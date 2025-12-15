@@ -1,0 +1,42 @@
+{
+    "users": [],
+    "branches": [
+        {
+            "id": "branch-main",
+            "name": "Main Branch",
+            "systems": [
+                {
+                    "id": "system-1",
+                    "name": "Gaming Station",
+                    "pricesByPeriod": []
+                }
+            ],
+            "periods": [
+                {
+                    "id": "default",
+                    "start": 0,
+                    "end": 1440,
+                    "defaultPrices": {
+                        "p1": 150000,
+                        "p2": 200000,
+                        "p3": 260000,
+                        "p4": 320000,
+                        "birthday": 500000,
+                        "film": 350000
+                    }
+                }
+            ]
+        }
+    ],
+    "settings": {
+        "title": "Great Panel",
+        "timezone": "Asia\/Tehran",
+        "panelName": "Great Panel",
+        "siteIcon": "uploads\/gallery\/gallery-69309ec5cc5647.53184842.svg",
+        "backupSettings": {
+            "autoIntervalMinutes": 0,
+            "autoLimit": 0,
+            "lastAutoBackupAt": null
+        }
+    }
+}
