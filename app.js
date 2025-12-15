@@ -1152,6 +1152,8 @@ function applyAppearancePalette(state, { persist = false } = {}) {
   root.style.setProperty("--primary", palette.primary);
   const darker = adjustHexLightness(palette.primary, -0.18);
   root.style.setProperty("--primary-600", darker || palette.primary);
+  const focusRing = hexToRgba(palette.primary, 0.12) || "rgba(225,29,46,0.12)";
+  root.style.setProperty("--primary-focus", focusRing);
   root.style.setProperty("--bg", palette.background);
   root.style.setProperty("--text", palette.text);
   const toggleBg = hexToRgba(palette.toggle, 0.12) || "rgba(225,29,46,0.08)";
@@ -3195,7 +3197,15 @@ async function undoGalleryPhotoUpdate(photoId, previousSnapshot) {
 function setActiveTab(tab) {
   qsa('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   qsa('.tab').forEach(t => t.classList.toggle('active', t.id === `tab-${tab}`));
-  const titles = { home: 'Home', users: 'Users', devsettings: 'Developer Settings', settings: 'Settings' };
+  const titles = {
+    home: 'Home',
+    users: 'Users',
+    settings: 'Account Settings',
+    guests: 'List of guests',
+    gallery: 'Photo Gallery',
+    invite: 'Invite',
+    devsettings: 'Developer Settings'
+  };
   const el = qs('#page-title');
   if (el) el.textContent = titles[tab] || '';
 }

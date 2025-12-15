@@ -4,8 +4,8 @@ declare(strict_types=1);
 session_start();
 require_once __DIR__ . '/api/lib/common.php';
 
+$configFile = __DIR__ . '/api/config.php';
 if (databaseConfigRequiresInstallation()) {
-  $configFile = __DIR__ . '/api/config.php';
   if (!is_file($configFile)) {
     header('Location: install.php');
     exit;
@@ -17,23 +17,9 @@ if (!empty($_SESSION['authenticated'])) {
   exit;
 }
 
-$dbConfig = require __DIR__ . '/api/config.php';
-$pdo = null;
-$connectionError = null;
-try {
-  $dsn = sprintf(
-    'mysql:host=%s;port=%d;dbname=%s;charset=%s',
-    $dbConfig['host'] ?? '127.0.0.1',
-    $dbConfig['port'] ?? 3306,
-    $dbConfig['dbname'] ?? '',
-    $dbConfig['charset'] ?? 'utf8mb4'
-  );
-  $pdo = new PDO($dsn, $dbConfig['user'] ?? '', $dbConfig['password'] ?? '');
-  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-  $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-} catch (PDOException $error) {
-  $connectionError = 'Database connection failed.';
-}
+$dbConfig = loadConfig($configFile);
+$pdo = connectDatabase($dbConfig);
+$connectionError = $pdo ? null : 'Database connection failed.';
 
 if (!$connectionError && $pdo && !isInstallComplete()) {
   try {
