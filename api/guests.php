@@ -9,6 +9,31 @@ header('Content-Type: application/json; charset=UTF-8');
 
 const INVITE_BASE_URL = 'https://davatshodi.ir/mci/inv';
 
+ensureEventStorageReady();
+
+function ensureEventStorageReady(): void
+{
+    $eventsRoot = __DIR__ . '/../events';
+    $subDirs = [
+        $eventsRoot,
+        $eventsRoot . '/event',
+        $eventsRoot . '/eventcard'
+    ];
+    foreach ($subDirs as $path) {
+        if (is_dir($path)) {
+            continue;
+        }
+        if (!mkdir($path, 0755, true) && !is_dir($path)) {
+            error_log('Failed to create events path: ' . $path);
+        }
+    }
+    $purelistPath = $eventsRoot . '/event/purelist.csv';
+    if (!is_file($purelistPath)) {
+        $headers = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'date_entered', 'date_exited'];
+        @file_put_contents($purelistPath, implode(',', $headers) . "\n");
+    }
+}
+
 function buildInviteLink(string $code): string
 {
     $code = trim($code, '/');
@@ -922,7 +947,7 @@ function createGuestInvitePages(array $guests): void
         $qrElement = '';
         if ($nationalId !== '') {
             $qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . rawurlencode($nationalId);
-            $qrElement = "<img class="qr" src="{$qrSrc}" alt="QR ???? {$safeName}">";
+            $qrElement = "<img class=\"qr\" src=\"{$qrSrc}\" alt=\"QR ???? {$safeName}\">";
         }
         $page = <<<HTML
 <!DOCTYPE html>

@@ -3,6 +3,23 @@ declare(strict_types=1);
 
 session_start();
 
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
+ini_set('log_errors', '1');
+set_exception_handler('renderApiException');
+
+function renderApiException(Throwable $exception): void
+{
+    error_log('API exception: ' . $exception->getMessage());
+    http_response_code(500);
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'An internal error occurred while loading panel data.'
+    ]);
+    exit;
+}
+
 require_once __DIR__ . '/lib/common.php';
 require_once __DIR__ . '/lib/users.php';
 
