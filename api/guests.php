@@ -193,6 +193,7 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
             exit;
         }
+        createGuestInvitePages($store['events'][$eventIndex]['guests'] ?? []);
         echo json_encode([
             'status' => 'ok',
             'message' => 'Guest added successfully.',
@@ -878,15 +879,14 @@ function createGuestInvitePages(array $guests): void
 <title>{$safeCode}</title>
 <style>
     :root { color-scheme: only light; }
-    body { margin: 0; background: #fff; min-height: 100vh; padding: 0.5rem 0; display: flex; align-items: center; justify-content: center; font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif; }
-    .device { width: min(360px, 95vw); height: min(98vh, 700px); aspect-ratio: 9 / 16; background: #fff; display: flex; flex-direction: column; overflow: hidden; text-align: center; }
+    body { margin: 0; background: #fff; min-height: 100vh; padding: 0.25rem 0; display: flex; align-items: center; justify-content: center; font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif; }
+    .device { width: min(360px, 95vw); height: min(98vh, 740px); aspect-ratio: 9 / 16; background: #fff; display: flex; flex-direction: column; overflow: hidden; text-align: center; }
     .device img { width: 100%; height: auto; object-fit: cover; }
-    .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 1.5rem 1rem 2rem; }
-    .greeting { margin: 0; font-size: 1.2rem; color: #000; }
-    .name { font-size: 1.75rem; font-weight: 700; margin: 0; }
-    .code { font-size: 1.9rem; font-weight: 700; color: #000; margin: 0; letter-spacing: 0.35em; margin-top: 0.6rem; width: 120px; display: block; margin-left: auto; margin-right: auto; white-space: nowrap; }
-    .qr { max-width: 70px; width: 40%; height: auto; margin: 0 auto 0.2rem; border-radius: 12px; background: transparent; box-shadow: none; }
-    @media (max-width: 500px) { .name { font-size: 1.6rem; } .code { font-size: 1rem; } .qr { max-width: 140px; } }
+    .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.35rem; padding: 1.5rem 1rem 2rem; }
+    .greeting { margin: 0 0 0.15rem; font-size: 1.3rem; color: #000; }
+    .name { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.3rem; }
+    .qr { max-width: 80px; width: 45%; height: auto; margin: 0 auto 0.5rem; border-radius: 0; background: transparent; box-shadow: none; }
+    .code { font-size: clamp(2.4rem, 5vw, 2.8rem); font-weight: 700; color: #000; margin: 0; letter-spacing: 0.35em; margin-top: 0.1rem; display: block; margin-left: auto; margin-right: auto; white-space: nowrap; }
 </style>
 </head>
 <body>

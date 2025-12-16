@@ -53,18 +53,19 @@
 
   <div style="height:16px;"></div>
 
-  <div class="card">
-    <div class="table-header">
-      <h3>Guest lists</h3>
-      <div class="table-actions">
-        <label class="field inline">
-          <span class="muted small">Event</span>
-          <select id="guest-event-filter">
-            <option value="">All events</option>
-          </select>
-        </label>
+    <div class="card">
+      <div class="table-header">
+        <h3>Guest lists</h3>
+        <div class="table-actions">
+          <label class="field inline">
+            <span class="muted small">Event</span>
+            <select id="guest-event-filter">
+              <option value="">All events</option>
+            </select>
+          </label>
+          <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+        </div>
       </div>
-    </div>
     <div class="table-wrapper">
       <table>
         <thead>
@@ -217,8 +218,10 @@
         <form id="guest-manual-form" class="form">
           <div class="grid">
             <label class="field">
-              <span>Event name</span>
-              <input id="manual-event-name" name="event_name" type="text" autocomplete="off" required />
+              <span>Event</span>
+              <select id="manual-event-select" name="event_slug" required>
+                <option value="">Select an event</option>
+              </select>
             </label>
             <label class="field">
               <span>Event date (Shamsi)</span>
@@ -316,13 +319,15 @@
     const manualCloseButtons = $qsa("[data-guest-manual-close]", manualModal || document);
     const manualOpenButton = document.getElementById("open-manual-modal");
     const manualForm = document.getElementById("guest-manual-form");
-    const manualEventNameInput = document.getElementById("manual-event-name");
+    const manualEventSelect = document.getElementById("manual-event-select");
     const manualEventDateInput = document.getElementById("manual-event-date");
     const manualFirstnameInput = document.getElementById("manual-firstname");
     const manualLastnameInput = document.getElementById("manual-lastname");
     const manualGenderSelect = document.getElementById("manual-gender");
     const manualNationalIdInput = document.getElementById("manual-national-id");
     const manualPhoneInput = document.getElementById("manual-phone");
+    const exportSmsButton = document.getElementById("export-sms-link");
+    const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
 
     function showModal(modal) {
@@ -431,6 +436,32 @@
         eventFilter.appendChild(option);
       });
       eventFilter.value = current || "";
+      renderManualEventOptions();
+    }
+
+    function renderManualEventOptions() {
+      if (!manualEventSelect) return;
+      const current = manualEventSelect.value;
+      manualEventSelect.innerHTML = '<option value="">Select an event</option>';
+      state.events.forEach(event => {
+        const option = document.createElement("option");
+        option.value = event.slug || "";
+        option.textContent = event.name || event.slug || "Unnamed event";
+        manualEventSelect.appendChild(option);
+      });
+      if (current && state.events.some(ev => (ev.slug || "") === current)) {
+        manualEventSelect.value = current;
+      } else {
+        manualEventSelect.value = "";
+      }
+      updateManualEventDate();
+    }
+
+    function updateManualEventDate() {
+      if (!manualEventDateInput) return;
+      const selectedSlug = manualEventSelect?.value || "";
+      const selectedEvent = state.events.find(ev => (ev.slug || "") === selectedSlug);
+      manualEventDateInput.value = (selectedEvent?.date || "").trim();
     }
 
     function renderGuestTable() {
@@ -627,20 +658,28 @@
 
     manualForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const selectedSlug = manualEventSelect?.value || "";
+      const selectedEvent = state.events.find(ev => (ev.slug || "") === selectedSlug);
+      if (!selectedEvent) {
+        showErrorSnackbar?.({ message: "Please select an event before adding a guest." });
+        return;
+      }
+      const eventName = (selectedEvent.name || "").trim();
+      const eventDate = (manualEventDateInput?.value || "").trim();
+      if (!eventName || !eventDate) {
+        showErrorSnackbar?.({ message: "Please select an event and date before adding a guest." });
+        return;
+      }
       const payload = {
         action: "add_manual_guest",
-        event_name: (manualEventNameInput?.value || "").trim(),
-        event_date: (manualEventDateInput?.value || "").trim(),
+        event_name: eventName,
+        event_date: eventDate,
         firstname: (manualFirstnameInput?.value || "").trim(),
         lastname: (manualLastnameInput?.value || "").trim(),
         gender: manualGenderSelect?.value || "",
         national_id: (manualNationalIdInput?.value || "").trim(),
         phone_number: (manualPhoneInput?.value || "").trim()
       };
-      if (!payload.event_name || !payload.event_date) {
-        showErrorSnackbar?.({ message: "Event name and date are required." });
-        return;
-      }
       const submitButton = manualForm.querySelector("button[type='submit']");
       submitButton?.setAttribute("disabled", "disabled");
       try {
@@ -657,6 +696,7 @@
         populateGenderSelect(manualGenderSelect);
         populateGenderSelect(editGenderSelect);
         manualForm.reset();
+        updateManualEventDate();
         hideModal(manualModal);
         showDefaultToast?.(data.message || "Guest added.");
       } catch (error) {
@@ -703,6 +743,18 @@
     });
 
     eventFilter?.addEventListener("change", renderGuestTable);
+
+    exportSmsButton?.addEventListener("click", async () => {
+      exportSmsButton.setAttribute("disabled", "disabled");
+      try {
+        await exportSmsLinks();
+        showDefaultToast?.("SMS links download started.");
+      } catch (error) {
+        showErrorSnackbar?.({ message: error?.message || "Failed to export SMS links." });
+      } finally {
+        exportSmsButton.removeAttribute("disabled");
+      }
+    });
 
     function openJalaliPicker(event) {
       event?.preventDefault?.();
@@ -832,6 +884,69 @@
       }
     }
 
+    async function loadPureListCsvRows() {
+      const response = await fetch(PURE_LIST_CSV_PATH, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Unable to retrieve the pure CSV guest list.");
+      }
+      const raw = await response.text();
+      if (!raw.trim()) {
+        throw new Error("The pure CSV file is empty.");
+      }
+      const workbook = XLSX.read(raw, { type: "string", raw: false });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        throw new Error("The pure CSV file does not contain any sheets.");
+      }
+      return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+    }
+
+    function buildSmsWorkbook(rows) {
+      const normalized = rows
+        .map(row => {
+          const firstname = String(row.firstname || row.first_name || "").trim();
+          const lastname = String(row.lastname || row.last_name || "").trim();
+          const fullname = [firstname, lastname].filter(Boolean).join(" ").trim();
+          const phone = String(row.phone_number || row.phone || "").trim();
+          const link = String(row.sms_link || row.link || "").trim();
+          return {
+            "نام کامل": fullname,
+            "شماره تلفن": phone,
+            "لینک کارت دعوت": link
+          };
+        })
+        .filter(entry => entry["نام کامل"] || entry["شماره تلفن"] || entry["لینک کارت دعوت"]);
+      if (!normalized.length) {
+        throw new Error("The pure CSV file did not yield any guest rows.");
+      }
+      const worksheet = XLSX.utils.json_to_sheet(normalized, {
+        header: ["نام کامل", "شماره تلفن", "لینک کارت دعوت"]
+      });
+      worksheet["!cols"] = [{ wch: 35 }, { wch: 20 }, { wch: 45 }];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "SMS Links");
+      const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
+      const existingView = hasViews ? workbook.Workbook.Views[0] : {};
+      workbook.Workbook = workbook.Workbook || {};
+      workbook.Workbook.Views = [{ ...existingView, RTL: true }];
+      return workbook;
+    }
+
+    async function exportSmsLinks() {
+      const rows = await loadPureListCsvRows();
+      const workbook = buildSmsWorkbook(rows);
+      const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "sms-link-list.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
       fileTrigger?.addEventListener("click", (e) => {
         e.preventDefault();
@@ -852,6 +967,8 @@
       manualEventDateInput?.addEventListener("click", openJalaliPicker);
       manualEventDateInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
 
+      manualEventSelect?.addEventListener("change", updateManualEventDate);
+
       editDateEnteredInput?.addEventListener("focus", openJalaliPicker);
       editDateEnteredInput?.addEventListener("click", openJalaliPicker);
       editDateEnteredInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
@@ -861,6 +978,7 @@
       editDateExitedInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
 
       manualOpenButton?.addEventListener("click", () => {
+        renderManualEventOptions();
         showModal(manualModal);
       });
 
