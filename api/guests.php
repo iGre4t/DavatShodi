@@ -393,7 +393,7 @@ if ($method === 'POST') {
         $guestRow = $guest;
         ensureInviteCode(null, $guestRow);
         $code = (string)($guestRow['invite_code'] ?? '');
-        $guestRow['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/mci/invite/%s', $code) : '';
+        $guestRow['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/invite/%s', $code) : '';
         $csvGuests[] = $guestRow;
     }
 
