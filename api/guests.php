@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 session_start();
 
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
+ini_set('log_errors', '1');
+
 date_default_timezone_set('Asia/Tehran');
 
 header('Content-Type: application/json; charset=UTF-8');
@@ -23,14 +27,16 @@ function ensureEventStorageReady(): void
         if (is_dir($path)) {
             continue;
         }
-        if (!mkdir($path, 0755, true) && !is_dir($path)) {
+        if (!@mkdir($path, 0755, true) && !is_dir($path)) {
             error_log('Failed to create events path: ' . $path);
         }
     }
     $purelistPath = $eventsRoot . '/event/purelist.csv';
     if (!is_file($purelistPath)) {
         $headers = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'date_entered', 'date_exited'];
-        @file_put_contents($purelistPath, implode(',', $headers) . "\n");
+        if (@file_put_contents($purelistPath, implode(',', $headers) . "\n") === false) {
+            error_log('Failed to initialize purelist header: ' . $purelistPath);
+        }
     }
 }
 
@@ -933,7 +939,8 @@ function createGuestInvitePages(array $guests): void
             continue;
         }
         $guestDir = $invRoot . '/' . $code;
-        if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+        if (!is_dir($guestDir) && !@mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+            error_log('Unable to create invite directory for ' . $code);
             continue;
         }
         $fullName = trim((string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? ''));
@@ -996,10 +1003,12 @@ function createGuestInvitePages(array $guests): void
     </div>
   </body>
   </html>
-  HTML;
-        file_put_contents($guestDir . '/index.php', $page);
-      }
-  }
+HTML;
+        if (@file_put_contents($guestDir . '/index.php', $page) === false) {
+            error_log('Failed to write invite page for ' . $code);
+        }
+    }
+}
 
 function clearGuestInviteDirectories(string $dir): void
 {
