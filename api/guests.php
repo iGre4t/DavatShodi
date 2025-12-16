@@ -141,9 +141,10 @@ if ($method === 'POST') {
         ]);
         exit;
     } elseif ($action === 'add_manual_guest') {
-        if ($eventName === '' || $eventDate === '') {
+        $eventSlug = trim((string)($_POST['event_slug'] ?? ''));
+        if ($eventSlug === '') {
             http_response_code(422);
-            echo json_encode(['status' => 'error', 'message' => 'Event name and date are required.']);
+            echo json_encode(['status' => 'error', 'message' => 'Please select an event before adding a guest.']);
             exit;
         }
         $firstname = trim((string)($_POST['firstname'] ?? ''));
@@ -159,24 +160,32 @@ if ($method === 'POST') {
             exit;
         }
         $store = loadGuestStore($storePath);
-        $slug = ensureUniqueSlug(slugify($eventName), $store['events']);
-        $eventIndex = findEventIndexBySlug($store['events'], $slug);
+        $eventIndex = findEventIndexBySlug($store['events'], $eventSlug);
         if ($eventIndex < 0) {
-            $store['events'][] = [
-                'slug' => $slug,
-                'name' => $eventName,
-                'date' => $eventDate,
-                'mapping' => [],
-                'purelist' => '',
-                'guest_count' => 0,
-                'guests' => [],
-                'created_at' => date('c'),
-                'updated_at' => date('c')
-            ];
-            $eventIndex = count($store['events']) - 1;
+            http_response_code(404);
+            echo json_encode(['status' => 'error', 'message' => 'Selected event was not found.']);
+            exit;
         }
-        $nextNumber = getNextGuestNumber($store['events'][$eventIndex]);
-        $store['events'][$eventIndex]['guests'][] = [
+        $eventNameFromPost = trim((string)($_POST['event_name'] ?? ''));
+        $eventDateFromPost = trim((string)($_POST['event_date'] ?? ''));
+        $storeEvent =& $store['events'][$eventIndex];
+        $eventName = (string)($storeEvent['name'] ?? '');
+        $eventDate = (string)($storeEvent['date'] ?? '');
+        if ($eventName === '' && $eventNameFromPost !== '') {
+            $eventName = $eventNameFromPost;
+            $storeEvent['name'] = $eventName;
+        }
+        if ($eventDate === '' && $eventDateFromPost !== '') {
+            $eventDate = $eventDateFromPost;
+            $storeEvent['date'] = $eventDate;
+        }
+        if ($eventName === '' || $eventDate === '') {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Event name and date are required.']);
+            exit;
+        }
+        $nextNumber = getNextGuestNumber($storeEvent);
+        $storeEvent['guests'][] = [
             'number' => $nextNumber,
             'firstname' => $firstname,
             'lastname' => $lastname,
@@ -186,8 +195,13 @@ if ($method === 'POST') {
             'date_entered' => $dateEntered,
             'date_exited' => $dateExited
         ];
-        $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
-        $store['events'][$eventIndex]['updated_at'] = date('c');
+        $storeEvent['guest_count'] = count($storeEvent['guests']);
+        $storeEvent['updated_at'] = date('c');
+        if (!syncEventPurelist($storeEvent, $eventSlug, $eventsRoot)) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
+            exit;
+        }
         if (!saveGuestStore($storePath, $store)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
@@ -550,6 +564,35 @@ function escapeCsv($value): string
     $needsQuotes = strpbrk($value, "\",\n\r") !== false;
     $escaped = str_replace('"', '""', $value);
     return $needsQuotes ? '"' . $escaped . '"' : $escaped;
+}
+
+function syncEventPurelist(array &$event, string $slug, string $eventsRoot): bool
+{
+    $eventDir = $eventsRoot . '/' . $slug;
+    if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
+        return false;
+    }
+    $guests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
+    foreach ($guests as &$guest) {
+        if (!is_array($guest)) {
+            $guest = [];
+        }
+        $guest['national_id'] = normalizeNationalId((string)($guest['national_id'] ?? ''));
+        ensureInviteCode($event, $guest);
+        $code = (string)($guest['invite_code'] ?? '');
+        $guest['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/mci/inv/%s', $code) : '';
+        $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
+        $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
+    }
+    unset($guest);
+    $headers = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'date_entered', 'date_exited'];
+    $csvContent = buildCsv($guests, $headers);
+    $purelistPath = $eventDir . '/purelist.csv';
+    if (file_put_contents($purelistPath, $csvContent) === false) {
+        return false;
+    }
+    $event['purelist'] = 'events/' . $slug . '/purelist.csv';
+    return true;
 }
 
 function normalizeDigitString(string $value): string

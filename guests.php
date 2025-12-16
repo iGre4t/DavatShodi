@@ -672,6 +672,7 @@
       }
       const payload = {
         action: "add_manual_guest",
+        event_slug: selectedSlug,
         event_name: eventName,
         event_date: eventDate,
         firstname: (manualFirstnameInput?.value || "").trim(),
@@ -909,20 +910,30 @@
           const fullname = [firstname, lastname].filter(Boolean).join(" ").trim();
           const phone = String(row.phone_number || row.phone || "").trim();
           const link = String(row.sms_link || row.link || "").trim();
+          const nationalId = String(row.national_id || row.nationalid || "").trim();
+          const lotteryCode = String(row.number || row.lottery_code || row.unique_code || "").trim();
           return {
+            "کد قرعه کشی": lotteryCode,
             "نام کامل": fullname,
+            "کدملی": nationalId,
             "شماره تلفن": phone,
             "لینک کارت دعوت": link
           };
         })
-        .filter(entry => entry["نام کامل"] || entry["شماره تلفن"] || entry["لینک کارت دعوت"]);
+        .filter(entry =>
+          entry["کد قرعه کشی"] ||
+          entry["نام کامل"] ||
+          entry["کدملی"] ||
+          entry["شماره تلفن"] ||
+          entry["لینک کارت دعوت"]
+        );
       if (!normalized.length) {
         throw new Error("The pure CSV file did not yield any guest rows.");
       }
       const worksheet = XLSX.utils.json_to_sheet(normalized, {
-        header: ["نام کامل", "شماره تلفن", "لینک کارت دعوت"]
+        header: ["کد قرعه کشی", "نام کامل", "کدملی", "شماره تلفن", "لینک کارت دعوت"]
       });
-      worksheet["!cols"] = [{ wch: 35 }, { wch: 20 }, { wch: 45 }];
+      worksheet["!cols"] = [{ wch: 15 }, { wch: 35 }, { wch: 18 }, { wch: 20 }, { wch: 45 }];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "SMS Links");
       const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
