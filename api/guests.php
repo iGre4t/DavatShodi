@@ -830,11 +830,15 @@ function normalizeEventsForResponse(array $events): array
 function createGuestInvitePages(array $guests): void
 {
     $invRoot = __DIR__ . '/../inv';
-    if (!is_dir($invRoot) && !mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
-        return;
+    if (!is_dir($invRoot)) {
+        if (!mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
+            return;
+        }
+    } else {
+        clearGuestInviteDirectories($invRoot);
     }
     $imageName = 'Invite Card Picture.jpg';
-    $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
+    $imageUrl = '../events/eventcard/' . rawurlencode($imageName);
     foreach ($guests as $guest) {
         $code = trim((string)($guest['invite_code'] ?? ''));
         if ($code === '') {
@@ -850,30 +854,41 @@ function createGuestInvitePages(array $guests): void
         }
         $safeName = htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $safeCode = htmlspecialchars($code, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $nationalId = normalizeNationalId((string)($guest['national_id'] ?? ''));
+        $safeNationalId = htmlspecialchars($nationalId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $qrElement = '';
+        if ($nationalId !== '') {
+            $qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . rawurlencode($nationalId);
+            $qrElement = "<img class=\"qr\" src=\"{$qrSrc}\" alt=\"QR برای {$safeName}\">";
+        }
         $page = <<<HTML
 <!DOCTYPE html>
-<html lang="fa">
+<html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{$safeCode}</title>
 <style>
     :root { color-scheme: only light; }
-    body { margin: 0; background: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
+    body { margin: 0; background: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif; }
     .device { width: min(360px, 95vw); aspect-ratio: 9 / 16; background: #fff; border: 1px solid #e0e0e0; box-shadow: 0 16px 35px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column; overflow: hidden; text-align: center; }
     .device img { width: 100%; height: auto; object-fit: cover; }
-    .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.3rem; padding: 1.5rem 1rem 2rem; }
+    .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 1.5rem 1rem 2rem; }
+    .greeting { margin: 0; font-size: 1rem; color: #888; }
     .name { font-size: 2rem; font-weight: 700; margin: 0; }
-    .code { font-size: 1.2rem; color: #555; margin: 0; letter-spacing: 0.08em; }
-    @media (max-width: 500px) { .name { font-size: 1.6rem; } .code { font-size: 1rem; } }
+    .code { font-size: 1.1rem; color: #555; margin: 0; letter-spacing: 0.1em; }
+    .qr { max-width: 160px; width: 70%; height: auto; margin: 0 auto; border-radius: 10px; box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08); }
+    @media (max-width: 500px) { .name { font-size: 1.6rem; } .code { font-size: 1rem; } .qr { max-width: 140px; } }
 </style>
 </head>
 <body>
     <div class="device">
         <img src="{$imageUrl}" alt="Invite Card Picture">
         <div class="message">
+            <p class="greeting">مهمان گرامی</p>
             <p class="name">{$safeName}</p>
             <p class="code">{$safeCode}</p>
+            {$qrElement}
         </div>
     </div>
 </body>
@@ -881,4 +896,49 @@ function createGuestInvitePages(array $guests): void
 HTML;
         file_put_contents($guestDir . '/index.php', $page);
     }
+}
+
+function clearGuestInviteDirectories(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+    $items = scandir($dir);
+    if ($items === false) {
+        return;
+    }
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+        $path = $dir . '/' . $item;
+        if (is_dir($path)) {
+            removeDirectoryTree($path);
+        } else {
+            @unlink($path);
+        }
+    }
+}
+
+function removeDirectoryTree(string $path): void
+{
+    if (!is_dir($path)) {
+        return;
+    }
+    $items = scandir($path);
+    if ($items === false) {
+        return;
+    }
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+        $child = $path . '/' . $item;
+        if (is_dir($child)) {
+            removeDirectoryTree($child);
+        } else {
+            @unlink($child);
+        }
+    }
+    @rmdir($path);
 }
