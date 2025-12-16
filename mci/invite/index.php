@@ -4,18 +4,7 @@ declare(strict_types=1);
 mb_internal_encoding('UTF-8');
 
 const CSV_PATH = __DIR__ . '/../../events/event/purelist.csv';
-const CARD_PATH = __DIR__ . '/../../events/eventcard/eventrawcard.jpg';
-const FONT_CANDIDATES = [
-    __DIR__ . '/../fonts/Roboto-Regular.ttf',
-    __DIR__ . '/../fonts/OpenSans-Regular.ttf',
-    'C:/Windows/Fonts/arial.ttf',
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-    '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
-    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-    '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
-    '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
-];
+const HERO_IMAGE_PATH = __DIR__ . '/../../events/eventcard/eventrawcard.jpg';
 
 $inviteCode = getRequestedInviteCode();
 if ($inviteCode === '') {
@@ -27,18 +16,11 @@ if ($guest === null) {
     respondNotFound($inviteCode);
 }
 
-$fullName = trim(($guest['firstname'] ?? '') . ' ' . ($guest['lastname'] ?? ''));
-$fullName = $fullName === '' ? 'Guest invite' : $fullName;
+$fullName = trim(($guest['firstname'] ?? ''));
+$displayName = $fullName === '' ? 'مهمان گرامی' : $fullName;
+$nationalId = trim($guest['national_id'] ?? '');
 
-$textLines = array_filter([
-    $fullName,
-    isset($guest['national_id']) && $guest['national_id'] !== '' ? 'National ID: ' . $guest['national_id'] : '',
-    isset($guest['phone_number']) && $guest['phone_number'] !== '' ? 'Phone: ' . $guest['phone_number'] : '',
-    'Invite code: ' . $inviteCode,
-]);
-
-$imageData = buildInviteImage($textLines);
-outputInvitePage($imageData, $fullName, $inviteCode);
+outputInvitePage($displayName, $inviteCode, $nationalId);
 
 exit;
 
@@ -106,145 +88,147 @@ function findGuestFromCsv(string $code): ?array
     return null;
 }
 
-function buildInviteImage(array $lines): string
+function outputInvitePage(string $name, string $code, string $nationalId): void
 {
-    $cardPath = realpath(CARD_PATH);
-    if ($cardPath === false || !is_readable($cardPath)) {
-        respondError('Raw event card not available');
-    }
-    if (!function_exists('imagecreatefromjpeg')) {
-        respondError('GD JPEG support missing');
-    }
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
 
-    $image = imagecreatefromjpeg($cardPath);
-    if ($image === false) {
-        respondError('Unable to open event card');
+    $heroPath = realpath(HERO_IMAGE_PATH);
+    if ($heroPath === false || !is_readable($heroPath)) {
+        respondError('پوستر رویداد پیدا نشد');
     }
 
-    $width = imagesx($image);
-    $height = imagesy($image);
+    $heroUrl = '/events/eventcard/eventrawcard.jpg';
+    $safeName = htmlspecialchars($name, ENT_QUOTES);
+    $safeCode = htmlspecialchars($code, ENT_QUOTES);
+    $watermark = $nationalId !== '' ? htmlspecialchars($nationalId, ENT_QUOTES) : '---';
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'davatshodi.ir';
+    $inviteUrl = $scheme . '://' . $host . '/mci/invite/' . $code;
+    $qrData = rawurlencode($inviteUrl);
+    $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={$qrData}&margin=12";
 
-    $fontPath = resolveFontPath();
-
-    $textBlockHeight = count($lines) * 30 + 20;
-    $overlayHeight = max($textBlockHeight + 32, (int) round($height * 0.27));
-    $overlayTop = $height - $overlayHeight;
-
-    $overlayColor = imagecolorallocatealpha($image, 0, 0, 0, 70);
-    imagefilledrectangle($image, 0, $overlayTop, $width, $height, $overlayColor);
-
-    $textColor = imagecolorallocate($image, 255, 255, 255);
-
-    $x = (int) round($width * 0.06);
-    $availableWidth = $width - $x * 2;
-
-    if ($fontPath !== null) {
-        $fontSize = max(26, min(48, (int) round($width / 24)));
-        $lineSpacing = (int) round($fontSize * 1.4);
-        $y = $overlayTop + 16 + $fontSize;
-        foreach ($lines as $content) {
-            $wrapped = wrapText($content, $fontSize, $fontPath, $availableWidth);
-            foreach ($wrapped as $line) {
-                imagettftext($image, $fontSize, 0, $x, $y, $textColor, $fontPath, $line);
-                $y += $lineSpacing;
-            }
-            $y += (int) round($lineSpacing * 0.1);
+    echo <<<HTML
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>$safeName</title>
+    <style>
+      @font-face {
+        font-family: "Peyda";
+        src: url("/style/fonts/PeydaWebFaNum-Regular.woff2") format("woff2"),
+             url("/style/fonts/PeydaWebFaNum-Bold.woff2") format("woff2");
+        font-weight: 400 700;
+        font-display: swap;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #fff;
+        font-family: "Peyda", "Peyda Web", "Segoe UI", sans-serif;
+        color: #0f172a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+      }
+      .invite-shell {
+        width: min(460px, 100%);
+        background: #fff;
+        border-radius: 32px;
+        box-shadow: 0 30px 70px rgba(15,23,42,0.22);
+        border: 1px solid rgba(15,23,42,0.08);
+        overflow: hidden;
+      }
+      .hero {
+        width: 100%;
+        display: block;
+        object-fit: cover;
+        height: 320px;
+      }
+      .info-panel {
+        padding: 36px 30px 38px;
+        text-align: center;
+        position: relative;
+      }
+      .info-panel .label {
+        font-size: 18px;
+        color: rgba(15,23,42,0.65);
+        margin-bottom: 12px;
+        letter-spacing: 0.08em;
+      }
+      .info-panel .name {
+        font-size: 32px;
+        font-weight: 600;
+        margin: 0;
+        line-height: 1.25;
+      }
+      .qr-shell {
+        margin: 32px auto 0;
+        width: 200px;
+        height: 200px;
+        position: relative;
+      }
+      .qr-shell img {
+        width: 100%;
+        height: 100%;
+        border-radius: 18px;
+        box-shadow: 0 12px 30px rgba(15,23,42,0.25);
+        display: block;
+      }
+      .watermark {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 60px;
+        color: rgba(15,23,42,0.08);
+        letter-spacing: 0.35em;
+        font-weight: 600;
+        pointer-events: none;
+        text-transform: uppercase;
+      }
+      .code-display {
+        margin-top: 28px;
+        font-size: 46px;
+        letter-spacing: 0.25em;
+        font-weight: 700;
+      }
+      @media (max-width: 500px) {
+        .hero {
+          height: 260px;
         }
-    } else {
-        $builtFont = 5;
-        $lineHeight = imagefontheight($builtFont);
-        $lineSpacing = $lineHeight + 6;
-        $charWidth = imagefontwidth($builtFont);
-        $maxChars = $charWidth > 0 ? max(1, (int) floor($availableWidth / $charWidth)) : 20;
-        $y = $overlayTop + 16;
-        foreach ($lines as $content) {
-            $wrapped = wrapBuiltInText($content, $maxChars);
-            foreach ($wrapped as $line) {
-                imagestring($image, $builtFont, $x, $y, $line, $textColor);
-                $y += $lineSpacing;
-            }
-            $y += (int) round($lineSpacing * 0.1);
+        .info-panel {
+          padding: 28px 20px 32px;
         }
-    }
-
-    ob_start();
-    imagejpeg($image, null, 86);
-    imagedestroy($image);
-    $data = ob_get_clean();
-
-    if (!is_string($data)) {
-        respondError('Failed to encode invite image');
-    }
-
-    return $data;
-}
-
-function wrapText(string $text, int $fontSize, string $fontPath, int $maxWidth): array
-{
-    $words = preg_split('/\s+/u', $text);
-    $lines = [];
-    $current = '';
-    foreach ($words as $word) {
-        if ($current === '') {
-            $candidate = $word;
-        } else {
-            $candidate = $current . ' ' . $word;
+        .code-display {
+          font-size: 38px;
         }
-
-        if (getTextWidth($candidate, $fontSize, $fontPath) <= $maxWidth) {
-            $current = $candidate;
-            continue;
-        }
-
-        if ($current !== '') {
-            $lines[] = $current;
-        }
-
-        if (getTextWidth($word, $fontSize, $fontPath) <= $maxWidth) {
-            $current = $word;
-        } else {
-        $current = trim(mb_substr($word, 0, max(1, (int) mb_strlen($word) / 2)));
-    }
-    }
-
-    if ($current !== '') {
-        $lines[] = $current;
-    }
-
-    return $lines;
-}
-
-function wrapBuiltInText(string $text, int $maxChars): array
-{
-    $maxChars = max(1, $maxChars);
-    $wrapped = explode("\n", wordwrap($text, $maxChars, "\n", true));
-    $result = [];
-    foreach ($wrapped as $line) {
-        $trimmed = trim($line);
-        if ($trimmed !== '') {
-            $result[] = $trimmed;
-        }
-    }
-    return $result;
-}
-
-function getTextWidth(string $text, int $fontSize, string $fontPath): int
-{
-    $box = imagettfbbox($fontSize, 0, $fontPath, $text);
-    if ($box === false) {
-        return mb_strlen($text) * $fontSize;
-    }
-    return abs($box[2] - $box[0]);
-}
-
-function resolveFontPath(): ?string
-{
-    foreach (FONT_CANDIDATES as $path) {
-        if (@is_file($path) && @is_readable($path)) {
-            return $path;
-        }
-    }
-    return null;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="invite-shell">
+      <img class="hero" src="$heroUrl" alt="پوستر رویداد" />
+      <div class="info-panel" aria-live="polite">
+        <div class="label">مهمان محترم</div>
+        <p class="name">$safeName</p>
+        <div class="qr-shell">
+          <div class="watermark">$watermark</div>
+          <img src="$qrUrl" alt="QR دعوت" loading="lazy" />
+        </div>
+        <div class="code-display">$safeCode</div>
+      </div>
+    </div>
+  </body>
+</html>
+HTML;
 }
 
 function respondNotFound(string $code = ''): void
@@ -267,63 +251,4 @@ function respondError(string $detail): void
     header('Content-Type: text/plain; charset=utf-8');
     echo $detail;
     exit;
-}
-
-function outputInvitePage(string $imageData, string $title, string $code): void
-{
-    header('Content-Type: text/html; charset=utf-8');
-    header('Cache-Control: no-store, no-cache, must-revalidate');
-    $imageBase64 = base64_encode($imageData);
-    $safeTitle = htmlspecialchars($title, ENT_QUOTES);
-    $safeCode = htmlspecialchars($code, ENT_QUOTES);
-    echo <<<HTML
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>$safeTitle - Invite</title>
-    <style>
-      :root { background:#050505; }
-      body {
-        margin:0;
-        min-height:100vh;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        background:#050505;
-        color:#fff;
-        font-family: Arial, sans-serif;
-      }
-      .invite-shell {
-        width:100%;
-        max-width:420px;
-        max-height:90vh;
-        padding:16px;
-        box-sizing:border-box;
-      }
-      .invite-shell img {
-        width:100%;
-        height:auto;
-        aspect-ratio:9/16;
-        object-fit:cover;
-        border-radius:22px;
-        box-shadow:0 24px 45px rgba(0,0,0,0.45);
-      }
-      .invite-shell .code {
-        margin-top:12px;
-        text-align:center;
-        font-weight:600;
-        letter-spacing:0.25em;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="invite-shell">
-      <img alt="Invite card for $safeTitle" src="data:image/jpeg;base64,$imageBase64" />
-      <div class="code">Invite code: $safeCode</div>
-    </div>
-  </body>
-</html>
-HTML;
 }

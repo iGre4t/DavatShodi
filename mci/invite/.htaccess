@@ -1,7 +1,0 @@
-RewriteEngine On
-RewriteBase /mci/invite/
-
-# Route nonexistent files back to the controller so `/mci/invite/{code}` works.
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.+)$ index.php/$1 [QSA,L]
