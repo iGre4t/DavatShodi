@@ -879,13 +879,13 @@ function createGuestInvitePages(array $guests): void
 <style>
     :root { color-scheme: only light; }
     body { margin: 0; background: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif; }
-    .device { width: min(360px, 95vw); aspect-ratio: 9 / 16; background: #fff; border: 1px solid #e0e0e0; box-shadow: 0 16px 35px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column; overflow: hidden; text-align: center; }
+    .device { width: min(360px, 95vw); aspect-ratio: 9 / 16; background: #fff; display: flex; flex-direction: column; overflow: hidden; text-align: center; }
     .device img { width: 100%; height: auto; object-fit: cover; }
     .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 1.5rem 1rem 2rem; }
     .greeting { margin: 0; font-size: 1.2rem; color: #000; }
-    .name { font-size: 2rem; font-weight: 700; margin: 0; }
-    .code { font-size: 1.4rem; color: #000; margin: 0; letter-spacing: 0.2em; margin-top: 0.4rem; }
-    .qr { max-width: 180px; width: 75%; height: auto; margin: 0 auto 0.5rem; border-radius: 12px; box-shadow: 0 16px 32px rgba(0, 0, 0, 0.1); }
+    .name { font-size: 1.75rem; font-weight: 700; margin: 0; }
+    .code { font-size: 1.1rem; color: #000; margin: 0; letter-spacing: 0.4em; margin-top: 0.4rem; width: 90px; display: block; margin-left: auto; margin-right: auto; }
+    .qr { max-width: 90px; width: 50%; height: auto; margin: 0 auto 0.5rem; border-radius: 12px; box-shadow: 0 16px 32px rgba(0, 0, 0, 0.1); }
     @media (max-width: 500px) { .name { font-size: 1.6rem; } .code { font-size: 1rem; } .qr { max-width: 140px; } }
 </style>
 </head>
