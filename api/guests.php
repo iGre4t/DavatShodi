@@ -435,6 +435,8 @@ if ($method === 'POST') {
         exit;
     }
 
+    createGuestInvitePages($guests);
+
     echo json_encode([
         'status' => 'ok',
         'message' => 'Guest list saved successfully.',
@@ -815,4 +817,60 @@ function normalizeEventsForResponse(array $events): array
             'updated_at' => (string)($event['updated_at'] ?? '')
         ];
     }, $events));
+}
+
+function createGuestInvitePages(array $guests): void
+{
+    $invRoot = __DIR__ . '/../inv';
+    if (!is_dir($invRoot) && !mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
+        return;
+    }
+    $imageName = 'Invite Card Picture.jpg';
+    $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
+    foreach ($guests as $guest) {
+        $code = trim((string)($guest['invite_code'] ?? ''));
+        if ($code === '') {
+            continue;
+        }
+        $guestDir = $invRoot . '/' . $code;
+        if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+            continue;
+        }
+        $fullName = trim((string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? ''));
+        if ($fullName === '') {
+            $fullName = 'Guest';
+        }
+        $safeName = htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeCode = htmlspecialchars($code, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $page = <<<HTML
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{$safeCode}</title>
+<style>
+    :root { color-scheme: only light; }
+    body { margin: 0; background: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
+    .device { width: min(360px, 95vw); aspect-ratio: 9 / 16; background: #fff; border: 1px solid #e0e0e0; box-shadow: 0 16px 35px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column; overflow: hidden; text-align: center; }
+    .device img { width: 100%; height: auto; object-fit: cover; }
+    .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.3rem; padding: 1.5rem 1rem 2rem; }
+    .name { font-size: 2rem; font-weight: 700; margin: 0; }
+    .code { font-size: 1.2rem; color: #555; margin: 0; letter-spacing: 0.08em; }
+    @media (max-width: 500px) { .name { font-size: 1.6rem; } .code { font-size: 1rem; } }
+</style>
+</head>
+<body>
+    <div class="device">
+        <img src="{$imageUrl}" alt="Invite Card Picture">
+        <div class="message">
+            <p class="name">{$safeName}</p>
+            <p class="code">{$safeCode}</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+        file_put_contents($guestDir . '/index.php', $page);
+    }
 }
