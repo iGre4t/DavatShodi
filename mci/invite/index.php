@@ -6,6 +6,8 @@ mb_internal_encoding('UTF-8');
 const CSV_PATH = __DIR__ . '/../../events/event/purelist.csv';
 const CARD_PATH = __DIR__ . '/../../events/eventcard/eventrawcard.jpg';
 const FONT_CANDIDATES = [
+    __DIR__ . '/../fonts/Roboto-Regular.ttf',
+    __DIR__ . '/../fonts/OpenSans-Regular.ttf',
     'C:/Windows/Fonts/arial.ttf',
     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
@@ -123,14 +125,8 @@ function buildInviteImage(array $lines): string
     $height = imagesy($image);
 
     $fontPath = resolveFontPath();
-    if ($fontPath === null) {
-        respondError('Descriptive font not found');
-    }
 
-    $fontSize = max(26, min(48, (int) round($width / 24)));
-    $lineSpacing = (int) round($fontSize * 1.4);
-
-    $textBlockHeight = count($lines) * $lineSpacing + 20;
+    $textBlockHeight = count($lines) * 30 + 20;
     $overlayHeight = max($textBlockHeight + 32, (int) round($height * 0.27));
     $overlayTop = $height - $overlayHeight;
 
@@ -140,16 +136,35 @@ function buildInviteImage(array $lines): string
     $textColor = imagecolorallocate($image, 255, 255, 255);
 
     $x = (int) round($width * 0.06);
-    $y = $overlayTop + 16 + $fontSize;
-
     $availableWidth = $width - $x * 2;
-    foreach ($lines as $content) {
-        $wrapped = wrapText($content, $fontSize, $fontPath, $availableWidth);
-        foreach ($wrapped as $line) {
-            imagettftext($image, $fontSize, 0, $x, $y, $textColor, $fontPath, $line);
-            $y += $lineSpacing;
+
+    if ($fontPath !== null) {
+        $fontSize = max(26, min(48, (int) round($width / 24)));
+        $lineSpacing = (int) round($fontSize * 1.4);
+        $y = $overlayTop + 16 + $fontSize;
+        foreach ($lines as $content) {
+            $wrapped = wrapText($content, $fontSize, $fontPath, $availableWidth);
+            foreach ($wrapped as $line) {
+                imagettftext($image, $fontSize, 0, $x, $y, $textColor, $fontPath, $line);
+                $y += $lineSpacing;
+            }
+            $y += (int) round($lineSpacing * 0.1);
         }
-        $y += (int) round($lineSpacing * 0.1);
+    } else {
+        $builtFont = 5;
+        $lineHeight = imagefontheight($builtFont);
+        $lineSpacing = $lineHeight + 6;
+        $charWidth = imagefontwidth($builtFont);
+        $maxChars = $charWidth > 0 ? max(1, (int) floor($availableWidth / $charWidth)) : 20;
+        $y = $overlayTop + 16;
+        foreach ($lines as $content) {
+            $wrapped = wrapBuiltInText($content, $maxChars);
+            foreach ($wrapped as $line) {
+                imagestring($image, $builtFont, $x, $y, $line, $textColor);
+                $y += $lineSpacing;
+            }
+            $y += (int) round($lineSpacing * 0.1);
+        }
     }
 
     ob_start();
@@ -199,6 +214,20 @@ function wrapText(string $text, int $fontSize, string $fontPath, int $maxWidth):
     return $lines;
 }
 
+function wrapBuiltInText(string $text, int $maxChars): array
+{
+    $maxChars = max(1, $maxChars);
+    $wrapped = explode("\n", wordwrap($text, $maxChars, "\n", true));
+    $result = [];
+    foreach ($wrapped as $line) {
+        $trimmed = trim($line);
+        if ($trimmed !== '') {
+            $result[] = $trimmed;
+        }
+    }
+    return $result;
+}
+
 function getTextWidth(string $text, int $fontSize, string $fontPath): int
 {
     $box = imagettfbbox($fontSize, 0, $fontPath, $text);
@@ -211,7 +240,7 @@ function getTextWidth(string $text, int $fontSize, string $fontPath): int
 function resolveFontPath(): ?string
 {
     foreach (FONT_CANDIDATES as $path) {
-        if (is_file($path) && is_readable($path)) {
+        if (@is_file($path) && @is_readable($path)) {
             return $path;
         }
     }
