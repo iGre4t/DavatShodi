@@ -398,7 +398,7 @@ if ($method === 'POST') {
         $guestRow = $guest;
         ensureInviteCode(null, $guestRow);
         $code = (string)($guestRow['invite_code'] ?? '');
-        $guestRow['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/invite/%s', $code) : '';
+        $guestRow['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/mci/inv/%s', $code) : '';
         $csvGuests[] = $guestRow;
     }
 
@@ -838,7 +838,15 @@ function createGuestInvitePages(array $guests): void
         clearGuestInviteDirectories($invRoot);
     }
     $imageName = 'Invite Card Picture.jpg';
+    $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
     $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
+    if (is_file($cardImagePath)) {
+        $content = @file_get_contents($cardImagePath);
+        if ($content !== false) {
+            $mime = mime_content_type($cardImagePath) ?: 'image/jpeg';
+            $imageUrl = 'data:' . $mime . ';base64,' . base64_encode($content);
+        }
+    }
     foreach ($guests as $guest) {
         $code = trim((string)($guest['invite_code'] ?? ''));
         if ($code === '') {
