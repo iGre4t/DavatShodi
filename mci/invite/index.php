@@ -83,7 +83,7 @@ function findGuestFromCsv(string $code): ?array
         if ($smsLink === '') {
             continue;
         }
-        if (!preg_match('#/invite/([^/?#]+)#', $smsLink, $matches)) {
+        if (!preg_match('@/invite/([^/?#]+)@', $smsLink, $matches)) {
             continue;
         }
         if ($matches[1] === $code) {
