@@ -1,7 +1,7 @@
 Options -Indexes
 
 # Prevent direct access to configuration and helper scripts.
-<FilesMatch "^(config|schema|users|test-db)\.php$">
+<FilesMatch "^(config|schema|users)\.php$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

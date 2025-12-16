@@ -5,6 +5,18 @@ session_start();
 
 require_once __DIR__ . '/api/lib/common.php';
 
+$tableDefault = 'great_panel_store';
+$configPath = __DIR__ . '/api/config.php';
+if (is_file($configPath)) {
+    $loadedConfig = include $configPath;
+    if (is_array($loadedConfig)) {
+        $candidate = trim((string)($loadedConfig['table'] ?? ''));
+        if ($candidate !== '') {
+            $tableDefault = $candidate;
+        }
+    }
+}
+
 if (databaseConfigIsComplete()) {
     header('Location: login.php');
     exit;
@@ -32,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'dbname' => $dbname,
             'user' => $user,
             'password' => $password,
-            'table' => 'great_panel_store',
+            'table' => $tableDefault,
             'record' => 'store'
         ]);
 

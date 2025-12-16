@@ -2,8 +2,8 @@
     "events": [
         {
             "slug": "event",
-            "name": "روز آخر",
-            "date": "1404\/09\/29",
+            "name": "روز اول",
+            "date": "1404\/09\/26",
             "mapping": {
                 "firstname": "نام",
                 "lastname": "نام خانوادگی",
@@ -12,8 +12,19 @@
                 "phone_number": "شماره موبایل"
             },
             "purelist": "events\/event\/purelist.csv",
-            "guest_count": 244,
+            "guest_count": 245,
             "guests": [
+                {
+                    "firstname": "",
+                    "lastname": "",
+                    "gender": "",
+                    "national_id": "",
+                    "phone_number": "(متصل به اوانو)",
+                    "number": 1,
+                    "date_entered": "",
+                    "date_exited": "",
+                    "invite_code": "0001"
+                },
                 {
                     "firstname": "غلامرضا",
                     "lastname": "نوشيرواني بابلي",
@@ -21,8 +32,8 @@
                     "national_id": "0532424379",
                     "phone_number": "9125055881",
                     "number": 2,
-                    "date_entered": "1404\/09\/24",
-                    "date_exited": "2025-12-15 18:26:00",
+                    "date_entered": "",
+                    "date_exited": "",
                     "invite_code": "0002"
                 },
                 {
@@ -32,8 +43,8 @@
                     "national_id": "0081739311",
                     "phone_number": "9101507461",
                     "number": 3,
-                    "date_entered": "2025-12-15 18:26:20",
-                    "date_exited": "2025-12-15 18:31:28",
+                    "date_entered": "",
+                    "date_exited": "",
                     "invite_code": "0003"
                 },
                 {
@@ -43,8 +54,8 @@
                     "national_id": "0073436461",
                     "phone_number": "9125703058",
                     "number": 4,
-                    "date_entered": "2025-12-15 23:09:59",
-                    "date_exited": "2025-12-16 21:37:40",
+                    "date_entered": "",
+                    "date_exited": "",
                     "invite_code": "0004"
                 },
                 {
@@ -1679,7 +1690,7 @@
                     "firstname": "علی",
                     "lastname": "ایمانی",
                     "gender": "مرد",
-                    "national_id": "",
+                    "national_id": "1520536747",
                     "phone_number": "9199048828",
                     "number": 153,
                     "date_entered": "",
@@ -1767,7 +1778,7 @@
                     "firstname": "حسین",
                     "lastname": "بصیری",
                     "gender": "مرد",
-                    "national_id": "",
+                    "national_id": "1990983936",
                     "phone_number": "9908641463",
                     "number": 161,
                     "date_entered": "",
@@ -1800,7 +1811,7 @@
                     "firstname": "علیرضا",
                     "lastname": "پیر",
                     "gender": "مرد",
-                    "national_id": "",
+                    "national_id": "2580602682",
                     "phone_number": "9398605304",
                     "number": 164,
                     "date_entered": "",
@@ -1921,7 +1932,7 @@
                     "firstname": "حسین",
                     "lastname": "حسامی",
                     "gender": "مرد",
-                    "national_id": "",
+                    "national_id": "4980389368",
                     "phone_number": "9017764780",
                     "number": 175,
                     "date_entered": "",
@@ -1987,7 +1998,7 @@
                     "firstname": "امیر",
                     "lastname": "خداوند",
                     "gender": "مرد",
-                    "national_id": "",
+                    "national_id": "5560359696",
                     "phone_number": "9912646072",
                     "number": 181,
                     "date_entered": "",
@@ -2699,7 +2710,7 @@
                     "invite_code": "0245"
                 }
             ],
-            "updated_at": "2025-12-15T18:23:00+03:30",
+            "updated_at": "2025-12-16T22:31:03+03:30",
             "source": {
                 "filename": "source.xlsx",
                 "path": "events\/event\/source.xlsx"

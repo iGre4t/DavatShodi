@@ -354,6 +354,17 @@
       if (evt.target === manualModal) hideModal(manualModal);
     });
 
+    editCloseButtons.forEach(btn => {
+      btn.addEventListener("click", evt => {
+        evt.preventDefault();
+        hideModal(editModal);
+      });
+    });
+
+    editModal?.addEventListener("click", evt => {
+      if (evt.target === editModal) hideModal(editModal);
+    });
+
     function normalizeHeader(value, idx) {
       const label = String(value ?? "").trim();
       return label !== "" ? label : "Column " + (idx + 1);

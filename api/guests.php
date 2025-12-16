@@ -388,8 +388,17 @@ if ($method === 'POST') {
         exit;
     }
 
-    $csvHeaders = array_merge(['number'], $requiredKeys, ['date_entered', 'date_exited']);
-    $csvContent = buildCsv($guests, $csvHeaders);
+    $csvGuests = [];
+    foreach ($guests as $guest) {
+        $guestRow = $guest;
+        ensureInviteCode(null, $guestRow);
+        $code = (string)($guestRow['invite_code'] ?? '');
+        $guestRow['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/mci/invite/%s', $code) : '';
+        $csvGuests[] = $guestRow;
+    }
+
+    $csvHeaders = array_merge(['number'], $requiredKeys, ['sms_link', 'date_entered', 'date_exited']);
+    $csvContent = buildCsv($csvGuests, $csvHeaders);
     $purelistFilename = 'purelist.csv';
     $purelistPath = $eventDir . '/' . $purelistFilename;
     if (file_put_contents($purelistPath, $csvContent) === false) {
