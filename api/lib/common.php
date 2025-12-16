@@ -381,3 +381,79 @@ function deleteBackupMetadataEntry(string $filename): void
     }));
     saveBackupMetadata($filtered);
 }
+
+const GENERAL_SETTINGS_SCRIPT_DIR = __DIR__ . '/../../General Setting';
+const GENERAL_SETTINGS_SCRIPT_FILE = GENERAL_SETTINGS_SCRIPT_DIR . '/general-settings.js';
+const GENERAL_SETTINGS_DEFAULTS = [
+    'title' => 'Great Panel',
+    'timezone' => 'Asia/Tehran',
+    'panelName' => 'Great Panel',
+    'siteIcon' => '',
+    'appearance' => [
+        'primary' => '#e11d2e',
+        'background' => '#ffffff',
+        'text' => '#111111',
+        'toggle' => '#e11d2e'
+    ],
+    'backupSettings' => [
+        'autoIntervalMinutes' => 0,
+        'autoLimit' => 0,
+        'lastAutoBackupAt' => null
+    ]
+];
+
+function normalizeAppearanceColor(string $value): string
+{
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return '';
+    }
+    if ($trimmed[0] !== '#') {
+        $trimmed = '#' . $trimmed;
+    }
+    if (preg_match('/^#[0-9a-fA-F]{6}$/', $trimmed)) {
+        return strtolower($trimmed);
+    }
+    return '';
+}
+
+function buildGeneralSettingsScriptPayload(array $settings = []): array
+{
+    $defaults = GENERAL_SETTINGS_DEFAULTS;
+    $payload = [];
+    foreach (['title', 'timezone', 'panelName', 'siteIcon'] as $field) {
+        $value = trim((string)($settings[$field] ?? ''));
+        if ($value === '') {
+            $value = (string)$defaults[$field];
+        }
+        $payload[$field] = $value;
+    }
+    $appearanceDefaults = $defaults['appearance'];
+    $incomingAppearance = is_array($settings['appearance'] ?? null) ? $settings['appearance'] : [];
+    $appearancePayload = [];
+    foreach ($appearanceDefaults as $key => $fallback) {
+        $color = normalizeAppearanceColor((string)($incomingAppearance[$key] ?? $fallback));
+        $appearancePayload[$key] = $color !== '' ? $color : $fallback;
+    }
+    $payload['appearance'] = $appearancePayload;
+    return $payload;
+}
+
+function persistGeneralSettingsScript(array $settings = []): void
+{
+    $payload = buildGeneralSettingsScriptPayload($settings);
+    $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        return;
+    }
+    $script = "// Auto-generated general settings payload.\nwindow.GENERAL_SETTINGS = {$json};\n";
+    $directory = GENERAL_SETTINGS_SCRIPT_DIR;
+    if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+        return;
+    }
+    $existing = @file_get_contents(GENERAL_SETTINGS_SCRIPT_FILE);
+    if ($existing === $script) {
+        return;
+    }
+    file_put_contents(GENERAL_SETTINGS_SCRIPT_FILE, $script);
+}

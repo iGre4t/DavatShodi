@@ -44,17 +44,7 @@ $defaultData = [
             ]
         ]
     ],
-    'settings' => [
-        'title' => 'Great Panel',
-        'timezone' => 'Asia/Tehran',
-        'panelName' => 'Great Panel',
-        'siteIcon' => '',
-        'backupSettings' => [
-            'autoIntervalMinutes' => 0,
-            'autoLimit' => 0,
-            'lastAutoBackupAt' => null
-        ]
-    ]
+    'settings' => GENERAL_SETTINGS_DEFAULTS
 ];
 
 function parseUserCodeValue(string $value): int
@@ -406,6 +396,19 @@ if ($method === 'POST') {
             $value = $settings['siteIcon'];
             $data['settings']['siteIcon'] = is_string($value) ? $value : '';
         }
+        if (array_key_exists('appearance', $settings) && is_array($settings['appearance'])) {
+            if (!isset($data['settings']['appearance']) || !is_array($data['settings']['appearance'])) {
+                $data['settings']['appearance'] = $defaultData['settings']['appearance'];
+            }
+            foreach (['primary', 'background', 'text', 'toggle'] as $field) {
+                if (array_key_exists($field, $settings['appearance'])) {
+                    $value = normalizeAppearanceColor((string)$settings['appearance'][$field]);
+                    if ($value !== '') {
+                        $data['settings']['appearance'][$field] = $value;
+                    }
+                }
+            }
+        }
     } elseif ($action === 'save_database_config' && !empty($payload['config']) && is_array($payload['config'])) {
         if (!persistDatabaseConfigOverrides($payload['config'])) {
             sendJsonResponse(['status' => 'error', 'message' => 'Failed to save database configuration.']);
@@ -731,6 +734,7 @@ function persistData(array $data, string $file, ?PDO $pdo, array $config): void
         mkdir($directory, 0755, true);
     }
     file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    persistGeneralSettingsScript($data['settings'] ?? []);
     if ($pdo) {
         saveDataToDb($pdo, $data, $config);
     }

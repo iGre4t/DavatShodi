@@ -76,7 +76,16 @@ const COLOR_PICKER_GRID = {
 };
 const appearancePickerGridState = {};
 let activeAppearancePickerKey = null;
-let SERVER_SETTINGS = { ...DEFAULT_SETTINGS };
+const SHARED_GENERAL_SETTINGS =
+  typeof window !== "undefined" &&
+  window.GENERAL_SETTINGS &&
+  typeof window.GENERAL_SETTINGS === "object"
+    ? window.GENERAL_SETTINGS
+    : null;
+let SERVER_SETTINGS = {
+  ...DEFAULT_SETTINGS,
+  ...(SHARED_GENERAL_SETTINGS ?? {})
+};
 let SERVER_DATA_LOADED = false;
 let SERVER_DATABASE_CONNECTED = false;
 let GALLERY_CATEGORIES = [];

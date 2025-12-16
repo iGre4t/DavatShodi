@@ -682,29 +682,36 @@ function findGuestByNationalIdForSlugs(array $events, string $nationalId, array 
     return null;
 }
 
-function generateInviteCode(string $eventSlug, array $guest): string
+function generateInviteCode(array $guest): string
 {
-    $cleanSlug = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $eventSlug) ?? '');
-    if ($cleanSlug === '') {
-        $cleanSlug = 'EVT';
-    }
-    $cleanSlug = substr($cleanSlug, 0, 4);
     $number = (int)($guest['number'] ?? 0);
     if ($number <= 0) {
         $number = 1;
     }
-    return sprintf('%s-%04d', $cleanSlug, $number);
+    if ($number > 9999) {
+        $number = 9999;
+    }
+    return sprintf('%04d', $number);
 }
 
 function ensureInviteCode($event, array &$guest): string
 {
-    $slug = is_array($event) ? (string)($event['slug'] ?? '') : (string)$event;
     $code = (string)($guest['invite_code'] ?? '');
-    if ($code === '') {
-        $code = generateInviteCode($slug, $guest);
+    if (!preg_match('/^\d{4}$/', $code)) {
+        $code = generateInviteCode($guest);
         $guest['invite_code'] = $code;
     }
     return $code;
+}
+
+function normalizeInviteCodeDigits(string $value): string
+{
+    $digits = preg_replace('/\D+/', '', $value);
+    if ($digits === null || $digits === '') {
+        return '';
+    }
+    $digits = substr($digits, -4);
+    return str_pad($digits, 4, '0', STR_PAD_LEFT);
 }
 
 function normalizeStore(array $store): array
@@ -754,7 +761,7 @@ function normalizeInviteLog(array $log): array
     $log['event_slug'] = (string)($log['event_slug'] ?? '');
     $log['event_name'] = (string)($log['event_name'] ?? '');
     $log['guest_name'] = trim((string)($log['guest_name'] ?? ''));
-    $log['invite_code'] = (string)($log['invite_code'] ?? '');
+    $log['invite_code'] = normalizeInviteCodeDigits((string)($log['invite_code'] ?? ''));
     $log['timestamp'] = (string)($log['timestamp'] ?? date('Y-m-d H:i:s'));
     $log['date_entered'] = (string)($log['date_entered'] ?? '');
     $log['date_exited'] = (string)($log['date_exited'] ?? '');

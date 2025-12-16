@@ -56,6 +56,7 @@ function loadPanelSettings(): array {
   if (isset($data['settings']) && is_array($data['settings'])) {
     $settings = $data['settings'];
   }
+  persistGeneralSettingsScript($settings);
   return array_merge(DEFAULT_PANEL_SETTINGS, $settings);
 }
 
@@ -1043,6 +1044,7 @@ $accountEmail = $currentUser['email'] ?? '';
     <script>
       window.__CURRENT_USER_NAME = <?= json_encode($topbarUserName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     </script>
+    <script src="General%20Setting/general-settings.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -183,9 +183,26 @@ $panelSiteIconUrl = formatSiteIconUrlForHtml($panelSettings['siteIcon'] ?? '');
     <style>
       /* Keep the invite tab visible in standalone mode. */
       #tab-invite { display: block; }
+      body.invite-page {
+        display: flex;
+        justify-content: center;
+        padding: 20px 0;
+      }
+      body.invite-page main.content {
+        width: 100%;
+        min-height: 100vh;
+        height: auto;
+      }
+      body.invite-page main.content > header {
+        width: 100%;
+      }
+      .invite-panel-shell {
+        width: clamp(320px, 45vw, 640px);
+        margin: 0 auto;
+      }
     </style>
   </head>
-  <body>
+  <body class="invite-page">
     <main class="content">
       <header class="topbar">
         <h2 id="page-title">Invite</h2>
@@ -196,7 +213,9 @@ $panelSiteIconUrl = formatSiteIconUrlForHtml($panelSettings['siteIcon'] ?? '');
         </div>
       </header>
 
-      <?php include __DIR__ . '/invitepanel.php'; ?>
+      <div class="invite-panel-shell">
+        <?php include __DIR__ . '/invitepanel.php'; ?>
+      </div>
     </main>
 
     <script>
