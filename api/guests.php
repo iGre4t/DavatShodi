@@ -382,6 +382,11 @@ if ($method === 'POST') {
         return false;
     }));
 
+    foreach ($guests as &$guest) {
+        ensureInviteCode(null, $guest);
+    }
+    unset($guest);
+
     if (empty($guests)) {
         http_response_code(422);
         echo json_encode(['status' => 'error', 'message' => 'Guest data is empty after mapping.']);
@@ -421,12 +426,15 @@ if ($method === 'POST') {
     if ($uploadedFileInfo) {
         $eventRecord['source'] = $uploadedFileInfo;
     }
+    $eventIndex = $existingIndex;
     if ($existingIndex >= 0) {
         $eventRecord['created_at'] = $store['events'][$existingIndex]['created_at'] ?? $eventRecord['updated_at'];
         $store['events'][$existingIndex] = array_merge($store['events'][$existingIndex], $eventRecord);
+        $eventIndex = $existingIndex;
     } else {
         $eventRecord['created_at'] = $eventRecord['updated_at'];
         $store['events'][] = $eventRecord;
+        $eventIndex = count($store['events']) - 1;
     }
 
     if (!saveGuestStore($storePath, $store)) {
@@ -435,7 +443,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    createGuestInvitePages($guests);
+    createGuestInvitePages($store['events'][$eventIndex]['guests'] ?? []);
 
     echo json_encode([
         'status' => 'ok',
