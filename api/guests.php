@@ -7,7 +7,7 @@ date_default_timezone_set('Asia/Tehran');
 
 header('Content-Type: application/json; charset=UTF-8');
 
-const INVITE_BASE_URL = 'https://davatshodi.ir/mci/inv';
+const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
 
 ensureEventStorageReady();
 
@@ -982,23 +982,24 @@ function createGuestInvitePages(array $guests): void
     })();
   </script>
 </head>
-<body>
-  <div class="device">
-    <div class="card-image-shell">
-      <img src="{$imageUrl}" alt="???? ???? ??????">
+  <body>
+    <div class="device">
+      <div class="card-image-shell">
+        <img src="{$imageUrl}" alt="???? ???? ??????">
+      </div>
+      <div class="message">
+        <p class="greeting">???? ???? ?????? ????? ?? ???? ????</p>
+        <p class="name">{$safeName}</p>
+        {$qrElement}
+        <p class="code">{$safeCode}</p>
+      </div>
     </div>
-    <div class="message">
-      <p class="greeting">???? ???? ?????? ????? ?? ???? ????</p>
-      <p class="name">{$safeName}</p>
-      {$qrElement}
-      <p class="code">{$safeCode}</p>
-    </div>
-  </div>
-</body>
-</html>
-HTML;
-    }
-}
+  </body>
+  </html>
+  HTML;
+        file_put_contents($guestDir . '/index.php', $page);
+      }
+  }
 
 function clearGuestInviteDirectories(string $dir): void
 {
