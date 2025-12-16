@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/lib/common.php';
+
 header('Content-Type: application/json; charset=UTF-8');
 
-$config = include __DIR__ . '/config.php';
+$configFile = __DIR__ . '/config.php';
+$config = loadConfig($configFile);
 $result = [
     'status' => 'error',
     'message' => 'MySQL configuration is missing.',
@@ -35,8 +38,8 @@ echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
 function connect(array $config): ?PDO
 {
-    $host = $config['host'] ?? '';
-    $dbname = $config['dbname'] ?? '';
+    $host = trim((string)($config['host'] ?? ''));
+    $dbname = trim((string)($config['dbname'] ?? ''));
     if ($host === '' || $dbname === '') {
         return null;
     }

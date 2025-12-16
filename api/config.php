@@ -9,9 +9,9 @@ declare(strict_types=1);
 return [
     'host' => getenv('DB_HOST') ?: '127.0.0.1',
     'port' => (int)(getenv('DB_PORT') ?: 3306),
-    'dbname' => getenv('DB_NAME') ?: 'great_panel',
-    'user' => getenv('DB_USER') ?: 'root',
-    'password' => getenv('DB_PASSWORD') ?: '',
+    'dbname' => getenv('DB_NAME') ?: 'sicily_davatshodimci',
+    'user' => getenv('DB_USER') ?: 'sicily_mciuser',
+    'password' => getenv('DB_PASSWORD') ?: '=M!6eihTX_Rjdp3(',
     'table' => getenv('DB_TABLE') ?: 'great_panel_store',
     'record' => getenv('DB_RECORD') ?: 'store',
     'charset' => 'utf8mb4'
