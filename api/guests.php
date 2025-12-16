@@ -838,7 +838,7 @@ function createGuestInvitePages(array $guests): void
         clearGuestInviteDirectories($invRoot);
     }
     $imageName = 'Invite Card Picture.jpg';
-    $imageUrl = '../events/eventcard/' . rawurlencode($imageName);
+    $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
     foreach ($guests as $guest) {
         $code = trim((string)($guest['invite_code'] ?? ''));
         if ($code === '') {
@@ -874,10 +874,10 @@ function createGuestInvitePages(array $guests): void
     .device { width: min(360px, 95vw); aspect-ratio: 9 / 16; background: #fff; border: 1px solid #e0e0e0; box-shadow: 0 16px 35px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column; overflow: hidden; text-align: center; }
     .device img { width: 100%; height: auto; object-fit: cover; }
     .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 1.5rem 1rem 2rem; }
-    .greeting { margin: 0; font-size: 1rem; color: #888; }
+    .greeting { margin: 0; font-size: 1.2rem; color: #000; }
     .name { font-size: 2rem; font-weight: 700; margin: 0; }
-    .code { font-size: 1.1rem; color: #555; margin: 0; letter-spacing: 0.1em; }
-    .qr { max-width: 160px; width: 70%; height: auto; margin: 0 auto; border-radius: 10px; box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08); }
+    .code { font-size: 1.4rem; color: #000; margin: 0; letter-spacing: 0.2em; margin-top: 0.4rem; }
+    .qr { max-width: 180px; width: 75%; height: auto; margin: 0 auto 0.5rem; border-radius: 12px; box-shadow: 0 16px 32px rgba(0, 0, 0, 0.1); }
     @media (max-width: 500px) { .name { font-size: 1.6rem; } .code { font-size: 1rem; } .qr { max-width: 140px; } }
 </style>
 </head>
@@ -887,8 +887,8 @@ function createGuestInvitePages(array $guests): void
         <div class="message">
             <p class="greeting">مهمان گرامی</p>
             <p class="name">{$safeName}</p>
-            <p class="code">{$safeCode}</p>
             {$qrElement}
+            <p class="code">{$safeCode}</p>
         </div>
     </div>
 </body>
