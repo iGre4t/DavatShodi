@@ -7,6 +7,17 @@ date_default_timezone_set('Asia/Tehran');
 
 header('Content-Type: application/json; charset=UTF-8');
 
+const INVITE_BASE_URL = 'https://davatshodi.ir/mci/inv';
+
+function buildInviteLink(string $code): string
+{
+    $code = trim($code, '/');
+    if ($code === '') {
+        return '';
+    }
+    return INVITE_BASE_URL . '/' . $code;
+}
+
 if (empty($_SESSION['authenticated'])) {
     http_response_code(403);
     echo json_encode(['status' => 'error', 'message' => 'You must be logged in to manage guest lists.']);
@@ -413,7 +424,7 @@ if ($method === 'POST') {
         $guestRow = $guest;
         ensureInviteCode(null, $guestRow);
         $code = (string)($guestRow['invite_code'] ?? '');
-        $guestRow['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/mci/inv/%s', $code) : '';
+        $guestRow['sms_link'] = buildInviteLink($code);
         $csvGuests[] = $guestRow;
     }
 
@@ -580,7 +591,7 @@ function syncEventPurelist(array &$event, string $slug, string $eventsRoot): boo
         $guest['national_id'] = normalizeNationalId((string)($guest['national_id'] ?? ''));
         ensureInviteCode($event, $guest);
         $code = (string)($guest['invite_code'] ?? '');
-        $guest['sms_link'] = $code !== '' ? sprintf('http://davatshodi.ir/mci/inv/%s', $code) : '';
+        $guest['sms_link'] = buildInviteLink($code);
         $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
         $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
     }
@@ -911,41 +922,56 @@ function createGuestInvitePages(array $guests): void
         $qrElement = '';
         if ($nationalId !== '') {
             $qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . rawurlencode($nationalId);
-            $qrElement = "<img class=\"qr\" src=\"{$qrSrc}\" alt=\"QR برای {$safeName}\">";
+            $qrElement = "<img class="qr" src="{$qrSrc}" alt="QR ???? {$safeName}">";
         }
         $page = <<<HTML
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{$safeCode}</title>
-<style>
-    :root { color-scheme: only light; }
-    body { margin: 0; background: #fff; min-height: 100vh; padding: 0.25rem 0; display: flex; align-items: center; justify-content: center; font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif; }
-    .device { width: min(360px, 95vw); height: min(98vh, 740px); aspect-ratio: 9 / 16; background: #fff; display: flex; flex-direction: column; overflow: hidden; text-align: center; }
-    .device img { width: 100%; height: auto; object-fit: cover; }
-    .message { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.35rem; padding: 1.5rem 1rem 2rem; }
-    .greeting { margin: 0 0 0.15rem; font-size: 1.3rem; color: #000; }
-    .name { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.3rem; }
-    .qr { max-width: 80px; width: 45%; height: auto; margin: 0 auto 0.5rem; border-radius: 0; background: transparent; box-shadow: none; }
-    .code { font-size: clamp(2.4rem, 5vw, 2.8rem); font-weight: 700; color: #000; margin: 0; letter-spacing: 0.35em; margin-top: 0.1rem; display: block; margin-left: auto; margin-right: auto; white-space: nowrap; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>???? ???? ?????? ????? ?? ???? ????</title>
+  <link rel="icon" id="site-icon" href="data:,">
+  <link rel="preload" href="/style/fonts/PeydaWebFaNum-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="preload" href="/style/fonts/PeydaWebFaNum-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="/style/invite-card.css">
+  <script src="/General%20Setting/general-settings.js" defer></script>
+  <script>
+    (function () {
+      const iconEl = document.getElementById('site-icon');
+      const applyIcon = () => {
+        if (!iconEl) {
+          return;
+        }
+        const iconUrl = window.GENERAL_SETTINGS?.siteIcon;
+        if (iconUrl) {
+          iconEl.href = iconUrl;
+        }
+      };
+      if (window.GENERAL_SETTINGS) {
+        applyIcon();
+      } else {
+        window.addEventListener('load', applyIcon);
+      }
+    })();
+  </script>
 </head>
 <body>
-    <div class="device">
-        <img src="{$imageUrl}" alt="Invite Card Picture">
-        <div class="message">
-            <p class="greeting">مهمان گرامی</p>
-            <p class="name">{$safeName}</p>
-            {$qrElement}
-            <p class="code">{$safeCode}</p>
-        </div>
+  <div class="device">
+    <div class="card-image-shell">
+      <img src="{$imageUrl}" alt="???? ???? ??????">
     </div>
+    <div class="message">
+      <p class="greeting">???? ???? ?????? ????? ?? ???? ????</p>
+      <p class="name">{$safeName}</p>
+      {$qrElement}
+      <p class="code">{$safeCode}</p>
+    </div>
+  </div>
 </body>
 </html>
 HTML;
-        file_put_contents($guestDir . '/index.php', $page);
     }
 }
 

@@ -463,8 +463,8 @@ $accountEmail = $currentUser['email'] ?? '';
                     </div>
                     <div class="form grid one-column">
                       <label class="field">
-                        <span>Panel name</span>
-                        <input id="dev-panel-name" type="text" value="Panel name" />
+                        <span>Panel title</span>
+                        <input id="dev-panel-name" type="text" value="<?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?>" />
                       </label>
                       <label class="field icon-field">
                         <span>Site icon</span>
@@ -494,6 +494,10 @@ $accountEmail = $currentUser['email'] ?? '';
                         </div>
                       </label>
                     </div>
+                    <div class="section-footer">
+                      <button type="button" class="btn primary" id="save-panel-settings">Save panel title</button>
+                    </div>
+                    <p class="hint">Update the text shown in the sidebar and browser tab for everyone who loads this panel.</p>
                   </div>
                   <div class="card settings-section">
                     <div class="section-header">
