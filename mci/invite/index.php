@@ -5,7 +5,15 @@ mb_internal_encoding('UTF-8');
 
 const CSV_PATH = __DIR__ . '/../../events/event/purelist.csv';
 const CARD_PATH = __DIR__ . '/../../events/eventcard/eventrawcard.jpg';
-const FALLBACK_FONT = 'C:/Windows/Fonts/arial.ttf';
+const FONT_CANDIDATES = [
+    'C:/Windows/Fonts/arial.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
+    '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
+];
 
 $inviteCode = getRequestedInviteCode();
 if ($inviteCode === '') {
@@ -114,8 +122,8 @@ function buildInviteImage(array $lines): string
     $width = imagesx($image);
     $height = imagesy($image);
 
-    $fontPath = FALLBACK_FONT;
-    if (!is_file($fontPath)) {
+    $fontPath = resolveFontPath();
+    if ($fontPath === null) {
         respondError('Descriptive font not found');
     }
 
@@ -180,8 +188,8 @@ function wrapText(string $text, int $fontSize, string $fontPath, int $maxWidth):
         if (getTextWidth($word, $fontSize, $fontPath) <= $maxWidth) {
             $current = $word;
         } else {
-            $current = trim(mb_substr($word, 0, max(1, (int) mb_strlen($word) / 2)));
-        }
+        $current = trim(mb_substr($word, 0, max(1, (int) mb_strlen($word) / 2)));
+    }
     }
 
     if ($current !== '') {
@@ -198,6 +206,16 @@ function getTextWidth(string $text, int $fontSize, string $fontPath): int
         return mb_strlen($text) * $fontSize;
     }
     return abs($box[2] - $box[0]);
+}
+
+function resolveFontPath(): ?string
+{
+    foreach (FONT_CANDIDATES as $path) {
+        if (is_file($path) && is_readable($path)) {
+            return $path;
+        }
+    }
+    return null;
 }
 
 function respondNotFound(string $code = ''): void
