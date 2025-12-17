@@ -87,16 +87,16 @@ function handleDrawPrizeAction(): void
   if (!$available) {
     respondJson(['status' => 'error', 'message' => 'No prizes remaining.'], 400);
   }
-  $cardIndex = null;
+  $emptyIndexes = [];
   foreach ($normalized as $idx => $entry) {
     if ($entry === null) {
-      $cardIndex = $idx;
-      break;
+      $emptyIndexes[] = $idx;
     }
   }
-  if ($cardIndex === null) {
+  if (!$emptyIndexes) {
     respondJson(['status' => 'error', 'message' => 'Grid is full.'], 400);
   }
+  $cardIndex = $emptyIndexes[array_rand($emptyIndexes)];
   $selected = $available[array_rand($available)];
   $state['drawn_ids'][] = $selected['id'];
   $state['cards'][] = [
@@ -638,10 +638,8 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         const prizeCards = Array.from(document.querySelectorAll('.prize-card'));
         const prizeValueEl = document.getElementById('prize-value');
         const startBtn = document.getElementById('start-draw');
-        const codeDisplay = document.getElementById('code-display');
-        const digitElements = Array.from(codeDisplay?.querySelectorAll('.code-digit') ?? []);
 
-        let digitAnimationInterval = null;
+        let prizeAnimationInterval = null;
         let revealTimer = null;
         let revealReady = false;
         let drawResult = null;
@@ -649,62 +647,41 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         let highlightInterval = null;
         let pendingCardIndex = null;
 
-        const randomDigit = () => Math.floor(Math.random() * 10).toString();
-        const normalizeCode = (value) => {
-          const text = (value ?? '').toString().trim();
-          const digits = text.replace(/\D+/g, '');
-          if (!digits.length) {
-            return '0000';
+        const stopNameAnimation = () => {
+          if (prizeAnimationInterval) {
+            clearInterval(prizeAnimationInterval);
+            prizeAnimationInterval = null;
           }
-          return digits.slice(-4).padStart(4, '0');
+          prizeValueEl?.classList.remove('prize-value--animating');
         };
-        const defaultLocks = () => Array(4).fill(false);
-        const renderDigits = (digits, locks = defaultLocks()) => {
-          const normalized = normalizeCode(digits);
-          digitElements.forEach((element) => {
-            const index = Number(element.dataset.index);
-            const char = normalized[index] ?? '0';
-            element.textContent = char;
-            const locked = Boolean(locks[index]);
-            element.classList.toggle('code-digit--locked', locked);
-            element.classList.toggle('code-digit--animating', !locked);
-          });
-        };
-        const setCode = (value, locks = defaultLocks()) => {
-          renderDigits(value, locks);
-        };
-        const startDigitAnimation = () => {
-          stopDigitAnimation();
-          digitAnimationInterval = setInterval(() => {
-            const digits = Array.from({ length: 4 }, () => randomDigit()).join('');
-            renderDigits(digits);
-          }, 90);
-        };
-        const stopDigitAnimation = () => {
-          if (digitAnimationInterval) {
-            clearInterval(digitAnimationInterval);
-            digitAnimationInterval = null;
-          }
+
+        const startNameAnimation = () => {
+          stopNameAnimation();
+          prizeValueEl?.classList.add('prize-value--animating');
+          prizeAnimationInterval = setInterval(() => {
+            const candidate = prizeList[Math.floor(Math.random() * prizeList.length)];
+            if (prizeValueEl) {
+              prizeValueEl.textContent = candidate?.name || '---';
+            }
+          }, 120);
         };
 
         const setAnimatingState = () => {
-          prizeValueEl.classList.add('prize-value--animating');
-          prizeValueEl.classList.remove('prize-value--locked');
-          startDigitAnimation();
+          prizeValueEl?.classList.remove('prize-value--locked');
+          startNameAnimation();
         };
 
         const setLockedState = () => {
-          prizeValueEl.classList.remove('prize-value--animating');
-          prizeValueEl.classList.add('prize-value--locked');
-          stopDigitAnimation();
-          setCode('0000');
+          stopNameAnimation();
+          prizeValueEl?.classList.add('prize-value--locked');
         };
 
         const resetValueState = () => {
-          prizeValueEl.classList.remove('prize-value--animating', 'prize-value--locked');
-          stopDigitAnimation();
-          setCode('0000');
-          prizeValueEl.textContent = '---';
+          stopNameAnimation();
+          prizeValueEl?.classList.remove('prize-value--locked');
+          if (prizeValueEl) {
+            prizeValueEl.textContent = '---';
+          }
         };
 
         const applyCardState = (assignments) => {
@@ -746,7 +723,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         };
 
         const cancelAnimation = () => {
-          stopDigitAnimation();
+          stopNameAnimation();
           if (revealTimer) {
             clearTimeout(revealTimer);
             revealTimer = null;
@@ -840,6 +817,10 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
               startBtn.disabled = !canDraw;
             });
         };
+
+        if (startBtn) {
+          startBtn.addEventListener('click', startDraw);
+        }
 
         const resetDrawState = async () => {
           cancelAnimation();
