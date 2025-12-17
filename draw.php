@@ -330,8 +330,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       }
 
       .code-digit--locked {
-        background: #b9bcc6;
-        color: #0f1a3d;
+        background: #173972;
+        color: #e9f5ff;
       }
 
       .caption {
@@ -422,8 +422,6 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         display: flex;
         flex-direction: column;
         gap: 12px;
-        max-height: 320px;
-        overflow-y: auto;
       }
 
       .winner-item {
@@ -496,7 +494,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       <p id="status-text" class="status">ready for the next pick</p>
     </div>
     <div class="winners-panel" aria-live="polite">
-      <h3>Confirmed winners</h3>
+      <h3>winners</h3>
       <div id="winner-items" class="winner-items"></div>
     </div>
 
