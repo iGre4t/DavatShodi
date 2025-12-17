@@ -602,11 +602,11 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
     </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">قرعه‌کشی جوایز برندگان مسابقات</p>
-      <div id="prize-display" class="prize-display" aria-live="polite" aria-label="Prize reveal">
+      <div id="prize-display" class="prize-display" aria-live="polite" aria-label="نمایش جایزه">
         <span id="prize-value" class="prize-value">---</span>
       </div>
       <div class="cta-group">
-        <button id="start-draw" class="start-btn" type="button">start draw</button>
+        <button id="start-draw" class="start-btn" type="button">قرعه کشی</button>
       </div>
     </div>
     <div class="prize-grid" aria-hidden="true">

@@ -164,13 +164,13 @@
       align-content: center;
     }
     #invite-print-area .invite-print-name {
-      font-size: 16pt;
+      font-size: 14pt;
       font-weight: 700;
       word-break: break-word;
     }
     .invite-print-greeting,
     .invite-print-note {
-      font-size: 12pt;
+      font-size: 10pt;
       margin: 0;
     }
     #invite-print-area .invite-print-label {
@@ -179,9 +179,9 @@
       letter-spacing: 0.3pt;
     }
     #invite-print-area .invite-print-code {
-      font-size: 20pt;
+      font-size: 18pt;
       font-weight: 800;
-      letter-spacing: 1.5pt;
+      letter-spacing: 1pt;
     }
     @page {
       size: 70mm 70mm portrait;

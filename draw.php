@@ -473,13 +473,13 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       </p>
       <p id="winner-name" class="winner-message winner-message--idle">برنده قرعه کشی</p>
       <div class="cta-group">
-        <button id="start-draw" class="start-btn" type="button">start draw</button>
-        <button id="confirm-guest" class="confirm-btn" type="button" disabled>confirm guest</button>
+        <button id="start-draw" class="start-btn" type="button">قرعه کشی</button>
+        <button id="confirm-guest" class="confirm-btn" type="button" disabled>تایید مهمان</button>
       </div>
-      <p id="status-text" class="status">ready for the next pick</p>
+      <p id="status-text" class="status">آماده برای انتخاب بعدی</p>
     </div>
     <div class="winners-panel" aria-live="polite">
-      <h3>winners</h3>
+      <h3>برندگان</h3>
       <div id="winner-items" class="winner-items"></div>
     </div>
 
