@@ -117,18 +117,18 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
 
       body {
         margin: 0;
-        min-height: 100vh;
+        height: 100vh;
         display: flex;
         align-items: center;
-        justify-content: flex-start;
+        justify-content: center;
         background: radial-gradient(circle at top, #7cb7ff, #1a3edb 55%, #07103b 100%);
         color: #f0f8ff;
         text-align: center;
-        padding: 32px 16px 48px;
+        padding: 16px 16px 24px;
         flex-direction: column;
-        gap: 24px;
+        gap: 12px;
         position: relative;
-        overflow-x: hidden;
+        overflow: hidden;
       }
 
       .background-icon {
@@ -234,6 +234,11 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         align-items: center;
       }
 
+      body.prizes-page .prize-grid {
+        width: min(1010px, 100%);
+        margin: 0 auto;
+      }
+
       .prize-display {
         min-height: clamp(110px, 14vw, 160px);
         width: min(640px, 100%);
@@ -279,13 +284,13 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         grid-template-rows: repeat(3, 1fr);
-        gap: 16px;
+        gap: 12px;
         padding-top: 12px;
       }
 
       .prize-card {
         position: relative;
-        height: 110px;
+        height: 55px;
         border-radius: 20px;
         overflow: hidden;
         background: rgba(255, 255, 255, 0.04);
