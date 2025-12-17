@@ -15,6 +15,7 @@ const DEFAULT_PANEL_SETTINGS = [
 ];
 const PRIZE_STATE_PATH = __DIR__ . '/data/prize_draw_state.json';
 const PRIZE_GRID_CARD_COUNT = 12;
+const PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
 
 function respondJson(array $payload, int $statusCode = 200): void
 {
@@ -158,8 +159,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
   respondJson(['status' => 'error', 'message' => 'Unsupported action.'], 400);
 }
-const PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
-
 function loadPanelSettings(): array
 {
   $payload = loadJsonPayload(STORE_PATH);
