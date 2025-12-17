@@ -627,151 +627,268 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
       <?php endfor; ?>
     </div>
     <script>
-      window.__PRIZE_LIST = window.__PRIZE_LIST || <?= json_encode($prizeList, JSON_UNESCAPED_UNICODE); ?>;
-      const prizeList = Array.isArray(window.__PRIZE_LIST) ? window.__PRIZE_LIST : [];
-      const prizeValueEl = document.getElementById('prize-value');
-      const startBtn = document.getElementById('start-draw');
-      const prizeCards = Array.from(document.querySelectorAll('.prize-card'));
-      let animationInterval = null;
-      let revealTimeout = null;
-      let selectedPrizeName = '';
-      let highlightInterval = null;
+      (function () {
+        const API_PATH = 'prizes.php';
+        window.__PRIZE_LIST = window.__PRIZE_LIST || <?= json_encode($prizeList, JSON_UNESCAPED_UNICODE); ?>;
+        const prizeList = Array.isArray(window.__PRIZE_LIST) ? window.__PRIZE_LIST : [];
+        const initialCardAssignments = <?= json_encode($cardAssignments, JSON_UNESCAPED_UNICODE); ?>;
+        let currentCardAssignments = initialCardAssignments.map((entry) => (entry ? { ...entry } : null));
+        let drawnPrizeIds = <?= json_encode($drawnPrizeIds, JSON_UNESCAPED_UNICODE); ?>;
+        let remainingPrizes = <?= $remainingPrizes; ?>;
+        let canDraw = <?= $canDraw ? 'true' : 'false'; ?>;
+        const prizeCards = Array.from(document.querySelectorAll('.prize-card'));
+        const prizeValueEl = document.getElementById('prize-value');
+        const startBtn = document.getElementById('start-draw');
+        const codeDisplay = document.getElementById('code-display');
+        const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
 
-      const resetValueState = () => {
-        prizeValueEl.classList.remove('prize-value--animating', 'prize-value--locked');
-      };
+        let digitAnimationInterval = null;
+        let revealTimer = null;
+        let revealReady = false;
+        let drawResult = null;
+        let finalizeLocked = false;
+        let highlightInterval = null;
+        let pendingCardIndex = null;
 
-      const setAnimatingState = () => {
-        prizeValueEl.classList.add('prize-value--animating');
-        prizeValueEl.classList.remove('prize-value--locked');
-      };
-
-      const setLockedState = () => {
-        prizeValueEl.classList.remove('prize-value--animating');
-        prizeValueEl.classList.add('prize-value--locked');
-      };
-
-      const cancelAnimation = () => {
-        if (animationInterval) {
-          clearInterval(animationInterval);
-          animationInterval = null;
-        }
-        if (revealTimeout) {
-          clearTimeout(revealTimeout);
-          revealTimeout = null;
-        }
-        resetValueState();
-      };
-
-      const stopCardGlow = () => {
-        if (highlightInterval) {
-          clearInterval(highlightInterval);
-          highlightInterval = null;
-        }
-      };
-
-      const resetCardDeck = () => {
-        prizeCards.forEach((card) => {
-          card.classList.remove('card-highlight', 'card-flip');
-          const back = card.querySelector('.card-back');
-          if (back) {
-            back.textContent = '';
+        const randomDigit = () => Math.floor(Math.random() * 10).toString();
+        const normalizeCode = (value) => {
+          const text = (value ?? '').toString().trim();
+          const digits = text.replace(/\D+/g, '');
+          if (!digits.length) {
+            return '0000';
           }
-        });
-        stopCardGlow();
-      };
-
-      const startCardGlowCycle = () => {
-        if (!prizeCards.length) {
-          return;
-        }
-        if (highlightInterval) {
-          clearInterval(highlightInterval);
-        }
-        highlightInterval = setInterval(() => {
-          const index = Math.floor(Math.random() * prizeCards.length);
-          prizeCards.forEach((card, idx) => {
-            card.classList.toggle('card-highlight', idx === index);
+          return digits.slice(-4).padStart(4, '0');
+        };
+        const defaultLocks = () => Array(4).fill(false);
+        const renderDigits = (digits, locks = defaultLocks()) => {
+          const normalized = normalizeCode(digits);
+          digitElements.forEach((element) => {
+            const index = Number(element.dataset.index);
+            const char = normalized[index] ?? '0';
+            element.textContent = char;
+            const locked = Boolean(locks[index]);
+            element.classList.toggle('code-digit--locked', locked);
+            element.classList.toggle('code-digit--animating', !locked);
           });
-        }, 180);
-      };
+        };
+        const setCode = (value, locks = defaultLocks()) => {
+          renderDigits(value, locks);
+        };
+        const startDigitAnimation = () => {
+          stopDigitAnimation();
+          digitAnimationInterval = setInterval(() => {
+            const digits = Array.from({ length: 4 }, () => randomDigit()).join('');
+            renderDigits(digits);
+          }, 90);
+        };
+        const stopDigitAnimation = () => {
+          if (digitAnimationInterval) {
+            clearInterval(digitAnimationInterval);
+            digitAnimationInterval = null;
+          }
+        };
 
-      const revealCard = (prizeName) => {
-        if (!prizeCards.length) {
-          return;
-        }
-        const finalIndex = Math.floor(Math.random() * prizeCards.length);
-        stopCardGlow();
-        prizeCards.forEach((card, idx) => {
-          card.classList.toggle('card-highlight', idx === finalIndex);
-        });
-        const card = prizeCards[finalIndex];
-        if (card) {
-          card.classList.add('card-flip');
+        const setAnimatingState = () => {
+          prizeValueEl.classList.add('prize-value--animating');
+          prizeValueEl.classList.remove('prize-value--locked');
+          startDigitAnimation();
+        };
+
+        const setLockedState = () => {
+          prizeValueEl.classList.remove('prize-value--animating');
+          prizeValueEl.classList.add('prize-value--locked');
+          stopDigitAnimation();
+          setCode('0000');
+        };
+
+        const resetValueState = () => {
+          prizeValueEl.classList.remove('prize-value--animating', 'prize-value--locked');
+          stopDigitAnimation();
+          setCode('0000');
+          prizeValueEl.textContent = '---';
+        };
+
+        const applyCardState = (assignments) => {
+          currentCardAssignments = assignments.map((entry) => (entry ? { ...entry } : null));
+          prizeCards.forEach((card) => {
+            const idx = Number(card.dataset.cardIndex);
+            const assignment = currentCardAssignments[idx];
+            const back = card.querySelector('.card-back');
+            card.classList.toggle('card-flip', Boolean(assignment));
+            if (back) {
+              back.textContent = assignment?.prize_name || '';
+            }
+          });
+        };
+        applyCardState(currentCardAssignments);
+
+        const getAvailableGlowCards = () => prizeCards.filter((card, idx) => !currentCardAssignments[idx] && idx !== pendingCardIndex);
+        const stopCardGlow = () => {
+          if (highlightInterval) {
+            clearInterval(highlightInterval);
+            highlightInterval = null;
+          }
+          prizeCards.forEach((card) => card.classList.remove('card-highlight'));
+        };
+        const startCardGlowCycle = () => {
+          stopCardGlow();
+          if (!getAvailableGlowCards().length) {
+            return;
+          }
+          highlightInterval = setInterval(() => {
+            const options = getAvailableGlowCards();
+            if (!options.length) {
+              stopCardGlow();
+              return;
+            }
+            const chosen = options[Math.floor(Math.random() * options.length)];
+            prizeCards.forEach((card) => card.classList.toggle('card-highlight', card === chosen));
+          }, 180);
+        };
+
+        const cancelAnimation = () => {
+          stopDigitAnimation();
+          if (revealTimer) {
+            clearTimeout(revealTimer);
+            revealTimer = null;
+          }
+          revealReady = false;
+          drawResult = null;
+          finalizeLocked = false;
+          pendingCardIndex = null;
+        };
+
+        const revealCard = (prizeName, cardIndex, prizeId, rowNumber) => {
+          stopCardGlow();
+          pendingCardIndex = null;
+          if (cardIndex == null) {
+            return;
+          }
+          const card = prizeCards[cardIndex];
+          if (!card) {
+            return;
+          }
+          card.classList.add('card-flip', 'card-highlight');
           const back = card.querySelector('.card-back');
           if (back) {
             back.textContent = prizeName || '';
           }
-        }
-      };
+          currentCardAssignments[cardIndex] = {
+            index: cardIndex,
+            prize_id: prizeId ?? 0,
+            prize_name: prizeName || '',
+            row: rowNumber ?? 0
+          };
+        };
 
-      const randomPrizeName = () => {
-        if (!prizeList.length) {
-          return '';
-        }
-        const idx = Math.floor(Math.random() * prizeList.length);
-        return prizeList[idx]?.name || '';
-      };
-
-      const showIdleState = () => {
-        prizeValueEl.textContent = '---';
-        resetValueState();
-        resetCardDeck();
-      };
-
-      startBtn.addEventListener('click', () => {
-        if (!prizeList.length) {
-          return;
-        }
-        cancelAnimation();
-        resetCardDeck();
-        startBtn.disabled = true;
-        setAnimatingState();
-        startCardGlowCycle();
-        selectedPrizeName = randomPrizeName();
-        animationInterval = setInterval(() => {
-          prizeValueEl.textContent = randomPrizeName() || '---';
-        }, 90);
-        const revealDelay = 2600 + Math.random() * 1400;
-        revealTimeout = setTimeout(() => {
-          cancelAnimation();
-          prizeValueEl.textContent = selectedPrizeName || '---';
-          if (selectedPrizeName) {
-            setLockedState();
-            revealCard(selectedPrizeName);
-          } else {
-            resetValueState();
-            resetCardDeck();
+        const tryFinalizeDraw = () => {
+          if (finalizeLocked || !revealReady || !drawResult) {
+            return;
           }
-          startBtn.disabled = false;
-        }, revealDelay);
-      });
+          finalizeLocked = true;
+          setLockedState();
+          prizeValueEl.textContent = drawResult.prize.name || '---';
+          revealCard(drawResult.prize.name || '', drawResult.card_index, drawResult.prize.id ?? 0, drawResult.prize.row ?? 0);
+          remainingPrizes = drawResult.remaining ?? remainingPrizes;
+          canDraw = Boolean(drawResult.can_draw);
+          drawnPrizeIds = drawResult.drawn_ids ?? drawnPrizeIds;
+          startBtn.disabled = !canDraw;
+        };
 
-      document.addEventListener('keydown', (event) => {
-        if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) {
-          return;
-        }
-        if (event.code === 'Enter' && !startBtn.disabled) {
-          event.preventDefault();
-          startBtn.click();
-        }
-      });
+        const postAction = async (action) => {
+          const response = await fetch(API_PATH, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action })
+          });
+          const payload = await response.json();
+          if (!response.ok || payload.status !== 'ok') {
+            throw new Error(payload.message || 'Unable to complete the request.');
+          }
+          return payload;
+        };
 
-      if (!prizeList.length) {
-        startBtn.disabled = true;
-      }
+        const startDraw = () => {
+          if (!canDraw) {
+            return;
+          }
+          cancelAnimation();
+          stopCardGlow();
+          startBtn.disabled = true;
+          setAnimatingState();
+          startCardGlowCycle();
+          const revealDelay = 2600 + Math.random() * 1400;
+          revealTimer = setTimeout(() => {
+            revealReady = true;
+            tryFinalizeDraw();
+          }, revealDelay);
+          postAction('draw_prize')
+            .then((payload) => {
+              drawResult = {
+                prize: payload.prize ?? {},
+                card_index: payload.card_index ?? null,
+                remaining: payload.remaining ?? remainingPrizes,
+                can_draw: payload.can_draw ?? false,
+                drawn_ids: payload.drawn_ids ?? drawnPrizeIds
+              };
+              pendingCardIndex = payload.card_index ?? null;
+              tryFinalizeDraw();
+            })
+            .catch((error) => {
+              console.error(error);
+              stopCardGlow();
+              resetValueState();
+              startBtn.disabled = !canDraw;
+            });
+        };
 
-      showIdleState();
+        const resetDrawState = async () => {
+          cancelAnimation();
+          stopCardGlow();
+          try {
+            const payload = await postAction('reset_draw');
+            const assignments = Array.isArray(payload.state) ? payload.state : currentCardAssignments;
+            currentCardAssignments = assignments.map((entry) => (entry ? { ...entry } : null));
+            drawnPrizeIds = payload.drawn_ids ?? [];
+            remainingPrizes = payload.remaining ?? prizeList.length;
+            canDraw = Boolean(payload.can_draw);
+            applyCardState(currentCardAssignments);
+            prizeValueEl.textContent = '---';
+            resetValueState();
+            startBtn.disabled = !canDraw;
+          } catch (error) {
+            console.error(error);
+          }
+        };
+
+        const pressedKeys = new Set();
+        let resetLocked = false;
+
+        document.addEventListener('keydown', (event) => {
+          pressedKeys.add(event.code);
+          if (!['INPUT', 'TEXTAREA'].includes(event.target?.tagName ?? '')) {
+            if (event.code === 'Enter' && !startBtn.disabled) {
+              event.preventDefault();
+              startDraw();
+            }
+          }
+          if (pressedKeys.has('Numpad8') && pressedKeys.has('Numpad9') && !resetLocked) {
+            resetLocked = true;
+            resetDrawState();
+          }
+        });
+
+        document.addEventListener('keyup', (event) => {
+          pressedKeys.delete(event.code);
+          if (event.code === 'Numpad8' || event.code === 'Numpad9') {
+            resetLocked = false;
+          }
+        });
+
+        setCode('0000');
+        resetValueState();
+        startBtn.disabled = !canDraw;
+      })();
     </script>
   </body>
 </html>

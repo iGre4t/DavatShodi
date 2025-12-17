@@ -150,6 +150,7 @@
     }
     #invite-print-area .invite-print-card {
       width: 80mm;
+      height: 80mm;
       padding: 10mm 6mm;
       display: grid;
       gap: 6mm;
@@ -163,8 +164,8 @@
       font-weight: 700;
       word-break: break-word;
     }
-    #invite-print-area .invite-print-greeting,
-    #invite-print-area .invite-print-note {
+    .invite-print-greeting,
+    .invite-print-note {
       font-size: 12pt;
       margin: 0;
     }
@@ -179,7 +180,7 @@
       letter-spacing: 1.5pt;
     }
     @page {
-      size: 80mm auto;
+      size: 80mm 80mm portrait;
       margin: 0;
     }
     @media print {
