@@ -144,18 +144,22 @@
     #invite-status[data-tone="success"] { color: #15803d; }
     #invite-status[data-tone="info"] { color: #1d4ed8; }
     #invite-print-area {
-      display: none;
+      position: fixed;
+      top: -9999px;
+      left: -9999px;
     }
     #invite-print-area .invite-print-card {
       width: 80mm;
       height: 80mm;
-      padding: 10mm 6mm;
+      padding: 8mm 6mm;
       display: grid;
       gap: 6mm;
       text-align: center;
       font-family: 'PeydaWebFaNum', 'PeydaWebFaNum', sans-serif;
       line-height: 1.3;
       border: 1px solid #000;
+      box-sizing: border-box;
+      overflow: hidden;
     }
     #invite-print-area .invite-print-name {
       font-size: 16pt;
@@ -188,14 +192,15 @@
         margin: 0;
         padding: 0;
       }
-      body > *:not(#invite-print-area) {
-        display: none !important;
+      body * {
+        visibility: hidden !important;
+      }
+      #invite-print-area, #invite-print-area * {
+        visibility: visible !important;
       }
       #invite-print-area {
-        display: block;
-        position: relative;
-        width: 80mm;
-        height: 80mm;
+        position: absolute;
+        inset: 0;
         margin: 0 auto;
       }
     }
