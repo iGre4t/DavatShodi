@@ -382,6 +382,9 @@ $accountEmail = $currentUser['email'] ?? '';
               <button type="button" class="sub-item" data-pane="database">
                 پایگاه داده
               </button>
+              <button type="button" class="sub-item" data-pane="printer-settings">
+                Printer Setting
+              </button>
                 </div>
               </aside>
               <div class="sub-content">
@@ -603,6 +606,48 @@ $accountEmail = $currentUser['email'] ?? '';
                     <div id="dev-sql-result" class="sql-result hidden" aria-live="polite">
                       <p class="muted" data-sql-result-message></p>
                       <div data-sql-result-body></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="sub-pane" data-pane="printer-settings">
+                  <div class="card settings-section">
+                    <div class="section-header">
+                      <h3>Printer Setting</h3>
+                    </div>
+                    <div class="form grid one-column">
+                      <label class="field">
+                        <span>Printer device</span>
+                        <select name="printer-device">
+                          <option value="">Select a printer</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        <span>Layout</span>
+                        <select name="printer-layout">
+                          <option value="portrait">Portrait</option>
+                          <option value="landscape">Landscape</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        <span>Paper size</span>
+                        <input type="text" name="printer-paper-size" placeholder="Custom size added to system is default" />
+                      </label>
+                      <p class="hint">Any custom size registered in the system will be used by default.</p>
+                      <label class="field">
+                        <span>Pages per paper</span>
+                        <input type="number" min="1" name="printer-pages-per-paper" />
+                      </label>
+                      <label class="field">
+                        <span>Margin</span>
+                        <input type="text" name="printer-margin" placeholder="e.g. 10mm" />
+                      </label>
+                      <label class="field">
+                        <span>Scale (%)</span>
+                        <input type="number" min="1" max="200" name="printer-scale" placeholder="100" />
+                      </label>
+                    </div>
+                    <div class="section-footer">
+                      <button type="button" class="btn primary">Save</button>
                     </div>
                   </div>
                 </div>

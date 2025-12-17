@@ -3297,6 +3297,30 @@ function getUserDisplayName(user) {
   );
 }
 
+function ensureUserPasswordField() {
+  if (qs('#user-password')) {
+    return;
+  }
+  const emailInput = qs('#user-email');
+  const emailLabel = emailInput?.closest('label');
+  if (!emailLabel) {
+    return;
+  }
+  const passwordLabel = document.createElement('label');
+  passwordLabel.className = 'field';
+  passwordLabel.dataset.passwordField = '';
+  const labelText = document.createElement('span');
+  labelText.textContent = 'Password (min 8 characters)';
+  const passwordInput = document.createElement('input');
+  passwordInput.id = 'user-password';
+  passwordInput.type = 'password';
+  passwordInput.autocomplete = 'new-password';
+  passwordInput.minLength = 8;
+  passwordLabel.appendChild(labelText);
+  passwordLabel.appendChild(passwordInput);
+  emailLabel.insertAdjacentElement('afterend', passwordLabel);
+}
+
 // Rebuilds the users table from the current USER_DB snapshot.
 function renderUsers() {
   const tbody = qs('#users-body');
@@ -3354,6 +3378,8 @@ function openUserModal(user = null) {
   const idInput = qs('#user-id-number');
   const emailInput = qs('#user-email');
   const activeInput = qs('#user-active');
+  const passwordInput = qs('#user-password');
+  const passwordField = qs('[data-password-field]');
   if (codeInput) {
     codeInput.value = user?.code ?? getNextUserCode();
   }
@@ -3371,6 +3397,13 @@ function openUserModal(user = null) {
   }
   if (emailInput) {
     emailInput.value = user?.email ?? '';
+  }
+  if (passwordInput) {
+    passwordInput.value = '';
+    passwordInput.required = !user;
+  }
+  if (passwordField) {
+    passwordField.classList.toggle('hidden', Boolean(user));
   }
   if (idInput) {
     idInput.value = user?.id_number ?? '';
@@ -3474,18 +3507,15 @@ function renderClock(){
     hour12:false,
     timeZone: tz
   });
-  const englishParts = new Intl.DateTimeFormat('en-US', {
+  const persianDateLabel = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-    numberingSystem: 'latn',
     timeZone: tz
-  }).formatToParts(now);
-  const partValue = (type) => englishParts.find(p => p.type === type)?.value || '';
-  const dateLabel = `${partValue('weekday')}, ${partValue('month')} ${partValue('day')} ${partValue('year')}`.trim();
+  }).format(now);
   const displayName = (window.__CURRENT_USER_NAME || PANEL_TITLE_DEFAULT);
-  el.innerHTML = `<span class="time">${time}</span><span class="date">${dateLabel}</span><span class="user">${displayName}</span>`;
+  el.innerHTML = `<span class="time">${time}</span><span class="date">${persianDateLabel}</span><span class="user">${displayName}</span>`;
 }
 
 // Removes the initial spinner after transition end to reveal the SPA.
@@ -3695,6 +3725,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   document.addEventListener('keydown', handleHomeShortcut);
 
+  ensureUserPasswordField();
   renderClock();
   setInterval(renderClock, 1000);
 
@@ -3719,14 +3750,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const email = qs('#user-email').value.trim();
     const codeInput = qs('#user-code');
     const codeValue = (codeInput?.value ?? "").trim();
-    const workId = qs('#user-work-id').value.trim();
-    const idNumber = qs('#user-id-number').value.trim();
-    const activeInput = qs('#user-active');
-    const isActive = activeInput ? activeInput.checked : true;
-    if (!username) {
-      showErrorSnackbar({ message: 'Username is required.' });
-      return;
-    }
+  const workId = qs('#user-work-id').value.trim();
+  const idNumber = qs('#user-id-number').value.trim();
+  const activeInput = qs('#user-active');
+  const isActive = activeInput ? activeInput.checked : true;
+  const passwordInput = qs('#user-password');
+  const password = passwordInput?.value ?? '';
+  const isAddMode = !editingUserCode;
+  if (!username) {
+    showErrorSnackbar({ message: 'Username is required.' });
+    return;
+  }
     if (!fullname) {
       showErrorSnackbar({ message: 'Full name is required.' });
       return;
@@ -3753,9 +3787,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const normalizedPhone = normalizeDigits(phone);
     if (normalizedPhone.length !== 11) {
-      showErrorSnackbar({ message: 'Phone number must contain 11 digits.' });
-      return;
-    }
+    showErrorSnackbar({ message: 'Phone number must contain 11 digits.' });
+    return;
+  }
     const duplicatePhone = USER_DB.some(u => {
       if (editingUserCode && u.code === editingUserCode) {
         return false;
@@ -3776,12 +3810,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const existingEmail = String(u.email ?? '').toLowerCase();
         return existingEmail !== '' && existingEmail === normalizedEmail;
       });
-      if (duplicateEmail) {
-        showErrorSnackbar({ message: 'Email must be unique.' });
-        return;
-      }
+    if (duplicateEmail) {
+      showErrorSnackbar({ message: 'Email must be unique.' });
+      return;
     }
-    const normalizedId = normalizeDigits(idNumber);
+  }
+  if (isAddMode) {
+    if (password === '') {
+      showErrorSnackbar({ message: 'Password is required.' });
+      return;
+    }
+    if (password.length < 8) {
+      showErrorSnackbar({ message: 'Password must be at least eight characters.' });
+      return;
+    }
+  }
+  const normalizedId = normalizeDigits(idNumber);
     if (normalizedId) {
       const duplicateIdNumber = USER_DB.some(u => {
         if (editingUserCode && u.code === editingUserCode) {
@@ -3806,6 +3850,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       active: isActive
     };
     payload.email = email;
+    const backendPayload = { ...payload };
+    if (isAddMode) {
+      backendPayload.password = password;
+    }
     if (editingUserCode) {
       const index = USER_DB.findIndex(u => u.code === editingUserCode);
       if (index >= 0) {
@@ -3852,7 +3900,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateKpis();
     closeUserModal();
     showDefaultToast('User added successfully.');
-    syncUserToBackend('add_user', newUser);
+    syncUserToBackend('add_user', backendPayload);
   });
   // Delete modal buttons drive the confirm/cancel flow.
   qs('#user-delete-cancel')?.addEventListener('click', closeDeleteModal);

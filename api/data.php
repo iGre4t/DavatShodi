@@ -284,6 +284,18 @@ if ($method === 'POST') {
         if ($pdo && isEmailTakenInTable($pdo, $email)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
         }
+        $password = trim((string)($user['password'] ?? ''));
+        if ($password !== '' && mb_strlen($password, 'UTF-8') < 8) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Password must be at least eight characters.']);
+        }
+        $passwordHash = '';
+        if ($password !== '') {
+            $hash = password_hash($password, PASSWORD_DEFAULT);
+            if ($hash === false) {
+                sendJsonResponse(['status' => 'error', 'message' => 'Unable to process the password.']);
+            }
+            $passwordHash = $hash;
+        }
         if (isIdNumberTaken($idNumber, $data)) {
             sendJsonResponse(['status' => 'error', 'message' => 'National ID already exists.']);
         }
@@ -312,7 +324,8 @@ if ($method === 'POST') {
             'phone' => $newUser['phone'],
             'work_id' => $newUser['work_id'],
             'id_number' => $newUser['id_number'],
-            'email' => $email
+            'email' => $email,
+            'password_hash' => $passwordHash
         ])) {
             sendJsonResponse(['status' => 'error', 'message' => 'Failed to insert user into the database.']);
         }

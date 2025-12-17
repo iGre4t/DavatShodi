@@ -89,6 +89,9 @@
       flex-direction: column;
       gap: 10px;
     }
+    #invite-status {
+      display: none;
+    }
     #tab-invite .invite-log {
       border: 1px solid #e2e8f0;
       border-radius: 12px;
