@@ -10,6 +10,58 @@ if (empty($_SESSION['authenticated'])) {
 
 const GUEST_STORE_PATH = __DIR__ . '/data/guests.json';
 const EVENTS_ROOT = __DIR__ . '/events';
+const STORE_PATH = __DIR__ . '/data/store.json';
+const DEFAULT_PANEL_SETTINGS = [
+  'panelName' => 'Great Panel',
+  'siteIcon' => ''
+];
+const LOGO_PATH = 'hard gallery/mci-logo-w.svg';
+
+function loadPanelSettings(): array
+{
+  $payload = loadJsonPayload(STORE_PATH);
+  $settings = is_array($payload['settings'] ?? null) ? $payload['settings'] : [];
+  return array_merge(DEFAULT_PANEL_SETTINGS, $settings);
+}
+
+function loadJsonPayload(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function formatSiteIconUrlForHtml(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  if (preg_match('/^(?:data:|https?:\\/\\/|\\/\\/)/i', $trimmed)) {
+    return $trimmed;
+  }
+  if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
+    return $trimmed;
+  }
+  return "./{$trimmed}";
+}
+
+function encodePath(string $value): string
+{
+  $parts = explode('/', $value);
+  return implode('/', array_map('rawurlencode', $parts));
+}
+
+$panelSettings = loadPanelSettings();
+$pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName']);
+$faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
+$logoUrl = encodePath(LOGO_PATH);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -83,8 +135,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Draw Stage</title>
-    <link rel="icon" href="data:," />
+    <title><?= htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') ?></title>
+    <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <style>
       @font-face {
         font-family: 'Peyda';
@@ -227,17 +279,48 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       }
 
       .code-display {
-        font-size: clamp(4rem, 16vw, 9rem);
-        letter-spacing: 1.2rem;
-        font-weight: 700;
-        color: #89c6ff;
-        margin: 0;
-        line-height: 1;
-        direction: ltr;
-        display: inline-flex;
+        display: flex;
         justify-content: center;
-        width: 100%;
-        text-align: center;
+        gap: clamp(0.35rem, 1vw, 0.8rem);
+        margin: 0 auto;
+      }
+
+      .code-digit {
+        width: clamp(60px, 14vw, 90px);
+        height: clamp(80px, 20vw, 120px);
+        background: rgba(255, 255, 255, 0.95);
+        position: relative;
+        border-radius: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Peyda', 'Segoe UI', sans-serif;
+        font-size: clamp(3.5rem, 8vw, 7rem);
+        letter-spacing: 0.4rem;
+        color: #0042a4;
+        font-weight: 700;
+        line-height: 1;
+        box-shadow: inset 0 0 0 1px rgba(4, 12, 38, 0.15);
+        transition: background 0.3s ease, color 0.3s ease;
+      }
+
+      .code-digit::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        border: 2px solid rgba(0, 66, 164, 0.3);
+        pointer-events: none;
+      }
+
+      .code-digit--animating {
+        background: linear-gradient(180deg, #d7ecff, #b4d8ff);
+        color: #07245d;
+      }
+
+      .code-digit--locked {
+        background: #0c1c4d;
+        color: #e3f3ff;
       }
 
       .caption {
@@ -384,12 +467,16 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         <a class="menu-item" href="#prizes">جوایز مسابقات</a>
       </div>
       <div class="logo-wrapper">
-        <img src="hard gallery/mci-logo-w.svg" alt="logo" loading="lazy" />
+        <img src="<?= htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="logo" loading="lazy" />
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">میز آغاز قرعه‌کشی</p>
-      <p id="code-display" class="code-display">0000</p>
+      <p id="code-display" class="code-display" aria-live="polite" aria-label="Current draw code">
+        <?php for ($idx = 0; $idx < 4; $idx++): ?>
+          <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
+        <?php endfor; ?>
+      </p>
       <p id="winner-name" class="winner-message">-- <span>----</span> is the winner --</p>
       <div class="cta-group">
         <button id="start-draw" class="start-btn" type="button">start draw</button>
@@ -413,6 +500,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       const startBtn = document.getElementById('start-draw');
       const confirmBtn = document.getElementById('confirm-guest');
       const winnersContainer = document.getElementById('winner-items');
+      const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
 
       let animationInterval = null;
       let stopTimeouts = [];
@@ -429,8 +517,22 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         return digits.slice(-4).padStart(4, '0');
       };
 
-      const setCode = (value) => {
-        codeDisplay.textContent = normalizeCode(value);
+      const defaultLocks = () => Array(4).fill(false);
+
+      const renderDigits = (digits, locks = defaultLocks()) => {
+        const chars = digits.split('');
+        digitElements.forEach((element, index) => {
+          const char = chars[index] ?? '0';
+          element.textContent = char;
+          const locked = Boolean(locks[index]);
+          element.classList.toggle('code-digit--locked', locked);
+          element.classList.toggle('code-digit--animating', !locked);
+        });
+      };
+
+      const setCode = (value, locks = defaultLocks()) => {
+        const normalized = normalizeCode(value);
+        renderDigits(normalized, locks);
       };
 
       const cancelAnimation = () => {
@@ -489,6 +591,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         confirmBtn.disabled = false;
       };
 
+      setCode('0000');
+
       startBtn.addEventListener('click', () => {
         if (!guestPool.length) {
           statusText.textContent = 'guest list is empty';
@@ -509,14 +613,14 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
               currentDigits[i] = randomDigit();
             }
           }
-          setCode(currentDigits.join(''));
+          setCode(currentDigits.join(''), locks);
         }, 90);
         const stopDelays = [1200, 3200, 5200, 7200];
         stopDelays.forEach((delay, index) => {
           const timeout = setTimeout(() => {
             locks[index] = true;
             currentDigits[index] = digits[index];
-            setCode(currentDigits.join(''));
+            setCode(currentDigits.join(''), locks);
             if (index === 3) {
               cancelAnimation();
               confirmBtn.disabled = false;
