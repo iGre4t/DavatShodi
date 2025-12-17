@@ -291,6 +291,11 @@ if ($method === 'POST') {
             ]
         );
         $store['events'][$eventIndex]['updated_at'] = date('c');
+        if (!syncEventPurelist($store['events'][$eventIndex], $slug, $eventsRoot)) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
+            exit;
+        }
         if (!saveGuestStore($storePath, $store)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
@@ -327,6 +332,11 @@ if ($method === 'POST') {
         array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
         $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
         $store['events'][$eventIndex]['updated_at'] = date('c');
+        if (!syncEventPurelist($store['events'][$eventIndex], $slug, $eventsRoot)) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
+            exit;
+        }
         if (!saveGuestStore($storePath, $store)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
