@@ -640,7 +640,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         const prizeValueEl = document.getElementById('prize-value');
         const startBtn = document.getElementById('start-draw');
         const codeDisplay = document.getElementById('code-display');
-        const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
+        const digitElements = Array.from(codeDisplay?.querySelectorAll('.code-digit') ?? []);
 
         let digitAnimationInterval = null;
         let revealTimer = null;
