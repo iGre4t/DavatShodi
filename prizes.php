@@ -274,6 +274,77 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
       }
 
+      .prize-grid {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-rows: repeat(3, 1fr);
+        gap: 16px;
+        padding-top: 12px;
+      }
+
+      .prize-card {
+        position: relative;
+        height: 110px;
+        border-radius: 20px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 12px 30px rgba(3, 9, 43, 0.35);
+        perspective: 1100px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .prize-card .card-inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        transition: transform 0.8s ease;
+        transform-style: preserve-3d;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .prize-card.card-flip .card-inner {
+        transform: rotateY(180deg);
+      }
+
+      .prize-card.card-highlight {
+        box-shadow: 0 0 25px rgba(50, 197, 255, 0.55);
+        border-color: rgba(50, 197, 255, 0.8);
+      }
+
+      .card-face {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #f0f8ff;
+        backface-visibility: hidden;
+      }
+
+      .card-front {
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .card-back {
+        background: linear-gradient(180deg, rgba(4, 12, 38, 0.92), rgba(6, 21, 57, 0.98));
+        transform: rotateY(180deg);
+        padding: 0 8px;
+        text-align: center;
+        direction: rtl;
+        font-size: 1rem;
+        white-space: normal;
+      }
+
       .cta-group {
         display: flex;
         flex-wrap: wrap;
@@ -340,14 +411,27 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         <button id="start-draw" class="start-btn" type="button">start draw</button>
       </div>
     </div>
+    <div class="prize-grid" aria-hidden="true">
+      <?php for ($cardIndex = 0; $cardIndex < 12; $cardIndex++): ?>
+        <div class="prize-card">
+          <div class="card-inner">
+            <div class="card-face card-front">جایزه</div>
+            <div class="card-face card-back"></div>
+          </div>
+        </div>
+      <?php endfor; ?>
+    </div>
     <script>
       window.__PRIZE_LIST = window.__PRIZE_LIST || <?= json_encode($prizeList, JSON_UNESCAPED_UNICODE); ?>;
       const prizeList = Array.isArray(window.__PRIZE_LIST) ? window.__PRIZE_LIST : [];
       const prizeValueEl = document.getElementById('prize-value');
       const startBtn = document.getElementById('start-draw');
+      const prizeCards = Array.from(document.querySelectorAll('.prize-card'));
       let animationInterval = null;
       let revealTimeout = null;
       let selectedPrizeName = '';
+      let highlightInterval = null;
+      let cardRevealTimeout = null;
 
       const resetValueState = () => {
         prizeValueEl.classList.remove('prize-value--animating', 'prize-value--locked');
@@ -375,6 +459,68 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         resetValueState();
       };
 
+      const stopCardGlow = () => {
+        if (highlightInterval) {
+          clearInterval(highlightInterval);
+          highlightInterval = null;
+        }
+        if (cardRevealTimeout) {
+          clearTimeout(cardRevealTimeout);
+          cardRevealTimeout = null;
+        }
+      };
+
+      const resetCardDeck = () => {
+        prizeCards.forEach((card) => {
+          card.classList.remove('card-highlight', 'card-flip');
+          const back = card.querySelector('.card-back');
+          if (back) {
+            back.textContent = '';
+          }
+        });
+        stopCardGlow();
+      };
+
+      const startCardGlowCycle = () => {
+        if (!prizeCards.length) {
+          return;
+        }
+        if (highlightInterval) {
+          clearInterval(highlightInterval);
+        }
+        highlightInterval = setInterval(() => {
+          const index = Math.floor(Math.random() * prizeCards.length);
+          prizeCards.forEach((card, idx) => {
+            card.classList.toggle('card-highlight', idx === index);
+          });
+        }, 180);
+      };
+
+      const scheduleCardReveal = (prizeName) => {
+        if (!prizeCards.length) {
+          return;
+        }
+        if (cardRevealTimeout) {
+          clearTimeout(cardRevealTimeout);
+        }
+        const finalIndex = Math.floor(Math.random() * prizeCards.length);
+        cardRevealTimeout = setTimeout(() => {
+          stopCardGlow();
+          prizeCards.forEach((card, idx) => {
+            card.classList.toggle('card-highlight', idx === finalIndex);
+          });
+          const card = prizeCards[finalIndex];
+          if (card) {
+            card.classList.add('card-flip');
+            const back = card.querySelector('.card-back');
+            if (back) {
+              back.textContent = prizeName || '';
+            }
+          }
+          cardRevealTimeout = null;
+        }, 700);
+      };
+
       const randomPrizeName = () => {
         if (!prizeList.length) {
           return '';
@@ -386,6 +532,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       const showIdleState = () => {
         prizeValueEl.textContent = '---';
         resetValueState();
+        resetCardDeck();
       };
 
       startBtn.addEventListener('click', () => {
@@ -393,8 +540,10 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
           return;
         }
         cancelAnimation();
+        resetCardDeck();
         startBtn.disabled = true;
         setAnimatingState();
+        startCardGlowCycle();
         selectedPrizeName = randomPrizeName();
         animationInterval = setInterval(() => {
           prizeValueEl.textContent = randomPrizeName() || '---';
@@ -405,8 +554,10 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
           prizeValueEl.textContent = selectedPrizeName || '---';
           if (selectedPrizeName) {
             setLockedState();
+            scheduleCardReveal(selectedPrizeName);
           } else {
             resetValueState();
+            resetCardDeck();
           }
           startBtn.disabled = false;
         }, revealDelay);
