@@ -229,6 +229,10 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         margin: 0;
       }
 
+      body.prizes-page .draw-shell {
+        width: min(1350px, 100%);
+      }
+
       .prize-display {
         min-height: clamp(110px, 14vw, 160px);
         width: min(640px, 100%);
@@ -314,7 +318,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       }
     </style>
   </head>
-  <body>
+  <body class="prizes-page">
     <div class="background-icon" aria-hidden="true">
       <svg viewBox="0 0 1173 773" role="presentation" xmlns="http://www.w3.org/2000/svg">
         <path class="icon-outline" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
