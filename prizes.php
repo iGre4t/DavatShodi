@@ -306,7 +306,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         position: relative;
         width: 100%;
         height: 100%;
-        transition: transform 0.8s ease;
+        transition: transform 1.2s cubic-bezier(0.645, 0.045, 0.355, 1);
         transform-style: preserve-3d;
         display: flex;
         align-items: center;
@@ -348,6 +348,35 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         direction: rtl;
         font-size: 1rem;
         white-space: normal;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .card-back::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.6) 45%, rgba(255, 255, 255, 0) 75%);
+        transform: translateX(-130%);
+        opacity: 0;
+      }
+
+      .card-flip .card-back::after {
+        animation: card-shine 1.2s ease;
+      }
+
+      @keyframes card-shine {
+        0% {
+          transform: translateX(-150%);
+          opacity: 0;
+        }
+        40% {
+          opacity: 0.75;
+        }
+        100% {
+          transform: translateX(150%);
+          opacity: 0;
+        }
       }
 
       .cta-group {
@@ -436,7 +465,6 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       let revealTimeout = null;
       let selectedPrizeName = '';
       let highlightInterval = null;
-      let cardRevealTimeout = null;
 
       const resetValueState = () => {
         prizeValueEl.classList.remove('prize-value--animating', 'prize-value--locked');
@@ -469,10 +497,6 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
           clearInterval(highlightInterval);
           highlightInterval = null;
         }
-        if (cardRevealTimeout) {
-          clearTimeout(cardRevealTimeout);
-          cardRevealTimeout = null;
-        }
       };
 
       const resetCardDeck = () => {
@@ -501,29 +525,23 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         }, 180);
       };
 
-      const scheduleCardReveal = (prizeName) => {
+      const revealCard = (prizeName) => {
         if (!prizeCards.length) {
           return;
         }
-        if (cardRevealTimeout) {
-          clearTimeout(cardRevealTimeout);
-        }
         const finalIndex = Math.floor(Math.random() * prizeCards.length);
-        cardRevealTimeout = setTimeout(() => {
-          stopCardGlow();
-          prizeCards.forEach((card, idx) => {
-            card.classList.toggle('card-highlight', idx === finalIndex);
-          });
-          const card = prizeCards[finalIndex];
-          if (card) {
-            card.classList.add('card-flip');
-            const back = card.querySelector('.card-back');
-            if (back) {
-              back.textContent = prizeName || '';
-            }
+        stopCardGlow();
+        prizeCards.forEach((card, idx) => {
+          card.classList.toggle('card-highlight', idx === finalIndex);
+        });
+        const card = prizeCards[finalIndex];
+        if (card) {
+          card.classList.add('card-flip');
+          const back = card.querySelector('.card-back');
+          if (back) {
+            back.textContent = prizeName || '';
           }
-          cardRevealTimeout = null;
-        }, 700);
+        }
       };
 
       const randomPrizeName = () => {
@@ -559,7 +577,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
           prizeValueEl.textContent = selectedPrizeName || '---';
           if (selectedPrizeName) {
             setLockedState();
-            scheduleCardReveal(selectedPrizeName);
+            revealCard(selectedPrizeName);
           } else {
             resetValueState();
             resetCardDeck();
