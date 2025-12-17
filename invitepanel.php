@@ -317,6 +317,16 @@
         "National ID not found in the active event list.": "کد ملی در فهرست فعال یافت نشد."
       };
 
+      function showToast(message) {
+        if (!message) return;
+        window.showDefaultToast?.({ message });
+      }
+
+      function showSnackbar(message) {
+        if (!message) return;
+        window.showErrorSnackbar?.({ message });
+      }
+
       const toneByOutcome = {
         enter: "success",
         exit: "info",
@@ -448,8 +458,7 @@
           const title = document.createElement("div");
           title.className = "invite-log-title";
           const label = statusLabels[type] || "به‌روزرسانی";
-          const labelWithName =
-            log?.guest_name && label === statusLabels.enter ? `${label} · ${log.guest_name}` : label;
+          const labelWithName = log?.guest_name ? `${label} · ${log.guest_name}` : label;
           title.textContent = labelWithName;
 
           const infoGrid = document.createElement("div");
@@ -599,31 +608,40 @@
           }
           const outcome = data.outcome;
           const guest = data.guest || {};
+          const guestDisplayName =
+            guest.full_name ||
+            `${guest.firstname || ""} ${guest.lastname || ""}`.trim() ||
+            "مهمان";
           const tone = toneByOutcome[outcome] || "";
           if (outcome === "enter") {
-            setStatus("مهمان پیدا شد. آماده چاپ کارت.", "success");
+            const successMessage = `ورود ${guestDisplayName} ثبت شد.`;
+            setStatus(successMessage, "success");
+            showToast(successMessage);
             openEntryModal(guest);
-            window.showDefaultToast?.({ message: "ورود ثبت شد." });
           } else if (outcome === "exit") {
-            setStatus("مهمان مراسم را ترک کرد.", tone || "info");
-            window.showDefaultToast?.({ message: "خروج ثبت شد." });
+            const successMessage = `خروج ${guestDisplayName} ثبت شد.`;
+            setStatus(successMessage, tone || "info");
+            showToast(successMessage);
           } else if (outcome === "spam") {
-            setStatus("اسکن تکراری ثبت شد (کمتر از ۵ دقیقه).", tone || "warn");
-            window.showDefaultToast?.({ message: "اسکن تکراری ذخیره شد." });
+            const warnMessage = "اسکن تکراری ثبت شد (کمتر از ۵ دقیقه).";
+            setStatus(warnMessage, tone || "warn");
+            showSnackbar("اسکن تکراری ثبت شد.");
           } else if (outcome === "more_exit") {
-            const exitedParts = guest?.date_exited ? formatTimestampParts(guest.date_exited) : null;
-            const exitedAt = exitedParts ? `${exitedParts.dateText} ${exitedParts.timeText}` : "";
-            setStatus("مهمان قبلاً خارج شده بود.", tone || "warn");
-            openExitedModal(`کاربر قبلاً در ${exitedAt || "این جلسه"} خارج شده بود.`);
+          const exitedParts = guest?.date_exited ? formatTimestampParts(guest.date_exited) : null;
+          const exitedAt = exitedParts ? `${exitedParts.dateText} ${exitedParts.timeText}` : "";
+          const exitMessage = `کاربر ${guestDisplayName} قبلاً در ${exitedAt || "این جلسه"} خارج شده بود.`;
+          setStatus("مهمان قبلاً خارج شده بود.", tone || "warn");
+          openExitedModal(exitMessage);
           } else if (outcome === "not_found") {
             setStatus("کد ملی در فهرست فعال یافت نشد.", "error");
-            window.showErrorSnackbar?.({ message: "کد ملی در فهرست فعال یافت نشد." });
+            showSnackbar("کد ملی در فهرست فعال یافت نشد.");
           } else {
             setStatus(data?.message || "وضعیت به‌روزرسانی شد.", tone || "");
           }
         } catch (error) {
-          setStatus(error?.message || "خطا در اسکن مهمان.", "error");
-          window.showErrorSnackbar?.({ message: error?.message || "خطا در اسکن مهمان." });
+          const errMsg = error?.message || "خطا در اسکن مهمان.";
+          setStatus(errMsg, "error");
+          showSnackbar(errMsg);
         } finally {
           loading = false;
           if (nationalInput) {
@@ -651,7 +669,9 @@
         if (value.length === 10) {
           scanNationalId(value);
         } else {
-          setStatus("کد ملی باید ۱۰ رقم باشد.", "warn");
+          const invalidMsg = "کد ملی باید ۱۰ رقم باشد.";
+          setStatus(invalidMsg, "warn");
+          showSnackbar(invalidMsg);
         }
       });
 

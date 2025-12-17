@@ -270,9 +270,9 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
 
       body {
         margin: 0;
-        height: 100vh;
+        min-height: 100vh;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: center;
         background: radial-gradient(circle at top, #7cb7ff, #1a3edb 55%, #07103b 100%);
         color: #f0f8ff;
@@ -281,7 +281,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         flex-direction: column;
         gap: 12px;
         position: relative;
-        overflow: hidden;
+        overflow-y: auto;
       }
 
       .background-icon {
