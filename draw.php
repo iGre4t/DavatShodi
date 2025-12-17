@@ -120,6 +120,75 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         padding: 32px 16px 48px;
         flex-direction: column;
         gap: 24px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .background-icon {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.25;
+      }
+
+      .background-icon svg {
+        width: min(240px, 60vw);
+        height: auto;
+        filter: drop-shadow(0 24px 48px rgba(3, 9, 43, 0.5));
+      }
+
+      .icon-outline {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.45);
+        stroke-width: 10;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 2000;
+        stroke-dashoffset: 2000;
+        animation: draw-icon 5s ease-in-out infinite alternate;
+      }
+
+      @keyframes draw-icon {
+        to {
+          stroke-dashoffset: 0;
+          stroke: rgba(255, 255, 255, 0.9);
+        }
+      }
+
+      .page-menu {
+        display: flex;
+        gap: 24px;
+        padding: 12px 24px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(6px);
+        z-index: 1;
+        position: relative;
+      }
+
+      .menu-item {
+        color: #f5f5f7;
+        text-decoration: none;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        padding: 4px 16px;
+        border-radius: 999px;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+
+      .menu-item.active {
+        background: rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+      }
+
+      .menu-item:hover:not(.active) {
+        background: rgba(255, 255, 255, 0.08);
       }
 
       .draw-shell {
@@ -132,6 +201,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         display: flex;
         flex-direction: column;
         gap: 28px;
+        position: relative;
+        z-index: 1;
       }
 
       .code-display {
@@ -220,6 +291,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         border: 1px solid rgba(255, 255, 255, 0.08);
         padding: 24px;
         box-shadow: 0 16px 30px rgba(3, 20, 60, 0.4);
+        position: relative;
+        z-index: 1;
       }
 
       .winners-panel h3 {
@@ -260,20 +333,10 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
 
       .winner-info {
         text-align: right;
-        font-size: 0.95rem;
-        direction: rtl;
-      }
-
-      .winner-name {
         font-size: 1rem;
+        direction: rtl;
         color: #ffffff;
-        margin-bottom: 2px;
         font-weight: 600;
-      }
-
-      .winner-metadata {
-        font-size: 0.85rem;
-        color: rgba(255, 255, 255, 0.75);
       }
 
       @media (max-width: 480px) {
@@ -289,6 +352,15 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
     </style>
   </head>
   <body>
+    <div class="background-icon" aria-hidden="true">
+      <svg viewBox="0 0 1173 773" role="presentation" xmlns="http://www.w3.org/2000/svg">
+        <path class="icon-outline" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
+      </svg>
+    </div>
+    <nav class="page-menu">
+      <a class="menu-item active" href="draw.php">قرعه کشی</a>
+      <a class="menu-item" href="#prizes">جوایز مسابقات</a>
+    </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">میز آغاز قرعه‌کشی</p>
       <p id="code-display" class="code-display">0000</p>
@@ -370,17 +442,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         const infoEl = document.createElement('div');
         infoEl.className = 'winner-info';
         const displayName = entry.full_name || `${entry.firstname || ''} ${entry.lastname || ''}`.trim() || 'Guest';
-        const nameEl = document.createElement('div');
-        nameEl.className = 'winner-name';
-        nameEl.textContent = displayName;
-        infoEl.appendChild(nameEl);
-        const metadataParts = [entry.phone_number, entry.national_id].filter((value) => value && value.trim() !== '');
-        if (metadataParts.length) {
-          const metadataEl = document.createElement('div');
-          metadataEl.className = 'winner-metadata';
-          metadataEl.textContent = metadataParts.join(' · ');
-          infoEl.appendChild(metadataEl);
-        }
+        infoEl.textContent = displayName;
         container.append(codeEl, infoEl);
         return container;
       };
