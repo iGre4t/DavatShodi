@@ -1027,7 +1027,7 @@ function createGuestInvitePages(array $guests): void
       min-height: 640px;
       max-height: min(96vh, 760px);
       background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 60%, #eef2ff 100%);
-      border-radius: 36px;
+      border-radius: 40px;
       box-shadow: 0 35px 60px rgba(15, 23, 42, 0.25);
       overflow: hidden;
       display: flex;
@@ -1045,12 +1045,25 @@ function createGuestInvitePages(array $guests): void
       pointer-events: none;
     }
 
+    .screen {
+      flex: 1;
+      margin: 0.75rem 0.85rem 0.95rem;
+      border-radius: 32px;
+      background: linear-gradient(180deg, #fefefe 0%, #fbfbff 55%, #e7efff 100%);
+      box-shadow: inset 0 2px 12px rgba(15, 23, 42, 0.1), 0 12px 30px rgba(15, 23, 42, 0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      overflow: hidden;
+    }
+
     .card-image-shell {
-      flex: 1.15;
-      background: #d9e2ff;
+      flex: 1;
+      background: #dce6ff;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 0.8rem;
     }
 
     .card-image-shell img {
@@ -1058,29 +1071,31 @@ function createGuestInvitePages(array $guests): void
       height: 100%;
       object-fit: cover;
       display: block;
+      border-radius: 18px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
     }
 
     .message {
-      flex: 1;
-      padding: 2.25rem 1.5rem 3rem;
+      flex: 0 0 auto;
+      padding: 1.5rem 1.25rem 1.8rem;
       display: flex;
       flex-direction: column;
-      gap: 0.3rem;
+      gap: 0.35rem;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       text-align: center;
-      background: linear-gradient(180deg, transparent 0%, rgba(14, 165, 233, 0.08) 100%);
+      background: transparent;
     }
 
     .greeting {
       margin: 0;
-      font-size: 1.05rem;
+      font-size: 1rem;
       color: #52606d;
     }
 
     .name {
       margin: 0;
-      font-size: clamp(1.1rem, 3vw, 1.4rem);
+      font-size: clamp(1.1rem, 3vw, 1.3rem);
       font-weight: 700;
       color: #0f172a;
     }
@@ -1092,15 +1107,19 @@ function createGuestInvitePages(array $guests): void
       background: #fff;
       padding: 0.4rem;
       box-shadow: 0 18px 35px rgba(15, 23, 42, 0.25);
-      margin-top: 0.4rem;
+      margin-top: 0.3rem;
     }
 
     .code {
       margin: 0;
-      font-size: clamp(2.6rem, 6vw, 3.2rem);
-      letter-spacing: 0.6em;
-      font-weight: 700;
+      font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: clamp(1.8rem, 4vw, 2.2rem);
+      letter-spacing: 0.35em;
+      font-weight: 600;
       color: #0f172a;
+      direction: ltr;
+      display: block;
+      line-height: 1.1;
     }
 
     @media (max-width: 480px) {
@@ -1108,25 +1127,30 @@ function createGuestInvitePages(array $guests): void
         width: min(340px, 95vw);
         border-radius: 28px;
       }
+      .screen {
+        margin: 0.65rem 0.7rem 0.8rem;
+      }
       .message {
-        padding: 1.5rem 1rem 2rem;
+        padding: 1.25rem 1rem 1.6rem;
       }
       .code {
-        letter-spacing: 0.55em;
+        letter-spacing: 0.3em;
       }
     }
-  </style>
+</style>
 </head>
   <body>
     <div class="device">
-      <div class="card-image-shell">
-        <img src="{$imageUrl}" alt="???? ???? ??????">
-      </div>
-      <div class="message">
-        <p class="greeting">مهمان محترم</p>
-        <p class="name">{$safeName}</p>
-        {$qrElement}
-        <p class="code">{$safeCode}</p>
+      <div class="screen">
+        <div class="card-image-shell">
+          <img src="{$imageUrl}" alt="???? ???? ??????">
+        </div>
+        <div class="message">
+          <p class="greeting">مهمان محترم</p>
+          <p class="name">{$safeName}</p>
+          {$qrElement}
+          <p class="code">{$safeCode}</p>
+        </div>
       </div>
     </div>
   </body>
