@@ -3507,15 +3507,18 @@ function renderClock(){
     hour12:false,
     timeZone: tz
   });
-  const persianDateLabel = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+  const persianFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
     timeZone: tz
-  }).format(now);
+  });
+  const parts = persianFormatter.formatToParts(now);
+  const getPart = (type) => parts.find(p => p.type === type)?.value || '';
+  const dateLabel = `${getPart('weekday')}، ${getPart('day')} ${getPart('month')} ${getPart('year')}`.trim();
   const displayName = (window.__CURRENT_USER_NAME || PANEL_TITLE_DEFAULT);
-  el.innerHTML = `<span class="time">${time}</span><span class="date">${persianDateLabel}</span><span class="user">${displayName}</span>`;
+  el.innerHTML = `<span class="time">${time}</span><span class="date">${dateLabel}</span><span class="user">${displayName}</span>`;
 }
 
 // Removes the initial spinner after transition end to reveal the SPA.

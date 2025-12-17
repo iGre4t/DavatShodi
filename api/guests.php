@@ -80,9 +80,9 @@ if ($method === 'POST') {
             http_response_code(422);
             echo json_encode([
                 'status' => 'error',
-                'message' => 'No active event selected. Please set the active event from the Winners tab.'
-            ]);
-            exit;
+            'message' => 'No active event selected. Please set the active event from the Winners tab.'
+        ]);
+        exit;
         }
         $activeEventIndex = findEventIndexBySlug($store['events'], $activeEventSlug);
         if ($activeEventIndex < 0) {
@@ -118,7 +118,8 @@ if ($method === 'POST') {
                 'status' => 'ok',
                 'outcome' => 'not_found',
                 'log' => $log,
-                'logs' => normalizeInviteLogs($store['logs'])
+                'logs' => normalizeInviteLogs($store['logs']),
+                'stats' => computeGuestStats($store['events'][$activeEventIndex] ?? [])
             ]);
             exit;
         }
@@ -195,7 +196,8 @@ if ($method === 'POST') {
                 'event_name' => $eventName
             ],
             'log' => $log,
-            'logs' => normalizeInviteLogs($store['logs'])
+            'logs' => normalizeInviteLogs($store['logs']),
+            'stats' => computeGuestStats($store['events'][$activeEventIndex] ?? [])
         ]);
         exit;
     } elseif ($action === 'add_manual_guest') {
@@ -538,10 +540,14 @@ if ($method === 'POST') {
 }
 
 $store = loadGuestStore($storePath);
+$activeEventSlug = trim((string)($store['active_event_slug'] ?? ''));
+$activeEventIndex = $activeEventSlug === '' ? -1 : findEventIndexBySlug($store['events'], $activeEventSlug);
+$activeEvent = $activeEventIndex >= 0 ? $store['events'][$activeEventIndex] : [];
 echo json_encode([
     'status' => 'ok',
     'events' => normalizeEventsForResponse($store['events']),
-    'logs' => normalizeInviteLogs($store['logs'])
+    'logs' => normalizeInviteLogs($store['logs']),
+    'stats' => computeGuestStats($activeEvent)
 ]);
 exit;
 
@@ -975,6 +981,35 @@ function normalizeEventsForResponse(array $events): array
             'updated_at' => (string)($event['updated_at'] ?? '')
         ];
     }, $events));
+}
+
+function computeGuestStats(array $event): array
+{
+    $guests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
+    $totalPresent = 0;
+    $presentByGender = [];
+    $invitedByGender = [];
+    foreach ($guests as $guest) {
+        if (!is_array($guest)) {
+            continue;
+        }
+        $gender = trim((string)($guest['gender'] ?? ''));
+        if ($gender === '') {
+            $gender = 'نامشخص';
+        }
+        $invitedByGender[$gender] = ($invitedByGender[$gender] ?? 0) + 1;
+        $entered = trim((string)($guest['date_entered'] ?? ''));
+        if ($entered !== '') {
+            $totalPresent++;
+            $presentByGender[$gender] = ($presentByGender[$gender] ?? 0) + 1;
+        }
+    }
+    return [
+        'total_present' => $totalPresent,
+        'total_invited' => count($guests),
+        'present_by_gender' => $presentByGender,
+        'invited_by_gender' => $invitedByGender
+    ];
 }
 
 function createGuestInvitePages(array $guests): void

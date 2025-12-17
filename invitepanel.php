@@ -10,8 +10,8 @@
       <form id="invite-form" class="form" autocomplete="off">
         <label class="field standard-width">
           <span>کد ملی (۱۰ رقم)</span>
-      <input
-          id="invite-national-id"
+          <input
+            id="invite-national-id"
           name="national_id"
           type="text"
           inputmode="numeric"
@@ -24,6 +24,11 @@
         </label>
       <p id="invite-status" class="hint" aria-live="polite"></p>
       </form>
+
+      <div class="invite-stats-shell">
+        <div class="invite-stats-title">آمار مهمان‌ها</div>
+        <div class="invite-stats-grid" id="invite-stats-grid"></div>
+      </div>
     </div>
 
   <div class="card">
@@ -84,6 +89,9 @@
   </div>
 
   <style>
+    #invite-status {
+      display: none;
+    }
     #tab-invite .invite-log-list {
       display: flex;
       flex-direction: column;
@@ -132,11 +140,37 @@
       justify-content: flex-end;
       margin-top: 4px;
     }
-      #tab-invite .invite-log-print-btn {
-        padding: 4px 10px;
-        font-size: 13px;
-        border-radius: 8px;
-      }
+    #tab-invite .invite-log-print-btn {
+      padding: 4px 10px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+    .invite-stats-shell {
+      margin-top: 18px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+    }
+    .invite-stats-title {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 600;
+    }
+    .invite-stats-grid {
+      display: grid;
+      gap: 6px;
+    }
+    .invite-stats-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12pt;
+      direction: rtl;
+    }
+    .invite-stats-item span:last-child {
+      font-weight: 700;
+    }
     #tab-invite .card + .card {
       margin-top: 20px;
     }
@@ -285,6 +319,7 @@
       const exitedMessageEl = document.getElementById("invite-exited-message");
       const printNameEl = document.getElementById("invite-print-name");
       const printCodeEl = document.getElementById("invite-print-code");
+      const statsGrid = document.getElementById("invite-stats-grid");
       const entryTimeLineEl = document.getElementById("invite-print-entry-time");
       const entryDateLineEl = document.getElementById("invite-print-entry-date-line");
       const persianTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
@@ -337,6 +372,7 @@
         more_exit: "warn",
         not_found: "error"
       };
+      let currentStats = null;
 
       function sanitizeDigits(value) {
         return (value || "").replace(/\D+/g, "").slice(0, 10);
@@ -438,6 +474,40 @@
           const aTime = String(a?.timestamp || "");
           const bTime = String(b?.timestamp || "");
           return bTime.localeCompare(aTime);
+        });
+      }
+
+      function createStatItem(label, value) {
+        const item = document.createElement("div");
+        item.className = "invite-stats-item";
+        const labelEl = document.createElement("span");
+        labelEl.textContent = label;
+        const valueEl = document.createElement("span");
+        valueEl.textContent = String(value ?? 0);
+        item.appendChild(labelEl);
+        item.appendChild(valueEl);
+        return item;
+      }
+
+      function renderStats(stats) {
+        if (!statsGrid) return;
+        if (stats) {
+          currentStats = stats;
+        }
+        statsGrid.innerHTML = "";
+        if (!currentStats) {
+          statsGrid.textContent = "در حال بارگذاری آمار...";
+          return;
+        }
+        statsGrid.appendChild(createStatItem("تعداد مهمانان حاضر", currentStats.total_present ?? 0));
+        const presentGenders = currentStats.present_by_gender || {};
+        Object.entries(presentGenders).forEach(([gender, count]) => {
+          statsGrid.appendChild(createStatItem(`${gender} حاضر`, count));
+        });
+        statsGrid.appendChild(createStatItem("تعداد مهمانان دعوت‌شده", currentStats.total_invited ?? 0));
+        const invitedGenders = currentStats.invited_by_gender || {};
+        Object.entries(invitedGenders).forEach(([gender, count]) => {
+          statsGrid.appendChild(createStatItem(`${gender} دعوت‌شده`, count));
         });
       }
 
@@ -585,6 +655,7 @@
           if (response.ok && data.status === "ok" && Array.isArray(data.logs)) {
             logs = data.logs;
             renderLogs();
+            renderStats(data.stats);
           }
         } catch (_) {
           // ignore initial load errors
@@ -609,6 +680,7 @@
           } else if (data.log) {
             mergeLogs([data.log]);
           }
+          renderStats(data.stats);
           const outcome = data.outcome;
           const guest = data.guest || {};
           const guestDisplayName =
@@ -702,6 +774,7 @@
       });
 
       renderLogs();
+      renderStats();
       document.addEventListener("DOMContentLoaded", () => {
         loadInviteData();
       });
