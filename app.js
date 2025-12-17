@@ -41,7 +41,7 @@ const DEFAULT_SETTINGS = {
   }
 };
 const SITE_ICON_DEFAULT_DATA_URI = "data:,";
-const DEFAULT_APPEARANCE = {
+const FALLBACK_APPEARANCE = {
   primary: "#e11d2e",
   background: "#ffffff",
   text: "#111111",
@@ -53,8 +53,6 @@ const APPEARANCE_TEXT_KEY = "frontend_appearance_text";
 const APPEARANCE_TOGGLE_KEY = "frontend_appearance_toggle";
 const APPEARANCE_HINT_DEFAULT = "Fine-tune the UI colors directly from the developer lab.";
 const LOCAL_UNCATEGORIZED_CATEGORY_NAME = "--no category--";
-let currentAppearanceState = { ...DEFAULT_APPEARANCE };
-let savedAppearanceState = { ...DEFAULT_APPEARANCE };
 const APPEARANCE_KEYS = ["primary", "background", "text", "toggle"];
 const APPEARANCE_HSL_BASE = {
   primary: { s: 0.78, l: 0.54 },
@@ -82,6 +80,25 @@ const SHARED_GENERAL_SETTINGS =
   typeof window.GENERAL_SETTINGS === "object"
     ? window.GENERAL_SETTINGS
     : null;
+const SHARED_APPEARANCE = (() => {
+  const appearance = SHARED_GENERAL_SETTINGS?.appearance;
+  if (!appearance || typeof appearance !== "object") {
+    return {};
+  }
+  return APPEARANCE_KEYS.reduce((acc, key) => {
+    const color = ensureHexColor(appearance[key] ?? "");
+    if (color) {
+      acc[key] = color;
+    }
+    return acc;
+  }, {});
+})();
+const DEFAULT_APPEARANCE = {
+  ...FALLBACK_APPEARANCE,
+  ...SHARED_APPEARANCE
+};
+let currentAppearanceState = { ...DEFAULT_APPEARANCE };
+let savedAppearanceState = { ...DEFAULT_APPEARANCE };
 let SERVER_SETTINGS = {
   ...DEFAULT_SETTINGS,
   ...(SHARED_GENERAL_SETTINGS ?? {})
@@ -711,6 +728,60 @@ function setBackupControlsSubmitting(isSubmitting) {
   });
 }
 
+async function handleAppearanceSave() {
+  const previousAppearanceState = { ...savedAppearanceState };
+  applyAppearancePalette(currentAppearanceState, { persist: true });
+  updateAppearanceInputs(currentAppearanceState);
+  const appliedState = { ...currentAppearanceState };
+  const success = await syncSettings({ appearance: appliedState });
+  if (!success) {
+    applyAppearancePalette(previousAppearanceState, { persist: true });
+    updateAppearanceInputs(previousAppearanceState);
+    showErrorSnackbar({ message: "Failed to save appearance settings." });
+    return;
+  }
+  refreshGlobalAppearanceDefaults(appliedState);
+  showActionSnackbar({
+    message: "Appearance preferences saved.",
+    instructionLabel: "Undo change",
+    onAction: () => {
+      void handleAppearanceUndo(previousAppearanceState, appliedState);
+    }
+  });
+}
+
+async function handleAppearanceUndo(targetState, fallbackState) {
+  applyAppearancePalette(targetState, { persist: true });
+  updateAppearanceInputs(targetState);
+  const reverted = await syncSettings({ appearance: targetState });
+  if (!reverted) {
+    applyAppearancePalette(fallbackState, { persist: true });
+    updateAppearanceInputs(fallbackState);
+    showErrorSnackbar({ message: "Failed to revert appearance." });
+    return;
+  }
+  refreshGlobalAppearanceDefaults(targetState);
+  showDefaultToast("Appearance reverted to previous colors.");
+}
+
+function refreshGlobalAppearanceDefaults(state) {
+  if (!state || typeof state !== "object") {
+    return;
+  }
+  APPEARANCE_KEYS.forEach(key => {
+    const color = ensureHexColor(state[key]);
+    if (color) {
+      DEFAULT_APPEARANCE[key] = color;
+    }
+  });
+  if (typeof window !== "undefined" && window.GENERAL_SETTINGS && typeof window.GENERAL_SETTINGS === "object") {
+    window.GENERAL_SETTINGS.appearance = {
+      ...(window.GENERAL_SETTINGS.appearance || {}),
+      ...DEFAULT_APPEARANCE
+    };
+  }
+}
+
 function triggerBackupDownload(content, filename, mime = "application/json", encoding) {
   if (!content) {
     return;
@@ -1277,11 +1348,15 @@ function closeColorPickerModal() {
 
 function initAppearanceControls() {
   const stored = loadAppearanceState();
-  if (stored.primary || stored.background || stored.text || stored.toggle) {
+  const hasLocalStored = APPEARANCE_KEYS.some(key => Boolean(stored[key]));
+  const hasSharedAppearance = Object.keys(SHARED_APPEARANCE).length > 0;
+  if (hasLocalStored && !hasSharedAppearance) {
     currentAppearanceState = {
       ...DEFAULT_APPEARANCE,
       ...stored
     };
+  } else {
+    currentAppearanceState = { ...DEFAULT_APPEARANCE };
   }
   applyAppearancePalette(currentAppearanceState, { persist: false });
   updateAppearanceInputs(currentAppearanceState);
@@ -1367,19 +1442,7 @@ function initAppearanceControls() {
     }
   });
   qs("#save-appearance-settings")?.addEventListener("click", () => {
-    const previousAppearanceState = { ...savedAppearanceState };
-    applyAppearancePalette(currentAppearanceState, { persist: true });
-    updateAppearanceInputs(currentAppearanceState);
-    showActionSnackbar({
-      message: "Appearance preferences saved.",
-      instructionLabel: "Undo change",
-      onAction: () => {
-        currentAppearanceState = { ...previousAppearanceState };
-        applyAppearancePalette(currentAppearanceState, { persist: true });
-        updateAppearanceInputs(currentAppearanceState);
-        showDefaultToast("Appearance reverted to previous colors.");
-      }
-    });
+    void handleAppearanceSave();
   });
   qs("#reset-appearance-settings")?.addEventListener("click", () => {
     const previousAppearanceState = { ...savedAppearanceState };

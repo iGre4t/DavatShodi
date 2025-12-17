@@ -136,9 +136,9 @@ if ($action !== '') {
   <div class="card">
     <div
       class="table-header"
-      style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; direction:rtl;"
+      style="display:flex; flex-direction:column; align-items:flex-end; gap:12px; flex-wrap:nowrap; direction:rtl;"
     >
-      <div style="text-align:right;">
+      <div style="text-align:right; align-self:flex-end;">
         <h3>Prizes</h3>
       </div>
       <form
@@ -225,22 +225,24 @@ if ($action !== '') {
         .map(prize => `
           <tr data-prize-id="${prize.id}">
             <td>${prize.id}</td>
-            <td>
-              <input
-                type="text"
-                class="prize-inline-input"
-                data-prize-id="${prize.id}"
-                value="${escapeHtml(prize.name)}"
-                data-original="${escapeHtml(prize.name)}"
-                style="width:100%; border:none; background:transparent; padding:0; text-align:right; direction:rtl;"
-              />
+            <td style="width:100%;">
+              <label class="field standard-width" style="margin:0;">
+                <input
+                  type="text"
+                  class="prize-inline-input"
+                  data-prize-id="${prize.id}"
+                  value="${escapeHtml(prize.name)}"
+                  data-original="${escapeHtml(prize.name)}"
+                  style="direction:rtl; text-align:right;"
+                />
+              </label>
             </td>
-          <td>
-            <button type="button" class="btn ghost" data-prize-action="delete" data-prize-id="${prize.id}">Delete</button>
-          </td>
-        </tr>
-      `)
-      .join('');
+            <td>
+              <button type="button" class="btn ghost" data-prize-action="delete" data-prize-id="${prize.id}">Delete</button>
+            </td>
+          </tr>
+        `)
+        .join('');
     }
 
     function handleInlineUpdate(input) {
@@ -263,9 +265,9 @@ if ($action !== '') {
           setStatus(error?.message || 'Unable to update prize.', true);
           input.value = original;
         })
-      .finally(() => {
-        input.removeAttribute('disabled');
-      });
+        .finally(() => {
+          input.removeAttribute('disabled');
+        });
     }
 
     listBody.addEventListener('focusin', (event) => {

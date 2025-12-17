@@ -733,6 +733,9 @@ function buildGuestPool(string $storePath): array
     if (!is_array($event)) {
       continue;
     }
+    if (!isEventActive($event)) {
+      continue;
+    }
     $eventName = trim((string)($event['name'] ?? 'event'));
     $slug = normalizeSlug((string)($event['slug'] ?? ''));
     if ($slug === '') {
@@ -744,6 +747,11 @@ function buildGuestPool(string $storePath): array
     $guests = $event['guests'] ?? [];
     foreach ($guests as $guest) {
       if (!is_array($guest)) {
+        continue;
+      }
+      $entered = trim((string)($guest['date_entered'] ?? ''));
+      $exited = trim((string)($guest['date_exited'] ?? ''));
+      if ($entered === '' || $exited !== '') {
         continue;
       }
       $code = preg_replace('/\D+/', '', (string)($guest['invite_code'] ?? ''));
@@ -791,6 +799,24 @@ function normalizeSlug(string $value): string
   $value = preg_replace('/[^a-zA-Z0-9]+/', '-', $value);
   $value = trim($value, '-');
   return strtolower($value);
+}
+
+function isEventActive(array $event): bool
+{
+  $flagKeys = ['active_event', 'is_active', 'active', 'enabled'];
+  foreach ($flagKeys as $key) {
+    if (!array_key_exists($key, $event)) {
+      continue;
+    }
+    $value = $event[$key];
+    if ($value === true) {
+      return true;
+    }
+    if (is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes', 'فعال'], true)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function buildWinnersFileName(string $eventName): string
