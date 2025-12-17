@@ -230,7 +230,8 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       }
 
       body.prizes-page .draw-shell {
-        width: min(1350px, 100%);
+        width: min(1010px, 100%);
+        align-items: center;
       }
 
       .prize-display {
