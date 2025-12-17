@@ -885,8 +885,19 @@
       }
     }
 
-    async function loadPureListCsvRows() {
-      const response = await fetch(PURE_LIST_CSV_PATH, { cache: "no-store" });
+    function resolvePureListCsvPath() {
+      const selectedSlug = eventFilter?.value || "";
+      const activeEvent = selectedSlug
+        ? state.events.find(ev => (ev.slug || "") === selectedSlug)
+        : state.events[0];
+      const path = activeEvent && typeof activeEvent.purelist === "string"
+        ? activeEvent.purelist.trim()
+        : "";
+      return path || PURE_LIST_CSV_PATH;
+    }
+
+    async function loadPureListCsvRows(path = PURE_LIST_CSV_PATH) {
+      const response = await fetch(path, { cache: "no-store" });
       if (!response.ok) {
         throw new Error("Unable to retrieve the pure CSV guest list.");
       }
@@ -944,7 +955,7 @@
     }
 
     async function exportSmsLinks() {
-      const rows = await loadPureListCsvRows();
+      const rows = await loadPureListCsvRows(resolvePureListCsvPath());
       const workbook = buildSmsWorkbook(rows);
       const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
       const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
