@@ -134,12 +134,11 @@ if ($action !== '') {
 
 <section id="tab-prizes" class="tab">
   <div class="card">
-    <div class="table-header">
+    <div class="table-header" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
       <div>
         <h3>Prizes</h3>
-        <p class="muted small">Add and manage prize names that will be saved in <code>prizelist.csv</code>.</p>
       </div>
-      <form id="prize-add-form" class="form" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+      <form id="prize-add-form" class="form" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-inline-start:auto;">
         <label class="field standard-width" style="flex:1 1 240px;">
           <span>Prize name</span>
           <input id="prize-name" name="name" type="text" placeholder="Enter prize name" autocomplete="off" required />

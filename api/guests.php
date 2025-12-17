@@ -872,6 +872,7 @@ function normalizeStore(array $store): array
     }
     unset($event);
     $store['logs'] = is_array($store['logs'] ?? null) ? array_values($store['logs']) : [];
+    $store['active_event_slug'] = trim((string)($store['active_event_slug'] ?? ''));
     return $store;
 }
 

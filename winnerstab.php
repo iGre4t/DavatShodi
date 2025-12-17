@@ -1,5 +1,6 @@
 <?php
 const EVENTS_ROOT = __DIR__ . '/events';
+const GUEST_STORE_PATH = __DIR__ . '/data/guests.json';
 
 function respondWinnersJson(array $payload, int $statusCode = 200): void
 {
@@ -9,6 +10,61 @@ function respondWinnersJson(array $payload, int $statusCode = 200): void
   }
   echo json_encode($payload, JSON_UNESCAPED_UNICODE);
   exit;
+}
+
+function normalizeGuestStore(array $store): array
+{
+  $result = $store;
+  $result['events'] = is_array($result['events'] ?? null) ? array_values($result['events']) : [];
+  $result['logs'] = is_array($result['logs'] ?? null) ? array_values($result['logs']) : [];
+  $result['active_event_slug'] = trim((string)($result['active_event_slug'] ?? ''));
+  return $result;
+}
+
+function loadGuestStore(): array
+{
+  if (!is_file(GUEST_STORE_PATH)) {
+    return ['events' => [], 'logs' => [], 'active_event_slug' => ''];
+  }
+  $content = file_get_contents(GUEST_STORE_PATH);
+  if ($content === false) {
+    return ['events' => [], 'logs' => [], 'active_event_slug' => ''];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return ['events' => [], 'logs' => [], 'active_event_slug' => ''];
+  }
+  return normalizeGuestStore($decoded);
+}
+
+function saveGuestStore(array $store): bool
+{
+  $store = normalizeGuestStore($store);
+  $directory = dirname(GUEST_STORE_PATH);
+  if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+    return false;
+  }
+  $encoded = json_encode($store, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($encoded === false) {
+    return false;
+  }
+  return file_put_contents(GUEST_STORE_PATH, $encoded) !== false;
+}
+
+function ensureEventSlugExists(array $events, string $slug): bool
+{
+  if ($slug === '') {
+    return true;
+  }
+  foreach ($events as $event) {
+    if (!is_array($event)) {
+      continue;
+    }
+    if ((string)($event['slug'] ?? '') === $slug) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function getEventsRootPath(): string
@@ -178,7 +234,13 @@ if ($action !== '') {
   $action = strtolower($action);
   switch ($action) {
     case 'list':
-      respondWinnersJson(['status' => 'ok', 'winners' => loadWinnersList(EVENTS_ROOT)]);
+      $winners = loadWinnersList(EVENTS_ROOT);
+      $store = loadGuestStore();
+      respondWinnersJson([
+        'status' => 'ok',
+        'winners' => $winners,
+        'activeEventSlug' => $store['active_event_slug']
+      ]);
       break;
     case 'delete':
       $line = (int)($_POST['line'] ?? 0);
@@ -189,10 +251,31 @@ if ($action !== '') {
       if (!deleteWinnerEntry($source, $line)) {
         respondWinnersJson(['status' => 'error', 'message' => 'Deletion failed. Entry not found or inaccessible.'], 404);
       }
+      $winners = loadWinnersList(EVENTS_ROOT);
+      $store = loadGuestStore();
       respondWinnersJson([
         'status' => 'ok',
         'message' => 'Winner removed.',
-        'winners' => loadWinnersList(EVENTS_ROOT)
+        'winners' => $winners,
+        'activeEventSlug' => $store['active_event_slug']
+      ]);
+      break;
+    case 'set_active_event':
+      $slug = trim((string)($_POST['slug'] ?? ''));
+      $store = loadGuestStore();
+      if ($slug !== '' && !ensureEventSlugExists($store['events'], $slug)) {
+        respondWinnersJson(['status' => 'error', 'message' => 'Selected event does not exist.'], 404);
+      }
+      $store['active_event_slug'] = $slug;
+      if (!saveGuestStore($store)) {
+        respondWinnersJson(['status' => 'error', 'message' => 'Unable to save active event.'], 500);
+      }
+      $winners = loadWinnersList(EVENTS_ROOT);
+      respondWinnersJson([
+        'status' => 'ok',
+        'message' => 'Active event saved.',
+        'activeEventSlug' => $store['active_event_slug'],
+        'winners' => $winners
       ]);
       break;
     default:
@@ -212,6 +295,28 @@ if ($action !== '') {
       <div class="table-actions">
         <button id="winner-export-button" class="btn ghost" disabled>Export winners to Excel</button>
       </div>
+    </div>
+    <div
+      class="active-event-section"
+      style="margin-top:16px; padding:16px; border:1px solid var(--sidebar-active-border); border-radius:12px; display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px;"
+    >
+      <div class="section-header" style="margin:0;">
+        <h3>Active Event</h3>
+      </div>
+      <form
+        id="winner-active-event-form"
+        class="form"
+        style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-inline-start:auto;"
+      >
+        <label class="field standard-width" style="flex:1 1 260px;">
+          <span>Select event</span>
+          <select id="winner-active-event-select">
+            <option value="">Select an event</option>
+          </select>
+        </label>
+        <button type="submit" class="btn primary">Save</button>
+      </form>
+      <p id="winner-active-event-status" class="muted small" aria-live="polite" style="margin:0;"></p>
     </div>
     <p id="winner-status" class="muted small" aria-live="polite"></p>
     <div class="table-wrapper">
@@ -247,12 +352,18 @@ if ($action !== '') {
     const tableBody = document.getElementById('winner-list-body');
     const statusEl = document.getElementById('winner-status');
     const exportBtn = document.getElementById('winner-export-button');
+    const activeEventForm = document.getElementById('winner-active-event-form');
+    const activeEventSelect = document.getElementById('winner-active-event-select');
+    const activeEventStatus = document.getElementById('winner-active-event-status');
+    const eventsEndpoint = './api/guests.php';
 
     if (!tableBody || !statusEl) {
       return;
     }
 
     let winners = [];
+    let activeEventSlug = '';
+    let eventsList = [];
 
     function setStatus(message, isError = false) {
       if (!statusEl) {
@@ -263,6 +374,97 @@ if ($action !== '') {
         statusEl.style.color = 'var(--primary)';
       } else {
         statusEl.style.color = '';
+      }
+    }
+
+    function setActiveEventStatus(message, isError = false) {
+      if (!activeEventStatus) {
+        return;
+      }
+      activeEventStatus.textContent = message || '';
+      if (isError) {
+        activeEventStatus.style.color = 'var(--primary)';
+      } else {
+        activeEventStatus.style.color = '';
+      }
+    }
+
+    function renderActiveEventOptions() {
+      if (!activeEventSelect) {
+        return;
+      }
+      const rows = ['<option value="">Select an event</option>'];
+      eventsList.forEach(event => {
+        const slug = event.slug ?? '';
+        const name = event.name ?? event.slug ?? 'Unnamed event';
+        const date = event.date ?? '';
+        const labelParts = [name];
+        if (date) {
+          labelParts.push(date);
+        }
+        const label = labelParts.join(' - ');
+        rows.push(`<option value="${escapeHtml(slug)}">${escapeHtml(label)}</option>`);
+      });
+      activeEventSelect.innerHTML = rows.join('');
+      if (activeEventSlug) {
+        activeEventSelect.value = activeEventSlug;
+      }
+    }
+
+    function updateActiveEventUi() {
+      if (activeEventSelect) {
+        activeEventSelect.value = activeEventSlug;
+      }
+      const match = eventsList.find(event => (event.slug ?? '') === activeEventSlug);
+      if (activeEventSlug && match) {
+        const labelParts = [];
+        if (match.name) {
+          labelParts.push(match.name);
+        } else if (match.slug) {
+          labelParts.push(match.slug);
+        }
+        if (match.date) {
+          labelParts.push(match.date);
+        }
+        const label = labelParts.join(' • ');
+        setActiveEventStatus(`Active event: ${label}`);
+      } else if (activeEventSlug) {
+        setActiveEventStatus('Active event saved.');
+      } else {
+        setActiveEventStatus('No active event selected.');
+      }
+    }
+
+    async function loadEventOptions() {
+      if (!activeEventSelect) {
+        return;
+      }
+      setActiveEventStatus('Loading events...');
+      try {
+        const response = await fetch(eventsEndpoint, { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok || payload.status !== 'ok') {
+          throw new Error(payload.message || 'Unable to load events.');
+        }
+        eventsList = Array.isArray(payload.events) ? payload.events : [];
+        eventsList.sort((a, b) => {
+          const dateA = (a.date ?? '').trim();
+          const dateB = (b.date ?? '').trim();
+          if (dateA === dateB) {
+            return 0;
+          }
+          if (dateA === '') {
+            return 1;
+          }
+          if (dateB === '') {
+            return -1;
+          }
+          return dateB.localeCompare(dateA);
+        });
+        renderActiveEventOptions();
+        updateActiveEventUi();
+      } catch (error) {
+        setActiveEventStatus(error?.message || 'Failed to load events.', true);
       }
     }
 
@@ -350,6 +552,10 @@ if ($action !== '') {
           throw new Error(payload.message || 'Unable to load winners.');
         }
         winners = Array.isArray(payload.winners) ? payload.winners : [];
+        if (payload.activeEventSlug !== undefined) {
+          activeEventSlug = payload.activeEventSlug || '';
+          updateActiveEventUi();
+        }
         renderTable();
         setStatus(winners.length ? `Loaded ${winners.length} winner(s).` : 'No winners yet.');
       } catch (error) {
@@ -376,8 +582,13 @@ if ($action !== '') {
         throw new Error(payload.message || 'Unable to update winners.');
       }
       winners = Array.isArray(payload.winners) ? payload.winners : winners;
+      if (payload.activeEventSlug !== undefined) {
+        activeEventSlug = payload.activeEventSlug || '';
+        updateActiveEventUi();
+      }
       renderTable();
       setStatus(payload.message || 'Changes saved.');
+      return payload;
     }
 
     tableBody.addEventListener('click', async (event) => {
@@ -403,6 +614,18 @@ if ($action !== '') {
         } finally {
           button.removeAttribute('disabled');
         }
+      }
+    });
+
+    activeEventForm?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const slug = (activeEventSelect?.value ?? '').trim();
+      setActiveEventStatus('Saving active event...');
+      try {
+        const payload = await sendAction('set_active_event', { slug });
+        setActiveEventStatus(payload.message || 'Active event saved.');
+      } catch (error) {
+        setActiveEventStatus(error?.message || 'Failed to save active event.', true);
       }
     });
 
@@ -460,5 +683,6 @@ if ($action !== '') {
     }
 
     fetchWinners();
+    loadEventOptions();
   })();
 </script>

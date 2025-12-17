@@ -301,7 +301,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         position: relative;
         border-radius: 18px;
         display: flex;
-        align-items: flex-end;
+        align-items: center;
         justify-content: center;
         font-family: 'Peyda', 'Segoe UI', sans-serif;
         font-size: clamp(3.5rem, 8vw, 7rem);
@@ -309,6 +309,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         color: #0042a4;
         font-weight: 700;
         line-height: 1;
+        padding-top: clamp(6px, 1.2vw, 12px);
         padding-bottom: clamp(4px, 1vw, 10px);
         box-shadow: inset 0 0 0 1px rgba(4, 12, 38, 0.15);
         transition: background 0.3s ease, color 0.3s ease;
@@ -343,8 +344,16 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       }
 
       .winner-message {
-        font-size: 1.2rem;
+        font-size: 1.6rem;
         margin: 0;
+        letter-spacing: 0.02em;
+      }
+
+      .winner-message--idle {
+        color: rgba(205, 230, 255, 0.6);
+      }
+
+      .winner-message--active {
         color: #cde6ff;
       }
 
@@ -492,7 +501,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
         <?php endfor; ?>
       </p>
-      <p id="winner-name" class="winner-message"><span>----</span> is the winner</p>
+      <p id="winner-name" class="winner-message winner-message--idle">برنده قرعه کشی</p>
       <div class="cta-group">
         <button id="start-draw" class="start-btn" type="button">start draw</button>
         <button id="confirm-guest" class="confirm-btn" type="button" disabled>confirm guest</button>
@@ -560,12 +569,16 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         stopTimeouts = [];
       };
 
+      const showIdleWinnerText = () => {
+        winnerNameEl.textContent = 'برنده قرعه کشی';
+        winnerNameEl.classList.add('winner-message--idle');
+        winnerNameEl.classList.remove('winner-message--active');
+      };
+
       const setWinnerText = (name) => {
-        winnerNameEl.textContent = '';
-        const highlight = document.createElement('span');
-        highlight.textContent = name;
-        winnerNameEl.appendChild(highlight);
-        winnerNameEl.appendChild(document.createTextNode(' is the winner'));
+        winnerNameEl.textContent = name;
+        winnerNameEl.classList.add('winner-message--active');
+        winnerNameEl.classList.remove('winner-message--idle');
       };
 
       const renderWinner = (winner) => {
@@ -607,6 +620,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       };
 
       setCode('0000');
+      showIdleWinnerText();
 
       startBtn.addEventListener('click', () => {
         if (!guestPool.length) {
@@ -618,6 +632,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         confirmBtn.disabled = true;
         currentWinner = guestPool[Math.floor(Math.random() * guestPool.length)];
         statusText.textContent = 'drawing...';
+        showIdleWinnerText();
         const targetCode = normalizeCode(currentWinner?.code);
         const digits = targetCode.split('');
         const currentDigits = ['0', '0', '0', '0'];
