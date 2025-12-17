@@ -56,6 +56,38 @@
       "match": [
         "Wide Format"
       ]
+    },
+    {
+      "id": "printer-default",
+      "name": "Default Printer Settings",
+      "layouts": [
+        "Portrait",
+        "Landscape"
+      ],
+      "paperSizes": [
+        "A4",
+        "A5",
+        "Letter",
+        "Custom"
+      ],
+      "pagesPerPaper": [
+        "1",
+        "2",
+        "4"
+      ],
+      "margins": [
+        "5mm",
+        "10mm",
+        "15mm"
+      ],
+      "scales": [
+        "90",
+        "100",
+        "110"
+      ],
+      "match": [
+        "*"
+      ]
     }
   ],
   "defaults": {

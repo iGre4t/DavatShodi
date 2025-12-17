@@ -65,6 +65,14 @@ $defaultData = [
     'printerSettings' => []
 ];
 
+const FALLBACK_PRINTER_OPTIONS = [
+    'layouts' => ['Portrait', 'Landscape'],
+    'paperSizes' => ['A4', 'A5', 'Letter', 'Custom'],
+    'pagesPerPaper' => ['1', '2', '4'],
+    'margins' => ['5mm', '10mm', '15mm'],
+    'scales' => ['90', '100', '110']
+];
+
 function parseUserCodeValue(string $value): int
 {
     $digits = preg_replace('/\D+/', '', $value);
@@ -868,12 +876,16 @@ function loadPrinterDefinitions(): array
         }
     }
     $printerNames = detectSystemPrinters();
+    $paperSizeMap = detectPrinterPaperNames();
     $devices = [];
     $usedIds = [];
     if (!empty($printerNames)) {
         foreach ($printerNames as $printerName) {
             $template = resolvePrinterTemplate($templates, $printerName);
-            $devices[] = buildPrinterDevice($template, $printerName, $usedIds);
+            $capabilities = [
+                'paperSizes' => $paperSizeMap[$printerName] ?? []
+            ];
+            $devices[] = buildPrinterDevice($template, $printerName, $usedIds, $capabilities);
         }
     }
     if (empty($devices)) {
@@ -891,6 +903,7 @@ function loadPrinterDefinitions(): array
 function resolvePrinterTemplate(array $templates, string $printerName): ?array
 {
     $printerLower = mb_strtolower($printerName);
+    $fallbackTemplate = null;
     foreach ($templates as $template) {
         if (!is_array($template)) {
             continue;
@@ -919,15 +932,21 @@ function resolvePrinterTemplate(array $templates, string $printerName): ?array
             if ($value === '') {
                 continue;
             }
+            if ($value === '*') {
+                if ($fallbackTemplate === null) {
+                    $fallbackTemplate = $template;
+                }
+                continue;
+            }
             if (mb_stripos($printerName, $value) !== false || mb_strtolower($value) === $printerLower) {
                 return $template;
             }
         }
     }
-    return null;
+    return $fallbackTemplate;
 }
 
-function buildPrinterDevice(?array $template, string $printerName, array &$usedIds): array
+function buildPrinterDevice(?array $template, string $printerName, array &$usedIds, array $capabilities = []): array
 {
     $template = is_array($template) ? $template : [];
     $baseId = trim((string)($template['id'] ?? ''));
@@ -941,9 +960,11 @@ function buildPrinterDevice(?array $template, string $printerName, array &$usedI
         $counter += 1;
     }
     $usedIds[$deviceId] = true;
-    $extract = function ($key) use ($template) {
-        $value = $template[$key] ?? [];
-        return is_array($value) ? array_values($value) : [];
+    $extract = function ($key) use ($template, $capabilities) {
+        $templateValues = is_array($template[$key] ?? null) ? $template[$key] : [];
+        $systemValues = is_array($capabilities[$key] ?? null) ? $capabilities[$key] : [];
+        $fallback = FALLBACK_PRINTER_OPTIONS[$key] ?? [];
+        return mergePrinterOptions($templateValues, $systemValues, $fallback);
     };
     return [
         'id' => $deviceId,
@@ -954,6 +975,26 @@ function buildPrinterDevice(?array $template, string $printerName, array &$usedI
         'margins' => $extract('margins'),
         'scales' => $extract('scales')
     ];
+}
+
+function mergePrinterOptions(array $templateValues, array $systemValues, array $fallback = []): array
+{
+    $result = [];
+    $seen = [];
+    foreach ([$templateValues, $systemValues, $fallback] as $values) {
+        if (!is_array($values)) {
+            continue;
+        }
+        foreach ($values as $value) {
+            $clean = trim((string)$value);
+            if ($clean === '' || isset($seen[$clean])) {
+                continue;
+            }
+            $seen[$clean] = true;
+            $result[] = $clean;
+        }
+    }
+    return $result;
 }
 
 function generatePrinterIdFromName(string $name): string
@@ -1016,6 +1057,55 @@ function detectSystemPrintersViaPowerShell(): array
         }
     }
     return array_values(array_filter(array_unique($names), fn ($value) => $value !== ''));
+}
+
+function detectPrinterPaperNames(): array
+{
+    if (stripos(PHP_OS, 'WIN') !== 0) {
+        return [];
+    }
+    $output = [];
+    $result = 0;
+    @exec('wmic printer get Name,PrinterPaperNames /format:csv', $output, $result);
+    if ($result !== 0 || !is_array($output)) {
+        return [];
+    }
+    $map = [];
+    foreach ($output as $line) {
+        $line = trim($line);
+        if ($line === '' || stripos($line, 'Node,Name,PrinterPaperNames') === 0) {
+            continue;
+        }
+        $parts = explode(',', $line, 3);
+        if (count($parts) < 3) {
+            continue;
+        }
+        $printerName = trim($parts[1]);
+        if ($printerName === '') {
+            continue;
+        }
+        $paperField = trim($parts[2]);
+        $sizes = [];
+        if ($paperField !== '') {
+            $clean = trim($paperField, "{} ");
+            if ($clean !== '') {
+                foreach (explode(';', $clean) as $value) {
+                    $value = trim($value);
+                    if ($value === '') {
+                        continue;
+                    }
+                    $sizes[] = $value;
+                }
+            }
+        }
+        if (!array_key_exists($printerName, $map)) {
+            $map[$printerName] = [];
+        }
+        if ($sizes) {
+            $map[$printerName] = array_values(array_unique(array_merge($map[$printerName], $sizes)));
+        }
+    }
+    return $map;
 }
 
 function sendJsonResponse(array $payload): void
