@@ -134,21 +134,19 @@ if ($action !== '') {
 
 <section id="tab-prizes" class="tab">
   <div class="card">
-    <div class="table-header" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
-      <div>
+    <div
+      class="table-header"
+      style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; direction:rtl;"
+    >
+      <div style="text-align:right;">
         <h3>Prizes</h3>
       </div>
-    </div>
-    <div
-      class="prize-add-row"
-      style="display:flex; justify-content:flex-end; direction:rtl; padding:0 0 12px 0; gap:12px; flex-wrap:wrap;"
-    >
       <form
         id="prize-add-form"
         class="form"
-        style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; min-width:320px;"
+        style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; min-width:320px; justify-content:flex-end;"
       >
-        <label class="field standard-width" style="flex:1 1 240px; direction: rtl;">
+        <label class="field standard-width" style="flex:1 1 240px; direction: rtl; text-align:right;">
           <span>Prize name</span>
           <input
             id="prize-name"
