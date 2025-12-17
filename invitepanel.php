@@ -1,34 +1,34 @@
 <section id="tab-invite" class="tab">
-  <div class="card">
-    <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-      <div>
-        <h3>Invite</h3>
-        <p class="muted small">Scan the active event guest list by national ID.</p>
+    <div class="card">
+      <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <div>
+          <h3>دعوت</h3>
+          <p class="muted small">کد ملی مهمان را وارد کنید تا برای مراسم آماده شود.</p>
+        </div>
+      <button type="button" class="btn ghost" id="invite-refresh">تازه‌سازی</button>
       </div>
-      <button type="button" class="btn ghost" id="invite-refresh">Refresh</button>
-    </div>
-    <form id="invite-form" class="form" autocomplete="off">
-      <label class="field standard-width">
-        <span>National ID (10 digits)</span>
-        <input
+      <form id="invite-form" class="form" autocomplete="off">
+        <label class="field standard-width">
+          <span>National ID (10 digits)</span>
+      <input
           id="invite-national-id"
           name="national_id"
           type="text"
           inputmode="numeric"
           pattern="\d*"
           maxlength="10"
-          placeholder="0000000000"
+          placeholder="٠٠٠٠٠٠٠٠٠٠"
           autocomplete="off"
           required
         />
-      </label>
+        </label>
       <p id="invite-status" class="hint" aria-live="polite"></p>
-    </form>
-  </div>
+      </form>
+    </div>
 
   <div class="card">
     <div class="section-header">
-      <h3>Present guests</h3>
+      <h3>مهمان‌های حاضر</h3>
     </div>
     <div id="invite-log-list" class="invite-log-list" role="list"></div>
   </div>
@@ -36,8 +36,8 @@
   <div id="invite-entry-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invite-entry-title">
     <div class="modal-card" style="max-width:420px;">
       <div class="modal-header">
-        <h3 id="invite-entry-title">Guest ready to enter</h3>
-        <button type="button" class="icon-btn" data-invite-entry-close aria-label="Close entry modal">X</button>
+        <h3 id="invite-entry-title">مهمان آماده ورود</h3>
+        <button type="button" class="icon-btn" data-invite-entry-close aria-label="بستن">X</button>
       </div>
       <div class="modal-body">
         <div class="invite-summary">
@@ -45,11 +45,11 @@
           <div class="muted small" id="invite-guest-id">-</div>
           <div class="muted small" id="invite-guest-code">-</div>
         </div>
-        <p class="muted small">Press Enter or click print to generate the 80mm badge.</p>
+        <p class="muted small">برای چاپ کارت، Enter یا گزینه چاپ را بزنید.</p>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn ghost" data-invite-entry-close>Cancel</button>
-        <button type="button" class="btn primary" id="invite-print-btn">Print</button>
+        <button type="button" class="btn ghost" data-invite-entry-close>لغو</button>
+        <button type="button" class="btn primary" id="invite-print-btn">چاپ کارت</button>
       </div>
     </div>
   </div>
@@ -57,14 +57,14 @@
   <div id="invite-exited-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invite-exited-title">
     <div class="modal-card" style="max-width:420px;">
       <div class="modal-header">
-        <h3 id="invite-exited-title">Guest has left</h3>
+    <h3 id="invite-exited-title">مهمان مراسم را ترک کرده است</h3>
         <button type="button" class="icon-btn" data-invite-exited-close aria-label="Close exit modal">X</button>
       </div>
       <div class="modal-body">
         <p id="invite-exited-message" class="muted"></p>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn primary" data-invite-exited-close>OK</button>
+        <button type="button" class="btn primary" data-invite-exited-close>تأیید</button>
       </div>
     </div>
   </div>
@@ -102,10 +102,13 @@
       justify-content: flex-end;
       margin-top: 4px;
     }
-    #tab-invite .invite-log-print-btn {
-      padding: 4px 10px;
-      font-size: 13px;
-      border-radius: 8px;
+      #tab-invite .invite-log-print-btn {
+        padding: 4px 10px;
+        font-size: 13px;
+        border-radius: 8px;
+      }
+    #tab-invite .card + .card {
+      margin-top: 20px;
     }
     #tab-invite .invite-log.enter {
       background: #e5f9ed;
@@ -272,11 +275,11 @@
       let loading = false;
 
       const statusLabels = {
-        enter: "Entered",
-        exit: "Exited",
-        spam: "Spam scan",
-        more_exit: "Second exit",
-        not_found: "Not found"
+        enter: "ورود",
+        exit: "خروج",
+        spam: "اسکن تکراری",
+        more_exit: "خروج دوباره",
+        not_found: "یافت نشد"
       };
 
       const toneByOutcome = {

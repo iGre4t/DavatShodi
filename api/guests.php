@@ -95,6 +95,7 @@ if ($method === 'POST') {
         }
         $now = createNowTime();
         $nowString = $now->format('Y-m-d H:i:s');
+        $nowShamsi = formatPersianDateTime($now);
         $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, [$activeEventSlug]);
         if ($match === null) {
             $activeEventName = (string)($store['events'][$activeEventIndex]['name'] ?? '');
@@ -136,7 +137,7 @@ if ($method === 'POST') {
         $message = '';
 
         if ($entered === '') {
-            $guest['date_entered'] = $nowString;
+            $guest['date_entered'] = $nowShamsi;
             $outcome = 'enter';
             $message = 'Guest marked as entered.';
         } elseif ($exited !== '') {
@@ -148,7 +149,7 @@ if ($method === 'POST') {
                 ? (($now->getTimestamp() - $enteredAt->getTimestamp()) / 60)
                 : 10;
             if ($minutesSinceEnter >= 5) {
-                $guest['date_exited'] = $nowString;
+                $guest['date_exited'] = $nowShamsi;
                 $outcome = 'exit';
                 $message = 'Guest marked as exited.';
             } else {
@@ -715,6 +716,26 @@ function createNowTime(): DateTimeImmutable
 {
     $tzName = date_default_timezone_get() ?: 'Asia/Tehran';
     return new DateTimeImmutable('now', new DateTimeZone($tzName));
+}
+
+function formatPersianDateTime(DateTimeInterface $date): string
+{
+    if (!class_exists('IntlDateFormatter')) {
+        return $date->format('Y/m/d H:i:s');
+    }
+    $formatter = new IntlDateFormatter(
+        'fa_IR@calendar=persian;numbers=latn',
+        IntlDateFormatter::NONE,
+        IntlDateFormatter::NONE,
+        $date->getTimezone(),
+        IntlDateFormatter::TRADITIONAL,
+        'yyyy/MM/dd HH:mm:ss'
+    );
+    $formatted = $formatter->format($date);
+    if (!is_string($formatted) || $formatted === false) {
+        return $date->format('Y/m/d H:i:s');
+    }
+    return normalizeDateDigits($formatted);
 }
 
 function parseDateTimeValue(string $value, DateTimeZone $tz): ?DateTimeImmutable

@@ -179,7 +179,7 @@ $accountEmail = $currentUser['email'] ?? '';
             data-external-target="draw.php"
             title="Jump to draw page"
           >
-            <span class="nav-icon ri ri-poker-clubs-line" aria-hidden="true"></span>
+            <span class="nav-icon ri ri-ticket-2-line" aria-hidden="true"></span>
             <span>Draw Pot</span>
           </button>
           <button class="nav-item" data-tab="winners">
