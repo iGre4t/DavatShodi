@@ -2,10 +2,9 @@
     <div class="card">
       <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
         <div>
-          <h3>دعوت</h3>
-          <p class="muted small">کد ملی مهمان را وارد کنید تا برای مراسم آماده شود.</p>
+          <h3>اطلاعات ورود</h3>
+          <p class="muted small">کد ملی مهمان را وارد کنید یا اسکن کنید.</p>
         </div>
-        <button type="button" class="btn ghost" id="invite-refresh">تازه‌سازی</button>
       </div>
       <form id="invite-form" class="form" autocomplete="off">
         <label class="field standard-width">
@@ -319,7 +318,6 @@
       const inviteForm = document.getElementById("invite-form");
       const statusBox = document.getElementById("invite-status");
       const logList = document.getElementById("invite-log-list");
-      const refreshButton = document.getElementById("invite-refresh");
       const entryModal = document.getElementById("invite-entry-modal");
       const exitModal = document.getElementById("invite-exited-modal");
       const entryCloseButtons = entryModal ? entryModal.querySelectorAll("[data-invite-entry-close]") : [];
@@ -361,7 +359,7 @@
 
       const messageTranslations = {
         "Guest marked as entered.": "مهمان وارد شده",
-        "Guest marked as exited.": "مهمان خروج کرده",
+        "Guest marked as exited.": "مهمان خارج شده",
         "Repeated scan too soon after entry.": "اسکن تکراری ثبت شد",
         "Guest already exited earlier.": "مهمان قبلاً خارج شده بود.",
         "National ID not found in the active event list.": "کد ملی در فهرست فعال یافت نشد."
@@ -731,8 +729,10 @@
             showSnackbar("اسکن تکراری ثبت شد.");
           } else if (outcome === "more_exit") {
           const exitedParts = guest?.date_exited ? formatTimestampParts(guest.date_exited) : null;
-          const exitedAt = exitedParts ? `${exitedParts.dateText} ${exitedParts.timeText}` : "";
-          const exitMessage = `کاربر ${guestDisplayName} قبلاً در ${exitedAt || "این جلسه"} خارج شده بود.`;
+          const hasExit = Boolean(exitedParts);
+          const exitMessage = hasExit
+            ? `کاربر ${guestDisplayName} در ${exitedParts.dateText}، ساعت ${exitedParts.timeText} خارج شده بود.`
+            : `کاربر ${guestDisplayName} قبلاً در این جلسه خارج شده بود.`;
           setStatus("مهمان قبلاً خارج شده بود.", tone || "warn");
           openExitedModal(exitMessage);
           } else if (outcome === "not_found") {
@@ -776,11 +776,6 @@
           setStatus(invalidMsg, "warn");
           showSnackbar(invalidMsg);
         }
-      });
-
-      refreshButton?.addEventListener("click", () => {
-        loadInviteData();
-        setStatus("لیست تازه شد.", "info");
       });
 
       printButton?.addEventListener("click", () => triggerPrint());
