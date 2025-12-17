@@ -536,6 +536,28 @@ if ($action !== '') {
       }
     }
 
-    fetchEvents();
+    let eventsFetchTriggered = false;
+    function triggerEventsLoad() {
+      if (eventsFetchTriggered) {
+        return;
+      }
+      eventsFetchTriggered = true;
+      fetchEvents();
+    }
+
+    const eventsTabElement = document.getElementById('tab-events');
+    if (eventsTabElement) {
+      const observer = new MutationObserver(() => {
+        if (eventsTabElement.classList.contains('active')) {
+          triggerEventsLoad();
+          observer.disconnect();
+        }
+      });
+      observer.observe(eventsTabElement, { attributes: true, attributeFilter: ['class'] });
+      if (eventsTabElement.classList.contains('active')) {
+        triggerEventsLoad();
+        observer.disconnect();
+      }
+    }
   })();
 </script>
