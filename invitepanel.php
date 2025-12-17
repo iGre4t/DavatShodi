@@ -208,18 +208,18 @@
         margin: 0;
         padding: 0;
       }
-      body > *:not(#invite-print-area) {
-        display: none !important;
-      }
-      #invite-print-area {
-        display: block;
-        position: relative;
-        width: 70mm;
-        height: 70mm;
-        margin: 0;
+      body * {
+        visibility: hidden !important;
       }
       #invite-print-area, #invite-print-area * {
         visibility: visible !important;
+      }
+      #invite-print-area {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        width: 70mm;
+        height: 70mm;
       }
     }
   </style>

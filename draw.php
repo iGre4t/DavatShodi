@@ -15,6 +15,11 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
+const DRAW_TIMEZONE = 'Asia/Tehran';
+const ENTRY_START_HOUR = 5;
+const ENTRY_START_MINUTE = 0;
+const ENTRY_END_HOUR = 21;
+const ENTRY_END_MINUTE = 15;
 function loadPanelSettings(): array
 {
   $payload = loadJsonPayload(STORE_PATH);
@@ -48,6 +53,117 @@ function formatSiteIconUrlForHtml(string $value): string
     return $trimmed;
   }
   return "./{$trimmed}";
+}
+
+function convertJalaliToGregorian(int $jy, int $jm, int $jd): array
+{
+  $jy += 1595;
+  $days = -355668 + (365 * $jy) + (int)(($jy / 33) * 8) + (int)((($jy % 33) + 3) / 4) + $jd;
+  if ($jm < 7) {
+    $days += ($jm - 1) * 31;
+  } else {
+    $days += (($jm - 7) * 30) + 186;
+  }
+  $gy = 400 * (int)($days / 146097);
+  $days %= 146097;
+  if ($days > 36524) {
+    $days--;
+    $gy += 100 * (int)($days / 36524);
+    $days %= 36524;
+    if ($days >= 365) {
+      $days++;
+    }
+  }
+  $gy += 4 * (int)($days / 1461);
+  $days %= 1461;
+  if ($days > 365) {
+    $gy += (int)((($days - 1) / 365));
+    $days = ($days - 1) % 365;
+  }
+  $gd = $days + 1;
+  $gregorianMonthDays = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if ((($gy % 4) === 0 && ($gy % 100) !== 0) || ($gy % 400) === 0) {
+    $gregorianMonthDays[2] = 29;
+  }
+  $gm = 1;
+  while ($gm <= 12 && $gd > $gregorianMonthDays[$gm]) {
+    $gd -= $gregorianMonthDays[$gm];
+    $gm++;
+  }
+  return [$gy, $gm, $gd];
+}
+
+function createDateTimeFromJalali(int $jy, int $jm, int $jd, int $hour, int $minute, int $second, ?DateTimeZone $timezone = null): ?DateTime
+{
+  [$gy, $gm, $gd] = convertJalaliToGregorian($jy, $jm, $jd);
+  $timezone = $timezone ?: new DateTimeZone(DRAW_TIMEZONE);
+  $formatted = sprintf('%04d-%02d-%02d %02d:%02d:%02d', $gy, $gm, $gd, $hour, $minute, $second);
+  $dt = DateTime::createFromFormat('Y-m-d H:i:s', $formatted, $timezone);
+  if ($dt === false) {
+    return null;
+  }
+  return $dt;
+}
+
+function parseGuestEntryDateTime(string $value): ?DateTime
+{
+  $clean = trim($value);
+  if ($clean === '') {
+    return null;
+  }
+  $timezone = new DateTimeZone(DRAW_TIMEZONE);
+  $formats = [
+    'Y-m-d H:i:s',
+    'Y-m-d H:i',
+    'Y-m-d',
+    'Y/m/d H:i:s',
+    'Y/m/d H:i',
+    'Y/m/d'
+  ];
+  foreach ($formats as $format) {
+    $dt = DateTime::createFromFormat($format, $clean, $timezone);
+    if ($dt !== false && $dt->format($format) === $clean) {
+      return $dt;
+    }
+  }
+  if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/', $clean)) {
+    try {
+      return new DateTime($clean, $timezone);
+    } catch (\Throwable $exception) {
+      // fall through to jalali parsing
+    }
+  }
+  if (preg_match('/^(\d{4})[\\/\\-](\d{1,2})[\\/\\-](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/', $clean, $matches)) {
+    $hour = isset($matches[4]) ? (int)$matches[4] : 0;
+    $minute = isset($matches[5]) ? (int)$matches[5] : 0;
+    $second = isset($matches[6]) ? (int)$matches[6] : 0;
+    return createDateTimeFromJalali((int)$matches[1], (int)$matches[2], (int)$matches[3], $hour, $minute, $second, $timezone);
+  }
+  return null;
+}
+
+function getEventEntryWindow(array $event): ?array
+{
+  $dateValue = trim((string)($event['date'] ?? ''));
+  if ($dateValue === '') {
+    return null;
+  }
+  if (!preg_match('/^(\d{4})[\\/\\-](\d{1,2})[\\/\\-](\d{1,2})$/', $dateValue, $matches)) {
+    return null;
+  }
+  $timezone = new DateTimeZone(DRAW_TIMEZONE);
+  $start = createDateTimeFromJalali((int)$matches[1], (int)$matches[2], (int)$matches[3], ENTRY_START_HOUR, ENTRY_START_MINUTE, 0, $timezone);
+  $end = createDateTimeFromJalali((int)$matches[1], (int)$matches[2], (int)$matches[3], ENTRY_END_HOUR, ENTRY_END_MINUTE, 0, $timezone);
+  if ($start === null || $end === null) {
+    return null;
+  }
+  return [$start, $end];
+}
+
+function isWithinEntryWindow(array $window, DateTime $entry): bool
+{
+  [$start, $end] = $window;
+  return $entry >= $start && $entry <= $end;
 }
 
 $panelSettings = loadPanelSettings();
@@ -707,6 +823,10 @@ function buildGuestPool(string $storePath): array
       continue;
     }
     $eventName = trim((string)($event['name'] ?? 'event'));
+    $entryWindow = getEventEntryWindow($event);
+    if ($entryWindow === null) {
+      continue;
+    }
     $guests = $event['guests'] ?? [];
     foreach ($guests as $guest) {
       if (!is_array($guest)) {
@@ -715,6 +835,10 @@ function buildGuestPool(string $storePath): array
       $entered = trim((string)($guest['date_entered'] ?? ''));
       $exited = trim((string)($guest['date_exited'] ?? ''));
       if ($entered === '' || $exited !== '') {
+        continue;
+      }
+      $entryDateTime = parseGuestEntryDateTime($entered);
+      if ($entryDateTime === null || !isWithinEntryWindow($entryWindow, $entryDateTime)) {
         continue;
       }
       $code = preg_replace('/\D+/', '', (string)($guest['invite_code'] ?? ''));

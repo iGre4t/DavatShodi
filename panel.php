@@ -173,10 +173,15 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-gift-line" aria-hidden="true"></span>
             <span>Prizes</span>
           </button>
-          <a class="nav-item" href="draw.php" title="Jump to draw page">
-            <span class="nav-icon ri ri-dice-line" aria-hidden="true"></span>
+          <button
+            type="button"
+            class="nav-item"
+            onclick="window.location.href='draw.php'"
+            title="Jump to draw page"
+          >
+            <span class="nav-icon ri ri-dice-5-line" aria-hidden="true"></span>
             <span>Draw Pot</span>
-          </a>
+          </button>
           <button class="nav-item" data-tab="winners">
             <span class="nav-icon ri ri-trophy-line" aria-hidden="true"></span>
             <span>Winners</span>
@@ -191,7 +196,12 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-terminal-box-line" aria-hidden="true"></span>
             <span>Developer Settings</span>
           </button>
-          <button class="nav-item" data-tab="invite">
+          <button
+            type="button"
+            class="nav-item"
+            onclick="window.location.href='invite.php'"
+            title="Jump to invite page"
+          >
             <span class="nav-icon ri ri-mail-add-line" aria-hidden="true"></span>
             <span>Invite</span>
           </button>
