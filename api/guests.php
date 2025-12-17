@@ -1155,6 +1155,7 @@ function createGuestInvitePages(array $guests): void
       }
       .code {
         letter-spacing: 0.3em;
+        font-size: clamp(1.8rem, 4vw, 2.4rem);
       }
       .name {
         font-size: clamp(1.5rem, 4vw, 1.9rem);
