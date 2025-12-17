@@ -138,12 +138,17 @@ if ($action !== '') {
       <div>
         <h3>Prizes</h3>
       </div>
+    </div>
+    <div
+      class="prize-add-row"
+      style="display:flex; justify-content:flex-end; direction:rtl; padding:0 0 12px 0; gap:12px; flex-wrap:wrap;"
+    >
       <form
         id="prize-add-form"
         class="form"
-        style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-inline-start:auto; direction:rtl;"
+        style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; min-width:320px;"
       >
-        <label class="field standard-width" style="flex:1 1 240px; direction: rtl; text-align: right;">
+        <label class="field standard-width" style="flex:1 1 240px; direction: rtl;">
           <span>Prize name</span>
           <input
             id="prize-name"
@@ -265,14 +270,14 @@ if ($action !== '') {
       });
     }
 
-    tableBody.addEventListener('focusin', (event) => {
+    listBody.addEventListener('focusin', (event) => {
       const input = event.target.closest('.prize-inline-input');
       if (input) {
         input.setAttribute('data-original', input.value ?? '');
       }
     });
 
-    tableBody.addEventListener('focusout', (event) => {
+    listBody.addEventListener('focusout', (event) => {
       const input = event.target.closest('.prize-inline-input');
       if (!input) {
         return;
@@ -284,7 +289,7 @@ if ($action !== '') {
       handleInlineUpdate(input);
     });
 
-    tableBody.addEventListener('keydown', (event) => {
+    listBody.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') {
         return;
       }
