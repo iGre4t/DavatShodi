@@ -5,11 +5,11 @@
           <h3>دعوت</h3>
           <p class="muted small">کد ملی مهمان را وارد کنید تا برای مراسم آماده شود.</p>
         </div>
-      <button type="button" class="btn ghost" id="invite-refresh">تازه‌سازی</button>
+        <button type="button" class="btn ghost" id="invite-refresh">تازه‌سازی</button>
       </div>
       <form id="invite-form" class="form" autocomplete="off">
         <label class="field standard-width">
-          <span>National ID (10 digits)</span>
+          <span>کد ملی (۱۰ رقم)</span>
       <input
           id="invite-national-id"
           name="national_id"
@@ -309,6 +309,14 @@
         not_found: "یافت نشد"
       };
 
+      const messageTranslations = {
+        "Guest marked as entered.": "مهمان وارد شده",
+        "Guest marked as exited.": "مهمان خروج کرده",
+        "Repeated scan too soon after entry.": "اسکن تکراری ثبت شد",
+        "Guest already exited earlier.": "مهمان قبلاً خارج شده بود.",
+        "National ID not found in the active event list.": "کد ملی در فهرست فعال یافت نشد."
+      };
+
       const toneByOutcome = {
         enter: "success",
         exit: "info",
@@ -331,12 +339,37 @@
         }
       }
 
-      function formatTimestamp(value) {
-        if (!value) return "";
+      const logDateFormatter = new Intl.DateTimeFormat("fa-IR", {
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      });
+      const logTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      });
+
+      function formatTimestampParts(value) {
+        if (!value) return null;
         const iso = value.includes("T") ? value : value.replace(" ", "T");
         const dt = new Date(iso);
-        if (Number.isNaN(dt.getTime())) return value;
-        return dt.toLocaleString();
+        if (Number.isNaN(dt.getTime())) return null;
+        return {
+          dateText: logDateFormatter.format(dt),
+          timeText: logTimeFormatter.format(dt)
+        };
+      }
+
+      function formatTimestamp(value) {
+        const parts = formatTimestampParts(value);
+        if (!parts) return "";
+        return `${parts.dateText} ${parts.timeText}`;
+      }
+
+      function translateLogMessage(value) {
+        if (!value) return "";
+        return messageTranslations[value] || value;
       }
 
       function parseEntryTimestamp(value) {
@@ -415,7 +448,9 @@
           const title = document.createElement("div");
           title.className = "invite-log-title";
           const label = statusLabels[type] || "به‌روزرسانی";
-          title.textContent = log?.event_name ? `${label} · ${log.event_name}` : label;
+          const labelWithName =
+            log?.guest_name && label === statusLabels.enter ? `${label} · ${log.guest_name}` : label;
+          title.textContent = labelWithName;
 
           const infoGrid = document.createElement("div");
           infoGrid.className = "invite-log-grid";
@@ -435,17 +470,18 @@
             infoGrid.appendChild(row);
           };
 
-          addRow("نام مهمان", log?.guest_name || "مهمان");
           if (log?.invite_code) {
             addRow("کد قرعه‌کشی", log.invite_code);
           }
           addRow("کد ملی", log?.national_id);
-          if (log?.timestamp) {
-            addRow("زمان", formatTimestamp(log.timestamp));
+          const timestampParts = formatTimestampParts(log?.timestamp);
+          if (timestampParts) {
+            addRow("تاریخ ورود", timestampParts.dateText);
+            addRow("زمان ورود", timestampParts.timeText);
           }
-          addRow("رویداد", log?.event_name);
-          if (log?.message) {
-            addRow("یادداشت", log.message);
+          const messageText = translateLogMessage(log?.message);
+          if (messageText) {
+            addRow("پیام", messageText);
           }
 
           container.appendChild(title);
@@ -499,7 +535,7 @@
       }
 
       function updatePrintArea(guest = {}) {
-        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "Guest";
+        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (printNameEl) printNameEl.textContent = fullName;
         if (printCodeEl) printCodeEl.textContent = guest.invite_code || "----";
         updateEntryInfo(guest.date_entered);
@@ -507,7 +543,7 @@
 
       function openEntryModal(guest = {}) {
         lastGuest = guest;
-        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "Guest";
+        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (guestNameEl) guestNameEl.textContent = fullName;
         if (guestIdEl) guestIdEl.textContent = guest.national_id ? `کد ملی: ${guest.national_id}` : "";
         if (guestCodeEl) guestCodeEl.textContent = guest.invite_code ? `کد یکتا: ${guest.invite_code}` : "";
@@ -518,7 +554,7 @@
 
       function openExitedModal(message) {
         if (exitedMessageEl) {
-          exitedMessageEl.textContent = message || "Guest has already exited.";
+          exitedMessageEl.textContent = message || "مهمان قبلاً خارج شده است.";
         }
         showModal(exitModal);
       }
@@ -575,7 +611,8 @@
             setStatus("اسکن تکراری ثبت شد (کمتر از ۵ دقیقه).", tone || "warn");
             window.showDefaultToast?.({ message: "اسکن تکراری ذخیره شد." });
           } else if (outcome === "more_exit") {
-            const exitedAt = guest?.date_exited ? formatTimestamp(guest.date_exited) : "";
+            const exitedParts = guest?.date_exited ? formatTimestampParts(guest.date_exited) : null;
+            const exitedAt = exitedParts ? `${exitedParts.dateText} ${exitedParts.timeText}` : "";
             setStatus("مهمان قبلاً خارج شده بود.", tone || "warn");
             openExitedModal(`کاربر قبلاً در ${exitedAt || "این جلسه"} خارج شده بود.`);
           } else if (outcome === "not_found") {
@@ -618,10 +655,10 @@
         }
       });
 
-        refreshButton?.addEventListener("click", () => {
-          loadInviteData();
-          setStatus("لیست تازه شد.", "info");
-        });
+      refreshButton?.addEventListener("click", () => {
+        loadInviteData();
+        setStatus("لیست تازه شد.", "info");
+      });
 
       printButton?.addEventListener("click", () => triggerPrint());
 

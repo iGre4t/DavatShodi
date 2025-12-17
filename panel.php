@@ -112,13 +112,13 @@ $accountEmail = $currentUser['email'] ?? '';
   </head>
   <body>
     <!-- Loader remains until app.js finishes initializing the view and hides this element. -->
-    <div id="app-loader" role="status" aria-live="polite" aria-label="Loading panel...">
+    <div id="app-loader" role="status" aria-live="polite" aria-label="در حال بارگذاری پنل...">
           <div class="loader-card">
         <div class="loader-ring" aria-hidden="true">
           <span></span>
           <span></span>
         </div>
-        <p class="loader-title">Loading...</p>
+        <p class="loader-title">در حال بارگذاری...</p>
       </div>
     </div>
     <!-- The main application shell; app.js toggles tabs within this container. -->
@@ -147,31 +147,31 @@ $accountEmail = $currentUser['email'] ?? '';
           <!-- Home expands the KPI overview; app.js also controls the headline text for this tab. -->
           <button class="nav-item active" data-tab="home" aria-current="page">
             <span class="nav-icon ri ri-home-4-line" aria-hidden="true"></span>
-            <span>Home</span>
+            <span>خانه</span>
           </button>
           <!-- Users tab is driven by app.js: it fetches the user list, wires up add/edit/delete modals, and calls api/data.php with add_user/update_user/delete_user actions. -->
           <button class="nav-item" data-tab="users">
             <span class="nav-icon ri ri-user-3-line" aria-hidden="true"></span>
-            <span>Users</span>
+            <span>کاربران</span>
           </button>
           <!-- Account tab contains the static forms that post to update_user_* actions. -->
           <button class="nav-item" data-tab="settings">
             <span class="nav-icon ri ri-user-settings-line" aria-hidden="true"></span>
-            <span>Account Settings</span>
+            <span>تنظیمات حساب</span>
           </button>
           <div class="nav-separator" aria-hidden="true"></div>
           <!-- Guests tab is routed to guests.php; content will be added later. -->
           <button class="nav-item" data-tab="guests">
             <span class="nav-icon ri ri-team-line" aria-hidden="true"></span>
-            <span>List of guests</span>
+            <span>لیست میهمانان</span>
           </button>
           <button class="nav-item" data-tab="events">
             <span class="nav-icon ri ri-calendar-event-line" aria-hidden="true"></span>
-            <span>Events</span>
+            <span>رویدادها</span>
           </button>
           <button class="nav-item" data-tab="prizes">
             <span class="nav-icon ri ri-gift-line" aria-hidden="true"></span>
-            <span>Prizes</span>
+            <span>جوایز</span>
           </button>
           <button
             type="button"
@@ -184,17 +184,7 @@ $accountEmail = $currentUser['email'] ?? '';
           </button>
           <button class="nav-item" data-tab="winners">
             <span class="nav-icon ri ri-trophy-line" aria-hidden="true"></span>
-            <span>Winners</span>
-          </button>
-          <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
-          <button class="nav-item" data-tab="gallery">
-            <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
-            <span>Photo Gallery</span>
-          </button>
-          <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
-          <button class="nav-item" data-tab="devsettings">
-            <span class="nav-icon ri ri-terminal-box-line" aria-hidden="true"></span>
-            <span>Developer Settings</span>
+            <span>برندگان</span>
           </button>
           <button
             type="button"
@@ -205,6 +195,16 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-mail-add-line" aria-hidden="true"></span>
             <span>Invite</span>
           </button>
+          <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
+          <button class="nav-item" data-tab="gallery">
+            <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
+            <span>گالری عکس</span>
+          </button>
+          <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
+          <button class="nav-item" data-tab="devsettings">
+            <span class="nav-icon ri ri-terminal-box-line" aria-hidden="true"></span>
+            <span>تنظیمات توسعه‌دهنده</span>
+          </button>
         </nav>
 
         <!-- Logout link hits logout.php directly to end the session without JavaScript. -->
@@ -212,11 +212,11 @@ $accountEmail = $currentUser['email'] ?? '';
           <a
             class="nav-item logout-nav"
             href="logout.php"
-            aria-label="Log out of the system"
-            title="Log out of the system"
+            aria-label="خروج از سیستم"
+            title="خروج از سیستم"
           >
             <span class="nav-icon ri ri-logout-box-line" aria-hidden="true"></span>
-            <span>Logout from system</span>
+            <span>خروج از سیستم</span>
           </a>
         </div>
       </aside>
@@ -224,8 +224,8 @@ $accountEmail = $currentUser['email'] ?? '';
       <main class="content">
         <!-- Top bar displays the current tab title and hooks into sidebar toggle + live clock logic defined in app.js. -->
         <header class="topbar">
-          <button id="sidebarToggle" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">≡</button>
-          <h2 id="page-title">Home</h2>
+          <button id="sidebarToggle" class="icon-btn" title="نمایش/پنهان کردن نوار کناری" aria-label="نمایش/پنهان کردن نوار کناری">≡</button>
+          <h2 id="page-title">خانه</h2>
           <div class="spacer"></div>
           <div id="live-clock" class="clock" aria-live="polite"></div>
         </header>
@@ -234,21 +234,21 @@ $accountEmail = $currentUser['email'] ?? '';
         <section id="tab-home" class="tab active">
           <div class="cards">
             <div class="card kpi">
-              <div class="kpi-label">Total users</div>
+              <div class="kpi-label">مجموع کاربران</div>
               <div class="kpi-value" id="kpi-users">0</div>
             </div>
             <div class="card kpi">
-              <div class="kpi-label">Gallery photos</div>
+              <div class="kpi-label">عکس‌های گالری</div>
               <div class="kpi-value" id="kpi-photos">0</div>
             </div>
             <div class="card kpi">
-              <div class="kpi-label">Database status</div>
-              <div class="kpi-value db-status" id="kpi-db-status">Checking...</div>
+              <div class="kpi-label">وضعیت پایگاه داده</div>
+              <div class="kpi-value db-status" id="kpi-db-status">در حال بررسی...</div>
             </div>
           </div>
           <div class="card">
-            <h3>Front-end release</h3>
-            <p class="muted">This front-end release runs entirely in the browser and does not rely on a backend or logins.</p>
+            <h3>نسخه رابط کاربری</h3>
+            <p class="muted">این نسخه از رابط کاربری کاملاً در مرورگر اجرا می‌شود و به بک‌اند یا ورود کاربر وابسته نیست.</p>
           </div>
         </section>
 
@@ -256,21 +256,21 @@ $accountEmail = $currentUser['email'] ?? '';
         <section id="tab-users" class="tab">
           <div class="card">
             <div class="table-header">
-              <h3>Users</h3>
+              <h3>کاربران</h3>
               <!-- JS binds #add-user to open the management modal in add mode. -->
-              <button class="btn primary" id="add-user">Add user</button>
+              <button class="btn primary" id="add-user">افزودن کاربر</button>
             </div>
             <div class="table-wrapper">
               <table>
                 <thead>
                   <tr>
-                    <th>User unique code</th>
-                    <th>Full name</th>
-                    <th>Phone number</th>
-                    <th>Work ID</th>
-                    <th>National ID</th>
-                    <th>Email</th>
-                    <th>Action</th>
+                    <th>کد یکتای کاربر</th>
+                    <th>نام کامل</th>
+                    <th>شماره تلفن</th>
+                    <th>کد پرسنلی</th>
+                    <th>کد ملی</th>
+                    <th>ایمیل</th>
+                    <th>عملیات</th>
                   </tr>
                 </thead>
                 <!-- Rows are injected by app.js -> renderUsers(), keeping USER_DB as the source of truth. -->
@@ -285,72 +285,72 @@ $accountEmail = $currentUser['email'] ?? '';
           <div class="settings-grid">
             <div class="card settings-section">
               <div class="section-header">
-                <h3>Personal information</h3>
+                <h3>اطلاعات شخصی</h3>
               </div>
               <!-- Updates the logged-in user's fullname through the update_user_personal API action. -->
               <form id="personal-info-form" class="form">
                 <label class="field standard-width">
-                  <span>Full name</span>
+                  <span>نام کامل</span>
                   <input id="personal-fullname" name="fullname" type="text" value="<?= htmlspecialchars($personalFullname, ENT_QUOTES, 'UTF-8') ?>" required />
                 </label>
                 <label class="field standard-width">
-                  <span>ID number</span>
+                  <span>شماره ملی</span>
                   <input type="text" value="<?= htmlspecialchars($personalIdNumber, ENT_QUOTES, 'UTF-8') ?>" readonly />
                 </label>
                 <label class="field standard-width">
-                  <span>Work ID</span>
+                  <span>کد پرسنلی</span>
                   <input type="text" value="<?= htmlspecialchars($personalWorkId, ENT_QUOTES, 'UTF-8') ?>" readonly />
                 </label>
                 <div class="section-footer">
-                  <button type="submit" class="btn primary">Save</button>
+                  <button type="submit" class="btn primary">ذخیره</button>
                 </div>
               </form>
             </div>
 
             <div class="card settings-section">
               <div class="section-header">
-                <h3>Account information</h3>
+                <h3>اطلاعات حساب</h3>
               </div>
               <!-- Sends username/phone/email edits to update_user_account so the backend can validate and refresh the session. -->
               <form id="account-info-form" class="form">
                 <label class="field standard-width">
-                  <span>Username</span>
+                  <span>نام کاربری</span>
                   <input id="account-username" name="username" type="text" value="<?= htmlspecialchars($accountUsername, ENT_QUOTES, 'UTF-8') ?>" required />
                 </label>
                 <label class="field standard-width">
-                  <span>Phone number</span>
+                  <span>شماره تلفن</span>
                   <input id="account-phone" name="phone" type="text" value="<?= htmlspecialchars($accountPhone, ENT_QUOTES, 'UTF-8') ?>" />
                 </label>
                 <label class="field standard-width">
-                  <span>Email</span>
+                  <span>ایمیل</span>
                   <input id="account-email" name="email" type="email" value="<?= htmlspecialchars($accountEmail, ENT_QUOTES, 'UTF-8') ?>" />
                 </label>
                 <div class="section-footer">
-                  <button type="submit" class="btn primary">Save</button>
+                  <button type="submit" class="btn primary">ذخیره</button>
                 </div>
               </form>
             </div>
 
             <div class="card settings-section">
               <div class="section-header">
-                <h3>Privacy</h3>
+                <h3>حریم خصوصی</h3>
               </div>
               <!-- Privacy form posts current+new password to update_user_password for validation before persisting. -->
               <form id="privacy-form" class="form">
                 <label class="field standard-width">
-                  <span>Current password</span>
+                  <span>رمز عبور فعلی</span>
                   <input id="current-password" name="current_password" type="password" autocomplete="current-password" />
                 </label>
                 <label class="field standard-width">
-                  <span>New password</span>
+                  <span>رمز عبور جدید</span>
                   <input id="new-password" name="new_password" type="password" autocomplete="new-password" />
                 </label>
                 <label class="field standard-width">
-                  <span>Confirm new password</span>
+                  <span>تأیید رمز عبور جدید</span>
                   <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" />
                 </label>
                 <div class="section-footer">
-                  <button type="submit" class="btn primary">Save</button>
+                  <button type="submit" class="btn primary">ذخیره</button>
                 </div>
               </form>
             </div>
@@ -368,20 +368,20 @@ $accountEmail = $currentUser['email'] ?? '';
         <section id="tab-devsettings" class="tab">
             <div class="sub-layout" data-sub-layout>
               <aside class="sub-sidebar">
-                <div class="sub-header">Developer settings</div>
-                <div class="sub-nav">
-                  <button type="button" class="sub-item active" data-pane="panel-settings">
-                    General
-                  </button>
-                  <button type="button" class="sub-item" data-pane="appearance">
-                    Appearance
-                  </button>
-                  <button type="button" class="sub-item" data-pane="beta-test">
-                    Beta Test
-                  </button>
-                  <button type="button" class="sub-item" data-pane="database">
-                    Database
-                  </button>
+            <div class="sub-header">تنظیمات توسعه‌دهنده</div>
+            <div class="sub-nav">
+              <button type="button" class="sub-item active" data-pane="panel-settings">
+                عمومی
+              </button>
+              <button type="button" class="sub-item" data-pane="appearance">
+                ظاهر
+              </button>
+              <button type="button" class="sub-item" data-pane="beta-test">
+                بتا تست
+              </button>
+              <button type="button" class="sub-item" data-pane="database">
+                پایگاه داده
+              </button>
                 </div>
               </aside>
               <div class="sub-content">
@@ -393,56 +393,56 @@ $accountEmail = $currentUser['email'] ?? '';
                 <div class="sub-pane" data-pane="appearance">
                   <div class="card settings-section">
                     <div class="section-header">
-                      <h3>General appearance setting</h3>
+                      <h3>تنظیمات ظاهری عمومی</h3>
                     </div>
                     <div class="form grid one-column">
                       <label class="field">
-                        <span>Panel title</span>
+                        <span>عنوان پنل</span>
                         <input id="dev-panel-name" type="text" value="<?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?>" />
                       </label>
                       <label class="field icon-field">
-                        <span>Site icon</span>
+                        <span>آیکون سایت</span>
                         <div class="photo-uploader" data-site-icon-uploader>
                           <div class="photo-preview" data-site-icon-preview aria-live="polite">
-                            <img data-site-icon-image class="hidden" alt="Selected site icon preview" />
-                            <div class="photo-placeholder" data-site-icon-placeholder>No image</div>
+                            <img data-site-icon-image class="hidden" alt="پیش‌نمایش آیکون انتخاب‌شده" />
+                            <div class="photo-placeholder" data-site-icon-placeholder>تصویری نیست</div>
                           </div>
                           <div class="photo-actions">
                             <button
                               type="button"
                               class="btn ghost small"
                               data-open-photo-chooser
-                              aria-label="Add site icon from photo library"
+                              aria-label="افزودن آیکون سایت از کتابخانه عکس"
                             >
-                              Add photo
+                              افزودن عکس
                             </button>
                             <button
                               type="button"
                               class="btn ghost small"
                               data-clear-site-icon
-                              aria-label="Clear selected site icon"
+                              aria-label="پاک کردن آیکون سایت انتخاب‌شده"
                             >
-                              Clear
+                              پاک کردن
                             </button>
                           </div>
                         </div>
                       </label>
                     </div>
                     <div class="section-footer">
-                      <button type="button" class="btn primary" id="save-panel-settings">Save panel title</button>
+                      <button type="button" class="btn primary" id="save-panel-settings">ذخیره عنوان پنل</button>
                     </div>
-                    <p class="hint">Update the text shown in the sidebar and browser tab for everyone who loads this panel.</p>
+                    <p class="hint">متن نمایش داده‌شده در نوار کناری و تب مرورگر را برای همه کاربران به‌روز کنید.</p>
                   </div>
                   <div class="card settings-section">
                     <div class="section-header">
-                      <h3>Colors setting</h3>
+                      <h3>تنظیم رنگ‌ها</h3>
                     </div>
                     <div class="appearance-grid">
                       <?php foreach ([
-                        "primary" => "Primary color",
-                        "background" => "Background color",
-                        "text" => "Text color",
-                        "toggle" => "Toggle button color"
+                        "primary" => "رنگ اصلی",
+                        "background" => "رنگ پس‌زمینه",
+                        "text" => "رنگ متن",
+                        "toggle" => "رنگ دکمه تغییر وضعیت"
                       ] as $key => $label): ?>
                         <div class="appearance-row">
                           <span class="appearance-label"><?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?></span>
@@ -451,7 +451,7 @@ $accountEmail = $currentUser['email'] ?? '';
                               type="text"
                               class="appearance-hex-field"
                               data-appearance-hex="<?= $key ?>"
-                              aria-label="<?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?> hex value"
+                              aria-label="<?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?> مقدار هگز"
                               maxlength="7"
                               placeholder="#000000"
                             />
@@ -460,128 +460,126 @@ $accountEmail = $currentUser['email'] ?? '';
                               class="appearance-preview"
                               data-appearance-preview="<?= $key ?>"
                               data-show-appearance-picker="<?= $key ?>"
-                              aria-label="Open color picker for <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?>"
+                              aria-label="باز کردن انتخاب رنگ برای <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?>"
                             ></button>
                             <button
                               type="button"
                               class="btn ghost small"
                               data-show-appearance-picker="<?= $key ?>"
                             >
-                              Pick color
+                              انتخاب رنگ
                             </button>
                           </div>
                         </div>
                       <?php endforeach; ?>
                     </div>
                     <div class="section-footer">
-                      <button type="button" class="btn primary" id="save-appearance-settings">Apply</button>
-                      <button type="button" class="btn ghost" id="reset-appearance-settings">Reset</button>
+                      <button type="button" class="btn primary" id="save-appearance-settings">اعمال</button>
+                      <button type="button" class="btn ghost" id="reset-appearance-settings">بازنشانی</button>
                     </div>
-                    <p class="hint" id="appearance-hint">Fine-tune the UI colors directly from the developer lab.</p>
+                    <p class="hint" id="appearance-hint">رنگ‌های رابط کاربری را مستقیماً از آزمایشگاه توسعه تنظیم کنید.</p>
                   </div>
                 </div>
                 <div class="sub-pane beta-test-pane" data-pane="beta-test" dir="rtl">
                   <div class="card settings-section">
                     <div class="section-header">
-                      <h3>Notifications</h3>
+                      <h3>اطلاع‌رسانی‌ها</h3>
                     </div>
                     <div class="section-footer beta-test-footer">
-                      <button type="button" class="btn secondary" data-test-toast aria-label="Test Toast">
-                        Test Toast
+                      <button type="button" class="btn secondary" data-test-toast aria-label="تست توست">
+                        آزمایش توست
                       </button>
                       <button
                         type="button"
                         class="btn secondary"
                         data-test-snackbar
-                        aria-label="Test Snackbar"
+                        aria-label="تست اسنک‌بار"
                       >
-                        Snackbar Test
+                        تست اسنک‌بار
                       </button>
                       <button
                         type="button"
                         class="btn secondary"
                         data-test-error-snackbar
-                        aria-label="Test Error Snackbar"
+                        aria-label="اسنک‌بار خطا"
                       >
-                        Error Snackbar
+                        اسنک‌بار خطا
                       </button>
                     </div>
-                    <p class="hint">Trigger a toast-style notification for testing.</p>
+                    <p class="hint">نمایش یک اعلان توست برای تست.</p>
                   </div>
                 </div>
                 <div class="sub-pane" data-pane="database">
                   <div class="card settings-section">
                     <div class="section-header">
-                      <h3>Database Import / export</h3>
+                      <h3>واردات / صادرات پایگاه داده</h3>
                     </div>
                     <p class="hint">
-                      Export the current database snapshot, import a previously downloaded file, and configure automated backups
-                      without leaving the panel.
+                      تصویر فعلی پایگاه داده را صادر کنید، فایل قبلی را وارد کنید و پشتیبان‌گیری خودکار را بدون ترک پنل پیکربندی کنید.
                     </p>
                     <div class="form single-column">
                       <label class="field standard-width">
-                        <span>Instant backup</span>
+                        <span>پشتیبان‌گیری فوری</span>
                         <button type="button" class="btn primary full-width" id="instant-backup-btn">
-                          Download backup
+                          دانلود پشتیبان
                         </button>
                       </label>
                       <label class="field standard-width">
-                        <span>Import backup</span>
+                        <span>درون‌ریزی پشتیبان</span>
                         <div class="backup-import-control">
                           <button type="button" class="btn ghost small" id="backup-import-trigger">
-                            Select file
+                            انتخاب فایل
                           </button>
-                          <span id="backup-file-chosen" class="backup-file-chosen">No file selected.</span>
+                          <span id="backup-file-chosen" class="backup-file-chosen">فایلی انتخاب نشده است.</span>
                           <input id="dev-db-backup-file" type="file" accept=".json" class="backup-file-input" hidden />
                         </div>
                       </label>
                     </div>
                     <form id="backup-settings-form" class="form single-column">
                       <label class="field standard-width">
-                        <span>Auto-backup interval (minutes)</span>
+                        <span>فاصله پشتیبان‌گیری خودکار (دقیقه)</span>
                         <input
                           id="auto-backup-interval"
                           type="number"
                           min="0"
-                          placeholder="0 = disabled"
+                          placeholder="۰ = غیرفعال"
                           class="numeric-field"
                         />
                       </label>
                       <label class="field standard-width">
-                        <span>Automatic backup storage limit</span>
+                        <span>حداکثر فضای ذخیره‌سازی پشتیبان خودکار</span>
                         <input
                           id="auto-backup-limit"
                           type="number"
                           min="0"
-                          placeholder="0 = unlimited"
+                          placeholder="۰ = نامحدود"
                           class="numeric-field"
                         />
                       </label>
                       <div class="section-footer auto-backup-actions">
                         <button type="submit" class="btn primary" id="save-backup-settings">
-                          Save auto-backup settings
+                          ذخیره تنظیمات پشتیبان خودکار
                         </button>
                       </div>
                     </form>
                     <p class="hint backup-history-hint">
-                      Backups below include instant snapshots and scheduled copies. Automatic versions respect the storage limit you
-                      configure.
+                      پشتیبان‌های زیر شامل تصویر فوری و نسخه‌های زمان‌بندی‌شده هستند. نسخه‌های خودکار مطابق با محدودیت ذخیره‌سازی تنظیم‌شده عمل می‌کنند.
                     </p>
                     <div class="backup-history" id="backup-history"></div>
                   </div>
                   <div class="card settings-section">
                     <div class="section-header">
-                      <h3>Database SQL console</h3>
+                      <h3>کنسول SQL پایگاه داده</h3>
                     </div>
                     <p class="hint sql-console-hint">
-                      Run SQL directly on the connected database without opening phpMyAdmin.
+                      اجرای مستقیم SQL روی پایگاه داده متصل بدون باز کردن phpMyAdmin.
                     </p>
                     <p class="hint sql-console-status muted" id="dev-sql-status">
-                      Checking database connection...
+                      در حال بررسی اتصال پایگاه داده...
                     </p>
                     <form id="developer-sql-form" class="form">
                       <label class="field full">
-                        <span>SQL query</span>
+                        <span>پرس‌وجوی SQL</span>
                         <textarea
                           id="dev-db-sql"
                           class="sql-editor"
@@ -594,10 +592,10 @@ $accountEmail = $currentUser['email'] ?? '';
                       <div class="section-footer sql-console-footer">
                         <div class="sql-console-actions">
                           <button type="submit" class="btn primary" id="run-sql-query">
-                            Run SQL
+                            اجرای SQL
                           </button>
                           <button type="button" class="btn ghost" id="clear-sql-query">
-                            Clear
+                            پاک کردن
                           </button>
                         </div>
                       </div>
@@ -622,16 +620,16 @@ $accountEmail = $currentUser['email'] ?? '';
         >
           <div class="modal-card">
             <div class="modal-card-header">
-              <h3 id="appearance-picker-title">Choose color</h3>
-              <button type="button" class="icon-btn" data-close-appearance-picker aria-label="Close color picker">×</button>
+              <h3 id="appearance-picker-title">انتخاب رنگ</h3>
+              <button type="button" class="icon-btn" data-close-appearance-picker aria-label="بستن انتخاب رنگ">×</button>
             </div>
-            <p class="hint" id="appearance-picker-hint">Slide or pick a swatch to fine-tune the selected color.</p>
+            <p class="hint" id="appearance-picker-hint">کشیدن یا انتخاب نمونه‌ای رنگ برای تنظیم دقیق رنگ انتخاب‌شده.</p>
             <div class="default-color-picker" data-appearance-modal-picker>
               <div class="default-color-picker__grid">
                 <span class="default-color-picker__handle"></span>
               </div>
               <div class="default-color-picker__slider">
-                <input type="range" min="0" max="360" aria-label="Picker hue slider" />
+                <input type="range" min="0" max="360" aria-label="اسلایدر طیف رنگ" />
               </div>
             </div>
           </div>
@@ -643,23 +641,23 @@ $accountEmail = $currentUser['email'] ?? '';
     <!-- Modal shared between adding/editing users; it posts to api/data.php and mirrors payload expectations. -->
     <div id="user-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
       <div class="modal-card">
-        <h3 id="user-modal-title">Add user</h3>
+        <h3 id="user-modal-title">افزودن کاربر</h3>
         <form id="user-form" class="form grid two-column-fields" data-mode="add">
           <label class="field">
-            <span>User ID</span>
+            <span>شناسه کاربر</span>
             <input id="user-code" type="text" readonly />
           </label>
           <!-- Username is sourced from the backend username column so it is distinct from the unique code. -->
           <label class="field">
-            <span>Username</span>
+            <span>نام کاربری</span>
             <input id="user-name" type="text" required />
           </label>
           <label class="field">
-            <span>Full name</span>
+            <span>نام کامل</span>
             <input id="user-fullname" type="text" required />
           </label>
           <label class="field">
-            <span>Phone number (11 digits)</span>
+            <span>شماره تلفن (۱۱ رقم)</span>
             <input
               id="user-phone"
               type="text"
@@ -672,7 +670,7 @@ $accountEmail = $currentUser['email'] ?? '';
             />
           </label>
           <label class="field">
-            <span>Email</span>
+            <span>ایمیل</span>
             <input
               id="user-email"
               type="email"
@@ -681,12 +679,12 @@ $accountEmail = $currentUser['email'] ?? '';
             />
           </label>
           <label class="field">
-            <span>Work ID</span>
+            <span>کد پرسنلی</span>
             <input id="user-work-id" type="text" />
           </label>
           <!-- National ID spans the full grid because it pairs with additional validation hints in the JS handler. -->
           <label class="field full">
-            <span>National ID</span>
+            <span>کد ملی</span>
             <input
               id="user-id-number"
               type="text"
@@ -698,8 +696,8 @@ $accountEmail = $currentUser['email'] ?? '';
             />
           </label>
           <div class="modal-actions">
-            <button type="button" class="btn" id="user-cancel">Cancel</button>
-            <button type="submit" class="btn primary">Add</button>
+            <button type="button" class="btn" id="user-cancel">انصراف</button>
+            <button type="submit" class="btn primary">افزودن</button>
           </div>
         </form>
       </div>
@@ -709,11 +707,11 @@ $accountEmail = $currentUser['email'] ?? '';
     <!-- Delete confirmation modal for enforcing safe removals driven by confirmUserDeletion(). -->
     <div id="user-delete-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-delete-modal-title">
       <div class="modal-card">
-        <h3 id="user-delete-modal-title">Delete user</h3>
-        <p id="user-delete-modal-msg">Are you sure you want to delete <strong id="user-delete-name">this user</strong>?</p>
+        <h3 id="user-delete-modal-title">حذف کاربر</h3>
+        <p id="user-delete-modal-msg">آیا مطمئن هستید که می‌خواهید <strong id="user-delete-name">این کاربر</strong> را حذف کنید؟</p>
         <div class="modal-actions">
-          <button type="button" class="btn" id="user-delete-cancel">Cancel</button>
-          <button type="button" class="btn primary" id="user-delete-confirm">Delete</button>
+          <button type="button" class="btn" id="user-delete-cancel">انصراف</button>
+          <button type="button" class="btn primary" id="user-delete-confirm">حذف</button>
         </div>
       </div>
     </div>
@@ -721,45 +719,45 @@ $accountEmail = $currentUser['email'] ?? '';
     <!-- System modal surfaces settings controlled by app.js for updating rates via the dev area. -->
     <div id="system-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="system-modal-title">
       <div class="modal-card">
-        <h3 id="system-modal-title">System settings</h3>
+        <h3 id="system-modal-title">تنظیمات سیستم</h3>
         <form id="system-form" class="form">
           <div class="grid full">
             <label class="field">
-              <span>System name</span>
+              <span>نام سیستم</span>
               <input id="system-name" type="text" required />
             </label>
           </div>
           <div class="grid full">
             <label class="field">
-              <span>Single tier (IRR/hour)</span>
+              <span>پلن تک‌نفره (ریال/ساعت)</span>
               <input id="price-1p" class="price-input" type="text" inputmode="numeric" required />
             </label>
             <label class="field">
-              <span>Double tier (IRR/hour)</span>
+              <span>پلن دو نفره (ریال/ساعت)</span>
               <input id="price-2p" class="price-input" type="text" inputmode="numeric" required />
             </label>
             <label class="field">
-              <span>Triple tier (IRR/hour)</span>
+              <span>پلن سه نفره (ریال/ساعت)</span>
               <input id="price-3p" class="price-input" type="text" inputmode="numeric" required />
             </label>
             <label class="field">
-              <span>Quad tier (IRR/hour)</span>
+              <span>پلن چهار نفره (ریال/ساعت)</span>
               <input id="price-4p" class="price-input" type="text" inputmode="numeric" required />
             </label>
           </div>
           <div class="grid full">
             <label class="field">
-              <span>Birthday (IRR)</span>
+              <span>تولد (ریال)</span>
               <input id="price-birthday" class="price-input" type="text" inputmode="numeric" required />
             </label>
             <label class="field">
-              <span>Film (IRR)</span>
+              <span>فیلم (ریال)</span>
               <input id="price-film" class="price-input" type="text" inputmode="numeric" required />
             </label>
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn" id="system-cancel">Cancel</button>
-            <button type="submit" class="btn primary">Save</button>
+            <button type="button" class="btn" id="system-cancel">انصراف</button>
+            <button type="submit" class="btn primary">ذخیره</button>
           </div>
           <p id="system-form-msg" class="hint"></p>
         </form>
@@ -775,12 +773,12 @@ $accountEmail = $currentUser['email'] ?? '';
     >
       <div class="modal-card large">
         <div class="modal-card-header">
-          <h3 id="gallery-upload-modal-title">Upload a photo</h3>
+          <h3 id="gallery-upload-modal-title">بارگذاری عکس</h3>
           <button
             type="button"
             class="icon-btn"
             data-gallery-upload-modal-close
-            aria-label="Close upload form"
+            aria-label="بستن فرم بارگذاری"
           >
             <span class="ri ri-close-line" aria-hidden="true"></span>
           </button>
@@ -790,41 +788,41 @@ $accountEmail = $currentUser['email'] ?? '';
             <div class="photo-preview">
               <img data-photo-image class="hidden" alt="" />
               <div data-photo-placeholder class="photo-placeholder">
-                Drag &amp; drop a photo or use the button below
+                کشیدن و رها کردن یک عکس یا استفاده از دکمه زیر
               </div>
               <button
                 type="button"
                 class="photo-preview-clear hidden"
                 data-photo-clear
-                aria-label="Remove photo"
+                aria-label="حذف عکس"
               >
-                Clear
+                پاک کردن
               </button>
             </div>
             <div class="photo-actions">
               <input type="file" name="photo" data-photo-input accept="image/*" hidden />
-              <button type="button" class="btn" data-photo-upload>Select photo</button>
+              <button type="button" class="btn" data-photo-upload>انتخاب عکس</button>
             </div>
           </div>
           <div class="grid">
             <label class="field">
-              <span>Photo title</span>
+              <span>عنوان عکس</span>
               <input name="title" type="text" required />
             </label>
             <label class="field">
-              <span>Alternate text (alt)</span>
+              <span>متن جایگزین (alt)</span>
               <input name="alt_text" type="text" />
             </label>
             <label class="field">
-              <span>Category</span>
+              <span>دسته</span>
               <select data-gallery-photo-category name="category_id">
-                <option value="">Select a category</option>
+                <option value="">انتخاب دسته</option>
               </select>
             </label>
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn" data-gallery-upload-modal-close>Cancel</button>
-            <button type="submit" class="btn primary">Upload photo</button>
+            <button type="button" class="btn" data-gallery-upload-modal-close>انصراف</button>
+            <button type="submit" class="btn primary">بارگذاری عکس</button>
           </div>
           </form>
         </div>
@@ -840,12 +838,12 @@ $accountEmail = $currentUser['email'] ?? '';
     >
       <div class="modal-card large">
         <div class="modal-card-header">
-          <h3 id="gallery-photo-modal-title">Photo details</h3>
+          <h3 id="gallery-photo-modal-title">جزئیات عکس</h3>
           <button
             type="button"
             class="icon-btn"
             data-gallery-photo-close
-            aria-label="Close photo details"
+            aria-label="بستن جزئیات عکس"
           >
             <span class="ri ri-close-line" aria-hidden="true"></span>
           </button>
@@ -854,30 +852,30 @@ $accountEmail = $currentUser['email'] ?? '';
           <div class="gallery-photo-modal-preview-wrapper">
             <div class="gallery-photo-modal-preview">
               <a data-gallery-photo-link target="_blank" rel="noopener">
-                <img data-gallery-photo-preview alt="Gallery photo preview" />
+                <img data-gallery-photo-preview alt="پیش‌نمایش عکس گالری" />
               </a>
             </div>
             <p class="gallery-photo-modal-preview-meta" data-gallery-photo-created></p>
           </div>
           <form class="form gallery-photo-modal-form" data-gallery-photo-modal-form>
             <label class="field">
-              <span>Photo title</span>
+              <span>عنوان عکس</span>
               <input type="text" data-gallery-photo-modal-title name="title" required />
             </label>
             <label class="field">
-              <span>Alternate text (alt)</span>
+              <span>متن جایگزین (alt)</span>
               <input type="text" data-gallery-photo-modal-alt name="alt_text" />
             </label>
             <label class="field">
-              <span>Category</span>
+              <span>دسته</span>
               <select data-gallery-photo-category name="category_id">
-                <option value="">Select a category</option>
+                <option value="">انتخاب دسته</option>
               </select>
             </label>
             <div class="modal-actions gallery-photo-modal-actions">
-              <button type="button" class="btn" data-gallery-photo-replace>Replace photo</button>
-              <button type="button" class="btn ghost" data-gallery-photo-delete>Delete</button>
-              <button type="submit" class="btn primary" data-gallery-photo-save>Save</button>
+              <button type="button" class="btn" data-gallery-photo-replace>جایگزینی عکس</button>
+              <button type="button" class="btn ghost" data-gallery-photo-delete>حذف</button>
+              <button type="submit" class="btn primary" data-gallery-photo-save>ذخیره</button>
             </div>
             <input type="file" name="photo" accept="image/*" data-gallery-photo-replace-input hidden />
           </form>
@@ -900,15 +898,15 @@ $accountEmail = $currentUser['email'] ?? '';
               class="btn ghost small"
               data-photo-chooser-upload
             >
-              Upload photo
+              بارگذاری عکس
             </button>
           </div>
-          <h3 id="photo-chooser-title">Photo chooser</h3>
+          <h3 id="photo-chooser-title">انتخابگر عکس</h3>
           <button
             type="button"
             class="icon-btn"
             data-photo-chooser-close
-            aria-label="Close photo chooser"
+            aria-label="بستن انتخابگر عکس"
           >
             <span class="ri ri-close-line" aria-hidden="true"></span>
           </button>
@@ -916,32 +914,32 @@ $accountEmail = $currentUser['email'] ?? '';
         <div class="gallery-thumb-grid-wrapper">
           <div class="gallery-search-row photo-chooser-search-row">
             <label class="gallery-search-field">
-              <span class="gallery-search-label">Search photo chooser</span>
+              <span class="gallery-search-label">جستجوی انتخابگر عکس</span>
               <input
                 type="search"
                 class="gallery-search-input"
                 data-photo-chooser-search
-                placeholder="Search by photo title or category"
+                placeholder="جستجو بر اساس عنوان یا دسته عکس"
                 autocomplete="off"
-                aria-label="Search the photo chooser by title or category"
+                aria-label="جستجو در انتخابگر عکس بر اساس عنوان یا دسته"
               />
             </label>
             <span class="gallery-search-count" data-photo-chooser-search-count>
-              0 photos
+              ۰ عکس
             </span>
           </div>
           <div class="photo-chooser-scroll">
             <div id="photo-chooser-thumb-grid" class="gallery-thumb-grid"></div>
-            <p class="muted gallery-thumb-loading hidden" data-gallery-loading>Loading photos…</p>
-            <p id="photo-chooser-thumb-empty" class="muted gallery-thumb-empty hidden">No photos uploaded yet.</p>
+            <p class="muted gallery-thumb-loading hidden" data-gallery-loading>در حال بارگذاری عکس‌ها...</p>
+            <p id="photo-chooser-thumb-empty" class="muted gallery-thumb-empty hidden">هنوز عکسی بارگذاری نشده است.</p>
           </div>
           <div class="gallery-thumb-actions">
-            <button type="button" id="photo-chooser-load-more" class="btn ghost hidden">Load More</button>
+            <button type="button" id="photo-chooser-load-more" class="btn ghost hidden">بارگذاری بیشتر</button>
           </div>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn ghost" data-photo-chooser-cancel>Cancel</button>
-          <button type="button" class="btn primary" id="photo-chooser-choose" disabled>Choose</button>
+          <button type="button" class="btn ghost" data-photo-chooser-cancel>انصراف</button>
+          <button type="button" class="btn primary" id="photo-chooser-choose" disabled>انتخاب</button>
         </div>
       </div>
     </div>
@@ -949,17 +947,17 @@ $accountEmail = $currentUser['email'] ?? '';
     <!-- Period configuration modal allows app.js to define time slices used in price calculations. -->
     <div id="periods-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="periods-modal-title">
       <div class="modal-card" style="max-width:640px;">
-        <h3 id="periods-modal-title">Configure time periods (24 hours)</h3>
+        <h3 id="periods-modal-title">تنظیم بازه‌های زمانی (۲۴ ساعته)</h3>
         <div class="form">
-          <div class="hint">Define between 1 and 5 periods and cover the entire 24 hours without overlap or gaps.</div>
+          <div class="hint">بین ۱ تا ۵ بازه تعریف کنید و کل ۲۴ ساعت را بدون هم‌پوشانی یا شکاف پوشش دهید.</div>
           <div id="periods-list" class="periods-list"></div>
           <div style="display:flex; gap:8px;">
-            <button id="add-period" type="button" class="btn">+ Add period</button>
+            <button id="add-period" type="button" class="btn">+ افزودن بازه</button>
           </div>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn" id="periods-cancel">Cancel</button>
-          <button type="button" class="btn primary" id="periods-save">Save</button>
+          <button type="button" class="btn" id="periods-cancel">انصراف</button>
+          <button type="button" class="btn primary" id="periods-save">ذخیره</button>
         </div>
         <p id="periods-msg" class="hint"></p>
       </div>
@@ -968,13 +966,13 @@ $accountEmail = $currentUser['email'] ?? '';
     <!-- Generic dialog modal is reused for messages initiated by app.js. -->
     <div id="dialog-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
       <div class="modal-card" style="max-width:420px;">
-        <h3 id="dialog-title">Message</h3>
+        <h3 id="dialog-title">پیام</h3>
         <div class="form">
           <div id="dialog-text" class="hint" style="white-space: pre-wrap;"></div>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn" id="dialog-cancel">Cancel</button>
-          <button type="button" class="btn primary" id="dialog-ok">OK</button>
+          <button type="button" class="btn" id="dialog-cancel">انصراف</button>
+          <button type="button" class="btn primary" id="dialog-ok">تأیید</button>
         </div>
       </div>
     </div>
