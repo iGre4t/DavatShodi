@@ -97,6 +97,33 @@
       gap: 4px;
       background: #f8fafc;
     }
+    #tab-invite .invite-log-grid {
+      display: grid;
+      gap: 4px;
+      border-top: 1px dashed rgba(15, 23, 42, 0.1);
+      padding-top: 8px;
+      margin-top: 6px;
+    }
+    #tab-invite .invite-log-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 10pt;
+      direction: rtl;
+    }
+    #tab-invite .invite-log-label {
+      color: #475569;
+      opacity: 0.9;
+      font-size: 9pt;
+    }
+    #tab-invite .invite-log-value {
+      font-weight: 600;
+      text-align: right;
+      max-width: 60%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     #tab-invite .invite-log-actions {
       display: flex;
       justify-content: flex-end;
@@ -375,7 +402,7 @@
         if (!items.length) {
           const empty = document.createElement("p");
           empty.className = "muted";
-          empty.textContent = "No scans yet.";
+          empty.textContent = "هنوز اسکن انجام نشده.";
           logList.appendChild(empty);
           return;
         }
@@ -387,57 +414,66 @@
 
           const title = document.createElement("div");
           title.className = "invite-log-title";
-          const label = statusLabels[type] || "Update";
+          const label = statusLabels[type] || "به‌روزرسانی";
           title.textContent = log?.event_name ? `${label} · ${log.event_name}` : label;
 
-          const name = document.createElement("div");
-          name.className = "invite-log-name";
-          name.textContent = log?.guest_name || "Guest";
+          const infoGrid = document.createElement("div");
+          infoGrid.className = "invite-log-grid";
 
-          const code = document.createElement("div");
-          code.className = "invite-log-code";
-          code.textContent = log?.invite_code ? `Code: ${log.invite_code}` : "";
+          const addRow = (labelText, valueText) => {
+            if (!valueText) return;
+            const row = document.createElement("div");
+            row.className = "invite-log-row";
+            const labelEl = document.createElement("span");
+            labelEl.className = "invite-log-label";
+            labelEl.textContent = labelText;
+            const valueEl = document.createElement("span");
+            valueEl.className = "invite-log-value";
+            valueEl.textContent = valueText;
+            row.appendChild(labelEl);
+            row.appendChild(valueEl);
+            infoGrid.appendChild(row);
+          };
 
-          const meta = document.createElement("div");
-          meta.className = "invite-log-meta";
-          const parts = [];
-          if (log?.timestamp) parts.push(formatTimestamp(log.timestamp));
-          if (log?.national_id) parts.push(`ID: ${log.national_id}`);
-          meta.textContent = parts.join(" · ");
-
-          const note = document.createElement("div");
-          note.className = "muted small";
-          note.textContent = log?.message || "";
+          addRow("نام مهمان", log?.guest_name || "مهمان");
+          if (log?.invite_code) {
+            addRow("کد قرعه‌کشی", log.invite_code);
+          }
+          addRow("کد ملی", log?.national_id);
+          if (log?.timestamp) {
+            addRow("زمان", formatTimestamp(log.timestamp));
+          }
+          addRow("رویداد", log?.event_name);
+          if (log?.message) {
+            addRow("یادداشت", log.message);
+          }
 
           container.appendChild(title);
-          container.appendChild(name);
-          if (code.textContent) container.appendChild(code);
-      container.appendChild(meta);
-      if (note.textContent) container.appendChild(note);
-      if (type === "enter" && log?.guest_name) {
-        const actions = document.createElement("div");
-        actions.className = "invite-log-actions";
-        const printAction = document.createElement("button");
-        printAction.type = "button";
-        printAction.className = "btn ghost small invite-log-print-btn";
-        printAction.textContent = "Print receipt";
-        printAction.addEventListener("click", () => {
-          const guestForPrint = {
-            full_name: log.guest_name,
-            firstname: log?.firstname,
-            lastname: log?.lastname,
-            national_id: log?.national_id,
-            invite_code: log?.invite_code,
-            date_entered: log?.date_entered
-          };
-          updatePrintArea(guestForPrint);
-          window.print();
+          container.appendChild(infoGrid);
+          if (type === "enter" && log?.guest_name) {
+            const actions = document.createElement("div");
+            actions.className = "invite-log-actions";
+            const printAction = document.createElement("button");
+            printAction.type = "button";
+            printAction.className = "btn ghost small invite-log-print-btn";
+            printAction.textContent = "چاپ رسید";
+            printAction.addEventListener("click", () => {
+              const guestForPrint = {
+                full_name: log.guest_name,
+                firstname: log?.firstname,
+                lastname: log?.lastname,
+                national_id: log?.national_id,
+                invite_code: log?.invite_code,
+                date_entered: log?.date_entered
+              };
+              updatePrintArea(guestForPrint);
+              window.print();
+            });
+            actions.appendChild(printAction);
+            container.appendChild(actions);
+          }
+          logList.appendChild(container);
         });
-        actions.appendChild(printAction);
-        container.appendChild(actions);
-      }
-      logList.appendChild(container);
-    });
   }
 
       function mergeLogs(nextLogs) {
