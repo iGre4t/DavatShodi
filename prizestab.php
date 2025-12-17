@@ -138,10 +138,22 @@ if ($action !== '') {
       <div>
         <h3>Prizes</h3>
       </div>
-      <form id="prize-add-form" class="form" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-inline-start:auto;">
-        <label class="field standard-width" style="flex:1 1 240px;">
+      <form
+        id="prize-add-form"
+        class="form"
+        style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-inline-start:auto; direction:rtl;"
+      >
+        <label class="field standard-width" style="flex:1 1 240px; direction: rtl; text-align: right;">
           <span>Prize name</span>
-          <input id="prize-name" name="name" type="text" placeholder="Enter prize name" autocomplete="off" required />
+          <input
+            id="prize-name"
+            name="name"
+            type="text"
+            placeholder="Enter prize name"
+            autocomplete="off"
+            required
+            style="direction: rtl; text-align: right;"
+          />
         </label>
         <button type="submit" class="btn primary" id="prize-add-button">Add</button>
       </form>
@@ -210,15 +222,79 @@ if ($action !== '') {
         .map(prize => `
           <tr data-prize-id="${prize.id}">
             <td>${prize.id}</td>
-            <td>${escapeHtml(prize.name)}</td>
             <td>
-              <button type="button" class="btn ghost" data-prize-action="edit" data-prize-id="${prize.id}">Edit</button>
-              <button type="button" class="btn ghost" data-prize-action="delete" data-prize-id="${prize.id}">Delete</button>
+              <input
+                type="text"
+                class="prize-inline-input"
+                data-prize-id="${prize.id}"
+                value="${escapeHtml(prize.name)}"
+                data-original="${escapeHtml(prize.name)}"
+                style="width:100%; border:none; background:transparent; padding:0; text-align:right; direction:rtl;"
+              />
             </td>
-          </tr>
-        `)
-        .join('');
+          <td>
+            <button type="button" class="btn ghost" data-prize-action="delete" data-prize-id="${prize.id}">Delete</button>
+          </td>
+        </tr>
+      `)
+      .join('');
     }
+
+    function handleInlineUpdate(input) {
+      const id = input?.getAttribute('data-prize-id') ?? '';
+      if (!id) {
+        return;
+      }
+      const original = (input.getAttribute('data-original') ?? '').trim();
+      const value = (input.value ?? '').trim();
+      if (value === original) {
+        input.value = original;
+        return;
+      }
+      input.setAttribute('disabled', 'disabled');
+      sendAction('update', { id, name: value })
+        .then(() => {
+          input.setAttribute('data-original', value);
+        })
+        .catch((error) => {
+          setStatus(error?.message || 'Unable to update prize.', true);
+          input.value = original;
+        })
+      .finally(() => {
+        input.removeAttribute('disabled');
+      });
+    }
+
+    tableBody.addEventListener('focusin', (event) => {
+      const input = event.target.closest('.prize-inline-input');
+      if (input) {
+        input.setAttribute('data-original', input.value ?? '');
+      }
+    });
+
+    tableBody.addEventListener('focusout', (event) => {
+      const input = event.target.closest('.prize-inline-input');
+      if (!input) {
+        return;
+      }
+      const next = event.relatedTarget;
+      if (next && next.closest && next.closest('[data-prize-action="delete"]')) {
+        return;
+      }
+      handleInlineUpdate(input);
+    });
+
+    tableBody.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') {
+        return;
+      }
+      const input = event.target.closest('.prize-inline-input');
+      if (!input) {
+        return;
+      }
+      event.preventDefault();
+      input.blur();
+    });
 
     async function fetchPrizes() {
       setStatus('Loading prizes...');
@@ -277,44 +353,34 @@ if ($action !== '') {
     });
 
     listBody.addEventListener('click', async (event) => {
-      const button = event.target.closest('[data-prize-action]');
+      const button = event.target.closest('[data-prize-action="delete"]');
       if (!button) {
         return;
       }
-      const action = button.getAttribute('data-prize-action');
       const id = button.getAttribute('data-prize-id');
       if (!id) {
         return;
       }
-      const prize = prizes.find(item => String(item.id) === id);
-      if (!prize) {
-        setStatus('Selected prize was not found.', true);
+      button.setAttribute('disabled', 'disabled');
+      const confirmDeletion =
+        typeof showDialog === 'function'
+          ? await showDialog('Delete this prize?', {
+              confirm: true,
+              title: 'Delete prize',
+              okText: 'Delete',
+              cancelText: 'Cancel'
+            })
+          : confirm('Delete this prize?');
+      if (!confirmDeletion) {
+        button.removeAttribute('disabled');
         return;
       }
-      if (action === 'edit') {
-        const updatedName = prompt('Edit prize name', prize.name);
-        if (updatedName === null) {
-          return;
-        }
-        const trimmed = updatedName.trim();
-        if (!trimmed) {
-          setStatus('Prize name cannot be empty.', true);
-          return;
-        }
-        try {
-          await sendAction('update', { id, name: trimmed });
-        } catch (error) {
-          setStatus(error.message, true);
-        }
-      } else if (action === 'delete') {
-        if (!confirm('Delete this prize?')) {
-          return;
-        }
-        try {
-          await sendAction('delete', { id });
-        } catch (error) {
-          setStatus(error.message, true);
-        }
+      try {
+        await sendAction('delete', { id });
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        button.removeAttribute('disabled');
       }
     });
 
