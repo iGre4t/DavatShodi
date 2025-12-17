@@ -461,11 +461,11 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
     <nav class="page-header">
       <div class="page-menu">
         <a class="menu-item active" href="draw.php">قرعه کشی</a>
-        <a class="menu-item" href="#prizes">جوایز مسابقات</a>
+        <a class="menu-item" href="prizes.php">جوایز مسابقات</a>
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
-      <p class="caption">میز آغاز قرعه‌کشی</p>
+      <p class="caption">قرعه‌کشی مشهد مقدس</p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="Current draw code">
         <?php for ($idx = 0; $idx < 4; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
