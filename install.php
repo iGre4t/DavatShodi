@@ -146,11 +146,6 @@ function getFieldValue(array $values, string $key, string $default = ''): string
     <script src="style/appearance.js"></script>
     <link rel="stylesheet" href="style/styles.css" />
     <style>
-      :root {
-        --primary: #e11d2e;
-        --primary-600: #c51625;
-        --primary-focus: rgba(225, 29, 46, 0.18);
-      }
       body.login-body {
         min-height: 100vh;
         margin: 0;

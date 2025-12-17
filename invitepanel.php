@@ -3,7 +3,7 @@
     <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <div>
         <h3>Invite</h3>
-        <p class="muted small">Scan today's invited guests by national ID.</p>
+        <p class="muted small">Scan the active event guest list by national ID.</p>
       </div>
       <button type="button" class="btn ghost" id="invite-refresh">Refresh</button>
     </div>
@@ -392,8 +392,8 @@
             setStatus("Guest already exited earlier.", tone || "warn");
             openExitedModal(`User already left on ${exitedAt || "this session"}.`);
           } else if (outcome === "not_found") {
-            setStatus("National ID not found in today's list.", "error");
-            window.showErrorSnackbar?.({ message: "National ID not found in today's list." });
+            setStatus("National ID not found in the active event list.", "error");
+            window.showErrorSnackbar?.({ message: "National ID not found in the active event list." });
           } else {
             setStatus(data?.message || "Status updated.", tone || "");
           }

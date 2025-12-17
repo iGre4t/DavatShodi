@@ -153,9 +153,20 @@
     "--primary-600",
     adjustHexLightness(palette.primary, -0.18) || palette.primary
   );
+  const focusRing =
+    hexToRgba(palette.primary, 0.12) || "rgba(225, 29, 46, 0.12)";
+  root.style.setProperty("--primary-focus", focusRing);
   root.style.setProperty(
-    "--primary-focus",
-    hexToRgba(palette.primary, 0.12) || "rgba(225, 29, 46, 0.12)"
+    "--primary-border-soft",
+    hexToRgba(palette.primary, 0.45) || "rgba(225, 29, 46, 0.45)"
+  );
+  root.style.setProperty(
+    "--primary-shadow",
+    hexToRgba(palette.primary, 0.25) || "rgba(225, 29, 46, 0.25)"
+  );
+  root.style.setProperty(
+    "--primary-shadow-heavy",
+    hexToRgba(palette.primary, 0.4) || "rgba(225, 29, 46, 0.4)"
   );
   root.style.setProperty("--bg", palette.background);
   root.style.setProperty("--text", palette.text);

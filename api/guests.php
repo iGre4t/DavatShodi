@@ -75,23 +75,38 @@ if ($method === 'POST') {
             exit;
         }
         $store = loadGuestStore($storePath);
+        $activeEventSlug = trim((string)($store['active_event_slug'] ?? ''));
+        if ($activeEventSlug === '') {
+            http_response_code(422);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'No active event selected. Please set the active event from the Winners tab.'
+            ]);
+            exit;
+        }
+        $activeEventIndex = findEventIndexBySlug($store['events'], $activeEventSlug);
+        if ($activeEventIndex < 0) {
+            http_response_code(422);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'The selected active event no longer exists. Please choose another event.'
+            ]);
+            exit;
+        }
         $now = createNowTime();
         $nowString = $now->format('Y-m-d H:i:s');
-        $todaySlugs = getTodayEventSlugs($store['events']);
-        $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, $todaySlugs);
-        if ($match === null && empty($todaySlugs)) {
-            $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, []);
-        }
+        $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, [$activeEventSlug]);
         if ($match === null) {
+            $activeEventName = (string)($store['events'][$activeEventIndex]['name'] ?? '');
             $log = appendInviteLog($store, [
                 'type' => 'not_found',
                 'national_id' => $nationalId,
-                'event_slug' => '',
-                'event_name' => '',
+                'event_slug' => $activeEventSlug,
+                'event_name' => $activeEventName,
                 'guest_name' => '',
                 'invite_code' => '',
                 'timestamp' => $nowString,
-                'message' => 'National ID not found for today.'
+                'message' => 'National ID not found in the active event list.'
             ]);
             if (!saveGuestStore($storePath, $store)) {
                 http_response_code(500);
