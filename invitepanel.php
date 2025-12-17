@@ -509,8 +509,8 @@
         lastGuest = guest;
         const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "Guest";
         if (guestNameEl) guestNameEl.textContent = fullName;
-        if (guestIdEl) guestIdEl.textContent = guest.national_id ? `National ID: ${guest.national_id}` : "";
-        if (guestCodeEl) guestCodeEl.textContent = guest.invite_code ? `Unique code: ${guest.invite_code}` : "";
+        if (guestIdEl) guestIdEl.textContent = guest.national_id ? `کد ملی: ${guest.national_id}` : "";
+        if (guestCodeEl) guestCodeEl.textContent = guest.invite_code ? `کد یکتا: ${guest.invite_code}` : "";
         updatePrintArea(guest);
         showModal(entryModal);
         printButton?.focus();
@@ -546,7 +546,7 @@
       async function scanNationalId(value) {
         if (loading) return;
         loading = true;
-        setStatus("Checking guest...", "info");
+        setStatus("در حال بررسی مهمان...", "info");
         const formData = new FormData();
         formData.append("action", "scan_invite");
         formData.append("national_id", value);
@@ -554,7 +554,7 @@
           const response = await fetch("./api/guests.php", { method: "POST", body: formData });
           const data = await response.json().catch(() => ({}));
           if (!response.ok || data.status !== "ok") {
-            throw new Error(data?.message || "Unable to scan guest.");
+            throw new Error(data?.message || "عدم امکان اسکن مهمان.");
           }
           if (Array.isArray(data.logs)) {
             mergeLogs(data.logs);
@@ -565,28 +565,28 @@
           const guest = data.guest || {};
           const tone = toneByOutcome[outcome] || "";
           if (outcome === "enter") {
-            setStatus("Guest found. Ready to print badge.", "success");
+            setStatus("مهمان پیدا شد. آماده چاپ کارت.", "success");
             openEntryModal(guest);
-            window.showDefaultToast?.({ message: "Entry recorded." });
+            window.showDefaultToast?.({ message: "ورود ثبت شد." });
           } else if (outcome === "exit") {
-            setStatus("Guest left the ceremony.", tone || "info");
-            window.showDefaultToast?.({ message: "Exit recorded." });
+            setStatus("مهمان مراسم را ترک کرد.", tone || "info");
+            window.showDefaultToast?.({ message: "خروج ثبت شد." });
           } else if (outcome === "spam") {
-            setStatus("Scan ignored (less than 5 minutes from entry).", tone || "warn");
-            window.showDefaultToast?.({ message: "Spam scan saved." });
+            setStatus("اسکن تکراری ثبت شد (کمتر از ۵ دقیقه).", tone || "warn");
+            window.showDefaultToast?.({ message: "اسکن تکراری ذخیره شد." });
           } else if (outcome === "more_exit") {
             const exitedAt = guest?.date_exited ? formatTimestamp(guest.date_exited) : "";
-            setStatus("Guest already exited earlier.", tone || "warn");
-            openExitedModal(`User already left on ${exitedAt || "this session"}.`);
+            setStatus("مهمان قبلاً خارج شده بود.", tone || "warn");
+            openExitedModal(`کاربر قبلاً در ${exitedAt || "این جلسه"} خارج شده بود.`);
           } else if (outcome === "not_found") {
-            setStatus("National ID not found in the active event list.", "error");
-            window.showErrorSnackbar?.({ message: "National ID not found in the active event list." });
+            setStatus("کد ملی در فهرست فعال یافت نشد.", "error");
+            window.showErrorSnackbar?.({ message: "کد ملی در فهرست فعال یافت نشد." });
           } else {
-            setStatus(data?.message || "Status updated.", tone || "");
+            setStatus(data?.message || "وضعیت به‌روزرسانی شد.", tone || "");
           }
         } catch (error) {
-          setStatus(error?.message || "Unable to scan guest.", "error");
-          window.showErrorSnackbar?.({ message: error?.message || "Unable to scan guest." });
+          setStatus(error?.message || "خطا در اسکن مهمان.", "error");
+          window.showErrorSnackbar?.({ message: error?.message || "خطا در اسکن مهمان." });
         } finally {
           loading = false;
           if (nationalInput) {
@@ -614,14 +614,14 @@
         if (value.length === 10) {
           scanNationalId(value);
         } else {
-          setStatus("National ID must be 10 digits.", "warn");
+          setStatus("کد ملی باید ۱۰ رقم باشد.", "warn");
         }
       });
 
-      refreshButton?.addEventListener("click", () => {
-        loadInviteData();
-        setStatus("Logs refreshed.", "info");
-      });
+        refreshButton?.addEventListener("click", () => {
+          loadInviteData();
+          setStatus("لیست تازه شد.", "info");
+        });
 
       printButton?.addEventListener("click", () => triggerPrint());
 

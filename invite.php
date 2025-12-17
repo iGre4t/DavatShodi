@@ -77,7 +77,7 @@ $panelSiteIconUrl = formatSiteIconUrlForHtml($panelSettings['siteIcon'] ?? '');
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Invite | <?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?></title>
+    <title>دعوت | <?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?></title>
     <meta name="color-scheme" content="light" />
     <script src="General%20Setting/general-settings.js"></script>
     <script src="style/appearance.js"></script>
@@ -110,7 +110,7 @@ $panelSiteIconUrl = formatSiteIconUrlForHtml($panelSettings['siteIcon'] ?? '');
   <body class="invite-page">
     <main class="content">
       <header class="topbar">
-        <h2 id="page-title">Invite</h2>
+        <h2 id="page-title">دعوت</h2>
         <div class="spacer"></div>
         <div id="live-clock" class="clock" aria-live="polite">
           <span class="time"></span>

@@ -558,6 +558,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         font-weight: 700;
         cursor: pointer;
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+        font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
       }
 
       button:disabled {

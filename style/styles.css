@@ -869,13 +869,14 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 .sidebar {
   border-left: 1px solid var(--border);
   padding: 16px 12px;
-  display: grid; grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   background: #fff;
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
 }
 #app-view.collapsed .sidebar-footer,
 .sidebar-footer {
@@ -925,7 +926,15 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 }
 .sidebar .title { font-weight: 600; }
 
-.nav { display: grid; gap: 6px; align-content: start; }
+.nav {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
 .nav-separator {
   border-top: 1px solid var(--border);
   margin: 6px 0;
