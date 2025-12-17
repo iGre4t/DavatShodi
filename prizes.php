@@ -250,6 +250,20 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         line-height: 1.2;
         white-space: nowrap;
         direction: rtl;
+        transition: background 0.3s ease, color 0.3s ease, transform 0.3s ease;
+      }
+
+      .prize-value--animating {
+        background: linear-gradient(180deg, #d7ecff, #b4d8ff);
+        color: #07245d;
+        transform: scale(1.02);
+      }
+
+      .prize-value--locked {
+        background: #173972;
+        color: #e9f5ff;
+        border-color: rgba(255, 255, 255, 0.4);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
       }
 
       .winner-message {
@@ -307,57 +321,14 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         margin: 0;
       }
 
-      .winners-panel {
-        width: min(540px, 100%);
-        border-radius: 28px;
-        background: rgba(4, 12, 38, 0.72);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        padding: 24px;
-        box-shadow: 0 16px 30px rgba(3, 20, 60, 0.4);
-        position: relative;
-        z-index: 1;
-      }
-
-      .winners-panel h3 {
-        margin: 0 0 12px;
-        font-size: 1rem;
-        letter-spacing: 0.2em;
-        color: rgba(255, 255, 255, 0.6);
-        text-transform: uppercase;
-      }
-
-      .winner-items {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .winner-item {
-        padding: 14px;
-        border-radius: 20px;
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 12px;
-        align-items: center;
-        direction: ltr;
-      }
-
-      .winner-code {
-        font-size: 1.35rem;
-        font-weight: 700;
-        letter-spacing: 0.4rem;
-        color: #8be1ff;
-        direction: ltr;
-      }
-
-      .winner-info {
-        text-align: right;
-        font-size: 1rem;
-        direction: rtl;
-        color: #ffffff;
-        font-weight: 600;
+      @media (max-width: 480px) {
+        .draw-shell {
+          padding: 20px;
+        }
+        .prize-value {
+          font-size: clamp(1.8rem, 10vw, 2.8rem);
+          padding: 16px 24px;
+        }
       }
 
       @media (max-width: 480px) {
@@ -385,7 +356,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
-      <p class="caption">press start to cycle through the prize list</p>
+      <p class="caption">قرعه‌کشی جوایز برندگان مسابقات</p>
       <div id="prize-display" class="prize-display" aria-live="polite" aria-label="Prize reveal">
         <span id="prize-value" class="prize-value">---</span>
       </div>
@@ -393,25 +364,30 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       <div class="cta-group">
         <button id="start-draw" class="start-btn" type="button">start draw</button>
       </div>
-      <p id="status-text" class="status">ready when you are</p>
     </div>
-    <div class="winners-panel" aria-live="polite">
-      <h3>prize queue</h3>
-      <div id="prize-items" class="winner-items"></div>
-    </div>
-
     <script>
       window.__PRIZE_LIST = window.__PRIZE_LIST || <?= json_encode($prizeList, JSON_UNESCAPED_UNICODE); ?>;
       const prizeList = Array.isArray(window.__PRIZE_LIST) ? window.__PRIZE_LIST : [];
       const prizeValueEl = document.getElementById('prize-value');
       const winnerMessageEl = document.getElementById('winner-name');
-      const statusText = document.getElementById('status-text');
       const startBtn = document.getElementById('start-draw');
-      const prizeItems = document.getElementById('prize-items');
-
       let animationInterval = null;
       let revealTimeout = null;
       let selectedPrizeName = '';
+
+      const resetValueState = () => {
+        prizeValueEl.classList.remove('prize-value--animating', 'prize-value--locked');
+      };
+
+      const setAnimatingState = () => {
+        prizeValueEl.classList.add('prize-value--animating');
+        prizeValueEl.classList.remove('prize-value--locked');
+      };
+
+      const setLockedState = () => {
+        prizeValueEl.classList.remove('prize-value--animating');
+        prizeValueEl.classList.add('prize-value--locked');
+      };
 
       const cancelAnimation = () => {
         if (animationInterval) {
@@ -422,6 +398,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
           clearTimeout(revealTimeout);
           revealTimeout = null;
         }
+        resetValueState();
       };
 
       const randomPrizeName = () => {
@@ -432,51 +409,23 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         return prizeList[idx]?.name || '';
       };
 
-      const renderPrizeList = () => {
-        if (!prizeItems) {
-          return;
-        }
-        prizeItems.innerHTML = '';
-        if (!prizeList.length) {
-          const placeholder = document.createElement('p');
-          placeholder.className = 'status';
-          placeholder.style.margin = '0';
-          placeholder.textContent = 'no prizes defined yet';
-          prizeItems.appendChild(placeholder);
-          return;
-        }
-        prizeList.forEach((entry) => {
-          const item = document.createElement('div');
-          item.className = 'winner-item';
-          const codeEl = document.createElement('div');
-          codeEl.className = 'winner-code';
-          codeEl.textContent = entry.id ? entry.id.toString() : '—';
-          const infoEl = document.createElement('div');
-          infoEl.className = 'winner-info';
-          infoEl.textContent = entry.name || 'prize';
-          item.append(codeEl, infoEl);
-          prizeItems.appendChild(item);
-        });
-      };
-
       const showIdleState = () => {
         prizeValueEl.textContent = '---';
         winnerMessageEl.textContent = 'ready for a new draw';
         winnerMessageEl.classList.add('winner-message--idle');
         winnerMessageEl.classList.remove('winner-message--active');
-        statusText.textContent = prizeList.length ? 'ready for another spin' : 'prize list is empty';
+        resetValueState();
       };
 
       startBtn.addEventListener('click', () => {
         if (!prizeList.length) {
-          statusText.textContent = 'prize list is empty';
-          return;
-        }
+        return;
+      }
         cancelAnimation();
         startBtn.disabled = true;
-        statusText.textContent = 'cycling through available prizes...';
         winnerMessageEl.textContent = 'selecting a prize...';
         winnerMessageEl.classList.remove('winner-message--idle');
+        setAnimatingState();
         selectedPrizeName = randomPrizeName();
         animationInterval = setInterval(() => {
           prizeValueEl.textContent = randomPrizeName() || '---';
@@ -489,11 +438,11 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
             winnerMessageEl.textContent = `prize picked: ${selectedPrizeName}`;
             winnerMessageEl.classList.add('winner-message--active');
             winnerMessageEl.classList.remove('winner-message--idle');
-            statusText.textContent = `prize locked: ${selectedPrizeName}`;
+            setLockedState();
           } else {
             winnerMessageEl.textContent = 'no prize picked';
             winnerMessageEl.classList.add('winner-message--idle');
-            statusText.textContent = 'try again';
+            resetValueState();
           }
           startBtn.disabled = false;
         }, revealDelay);
@@ -511,11 +460,9 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
 
       if (!prizeList.length) {
         startBtn.disabled = true;
-        statusText.textContent = 'prize list is empty';
       }
 
       showIdleState();
-      renderPrizeList();
     </script>
   </body>
 </html>
