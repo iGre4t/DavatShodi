@@ -300,6 +300,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         display: flex;
         align-items: center;
         justify-content: center;
+        transition: background 0.4s ease, border-color 0.4s ease;
       }
 
       .prize-card .card-inner {
@@ -315,6 +316,16 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
 
       .prize-card.card-flip .card-inner {
         transform: rotateY(180deg);
+      }
+
+      .prize-card.card-flip {
+        background: linear-gradient(180deg, #041236, #0b1f63);
+        border-color: rgba(77, 162, 255, 0.9);
+      }
+
+      .prize-card.card-flip .card-front {
+        background: rgba(4, 9, 40, 0.85);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
       }
 
       .prize-card.card-highlight {
