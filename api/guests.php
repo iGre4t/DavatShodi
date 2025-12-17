@@ -1011,7 +1011,7 @@ function createGuestInvitePages(array $guests): void
     body {
       height: 100%;
       margin: 0;
-      padding: 0.25rem 0.35rem 0.4rem;
+      padding: 0.2rem 0.35rem 0.4rem;
       background: radial-gradient(circle at top, #fff7f1 0%, #f3f4f6 45%, #e2e8f0 100%);
       display: flex;
       align-items: center;
@@ -1024,7 +1024,8 @@ function createGuestInvitePages(array $guests): void
     .device {
       width: min(340px, 92vw);
       aspect-ratio: 9 / 16;
-      max-height: min(92vh, 640px);
+      min-height: 640px;
+      max-height: min(96vh, 760px);
       background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 60%, #eef2ff 100%);
       border-radius: 36px;
       box-shadow: 0 35px 60px rgba(15, 23, 42, 0.25);
@@ -1060,12 +1061,13 @@ function createGuestInvitePages(array $guests): void
     }
 
     .message {
-      padding: 2rem 1.5rem 2.5rem;
+      flex: 1;
+      padding: 2.25rem 1.5rem 3rem;
       display: flex;
       flex-direction: column;
-      gap: 0.35rem;
+      gap: 0.3rem;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: space-between;
       text-align: center;
       background: linear-gradient(180deg, transparent 0%, rgba(14, 165, 233, 0.08) 100%);
     }
