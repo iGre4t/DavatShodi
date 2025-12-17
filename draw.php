@@ -52,16 +52,23 @@ function formatSiteIconUrlForHtml(string $value): string
   return "./{$trimmed}";
 }
 
-function encodePath(string $value): string
+function loadLogoImage(string $relativePath): string
 {
-  $parts = explode('/', $value);
-  return implode('/', array_map('rawurlencode', $parts));
+  $fullPath = __DIR__ . '/' . $relativePath;
+  if (!is_file($fullPath)) {
+    return '';
+  }
+  $content = file_get_contents($fullPath);
+  if ($content === false) {
+    return '';
+  }
+  return 'data:image/svg+xml;base64,' . base64_encode($content);
 }
 
 $panelSettings = loadPanelSettings();
 $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName']);
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
-$logoUrl = encodePath(LOGO_PATH);
+$logoUrl = loadLogoImage(LOGO_PATH);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -283,6 +290,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         justify-content: center;
         gap: clamp(0.35rem, 1vw, 0.8rem);
         margin: 0 auto;
+        direction: ltr;
+        unicode-bidi: isolate;
       }
 
       .code-digit {
@@ -296,12 +305,14 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         justify-content: center;
         font-family: 'Peyda', 'Segoe UI', sans-serif;
         font-size: clamp(3.5rem, 8vw, 7rem);
-        letter-spacing: 0.4rem;
+        letter-spacing: 0;
         color: #0042a4;
         font-weight: 700;
         line-height: 1;
         box-shadow: inset 0 0 0 1px rgba(4, 12, 38, 0.15);
         transition: background 0.3s ease, color 0.3s ease;
+        direction: ltr;
+        text-align: center;
       }
 
       .code-digit::after {
@@ -319,8 +330,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       }
 
       .code-digit--locked {
-        background: #0c1c4d;
-        color: #e3f3ff;
+        background: #b9bcc6;
+        color: #0f1a3d;
       }
 
       .caption {
@@ -520,9 +531,10 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       const defaultLocks = () => Array(4).fill(false);
 
       const renderDigits = (digits, locks = defaultLocks()) => {
-        const chars = digits.split('');
-        digitElements.forEach((element, index) => {
-          const char = chars[index] ?? '0';
+        const normalized = normalizeCode(digits);
+        digitElements.forEach((element) => {
+          const index = Number(element.dataset.index);
+          const char = normalized[index] ?? '0';
           element.textContent = char;
           const locked = Boolean(locks[index]);
           element.classList.toggle('code-digit--locked', locked);

@@ -260,6 +260,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-team-line" aria-hidden="true"></span>
             <span>List of guests</span>
           </button>
+          <button class="nav-item" data-tab="prizes">
+            <span class="nav-icon ri ri-gift-line" aria-hidden="true"></span>
+            <span>Prizes</span>
+          </button>
           <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
           <button class="nav-item" data-tab="gallery">
             <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
@@ -427,6 +431,7 @@ $accountEmail = $currentUser['email'] ?? '';
         </section>
 
         <?php include __DIR__ . '/guests.php'; ?>
+        <?php include __DIR__ . '/prizestab.php'; ?>
         <?php include __DIR__ . '/gallery-tab.php'; ?>
         <?php include __DIR__ . '/invitepanel.php'; ?>
 
