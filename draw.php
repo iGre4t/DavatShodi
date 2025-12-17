@@ -113,7 +113,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         min-height: 100vh;
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         background: radial-gradient(circle at top, #7cb7ff, #1a3edb 55%, #07103b 100%);
         color: #f0f8ff;
         text-align: center;
@@ -121,7 +121,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         flex-direction: column;
         gap: 24px;
         position: relative;
-        overflow: hidden;
+        overflow-x: hidden;
       }
 
       .background-icon {
@@ -159,6 +159,15 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         }
       }
 
+      .page-header {
+        width: min(640px, 100%);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        z-index: 2;
+      }
+
       .page-menu {
         display: flex;
         gap: 24px;
@@ -168,7 +177,19 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         border: 1px solid rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(6px);
         z-index: 1;
-        position: relative;
+      }
+
+      .logo-wrapper {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      .logo-wrapper img {
+        display: block;
+        height: 48px;
+        width: auto;
       }
 
       .menu-item {
@@ -357,9 +378,14 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         <path class="icon-outline" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
       </svg>
     </div>
-    <nav class="page-menu">
-      <a class="menu-item active" href="draw.php">قرعه کشی</a>
-      <a class="menu-item" href="#prizes">جوایز مسابقات</a>
+    <nav class="page-header">
+      <div class="page-menu">
+        <a class="menu-item active" href="draw.php">قرعه کشی</a>
+        <a class="menu-item" href="#prizes">جوایز مسابقات</a>
+      </div>
+      <div class="logo-wrapper">
+        <img src="hard gallery/mci-logo-w.svg" alt="logo" loading="lazy" />
+      </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">میز آغاز قرعه‌کشی</p>
@@ -389,10 +415,10 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       const winnersContainer = document.getElementById('winner-items');
 
       let animationInterval = null;
-      let settleTimeout = null;
+      let stopTimeouts = [];
       let currentWinner = null;
 
-      const randomCode = () => Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join('');
+      const randomDigit = () => Math.floor(Math.random() * 10).toString();
 
       const normalizeCode = (value) => {
         const text = (value ?? '').toString().trim();
@@ -412,10 +438,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
           clearInterval(animationInterval);
           animationInterval = null;
         }
-        if (settleTimeout !== null) {
-          clearTimeout(settleTimeout);
-          settleTimeout = null;
-        }
+        stopTimeouts.forEach(clearTimeout);
+        stopTimeouts = [];
       };
 
       const setWinnerText = (name) => {
@@ -475,19 +499,33 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         confirmBtn.disabled = true;
         currentWinner = guestPool[Math.floor(Math.random() * guestPool.length)];
         statusText.textContent = 'drawing...';
-
+        const targetCode = normalizeCode(currentWinner?.code);
+        const digits = targetCode.split('');
+        const currentDigits = ['0', '0', '0', '0'];
+        const locks = [false, false, false, false];
         animationInterval = setInterval(() => {
-          setCode(randomCode());
-        }, 70);
-
-        settleTimeout = setTimeout(() => {
-          cancelAnimation();
-          const winnerCode = normalizeCode(currentWinner?.code);
-          setCode(winnerCode);
-          confirmBtn.disabled = false;
-          startBtn.disabled = false;
-          renderWinner(currentWinner);
-        }, 2400);
+          for (let i = 0; i < 4; i += 1) {
+            if (!locks[i]) {
+              currentDigits[i] = randomDigit();
+            }
+          }
+          setCode(currentDigits.join(''));
+        }, 90);
+        const stopDelays = [1200, 3200, 5200, 7200];
+        stopDelays.forEach((delay, index) => {
+          const timeout = setTimeout(() => {
+            locks[index] = true;
+            currentDigits[index] = digits[index];
+            setCode(currentDigits.join(''));
+            if (index === 3) {
+              cancelAnimation();
+              confirmBtn.disabled = false;
+              startBtn.disabled = false;
+              renderWinner(currentWinner);
+            }
+          }, delay);
+          stopTimeouts.push(timeout);
+        });
       });
 
       confirmBtn.addEventListener('click', async () => {
@@ -509,9 +547,25 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
           }
           renderWinnerList(data.winners || []);
           window.__WINNERS_LIST = Array.isArray(data.winners) ? data.winners : [];
-          statusText.textContent = `guest confirmed: ${currentWinner.full_name}`;
-        } catch (error) {
-          flashError('unable to save winner');
+        statusText.textContent = `guest confirmed: ${currentWinner.full_name}`;
+      } catch (error) {
+        flashError('unable to save winner');
+      }
+    });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) {
+          return;
+        }
+        if (event.code === 'Enter') {
+          if (!startBtn.disabled) {
+            startBtn.click();
+          }
+        } else if (event.code === 'Space') {
+          event.preventDefault();
+          if (!confirmBtn.disabled) {
+            confirmBtn.click();
+          }
         }
       });
 
