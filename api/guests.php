@@ -809,6 +809,23 @@ function ensureInviteCode($event, array &$guest): string
     return $code;
 }
 
+function convertDigitsToPersian(string $value): string
+{
+    $map = [
+        '0' => '۰',
+        '1' => '۱',
+        '2' => '۲',
+        '3' => '۳',
+        '4' => '۴',
+        '5' => '۵',
+        '6' => '۶',
+        '7' => '۷',
+        '8' => '۸',
+        '9' => '۹'
+    ];
+    return strtr($value, $map);
+}
+
 function normalizeInviteCodeDigits(string $value): string
 {
     $digits = preg_replace('/\D+/', '', $value);
@@ -949,6 +966,7 @@ function createGuestInvitePages(array $guests): void
         }
         $safeName = htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $safeCode = htmlspecialchars($code, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $persianCode = convertDigitsToPersian((string)$safeCode);
         $nationalId = normalizeNationalId((string)($guest['national_id'] ?? ''));
         $safeNationalId = htmlspecialchars($nationalId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $qrElement = '';
@@ -1034,6 +1052,7 @@ function createGuestInvitePages(array $guests): void
       flex-direction: column;
       position: relative;
       margin: 0 auto;
+      padding: 0.4rem 0.45rem 0.5rem;
     }
 
     .device::after {
@@ -1047,9 +1066,9 @@ function createGuestInvitePages(array $guests): void
 
     .screen {
       flex: 1;
-      margin: 0.75rem 0.85rem 0.95rem;
+      margin: 0;
       border-radius: 32px;
-      background: linear-gradient(180deg, #fefefe 0%, #fbfbff 55%, #e7efff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, #f3f5ff 55%, #e3ebff 100%);
       box-shadow: inset 0 2px 12px rgba(15, 23, 42, 0.1), 0 12px 30px rgba(15, 23, 42, 0.15);
       display: flex;
       flex-direction: column;
@@ -1112,23 +1131,23 @@ function createGuestInvitePages(array $guests): void
 
     .code {
       margin: 0;
-      font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
-      font-size: clamp(1.8rem, 4vw, 2.2rem);
+      font-family: 'Peyda';
+      font-size: clamp(1.4rem, 3vw, 1.8rem);
       letter-spacing: 0.35em;
       font-weight: 600;
       color: #0f172a;
       direction: ltr;
       display: block;
       line-height: 1.1;
+      width: 100%;
+      text-align: center;
+      white-space: nowrap;
     }
 
     @media (max-width: 480px) {
       .device {
         width: min(340px, 95vw);
         border-radius: 28px;
-      }
-      .screen {
-        margin: 0.65rem 0.7rem 0.8rem;
       }
       .message {
         padding: 1.25rem 1rem 1.6rem;
@@ -1149,7 +1168,7 @@ function createGuestInvitePages(array $guests): void
           <p class="greeting">مهمان محترم</p>
           <p class="name">{$safeName}</p>
           {$qrElement}
-          <p class="code">{$safeCode}</p>
+          <p class="code">{$persianCode}</p>
         </div>
       </div>
     </div>
