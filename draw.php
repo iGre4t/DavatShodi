@@ -301,7 +301,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         position: relative;
         border-radius: 18px;
         display: flex;
-        align-items: center;
+        align-items: flex-end;
         justify-content: center;
         font-family: 'Peyda', 'Segoe UI', sans-serif;
         font-size: clamp(3.5rem, 8vw, 7rem);
@@ -309,6 +309,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         color: #0042a4;
         font-weight: 700;
         line-height: 1;
+        padding-bottom: clamp(4px, 1vw, 10px);
         box-shadow: inset 0 0 0 1px rgba(4, 12, 38, 0.15);
         transition: background 0.3s ease, color 0.3s ease;
         direction: ltr;
@@ -345,6 +346,11 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         font-size: 1.2rem;
         margin: 0;
         color: #cde6ff;
+      }
+
+      .cta-group button {
+        font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
+        letter-spacing: 0.04em;
       }
 
       .cta-group {
@@ -486,7 +492,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
         <?php endfor; ?>
       </p>
-      <p id="winner-name" class="winner-message">-- <span>----</span> is the winner --</p>
+      <p id="winner-name" class="winner-message"><span>----</span> is the winner</p>
       <div class="cta-group">
         <button id="start-draw" class="start-btn" type="button">start draw</button>
         <button id="confirm-guest" class="confirm-btn" type="button" disabled>confirm guest</button>
@@ -556,11 +562,10 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
 
       const setWinnerText = (name) => {
         winnerNameEl.textContent = '';
-        winnerNameEl.appendChild(document.createTextNode('-- '));
         const highlight = document.createElement('span');
         highlight.textContent = name;
         winnerNameEl.appendChild(highlight);
-        winnerNameEl.appendChild(document.createTextNode(' is the winner --'));
+        winnerNameEl.appendChild(document.createTextNode(' is the winner'));
       };
 
       const renderWinner = (winner) => {

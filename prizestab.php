@@ -1,7 +1,7 @@
 <?php
 $csvPath = __DIR__ . '/prizelist.csv';
 
-function respondJson(array $payload, int $statusCode = 200): void {
+function respondPrizesJson(array $payload, int $statusCode = 200): void {
   if (!headers_sent()) {
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
@@ -61,20 +61,20 @@ if ($action !== '') {
   $prizes = readPrizes($csvPath);
   switch ($action) {
     case 'list':
-      respondJson(['status' => 'ok', 'prizes' => $prizes]);
+      respondPrizesJson(['status' => 'ok', 'prizes' => $prizes]);
       break;
     case 'add':
       $name = trim((string)($_POST['name'] ?? ''));
       if ($name === '') {
-        respondJson(['status' => 'error', 'message' => 'Prize name is required.'], 422);
+        respondPrizesJson(['status' => 'error', 'message' => 'Prize name is required.'], 422);
       }
       $ids = array_column($prizes, 'id');
       $nextId = $ids ? (max($ids) + 1) : 1;
       $prizes[] = ['id' => $nextId, 'name' => $name];
       if (!writePrizes($csvPath, $prizes)) {
-        respondJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
+        respondPrizesJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
       }
-      respondJson([
+      respondPrizesJson([
         'status' => 'ok',
         'message' => 'Prize added.',
         'prizes' => readPrizes($csvPath)
@@ -84,7 +84,7 @@ if ($action !== '') {
       $id = (int)($_POST['id'] ?? 0);
       $name = trim((string)($_POST['name'] ?? ''));
       if ($id <= 0 || $name === '') {
-        respondJson(['status' => 'error', 'message' => 'Prize id and a valid name are required.'], 422);
+        respondPrizesJson(['status' => 'error', 'message' => 'Prize id and a valid name are required.'], 422);
       }
       $found = false;
       foreach ($prizes as &$entry) {
@@ -96,12 +96,12 @@ if ($action !== '') {
       }
       unset($entry);
       if (!$found) {
-        respondJson(['status' => 'error', 'message' => 'Prize not found.'], 404);
+        respondPrizesJson(['status' => 'error', 'message' => 'Prize not found.'], 404);
       }
       if (!writePrizes($csvPath, $prizes)) {
-        respondJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
+        respondPrizesJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
       }
-      respondJson([
+      respondPrizesJson([
         'status' => 'ok',
         'message' => 'Prize updated.',
         'prizes' => readPrizes($csvPath)
@@ -110,23 +110,23 @@ if ($action !== '') {
     case 'delete':
       $id = (int)($_POST['id'] ?? 0);
       if ($id <= 0) {
-        respondJson(['status' => 'error', 'message' => 'Prize id is required for deletion.'], 422);
+        respondPrizesJson(['status' => 'error', 'message' => 'Prize id is required for deletion.'], 422);
       }
       $filtered = array_filter($prizes, fn($entry) => $entry['id'] !== $id);
       if (count($filtered) === count($prizes)) {
-        respondJson(['status' => 'error', 'message' => 'Prize not found.'], 404);
+        respondPrizesJson(['status' => 'error', 'message' => 'Prize not found.'], 404);
       }
       if (!writePrizes($csvPath, array_values($filtered))) {
-        respondJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
+        respondPrizesJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
       }
-      respondJson([
+      respondPrizesJson([
         'status' => 'ok',
         'message' => 'Prize removed.',
         'prizes' => readPrizes($csvPath)
       ]);
       break;
     default:
-      respondJson(['status' => 'error', 'message' => 'Unknown action.'], 400);
+      respondPrizesJson(['status' => 'error', 'message' => 'Unknown action.'], 400);
       break;
   }
 }

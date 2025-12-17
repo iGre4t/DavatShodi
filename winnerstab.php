@@ -1,7 +1,7 @@
 <?php
 const EVENTS_ROOT = __DIR__ . '/events';
 
-function respondJson(array $payload, int $statusCode = 200): void
+function respondWinnersJson(array $payload, int $statusCode = 200): void
 {
   if (!headers_sent()) {
     http_response_code($statusCode);
@@ -178,25 +178,25 @@ if ($action !== '') {
   $action = strtolower($action);
   switch ($action) {
     case 'list':
-      respondJson(['status' => 'ok', 'winners' => loadWinnersList(EVENTS_ROOT)]);
+      respondWinnersJson(['status' => 'ok', 'winners' => loadWinnersList(EVENTS_ROOT)]);
       break;
     case 'delete':
       $line = (int)($_POST['line'] ?? 0);
       $source = trim((string)($_POST['source'] ?? ''));
       if ($line <= 0 || $source === '') {
-        respondJson(['status' => 'error', 'message' => 'Line and source are required.'], 400);
+        respondWinnersJson(['status' => 'error', 'message' => 'Line and source are required.'], 400);
       }
       if (!deleteWinnerEntry($source, $line)) {
-        respondJson(['status' => 'error', 'message' => 'Deletion failed. Entry not found or inaccessible.'], 404);
+        respondWinnersJson(['status' => 'error', 'message' => 'Deletion failed. Entry not found or inaccessible.'], 404);
       }
-      respondJson([
+      respondWinnersJson([
         'status' => 'ok',
         'message' => 'Winner removed.',
         'winners' => loadWinnersList(EVENTS_ROOT)
       ]);
       break;
     default:
-      respondJson(['status' => 'error', 'message' => 'Unknown action.'], 400);
+      respondWinnersJson(['status' => 'error', 'message' => 'Unknown action.'], 400);
       break;
   }
 }
