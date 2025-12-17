@@ -963,7 +963,7 @@ function createGuestInvitePages(array $guests): void
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>???? ???? ?????? ????? ?? ???? ????</title>
+  <title>کارت دعوت رویداد همراه با نامی آشنا</title>
   <link rel="icon" id="site-icon-link" href="data:,">
   <link rel="preload" href="/style/fonts/PeydaWebFaNum-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
   <link rel="preload" href="/style/fonts/PeydaWebFaNum-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
@@ -988,6 +988,131 @@ function createGuestInvitePages(array $guests): void
       }
     })();
   </script>
+  <style>
+    @font-face {
+      font-family: 'Peyda';
+      font-style: normal;
+      font-weight: 400;
+      src: url('/style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+    }
+
+    @font-face {
+      font-family: 'Peyda';
+      font-style: normal;
+      font-weight: 700;
+      src: url('/style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+    }
+
+    :root {
+      color-scheme: only light;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      padding: 0.5rem;
+      background: radial-gradient(circle at top, #fff7f1 0%, #f3f4f6 45%, #e2e8f0 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
+      color: #111;
+      direction: rtl;
+    }
+
+    .device {
+      width: min(360px, 90vw);
+      aspect-ratio: 9 / 16;
+      max-height: 90vh;
+      background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 60%, #eef2ff 100%);
+      border-radius: 36px;
+      box-shadow: 0 35px 60px rgba(15, 23, 42, 0.25);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .device::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      pointer-events: none;
+    }
+
+    .card-image-shell {
+      flex: 1.15;
+      background: #d9e2ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card-image-shell img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .message {
+      padding: 2rem 1.5rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      align-items: center;
+      justify-content: flex-end;
+      text-align: center;
+      background: linear-gradient(180deg, transparent 0%, rgba(14, 165, 233, 0.08) 100%);
+    }
+
+    .greeting {
+      margin: 0;
+      font-size: 1.05rem;
+      color: #52606d;
+    }
+
+    .name {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 2.4rem);
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .qr {
+      width: 110px;
+      height: 110px;
+      border-radius: 16px;
+      background: #fff;
+      padding: 0.4rem;
+      box-shadow: 0 18px 35px rgba(15, 23, 42, 0.25);
+      margin-top: 0.4rem;
+    }
+
+    .code {
+      margin: 0;
+      font-size: clamp(2.6rem, 6vw, 3.2rem);
+      letter-spacing: 0.6em;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    @media (max-width: 480px) {
+      .device {
+        width: min(340px, 95vw);
+        border-radius: 28px;
+      }
+      .message {
+        padding: 1.5rem 1rem 2rem;
+      }
+      .code {
+        letter-spacing: 0.55em;
+      }
+    }
+  </style>
 </head>
   <body>
     <div class="device">
