@@ -606,7 +606,8 @@
                 lastname: log?.lastname,
                 national_id: log?.national_id,
                 invite_code: log?.invite_code,
-                date_entered: log?.date_entered
+                date_entered: log?.date_entered,
+                entryTimestamp: log?.timestamp
               };
               updatePrintArea(guestForPrint);
               window.print();
@@ -644,7 +645,8 @@
         const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (printNameEl) printNameEl.textContent = fullName;
         if (printCodeEl) printCodeEl.textContent = guest.invite_code || "----";
-        updateEntryInfo(guest.date_entered);
+        const entryValue = guest.entryTimestamp || guest.date_entered;
+        updateEntryInfo(entryValue);
       }
 
       function openEntryModal(guest = {}) {
@@ -716,7 +718,9 @@
             const successMessage = `ورود ${guestDisplayName} ثبت شد.`;
             setStatus(successMessage, "success");
             showToast(successMessage);
-            openEntryModal(guest);
+            const entryTimestamp = data.log?.timestamp || guest.date_entered;
+            const guestForModal = { ...guest, entryTimestamp };
+            openEntryModal(guestForModal);
           } else if (outcome === "exit") {
             const successMessage = `خروج ${guestDisplayName} ثبت شد.`;
             setStatus(successMessage, tone || "info");
