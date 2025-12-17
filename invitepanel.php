@@ -81,8 +81,7 @@
       <div class="invite-print-label">کد قرعه کشی شما</div>
       <div class="invite-print-code" id="invite-print-code"></div>
       <div class="invite-print-entry-info">
-        <span id="invite-print-entry-time"></span>
-        <span id="invite-print-entry-date-line"></span>
+        <span id="invite-print-entry-line"></span>
       </div>
     </div>
   </div>
@@ -330,8 +329,7 @@
       const printNameEl = document.getElementById("invite-print-name");
       const printCodeEl = document.getElementById("invite-print-code");
       const statsGrid = document.getElementById("invite-stats-grid");
-      const entryTimeLineEl = document.getElementById("invite-print-entry-time");
-      const entryDateLineEl = document.getElementById("invite-print-entry-date-line");
+      const entryLineEl = document.getElementById("invite-print-entry-line");
       const persianTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
         hour: "2-digit",
         minute: "2-digit",
@@ -447,35 +445,35 @@
         return null;
       }
 
-      function buildEntryDateLines(value) {
+      function buildEntryLine(value) {
         const dateObj = parseEntryTimestamp(value);
         if (!dateObj) {
-          return { timeLine: "", dateLine: "" };
+          return "";
         }
         const timeText = persianTimeFormatter.format(dateObj);
         const dateParts = persianDateFormatter.formatToParts(dateObj);
         const dayPart = dateParts.find((part) => part.type === "day")?.value || "";
-        let monthPart = dateParts.find((part) => part.type === "month")?.value || "";
-        if (monthPart && !monthPart.endsWith("ماه")) {
-          monthPart = `${monthPart}ماه`;
-        }
+        const monthPart = dateParts.find((part) => part.type === "month")?.value || "";
         const yearPart = dateParts.find((part) => part.type === "year")?.value || "";
         const weekday = persianWeekdayFormatter.format(dateObj);
-        const timeLine = timeText ? `ساعت ورود ${timeText} دقیقه` : "";
-        const dateLine =
-          weekday && dayPart && monthPart && yearPart
-            ? `در روز ${weekday} ${dayPart} ${monthPart} ${yearPart}`
-            : "";
-        return { timeLine, dateLine };
+        const hasFullDate = Boolean(weekday && dayPart && monthPart && yearPart);
+        const dateSegment = hasFullDate ? `روز ${weekday} ${dayPart} ${monthPart} ${yearPart}` : "";
+        if (timeText && dateSegment) {
+          return `ورود ساعت ${timeText} ${dateSegment}`;
+        }
+        if (timeText) {
+          return `ورود ساعت ${timeText}`;
+        }
+        if (dateSegment) {
+          return `ورود ${dateSegment}`;
+        }
+        return "";
       }
 
       function updateEntryInfo(value) {
-        const { timeLine, dateLine } = buildEntryDateLines(value);
-        if (entryTimeLineEl) {
-          entryTimeLineEl.textContent = timeLine;
-        }
-        if (entryDateLineEl) {
-          entryDateLineEl.textContent = dateLine;
+        const entryLine = buildEntryLine(value);
+        if (entryLineEl) {
+          entryLineEl.textContent = entryLine;
         }
       }
 
