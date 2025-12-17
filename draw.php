@@ -804,10 +804,12 @@ function normalizeSlug(string $value): string
 function isEventActive(array $event): bool
 {
   $flagKeys = ['active_event', 'is_active', 'active', 'enabled'];
+  $hasFlag = false;
   foreach ($flagKeys as $key) {
     if (!array_key_exists($key, $event)) {
       continue;
     }
+    $hasFlag = true;
     $value = $event[$key];
     if ($value === true) {
       return true;
@@ -815,8 +817,11 @@ function isEventActive(array $event): bool
     if (is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes', 'فعال'], true)) {
       return true;
     }
+    if (is_int($value) && $value > 0) {
+      return true;
+    }
   }
-  return false;
+  return !$hasFlag;
 }
 
 function buildWinnersFileName(string $eventName): string
