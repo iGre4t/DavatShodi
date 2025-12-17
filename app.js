@@ -3510,6 +3510,9 @@ function showDialog(message, opts = {}){
     alert(message);
     return true;
   }
+  const defaultTitleText = titleEl ? titleEl.textContent : 'Message';
+  const defaultOkText = okBtn.textContent;
+  const defaultCancelText = cancelBtn.textContent;
   textEl.textContent = message;
   if (titleEl) titleEl.textContent = opts.title || 'Message';
   if (opts.okText) okBtn.textContent = opts.okText;
@@ -3538,14 +3541,32 @@ function showDialog(message, opts = {}){
       modal.classList.add('hidden');
       okBtn.onclick = null;
       cancelBtn.onclick = null;
+      if (titleEl) titleEl.textContent = defaultTitleText;
+      okBtn.textContent = defaultOkText;
+      cancelBtn.textContent = defaultCancelText;
       resolve(result);
     };
-    okBtn.onclick = () => close(true);
-    cancelBtn.onclick = () => close(false);
-    document.addEventListener("keydown", handleKey);
-    modal.classList.remove('hidden');
-    if (!opts.confirm) cancelBtn.classList.add('hidden'); else cancelBtn.classList.remove('hidden');
-  });
+      okBtn.onclick = () => close(true);
+      cancelBtn.onclick = () => close(false);
+      document.addEventListener("keydown", handleKey);
+      modal.classList.remove('hidden');
+      if (!opts.confirm) cancelBtn.classList.add('hidden'); else cancelBtn.classList.remove('hidden');
+    });
+}
+
+async function confirmExternalExit(targetUrl){
+  const confirmed = await showDialog(
+    'You are exiting panel, are you sure?',
+    {
+      title: 'Leaving panel',
+      okText: "I'm sure",
+      cancelText: 'Cancel',
+      confirm: true
+    }
+  );
+  if (confirmed) {
+    window.location.href = targetUrl;
+  }
 }
 
 function populateTimezoneSelect(){
@@ -3631,13 +3652,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Clicking a nav-item switches tabs and refreshes the header/title.
   const navContainer = qs('.nav');
-  navContainer?.addEventListener('click', (event) => {
+  navContainer?.addEventListener('click', async (event) => {
     const target = event.target;
-    const btn = target && target instanceof Element ? target.closest('.nav-item[data-tab]') : null;
+    const btn = target && target instanceof Element ? target.closest('.nav-item') : null;
     if (!btn) return;
-    event.preventDefault();
+    const externalTarget = btn.dataset.externalTarget;
+    if (externalTarget) {
+      event.preventDefault();
+      await confirmExternalExit(externalTarget);
+      return;
+    }
     const tab = btn.dataset.tab;
     if (tab) {
+      event.preventDefault();
       setActiveTab(tab);
     }
   });

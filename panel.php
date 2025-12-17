@@ -176,10 +176,10 @@ $accountEmail = $currentUser['email'] ?? '';
           <button
             type="button"
             class="nav-item"
-            onclick="window.location.href='draw.php'"
+            data-external-target="draw.php"
             title="Jump to draw page"
           >
-            <span class="nav-icon ri ri-dice-5-line" aria-hidden="true"></span>
+            <span class="nav-icon ri ri-poker-clubs-line" aria-hidden="true"></span>
             <span>Draw Pot</span>
           </button>
           <button class="nav-item" data-tab="winners">
@@ -199,7 +199,7 @@ $accountEmail = $currentUser['email'] ?? '';
           <button
             type="button"
             class="nav-item"
-            onclick="window.location.href='invite.php'"
+            data-external-target="invite.php"
             title="Jump to invite page"
           >
             <span class="nav-icon ri ri-mail-add-line" aria-hidden="true"></span>

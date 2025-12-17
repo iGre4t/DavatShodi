@@ -71,15 +71,15 @@
 
   <div id="invite-print-area" aria-hidden="true">
     <div class="invite-print-card">
+      <div class="invite-print-salutation">مهمان محترم</div>
       <div class="invite-print-name" id="invite-print-name"></div>
+      <p class="invite-print-greeting">به رویداد همراه با نامی آشنا خوش آمدید</p>
+      <div class="invite-print-label">کد قرعه کشی شما</div>
+      <div class="invite-print-code" id="invite-print-code"></div>
       <div class="invite-print-entry-info">
         <span id="invite-print-entry-time"></span>
         <span id="invite-print-entry-date-line"></span>
       </div>
-      <p class="invite-print-greeting">به رویداد همراه با نامی آشنا خوش آمدید</p>
-      <div class="invite-print-label">کد قرعه کشی شما</div>
-      <div class="invite-print-code" id="invite-print-code"></div>
-      <p class="invite-print-note">لطفا در حفظ این برگه تا آخر مراسم کوشا باشید</p>
     </div>
   </div>
 
@@ -172,12 +172,19 @@
       font-weight: 700;
       word-break: break-word;
     }
+    .invite-print-salutation {
+      font-size: 9pt;
+      letter-spacing: 0.5pt;
+      text-transform: uppercase;
+      opacity: 0.8;
+    }
     .invite-print-entry-info {
       display: grid;
-      gap: 0.5mm;
-      font-size: 11pt;
+      gap: 0.4mm;
+      font-size: 8pt;
       line-height: 1.2;
       direction: rtl;
+      margin-top: 1mm;
     }
     .invite-print-entry-info span {
       white-space: nowrap;
