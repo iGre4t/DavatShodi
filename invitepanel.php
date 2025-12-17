@@ -149,17 +149,19 @@
       left: -9999px;
     }
     #invite-print-area .invite-print-card {
-      width: 700mm;
-      height: 700mm;
-      padding: 8mm 6mm;
+      width: 70mm;
+      height: 70mm;
+      padding: 10mm 6mm;
       display: grid;
-      gap: 6mm;
+      gap: 4mm;
       text-align: center;
       font-family: 'PeydaWebFaNum', 'PeydaWebFaNum', sans-serif;
-      line-height: 1.3;
+      line-height: 1.2;
       border: 1px solid #000;
       box-sizing: border-box;
       overflow: hidden;
+      justify-items: center;
+      align-content: center;
     }
     #invite-print-area .invite-print-name {
       font-size: 16pt;
@@ -182,7 +184,7 @@
       letter-spacing: 1.5pt;
     }
     @page {
-      size: 700mm 700mm;
+      size: 70mm 70mm portrait;
       margin: 0;
     }
     @media print {

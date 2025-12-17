@@ -658,6 +658,16 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
     });
 
       document.addEventListener('keydown', (event) => {
+        if (event.code === 'Numpad1') {
+          event.preventDefault();
+          window.location.href = 'prizes.php';
+          return;
+        }
+        if (event.code === 'Numpad2') {
+          event.preventDefault();
+          window.location.href = 'draw.php';
+          return;
+        }
         if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) {
           return;
         }

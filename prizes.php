@@ -846,6 +846,16 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
 
         document.addEventListener('keydown', (event) => {
           pressedKeys.add(event.code);
+          if (event.code === 'Numpad1') {
+            event.preventDefault();
+            window.location.href = 'prizes.php';
+            return;
+          }
+          if (event.code === 'Numpad2') {
+            event.preventDefault();
+            window.location.href = 'draw.php';
+            return;
+          }
           if (!['INPUT', 'TEXTAREA'].includes(event.target?.tagName ?? '')) {
             if (event.code === 'Enter' && !startBtn.disabled) {
               event.preventDefault();
