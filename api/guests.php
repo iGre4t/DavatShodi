@@ -964,14 +964,14 @@ function createGuestInvitePages(array $guests): void
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>???? ???? ?????? ????? ?? ???? ????</title>
-  <link rel="icon" id="site-icon" href="data:,">
+  <link rel="icon" id="site-icon-link" href="data:,">
   <link rel="preload" href="/style/fonts/PeydaWebFaNum-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
   <link rel="preload" href="/style/fonts/PeydaWebFaNum-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
   <link rel="stylesheet" href="/style/invite-card.css">
   <script src="/General%20Setting/general-settings.js" defer></script>
   <script>
     (function () {
-      const iconEl = document.getElementById('site-icon');
+      const iconEl = document.getElementById('site-icon-link');
       const applyIcon = () => {
         if (!iconEl) {
           return;
@@ -995,7 +995,7 @@ function createGuestInvitePages(array $guests): void
         <img src="{$imageUrl}" alt="???? ???? ??????">
       </div>
       <div class="message">
-        <p class="greeting">???? ???? ?????? ????? ?? ???? ????</p>
+        <p class="greeting">مهمان محترم</p>
         <p class="name">{$safeName}</p>
         {$qrElement}
         <p class="code">{$safeCode}</p>
