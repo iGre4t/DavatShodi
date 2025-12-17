@@ -13,6 +13,151 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
+const PRIZE_STATE_PATH = __DIR__ . '/data/prize_draw_state.json';
+const PRIZE_GRID_CARD_COUNT = 12;
+
+function respondJson(array $payload, int $statusCode = 200): void
+{
+  if (!headers_sent()) {
+    http_response_code($statusCode);
+    header('Content-Type: application/json; charset=utf-8');
+  }
+  echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+function saveJsonPayload(string $path, array $payload): bool
+{
+  $dir = dirname($path);
+  if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+    return false;
+  }
+  $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($encoded === false) {
+    return false;
+  }
+  return file_put_contents($path, $encoded) !== false;
+}
+
+function loadPrizeDrawState(): array
+{
+  $payload = loadJsonPayload(PRIZE_STATE_PATH);
+  $drawn = is_array($payload['drawn_ids'] ?? null) ? $payload['drawn_ids'] : [];
+  $cards = is_array($payload['cards'] ?? null) ? $payload['cards'] : [];
+  return [
+    'drawn_ids' => array_values(array_map('intval', $drawn)),
+    'cards' => $cards
+  ];
+}
+
+function persistPrizeDrawState(array $state): bool
+{
+  return saveJsonPayload(PRIZE_STATE_PATH, $state);
+}
+
+function normalizeCardAssignments(array $cards): array
+{
+  $result = array_fill(0, PRIZE_GRID_CARD_COUNT, null);
+  foreach ($cards as $entry) {
+    if (!is_array($entry)) {
+      continue;
+    }
+    $index = (int)($entry['index'] ?? -1);
+    if ($index < 0 || $index >= PRIZE_GRID_CARD_COUNT) {
+      continue;
+    }
+    $result[$index] = [
+      'index' => $index,
+      'prize_id' => (int)($entry['prize_id'] ?? 0),
+      'prize_name' => (string)($entry['prize_name'] ?? ''),
+      'row' => (int)($entry['row'] ?? 0)
+    ];
+  }
+  return $result;
+}
+
+function handleDrawPrizeAction(): void
+{
+  $prizeList = loadPrizeList(PRIZE_LIST_PATH);
+  $state = loadPrizeDrawState();
+  $normalized = normalizeCardAssignments($state['cards']);
+  $drawnIds = array_unique($state['drawn_ids']);
+  $available = array_values(array_filter($prizeList, static fn ($entry) => !in_array($entry['id'], $drawnIds, true)));
+  if (!$available) {
+    respondJson(['status' => 'error', 'message' => 'No prizes remaining.'], 400);
+  }
+  $cardIndex = null;
+  foreach ($normalized as $idx => $entry) {
+    if ($entry === null) {
+      $cardIndex = $idx;
+      break;
+    }
+  }
+  if ($cardIndex === null) {
+    respondJson(['status' => 'error', 'message' => 'Grid is full.'], 400);
+  }
+  $selected = $available[array_rand($available)];
+  $state['drawn_ids'][] = $selected['id'];
+  $state['cards'][] = [
+    'index' => $cardIndex,
+    'prize_id' => $selected['id'],
+    'prize_name' => $selected['name'],
+    'row' => $selected['row']
+  ];
+  $state['cards'] = array_values(array_filter($state['cards'], static fn ($entry) => is_array($entry)));
+  if (!persistPrizeDrawState($state)) {
+    respondJson(['status' => 'error', 'message' => 'Unable to persist prize state.'], 500);
+  }
+  $normalized = normalizeCardAssignments($state['cards']);
+  $remaining = count($available) - 1;
+  $emptySlots = count(array_filter($normalized, static fn ($entry) => $entry === null));
+  $canDraw = $remaining > 0 && $emptySlots > 0;
+  respondJson([
+    'status' => 'ok',
+    'prize' => [
+      'id' => $selected['id'],
+      'name' => $selected['name'],
+      'row' => $selected['row']
+    ],
+    'card_index' => $cardIndex,
+    'state' => $normalized,
+    'remaining' => $remaining,
+    'can_draw' => $canDraw,
+    'drawn_ids' => array_values(array_unique($state['drawn_ids']))
+  ]);
+}
+
+function handleResetPrizeState(): void
+{
+  $prizeList = loadPrizeList(PRIZE_LIST_PATH);
+  $state = ['drawn_ids' => [], 'cards' => []];
+  if (!persistPrizeDrawState($state)) {
+    respondJson(['status' => 'error', 'message' => 'Unable to reset prize state.'], 500);
+  }
+  $normalized = normalizeCardAssignments($state['cards']);
+  $remaining = count($prizeList);
+  $canDraw = $remaining > 0;
+  respondJson([
+    'status' => 'ok',
+    'state' => $normalized,
+    'remaining' => $remaining,
+    'can_draw' => $canDraw,
+    'drawn_ids' => []
+  ]);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $rawInput = file_get_contents('php://input');
+  $payload = json_decode($rawInput ?: '', true);
+  $action = strtolower(trim((string)($payload['action'] ?? '')));
+  if ($action === 'draw_prize') {
+    handleDrawPrizeAction();
+  }
+  if ($action === 'reset_draw') {
+    handleResetPrizeState();
+  }
+  respondJson(['status' => 'error', 'message' => 'Unsupported action.'], 400);
+}
 const PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
 
 function loadPanelSettings(): array
@@ -61,17 +206,20 @@ function loadPrizeList(string $path): array
   }
   $list = [];
   fgetcsv($handle);
+  $rowNumber = 1;
   while (($row = fgetcsv($handle)) !== false) {
     if (!is_array($row)) {
       continue;
     }
+    $rowNumber++;
     $name = trim((string)($row[1] ?? $row[0] ?? ''));
     if ($name === '') {
       continue;
     }
     $list[] = [
       'id' => (int)($row[0] ?? 0),
-      'name' => $name
+      'name' => $name,
+      'row' => $rowNumber
     ];
   }
   fclose($handle);
@@ -83,6 +231,12 @@ $panelSettings = loadPanelSettings();
 $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName']);
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
 $prizeList = loadPrizeList(PRIZE_LIST_PATH);
+$drawState = loadPrizeDrawState();
+$cardAssignments = normalizeCardAssignments($drawState['cards']);
+$drawnPrizeIds = array_values(array_unique($drawState['drawn_ids']));
+$remainingPrizes = max(0, count($prizeList) - count($drawnPrizeIds));
+$filledCardSlots = count(array_filter($cardAssignments, static fn ($entry) => $entry !== null));
+$canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
 
 ?>
 <!doctype html>
@@ -457,11 +611,17 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       </div>
     </div>
     <div class="prize-grid" aria-hidden="true">
-      <?php for ($cardIndex = 0; $cardIndex < 12; $cardIndex++): ?>
-        <div class="prize-card">
+      <?php for ($cardIndex = 0; $cardIndex < PRIZE_GRID_CARD_COUNT; $cardIndex++): ?>
+        <?php
+          $assignment = $cardAssignments[$cardIndex] ?? null;
+          $isFlipped = $assignment !== null;
+        ?>
+        <div class="prize-card<?= $isFlipped ? ' card-flip' : '' ?>" data-card-index="<?= $cardIndex ?>">
           <div class="card-inner">
             <div class="card-face card-front">جایزه</div>
-            <div class="card-face card-back"></div>
+            <div class="card-face card-back">
+              <?= htmlspecialchars((string)($assignment['prize_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+            </div>
           </div>
         </div>
       <?php endfor; ?>

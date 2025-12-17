@@ -93,6 +93,16 @@
       gap: 4px;
       background: #f8fafc;
     }
+    #tab-invite .invite-log-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+    #tab-invite .invite-log-print-btn {
+      padding: 4px 10px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
     #tab-invite .invite-log.enter {
       background: #e5f9ed;
       border-color: #16a34a;
@@ -299,11 +309,32 @@
           container.appendChild(title);
           container.appendChild(name);
           if (code.textContent) container.appendChild(code);
-          container.appendChild(meta);
-          if (note.textContent) container.appendChild(note);
-          logList.appendChild(container);
+      container.appendChild(meta);
+      if (note.textContent) container.appendChild(note);
+      if (type === "enter" && log?.guest_name) {
+        const actions = document.createElement("div");
+        actions.className = "invite-log-actions";
+        const printAction = document.createElement("button");
+        printAction.type = "button";
+        printAction.className = "btn ghost small invite-log-print-btn";
+        printAction.textContent = "Print receipt";
+        printAction.addEventListener("click", () => {
+          const guestForPrint = {
+            full_name: log.guest_name,
+            firstname: log?.firstname,
+            lastname: log?.lastname,
+            national_id: log?.national_id,
+            invite_code: log?.invite_code
+          };
+          updatePrintArea(guestForPrint);
+          window.print();
         });
+        actions.appendChild(printAction);
+        container.appendChild(actions);
       }
+      logList.appendChild(container);
+    });
+  }
 
       function mergeLogs(nextLogs) {
         if (!Array.isArray(nextLogs)) return;
