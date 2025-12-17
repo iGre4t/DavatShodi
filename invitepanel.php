@@ -144,9 +144,7 @@
     #invite-status[data-tone="success"] { color: #15803d; }
     #invite-status[data-tone="info"] { color: #1d4ed8; }
     #invite-print-area {
-      position: fixed;
-      top: -9999px;
-      left: -9999px;
+      display: none;
     }
     #invite-print-area .invite-print-card {
       width: 80mm;
@@ -184,15 +182,20 @@
       margin: 0;
     }
     @media print {
-      body * {
-        visibility: hidden !important;
+      html, body {
+        width: 80mm;
+        height: 80mm;
+        margin: 0;
+        padding: 0;
       }
-      #invite-print-area, #invite-print-area * {
-        visibility: visible !important;
+      body > *:not(#invite-print-area) {
+        display: none !important;
       }
       #invite-print-area {
-        position: absolute;
-        inset: 0;
+        display: block;
+        position: relative;
+        width: 80mm;
+        height: 80mm;
         margin: 0 auto;
       }
     }
