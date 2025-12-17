@@ -716,34 +716,26 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
 <?php
 function buildGuestPool(string $storePath): array
 {
+  $store = loadGuestStoreForDraw($storePath);
+  $events = $store['events'] ?? [];
+  $activeSlug = trim((string)($store['active_event_slug'] ?? ''));
   $pool = [];
-  if (!is_file($storePath)) {
-    return $pool;
-  }
-  $content = file_get_contents($storePath);
-  if ($content === false) {
-    return $pool;
-  }
-  $decoded = json_decode($content, true);
-  if (!is_array($decoded)) {
-    return $pool;
-  }
-  $events = $decoded['events'] ?? [];
+
   foreach ($events as $event) {
     if (!is_array($event)) {
+      continue;
+    }
+    $slug = normalizeSlug((string)($event['slug'] ?? ''));
+    if ($slug === '') {
+      $slug = normalizeSlug((string)($event['name'] ?? ''));
+    }
+    if ($activeSlug !== '' && $slug !== $activeSlug) {
       continue;
     }
     if (!isEventActive($event)) {
       continue;
     }
     $eventName = trim((string)($event['name'] ?? 'event'));
-    $slug = normalizeSlug((string)($event['slug'] ?? ''));
-    if ($slug === '') {
-      $slug = normalizeSlug($eventName);
-    }
-    if ($slug === '') {
-      $slug = 'event';
-    }
     $guests = $event['guests'] ?? [];
     foreach ($guests as $guest) {
       if (!is_array($guest)) {
@@ -822,6 +814,24 @@ function isEventActive(array $event): bool
     }
   }
   return !$hasFlag;
+}
+
+function loadGuestStoreForDraw(string $storePath): array
+{
+  if (!is_file($storePath)) {
+    return ['events' => [], 'active_event_slug' => ''];
+  }
+  $content = file_get_contents($storePath);
+  if ($content === false) {
+    return ['events' => [], 'active_event_slug' => ''];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return ['events' => [], 'active_event_slug' => ''];
+  }
+  $decoded['events'] = is_array($decoded['events'] ?? null) ? array_values($decoded['events']) : [];
+  $decoded['active_event_slug'] = trim((string)($decoded['active_event_slug'] ?? ''));
+  return $decoded;
 }
 
 function buildWinnersFileName(string $eventName): string
