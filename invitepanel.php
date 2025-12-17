@@ -153,8 +153,8 @@
       left: -9999px;
     }
     #invite-print-area .invite-print-card {
-      width: 70mm;
-      height: 70mm;
+      width: 72mm;
+      height: 72mm;
       padding: 10mm 6mm;
       display: grid;
       gap: 4mm;
@@ -205,13 +205,13 @@
       letter-spacing: 1pt;
     }
     @page {
-      size: 70mm 70mm portrait;
+      size: 72mm 72mm portrait;
       margin: 0;
     }
     @media print {
       html, body {
-        width: 70mm;
-        height: 70mm;
+        width: 72mm;
+        height: 72mm;
         margin: 0;
         padding: 0;
       }
@@ -225,8 +225,11 @@
         position: absolute;
         inset: 0;
         margin: 0;
-        width: 70mm;
-        height: 70mm;
+        width: 72mm;
+        height: 72mm;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
     }
   </style>
