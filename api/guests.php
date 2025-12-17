@@ -1011,7 +1011,7 @@ function createGuestInvitePages(array $guests): void
     body {
       height: 100%;
       margin: 0;
-      padding: 0.5rem;
+      padding: 0.25rem 0.35rem 0.4rem;
       background: radial-gradient(circle at top, #fff7f1 0%, #f3f4f6 45%, #e2e8f0 100%);
       display: flex;
       align-items: center;
@@ -1022,9 +1022,9 @@ function createGuestInvitePages(array $guests): void
     }
 
     .device {
-      width: min(360px, 90vw);
+      width: min(340px, 92vw);
       aspect-ratio: 9 / 16;
-      max-height: 90vh;
+      max-height: min(92vh, 640px);
       background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 60%, #eef2ff 100%);
       border-radius: 36px;
       box-shadow: 0 35px 60px rgba(15, 23, 42, 0.25);
@@ -1032,6 +1032,7 @@ function createGuestInvitePages(array $guests): void
       display: flex;
       flex-direction: column;
       position: relative;
+      margin: 0 auto;
     }
 
     .device::after {
@@ -1077,7 +1078,7 @@ function createGuestInvitePages(array $guests): void
 
     .name {
       margin: 0;
-      font-size: clamp(2rem, 5vw, 2.4rem);
+      font-size: clamp(1.1rem, 3vw, 1.4rem);
       font-weight: 700;
       color: #0f172a;
     }
