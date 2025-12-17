@@ -15,8 +15,6 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
-const LOGO_PATH = 'hard gallery/mci-logo-w.svg';
-
 function loadPanelSettings(): array
 {
   $payload = loadJsonPayload(STORE_PATH);
@@ -52,23 +50,9 @@ function formatSiteIconUrlForHtml(string $value): string
   return "./{$trimmed}";
 }
 
-function loadLogoImage(string $relativePath): string
-{
-  $fullPath = __DIR__ . '/' . $relativePath;
-  if (!is_file($fullPath)) {
-    return '';
-  }
-  $content = file_get_contents($fullPath);
-  if ($content === false) {
-    return '';
-  }
-  return 'data:image/svg+xml;base64,' . base64_encode($content);
-}
-
 $panelSettings = loadPanelSettings();
 $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName']);
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
-$logoUrl = loadLogoImage(LOGO_PATH);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -238,19 +222,6 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         border: 1px solid rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(6px);
         z-index: 1;
-      }
-
-      .logo-wrapper {
-        position: absolute;
-        right: 0;
-        top: 50%;
-        transform: translateY(-50%);
-      }
-
-      .logo-wrapper img {
-        display: block;
-        height: 48px;
-        width: auto;
       }
 
       .menu-item {
@@ -491,9 +462,6 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       <div class="page-menu">
         <a class="menu-item active" href="draw.php">قرعه کشی</a>
         <a class="menu-item" href="#prizes">جوایز مسابقات</a>
-      </div>
-      <div class="logo-wrapper">
-        <img src="<?= htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="logo" loading="lazy" />
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">

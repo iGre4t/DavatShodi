@@ -505,7 +505,18 @@ if ($action !== '') {
       if (!slug) {
         return;
       }
-      if (!window.confirm('Delete this event and all associated files?')) {
+      let confirmed = true;
+      if (typeof showDialog === 'function') {
+        confirmed = await showDialog('Delete this event and all associated files?', {
+          confirm: true,
+          title: 'Delete event',
+          okText: 'Delete',
+          cancelText: 'Cancel'
+        });
+      } else {
+        confirmed = window.confirm('Delete this event and all associated files?');
+      }
+      if (!confirmed) {
         return;
       }
       button.setAttribute('disabled', 'disabled');
