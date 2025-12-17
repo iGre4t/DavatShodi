@@ -72,6 +72,10 @@
   <div id="invite-print-area" aria-hidden="true">
     <div class="invite-print-card">
       <div class="invite-print-name" id="invite-print-name"></div>
+      <div class="invite-print-entry-info">
+        <span id="invite-print-entry-time"></span>
+        <span id="invite-print-entry-date-line"></span>
+      </div>
       <p class="invite-print-greeting">به رویداد همراه با نامی آشنا خوش آمدید</p>
       <div class="invite-print-label">کد قرعه کشی شما</div>
       <div class="invite-print-code" id="invite-print-code"></div>
@@ -168,6 +172,16 @@
       font-weight: 700;
       word-break: break-word;
     }
+    .invite-print-entry-info {
+      display: grid;
+      gap: 0.5mm;
+      font-size: 11pt;
+      line-height: 1.2;
+      direction: rtl;
+    }
+    .invite-print-entry-info span {
+      white-space: nowrap;
+    }
     .invite-print-greeting,
     .invite-print-note {
       font-size: 10pt;
@@ -189,21 +203,23 @@
     }
     @media print {
       html, body {
-        width: 80mm;
-        height: 80mm;
+        width: 70mm;
+        height: 70mm;
         margin: 0;
         padding: 0;
       }
-      body * {
-        visibility: hidden !important;
+      body > *:not(#invite-print-area) {
+        display: none !important;
+      }
+      #invite-print-area {
+        display: block;
+        position: relative;
+        width: 70mm;
+        height: 70mm;
+        margin: 0;
       }
       #invite-print-area, #invite-print-area * {
         visibility: visible !important;
-      }
-      #invite-print-area {
-        position: absolute;
-        inset: 0;
-        margin: 0 auto;
       }
     }
   </style>
@@ -226,6 +242,21 @@
       const exitedMessageEl = document.getElementById("invite-exited-message");
       const printNameEl = document.getElementById("invite-print-name");
       const printCodeEl = document.getElementById("invite-print-code");
+      const entryTimeLineEl = document.getElementById("invite-print-entry-time");
+      const entryDateLineEl = document.getElementById("invite-print-entry-date-line");
+      const persianTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      });
+      const persianWeekdayFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+        weekday: "long"
+      });
+      const persianDateFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      });
       let logs = [];
       let lastGuest = null;
       let loading = false;
@@ -266,6 +297,54 @@
         const dt = new Date(iso);
         if (Number.isNaN(dt.getTime())) return value;
         return dt.toLocaleString();
+      }
+
+      function parseEntryTimestamp(value) {
+        const trimmed = (value || "").trim();
+        if (!trimmed) return null;
+        const isoCandidate = trimmed.replace(/\s+/g, "T");
+        const parsed = new Date(isoCandidate);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed;
+        }
+        const altCandidate = trimmed.replace(/[\\/]/g, "-").replace(/\s+/g, "T");
+        const altParsed = new Date(altCandidate);
+        if (!Number.isNaN(altParsed.getTime())) {
+          return altParsed;
+        }
+        return null;
+      }
+
+      function buildEntryDateLines(value) {
+        const dateObj = parseEntryTimestamp(value);
+        if (!dateObj) {
+          return { timeLine: "", dateLine: "" };
+        }
+        const timeText = persianTimeFormatter.format(dateObj);
+        const dateParts = persianDateFormatter.formatToParts(dateObj);
+        const dayPart = dateParts.find((part) => part.type === "day")?.value || "";
+        let monthPart = dateParts.find((part) => part.type === "month")?.value || "";
+        if (monthPart && !monthPart.endsWith("ماه")) {
+          monthPart = `${monthPart}ماه`;
+        }
+        const yearPart = dateParts.find((part) => part.type === "year")?.value || "";
+        const weekday = persianWeekdayFormatter.format(dateObj);
+        const timeLine = timeText ? `ساعت ورود ${timeText} دقیقه` : "";
+        const dateLine =
+          weekday && dayPart && monthPart && yearPart
+            ? `در روز ${weekday} ${dayPart} ${monthPart} ${yearPart}`
+            : "";
+        return { timeLine, dateLine };
+      }
+
+      function updateEntryInfo(value) {
+        const { timeLine, dateLine } = buildEntryDateLines(value);
+        if (entryTimeLineEl) {
+          entryTimeLineEl.textContent = timeLine;
+        }
+        if (entryDateLineEl) {
+          entryDateLineEl.textContent = dateLine;
+        }
       }
 
       function sortLogs(list) {
@@ -335,7 +414,8 @@
             firstname: log?.firstname,
             lastname: log?.lastname,
             national_id: log?.national_id,
-            invite_code: log?.invite_code
+            invite_code: log?.invite_code,
+            date_entered: log?.date_entered
           };
           updatePrintArea(guestForPrint);
           window.print();
@@ -373,6 +453,7 @@
         const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "Guest";
         if (printNameEl) printNameEl.textContent = fullName;
         if (printCodeEl) printCodeEl.textContent = guest.invite_code || "----";
+        updateEntryInfo(guest.date_entered);
       }
 
       function openEntryModal(guest = {}) {

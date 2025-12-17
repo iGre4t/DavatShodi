@@ -466,7 +466,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
     </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">قرعه‌کشی مشهد مقدس</p>
-      <p id="code-display" class="code-display" aria-live="polite" aria-label="Current draw code">
+      <p id="code-display" class="code-display" aria-live="polite" aria-label="کد قرعه‌کشی فعلی">
         <?php for ($idx = 0; $idx < 4; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
         <?php endfor; ?>
@@ -476,7 +476,6 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         <button id="start-draw" class="start-btn" type="button">قرعه کشی</button>
         <button id="confirm-guest" class="confirm-btn" type="button" disabled>تایید مهمان</button>
       </div>
-      <p id="status-text" class="status">آماده برای انتخاب بعدی</p>
     </div>
     <div class="winners-panel" aria-live="polite">
       <h3>برندگان</h3>
@@ -490,7 +489,6 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       let winnersList = Array.isArray(window.__WINNERS_LIST) ? window.__WINNERS_LIST : [];
       const codeDisplay = document.getElementById('code-display');
       const winnerNameEl = document.getElementById('winner-name');
-      const statusText = document.getElementById('status-text');
       const startBtn = document.getElementById('start-draw');
       const confirmBtn = document.getElementById('confirm-guest');
       const winnersContainer = document.getElementById('winner-items');
@@ -554,7 +552,6 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       const renderWinner = (winner) => {
         const name = winner?.full_name || '----';
         setWinnerText(name);
-        statusText.textContent = winner ? `winner locked: ${name}` : 'ready for the next pick';
       };
 
       const formatWinnerItem = (entry) => {
@@ -565,7 +562,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         codeEl.textContent = (entry.code || entry.invite_code || '0000').toString();
         const infoEl = document.createElement('div');
         infoEl.className = 'winner-info';
-        const displayName = entry.full_name || `${entry.firstname || ''} ${entry.lastname || ''}`.trim() || 'Guest';
+        const displayName = entry.full_name || `${entry.firstname || ''} ${entry.lastname || ''}`.trim() || 'مهمان';
         infoEl.textContent = displayName;
         container.append(codeEl, infoEl);
         return container;
@@ -577,7 +574,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         if (!winnersList.length) {
           const placeholder = document.createElement('p');
           placeholder.className = 'status';
-          placeholder.textContent = 'no winners confirmed yet';
+          placeholder.textContent = 'هنوز برنده‌ای تایید نشده است';
           winnersContainer.appendChild(placeholder);
           return;
         }
@@ -585,7 +582,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       };
 
       const flashError = (message) => {
-        statusText.textContent = message;
+        console.error(message);
         confirmBtn.disabled = false;
       };
 
@@ -594,14 +591,12 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
 
       startBtn.addEventListener('click', () => {
         if (!guestPool.length) {
-          statusText.textContent = 'guest list is empty';
           return;
         }
         cancelAnimation();
         startBtn.disabled = true;
         confirmBtn.disabled = true;
         currentWinner = guestPool[Math.floor(Math.random() * guestPool.length)];
-        statusText.textContent = 'drawing...';
         showIdleWinnerText();
         const targetCode = normalizeCode(currentWinner?.code);
         const digits = targetCode.split('');
@@ -634,10 +629,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
 
       confirmBtn.addEventListener('click', async () => {
         if (!currentWinner) {
-          statusText.textContent = 'choose a winner first';
           return;
         }
-        statusText.textContent = 'confirming winner...';
         confirmBtn.disabled = true;
         try {
           const response = await fetch('draw.php', {
@@ -647,13 +640,12 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
           });
           const data = await response.json();
           if (!data || data.status !== 'ok') {
-            throw new Error(data?.message || 'Failed to save winner');
+            throw new Error(data?.message || 'ثبت برنده ممکن نشد');
           }
           renderWinnerList(data.winners || []);
           window.__WINNERS_LIST = Array.isArray(data.winners) ? data.winners : [];
-        statusText.textContent = `guest confirmed: ${currentWinner.full_name}`;
       } catch (error) {
-        flashError('unable to save winner');
+        flashError('ذخیره برنده با مشکل مواجه شد');
       }
     });
 
@@ -684,7 +676,6 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       });
 
       if (!guestPool.length) {
-        statusText.textContent = 'guest list is empty';
         startBtn.disabled = true;
       }
 
@@ -736,7 +727,7 @@ function buildGuestPool(string $storePath): array
       $lastName = trim((string)($guest['lastname'] ?? ''));
       $fullName = trim(implode(' ', array_filter([$firstName, $lastName], static fn ($value) => $value !== '')));
       if ($fullName === '') {
-        $fullName = 'Guest';
+        $fullName = 'مهمان';
       }
       $pool[] = [
         'code' => $code,

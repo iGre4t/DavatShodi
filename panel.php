@@ -173,6 +173,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-gift-line" aria-hidden="true"></span>
             <span>Prizes</span>
           </button>
+          <a class="nav-item" href="draw.php" title="Jump to draw page">
+            <span class="nav-icon ri ri-dice-line" aria-hidden="true"></span>
+            <span>Draw Pot</span>
+          </a>
           <button class="nav-item" data-tab="winners">
             <span class="nav-icon ri ri-trophy-line" aria-hidden="true"></span>
             <span>Winners</span>
