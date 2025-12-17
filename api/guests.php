@@ -1042,8 +1042,8 @@ function createGuestInvitePages(array $guests): void
     .device {
       width: min(340px, 92vw);
       aspect-ratio: 9 / 16;
-      min-height: 640px;
-      max-height: min(96vh, 760px);
+      min-height: 700px;
+      max-height: min(96vh, 780px);
       background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 60%, #eef2ff 100%);
       border-radius: 40px;
       box-shadow: 0 35px 60px rgba(15, 23, 42, 0.25);
@@ -1052,7 +1052,7 @@ function createGuestInvitePages(array $guests): void
       flex-direction: column;
       position: relative;
       margin: 0 auto;
-      padding: 0.4rem 0.45rem 0.5rem;
+      padding: 0.6rem 0.5rem 0.65rem;
     }
 
     .device::after {
@@ -1066,7 +1066,7 @@ function createGuestInvitePages(array $guests): void
 
     .screen {
       flex: 1;
-      margin: 0;
+      margin: 0.05rem 0;
       border-radius: 32px;
       background: linear-gradient(180deg, #ffffff 0%, #f3f5ff 55%, #e3ebff 100%);
       box-shadow: inset 0 2px 12px rgba(15, 23, 42, 0.1), 0 12px 30px rgba(15, 23, 42, 0.15);
@@ -1127,10 +1127,11 @@ function createGuestInvitePages(array $guests): void
       padding: 0.4rem;
       box-shadow: 0 18px 35px rgba(15, 23, 42, 0.25);
       margin-top: 0.3rem;
+      margin-bottom: 0.8rem;
     }
 
     .code {
-      margin: 0;
+      margin: 0 0 5px;
       font-family: 'Peyda';
       font-size: clamp(1.4rem, 3vw, 1.8rem);
       letter-spacing: 0.35em;
@@ -1154,6 +1155,9 @@ function createGuestInvitePages(array $guests): void
       }
       .code {
         letter-spacing: 0.3em;
+      }
+      .name {
+        font-size: clamp(1.5rem, 4vw, 1.9rem);
       }
     }
 </style>
