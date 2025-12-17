@@ -167,9 +167,21 @@
       justify-content: space-between;
       font-size: 12pt;
       direction: rtl;
+      gap: 8px;
+      align-items: baseline;
     }
-    .invite-stats-item span:last-child {
+    .invite-stats-value {
+      display: flex;
+      gap: 2px;
+      align-items: baseline;
+    }
+    .invite-stats-primary {
       font-weight: 700;
+      color: var(--primary);
+    }
+    .invite-stats-secondary {
+      font-weight: 500;
+      color: #475569;
     }
     #tab-invite .card + .card {
       margin-top: 20px;
@@ -477,13 +489,21 @@
         });
       }
 
-      function createStatItem(label, value) {
+      function createRatioItem(label, present, total) {
         const item = document.createElement("div");
         item.className = "invite-stats-item";
         const labelEl = document.createElement("span");
         labelEl.textContent = label;
         const valueEl = document.createElement("span");
-        valueEl.textContent = String(value ?? 0);
+        valueEl.className = "invite-stats-value";
+        const primary = document.createElement("span");
+        primary.className = "invite-stats-primary";
+        primary.textContent = String(present ?? 0);
+        const secondary = document.createElement("span");
+        secondary.className = "invite-stats-secondary";
+        secondary.textContent = `/${total ?? 0}`;
+        valueEl.appendChild(primary);
+        valueEl.appendChild(secondary);
         item.appendChild(labelEl);
         item.appendChild(valueEl);
         return item;
@@ -499,15 +519,23 @@
           statsGrid.textContent = "در حال بارگذاری آمار...";
           return;
         }
-        statsGrid.appendChild(createStatItem("تعداد مهمانان حاضر", currentStats.total_present ?? 0));
-        const presentGenders = currentStats.present_by_gender || {};
-        Object.entries(presentGenders).forEach(([gender, count]) => {
-          statsGrid.appendChild(createStatItem(`${gender} حاضر`, count));
-        });
-        statsGrid.appendChild(createStatItem("تعداد مهمانان دعوت‌شده", currentStats.total_invited ?? 0));
-        const invitedGenders = currentStats.invited_by_gender || {};
-        Object.entries(invitedGenders).forEach(([gender, count]) => {
-          statsGrid.appendChild(createStatItem(`${gender} دعوت‌شده`, count));
+        statsGrid.appendChild(
+          createRatioItem(
+            "تعداد مهمانان حاضر",
+            currentStats.total_present ?? 0,
+            currentStats.total_invited ?? 0
+          )
+        );
+        const genders = Array.from(
+          new Set([
+            ...Object.keys(currentStats.present_by_gender || {}),
+            ...Object.keys(currentStats.invited_by_gender || {})
+          ])
+        );
+        genders.forEach((gender) => {
+          const present = currentStats.present_by_gender?.[gender] ?? 0;
+          const invited = currentStats.invited_by_gender?.[gender] ?? 0;
+          statsGrid.appendChild(createRatioItem(`${gender}`, present, invited));
         });
       }
 
@@ -777,6 +805,11 @@
       renderStats();
       document.addEventListener("DOMContentLoaded", () => {
         loadInviteData();
+        setInterval(() => {
+          if (!loading) {
+            loadInviteData();
+          }
+        }, 5000);
       });
     })();
   </script>

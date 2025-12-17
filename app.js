@@ -157,6 +157,16 @@ let backupImportTrigger = null;
 let backupFileChosen = null;
 let pendingBackupImportFile = null;
 let backupSettingsFormElement = null;
+
+let PRINTER_DEVICES = [];
+let PRINTER_SETTINGS = {
+  printerId: "",
+  layout: "",
+  paperSize: "",
+  pagesPerPaper: "",
+  margin: "",
+  scale: ""
+};
 let backupSaveButton = null;
 
 function normalizeValue(value) {
@@ -455,6 +465,7 @@ async function loadServerData() {
     }
     updateGalleryStateFromPayload(payload);
     updateBackupListFromPayload(payload);
+    updatePrinterStateFromPayload(payload);
     applyServerSettings(); // Save server-provided defaults for the next session.
     SERVER_DATA_LOADED = true;
   } catch (err) {
@@ -725,6 +736,181 @@ function setBackupControlsSubmitting(isSubmitting) {
       return;
     }
     control.disabled = Boolean(isSubmitting);
+  });
+}
+
+function updatePrinterStateFromPayload(payload = {}) {
+  PRINTER_DEVICES = Array.isArray(payload.printerDevices) ? payload.printerDevices : [];
+  PRINTER_SETTINGS = normalizePrinterSettings(payload.printerSettings ?? {}, PRINTER_DEVICES);
+  renderPrinterSettingsForm();
+}
+
+function normalizePrinterSettings(settings, devices) {
+  const availableIds = (devices || []).map(device => device?.id).filter(Boolean);
+  const defaultDeviceId = availableIds[0] || "";
+  const requestedId = String(settings.printerId ?? "").trim();
+  const printerId = availableIds.includes(requestedId) ? requestedId : defaultDeviceId;
+  const device = getPrinterDeviceById(printerId) || devices[0] || {};
+  return {
+    printerId,
+    layout: pickPrinterOption(settings.layout, device.layouts, device.layouts?.[0] || ""),
+    paperSize: pickPrinterOption(settings.paperSize, device.paperSizes, device.paperSizes?.[0] || ""),
+    pagesPerPaper: pickPrinterOption(settings.pagesPerPaper, device.pagesPerPaper, device.pagesPerPaper?.[0] || ""),
+    margin: pickPrinterOption(settings.margin, device.margins, device.margins?.[0] || ""),
+    scale: pickPrinterOption(settings.scale, device.scales, device.scales?.[0] || "")
+  };
+}
+
+function pickPrinterOption(value, options, fallback = "") {
+  const candidate = String(value ?? "").trim();
+  if (Array.isArray(options)) {
+    for (const option of options) {
+      if (candidate !== "" && String(option) === candidate) {
+        return candidate;
+      }
+    }
+    if (options.length) {
+      return String(options[0]);
+    }
+  }
+  return String(fallback);
+}
+
+function getPrinterDeviceById(id) {
+  if (!id) {
+    return null;
+  }
+  return PRINTER_DEVICES.find(device => device?.id === id) || null;
+}
+
+function renderPrinterSettingsForm() {
+  const deviceSelect = qs("#printer-device");
+  const layoutSelect = qs("#printer-layout");
+  const paperSizeSelect = qs("#printer-paper-size");
+  const pagesSelect = qs("#printer-pages-per-paper");
+  const marginSelect = qs("#printer-margin");
+  const scaleSelect = qs("#printer-scale");
+  const saveBtn = qs("#printer-settings-save");
+  if (!deviceSelect || !layoutSelect || !paperSizeSelect || !pagesSelect || !marginSelect || !scaleSelect) {
+    return;
+  }
+  if (!PRINTER_DEVICES.length) {
+    populatePrinterSelect(deviceSelect, [], "", "device", "No printers configured");
+    [layoutSelect, paperSizeSelect, pagesSelect, marginSelect, scaleSelect].forEach(select =>
+      populatePrinterSelect(select, [], "", "fallback", "No options available")
+    );
+    if (saveBtn) {
+      saveBtn.disabled = true;
+    }
+    return;
+  }
+  PRINTER_SETTINGS = normalizePrinterSettings(PRINTER_SETTINGS, PRINTER_DEVICES);
+  populatePrinterSelect(deviceSelect, PRINTER_DEVICES, PRINTER_SETTINGS.printerId, "device");
+  const activeDevice = getPrinterDeviceById(deviceSelect.value) || PRINTER_DEVICES[0];
+  populatePrinterSelect(layoutSelect, activeDevice.layouts || [], PRINTER_SETTINGS.layout, "layout");
+  populatePrinterSelect(paperSizeSelect, activeDevice.paperSizes || [], PRINTER_SETTINGS.paperSize, "paperSize");
+  populatePrinterSelect(pagesSelect, activeDevice.pagesPerPaper || [], PRINTER_SETTINGS.pagesPerPaper, "pagesPerPaper");
+  populatePrinterSelect(marginSelect, activeDevice.margins || [], PRINTER_SETTINGS.margin, "margin");
+  populatePrinterSelect(scaleSelect, activeDevice.scales || [], PRINTER_SETTINGS.scale, "scale");
+  if (saveBtn) {
+    saveBtn.disabled = !PRINTER_DEVICES.length;
+  }
+}
+
+function populatePrinterSelect(select, options, selectedValue, field, emptyLabel = "No options available") {
+  if (!select) {
+    return;
+  }
+  select.innerHTML = "";
+  if (!Array.isArray(options) || options.length === 0) {
+    select.disabled = true;
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = emptyLabel;
+    select.appendChild(option);
+    return;
+  }
+  options.forEach(item => {
+    const option = document.createElement("option");
+    if (field === "device") {
+      option.value = item?.id || "";
+      option.textContent = item?.name || item?.id || "Unknown printer";
+    } else {
+      const value = String(item ?? "");
+      option.value = value;
+      option.textContent = formatPrinterOptionLabel(field, value);
+    }
+    if (option.value === String(selectedValue)) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+  select.disabled = false;
+}
+
+function formatPrinterOptionLabel(field, value) {
+  if (value === "") {
+    return "";
+  }
+  if (field === "scale") {
+    return value.endsWith("%") ? value : `${value}%`;
+  }
+  if (field === "pagesPerPaper") {
+    return `${value} per paper`;
+  }
+  return value;
+}
+
+function handlePrinterDeviceChange() {
+  const select = qs("#printer-device");
+  if (!select) {
+    return;
+  }
+  PRINTER_SETTINGS = normalizePrinterSettings(
+    { ...PRINTER_SETTINGS, printerId: select.value },
+    PRINTER_DEVICES
+  );
+  renderPrinterSettingsForm();
+}
+
+function collectPrinterSettingsFromControls() {
+  return {
+    printerId: qs("#printer-device")?.value ?? "",
+    layout: qs("#printer-layout")?.value ?? "",
+    paperSize: qs("#printer-paper-size")?.value ?? "",
+    pagesPerPaper: qs("#printer-pages-per-paper")?.value ?? "",
+    margin: qs("#printer-margin")?.value ?? "",
+    scale: qs("#printer-scale")?.value ?? ""
+  };
+}
+
+async function handlePrinterSettingsSave() {
+  const saveBtn = qs("#printer-settings-save");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+  }
+  const settings = collectPrinterSettingsFromControls();
+  try {
+    const result = await syncPrinterSettings(settings);
+    if (Array.isArray(result.printerDevices)) {
+      PRINTER_DEVICES = result.printerDevices;
+    }
+    PRINTER_SETTINGS = normalizePrinterSettings(result.printerSettings ?? settings, PRINTER_DEVICES);
+    renderPrinterSettingsForm();
+    showDefaultToast(result.message || "Printer settings saved.");
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Failed to save printer settings." });
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = !PRINTER_DEVICES.length;
+    }
+  }
+}
+
+async function syncPrinterSettings(settings) {
+  return postJsonAction({
+    action: "save_printer_settings",
+    printer_settings: settings
   });
 }
 
@@ -3658,6 +3844,12 @@ function initSubSidebars(){
     });
   });
 }
+
+function initPrinterSettingsControls() {
+  qs("#printer-device")?.addEventListener("change", handlePrinterDeviceChange);
+  qs("#printer-settings-save")?.addEventListener("click", handlePrinterSettingsSave);
+  renderPrinterSettingsForm();
+}
 // Bootstraps the UI once DOM is ready: load data, render galleries/users, and attach all handlers.
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -3673,6 +3865,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   photoChooserSearchCountElement = qs("[data-photo-chooser-search-count]");
   renderGalleryGrid();
   initPhotoUploaders();
+  initPrinterSettingsControls();
   const loadMoreGalleryPhotos = qs("#gallery-load-more");
   loadMoreGalleryPhotos?.addEventListener("click", () => {
     galleryVisibleCount += GALLERY_GRID_LOAD_STEP;

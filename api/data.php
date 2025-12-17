@@ -61,7 +61,8 @@ $defaultData = [
             ]
         ]
     ],
-    'settings' => GENERAL_SETTINGS_DEFAULTS
+    'settings' => GENERAL_SETTINGS_DEFAULTS,
+    'printerSettings' => []
 ];
 
 function parseUserCodeValue(string $value): int
@@ -439,6 +440,16 @@ if ($method === 'POST') {
                 }
             }
         }
+    } elseif ($action === 'save_printer_settings' && !empty($payload['printer_settings']) && is_array($payload['printer_settings'])) {
+        $definitions = loadPrinterDefinitions();
+        if (empty($definitions['devices'])) {
+            sendJsonResponse([
+                'status' => 'error',
+                'message' => 'No printers are configured in the system settings.'
+            ]);
+        }
+        $data['printerSettings'] = normalizePrinterSettingsForResponse($payload['printer_settings'], $definitions);
+        $postResponse['message'] = 'Printer preferences saved successfully.';
     } elseif ($action === 'save_database_config' && !empty($payload['config']) && is_array($payload['config'])) {
         if (!persistDatabaseConfigOverrides($payload['config'])) {
             sendJsonResponse(['status' => 'error', 'message' => 'Failed to save database configuration.']);
@@ -696,6 +707,7 @@ if ($method === 'POST') {
     }
 
     $data = normalizeData($data, $defaultData);
+    applyPrinterState($data, $postResponse);
     persistData($data, $dataFile, $pdo, $config);
     sendJsonResponse($postResponse);
 }
@@ -722,6 +734,7 @@ $data['databaseConnected'] = $pdo !== null;
 $data['databaseConfig'] = getDatabaseConfigForResponse($config);
 $data['backups'] = getBackupHistoryForResponse();
 
+applyPrinterState($data);
 echo json_encode($data);
 exit;
 
@@ -768,6 +781,111 @@ function persistData(array $data, string $file, ?PDO $pdo, array $config): void
     if ($pdo) {
         saveDataToDb($pdo, $data, $config);
     }
+}
+
+function applyPrinterState(array &$data, ?array &$response = null): void
+{
+    $definitions = loadPrinterDefinitions();
+    $normalizedSettings = normalizePrinterSettingsForResponse($data['printerSettings'] ?? [], $definitions);
+    $data['printerSettings'] = $normalizedSettings;
+    $data['printerDevices'] = $definitions['devices'];
+    if (is_array($response)) {
+        $response['printerSettings'] = $normalizedSettings;
+        $response['printerDevices'] = $definitions['devices'];
+    }
+}
+
+function normalizePrinterSettingsForResponse(array $settings, array $definitions): array
+{
+    $devices = $definitions['devices'] ?? [];
+    $defaults = $definitions['defaults'] ?? [];
+    $availableIds = [];
+    foreach ($devices as $device) {
+        if (is_array($device) && isset($device['id'])) {
+            $availableIds[] = (string)$device['id'];
+        }
+    }
+    $firstDevice = $devices[0] ?? [];
+    $printerId = trim((string)($settings['printerId'] ?? ''));
+    if ($printerId === '' || !in_array($printerId, $availableIds, true)) {
+        $printerId = (string)($defaults['printerId'] ?? $firstDevice['id'] ?? '');
+    }
+    $currentDevice = findPrinterDeviceById($devices, $printerId) ?? $firstDevice;
+    return [
+        'printerId' => $printerId,
+        'layout' => choosePrinterOption($settings['layout'] ?? '', $currentDevice['layouts'] ?? [], $defaults['layout'] ?? ''),
+        'paperSize' => choosePrinterOption($settings['paperSize'] ?? '', $currentDevice['paperSizes'] ?? [], $defaults['paperSize'] ?? ''),
+        'pagesPerPaper' => choosePrinterOption($settings['pagesPerPaper'] ?? '', $currentDevice['pagesPerPaper'] ?? [], $defaults['pagesPerPaper'] ?? ''),
+        'margin' => choosePrinterOption($settings['margin'] ?? '', $currentDevice['margins'] ?? [], $defaults['margin'] ?? ''),
+        'scale' => choosePrinterOption($settings['scale'] ?? '', $currentDevice['scales'] ?? [], $defaults['scale'] ?? '')
+    ];
+}
+
+function choosePrinterOption($value, array $options, string $fallback = ''): string
+{
+    $candidate = trim((string)$value);
+    foreach ($options as $option) {
+        if ($candidate !== '' && trim((string)$option) === $candidate) {
+            return $candidate;
+        }
+    }
+    if (!empty($options)) {
+        return trim((string)$options[0]);
+    }
+    return trim($fallback);
+}
+
+function findPrinterDeviceById(array $devices, string $id): ?array
+{
+    foreach ($devices as $device) {
+        if (!is_array($device)) {
+            continue;
+        }
+        if ((string)($device['id'] ?? '') === $id) {
+            return $device;
+        }
+    }
+    return null;
+}
+
+function loadPrinterDefinitions(): array
+{
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+    $path = __DIR__ . '/../data/printer-devices.json';
+    if (!is_file($path)) {
+        return $cache = ['devices' => [], 'defaults' => []];
+    }
+    $content = @file_get_contents($path);
+    if ($content === false) {
+        return $cache = ['devices' => [], 'defaults' => []];
+    }
+    $decoded = json_decode($content, true);
+    if (!is_array($decoded)) {
+        return $cache = ['devices' => [], 'defaults' => []];
+    }
+    $devices = [];
+    foreach ($decoded['devices'] ?? [] as $device) {
+        if (!is_array($device)) {
+            continue;
+        }
+        $id = trim((string)($device['id'] ?? ''));
+        if ($id === '') {
+            continue;
+        }
+        $sanitized = $device;
+        $sanitized['id'] = $id;
+        foreach (['layouts', 'paperSizes', 'pagesPerPaper', 'margins', 'scales'] as $key) {
+            if (!isset($sanitized[$key]) || !is_array($sanitized[$key])) {
+                $sanitized[$key] = [];
+            }
+        }
+        $devices[] = $sanitized;
+    }
+    $defaults = is_array($decoded['defaults'] ?? null) ? $decoded['defaults'] : [];
+    return $cache = ['devices' => $devices, 'defaults' => $defaults];
 }
 
 function sendJsonResponse(array $payload): void

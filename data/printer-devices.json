@@ -1,0 +1,63 @@
+{
+  "devices": [
+    {
+      "id": "printer-main",
+      "name": "Lobby Station",
+      "layouts": [
+        "Portrait",
+        "Landscape"
+      ],
+      "paperSizes": [
+        "A4",
+        "A5",
+        "Letter"
+      ],
+      "pagesPerPaper": [
+        "1",
+        "2",
+        "4"
+      ],
+      "margins": [
+        "5mm",
+        "10mm",
+        "15mm"
+      ],
+      "scales": [
+        "90",
+        "100",
+        "110"
+      ]
+    },
+    {
+      "id": "printer-wide",
+      "name": "Wide Format",
+      "layouts": [
+        "Landscape",
+        "Portrait"
+      ],
+      "paperSizes": [
+        "A3",
+        "A2"
+      ],
+      "pagesPerPaper": [
+        "1"
+      ],
+      "margins": [
+        "10mm",
+        "20mm"
+      ],
+      "scales": [
+        "100",
+        "120"
+      ]
+    }
+  ],
+  "defaults": {
+    "printerId": "printer-main",
+    "layout": "Portrait",
+    "paperSize": "A4",
+    "pagesPerPaper": "1",
+    "margin": "10mm",
+    "scale": "100"
+  }
+}

@@ -614,40 +614,47 @@ $accountEmail = $currentUser['email'] ?? '';
                     <div class="section-header">
                       <h3>Printer Setting</h3>
                     </div>
-                    <div class="form grid one-column">
+                    <form id="printer-settings-form" class="form grid one-column">
                       <label class="field">
                         <span>Printer device</span>
-                        <select name="printer-device">
-                          <option value="">Select a printer</option>
+                        <select id="printer-device" name="printer-device">
+                          <option value="">Loading printers…</option>
                         </select>
                       </label>
                       <label class="field">
                         <span>Layout</span>
-                        <select name="printer-layout">
-                          <option value="portrait">Portrait</option>
-                          <option value="landscape">Landscape</option>
+                        <select id="printer-layout" name="printer-layout">
+                          <option value="">Select layout</option>
                         </select>
                       </label>
                       <label class="field">
                         <span>Paper size</span>
-                        <input type="text" name="printer-paper-size" placeholder="Custom size added to system is default" />
+                        <select id="printer-paper-size" name="printer-paper-size">
+                          <option value="">Select paper size</option>
+                        </select>
                       </label>
                       <p class="hint">Any custom size registered in the system will be used by default.</p>
                       <label class="field">
                         <span>Pages per paper</span>
-                        <input type="number" min="1" name="printer-pages-per-paper" />
+                        <select id="printer-pages-per-paper" name="printer-pages-per-paper">
+                          <option value="">Select pages per sheet</option>
+                        </select>
                       </label>
                       <label class="field">
                         <span>Margin</span>
-                        <input type="text" name="printer-margin" placeholder="e.g. 10mm" />
+                        <select id="printer-margin" name="printer-margin">
+                          <option value="">Select margin</option>
+                        </select>
                       </label>
                       <label class="field">
-                        <span>Scale (%)</span>
-                        <input type="number" min="1" max="200" name="printer-scale" placeholder="100" />
+                        <span>Scale</span>
+                        <select id="printer-scale" name="printer-scale">
+                          <option value="">Select scale</option>
+                        </select>
                       </label>
-                    </div>
+                    </form>
                     <div class="section-footer">
-                      <button type="button" class="btn primary">Save</button>
+                      <button type="button" id="printer-settings-save" class="btn primary">Save</button>
                     </div>
                   </div>
                 </div>
