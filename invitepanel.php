@@ -60,10 +60,10 @@
 
   <div id="invite-exited-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invite-exited-title">
     <div class="modal-card" style="max-width:420px;">
-      <div class="modal-header">
-    <h3 id="invite-exited-title">مهمان مراسم را ترک کرده است</h3>
-        <button type="button" class="icon-btn" data-invite-exited-close aria-label="Close exit modal">X</button>
-      </div>
+    <div class="modal-header">
+      <h3 id="invite-exited-title">خروج تکراری</h3>
+      <button type="button" class="icon-btn" data-invite-exited-close aria-label="بستن">X</button>
+    </div>
       <div class="modal-body">
         <p id="invite-exited-message" class="muted"></p>
       </div>

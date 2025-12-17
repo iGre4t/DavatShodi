@@ -102,15 +102,21 @@ $panelSiteIconUrl = formatSiteIconUrlForHtml($panelSettings['siteIcon'] ?? '');
         width: 100%;
       }
       .invite-panel-shell {
-        width: clamp(320px, 45vw, 640px);
+        width: min(640px, 100%);
         margin: 0 auto;
+      }
+      @media (max-width: 768px) {
+        .invite-panel-shell {
+          width: 100%;
+          padding: 0 12px;
+        }
       }
     </style>
   </head>
   <body class="invite-page">
     <main class="content">
       <header class="topbar">
-        <h2 id="page-title">دعوت</h2>
+        <h2 id="page-title">پنل ورود و خروج مهمان</h2>
         <div class="spacer"></div>
         <div id="live-clock" class="clock" aria-live="polite">
           <span class="time"></span>

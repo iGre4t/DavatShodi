@@ -854,38 +854,168 @@ function loadPrinterDefinitions(): array
     if ($cache !== null) {
         return $cache;
     }
+    $templates = [];
+    $defaults = [];
     $path = __DIR__ . '/../data/printer-devices.json';
-    if (!is_file($path)) {
-        return $cache = ['devices' => [], 'defaults' => []];
-    }
-    $content = @file_get_contents($path);
-    if ($content === false) {
-        return $cache = ['devices' => [], 'defaults' => []];
-    }
-    $decoded = json_decode($content, true);
-    if (!is_array($decoded)) {
-        return $cache = ['devices' => [], 'defaults' => []];
-    }
-    $devices = [];
-    foreach ($decoded['devices'] ?? [] as $device) {
-        if (!is_array($device)) {
-            continue;
-        }
-        $id = trim((string)($device['id'] ?? ''));
-        if ($id === '') {
-            continue;
-        }
-        $sanitized = $device;
-        $sanitized['id'] = $id;
-        foreach (['layouts', 'paperSizes', 'pagesPerPaper', 'margins', 'scales'] as $key) {
-            if (!isset($sanitized[$key]) || !is_array($sanitized[$key])) {
-                $sanitized[$key] = [];
+    if (is_file($path)) {
+        $content = @file_get_contents($path);
+        if (is_string($content)) {
+            $decoded = json_decode($content, true);
+            if (is_array($decoded)) {
+                $templates = array_filter(is_array($decoded['devices'] ?? []) ? $decoded['devices'] : [], 'is_array');
+                $defaults = is_array($decoded['defaults'] ?? null) ? $decoded['defaults'] : [];
             }
         }
-        $devices[] = $sanitized;
     }
-    $defaults = is_array($decoded['defaults'] ?? null) ? $decoded['defaults'] : [];
-    return $cache = ['devices' => $devices, 'defaults' => $defaults];
+    $printerNames = detectSystemPrinters();
+    $devices = [];
+    $usedIds = [];
+    if (!empty($printerNames)) {
+        foreach ($printerNames as $printerName) {
+            $template = resolvePrinterTemplate($templates, $printerName);
+            $devices[] = buildPrinterDevice($template, $printerName, $usedIds);
+        }
+    }
+    if (empty($devices)) {
+        foreach ($templates as $template) {
+            $displayName = trim((string)($template['name'] ?? $template['id'] ?? ''));
+            if ($displayName === '') {
+                continue;
+            }
+            $devices[] = buildPrinterDevice($template, $displayName, $usedIds);
+        }
+    }
+    return $cache = ['devices' => array_values($devices), 'defaults' => $defaults];
+}
+
+function resolvePrinterTemplate(array $templates, string $printerName): ?array
+{
+    $printerLower = mb_strtolower($printerName);
+    foreach ($templates as $template) {
+        if (!is_array($template)) {
+            continue;
+        }
+        $candidates = [];
+        if (isset($template['match'])) {
+            $candidates = array_merge(
+                $candidates,
+                is_array($template['match']) ? $template['match'] : [$template['match']]
+            );
+        }
+        if (isset($template['matches'])) {
+            $candidates = array_merge(
+                $candidates,
+                is_array($template['matches']) ? $template['matches'] : [$template['matches']]
+            );
+        }
+        if (isset($template['name'])) {
+            $candidates[] = $template['name'];
+        }
+        if (isset($template['id'])) {
+            $candidates[] = $template['id'];
+        }
+        foreach ($candidates as $candidate) {
+            $value = trim((string)$candidate);
+            if ($value === '') {
+                continue;
+            }
+            if (mb_stripos($printerName, $value) !== false || mb_strtolower($value) === $printerLower) {
+                return $template;
+            }
+        }
+    }
+    return null;
+}
+
+function buildPrinterDevice(?array $template, string $printerName, array &$usedIds): array
+{
+    $template = is_array($template) ? $template : [];
+    $baseId = trim((string)($template['id'] ?? ''));
+    if ($baseId === '') {
+        $baseId = generatePrinterIdFromName($printerName);
+    }
+    $deviceId = $baseId;
+    $counter = 1;
+    while (isset($usedIds[$deviceId])) {
+        $deviceId = "{$baseId}-{$counter}";
+        $counter += 1;
+    }
+    $usedIds[$deviceId] = true;
+    $extract = function ($key) use ($template) {
+        $value = $template[$key] ?? [];
+        return is_array($value) ? array_values($value) : [];
+    };
+    return [
+        'id' => $deviceId,
+        'name' => $printerName,
+        'layouts' => $extract('layouts'),
+        'paperSizes' => $extract('paperSizes'),
+        'pagesPerPaper' => $extract('pagesPerPaper'),
+        'margins' => $extract('margins'),
+        'scales' => $extract('scales')
+    ];
+}
+
+function generatePrinterIdFromName(string $name): string
+{
+    $slug = preg_replace('/[^a-z0-9]+/i', '-', strtolower(trim($name)));
+    $slug = trim($slug, '-');
+    return $slug !== '' ? $slug : 'printer';
+}
+
+function detectSystemPrinters(): array
+{
+    if (stripos(PHP_OS, 'WIN') !== 0) {
+        return [];
+    }
+    $names = detectSystemPrintersViaWmi();
+    if (!empty($names)) {
+        return $names;
+    }
+    return detectSystemPrintersViaPowerShell();
+}
+
+function detectSystemPrintersViaWmi(): array
+{
+    $output = [];
+    $result = 0;
+    @exec('wmic printer get Name 2>&1', $output, $result);
+    if ($result !== 0 || !is_array($output)) {
+        return [];
+    }
+    $names = [];
+    foreach ($output as $line) {
+        $line = trim($line);
+        if ($line === '' || stripos($line, 'Name') === 0) {
+            continue;
+        }
+        $names[] = $line;
+    }
+    return array_values(array_filter(array_unique($names), fn ($value) => $value !== ''));
+}
+
+function detectSystemPrintersViaPowerShell(): array
+{
+    $command = 'powershell -NoProfile -Command "Get-Printer | Select-Object -Property Name | ConvertTo-Json"';
+    $output = @shell_exec($command);
+    if (!is_string($output) || trim($output) === '') {
+        return [];
+    }
+    $decoded = json_decode($output, true);
+    if (!$decoded) {
+        return [];
+    }
+    $names = [];
+    if (isset($decoded['Name'])) {
+        $names[] = trim((string)$decoded['Name']);
+    } elseif (is_array($decoded)) {
+        foreach ($decoded as $entry) {
+            if (is_array($entry) && isset($entry['Name'])) {
+                $names[] = trim((string)$entry['Name']);
+            }
+        }
+    }
+    return array_values(array_filter(array_unique($names), fn ($value) => $value !== ''));
 }
 
 function sendJsonResponse(array $payload): void
