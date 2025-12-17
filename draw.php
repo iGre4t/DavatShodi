@@ -195,7 +195,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       }
 
       .background-icon svg {
-        width: 175%;
+        width: 65%;
         height: auto;
         filter: drop-shadow(0 24px 48px rgba(3, 9, 43, 0.5));
       }

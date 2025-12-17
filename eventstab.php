@@ -350,7 +350,7 @@ if ($action !== '') {
                     style="direction:rtl; text-align:right;"
                   />
                 </label>
-                <div class="muted small" style="margin-top:4px;">${displaySlug}</div>
+                <div class="muted small" style="margin-top:4px;">${slugLabel}</div>
               </td>
               <td>
                 <label class="field standard-width" style="margin:0;">
