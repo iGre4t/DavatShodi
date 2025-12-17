@@ -55,6 +55,23 @@ function formatSiteIconUrlForHtml(string $value): string
   return "./{$trimmed}";
 }
 
+function convertPersianDigits(string $value): string
+{
+  static $map = [
+    '۰' => '0',
+    '۱' => '1',
+    '۲' => '2',
+    '۳' => '3',
+    '۴' => '4',
+    '۵' => '5',
+    '۶' => '6',
+    '۷' => '7',
+    '۸' => '8',
+    '۹' => '9'
+  ];
+  return strtr($value, $map);
+}
+
 function convertJalaliToGregorian(int $jy, int $jm, int $jd): array
 {
   $jy += 1595;
@@ -108,6 +125,7 @@ function createDateTimeFromJalali(int $jy, int $jm, int $jd, int $hour, int $min
 function parseGuestEntryDateTime(string $value): ?DateTime
 {
   $clean = trim($value);
+  $clean = convertPersianDigits($clean);
   if ($clean === '') {
     return null;
   }
@@ -145,6 +163,7 @@ function parseGuestEntryDateTime(string $value): ?DateTime
 function getEventEntryWindow(array $event): ?array
 {
   $dateValue = trim((string)($event['date'] ?? ''));
+  $dateValue = convertPersianDigits($dateValue);
   if ($dateValue === '') {
     return null;
   }
