@@ -231,6 +231,8 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
 
       .prize-display {
         min-height: clamp(110px, 14vw, 160px);
+        width: min(640px, 100%);
+        min-width: min(550px, 90vw);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -246,7 +248,8 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         border-radius: 24px;
         padding: 20px 34px;
         border: 1px solid rgba(255, 255, 255, 0.25);
-        min-width: clamp(220px, 40vw, 360px);
+        width: 100%;
+        max-width: 100%;
         line-height: 1.2;
         white-space: nowrap;
         direction: rtl;
@@ -264,20 +267,6 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         color: #e9f5ff;
         border-color: rgba(255, 255, 255, 0.4);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-      }
-
-      .winner-message {
-        font-size: 1.6rem;
-        margin: 0;
-        letter-spacing: 0.02em;
-      }
-
-      .winner-message--idle {
-        color: rgba(205, 230, 255, 0.6);
-      }
-
-      .winner-message--active {
-        color: #cde6ff;
       }
 
       .cta-group {
@@ -314,26 +303,8 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
         transform: translateY(-2px);
       }
 
-      .status {
-        font-size: 0.85rem;
-        color: rgba(255, 255, 255, 0.8);
-        letter-spacing: 0.2em;
-        margin: 0;
-      }
-
       @media (max-width: 480px) {
         .draw-shell {
-          padding: 20px;
-        }
-        .prize-value {
-          font-size: clamp(1.8rem, 10vw, 2.8rem);
-          padding: 16px 24px;
-        }
-      }
-
-      @media (max-width: 480px) {
-        .draw-shell,
-        .winners-panel {
           padding: 20px;
         }
         .prize-value {
@@ -360,7 +331,6 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       <div id="prize-display" class="prize-display" aria-live="polite" aria-label="Prize reveal">
         <span id="prize-value" class="prize-value">---</span>
       </div>
-      <p id="winner-name" class="winner-message winner-message--idle">waiting for new selection</p>
       <div class="cta-group">
         <button id="start-draw" class="start-btn" type="button">start draw</button>
       </div>
@@ -369,7 +339,6 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       window.__PRIZE_LIST = window.__PRIZE_LIST || <?= json_encode($prizeList, JSON_UNESCAPED_UNICODE); ?>;
       const prizeList = Array.isArray(window.__PRIZE_LIST) ? window.__PRIZE_LIST : [];
       const prizeValueEl = document.getElementById('prize-value');
-      const winnerMessageEl = document.getElementById('winner-name');
       const startBtn = document.getElementById('start-draw');
       let animationInterval = null;
       let revealTimeout = null;
@@ -411,20 +380,15 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
 
       const showIdleState = () => {
         prizeValueEl.textContent = '---';
-        winnerMessageEl.textContent = 'ready for a new draw';
-        winnerMessageEl.classList.add('winner-message--idle');
-        winnerMessageEl.classList.remove('winner-message--active');
         resetValueState();
       };
 
       startBtn.addEventListener('click', () => {
         if (!prizeList.length) {
-        return;
-      }
+          return;
+        }
         cancelAnimation();
         startBtn.disabled = true;
-        winnerMessageEl.textContent = 'selecting a prize...';
-        winnerMessageEl.classList.remove('winner-message--idle');
         setAnimatingState();
         selectedPrizeName = randomPrizeName();
         animationInterval = setInterval(() => {
@@ -435,13 +399,8 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
           cancelAnimation();
           prizeValueEl.textContent = selectedPrizeName || '---';
           if (selectedPrizeName) {
-            winnerMessageEl.textContent = `prize picked: ${selectedPrizeName}`;
-            winnerMessageEl.classList.add('winner-message--active');
-            winnerMessageEl.classList.remove('winner-message--idle');
             setLockedState();
           } else {
-            winnerMessageEl.textContent = 'no prize picked';
-            winnerMessageEl.classList.add('winner-message--idle');
             resetValueState();
           }
           startBtn.disabled = false;
