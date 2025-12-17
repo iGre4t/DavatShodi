@@ -3,8 +3,8 @@ if (session_status() === PHP_SESSION_NONE) {
   session_start();
 }
 
-const EVENT_STORE_PATH = __DIR__ . '/data/guests.json';
-const EVENTS_ROOT = __DIR__ . '/events';
+const EVENTSTAB_STORE_PATH = __DIR__ . '/data/guests.json';
+const EVENTSTAB_EVENTS_ROOT = __DIR__ . '/events';
 
 function respondEventsJson(array $payload, int $statusCode = 200): void
 {
@@ -16,7 +16,7 @@ function respondEventsJson(array $payload, int $statusCode = 200): void
   exit;
 }
 
-function normalizeGuestStore(array $store): array
+function eventstabNormalizeGuestStore(array $store): array
 {
   return [
     'events' => is_array($store['events'] ?? null) ? array_values($store['events']) : [],
@@ -25,26 +25,26 @@ function normalizeGuestStore(array $store): array
   ];
 }
 
-function loadGuestStore(): array
+function eventstabLoadGuestStore(): array
 {
-  if (!is_file(EVENT_STORE_PATH)) {
-    return normalizeGuestStore([]);
+  if (!is_file(EVENTSTAB_STORE_PATH)) {
+    return eventstabNormalizeGuestStore([]);
   }
-  $content = file_get_contents(EVENT_STORE_PATH);
+  $content = file_get_contents(EVENTSTAB_STORE_PATH);
   if ($content === false) {
-    return normalizeGuestStore([]);
+    return eventstabNormalizeGuestStore([]);
   }
   $decoded = json_decode($content, true);
   if (!is_array($decoded)) {
-    return normalizeGuestStore([]);
+    return eventstabNormalizeGuestStore([]);
   }
-  return normalizeGuestStore($decoded);
+  return eventstabNormalizeGuestStore($decoded);
 }
 
-function saveGuestStore(array $store): bool
+function eventstabSaveGuestStore(array $store): bool
 {
-  $normalized = normalizeGuestStore($store);
-  $directory = dirname(EVENT_STORE_PATH);
+  $normalized = eventstabNormalizeGuestStore($store);
+  $directory = dirname(EVENTSTAB_STORE_PATH);
   if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
     return false;
   }
@@ -52,10 +52,10 @@ function saveGuestStore(array $store): bool
   if ($encoded === false) {
     return false;
   }
-  return file_put_contents(EVENT_STORE_PATH, $encoded, LOCK_EX) !== false;
+  return file_put_contents(EVENTSTAB_STORE_PATH, $encoded, LOCK_EX) !== false;
 }
 
-function findEventIndexBySlug(array $events, string $slug): int
+function eventstabFindEventIndexBySlug(array $events, string $slug): int
 {
   foreach ($events as $index => $event) {
     if (!is_array($event)) {
@@ -68,7 +68,7 @@ function findEventIndexBySlug(array $events, string $slug): int
   return -1;
 }
 
-function normalizeEventsForResponse(array $events): array
+function eventstabNormalizeEventsForResponse(array $events): array
 {
   return array_values(array_map(static function ($event) {
     if (!is_array($event)) {
@@ -93,25 +93,25 @@ function normalizeEventsForResponse(array $events): array
   }, $events));
 }
 
-function getEventsRootPath(): string
+function eventstabGetEventsRootPath(): string
 {
   static $cached = null;
   if ($cached !== null) {
     return $cached;
   }
-  $real = realpath(EVENTS_ROOT);
-  $cached = $real !== false ? $real : EVENTS_ROOT;
+  $real = realpath(EVENTSTAB_EVENTS_ROOT);
+  $cached = $real !== false ? $real : EVENTSTAB_EVENTS_ROOT;
   return $cached;
 }
 
-function normalizePathForComparison(string $value): string
+function eventstabNormalizePathForComparison(string $value): string
 {
   $trimmed = trim($value);
   $normalized = str_replace('\\', '/', $trimmed);
   return rtrim($normalized, '/');
 }
 
-function deleteDirectoryRecursive(string $directory): bool
+function eventstabDeleteDirectoryRecursive(string $directory): bool
 {
   if (!is_dir($directory)) {
     return true;
@@ -126,7 +126,7 @@ function deleteDirectoryRecursive(string $directory): bool
     }
     $target = $directory . DIRECTORY_SEPARATOR . $entry;
     if (is_dir($target)) {
-      if (!deleteDirectoryRecursive($target)) {
+      if (!eventstabDeleteDirectoryRecursive($target)) {
         return false;
       }
       continue;
@@ -138,22 +138,22 @@ function deleteDirectoryRecursive(string $directory): bool
   return rmdir($directory);
 }
 
-function deleteEventDirectory(string $slug): bool
+function eventstabDeleteEventDirectory(string $slug): bool
 {
   if ($slug === '') {
     return true;
   }
-  $root = getEventsRootPath();
+  $root = eventstabGetEventsRootPath();
   if ($root === '') {
     return false;
   }
   $target = $root . DIRECTORY_SEPARATOR . $slug;
-  $normalizedRoot = normalizePathForComparison($root);
-  $normalizedTarget = normalizePathForComparison($target);
+  $normalizedRoot = eventstabNormalizePathForComparison($root);
+  $normalizedTarget = eventstabNormalizePathForComparison($target);
   if ($normalizedRoot === '' || $normalizedTarget === '' || strpos($normalizedTarget, $normalizedRoot) !== 0) {
     return false;
   }
-  return deleteDirectoryRecursive($target);
+  return eventstabDeleteDirectoryRecursive($target);
 }
 
 $action = trim((string)($_REQUEST['event_action'] ?? ''));
@@ -161,13 +161,13 @@ if ($action !== '') {
   if (empty($_SESSION['authenticated'])) {
     respondEventsJson(['status' => 'error', 'message' => 'Authentication required.'], 403);
   }
-  $store = loadGuestStore();
+  $store = eventstabLoadGuestStore();
   $action = strtolower($action);
   switch ($action) {
     case 'list':
       respondEventsJson([
         'status' => 'ok',
-        'events' => normalizeEventsForResponse($store['events'])
+        'events' => eventstabNormalizeEventsForResponse($store['events'])
       ]);
       break;
     case 'update':
@@ -177,20 +177,20 @@ if ($action !== '') {
       if ($slug === '' || $name === '' || $date === '') {
         respondEventsJson(['status' => 'error', 'message' => 'Event slug, name, and date are required.'], 422);
       }
-      $index = findEventIndexBySlug($store['events'], $slug);
+      $index = eventstabFindEventIndexBySlug($store['events'], $slug);
       if ($index < 0) {
         respondEventsJson(['status' => 'error', 'message' => 'Event not found.'], 404);
       }
       $store['events'][$index]['name'] = $name;
       $store['events'][$index]['date'] = $date;
       $store['events'][$index]['updated_at'] = date('c');
-      if (!saveGuestStore($store)) {
+      if (!eventstabSaveGuestStore($store)) {
         respondEventsJson(['status' => 'error', 'message' => 'Unable to persist event list.'], 500);
       }
       respondEventsJson([
         'status' => 'ok',
         'message' => 'Event saved.',
-        'events' => normalizeEventsForResponse($store['events'])
+        'events' => eventstabNormalizeEventsForResponse($store['events'])
       ]);
       break;
     case 'delete':
@@ -198,22 +198,22 @@ if ($action !== '') {
       if ($slug === '') {
         respondEventsJson(['status' => 'error', 'message' => 'Event slug is required for deletion.'], 422);
       }
-      if (findEventIndexBySlug($store['events'], $slug) < 0) {
+      if (eventstabFindEventIndexBySlug($store['events'], $slug) < 0) {
         respondEventsJson(['status' => 'error', 'message' => 'Event not found.'], 404);
       }
-      $targetDir = getEventsRootPath() . DIRECTORY_SEPARATOR . $slug;
+      $targetDir = eventstabGetEventsRootPath() . DIRECTORY_SEPARATOR . $slug;
       $directoryExisted = is_dir($targetDir);
       $store['events'] = array_values(array_filter($store['events'], static fn($event) => (string)($event['slug'] ?? '') !== $slug));
-      if ($directoryExisted && !deleteEventDirectory($slug)) {
+      if ($directoryExisted && !eventstabDeleteEventDirectory($slug)) {
         respondEventsJson(['status' => 'error', 'message' => 'Failed to remove event directory.'], 500);
       }
-      if (!saveGuestStore($store)) {
+      if (!eventstabSaveGuestStore($store)) {
         respondEventsJson(['status' => 'error', 'message' => 'Unable to persist event list.'], 500);
       }
       respondEventsJson([
         'status' => 'ok',
         'message' => 'Event removed.',
-        'events' => normalizeEventsForResponse($store['events'])
+        'events' => eventstabNormalizeEventsForResponse($store['events'])
       ]);
       break;
     default:
