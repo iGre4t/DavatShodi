@@ -149,8 +149,9 @@
       left: -9999px;
     }
     #invite-print-area .invite-print-card {
-      width: 80mm;
-      height: 80mm;
+      aspect-ratio: 1 / 1;
+      width: 75mm;
+      max-width: 75mm;
       padding: 8mm 6mm;
       display: grid;
       gap: 6mm;
@@ -182,7 +183,7 @@
       letter-spacing: 1.5pt;
     }
     @page {
-      size: 80mm 80mm portrait;
+      size: 1:1 square;
       margin: 0;
     }
     @media print {
