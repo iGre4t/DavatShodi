@@ -142,6 +142,10 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         margin: 0;
         line-height: 1;
         direction: ltr;
+        display: inline-flex;
+        justify-content: center;
+        width: 100%;
+        text-align: center;
       }
 
       .caption {
@@ -240,9 +244,10 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.08);
         display: grid;
-        grid-template-columns: auto 1fr auto;
+        grid-template-columns: auto 1fr;
         gap: 12px;
         align-items: center;
+        direction: ltr;
       }
 
       .winner-code {
@@ -254,20 +259,21 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       }
 
       .winner-info {
-        text-align: left;
+        text-align: right;
         font-size: 0.95rem;
         direction: rtl;
       }
 
-      .winner-info span {
-        display: block;
-        color: rgba(255, 255, 255, 0.75);
-        font-size: 0.85rem;
+      .winner-name {
+        font-size: 1rem;
+        color: #ffffff;
+        margin-bottom: 2px;
+        font-weight: 600;
       }
 
-      .winner-time {
-        font-size: 0.75rem;
-        color: rgba(255, 255, 255, 0.5);
+      .winner-metadata {
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.75);
       }
 
       @media (max-width: 480px) {
@@ -314,12 +320,19 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       let settleTimeout = null;
       let currentWinner = null;
 
-      const randomCode = () => {
-        return Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join('');
+      const randomCode = () => Array.from({ length: 4 }, () => Math.floor(Math.random() * 10)).join('');
+
+      const normalizeCode = (value) => {
+        const text = (value ?? '').toString().trim();
+        const digits = text.replace(/\D+/g, '');
+        if (digits.length === 0) {
+          return '0000';
+        }
+        return digits.slice(-4).padStart(4, '0');
       };
 
       const setCode = (value) => {
-        codeDisplay.textContent = value.padStart(4, '0');
+        codeDisplay.textContent = normalizeCode(value);
       };
 
       const cancelAnimation = () => {
@@ -357,11 +370,18 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         const infoEl = document.createElement('div');
         infoEl.className = 'winner-info';
         const displayName = entry.full_name || `${entry.firstname || ''} ${entry.lastname || ''}`.trim() || 'Guest';
-        infoEl.innerHTML = `${displayName}<span>${entry.event_name || entry.event_slug || 'event'}</span>`;
-        const timeEl = document.createElement('div');
-        timeEl.className = 'winner-time';
-        timeEl.textContent = entry.timestamp || '';
-        container.append(codeEl, infoEl, timeEl);
+        const nameEl = document.createElement('div');
+        nameEl.className = 'winner-name';
+        nameEl.textContent = displayName;
+        infoEl.appendChild(nameEl);
+        const metadataParts = [entry.phone_number, entry.national_id].filter((value) => value && value.trim() !== '');
+        if (metadataParts.length) {
+          const metadataEl = document.createElement('div');
+          metadataEl.className = 'winner-metadata';
+          metadataEl.textContent = metadataParts.join(' · ');
+          infoEl.appendChild(metadataEl);
+        }
+        container.append(codeEl, infoEl);
         return container;
       };
 
@@ -400,7 +420,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
 
         settleTimeout = setTimeout(() => {
           cancelAnimation();
-          const winnerCode = currentWinner?.code ?? '0000';
+          const winnerCode = normalizeCode(currentWinner?.code);
           setCode(winnerCode);
           confirmBtn.disabled = false;
           startBtn.disabled = false;
