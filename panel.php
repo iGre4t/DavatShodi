@@ -165,6 +165,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-team-line" aria-hidden="true"></span>
             <span>List of guests</span>
           </button>
+          <button class="nav-item" data-tab="events">
+            <span class="nav-icon ri ri-calendar-event-line" aria-hidden="true"></span>
+            <span>Events</span>
+          </button>
           <button class="nav-item" data-tab="prizes">
             <span class="nav-icon ri ri-gift-line" aria-hidden="true"></span>
             <span>Prizes</span>
@@ -340,6 +344,7 @@ $accountEmail = $currentUser['email'] ?? '';
         </section>
 
         <?php include __DIR__ . '/guests.php'; ?>
+        <?php include __DIR__ . '/eventstab.php'; ?>
         <?php include __DIR__ . '/prizestab.php'; ?>
         <?php include __DIR__ . '/winnerstab.php'; ?>
         <?php include __DIR__ . '/gallery-tab.php'; ?>

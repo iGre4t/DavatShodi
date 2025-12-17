@@ -3274,6 +3274,7 @@ function setActiveTab(tab) {
     users: 'Users',
     settings: 'Account Settings',
     guests: 'List of guests',
+    events: 'Events',
     gallery: 'Photo Gallery',
     invite: 'Invite',
     devsettings: 'Developer Settings'
