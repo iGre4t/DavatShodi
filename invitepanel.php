@@ -72,7 +72,10 @@
   <div id="invite-print-area" aria-hidden="true">
     <div class="invite-print-card">
       <div class="invite-print-name" id="invite-print-name"></div>
+      <p class="invite-print-greeting">به رویداد همراه با نامی آشنا خوش آمدید</p>
+      <div class="invite-print-label">کد قرعه کشی شما</div>
       <div class="invite-print-code" id="invite-print-code"></div>
+      <p class="invite-print-note">لطفا در حفظ این برگه تا آخر مراسم کوشا باشید</p>
     </div>
   </div>
 
@@ -137,14 +140,12 @@
     }
     #invite-print-area .invite-print-card {
       width: 80mm;
-      min-height: 80mm;
-      padding: 16mm 10mm;
+      padding: 10mm 6mm;
       display: grid;
-      align-items: center;
-      justify-items: center;
-      gap: 10mm;
+      gap: 6mm;
       text-align: center;
-      font-family: Arial, sans-serif;
+      font-family: 'PeydaWebFaNum', 'PeydaWebFaNum', sans-serif;
+      line-height: 1.3;
       border: 1px solid #000;
     }
     #invite-print-area .invite-print-name {
@@ -152,10 +153,24 @@
       font-weight: 700;
       word-break: break-word;
     }
+    #invite-print-area .invite-print-greeting,
+    #invite-print-area .invite-print-note {
+      font-size: 12pt;
+      margin: 0;
+    }
+    #invite-print-area .invite-print-label {
+      font-size: 11pt;
+      font-weight: 600;
+      letter-spacing: 0.3pt;
+    }
     #invite-print-area .invite-print-code {
-      font-size: 28pt;
+      font-size: 20pt;
       font-weight: 800;
-      letter-spacing: 2pt;
+      letter-spacing: 1.5pt;
+    }
+    @page {
+      size: 80mm auto;
+      margin: 0;
     }
     @media print {
       body * {

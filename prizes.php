@@ -352,7 +352,7 @@ $prizeList = loadPrizeList(PRIZE_LIST_PATH);
       }
 
       .card-back {
-        background: linear-gradient(180deg, rgba(4, 12, 38, 0.92), rgba(6, 21, 57, 0.98));
+        background: transparent;
         transform: rotateY(180deg);
         padding: 0 8px;
         text-align: center;
