@@ -529,6 +529,23 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         renderDigits(normalized, locks);
       };
 
+      const createGuestSelectionKey = (guest) => {
+        if (!guest || typeof guest !== 'object') {
+          return '';
+        }
+        const slug = (guest.event_slug ?? '').toString();
+        const code = normalizeCode(guest.code ?? guest.invite_code ?? '');
+        const number = (guest.number ?? '').toString();
+        return `${slug}|${code}|${number}`;
+      };
+
+      const chosenGuestKeys = new Set();
+
+      const getAvailableGuests = () => guestPool.filter((guest) => {
+        const key = createGuestSelectionKey(guest);
+        return key !== '' && !chosenGuestKeys.has(key);
+      });
+
       const cancelAnimation = () => {
         if (animationInterval !== null) {
           clearInterval(animationInterval);
@@ -591,15 +608,21 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       showIdleWinnerText();
 
       startBtn.addEventListener('click', () => {
-        if (!guestPool.length) {
+        const availableGuests = getAvailableGuests();
+        if (!availableGuests.length) {
+          startBtn.disabled = true;
           return;
         }
         cancelAnimation();
         startBtn.disabled = true;
         confirmBtn.disabled = true;
-        currentWinner = guestPool[Math.floor(Math.random() * guestPool.length)];
+        currentWinner = availableGuests[Math.floor(Math.random() * availableGuests.length)];
+        const selectionKey = createGuestSelectionKey(currentWinner);
+        if (selectionKey !== '') {
+          chosenGuestKeys.add(selectionKey);
+        }
         showIdleWinnerText();
-        const targetCode = normalizeCode(currentWinner?.code);
+        const targetCode = normalizeCode(currentWinner?.code ?? currentWinner?.invite_code);
         const digits = targetCode.split('');
         const currentDigits = ['0', '0', '0', '0'];
         const locks = [false, false, false, false];
@@ -620,7 +643,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
             if (index === 3) {
               cancelAnimation();
               confirmBtn.disabled = false;
-              startBtn.disabled = false;
+              const hasRemaining = getAvailableGuests().length > 0;
+              startBtn.disabled = !hasRemaining;
               renderWinner(currentWinner);
             }
           }, delay);
@@ -676,7 +700,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         }
       });
 
-      if (!guestPool.length) {
+      if (!getAvailableGuests().length) {
         startBtn.disabled = true;
       }
 
