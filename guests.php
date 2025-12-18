@@ -63,7 +63,10 @@
               <option value="">All events</option>
             </select>
           </label>
-          <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+            <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+          </div>
         </div>
       </div>
     <div class="table-wrapper">
@@ -327,6 +330,7 @@
     const manualNationalIdInput = document.getElementById("manual-national-id");
     const manualPhoneInput = document.getElementById("manual-phone");
     const exportSmsButton = document.getElementById("export-sms-link");
+    const exportPresentGuestButton = document.getElementById("export-present-guest-list");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
 
@@ -757,6 +761,18 @@
       }
     });
 
+    exportPresentGuestButton?.addEventListener("click", async () => {
+      exportPresentGuestButton.setAttribute("disabled", "disabled");
+      try {
+        await exportPresentGuests();
+        showDefaultToast?.("Present guests download started.");
+      } catch (error) {
+        showErrorSnackbar?.({ message: error?.message || "Failed to export present guest list." });
+      } finally {
+        exportPresentGuestButton.removeAttribute("disabled");
+      }
+    });
+
     function openJalaliPicker(event) {
       event?.preventDefault?.();
       const targetInput = event?.currentTarget instanceof HTMLInputElement ? event.currentTarget : eventDateInput;
@@ -885,18 +901,18 @@
       }
     }
 
-    function resolvePureListCsvPath() {
-      const selectedSlug = eventFilter?.value || "";
-      const activeEvent = selectedSlug
-        ? state.events.find(ev => (ev.slug || "") === selectedSlug)
-        : state.events[0];
-      const path = activeEvent && typeof activeEvent.purelist === "string"
-        ? activeEvent.purelist.trim()
-        : "";
-      return path || PURE_LIST_CSV_PATH;
+    function normalizeHeaderKey(value) {
+      return String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
     }
 
-    async function loadPureListCsvRows(path = PURE_LIST_CSV_PATH) {
+    function headerNameMatches(value, target) {
+      return normalizeHeaderKey(value) === normalizeHeaderKey(target);
+    }
+
+    async function loadPureListWorkbook(path = PURE_LIST_CSV_PATH) {
       const response = await fetch(path, { cache: "no-store" });
       if (!response.ok) {
         throw new Error("Unable to retrieve the pure CSV guest list.");
@@ -910,7 +926,94 @@
       if (!sheetName) {
         throw new Error("The pure CSV file does not contain any sheets.");
       }
-      return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+      return { workbook, sheetName };
+    }
+
+    async function loadPureListSheetData(path = PURE_LIST_CSV_PATH) {
+      const { workbook, sheetName } = await loadPureListWorkbook(path);
+      const sheet = workbook.Sheets[sheetName];
+      const headerRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      const headers = Array.isArray(headerRows[0])
+        ? headerRows[0].map((header) => (header ?? ""))
+        : [];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      return { rows, headers };
+    }
+
+    function resolvePureListCsvPath() {
+      const selectedSlug = eventFilter?.value || "";
+      const activeEvent = selectedSlug
+        ? state.events.find(ev => (ev.slug || "") === selectedSlug)
+        : state.events[0];
+      const path = activeEvent && typeof activeEvent.purelist === "string"
+        ? activeEvent.purelist.trim()
+        : "";
+      return path || PURE_LIST_CSV_PATH;
+    }
+
+    async function loadPureListCsvRows(path = PURE_LIST_CSV_PATH) {
+      const data = await loadPureListSheetData(path);
+      return data.rows;
+    }
+
+    function isSmsHeaderName(header) {
+      const normalized = normalizeHeaderKey(header);
+      return normalized === "smslink" || normalized === "invitesmslink";
+    }
+
+    function buildPresentGuestsWorkbook(rows, headers) {
+      const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+      worksheet["!cols"] = headers.map((header) => {
+        const normalized = normalizeHeaderKey(header);
+        if (normalized.includes("date")) {
+          return { wch: 25 };
+        }
+        return { wch: 20 };
+      });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Present guests");
+      const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
+      const existingView = hasViews ? workbook.Workbook.Views[0] : {};
+      workbook.Workbook = workbook.Workbook || {};
+      workbook.Workbook.Views = [{ ...existingView, RTL: true }];
+      return workbook;
+    }
+
+    async function exportPresentGuests() {
+      const { rows, headers } = await loadPureListSheetData(resolvePureListCsvPath());
+      const headerKeys = headers.map((header) => header ?? "");
+      const dateEnteredHeader = headerKeys.find(header => headerNameMatches(header, "date_entered"));
+      const dateExitedHeader = headerKeys.find(header => headerNameMatches(header, "date_exited"));
+      if (!dateEnteredHeader || !dateExitedHeader) {
+        throw new Error("Entry and exit timestamp columns are missing from the guest list.");
+      }
+      const presentRows = rows.filter(row => {
+        const entered = String(row[dateEnteredHeader] ?? "").trim();
+        const exited = String(row[dateExitedHeader] ?? "").trim();
+        return entered !== "" && exited !== "";
+      });
+      if (!presentRows.length) {
+        throw new Error("No guests have both entry and exit timestamps yet.");
+      }
+      const exportHeaders = headerKeys.filter(header => header !== "" && !isSmsHeaderName(header));
+      const normalizedRows = presentRows.map(row => {
+        const normalized = {};
+        exportHeaders.forEach(header => {
+          normalized[header] = row[header] ?? "";
+        });
+        return normalized;
+      });
+      const workbook = buildPresentGuestsWorkbook(normalizedRows, exportHeaders);
+      const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "present-guest-list.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
     }
 
     function buildSmsWorkbook(rows) {
