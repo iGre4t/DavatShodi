@@ -63,6 +63,19 @@ if ($method === 'POST') {
   $payload = json_decode($rawInput ?: '', true);
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
 
+  if ($action === 'reset_winners') {
+    if (!deleteAllWinnerRecords(EVENTS_ROOT)) {
+      echo json_encode(['status' => 'error', 'message' => 'Unable to remove winner records.']);
+      exit;
+    }
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Winners list cleared.',
+      'winners' => []
+    ]);
+    exit;
+  }
+
   if ($action !== 'confirm_winner') {
     echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
     exit;
@@ -498,6 +511,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       let animationInterval = null;
       let stopTimeouts = [];
       let currentWinner = null;
+      const pressedShortcutKeys = new Set();
+      let resetShortcutLocked = false;
 
       const randomDigit = () => Math.floor(Math.random() * 10).toString();
 
@@ -604,6 +619,35 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         confirmBtn.disabled = false;
       };
 
+      const resetWinnersList = async () => {
+        cancelAnimation();
+        confirmBtn.disabled = true;
+        try {
+          const response = await fetch('draw.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'reset_winners' })
+          });
+          const payload = await response.json();
+          if (!response.ok || payload.status !== 'ok') {
+            throw new Error(payload?.message || 'Unable to reset winners list.');
+          }
+          const winners = Array.isArray(payload.winners) ? payload.winners : [];
+          chosenGuestKeys.clear();
+          currentWinner = null;
+          showIdleWinnerText();
+          setCode('0000');
+          renderWinnerList(winners);
+          window.__WINNERS_LIST = winners;
+          startBtn.disabled = getAvailableGuests().length === 0;
+          confirmBtn.disabled = true;
+        } catch (error) {
+          flashError('Unable to reset winners list.');
+          confirmBtn.disabled = true;
+          startBtn.disabled = getAvailableGuests().length === 0;
+        }
+      };
+
       setCode('0000');
       showIdleWinnerText();
 
@@ -675,6 +719,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
     });
 
       document.addEventListener('keydown', (event) => {
+        pressedShortcutKeys.add(event.code);
         if (event.code === 'Numpad1') {
           event.preventDefault();
           window.location.href = 'prizes.php';
@@ -685,7 +730,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
           window.location.href = 'draw.php';
           return;
         }
-        if (event.target && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) {
+        const targetTag = event.target?.tagName ?? '';
+        if (['INPUT', 'TEXTAREA'].includes(targetTag)) {
           return;
         }
         if (event.code === 'Enter') {
@@ -697,6 +743,18 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
           if (!confirmBtn.disabled) {
             confirmBtn.click();
           }
+        }
+        if (!resetShortcutLocked && pressedShortcutKeys.has('Numpad8') && pressedShortcutKeys.has('Numpad9')) {
+          resetShortcutLocked = true;
+          event.preventDefault();
+          resetWinnersList();
+        }
+      });
+
+      document.addEventListener('keyup', (event) => {
+        pressedShortcutKeys.delete(event.code);
+        if (event.code === 'Numpad8' || event.code === 'Numpad9') {
+          resetShortcutLocked = false;
         }
       });
 
@@ -933,4 +991,38 @@ function readCsvRows(string $path): array
   }
   fclose($handle);
   return $rows;
+}
+
+function deleteAllWinnerRecords(string $eventsRoot): bool
+{
+  if (!is_dir($eventsRoot)) {
+    return true;
+  }
+  $success = true;
+  $entries = scandir($eventsRoot);
+  if ($entries === false) {
+    return true;
+  }
+  foreach ($entries as $entry) {
+    if ($entry === '.' || $entry === '..') {
+      continue;
+    }
+    $eventPath = $eventsRoot . '/' . $entry;
+    if (!is_dir($eventPath)) {
+      continue;
+    }
+    $files = glob($eventPath . '/winners of *.csv');
+    if ($files === false) {
+      continue;
+    }
+    foreach ($files as $filePath) {
+      if (!is_file($filePath)) {
+        continue;
+      }
+      if (!@unlink($filePath)) {
+        $success = false;
+      }
+    }
+  }
+  return $success;
 }
