@@ -166,7 +166,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
       }
 
       body {
-        margin: 0;
+        margin: 20px 0 0;
         min-height: 100vh;
         display: flex;
         align-items: center;
