@@ -269,7 +269,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
       }
 
       body {
-        margin: 20px 0 0;
+        margin: 40px 0 0;
         min-height: 100vh;
         display: flex;
         align-items: center;
