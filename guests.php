@@ -1,99 +1,114 @@
 <section id="tab-guests" class="tab">
   <link rel="stylesheet" href="style/jalalidatepicker.min.css" />
-
-  <div class="card">
-    <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-      <div>
-        <h3>List of guests</h3>
-        <p class="muted small">Upload an event guest list or add guests manually, then generate a clean list.</p>
+  <div class="sub-layout" data-sub-layout>
+    <aside class="sub-sidebar">
+      <div class="sub-header">لیست مهمانان</div>
+      <div class="sub-nav">
+        <button type="button" class="sub-item active" data-pane="guest-upload-pane">
+          بارگذاری مهمان
+        </button>
+        <button type="button" class="sub-item" data-pane="guest-lists-pane">
+          لیست مهمانان
+        </button>
       </div>
-      <button type="button" class="btn" id="open-manual-modal">Add guest manually</button>
-    </div>
-    <form id="guest-upload-form" class="form" enctype="multipart/form-data">
-      <div class="form" style="max-width: 420px; gap: 12px;">
-        <label class="field standard-width">
-          <span>Name of event</span>
-          <input id="guest-event-name" name="event_name" type="text" autocomplete="off" required />
-        </label>
-        <label class="field standard-width">
-          <span>Event date (Shamsi)</span>
-          <input
-            id="guest-event-date"
-            name="event_date"
-            type="text"
-            data-jdp
-            data-jdp-only-date="true"
-            placeholder="Example: 1403/10/01"
-            autocomplete="off"
-            readonly
-            required
-          />
-        </label>
-        <label class="field standard-width">
-          <span>Excel / CSV file</span>
-          <div class="file-row" style="display:flex; align-items:center; gap:8px;">
-            <button type="button" class="btn" id="guest-file-trigger">Choose file</button>
-            <span id="guest-file-name" class="muted" aria-live="polite">No file chosen</span>
-            <input
-              id="guest-file"
-              name="guest_file"
-              type="file"
-              accept=".csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              required
-              style="display:none;"
-            />
+    </aside>
+    <div class="sub-content">
+      <div class="sub-pane active" data-pane="guest-upload-pane">
+        <div class="card">
+          <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <h3>List of guests</h3>
+              <p class="muted small">Upload an event guest list or add guests manually, then generate a clean list.</p>
+            </div>
+            <button type="button" class="btn" id="open-manual-modal">Add guest manually</button>
           </div>
-        </label>
+          <form id="guest-upload-form" class="form" enctype="multipart/form-data">
+            <div class="form" style="max-width: 420px; gap: 12px;">
+              <label class="field standard-width">
+                <span>Name of event</span>
+                <input id="guest-event-name" name="event_name" type="text" autocomplete="off" required />
+              </label>
+              <label class="field standard-width">
+                <span>Event date (Shamsi)</span>
+                <input
+                  id="guest-event-date"
+                  name="event_date"
+                  type="text"
+                  data-jdp
+                  data-jdp-only-date="true"
+                  placeholder="Example: 1403/10/01"
+                  autocomplete="off"
+                  readonly
+                  required
+                />
+              </label>
+              <label class="field standard-width">
+                <span>Excel / CSV file</span>
+                <div class="file-row" style="display:flex; align-items:center; gap:8px;">
+                  <button type="button" class="btn" id="guest-file-trigger">Choose file</button>
+                  <span id="guest-file-name" class="muted" aria-live="polite">No file chosen</span>
+                  <input
+                    id="guest-file"
+                    name="guest_file"
+                    type="file"
+                    accept=".csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    required
+                    style="display:none;"
+                  />
+                </div>
+              </label>
+            </div>
+            <div class="section-footer">
+              <button type="submit" class="btn primary" id="guest-upload-submit">Upload file</button>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="section-footer">
-        <button type="submit" class="btn primary" id="guest-upload-submit">Upload file</button>
-      </div>
-    </form>
-  </div>
-
-  <div style="height:16px;"></div>
-
-    <div class="card">
-      <div class="table-header">
-        <h3>Guest lists</h3>
-        <div class="table-actions">
-          <label class="field inline">
-            <span class="muted small">Event</span>
-            <select id="guest-event-filter">
-              <option value="">All events</option>
-            </select>
-          </label>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
-            <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+      <div class="sub-pane" data-pane="guest-lists-pane">
+        <div class="card">
+          <div class="table-header">
+            <h3>Guest lists</h3>
+            <div class="table-actions">
+              <label class="field inline">
+                <span class="muted small">Event</span>
+                <select id="guest-event-filter">
+                  <option value="">All events</option>
+                </select>
+              </label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+                <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Event</th>
+                  <th>Event date</th>
+                  <th>First name</th>
+                  <th>Last name</th>
+                  <th>Gender</th>
+                  <th>National ID</th>
+                  <th>Phone number</th>
+                  <th>Join date</th>
+                  <th>Join time</th>
+                  <th>Left date</th>
+                  <th>Left time</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="guest-list-body">
+                <tr>
+                  <td colspan="11" class="muted">No guest lists yet.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>Event</th>
-            <th>Event date</th>
-            <th>First name</th>
-            <th>Last name</th>
-            <th>Gender</th>
-            <th>National ID</th>
-            <th>Phone number</th>
-            <th>Join date</th>
-            <th>Join time</th>
-            <th>Left date</th>
-            <th>Left time</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="guest-list-body">
-          <tr>
-            <td colspan="11" class="muted">No guest lists yet.</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   </div>
 
