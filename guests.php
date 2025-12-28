@@ -81,8 +81,10 @@
             <th>Gender</th>
             <th>National ID</th>
             <th>Phone number</th>
-            <th>Entered</th>
-            <th>Exited</th>
+            <th>Join date</th>
+            <th>Join time</th>
+            <th>Left date</th>
+            <th>Left time</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -476,6 +478,14 @@
       state.events.forEach(event => {
         if (selectedSlug && event.slug !== selectedSlug) return;
         (event.guests || []).forEach(guest => {
+          const entrySource = guest.join_date
+            ? `${guest.join_date} ${guest.join_time || ""}`.trim()
+            : guest.date_entered || "";
+          const exitSource = guest.left_date
+            ? `${guest.left_date} ${guest.left_time || ""}`.trim()
+            : guest.date_exited || "";
+          const enteredParts = splitDateTime(entrySource);
+          const exitedParts = splitDateTime(exitSource);
           rows.push({
             number: guest.number || rows.length + 1,
             event: event.name,
@@ -485,8 +495,10 @@
             gender: guest.gender || "",
             national_id: guest.national_id || "",
             phone_number: guest.phone_number || "",
-            date_entered: guest.date_entered || "",
-            date_exited: guest.date_exited || "",
+            join_date: enteredParts.date,
+            join_time: enteredParts.time,
+            left_date: exitedParts.date,
+            left_time: exitedParts.time,
             slug: event.slug
           });
         });
@@ -494,7 +506,7 @@
       if (!rows.length) {
         const emptyRow = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 11;
+        td.colSpan = 13;
         td.className = "muted";
         td.textContent = "No guest lists yet.";
         emptyRow.appendChild(td);
@@ -503,7 +515,7 @@
       }
       rows.forEach(row => {
         const tr = document.createElement("tr");
-        ["number", "event", "date", "firstname", "lastname", "gender", "national_id", "phone_number", "date_entered", "date_exited"].forEach(key => {
+        ["number", "event", "date", "firstname", "lastname", "gender", "national_id", "phone_number", "join_date", "join_time", "left_date", "left_time"].forEach(key => {
           const td = document.createElement("td");
           td.textContent = row[key] ?? "";
           tr.appendChild(td);
@@ -863,8 +875,14 @@
       }
       editContext = { slug, number };
       const g = found.guest;
-      const enteredParts = splitDateTime(g.date_entered || "");
-      const exitedParts = splitDateTime(g.date_exited || "");
+      const entryValue = g.join_date
+        ? `${g.join_date} ${g.join_time || ""}`.trim()
+        : g.date_entered || "";
+      const exitValue = g.left_date
+        ? `${g.left_date} ${g.left_time || ""}`.trim()
+        : g.date_exited || "";
+      const enteredParts = splitDateTime(entryValue);
+      const exitedParts = splitDateTime(exitValue);
       editFirstnameInput.value = g.firstname || "";
       editLastnameInput.value = g.lastname || "";
       editNationalIdInput.value = g.national_id || "";
@@ -982,10 +1000,14 @@
     async function exportPresentGuests() {
       const { rows, headers } = await loadPureListSheetData(resolvePureListCsvPath());
       const headerKeys = headers.map((header) => header ?? "");
-      const dateEnteredHeader = headerKeys.find(header => headerNameMatches(header, "date_entered"));
-      const dateExitedHeader = headerKeys.find(header => headerNameMatches(header, "date_exited"));
+      const dateEnteredHeader =
+        headerKeys.find(header => headerNameMatches(header, "join_date")) ||
+        headerKeys.find(header => headerNameMatches(header, "date_entered"));
+      const dateExitedHeader =
+        headerKeys.find(header => headerNameMatches(header, "left_date")) ||
+        headerKeys.find(header => headerNameMatches(header, "date_exited"));
       if (!dateEnteredHeader || !dateExitedHeader) {
-        throw new Error("Entry and exit timestamp columns are missing from the guest list.");
+        throw new Error("Entry and exit columns are missing from the guest list.");
       }
       const presentRows = rows.filter(row => {
         const entered = String(row[dateEnteredHeader] ?? "").trim();

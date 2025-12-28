@@ -600,13 +600,18 @@
             printAction.className = "btn ghost small invite-log-print-btn";
             printAction.textContent = "چاپ رسید";
             printAction.addEventListener("click", () => {
-              const guestForPrint = {
+            const guestForPrint = {
                 full_name: log.guest_name,
                 firstname: log?.firstname,
                 lastname: log?.lastname,
                 national_id: log?.national_id,
                 invite_code: log?.invite_code,
+                join_date: log?.join_date,
+                join_time: log?.join_time,
+                left_date: log?.left_date,
+                left_time: log?.left_time,
                 date_entered: log?.date_entered,
+                date_exited: log?.date_exited,
                 entryTimestamp: log?.timestamp
               };
               updatePrintArea(guestForPrint);
@@ -645,7 +650,9 @@
         const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (printNameEl) printNameEl.textContent = fullName;
         if (printCodeEl) printCodeEl.textContent = guest.invite_code || "----";
-        const entryValue = guest.entryTimestamp || guest.date_entered;
+        const entryValue = guest.join_date
+          ? `${guest.join_date} ${guest.join_time || ""}`.trim()
+          : guest.entryTimestamp || guest.date_entered;
         updateEntryInfo(entryValue);
       }
 
@@ -718,7 +725,9 @@
             const successMessage = `ورود ${guestDisplayName} ثبت شد.`;
             setStatus(successMessage, "success");
             showToast(successMessage);
-            const entryTimestamp = data.log?.timestamp || guest.date_entered;
+            const entryTimestamp = guest.join_date
+              ? `${guest.join_date} ${guest.join_time || ""}`.trim()
+              : data.log?.timestamp || guest.date_entered;
             const guestForModal = { ...guest, entryTimestamp };
             openEntryModal(guestForModal);
           } else if (outcome === "exit") {
@@ -730,13 +739,16 @@
             setStatus(warnMessage, tone || "warn");
             showSnackbar("اسکن تکراری ثبت شد.");
           } else if (outcome === "more_exit") {
-          const exitedParts = guest?.date_exited ? formatTimestampParts(guest.date_exited) : null;
-          const hasExit = Boolean(exitedParts);
-          const exitMessage = hasExit
-            ? `کاربر ${guestDisplayName} در ${exitedParts.dateText}، ساعت ${exitedParts.timeText} خارج شده بود.`
-            : `کاربر ${guestDisplayName} قبلاً در این جلسه خارج شده بود.`;
-          setStatus("مهمان قبلاً خارج شده بود.", tone || "warn");
-          openExitedModal(exitMessage);
+            const exitValue = guest?.left_date
+              ? `${guest.left_date} ${guest.left_time || ""}`.trim()
+              : guest.date_exited || "";
+            const exitedParts = exitValue ? formatTimestampParts(exitValue) : null;
+            const hasExit = Boolean(exitedParts);
+            const exitMessage = hasExit
+              ? `UcOOñO"Oñ ${guestDisplayName} O_Oñ ${exitedParts.dateText}OO O3OO1O¦ ${exitedParts.timeText} OrOOñOª O'O_UØ O"U^O_.`
+              : `UcOOñO"Oñ ${guestDisplayName} U,O"U,OU< O_Oñ OUOU+ OªU,O3UØ OrOOñOª O'O_UØ O"U^O_.`;
+            setStatus("U.UØU.OU+ U,O"U,OU< OrOOñOª O'O_UØ O"U^O_.", tone || "warn");
+            openExitedModal(exitMessage);
           } else if (outcome === "not_found") {
             setStatus("کد ملی در فهرست فعال یافت نشد.", "error");
             showSnackbar("کد ملی در فهرست فعال یافت نشد.");

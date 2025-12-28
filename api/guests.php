@@ -12,6 +12,7 @@ date_default_timezone_set('Asia/Tehran');
 header('Content-Type: application/json; charset=UTF-8');
 
 const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
+const PURELIST_HEADERS = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'join_date', 'join_time', 'left_date', 'left_time'];
 
 ensureEventStorageReady();
 
@@ -33,8 +34,7 @@ function ensureEventStorageReady(): void
     }
     $purelistPath = $eventsRoot . '/event/purelist.csv';
     if (!is_file($purelistPath)) {
-        $headers = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'date_entered', 'date_exited'];
-        if (@file_put_contents($purelistPath, implode(',', $headers) . "\n") === false) {
+        if (@file_put_contents($purelistPath, implode(',', PURELIST_HEADERS) . "\n") === false) {
             error_log('Failed to initialize purelist header: ' . $purelistPath);
         }
     }
@@ -95,7 +95,7 @@ if ($method === 'POST') {
         }
         $now = createNowTime();
         $nowString = $now->format('Y-m-d H:i:s');
-        $nowShamsi = formatPersianDateTime($now);
+        $nowShamsiParts = formatPersianDateTimeParts($now);
         $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, [$activeEventSlug]);
         if ($match === null) {
             $activeEventName = (string)($store['events'][$activeEventIndex]['name'] ?? '');
@@ -132,13 +132,15 @@ if ($method === 'POST') {
         $eventName = (string)($event['name'] ?? '');
         $guest['national_id'] = normalizeNationalId((string)($guest['national_id'] ?? ''));
         $inviteCode = ensureInviteCode($event, $guest);
-        $entered = trim((string)($guest['date_entered'] ?? ''));
+        $entered = trim((string)($guest['join_date'] ?? $guest['date_entered'] ?? ''));
         $exited = trim((string)($guest['date_exited'] ?? ''));
         $outcome = '';
         $message = '';
 
         if ($entered === '') {
-            $guest['date_entered'] = $nowShamsi;
+            $guest['join_date'] = $nowShamsiParts['date'];
+            $guest['join_time'] = $nowShamsiParts['time'];
+            $guest['date_entered'] = composeDateTimeString($guest['join_date'], $guest['join_time']);
             $outcome = 'enter';
             $message = 'Guest marked as entered.';
         } elseif ($exited !== '') {
@@ -150,7 +152,9 @@ if ($method === 'POST') {
                 ? (($now->getTimestamp() - $enteredAt->getTimestamp()) / 60)
                 : 10;
             if ($minutesSinceEnter >= 5) {
-                $guest['date_exited'] = $nowShamsi;
+                $guest['left_date'] = $nowShamsiParts['date'];
+                $guest['left_time'] = $nowShamsiParts['time'];
+                $guest['date_exited'] = composeDateTimeString($guest['left_date'], $guest['left_time']);
                 $outcome = 'exit';
                 $message = 'Guest marked as exited.';
             } else {
@@ -158,6 +162,7 @@ if ($method === 'POST') {
                 $message = 'Repeated scan too soon after entry.';
             }
         }
+        normalizeGuestDateFields($guest);
 
         $guestName = trim(
             (string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? '')
@@ -170,6 +175,10 @@ if ($method === 'POST') {
             'guest_name' => $guestName,
             'invite_code' => $inviteCode,
             'timestamp' => $nowString,
+            'join_date' => (string)($guest['join_date'] ?? ''),
+            'join_time' => (string)($guest['join_time'] ?? ''),
+            'left_date' => (string)($guest['left_date'] ?? ''),
+            'left_time' => (string)($guest['left_time'] ?? ''),
             'date_entered' => (string)($guest['date_entered'] ?? ''),
             'date_exited' => (string)($guest['date_exited'] ?? ''),
             'message' => $message
@@ -190,6 +199,10 @@ if ($method === 'POST') {
                 'full_name' => $guestName,
                 'national_id' => (string)($guest['national_id'] ?? ''),
                 'invite_code' => $inviteCode,
+                'join_date' => (string)($guest['join_date'] ?? ''),
+                'join_time' => (string)($guest['join_time'] ?? ''),
+                'left_date' => (string)($guest['left_date'] ?? ''),
+                'left_time' => (string)($guest['left_time'] ?? ''),
                 'date_entered' => (string)($guest['date_entered'] ?? ''),
                 'date_exited' => (string)($guest['date_exited'] ?? ''),
                 'event_slug' => $eventSlug,
@@ -245,7 +258,7 @@ if ($method === 'POST') {
             exit;
         }
         $nextNumber = getNextGuestNumber($storeEvent);
-        $storeEvent['guests'][] = [
+        $manualGuest = [
             'number' => $nextNumber,
             'firstname' => $firstname,
             'lastname' => $lastname,
@@ -255,6 +268,8 @@ if ($method === 'POST') {
             'date_entered' => $dateEntered,
             'date_exited' => $dateExited
         ];
+        normalizeGuestDateFields($manualGuest);
+        $storeEvent['guests'][] = $manualGuest;
         $storeEvent['guest_count'] = count($storeEvent['guests']);
         $storeEvent['updated_at'] = date('c');
         if (!syncEventPurelist($storeEvent, $eventSlug, $eventsRoot)) {
@@ -308,6 +323,7 @@ if ($method === 'POST') {
                 'date_exited' => trim((string)($_POST['date_exited'] ?? ''))
             ]
         );
+        normalizeGuestDateFields($store['events'][$eventIndex]['guests'][$guestIndex]);
         $store['events'][$eventIndex]['updated_at'] = date('c');
         if (!syncEventPurelist($store['events'][$eventIndex], $slug, $eventsRoot)) {
             http_response_code(500);
@@ -469,6 +485,7 @@ if ($method === 'POST') {
 
     foreach ($guests as &$guest) {
         ensureInviteCode(null, $guest);
+        normalizeGuestDateFields($guest);
     }
     unset($guest);
 
@@ -487,7 +504,7 @@ if ($method === 'POST') {
         $csvGuests[] = $guestRow;
     }
 
-    $csvHeaders = array_merge(['number'], $requiredKeys, ['sms_link', 'date_entered', 'date_exited']);
+    $csvHeaders = array_merge(['number'], $requiredKeys, ['sms_link', 'join_date', 'join_time', 'left_date', 'left_time']);
     $csvContent = buildCsv($csvGuests, $csvHeaders);
     $purelistFilename = 'purelist.csv';
     $purelistPath = $eventDir . '/' . $purelistFilename;
@@ -657,9 +674,10 @@ function syncEventPurelist(array &$event, string $slug, string $eventsRoot): boo
         $guest['sms_link'] = buildInviteLink($code);
         $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
         $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
+        normalizeGuestDateFields($guest);
     }
     unset($guest);
-    $headers = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'date_entered', 'date_exited'];
+    $headers = PURELIST_HEADERS;
     $csvContent = buildCsv($guests, $headers);
     $purelistPath = $eventDir . '/purelist.csv';
     if (file_put_contents($purelistPath, $csvContent) === false) {
@@ -724,24 +742,109 @@ function createNowTime(): DateTimeImmutable
     return new DateTimeImmutable('now', new DateTimeZone($tzName));
 }
 
-function formatPersianDateTime(DateTimeInterface $date): string
+function formatPersianDateTimeParts(DateTimeInterface $date): array
 {
+    $tz = $date->getTimezone();
     if (!class_exists('IntlDateFormatter')) {
-        return $date->format('Y/m/d H:i:s');
+        return splitDateTimeValue($date->format('Y/m/d H:i:s'));
     }
-    $formatter = new IntlDateFormatter(
+    $dateFormatter = new IntlDateFormatter(
         'fa_IR@calendar=persian;numbers=latn',
         IntlDateFormatter::NONE,
         IntlDateFormatter::NONE,
-        $date->getTimezone(),
+        $tz,
         IntlDateFormatter::TRADITIONAL,
-        'yyyy/MM/dd HH:mm:ss'
+        'yyyy/MM/dd'
     );
-    $formatted = $formatter->format($date);
-    if (!is_string($formatted) || $formatted === false) {
-        return $date->format('Y/m/d H:i:s');
+    $timeFormatter = new IntlDateFormatter(
+        'fa_IR@calendar=persian;numbers=latn',
+        IntlDateFormatter::NONE,
+        IntlDateFormatter::NONE,
+        $tz,
+        IntlDateFormatter::TRADITIONAL,
+        'HH:mm:ss'
+    );
+    $dateText = $dateFormatter !== false ? $dateFormatter->format($date) : '';
+    $timeText = $timeFormatter !== false ? $timeFormatter->format($date) : '';
+    if (!is_string($dateText) || trim($dateText) === '') {
+        $dateText = $date->format('Y/m/d');
     }
-    return normalizeDateDigits($formatted);
+    if (!is_string($timeText) || trim($timeText) === '') {
+        $timeText = $date->format('H:i:s');
+    }
+    return [
+        'date' => trim($dateText),
+        'time' => trim($timeText)
+    ];
+}
+
+function splitDateTimeValue(string $value): array
+{
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return ['date' => '', 'time' => ''];
+    }
+    if (preg_match('/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/', $trimmed, $matches)) {
+        return [
+            'date' => "{$matches[1]}/{$matches[2]}/{$matches[3]}",
+            'time' => "{$matches[4]}:{$matches[5]}:{$matches[6]}"
+        ];
+    }
+    $normalized = str_replace(['T', 't'], ' ', $trimmed);
+    $parts = preg_split('/\s+/', $normalized);
+    $datePart = $parts[0] ?? '';
+    $timePart = $parts[1] ?? '';
+    if ($timePart === '' && strpos($datePart, 'T') !== false) {
+        [$datePart, $timePart] = array_pad(explode('T', $datePart, 2), 2, '');
+    }
+    if ($timePart === '' && strpos($datePart, ':') !== false && strpos($datePart, '/') === false && strpos($datePart, '-') === false) {
+        return ['', $datePart];
+    }
+    return [$datePart, $timePart];
+}
+
+function composeDateTimeString(string $date, string $time): string
+{
+    $date = trim($date);
+    $time = trim($time);
+    if ($date === '') {
+        return '';
+    }
+    return $time === '' ? $date : "{$date} {$time}";
+}
+
+function normalizeGuestDateFields(array &$guest): void
+{
+    $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
+    $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
+
+    $existingJoin = [
+        'date' => trim((string)($guest['join_date'] ?? '')),
+        'time' => trim((string)($guest['join_time'] ?? ''))
+    ];
+    $enteredParts = splitDateTimeValue($guest['date_entered']);
+    if ($existingJoin['date'] === '' && $enteredParts['date'] !== '') {
+        $existingJoin = $enteredParts;
+    }
+    $guest['join_date'] = $existingJoin['date'];
+    $guest['join_time'] = $existingJoin['time'];
+    if ($guest['date_entered'] === '' && $guest['join_date'] !== '') {
+        $guest['date_entered'] = composeDateTimeString($guest['join_date'], $guest['join_time']);
+    }
+
+    $existingLeft = [
+        'date' => trim((string)($guest['left_date'] ?? '')),
+        'time' => trim((string)($guest['left_time'] ?? ''))
+    ];
+    $exitedParts = splitDateTimeValue($guest['date_exited']);
+    if ($existingLeft['date'] === '' && $exitedParts['date'] !== '') {
+        $existingLeft = $exitedParts;
+    }
+    $guest['left_date'] = $existingLeft['date'];
+    $guest['left_time'] = $existingLeft['time'];
+    if ($guest['date_exited'] === '' && $guest['left_date'] !== '') {
+        $guest['date_exited'] = composeDateTimeString($guest['left_date'], $guest['left_time']);
+    }
 }
 
 function parseDateTimeValue(string $value, DateTimeZone $tz): ?DateTimeImmutable
@@ -908,6 +1011,7 @@ function normalizeStore(array $store): array
             $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
             $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
             $guest['invite_code'] = ensureInviteCode($event, $guest);
+            normalizeGuestDateFields($guest);
         }
         unset($guest);
         $event['guest_count'] = count($event['guests']);
@@ -940,6 +1044,12 @@ function normalizeInviteLog(array $log): array
     $log['timestamp'] = (string)($log['timestamp'] ?? date('Y-m-d H:i:s'));
     $log['date_entered'] = (string)($log['date_entered'] ?? '');
     $log['date_exited'] = (string)($log['date_exited'] ?? '');
+    $enteredParts = splitDateTimeValue($log['date_entered']);
+    $log['join_date'] = (string)($log['join_date'] ?? $enteredParts['date']);
+    $log['join_time'] = (string)($log['join_time'] ?? $enteredParts['time']);
+    $exitedParts = splitDateTimeValue($log['date_exited']);
+    $log['left_date'] = (string)($log['left_date'] ?? $exitedParts['date']);
+    $log['left_time'] = (string)($log['left_time'] ?? $exitedParts['time']);
     $log['message'] = (string)($log['message'] ?? '');
     return $log;
 }
@@ -966,6 +1076,7 @@ function normalizeEventsForResponse(array $events): array
             $guest['invite_code'] = ensureInviteCode($event, $guest);
             $guest['date_entered'] = $guest['date_entered'] ?? '';
             $guest['date_exited'] = $guest['date_exited'] ?? '';
+            normalizeGuestDateFields($guest);
         }
         unset($guest);
         return [

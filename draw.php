@@ -795,8 +795,8 @@ function buildGuestPool(string $storePath): array
       if (!is_array($guest)) {
         continue;
       }
-      $entered = trim((string)($guest['date_entered'] ?? ''));
-      $exited = trim((string)($guest['date_exited'] ?? ''));
+      $entered = trim((string)($guest['join_date'] ?? $guest['date_entered'] ?? ''));
+      $exited = trim((string)($guest['left_date'] ?? $guest['date_exited'] ?? ''));
       if ($entered === '' || $exited !== '') {
         continue;
       }
