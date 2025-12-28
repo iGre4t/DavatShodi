@@ -1,5 +1,71 @@
 <section id="tab-guests" class="tab">
   <link rel="stylesheet" href="style/jalalidatepicker.min.css" />
+  <style>
+    .guest-list-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .guest-list-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .guest-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .guest-sidebar .card {
+      padding: 16px;
+    }
+    .guest-sidebar-metrics {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .guest-sidebar-metrics .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .guest-sidebar-metrics .metric-row strong {
+      font-size: 1.45rem;
+      font-weight: 700;
+    }
+    .sidebar-event-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 160px;
+      overflow: auto;
+      padding-left: 0;
+    }
+    .sidebar-event-list li {
+      font-size: 0.9rem;
+      color: #1f2937;
+    }
+    .sidebar-note {
+      font-size: 0.85rem;
+    }
+    @media (max-width: 960px) {
+      .guest-list-layout {
+        grid-template-columns: 1fr;
+      }
+      .guest-sidebar {
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .guest-sidebar .card {
+        flex: 1 1 200px;
+      }
+    }
+  </style>
 
   <div class="card">
     <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
@@ -53,7 +119,8 @@
 
   <div style="height:16px;"></div>
 
-    <div class="card">
+  <div class="guest-list-layout">
+    <div class="guest-list-card card">
       <div class="table-header">
         <h3>Guest lists</h3>
         <div class="table-actions">
@@ -69,32 +136,60 @@
           </div>
         </div>
       </div>
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>Event</th>
-            <th>Event date</th>
-            <th>First name</th>
-            <th>Last name</th>
-            <th>Gender</th>
-            <th>National ID</th>
-            <th>Phone number</th>
-            <th>Join date</th>
-            <th>Join time</th>
-            <th>Left date</th>
-            <th>Left time</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="guest-list-body">
-          <tr>
-            <td colspan="11" class="muted">No guest lists yet.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th>Event</th>
+              <th>Event date</th>
+              <th>First name</th>
+              <th>Last name</th>
+              <th>Gender</th>
+              <th>National ID</th>
+              <th>Phone number</th>
+              <th>Join date</th>
+              <th>Join time</th>
+              <th>Left date</th>
+              <th>Left time</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="guest-list-body">
+            <tr>
+              <td colspan="13" class="muted">No guest lists yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
+    <aside class="guest-sidebar">
+      <div class="card">
+        <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <div>
+            <h3>Event summary</h3>
+            <p class="muted small">Stats update when you switch events.</p>
+          </div>
+        </div>
+        <div class="guest-sidebar-metrics">
+          <div class="metric-row">
+            <span class="muted small">Registered guests</span>
+            <strong id="sidebar-total-guests">0</strong>
+          </div>
+          <div class="metric-row">
+            <span class="muted small">Currently inside</span>
+            <strong id="sidebar-present-guests">0</strong>
+          </div>
+        </div>
+        <div class="sidebar-note">
+          <p class="muted small">Tracked events: <strong id="sidebar-event-count">0</strong></p>
+          <ul id="sidebar-event-list" class="sidebar-event-list">
+            <li class="muted small">No events yet.</li>
+          </ul>
+        </div>
+        <p class="muted small" id="sidebar-last-updated">Updated: -</p>
+      </div>
+    </aside>
   </div>
 
   <div id="guest-mapping-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="guest-mapping-title">
@@ -333,6 +428,11 @@
     const manualPhoneInput = document.getElementById("manual-phone");
     const exportSmsButton = document.getElementById("export-sms-link");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
+    const sidebarTotalGuestsEl = document.getElementById("sidebar-total-guests");
+    const sidebarPresentGuestsEl = document.getElementById("sidebar-present-guests");
+    const sidebarEventCountEl = document.getElementById("sidebar-event-count");
+    const sidebarEventListEl = document.getElementById("sidebar-event-list");
+    const sidebarLastUpdatedEl = document.getElementById("sidebar-last-updated");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
 
@@ -511,6 +611,7 @@
         td.textContent = "No guest lists yet.";
         emptyRow.appendChild(td);
         guestListBody.appendChild(emptyRow);
+        updateGuestSidebar();
         return;
       }
       rows.forEach(row => {
@@ -528,6 +629,60 @@
         tr.appendChild(actionTd);
         guestListBody.appendChild(tr);
       });
+      updateGuestSidebar();
+    }
+
+    function updateGuestSidebar() {
+      if (
+        !sidebarTotalGuestsEl &&
+        !sidebarPresentGuestsEl &&
+        !sidebarEventCountEl &&
+        !sidebarEventListEl &&
+        !sidebarLastUpdatedEl
+      ) {
+        return;
+      }
+      const selectedSlug = eventFilter?.value || "";
+      const activeEvent =
+        selectedSlug && selectedSlug !== ""
+          ? state.events.find(ev => (ev.slug || "") === selectedSlug)
+          : state.events[0];
+      const guests = Array.isArray(activeEvent?.guests) ? activeEvent.guests : [];
+      const totalGuests = guests.length;
+      const presentGuests = guests.filter(guest => {
+        const entered = (guest.join_date || guest.date_entered || "").trim();
+        const exited = (guest.left_date || guest.date_exited || "").trim();
+        return entered !== "" && exited === "";
+      }).length;
+      if (sidebarTotalGuestsEl) {
+        sidebarTotalGuestsEl.textContent = String(totalGuests);
+      }
+      if (sidebarPresentGuestsEl) {
+        sidebarPresentGuestsEl.textContent = String(presentGuests);
+      }
+      if (sidebarEventCountEl) {
+        sidebarEventCountEl.textContent = String(state.events.length);
+      }
+      if (sidebarEventListEl) {
+        sidebarEventListEl.innerHTML = "";
+        if (!state.events.length) {
+          const placeholder = document.createElement("li");
+          placeholder.className = "muted small";
+          placeholder.textContent = "No events yet.";
+          sidebarEventListEl.appendChild(placeholder);
+        } else {
+          state.events.forEach(event => {
+            const listItem = document.createElement("li");
+            const label = event.name || event.slug || "Unnamed event";
+            const dateText = event.date ? ` (${event.date})` : "";
+            listItem.textContent = `${label}${dateText}`;
+            sidebarEventListEl.appendChild(listItem);
+          });
+        }
+      }
+      if (sidebarLastUpdatedEl) {
+        sidebarLastUpdatedEl.textContent = activeEvent?.updated_at ? `Updated: ${activeEvent.updated_at}` : "Updated: -";
+      }
     }
 
     function serializeGuests(rows, mapping) {
