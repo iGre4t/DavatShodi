@@ -13,6 +13,8 @@ header('Content-Type: application/json; charset=UTF-8');
 
 const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
 const PURELIST_HEADERS = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'join_date', 'join_time', 'left_date', 'left_time'];
+const EVENT_CODE_MIN = 10000;
+const EVENT_CODE_DIGITS = 5;
 
 ensureEventStorageReady();
 
@@ -38,6 +40,55 @@ function ensureEventStorageReady(): void
             error_log('Failed to initialize purelist header: ' . $purelistPath);
         }
     }
+}
+
+function allocateEventCode(array &$store): string
+{
+    $next = max(EVENT_CODE_MIN, (int)($store['next_event_code'] ?? EVENT_CODE_MIN));
+    $store['next_event_code'] = $next + 1;
+    return str_pad((string)$next, EVENT_CODE_DIGITS, '0', STR_PAD_LEFT);
+}
+
+function allocateGuestNumber(array &$store): int
+{
+    $next = max(1, (int)($store['next_guest_number'] ?? 1));
+    $store['next_guest_number'] = $next + 1;
+    return $next;
+}
+
+function isEventCodeValid(string $value): bool
+{
+    return preg_match('/^\d{' . EVENT_CODE_DIGITS . ',}$/', $value) === 1;
+}
+
+function getEventDirName(array $event): string
+{
+    $code = trim((string)($event['code'] ?? ''));
+    if ($code !== '') {
+        return $code;
+    }
+    $fallback = trim((string)($event['slug'] ?? ''));
+    return $fallback !== '' ? $fallback : 'event';
+}
+
+function ensureEventHasCode(array &$event, int &$nextEventCode): void
+{
+    $code = trim((string)($event['code'] ?? ''));
+    if (isEventCodeValid($code)) {
+        $numeric = (int)$code;
+        if ($numeric >= $nextEventCode) {
+            $nextEventCode = $numeric + 1;
+        }
+        $event['code'] = str_pad((string)$numeric, EVENT_CODE_DIGITS, '0', STR_PAD_LEFT);
+        return;
+    }
+    $event['code'] = str_pad((string)$nextEventCode, EVENT_CODE_DIGITS, '0', STR_PAD_LEFT);
+    $nextEventCode++;
+}
+
+function getEventDir(array $event, string $eventsRoot): string
+{
+    return $eventsRoot . '/' . getEventDirName($event);
 }
 
 function buildInviteLink(string $code): string
@@ -257,9 +308,8 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Event name and date are required.']);
             exit;
         }
-        $nextNumber = getNextGuestNumber($storeEvent);
         $manualGuest = [
-            'number' => $nextNumber,
+            'number' => allocateGuestNumber($store),
             'firstname' => $firstname,
             'lastname' => $lastname,
             'gender' => $gender,
@@ -272,7 +322,7 @@ if ($method === 'POST') {
         $storeEvent['guests'][] = $manualGuest;
         $storeEvent['guest_count'] = count($storeEvent['guests']);
         $storeEvent['updated_at'] = date('c');
-        if (!syncEventPurelist($storeEvent, $eventSlug, $eventsRoot)) {
+        if (!syncEventPurelist($storeEvent, $eventsRoot)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
             exit;
@@ -325,7 +375,7 @@ if ($method === 'POST') {
         );
         normalizeGuestDateFields($store['events'][$eventIndex]['guests'][$guestIndex]);
         $store['events'][$eventIndex]['updated_at'] = date('c');
-        if (!syncEventPurelist($store['events'][$eventIndex], $slug, $eventsRoot)) {
+        if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
             exit;
@@ -366,7 +416,7 @@ if ($method === 'POST') {
         array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
         $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
         $store['events'][$eventIndex]['updated_at'] = date('c');
-        if (!syncEventPurelist($store['events'][$eventIndex], $slug, $eventsRoot)) {
+        if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
             exit;
@@ -424,7 +474,16 @@ if ($method === 'POST') {
 
     $store = loadGuestStore($storePath);
     $slug = ensureUniqueSlug(slugify($eventName), $store['events']);
-    $eventDir = $eventsRoot . '/' . $slug;
+    if ($existingIndex >= 0) {
+        $eventCode = trim((string)($store['events'][$existingIndex]['code'] ?? ''));
+        if ($eventCode === '') {
+            $eventCode = allocateEventCode($store);
+            $store['events'][$existingIndex]['code'] = $eventCode;
+        }
+    } else {
+        $eventCode = allocateEventCode($store);
+    }
+    $eventDir = getEventDir(['code' => $eventCode, 'slug' => $slug], $eventsRoot);
     if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Unable to create event directory.']);
@@ -445,7 +504,7 @@ if ($method === 'POST') {
             }
             $uploadedFileInfo = [
                 'filename' => $targetName,
-                'path' => 'events/' . $slug . '/' . $targetName
+                'path' => 'events/' . $eventCode . '/' . $targetName
             ];
         }
     }
@@ -463,9 +522,8 @@ if ($method === 'POST') {
         return $entry;
     }, $rows);
 
-    // Add sequential numbers starting from 1 for this pure list.
-    foreach ($guests as $idx => &$guest) {
-        $guest['number'] = $idx + 1;
+    foreach ($guests as &$guest) {
+        $guest['number'] = allocateGuestNumber($store);
         $guest['date_entered'] = $guest['date_entered'] ?? '';
         $guest['date_exited'] = $guest['date_exited'] ?? '';
     }
@@ -517,10 +575,11 @@ if ($method === 'POST') {
     $existingIndex = findEventIndexBySlug($store['events'], $slug);
     $eventRecord = [
         'slug' => $slug,
+        'code' => $eventCode,
         'name' => $eventName,
         'date' => $eventDate,
         'mapping' => $mapping,
-        'purelist' => 'events/' . $slug . '/' . $purelistFilename,
+        'purelist' => 'events/' . $eventCode . '/' . $purelistFilename,
         'guest_count' => count($guests),
         'guests' => $guests,
         'updated_at' => date('c')
@@ -657,9 +716,9 @@ function escapeCsv($value): string
     return $needsQuotes ? '"' . $escaped . '"' : $escaped;
 }
 
-function syncEventPurelist(array &$event, string $slug, string $eventsRoot): bool
+function syncEventPurelist(array &$event, string $eventsRoot): bool
 {
-    $eventDir = $eventsRoot . '/' . $slug;
+    $eventDir = getEventDir($event, $eventsRoot);
     if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
         return false;
     }
@@ -683,7 +742,7 @@ function syncEventPurelist(array &$event, string $slug, string $eventsRoot): boo
     if (file_put_contents($purelistPath, $csvContent) === false) {
         return false;
     }
-    $event['purelist'] = 'events/' . $slug . '/purelist.csv';
+    $event['purelist'] = 'events/' . getEventDirName($event) . '/purelist.csv';
     return true;
 }
 
@@ -707,18 +766,6 @@ function normalizeNationalId(string $value): string
         $digits = str_pad($digits, 10, '0', STR_PAD_LEFT);
     }
     return $digits;
-}
-
-function getNextGuestNumber(array $event): int
-{
-    $max = 0;
-    foreach ($event['guests'] ?? [] as $guest) {
-        $num = (int)($guest['number'] ?? 0);
-        if ($num > $max) {
-            $max = $num;
-        }
-    }
-    return $max + 1;
 }
 
 function findGuestIndexByNumber(array $guests, int $number): int
@@ -994,19 +1041,31 @@ function normalizeInviteCodeDigits(string $value): string
 function normalizeStore(array $store): array
 {
     $store['events'] = is_array($store['events'] ?? null) ? array_values($store['events']) : [];
+    $nextEventCode = max(EVENT_CODE_MIN, (int)($store['next_event_code'] ?? EVENT_CODE_MIN));
+    $nextGuestNumber = max(1, (int)($store['next_guest_number'] ?? 1));
     foreach ($store['events'] as &$event) {
         if (!is_array($event)) {
             $event = [];
         }
         $event['slug'] = (string)($event['slug'] ?? '');
+        if ($event['slug'] === '') {
+            $event['slug'] = slugify((string)($event['name'] ?? 'event'));
+        }
+        ensureEventHasCode($event, $nextEventCode);
+        $event['purelist'] = 'events/' . getEventDirName($event) . '/purelist.csv';
         $event['guests'] = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
-        foreach ($event['guests'] as $idx => &$guest) {
+        foreach ($event['guests'] as &$guest) {
             if (!is_array($guest)) {
                 $guest = [];
             }
-            if (!isset($guest['number']) || (int)($guest['number'] ?? 0) <= 0) {
-                $guest['number'] = $idx + 1;
+            $number = (int)($guest['number'] ?? 0);
+            if ($number <= 0) {
+                $number = $nextGuestNumber;
+                $nextGuestNumber++;
+            } elseif ($number >= $nextGuestNumber) {
+                $nextGuestNumber = $number + 1;
             }
+            $guest['number'] = $number;
             $guest['national_id'] = normalizeNationalId((string)($guest['national_id'] ?? ''));
             $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
             $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
@@ -1017,6 +1076,8 @@ function normalizeStore(array $store): array
         $event['guest_count'] = count($event['guests']);
     }
     unset($event);
+    $store['next_event_code'] = $nextEventCode;
+    $store['next_guest_number'] = $nextGuestNumber;
     $store['logs'] = is_array($store['logs'] ?? null) ? array_values($store['logs']) : [];
     $store['active_event_slug'] = trim((string)($store['active_event_slug'] ?? ''));
     return $store;
@@ -1081,6 +1142,7 @@ function normalizeEventsForResponse(array $events): array
         unset($guest);
         return [
             'slug' => (string)($event['slug'] ?? ''),
+            'code' => (string)($event['code'] ?? ''),
             'name' => (string)($event['name'] ?? ''),
             'date' => (string)($event['date'] ?? ''),
             'guest_count' => (int)($event['guest_count'] ?? count($guests)),
