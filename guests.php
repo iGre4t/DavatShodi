@@ -63,6 +63,28 @@
             </div>
           </form>
         </div>
+        <div class="card">
+          <div class="table-header">
+            <h3>Saved events</h3>
+            <p class="muted small">Each event shows its name, Shamsi date, and unique invite code.</p>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Event name</th>
+                  <th>Event date</th>
+                  <th>Unique code</th>
+                </tr>
+              </thead>
+              <tbody id="guest-event-list-body">
+                <tr>
+                  <td colspan="3" class="muted">No events yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
       <div class="sub-pane" data-pane="guest-lists-pane">
         <div class="card">
@@ -348,6 +370,7 @@
     const manualPhoneInput = document.getElementById("manual-phone");
     const exportSmsButton = document.getElementById("export-sms-link");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
+    const eventListBody = document.getElementById("guest-event-list-body");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
 
@@ -526,6 +549,7 @@
         td.textContent = "No guest lists yet.";
         emptyRow.appendChild(td);
         guestListBody.appendChild(emptyRow);
+        renderEventList();
         return;
       }
       rows.forEach(row => {
@@ -542,6 +566,34 @@
         `;
         tr.appendChild(actionTd);
         guestListBody.appendChild(tr);
+      });
+      renderEventList();
+    }
+
+    function renderEventList() {
+      if (!eventListBody) return;
+      eventListBody.innerHTML = "";
+      const events = Array.isArray(state.events) ? state.events : [];
+      if (!events.length) {
+        const emptyRow = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 3;
+        td.className = "muted";
+        td.textContent = "No events yet.";
+        emptyRow.appendChild(td);
+        eventListBody.appendChild(emptyRow);
+        return;
+      }
+      events.forEach(event => {
+        const row = document.createElement("tr");
+        const nameTd = document.createElement("td");
+        nameTd.textContent = event.name || "";
+        const dateTd = document.createElement("td");
+        dateTd.textContent = event.date || "";
+        const codeTd = document.createElement("td");
+        codeTd.textContent = event.code || event.slug || "";
+        [nameTd, dateTd, codeTd].forEach(cell => row.appendChild(cell));
+        eventListBody.appendChild(row);
       });
     }
 
