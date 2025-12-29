@@ -10,10 +10,14 @@
         <button type="button" class="sub-item" data-pane="guest-lists-pane">
           لیست مهمانان
         </button>
-      </div>
-      <div class="sub-block sub-events-shell" data-pane-target="guest-lists-pane">
-        <div class="sub-header">Events</div>
-        <div class="sub-event-tabs" id="guest-event-tabs"></div>
+      </div>
+
+      <div class="sub-block sub-events-shell" data-pane-target="guest-lists-pane">
+
+        <div class="sub-header">Events</div>
+
+        <div class="sub-event-tabs" id="guest-event-tabs"></div>
+
       </div>
     </aside>
     <div class="sub-content">
@@ -101,7 +105,7 @@
           <form id="event-info-form" class="form">
             <div class="form" style="max-width: 420px; gap: 12px;">
               <label class="field standard-width">
-                <span>Event slug</span>
+                <span>Event code</span>
                 <input id="event-info-slug" type="text" readonly />
               </label>
               <label class="field standard-width">
@@ -303,7 +307,7 @@
           <div class="grid">
             <label class="field">
               <span>Event</span>
-              <select id="manual-event-select" name="event_slug" required>
+              <select id="manual-event-select" name="event_code" required>
                 <option value="">Select an event</option>
               </select>
             </label>
@@ -367,7 +371,7 @@
       eventDate: "",
       events: []
     };
-    let activeEventSlug = "";
+    let activeEventCode = "";
 
     const uploadForm = document.getElementById("guest-upload-form");
     const uploadSubmit = document.getElementById("guest-upload-submit");
@@ -418,7 +422,7 @@
     const eventInfoForm = document.getElementById("event-info-form");
     const eventInfoNameInput = document.getElementById("event-info-name");
     const eventInfoDateInput = document.getElementById("event-info-date");
-    const eventInfoSlugInput = document.getElementById("event-info-slug");
+    const eventInfoCodeInput = document.getElementById("event-info-slug");
     const eventInfoSaveButton = document.getElementById("event-info-save");
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
@@ -527,8 +531,9 @@
       eventFilter.innerHTML = '<option value="">All events</option>';
       state.events.forEach(event => {
         const option = document.createElement("option");
-        option.value = event.slug;
-        option.textContent = event.name;
+        const code = event.code || "";
+        option.value = code;
+        option.textContent = event.name || code || "Unnamed event";
         eventFilter.appendChild(option);
       });
       eventFilter.value = current || "";
@@ -542,11 +547,12 @@
       manualEventSelect.innerHTML = '<option value="">Select an event</option>';
       state.events.forEach(event => {
         const option = document.createElement("option");
-        option.value = event.slug || "";
-        option.textContent = event.name || event.slug || "Unnamed event";
+        const code = event.code || "";
+        option.value = code;
+        option.textContent = event.name || code || "Unnamed event";
         manualEventSelect.appendChild(option);
       });
-      if (current && state.events.some(ev => (ev.slug || "") === current)) {
+      if (current && state.events.some(ev => (ev.code || "") === current)) {
         manualEventSelect.value = current;
       } else {
         manualEventSelect.value = "";
@@ -559,7 +565,7 @@
       eventTabsContainer.innerHTML = "";
       const events = Array.isArray(state.events) ? state.events : [];
       if (!events.length) {
-        activeEventSlug = "";
+        activeEventCode = "";
         const emptyState = document.createElement("div");
         emptyState.className = "muted small";
         emptyState.textContent = "No events yet.";
@@ -567,20 +573,21 @@
         updateEventInfoForm();
         return;
       }
-      const hasActive = events.some(ev => (ev.slug || "") === activeEventSlug);
+      const hasActive = events.some(ev => (ev.code || "") === activeEventCode);
       if (!hasActive) {
-        activeEventSlug = events[0]?.slug || "";
+        activeEventCode = events[0]?.code || "";
       }
       events.forEach(event => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "sub-item event-tab";
-        button.dataset.slug = event.slug || "";
-        button.textContent = event.name || event.slug || "Unnamed event";
-        if (button.dataset.slug === activeEventSlug) {
+        const code = event.code || "";
+        button.dataset.code = code;
+        button.textContent = event.name || code || "Unnamed event";
+        if (button.dataset.code === activeEventCode) {
           button.classList.add("active");
         }
-        button.addEventListener("click", () => handleEventTabSelect(button.dataset.slug || ""));
+        button.addEventListener("click", () => handleEventTabSelect(button.dataset.code || ""));
         eventTabsContainer.appendChild(button);
       });
       updateEventInfoForm();
@@ -592,22 +599,22 @@
       subEventsShell.classList.toggle("active", activeNavItem?.dataset.pane === "guest-lists-pane");
     }
 
-    function handleEventTabSelect(slug) {
-      if (!slug) return;
-      activeEventSlug = slug;
+    function handleEventTabSelect(code) {
+      if (!code) return;
+      activeEventCode = code;
       const tabs = eventTabsContainer ? Array.from(eventTabsContainer.querySelectorAll(".event-tab")) : [];
       tabs.forEach(tab => {
-        const targetSlug = tab.getAttribute("data-slug") || "";
-        tab.classList.toggle("active", targetSlug === slug);
+        const targetCode = tab.getAttribute("data-code") || "";
+        tab.classList.toggle("active", targetCode === code);
       });
       updateEventInfoForm();
     }
 
     function updateEventInfoForm() {
-      const selectedEvent = state.events.find(ev => (ev.slug || "") === activeEventSlug) || null;
-      const hasEvent = Boolean(selectedEvent && selectedEvent.slug);
-      if (eventInfoSlugInput) {
-        eventInfoSlugInput.value = selectedEvent?.slug || "";
+      const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
+      const hasEvent = Boolean(selectedEvent && selectedEvent.code);
+      if (eventInfoCodeInput) {
+        eventInfoCodeInput.value = selectedEvent?.code || "";
       }
       if (eventInfoNameInput) {
         eventInfoNameInput.value = selectedEvent?.name || "";
@@ -639,18 +646,18 @@
 
     function updateManualEventDate() {
       if (!manualEventDateInput) return;
-      const selectedSlug = manualEventSelect?.value || "";
-      const selectedEvent = state.events.find(ev => (ev.slug || "") === selectedSlug);
+      const selectedCode = manualEventSelect?.value || "";
+      const selectedEvent = state.events.find(ev => (ev.code || "") === selectedCode);
       manualEventDateInput.value = (selectedEvent?.date || "").trim();
     }
 
     function renderGuestTable() {
       if (!guestListBody) return;
       guestListBody.innerHTML = "";
-      const selectedSlug = eventFilter?.value || "";
+      const selectedCode = eventFilter?.value || "";
       const rows = [];
       state.events.forEach(event => {
-        if (selectedSlug && event.slug !== selectedSlug) return;
+        if (selectedCode && event.code !== selectedCode) return;
         (event.guests || []).forEach(guest => {
           const entrySource = guest.join_date
             ? `${guest.join_date} ${guest.join_time || ""}`.trim()
@@ -673,7 +680,7 @@
             join_time: enteredParts.time,
             left_date: exitedParts.date,
             left_time: exitedParts.time,
-            slug: event.slug
+            code: event.code
           });
         });
       });
@@ -697,8 +704,8 @@
         });
         const actionTd = document.createElement("td");
         actionTd.innerHTML = `
-          <button type="button" class="btn small" data-guest-edit data-slug="${row.slug || ""}" data-number="${row.number}">Edit</button>
-          <button type="button" class="btn ghost small" data-guest-delete data-slug="${row.slug || ""}" data-number="${row.number}">Delete</button>
+          <button type="button" class="btn small" data-guest-edit data-code="${row.code || ""}" data-number="${row.number}">Edit</button>
+          <button type="button" class="btn ghost small" data-guest-delete data-code="${row.code || ""}" data-number="${row.number}">Delete</button>
         `;
         tr.appendChild(actionTd);
         guestListBody.appendChild(tr);
@@ -877,8 +884,8 @@
 
     manualForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const selectedSlug = manualEventSelect?.value || "";
-      const selectedEvent = state.events.find(ev => (ev.slug || "") === selectedSlug);
+      const selectedCode = manualEventSelect?.value || "";
+      const selectedEvent = state.events.find(ev => (ev.code || "") === selectedCode);
       if (!selectedEvent) {
         showErrorSnackbar?.({ message: "Please select an event before adding a guest." });
         return;
@@ -891,7 +898,7 @@
       }
       const payload = {
         action: "add_manual_guest",
-        event_slug: selectedSlug,
+        event_code: selectedCode,
         event_name: eventName,
         event_date: eventDate,
         firstname: (manualFirstnameInput?.value || "").trim(),
@@ -928,7 +935,7 @@
 
     eventInfoForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!activeEventSlug) return;
+      if (!activeEventCode) return;
       const name = (eventInfoNameInput?.value || "").trim();
       const date = (eventInfoDateInput?.value || "").trim();
       if (!name || !date) {
@@ -940,7 +947,7 @@
       try {
         const formData = new FormData();
         formData.append("action", "update_event");
-        formData.append("slug", activeEventSlug);
+        formData.append("code", activeEventCode);
         formData.append("name", name);
         formData.append("date", date);
         const response = await fetch("./api/guests.php", { method: "POST", body: formData });
@@ -964,7 +971,7 @@
       if (!editContext) return;
       const payload = {
         action: "update_guest",
-        event_slug: editContext.slug,
+        event_code: editContext.code,
         number: editContext.number,
         firstname: (editFirstnameInput?.value || "").trim(),
         lastname: (editLastnameInput?.value || "").trim(),
@@ -1041,8 +1048,8 @@
       window.jalaliDatepicker.show(targetInput);
     }
 
-    function findGuest(slug, number) {
-      const event = state.events.find(ev => (ev.slug || "") === slug);
+    function findGuest(code, number) {
+      const event = state.events.find(ev => (ev.code || "") === code);
       if (!event) return null;
       const idx = (event.guests || []).findIndex(g => Number(g.number) === Number(number));
       if (idx < 0) return null;
@@ -1103,13 +1110,13 @@
       });
     }
 
-    function openEditModal(slug, number) {
-      const found = findGuest(slug, number);
+    function openEditModal(code, number) {
+      const found = findGuest(code, number);
       if (!found) {
         showErrorSnackbar?.({ message: "Guest not found." });
         return;
       }
-      editContext = { slug, number };
+      editContext = { code, number };
       const g = found.guest;
       const entryValue = g.join_date
         ? `${g.join_date} ${g.join_time || ""}`.trim()
@@ -1132,14 +1139,14 @@
       showModal(editModal);
     }
 
-    async function deleteGuest(slug, number) {
-      if (!slug || !number) {
+    async function deleteGuest(code, number) {
+      if (!code || !number) {
         showErrorSnackbar?.({ message: "Invalid guest selected." });
         return;
       }
       const formData = new FormData();
       formData.append("action", "delete_guest");
-      formData.append("event_slug", slug);
+      formData.append("event_code", code);
       formData.append("number", String(number));
       try {
         const response = await fetch("./api/guests.php", { method: "POST", body: formData });
@@ -1195,9 +1202,9 @@
     }
 
     function resolvePureListCsvPath() {
-      const selectedSlug = eventFilter?.value || "";
-      const activeEvent = selectedSlug
-        ? state.events.find(ev => (ev.slug || "") === selectedSlug)
+      const selectedCode = eventFilter?.value || "";
+      const activeEvent = selectedCode
+        ? state.events.find(ev => (ev.code || "") === selectedCode)
         : state.events[0];
       const path = activeEvent && typeof activeEvent.purelist === "string"
         ? activeEvent.purelist.trim()
@@ -1373,13 +1380,13 @@
         const target = evt.target;
         if (!(target instanceof HTMLElement)) return;
         if (target.hasAttribute("data-guest-edit")) {
-          const slug = target.getAttribute("data-slug") || "";
+          const code = target.getAttribute("data-code") || "";
           const number = Number(target.getAttribute("data-number") || 0);
-          openEditModal(slug, number);
+          openEditModal(code, number);
         } else if (target.hasAttribute("data-guest-delete")) {
-          const slug = target.getAttribute("data-slug") || "";
+          const code = target.getAttribute("data-code") || "";
           const number = Number(target.getAttribute("data-number") || 0);
-          deleteGuest(slug, number);
+          deleteGuest(code, number);
         }
       });
 

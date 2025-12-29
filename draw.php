@@ -56,6 +56,8 @@ $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['pan
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$drawEventCode = trim((string)($_GET['event_code'] ?? ''));
+$drawEventCode = preg_replace('/[^A-Za-z0-9_-]+/', '', $drawEventCode);
 
 if ($method === 'POST') {
   header('Content-Type: application/json; charset=UTF-8');
@@ -64,7 +66,7 @@ if ($method === 'POST') {
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
 
   if ($action === 'reset_winners') {
-    if (!deleteAllWinnerRecords(EVENTS_ROOT)) {
+    if (!deleteWinnerRecords(EVENTS_ROOT, $drawEventCode)) {
       echo json_encode(['status' => 'error', 'message' => 'Unable to remove winner records.']);
       exit;
     }
@@ -94,19 +96,18 @@ if ($method === 'POST') {
   }
 
   $eventName = trim((string)($guest['event_name'] ?? 'event'));
+  $eventCode = trim((string)($guest['event_code'] ?? ''));
   $eventSlug = normalizeSlug((string)($guest['event_slug'] ?? ''));
-  if ($eventSlug === '') {
-    $eventSlug = normalizeSlug($eventName);
-  }
-  if ($eventSlug === '') {
-    $eventSlug = 'event';
+  $dirCandidate = $eventCode !== '' ? $eventCode : ($eventSlug !== '' ? $eventSlug : normalizeSlug($eventName));
+  if ($dirCandidate === '') {
+    $dirCandidate = 'event';
   }
 
-  $eventDir = EVENTS_ROOT . '/' . $eventSlug;
+  $eventDir = EVENTS_ROOT . '/' . $dirCandidate;
   $winnersFile = buildWinnersFileName($eventName);
   $entry = [
     'timestamp' => (new DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
-    'event_slug' => $eventSlug,
+    'event_code' => $eventCode !== '' ? $eventCode : $dirCandidate,
     'event_name' => $eventName ?: 'event',
     'code' => $code,
     'number' => (int)($guest['number'] ?? 0),
@@ -126,13 +127,13 @@ if ($method === 'POST') {
   echo json_encode([
     'status' => 'ok',
     'message' => 'Winner saved.',
-    'winners' => loadWinnersList(EVENTS_ROOT)
+    'winners' => loadWinnersList(EVENTS_ROOT, $drawEventCode)
   ]);
   exit;
 }
 
-$guestPool = buildGuestPool(GUEST_STORE_PATH);
-$winnersList = loadWinnersList(EVENTS_ROOT);
+$guestPool = buildGuestPool(GUEST_STORE_PATH, $drawEventCode);
+$winnersList = loadWinnersList(EVENTS_ROOT, $drawEventCode);
 
 ?>
 <!doctype html>
@@ -499,6 +500,8 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
     <script>
       window.__GUEST_POOL = window.__GUEST_POOL || <?= json_encode($guestPool, JSON_UNESCAPED_UNICODE); ?>;
       window.__WINNERS_LIST = window.__WINNERS_LIST || <?= json_encode($winnersList, JSON_UNESCAPED_UNICODE); ?>;
+      const EVENT_CODE = <?= json_encode($drawEventCode, JSON_UNESCAPED_UNICODE); ?>;
+      const DRAW_API_PATH = 'draw.php' + (EVENT_CODE ? '?event_code=' + encodeURIComponent(EVENT_CODE) : '');
       const guestPool = Array.isArray(window.__GUEST_POOL) ? window.__GUEST_POOL : [];
       let winnersList = Array.isArray(window.__WINNERS_LIST) ? window.__WINNERS_LIST : [];
       const codeDisplay = document.getElementById('code-display');
@@ -548,10 +551,10 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         if (!guest || typeof guest !== 'object') {
           return '';
         }
-        const slug = (guest.event_slug ?? '').toString();
+        const eventCode = (guest.event_code ?? guest.event_slug ?? '').toString();
         const code = normalizeCode(guest.code ?? guest.invite_code ?? '');
         const number = (guest.number ?? '').toString();
-        return `${slug}|${code}|${number}`;
+        return `${eventCode}|${code}|${number}`;
       };
 
       const chosenGuestKeys = new Set();
@@ -623,7 +626,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         cancelAnimation();
         confirmBtn.disabled = true;
         try {
-          const response = await fetch('draw.php', {
+          const response = await fetch(DRAW_API_PATH, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'reset_winners' })
@@ -702,7 +705,7 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
         }
         confirmBtn.disabled = true;
         try {
-          const response = await fetch('draw.php', {
+          const response = await fetch(DRAW_API_PATH, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'confirm_winner', guest: currentWinner })
@@ -768,22 +771,35 @@ $winnersList = loadWinnersList(EVENTS_ROOT);
 </html>
 
 <?php
-function buildGuestPool(string $storePath): array
+
+function buildGuestPool(string $storePath, string $targetEventCode = ''): array
 {
   $store = loadGuestStoreForDraw($storePath);
   $events = $store['events'] ?? [];
-  $activeSlug = trim((string)($store['active_event_slug'] ?? ''));
+  $activeCode = trim((string)($store['active_event_code'] ?? ''));
+  $targetEventCode = trim($targetEventCode);
   $pool = [];
 
   foreach ($events as $event) {
     if (!is_array($event)) {
       continue;
     }
+    $eventCode = trim((string)($event['code'] ?? ''));
     $slug = normalizeSlug((string)($event['slug'] ?? ''));
     if ($slug === '') {
       $slug = normalizeSlug((string)($event['name'] ?? ''));
     }
-    if ($activeSlug !== '' && $slug !== $activeSlug) {
+    if ($eventCode === '') {
+      $eventCode = $slug;
+    }
+    if ($eventCode === '') {
+      $eventCode = 'event';
+    }
+    if ($targetEventCode !== '') {
+      if ($eventCode !== $targetEventCode) {
+        continue;
+      }
+    } elseif ($activeCode !== '' && $eventCode !== $activeCode) {
       continue;
     }
     if (!isEventActive($event)) {
@@ -823,6 +839,7 @@ function buildGuestPool(string $storePath): array
         'phone_number' => trim((string)($guest['phone_number'] ?? '')),
         'invite_code' => $code,
         'event_name' => $eventName,
+        'event_code' => $eventCode,
         'event_slug' => $slug
       ];
     }
@@ -873,18 +890,22 @@ function isEventActive(array $event): bool
 function loadGuestStoreForDraw(string $storePath): array
 {
   if (!is_file($storePath)) {
-    return ['events' => [], 'active_event_slug' => ''];
+    return ['events' => [], 'active_event_slug' => '', 'active_event_code' => ''];
   }
   $content = file_get_contents($storePath);
   if ($content === false) {
-    return ['events' => [], 'active_event_slug' => ''];
+    return ['events' => [], 'active_event_slug' => '', 'active_event_code' => ''];
   }
   $decoded = json_decode($content, true);
   if (!is_array($decoded)) {
-    return ['events' => [], 'active_event_slug' => ''];
+    return ['events' => [], 'active_event_slug' => '', 'active_event_code' => ''];
   }
   $decoded['events'] = is_array($decoded['events'] ?? null) ? array_values($decoded['events']) : [];
   $decoded['active_event_slug'] = trim((string)($decoded['active_event_slug'] ?? ''));
+  $decoded['active_event_code'] = trim((string)($decoded['active_event_code'] ?? ''));
+  if ($decoded['active_event_code'] === '') {
+    $decoded['active_event_code'] = $decoded['active_event_slug'];
+  }
   return $decoded;
 }
 
@@ -914,7 +935,7 @@ function appendWinnerRecord(string $eventDir, string $fileName, array $row): boo
     return false;
   }
   $filePath = $eventDir . '/' . $fileName;
-  $headers = ['timestamp', 'event_slug', 'event_name', 'code', 'number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'invite_code'];
+  $headers = ['timestamp', 'event_code', 'event_name', 'code', 'number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'invite_code'];
   $isNew = !is_file($filePath);
   $handle = fopen($filePath, 'a');
   if ($handle === false) {
@@ -932,7 +953,7 @@ function appendWinnerRecord(string $eventDir, string $fileName, array $row): boo
   return true;
 }
 
-function loadWinnersList(string $eventsRoot): array
+function loadWinnersList(string $eventsRoot, string $targetEventCode = ''): array
 {
   $list = [];
   if (!is_dir($eventsRoot)) {
@@ -942,12 +963,16 @@ function loadWinnersList(string $eventsRoot): array
   if ($eventDirs === false) {
     return $list;
   }
+  $targetEventCode = trim($targetEventCode);
   foreach ($eventDirs as $dir) {
     if ($dir === '.' || $dir === '..') {
       continue;
     }
     $eventPath = $eventsRoot . '/' . $dir;
     if (!is_dir($eventPath)) {
+      continue;
+    }
+    if ($targetEventCode !== '' && $dir !== $targetEventCode) {
       continue;
     }
     $files = glob($eventPath . '/winners of *.csv');
@@ -957,6 +982,17 @@ function loadWinnersList(string $eventsRoot): array
     foreach ($files as $filePath) {
       $rows = readCsvRows($filePath);
       if ($rows) {
+        foreach ($rows as &$row) {
+          $codeValue = trim((string)($row['event_code'] ?? ''));
+          if ($codeValue === '') {
+            $row['event_code'] = $dir;
+          }
+          $slugValue = trim((string)($row['event_slug'] ?? ''));
+          if ($slugValue !== '' && trim((string)($row['event_code'] ?? '')) === '') {
+            $row['event_code'] = $slugValue;
+          }
+        }
+        unset($row);
         $list = array_merge($list, $rows);
       }
     }
@@ -993,8 +1029,12 @@ function readCsvRows(string $path): array
   return $rows;
 }
 
-function deleteAllWinnerRecords(string $eventsRoot): bool
+function deleteWinnerRecords(string $eventsRoot, string $targetEventCode = ''): bool
 {
+  if ($targetEventCode !== '') {
+    $eventDir = $eventsRoot . '/' . trim($targetEventCode);
+    return deleteWinnerFilesInDirectory($eventDir);
+  }
   if (!is_dir($eventsRoot)) {
     return true;
   }
@@ -1011,17 +1051,29 @@ function deleteAllWinnerRecords(string $eventsRoot): bool
     if (!is_dir($eventPath)) {
       continue;
     }
-    $files = glob($eventPath . '/winners of *.csv');
-    if ($files === false) {
+    if (!deleteWinnerFilesInDirectory($eventPath)) {
+      $success = false;
+    }
+  }
+  return $success;
+}
+
+function deleteWinnerFilesInDirectory(string $eventPath): bool
+{
+  if (!is_dir($eventPath)) {
+    return true;
+  }
+  $success = true;
+  $files = glob($eventPath . '/winners of *.csv');
+  if ($files === false) {
+    return true;
+  }
+  foreach ($files as $filePath) {
+    if (!is_file($filePath)) {
       continue;
     }
-    foreach ($files as $filePath) {
-      if (!is_file($filePath)) {
-        continue;
-      }
-      if (!@unlink($filePath)) {
-        $success = false;
-      }
+    if (!@unlink($filePath)) {
+      $success = false;
     }
   }
   return $success;

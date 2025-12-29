@@ -21,7 +21,7 @@ function eventstabNormalizeGuestStore(array $store): array
   return [
     'events' => is_array($store['events'] ?? null) ? array_values($store['events']) : [],
     'logs' => is_array($store['logs'] ?? null) ? array_values($store['logs']) : [],
-    'active_event_slug' => trim((string)($store['active_event_slug'] ?? ''))
+    'active_event_code' => trim((string)($store['active_event_code'] ?? ''))
   ];
 }
 
@@ -55,13 +55,17 @@ function eventstabSaveGuestStore(array $store): bool
   return file_put_contents(EVENTSTAB_STORE_PATH, $encoded, LOCK_EX) !== false;
 }
 
-function eventstabFindEventIndexBySlug(array $events, string $slug): int
+function eventstabFindEventIndexByCode(array $events, string $code): int
 {
+  $normalizedCode = trim($code);
+  if ($normalizedCode === '') {
+    return -1;
+  }
   foreach ($events as $index => $event) {
     if (!is_array($event)) {
       continue;
     }
-    if ((string)($event['slug'] ?? '') === $slug) {
+    if ((string)($event['code'] ?? '') === $normalizedCode) {
       return $index;
     }
   }
@@ -72,20 +76,20 @@ function eventstabNormalizeEventsForResponse(array $events): array
 {
   return array_values(array_map(static function ($event) {
     if (!is_array($event)) {
-      return [
-        'slug' => '',
-        'name' => '',
-        'date' => '',
-        'guest_count' => 0,
-        'created_at' => '',
-        'updated_at' => ''
-      ];
-    }
-    $guests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
     return [
-      'slug' => (string)($event['slug'] ?? ''),
-      'name' => (string)($event['name'] ?? ''),
-      'date' => (string)($event['date'] ?? ''),
+      'code' => '',
+      'name' => '',
+      'date' => '',
+      'guest_count' => 0,
+      'created_at' => '',
+      'updated_at' => ''
+    ];
+  }
+  $guests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
+  return [
+    'code' => (string)($event['code'] ?? ''),
+    'name' => (string)($event['name'] ?? ''),
+    'date' => (string)($event['date'] ?? ''),
       'guest_count' => (int)($event['guest_count'] ?? count($guests)),
       'created_at' => (string)($event['created_at'] ?? ''),
       'updated_at' => (string)($event['updated_at'] ?? '')
@@ -138,16 +142,16 @@ function eventstabDeleteDirectoryRecursive(string $directory): bool
   return rmdir($directory);
 }
 
-function eventstabDeleteEventDirectory(string $slug): bool
+function eventstabDeleteEventDirectory(string $code): bool
 {
-  if ($slug === '') {
+  if ($code === '') {
     return true;
   }
   $root = eventstabGetEventsRootPath();
   if ($root === '') {
     return false;
   }
-  $target = $root . DIRECTORY_SEPARATOR . $slug;
+  $target = $root . DIRECTORY_SEPARATOR . $code;
   $normalizedRoot = eventstabNormalizePathForComparison($root);
   $normalizedTarget = eventstabNormalizePathForComparison($target);
   if ($normalizedRoot === '' || $normalizedTarget === '' || strpos($normalizedTarget, $normalizedRoot) !== 0) {
@@ -171,13 +175,13 @@ if ($action !== '') {
       ]);
       break;
     case 'update':
-      $slug = trim((string)($_POST['slug'] ?? ''));
+      $code = trim((string)($_POST['code'] ?? ''));
       $name = trim((string)($_POST['name'] ?? ''));
       $date = trim((string)($_POST['date'] ?? ''));
-      if ($slug === '' || $name === '' || $date === '') {
-        respondEventsJson(['status' => 'error', 'message' => 'Event slug, name, and date are required.'], 422);
+      if ($code === '' || $name === '' || $date === '') {
+        respondEventsJson(['status' => 'error', 'message' => 'Event code, name, and date are required.'], 422);
       }
-      $index = eventstabFindEventIndexBySlug($store['events'], $slug);
+      $index = eventstabFindEventIndexByCode($store['events'], $code);
       if ($index < 0) {
         respondEventsJson(['status' => 'error', 'message' => 'Event not found.'], 404);
       }
@@ -194,17 +198,17 @@ if ($action !== '') {
       ]);
       break;
     case 'delete':
-      $slug = trim((string)($_POST['slug'] ?? ''));
-      if ($slug === '') {
-        respondEventsJson(['status' => 'error', 'message' => 'Event slug is required for deletion.'], 422);
+      $code = trim((string)($_POST['code'] ?? ''));
+      if ($code === '') {
+        respondEventsJson(['status' => 'error', 'message' => 'Event code is required for deletion.'], 422);
       }
-      if (eventstabFindEventIndexBySlug($store['events'], $slug) < 0) {
+      if (eventstabFindEventIndexByCode($store['events'], $code) < 0) {
         respondEventsJson(['status' => 'error', 'message' => 'Event not found.'], 404);
       }
-      $targetDir = eventstabGetEventsRootPath() . DIRECTORY_SEPARATOR . $slug;
+      $targetDir = eventstabGetEventsRootPath() . DIRECTORY_SEPARATOR . $code;
       $directoryExisted = is_dir($targetDir);
-      $store['events'] = array_values(array_filter($store['events'], static fn($event) => (string)($event['slug'] ?? '') !== $slug));
-      if ($directoryExisted && !eventstabDeleteEventDirectory($slug)) {
+      $store['events'] = array_values(array_filter($store['events'], static fn($event) => (string)($event['code'] ?? '') !== $code));
+      if ($directoryExisted && !eventstabDeleteEventDirectory($code)) {
         respondEventsJson(['status' => 'error', 'message' => 'Failed to remove event directory.'], 500);
       }
       if (!eventstabSaveGuestStore($store)) {
@@ -332,32 +336,32 @@ if ($action !== '') {
       }
       tableBody.innerHTML = events
         .map((event, index) => {
-          const slug = (event.slug ?? '').trim();
-          const dateValue = escapeHtml(event.date || '');
-          const nameValue = escapeHtml(event.name || '');
-          const slugLabel = escapeHtml(slug ? `Slug: ${slug}` : 'Slug missing');
-          return `
-            <tr data-event-row="${escapeHtml(slug)}">
+        const code = (event.code ?? '').trim();
+        const dateValue = escapeHtml(event.date || '');
+        const nameValue = escapeHtml(event.name || '');
+        const codeLabel = escapeHtml(code ? `Code: ${code}` : 'Code missing');
+        return `
+            <tr data-event-row="${escapeHtml(code)}">
               <td>${index + 1}</td>
               <td>
                 <label class="field standard-width" style="margin:0;">
                   <input
                     type="text"
                     class="event-name-input"
-                    data-event-slug="${escapeHtml(slug)}"
+                    data-event-code="${escapeHtml(code)}"
                     value="${nameValue}"
                     data-original="${nameValue}"
                     style="direction:rtl; text-align:right;"
                   />
                 </label>
-                <div class="muted small" style="margin-top:4px;">${slugLabel}</div>
+                <div class="muted small" style="margin-top:4px;">${codeLabel}</div>
               </td>
               <td>
                 <label class="field standard-width" style="margin:0;">
                   <input
                     type="text"
                     class="event-date-input"
-                    data-event-slug="${escapeHtml(slug)}"
+                    data-event-code="${escapeHtml(code)}"
                     value="${dateValue}"
                     data-original="${dateValue}"
                     data-event-date
@@ -374,7 +378,7 @@ if ($action !== '') {
                   type="button"
                   class="btn ghost small"
                   data-event-action="delete"
-                  data-event-slug="${escapeHtml(slug)}"
+                  data-event-code="${escapeHtml(code)}"
                 >
                   Delete
                 </button>
@@ -386,8 +390,8 @@ if ($action !== '') {
       initDatepicker();
     }
 
-    function getEventBySlug(slug) {
-      return events.find(ev => (ev.slug ?? '') === slug) || null;
+    function getEventByCode(code) {
+      return events.find(ev => (ev.code ?? '') === code) || null;
     }
 
     async function sendAction(action, data = {}) {
@@ -412,8 +416,8 @@ if ($action !== '') {
     }
 
     function handleInlineUpdate(input, field) {
-      const slug = input?.getAttribute('data-event-slug') ?? '';
-      if (!slug) {
+      const code = input?.getAttribute('data-event-code') ?? '';
+      if (!code) {
         return;
       }
       const original = (input.getAttribute('data-original') ?? '').trim();
@@ -422,9 +426,9 @@ if ($action !== '') {
         input.value = original;
         return;
       }
-      const existing = getEventBySlug(slug);
+      const existing = getEventByCode(code);
       const payload = {
-        slug,
+        code,
         name: existing?.name ?? '',
         date: existing?.date ?? ''
       };
@@ -501,8 +505,8 @@ if ($action !== '') {
       if (!button) {
         return;
       }
-      const slug = button.getAttribute('data-event-slug') ?? '';
-      if (!slug) {
+      const code = button.getAttribute('data-event-code') ?? '';
+      if (!code) {
         return;
       }
       let confirmed = true;
@@ -521,7 +525,7 @@ if ($action !== '') {
       }
       button.setAttribute('disabled', 'disabled');
       try {
-        await sendAction('delete', { slug });
+        await sendAction('delete', { code });
       } catch (error) {
         setStatus(error?.message || 'Unable to delete event.', true);
       } finally {

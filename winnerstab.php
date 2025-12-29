@@ -18,21 +18,25 @@ function normalizeGuestStore(array $store): array
   $result['events'] = is_array($result['events'] ?? null) ? array_values($result['events']) : [];
   $result['logs'] = is_array($result['logs'] ?? null) ? array_values($result['logs']) : [];
   $result['active_event_slug'] = trim((string)($result['active_event_slug'] ?? ''));
+  $result['active_event_code'] = trim((string)($result['active_event_code'] ?? ''));
+  if ($result['active_event_code'] === '') {
+    $result['active_event_code'] = $result['active_event_slug'];
+  }
   return $result;
 }
 
 function loadGuestStore(): array
 {
   if (!is_file(GUEST_STORE_PATH)) {
-    return ['events' => [], 'logs' => [], 'active_event_slug' => ''];
+    return ['events' => [], 'logs' => [], 'active_event_slug' => '', 'active_event_code' => ''];
   }
   $content = file_get_contents(GUEST_STORE_PATH);
   if ($content === false) {
-    return ['events' => [], 'logs' => [], 'active_event_slug' => ''];
+    return ['events' => [], 'logs' => [], 'active_event_slug' => '', 'active_event_code' => ''];
   }
   $decoded = json_decode($content, true);
   if (!is_array($decoded)) {
-    return ['events' => [], 'logs' => [], 'active_event_slug' => ''];
+    return ['events' => [], 'logs' => [], 'active_event_slug' => '', 'active_event_code' => ''];
   }
   return normalizeGuestStore($decoded);
 }
@@ -51,16 +55,16 @@ function saveGuestStore(array $store): bool
   return file_put_contents(GUEST_STORE_PATH, $encoded) !== false;
 }
 
-function ensureEventSlugExists(array $events, string $slug): bool
+function ensureEventCodeExists(array $events, string $code): bool
 {
-  if ($slug === '') {
+  if ($code === '') {
     return true;
   }
   foreach ($events as $event) {
     if (!is_array($event)) {
       continue;
     }
-    if ((string)($event['slug'] ?? '') === $slug) {
+    if ((string)($event['code'] ?? '') === $code) {
       return true;
     }
   }
@@ -239,7 +243,7 @@ if ($action !== '') {
       respondWinnersJson([
         'status' => 'ok',
         'winners' => $winners,
-        'activeEventSlug' => $store['active_event_slug']
+        'activeEventCode' => $store['active_event_code']
       ]);
       break;
     case 'delete':
@@ -257,16 +261,16 @@ if ($action !== '') {
         'status' => 'ok',
         'message' => 'Winner removed.',
         'winners' => $winners,
-        'activeEventSlug' => $store['active_event_slug']
+        'activeEventCode' => $store['active_event_code']
       ]);
       break;
     case 'set_active_event':
-      $slug = trim((string)($_POST['slug'] ?? ''));
+      $code = trim((string)($_POST['code'] ?? ''));
       $store = loadGuestStore();
-      if ($slug !== '' && !ensureEventSlugExists($store['events'], $slug)) {
+      if ($code !== '' && !ensureEventCodeExists($store['events'], $code)) {
         respondWinnersJson(['status' => 'error', 'message' => 'Selected event does not exist.'], 404);
       }
-      $store['active_event_slug'] = $slug;
+      $store['active_event_code'] = $code;
       if (!saveGuestStore($store)) {
         respondWinnersJson(['status' => 'error', 'message' => 'Unable to save active event.'], 500);
       }
@@ -274,7 +278,7 @@ if ($action !== '') {
       respondWinnersJson([
         'status' => 'ok',
         'message' => 'Active event saved.',
-        'activeEventSlug' => $store['active_event_slug'],
+        'activeEventCode' => $store['active_event_code'],
         'winners' => $winners
       ]);
       break;
@@ -362,7 +366,7 @@ if ($action !== '') {
     }
 
     let winners = [];
-    let activeEventSlug = '';
+    let activeEventCode = '';
     let eventsList = [];
 
     function setStatus(message, isError = false) {
@@ -395,40 +399,44 @@ if ($action !== '') {
       }
       const rows = ['<option value="">Select an event</option>'];
       eventsList.forEach(event => {
-        const slug = event.slug ?? '';
-        const name = event.name ?? event.slug ?? 'Unnamed event';
+        const code = event.code ?? '';
+        const name = event.name ?? code || 'Unnamed event';
         const date = event.date ?? '';
         const labelParts = [name];
+        if (code) {
+          labelParts.push(`Code: ${code}`);
+        }
         if (date) {
           labelParts.push(date);
         }
         const label = labelParts.join(' - ');
-        rows.push(`<option value="${escapeHtml(slug)}">${escapeHtml(label)}</option>`);
+        rows.push(`<option value="${escapeHtml(code)}">${escapeHtml(label)}</option>`);
       });
       activeEventSelect.innerHTML = rows.join('');
-      if (activeEventSlug) {
-        activeEventSelect.value = activeEventSlug;
+      if (activeEventCode) {
+        activeEventSelect.value = activeEventCode;
       }
     }
 
     function updateActiveEventUi() {
       if (activeEventSelect) {
-        activeEventSelect.value = activeEventSlug;
+        activeEventSelect.value = activeEventCode;
       }
-      const match = eventsList.find(event => (event.slug ?? '') === activeEventSlug);
-      if (activeEventSlug && match) {
+      const match = eventsList.find(event => (event.code ?? '') === activeEventCode);
+      if (activeEventCode && match) {
         const labelParts = [];
         if (match.name) {
           labelParts.push(match.name);
-        } else if (match.slug) {
-          labelParts.push(match.slug);
+        }
+        if (match.code) {
+          labelParts.push(`Code: ${match.code}`);
         }
         if (match.date) {
           labelParts.push(match.date);
         }
         const label = labelParts.join(' • ');
         setActiveEventStatus(`Active event: ${label}`);
-      } else if (activeEventSlug) {
+      } else if (activeEventCode) {
         setActiveEventStatus('Active event saved.');
       } else {
         setActiveEventStatus('No active event selected.');
@@ -498,8 +506,8 @@ if ($action !== '') {
       }
       tableBody.innerHTML = winners
         .map((winner, index) => {
-          const eventLabel = escapeHtml(winner.event_name || winner.event_slug || 'Unknown event');
-          const eventSlug = escapeHtml(winner.event_slug || '');
+        const eventCode = escapeHtml(winner.event_code || winner.event_slug || '');
+        const eventLabel = escapeHtml(winner.event_name || eventCode || 'Unknown event');
           const fullname = escapeHtml(
             [winner.firstname, winner.lastname].filter(Boolean).join(' ').trim() || '---'
           );
@@ -514,7 +522,7 @@ if ($action !== '') {
               <td>${index + 1}</td>
               <td>
                 <strong>${eventLabel}</strong>
-                ${eventSlug ? `<div class="muted small">${eventSlug}</div>` : ''}
+                ${eventCode ? `<div class="muted small">Code: ${eventCode}</div>` : ''}
               </td>
               <td>${timestamp}</td>
               <td>
@@ -552,8 +560,8 @@ if ($action !== '') {
           throw new Error(payload.message || 'Unable to load winners.');
         }
         winners = Array.isArray(payload.winners) ? payload.winners : [];
-        if (payload.activeEventSlug !== undefined) {
-          activeEventSlug = payload.activeEventSlug || '';
+        if (payload.activeEventCode !== undefined) {
+          activeEventCode = payload.activeEventCode || '';
           updateActiveEventUi();
         }
         renderTable();
@@ -582,8 +590,8 @@ if ($action !== '') {
         throw new Error(payload.message || 'Unable to update winners.');
       }
       winners = Array.isArray(payload.winners) ? payload.winners : winners;
-      if (payload.activeEventSlug !== undefined) {
-        activeEventSlug = payload.activeEventSlug || '';
+      if (payload.activeEventCode !== undefined) {
+        activeEventCode = payload.activeEventCode || '';
         updateActiveEventUi();
       }
       renderTable();
@@ -619,10 +627,10 @@ if ($action !== '') {
 
     activeEventForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const slug = (activeEventSelect?.value ?? '').trim();
+      const code = (activeEventSelect?.value ?? '').trim();
       setActiveEventStatus('Saving active event...');
       try {
-        const payload = await sendAction('set_active_event', { slug });
+        const payload = await sendAction('set_active_event', { code });
         setActiveEventStatus(payload.message || 'Active event saved.');
       } catch (error) {
         setActiveEventStatus(error?.message || 'Failed to save active event.', true);
@@ -642,7 +650,7 @@ if ($action !== '') {
         const rows = winners.map((winner) => ({
           Timestamp: winner.timestamp ?? '',
           'Event name': winner.event_name ?? '',
-          'Event slug': winner.event_slug ?? '',
+          'Event code': winner.event_code ?? winner.event_slug ?? '',
           Code: winner.code ?? '',
           'Full name': [winner.firstname, winner.lastname].filter(Boolean).join(' ').trim(),
           Number: winner.number ?? '',
@@ -655,7 +663,7 @@ if ($action !== '') {
           header: [
             'Timestamp',
             'Event name',
-            'Event slug',
+            'Event code',
             'Code',
             'Full name',
             'Number',

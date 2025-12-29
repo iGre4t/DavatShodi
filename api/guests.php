@@ -126,8 +126,8 @@ if ($method === 'POST') {
             exit;
         }
         $store = loadGuestStore($storePath, $eventsRoot);
-        $activeEventSlug = trim((string)($store['active_event_slug'] ?? ''));
-        if ($activeEventSlug === '') {
+        $activeEventCode = trim((string)($store['active_event_code'] ?? ''));
+        if ($activeEventCode === '') {
             http_response_code(422);
             echo json_encode([
                 'status' => 'error',
@@ -135,7 +135,7 @@ if ($method === 'POST') {
         ]);
         exit;
         }
-        $activeEventIndex = findEventIndexBySlug($store['events'], $activeEventSlug);
+        $activeEventIndex = findEventIndexByCode($store['events'], $activeEventCode);
         if ($activeEventIndex < 0) {
             http_response_code(422);
             echo json_encode([
@@ -147,13 +147,13 @@ if ($method === 'POST') {
         $now = createNowTime();
         $nowString = $now->format('Y-m-d H:i:s');
         $nowShamsiParts = formatPersianDateTimeParts($now);
-        $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, [$activeEventSlug]);
+        $match = findGuestByNationalIdForCodes($store['events'], $nationalId, [$activeEventCode]);
         if ($match === null) {
             $activeEventName = (string)($store['events'][$activeEventIndex]['name'] ?? '');
             $log = appendInviteLog($store, [
                 'type' => 'not_found',
                 'national_id' => $nationalId,
-                'event_slug' => $activeEventSlug,
+                'event_code' => $activeEventCode,
                 'event_name' => $activeEventName,
                 'guest_name' => '',
                 'invite_code' => '',
@@ -179,7 +179,7 @@ if ($method === 'POST') {
         $guestIndex = $match['guest_index'];
         $event = &$store['events'][$eventIndex];
         $guest = &$event['guests'][$guestIndex];
-        $eventSlug = (string)($event['slug'] ?? '');
+        $eventCode = (string)($event['code'] ?? '');
         $eventName = (string)($event['name'] ?? '');
         $guest['national_id'] = normalizeNationalId((string)($guest['national_id'] ?? ''));
         $inviteCode = ensureInviteCode($event, $guest);
@@ -221,7 +221,7 @@ if ($method === 'POST') {
         $log = appendInviteLog($store, [
             'type' => $outcome,
             'national_id' => $nationalId,
-            'event_slug' => $eventSlug,
+            'event_code' => $eventCode,
             'event_name' => $eventName,
             'guest_name' => $guestName,
             'invite_code' => $inviteCode,
@@ -256,7 +256,7 @@ if ($method === 'POST') {
                 'left_time' => (string)($guest['left_time'] ?? ''),
                 'date_entered' => (string)($guest['date_entered'] ?? ''),
                 'date_exited' => (string)($guest['date_exited'] ?? ''),
-                'event_slug' => $eventSlug,
+                'event_code' => $eventCode,
                 'event_name' => $eventName
             ],
             'log' => $log,
@@ -265,8 +265,8 @@ if ($method === 'POST') {
         ]);
         exit;
     } elseif ($action === 'add_manual_guest') {
-        $eventSlug = trim((string)($_POST['event_slug'] ?? ''));
-        if ($eventSlug === '') {
+        $eventCode = trim((string)($_POST['event_code'] ?? ''));
+        if ($eventCode === '') {
             http_response_code(422);
             echo json_encode(['status' => 'error', 'message' => 'Please select an event before adding a guest.']);
             exit;
@@ -284,7 +284,7 @@ if ($method === 'POST') {
             exit;
         }
         $store = loadGuestStore($storePath, $eventsRoot);
-        $eventIndex = findEventIndexBySlug($store['events'], $eventSlug);
+        $eventIndex = findEventIndexByCode($store['events'], $eventCode);
         if ($eventIndex < 0) {
             http_response_code(404);
             echo json_encode(['status' => 'error', 'message' => 'Selected event was not found.']);
@@ -344,15 +344,15 @@ if ($method === 'POST') {
         ]);
         exit;
     } elseif ($action === 'update_guest') {
-        $slug = trim((string)($_POST['event_slug'] ?? ''));
+        $eventCode = trim((string)($_POST['event_code'] ?? ''));
         $number = (int)($_POST['number'] ?? 0);
-        if ($slug === '' || $number <= 0) {
+        if ($eventCode === '' || $number <= 0) {
             http_response_code(422);
             echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
             exit;
         }
         $store = loadGuestStore($storePath, $eventsRoot);
-        $eventIndex = findEventIndexBySlug($store['events'], $slug);
+        $eventIndex = findEventIndexByCode($store['events'], $eventCode);
         if ($eventIndex < 0) {
             http_response_code(404);
             echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
@@ -396,15 +396,15 @@ if ($method === 'POST') {
         ]);
         exit;
       } elseif ($action === 'delete_guest') {
-          $slug = trim((string)($_POST['event_slug'] ?? ''));
+          $eventCode = trim((string)($_POST['event_code'] ?? ''));
           $number = (int)($_POST['number'] ?? 0);
-          if ($slug === '' || $number <= 0) {
+          if ($eventCode === '' || $number <= 0) {
               http_response_code(422);
               echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
               exit;
           }
           $store = loadGuestStore($storePath, $eventsRoot);
-          $eventIndex = findEventIndexBySlug($store['events'], $slug);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
           if ($eventIndex < 0) {
               http_response_code(404);
               echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
@@ -437,16 +437,16 @@ if ($method === 'POST') {
           ]);
           exit;
       } elseif ($action === 'update_event') {
-          $slug = trim((string)($_POST['slug'] ?? ''));
+          $eventCode = trim((string)($_POST['code'] ?? ''));
           $name = trim((string)($_POST['name'] ?? ''));
           $date = trim((string)($_POST['date'] ?? ''));
-          if ($slug === '' || $name === '' || $date === '') {
+          if ($eventCode === '' || $name === '' || $date === '') {
               http_response_code(422);
-              echo json_encode(['status' => 'error', 'message' => 'Event slug, name, and date are required.']);
+              echo json_encode(['status' => 'error', 'message' => 'Event code, name, and date are required.']);
               exit;
           }
           $store = loadGuestStore($storePath, $eventsRoot);
-          $eventIndex = findEventIndexBySlug($store['events'], $slug);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
           if ($eventIndex < 0) {
               http_response_code(404);
               echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
@@ -507,17 +507,8 @@ if ($method === 'POST') {
     }
 
     $store = loadGuestStore($storePath, $eventsRoot);
-    $slug = ensureUniqueSlug(slugify($eventName), $store['events']);
-    if ($existingIndex >= 0) {
-        $eventCode = trim((string)($store['events'][$existingIndex]['code'] ?? ''));
-        if ($eventCode === '') {
-            $eventCode = allocateEventCode($store);
-            $store['events'][$existingIndex]['code'] = $eventCode;
-        }
-    } else {
-        $eventCode = allocateEventCode($store);
-    }
-    $eventDir = getEventDir(['code' => $eventCode, 'slug' => $slug], $eventsRoot);
+    $eventCode = allocateEventCode($store);
+    $eventDir = getEventDir(['code' => $eventCode], $eventsRoot);
     if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Unable to create event directory.']);
@@ -606,9 +597,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    $existingIndex = findEventIndexBySlug($store['events'], $slug);
     $eventRecord = [
-        'slug' => $slug,
         'code' => $eventCode,
         'name' => $eventName,
         'date' => $eventDate,
@@ -621,16 +610,9 @@ if ($method === 'POST') {
     if ($uploadedFileInfo) {
         $eventRecord['source'] = $uploadedFileInfo;
     }
-    $eventIndex = $existingIndex;
-    if ($existingIndex >= 0) {
-        $eventRecord['created_at'] = $store['events'][$existingIndex]['created_at'] ?? $eventRecord['updated_at'];
-        $store['events'][$existingIndex] = array_merge($store['events'][$existingIndex], $eventRecord);
-        $eventIndex = $existingIndex;
-    } else {
-        $eventRecord['created_at'] = $eventRecord['updated_at'];
-        $store['events'][] = $eventRecord;
-        $eventIndex = count($store['events']) - 1;
-    }
+    $eventRecord['created_at'] = $eventRecord['updated_at'];
+    $store['events'][] = $eventRecord;
+    $eventIndex = count($store['events']) - 1;
 
     if (!saveGuestStore($storePath, $store)) {
         http_response_code(500);
@@ -653,8 +635,8 @@ if ($method === 'POST') {
 }
 
 $store = loadGuestStore($storePath, $eventsRoot);
-$activeEventSlug = trim((string)($store['active_event_slug'] ?? ''));
-$activeEventIndex = $activeEventSlug === '' ? -1 : findEventIndexBySlug($store['events'], $activeEventSlug);
+$activeEventCode = trim((string)($store['active_event_code'] ?? ''));
+$activeEventIndex = $activeEventCode === '' ? -1 : findEventIndexByCode($store['events'], $activeEventCode);
 $activeEvent = $activeEventIndex >= 0 ? $store['events'][$activeEventIndex] : [];
 echo json_encode([
     'status' => 'ok',
@@ -695,40 +677,17 @@ function saveGuestStore(string $path, array $data): bool
     return file_put_contents($path, $encoded) !== false;
 }
 
-function slugify(string $value): string
+function findEventIndexByCode(array $events, string $code): int
 {
-    $value = strtolower(trim($value));
-    $value = preg_replace('/[^a-z0-9\-_\s]+/', '', $value) ?? '';
-    $value = preg_replace('/[\s_]+/', '-', $value) ?? '';
-    $value = trim($value, '-');
-    return $value !== '' ? $value : 'event';
-}
-
-function ensureUniqueSlug(string $slug, array $events): string
-{
-    $existingIndex = findEventIndexBySlug($events, $slug);
-    if ($existingIndex >= 0) {
-        return $slug;
+    $normalizedCode = trim((string)$code);
+    if ($normalizedCode === '') {
+        return -1;
     }
-    $existing = array_fill_keys(array_map(static function ($event) {
-        return (string)($event['slug'] ?? '');
-    }, $events), true);
-    $candidate = $slug;
-    $suffix = 1;
-    while (isset($existing[$candidate]) && $existing[$candidate] === true) {
-        $candidate = $slug . '-' . $suffix;
-        $suffix++;
-    }
-    return $candidate;
-}
-
-function findEventIndexBySlug(array $events, string $slug): int
-{
     foreach ($events as $index => $event) {
         if (!is_array($event)) {
             continue;
         }
-        if ((string)($event['slug'] ?? '') === $slug) {
+        if (trim((string)($event['code'] ?? '')) === $normalizedCode) {
             return (int)$index;
         }
     }
@@ -1009,31 +968,17 @@ function isEventDateToday(string $eventDate): bool
     return false;
 }
 
-function getTodayEventSlugs(array $events): array
+function findGuestByNationalIdForCodes(array $events, string $nationalId, array $allowedCodes = []): ?array
 {
-    $slugs = [];
-    foreach ($events as $event) {
-        if (!is_array($event)) {
-            continue;
-        }
-        if (isEventDateToday((string)($event['date'] ?? ''))) {
-            $slugs[] = (string)($event['slug'] ?? '');
-        }
-    }
-    return array_values(array_filter(array_unique($slugs)));
-}
-
-function findGuestByNationalIdForSlugs(array $events, string $nationalId, array $allowedSlugs = []): ?array
-{
-    $allowed = array_filter($allowedSlugs, static function ($value) {
+    $allowed = array_filter($allowedCodes, static function ($value) {
         return trim((string)$value) !== '';
     });
     foreach ($events as $eventIndex => $event) {
         if (!is_array($event)) {
             continue;
         }
-        $slug = (string)($event['slug'] ?? '');
-        if (!empty($allowed) && !in_array($slug, $allowed, true)) {
+        $code = (string)($event['code'] ?? '');
+        if (!empty($allowed) && !in_array($code, $allowed, true)) {
             continue;
         }
         foreach ($event['guests'] ?? [] as $guestIndex => $guest) {
@@ -1107,10 +1052,6 @@ function normalizeStore(array $store): array
         if (!is_array($event)) {
             $event = [];
         }
-        $event['slug'] = (string)($event['slug'] ?? '');
-        if ($event['slug'] === '') {
-            $event['slug'] = slugify((string)($event['name'] ?? 'event'));
-        }
         ensureEventHasCode($event, $nextEventCode);
         $event['purelist'] = 'events/' . getEventDirName($event) . '/purelist.csv';
         $event['guests'] = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
@@ -1139,7 +1080,7 @@ function normalizeStore(array $store): array
     $store['next_event_code'] = $nextEventCode;
     $store['next_guest_number'] = $nextGuestNumber;
     $store['logs'] = is_array($store['logs'] ?? null) ? array_values($store['logs']) : [];
-    $store['active_event_slug'] = trim((string)($store['active_event_slug'] ?? ''));
+    $store['active_event_code'] = trim((string)($store['active_event_code'] ?? ''));
     return $store;
 }
 
@@ -1158,7 +1099,7 @@ function normalizeInviteLog(array $log): array
     $log['id'] = (string)($log['id'] ?? uniqid('log_', true));
     $log['type'] = (string)($log['type'] ?? '');
     $log['national_id'] = normalizeNationalId((string)($log['national_id'] ?? ''));
-    $log['event_slug'] = (string)($log['event_slug'] ?? '');
+    $log['event_code'] = (string)($log['event_code'] ?? '');
     $log['event_name'] = (string)($log['event_name'] ?? '');
     $log['guest_name'] = trim((string)($log['guest_name'] ?? ''));
     $log['invite_code'] = normalizeInviteCodeDigits((string)($log['invite_code'] ?? ''));
@@ -1201,7 +1142,6 @@ function normalizeEventsForResponse(array $events): array
         }
         unset($guest);
         return [
-            'slug' => (string)($event['slug'] ?? ''),
             'code' => (string)($event['code'] ?? ''),
             'name' => (string)($event['name'] ?? ''),
             'date' => (string)($event['date'] ?? ''),
