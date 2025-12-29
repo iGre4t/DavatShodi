@@ -467,6 +467,50 @@ if ($method === 'POST') {
               'logs' => normalizeInviteLogs($store['logs'])
           ]);
           exit;
+      } elseif ($action === 'delete_event') {
+          $eventCode = trim((string)($_POST['event_code'] ?? ''));
+          if ($eventCode === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event code is required for deletion.']);
+              exit;
+          }
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $event = $store['events'][$eventIndex];
+          $eventDir = getEventDir($event, $eventsRoot);
+          $invRoot = __DIR__ . '/../inv';
+          $invEventDir = $invRoot . '/' . $eventCode;
+          if (!deleteDirectoryWithinRoot($eventDir, $eventsRoot)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to remove event files.']);
+              exit;
+          }
+          if (!deleteDirectoryWithinRoot($invEventDir, $invRoot)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to remove invite directories for the event.']);
+              exit;
+          }
+          array_splice($store['events'], $eventIndex, 1);
+          if (trim((string)($store['active_event_code'] ?? '')) === $eventCode) {
+              $store['active_event_code'] = '';
+          }
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to persist event data.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Event deleted successfully.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
       } elseif ($action !== 'save_guest_purelist') {
           http_response_code(400);
           echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);

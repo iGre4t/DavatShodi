@@ -7,12 +7,10 @@
         <button type="button" class="sub-item active" data-pane="guest-upload-pane">
           بارگذاری مهمان
         </button>
-        <button type="button" class="sub-item" data-pane="guest-lists-pane">
-          لیست مهمانان
-        </button>
+
       </div>
 
-      <div class="sub-block sub-events-shell" data-pane-target="guest-lists-pane">
+      <div class="sub-block sub-events-shell">
 
         <div class="sub-header">Events</div>
 
