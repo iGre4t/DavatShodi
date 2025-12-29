@@ -1333,9 +1333,24 @@ select[multiple] { min-height: 140px; padding: 8px; }
   border-color: var(--sidebar-active-border, rgba(225, 29, 46, 0.22));
   color: var(--primary-600);
 }
-.sub-content { display: grid; gap: 12px; }
-.sub-pane { display: none; }
-.sub-pane.active { display: block; }
+  .sub-content { display: grid; gap: 12px; }
+  .sub-pane { display: none; }
+  .sub-pane.active { display: block; }
+  .sub-events-shell {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    display: none;
+  }
+  .sub-events-shell.active {
+    display: block;
+  }
+  .sub-event-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
 
 /* Bulk bar for systems */
 .bulk-bar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 8px 0 12px; flex-wrap: wrap; }

@@ -10,6 +10,10 @@
         <button type="button" class="sub-item" data-pane="guest-lists-pane">
           لیست مهمانان
         </button>
+      </div>
+      <div class="sub-block sub-events-shell" data-pane-target="guest-lists-pane">
+        <div class="sub-header">Events</div>
+        <div class="sub-event-tabs" id="guest-event-tabs"></div>
       </div>
     </aside>
     <div class="sub-content">
@@ -87,93 +91,85 @@
         </div>
       </div>
       <div class="sub-pane" data-pane="guest-lists-pane">
-        <div class="sub-layout guest-lists-panel">
-          <aside class="sub-sidebar">
-            <div class="sub-header">Events</div>
-            <div class="sub-nav" id="guest-event-tabs"></div>
-          </aside>
-          <div class="sub-content">
-            <div class="card">
-              <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-                <div>
-                  <h3>Event info</h3>
-                  <p class="muted small">Update the selected event's name and date.</p>
-                </div>
-              </div>
-              <form id="event-info-form" class="form">
-                <div class="form" style="max-width: 420px; gap: 12px;">
-                  <label class="field standard-width">
-                    <span>Event slug</span>
-                    <input id="event-info-slug" type="text" readonly />
-                  </label>
-                  <label class="field standard-width">
-                    <span>Event name</span>
-                    <input id="event-info-name" name="event_name" type="text" autocomplete="off" required />
-                  </label>
-                  <label class="field standard-width">
-                    <span>Event date (Shamsi)</span>
-                    <input
-                      id="event-info-date"
-                      name="event_date"
-                      type="text"
-                      data-jdp
-                      data-jdp-only-date="true"
-                      placeholder="Example: 1403/10/01"
-                      autocomplete="off"
-                      readonly
-                      required
-                    />
-                  </label>
-                </div>
-                <div class="section-footer">
-                  <button type="submit" class="btn primary" id="event-info-save">Save event</button>
-                </div>
-                <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
-              </form>
+        <div class="card">
+          <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <h3>Event info</h3>
+              <p class="muted small">Update the selected event's name and date.</p>
             </div>
-            <div class="card">
-              <div class="table-header">
-                <h3>Guest lists</h3>
-                <div class="table-actions">
-                  <label class="field inline">
-                    <span class="muted small">Event</span>
-                    <select id="guest-event-filter">
-                      <option value="">All events</option>
-                    </select>
-                  </label>
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
-                    <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
-                  </div>
-                </div>
-              </div>
-              <div class="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>No.</th>
-                      <th>Event</th>
-                      <th>Event date</th>
-                      <th>First name</th>
-                      <th>Last name</th>
-                      <th>Gender</th>
-                      <th>National ID</th>
-                      <th>Phone number</th>
-                      <th>Join date</th>
-                      <th>Join time</th>
-                      <th>Left date</th>
-                      <th>Left time</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="guest-list-body">
-                    <tr>
-                      <td colspan="11" class="muted">No guest lists yet.</td>
-                    </tr>
-                  </tbody>
-                </table>
+          </div>
+          <form id="event-info-form" class="form">
+            <div class="form" style="max-width: 420px; gap: 12px;">
+              <label class="field standard-width">
+                <span>Event slug</span>
+                <input id="event-info-slug" type="text" readonly />
+              </label>
+              <label class="field standard-width">
+                <span>Event name</span>
+                <input id="event-info-name" name="event_name" type="text" autocomplete="off" required />
+              </label>
+              <label class="field standard-width">
+                <span>Event date (Shamsi)</span>
+                <input
+                  id="event-info-date"
+                  name="event_date"
+                  type="text"
+                  data-jdp
+                  data-jdp-only-date="true"
+                  placeholder="Example: 1403/10/01"
+                  autocomplete="off"
+                  readonly
+                  required
+                />
+              </label>
+            </div>
+            <div class="section-footer">
+              <button type="submit" class="btn primary" id="event-info-save">Save event</button>
+            </div>
+            <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
+          </form>
+        </div>
+        <div class="card">
+          <div class="table-header">
+            <h3>Guest lists</h3>
+            <div class="table-actions">
+              <label class="field inline">
+                <span class="muted small">Event</span>
+                <select id="guest-event-filter">
+                  <option value="">All events</option>
+                </select>
+              </label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+                <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
               </div>
             </div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Event</th>
+                  <th>Event date</th>
+                  <th>First name</th>
+                  <th>Last name</th>
+                  <th>Gender</th>
+                  <th>National ID</th>
+                  <th>Phone number</th>
+                  <th>Join date</th>
+                  <th>Join time</th>
+                  <th>Left date</th>
+                  <th>Left time</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="guest-list-body">
+                <tr>
+                  <td colspan="11" class="muted">No guest lists yet.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -427,6 +423,8 @@
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
+    const guestSubNav = document.querySelector(".sub-sidebar .sub-nav");
+    const subEventsShell = document.querySelector(".sub-events-shell[data-pane-target=\"guest-lists-pane\"]");
 
     function showModal(modal) {
       if (!modal) return;
@@ -586,6 +584,12 @@
         eventTabsContainer.appendChild(button);
       });
       updateEventInfoForm();
+    }
+
+    function updateGuestEventsShellVisibility() {
+      if (!subEventsShell) return;
+      const activeNavItem = guestSubNav?.querySelector(".sub-item.active");
+      subEventsShell.classList.toggle("active", activeNavItem?.dataset.pane === "guest-lists-pane");
     }
 
     function handleEventTabSelect(slug) {
@@ -1401,6 +1405,8 @@
 
       renderEventTabs();
       fetchGuestEvents();
+      guestSubNav?.addEventListener("click", () => setTimeout(updateGuestEventsShellVisibility, 0));
+      updateGuestEventsShellVisibility();
     });
   })();
 </script>

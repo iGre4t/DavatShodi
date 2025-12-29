@@ -332,7 +332,10 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
             exit;
         }
-        createGuestInvitePages($store['events'][$eventIndex]['guests'] ?? []);
+        createGuestInvitePages(
+            $store['events'][$eventIndex]['guests'] ?? [],
+            (string)($store['events'][$eventIndex]['code'] ?? '')
+        );
         echo json_encode([
             'status' => 'ok',
             'message' => 'Guest added successfully.',
@@ -635,7 +638,10 @@ if ($method === 'POST') {
         exit;
     }
 
-    createGuestInvitePages($store['events'][$eventIndex]['guests'] ?? []);
+        createGuestInvitePages(
+            $store['events'][$eventIndex]['guests'] ?? [],
+            (string)($store['events'][$eventIndex]['code'] ?? '')
+        );
 
     echo json_encode([
         'status' => 'ok',
@@ -1239,13 +1245,21 @@ function computeGuestStats(array $event): array
     ];
 }
 
-function createGuestInvitePages(array $guests): void
+function createGuestInvitePages(array $guests, string $eventCode): void
 {
     $invRoot = __DIR__ . '/../inv';
     if (!is_dir($invRoot)) {
         if (!mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
             return;
         }
+    }
+    $eventCode = trim($eventCode);
+    if ($eventCode === '') {
+        $eventCode = 'event';
+    }
+    $eventInvRoot = $invRoot . '/' . $eventCode;
+    if (!is_dir($eventInvRoot) && !mkdir($eventInvRoot, 0755, true) && !is_dir($eventInvRoot)) {
+        return;
     }
     $imageName = 'Invite Card Picture.jpg';
     $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
@@ -1262,7 +1276,7 @@ function createGuestInvitePages(array $guests): void
         if ($code === '') {
             continue;
         }
-        $guestDir = $invRoot . '/' . $code;
+        $guestDir = $eventInvRoot . '/' . $code;
         if (!is_dir($guestDir) && !@mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
             error_log('Unable to create invite directory for ' . $code);
             continue;
