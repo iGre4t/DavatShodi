@@ -7,7 +7,6 @@
         <button type="button" class="sub-item active" data-pane="guest-upload-pane">
           بارگذاری مهمان
         </button>
-
       </div>
 
       <div class="sub-block sub-events-shell">
@@ -81,24 +80,25 @@
                   <th>Event name</th>
                   <th>Event date</th>
                   <th>Unique code</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody id="guest-event-list-body">
                 <tr>
-                  <td colspan="3" class="muted">No events yet.</td>
+                  <td colspan="4" class="muted">No events yet.</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
-      </div>
-      <div class="sub-pane" data-pane="guest-lists-pane">
+
         <div class="card">
           <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
             <div>
               <h3>Event info</h3>
               <p class="muted small">Update the selected event's name and date.</p>
             </div>
+            <button type="submit" class="btn primary" id="event-info-save" form="event-info-form">Save event</button>
           </div>
           <form id="event-info-form" class="form">
             <div class="form" style="max-width: 420px; gap: 12px;">
@@ -124,9 +124,6 @@
                   required
                 />
               </label>
-            </div>
-            <div class="section-footer">
-              <button type="submit" class="btn primary" id="event-info-save">Save event</button>
             </div>
             <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
           </form>
@@ -174,6 +171,7 @@
             </table>
           </div>
         </div>
+
       </div>
     </div>
   </div>
@@ -425,8 +423,6 @@
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
-    const guestSubNav = document.querySelector(".sub-sidebar .sub-nav");
-    const subEventsShell = document.querySelector(".sub-events-shell[data-pane-target=\"guest-lists-pane\"]");
 
     function showModal(modal) {
       if (!modal) return;
@@ -525,18 +521,23 @@
 
     function renderEventFilter() {
       if (!eventFilter) return;
-      const current = eventFilter.value;
-      eventFilter.innerHTML = '<option value="">All events</option>';
-      state.events.forEach(event => {
+      const events = Array.isArray(state.events) ? state.events : [];
+      eventFilter.innerHTML = '<option value="" disabled>Select event</option>';
+      events.forEach(event => {
         const option = document.createElement("option");
         const code = event.code || "";
         option.value = code;
         option.textContent = event.name || code || "Unnamed event";
         eventFilter.appendChild(option);
       });
-      eventFilter.value = current || "";
       renderManualEventOptions();
       renderEventTabs();
+      const fallbackCode = activeEventCode || events[0]?.code || "";
+      if (fallbackCode) {
+        eventFilter.value = fallbackCode;
+      } else {
+        eventFilter.selectedIndex = 0;
+      }
     }
 
     function renderManualEventOptions() {
@@ -556,6 +557,21 @@
         manualEventSelect.value = "";
       }
       updateManualEventDate();
+    }
+
+    function getActiveGuestEvent() {
+      const events = Array.isArray(state.events) ? state.events : [];
+      if (!events.length) return null;
+      let code = activeEventCode || eventFilter?.value || "";
+      if (!code) {
+        code = events[0]?.code || "";
+      }
+      if (!code) return null;
+      const foundEvent = events.find(ev => (ev.code || "") === code) || null;
+      if (!activeEventCode && foundEvent) {
+        activeEventCode = foundEvent.code || "";
+      }
+      return foundEvent;
     }
 
     function renderEventTabs() {
@@ -591,21 +607,19 @@
       updateEventInfoForm();
     }
 
-    function updateGuestEventsShellVisibility() {
-      if (!subEventsShell) return;
-      const activeNavItem = guestSubNav?.querySelector(".sub-item.active");
-      subEventsShell.classList.toggle("active", activeNavItem?.dataset.pane === "guest-lists-pane");
-    }
-
     function handleEventTabSelect(code) {
       if (!code) return;
       activeEventCode = code;
+      if (eventFilter) {
+        eventFilter.value = code;
+      }
       const tabs = eventTabsContainer ? Array.from(eventTabsContainer.querySelectorAll(".event-tab")) : [];
       tabs.forEach(tab => {
         const targetCode = tab.getAttribute("data-code") || "";
         tab.classList.toggle("active", targetCode === code);
       });
       updateEventInfoForm();
+      renderGuestTable();
     }
 
     function updateEventInfoForm() {
@@ -652,47 +666,67 @@
     function renderGuestTable() {
       if (!guestListBody) return;
       guestListBody.innerHTML = "";
-      const selectedCode = eventFilter?.value || "";
-      const rows = [];
-      state.events.forEach(event => {
-        if (selectedCode && event.code !== selectedCode) return;
-        (event.guests || []).forEach(guest => {
-          const entrySource = guest.join_date
-            ? `${guest.join_date} ${guest.join_time || ""}`.trim()
-            : guest.date_entered || "";
-          const exitSource = guest.left_date
-            ? `${guest.left_date} ${guest.left_time || ""}`.trim()
-            : guest.date_exited || "";
-          const enteredParts = splitDateTime(entrySource);
-          const exitedParts = splitDateTime(exitSource);
-          rows.push({
-            number: guest.number || rows.length + 1,
-            event: event.name,
-            date: event.date,
-            firstname: guest.firstname || "",
-            lastname: guest.lastname || "",
-            gender: guest.gender || "",
-            national_id: guest.national_id || "",
-            phone_number: guest.phone_number || "",
-            join_date: enteredParts.date,
-            join_time: enteredParts.time,
-            left_date: exitedParts.date,
-            left_time: exitedParts.time,
-            code: event.code
-          });
-        });
-      });
-      if (!rows.length) {
+      const events = Array.isArray(state.events) ? state.events : [];
+      if (!events.length) {
         const emptyRow = document.createElement("tr");
         const td = document.createElement("td");
         td.colSpan = 13;
         td.className = "muted";
-        td.textContent = "No guest lists yet.";
+        td.textContent = "No events yet.";
         emptyRow.appendChild(td);
         guestListBody.appendChild(emptyRow);
         renderEventList();
         return;
       }
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        const emptyRow = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 13;
+        td.className = "muted";
+        td.textContent = "Select an event to view its guests.";
+        emptyRow.appendChild(td);
+        guestListBody.appendChild(emptyRow);
+        renderEventList();
+        return;
+      }
+      const guests = Array.isArray(activeEvent.guests) ? activeEvent.guests : [];
+      if (!guests.length) {
+        const emptyRow = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 13;
+        td.className = "muted";
+        td.textContent = "No guests yet for this event.";
+        emptyRow.appendChild(td);
+        guestListBody.appendChild(emptyRow);
+        renderEventList();
+        return;
+      }
+      const rows = guests.map((guest, index) => {
+        const entrySource = guest.join_date
+          ? `${guest.join_date} ${guest.join_time || ""}`.trim()
+          : guest.date_entered || "";
+        const exitSource = guest.left_date
+          ? `${guest.left_date} ${guest.left_time || ""}`.trim()
+          : guest.date_exited || "";
+        const enteredParts = splitDateTime(entrySource);
+        const exitedParts = splitDateTime(exitSource);
+        return {
+          number: guest.number || index + 1,
+          event: activeEvent.name || "",
+          date: activeEvent.date || "",
+          firstname: guest.firstname || "",
+          lastname: guest.lastname || "",
+          gender: guest.gender || "",
+          national_id: guest.national_id || "",
+          phone_number: guest.phone_number || "",
+          join_date: enteredParts.date,
+          join_time: enteredParts.time,
+          left_date: exitedParts.date,
+          left_time: exitedParts.time,
+          code: activeEvent.code || ""
+        };
+      });
       rows.forEach(row => {
         const tr = document.createElement("tr");
         ["number", "event", "date", "firstname", "lastname", "gender", "national_id", "phone_number", "join_date", "join_time", "left_date", "left_time"].forEach(key => {
@@ -718,7 +752,7 @@
       if (!events.length) {
         const emptyRow = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 3;
+        td.colSpan = 4;
         td.className = "muted";
         td.textContent = "No events yet.";
         emptyRow.appendChild(td);
@@ -732,8 +766,19 @@
         const dateTd = document.createElement("td");
         dateTd.textContent = event.date || "";
         const codeTd = document.createElement("td");
-        codeTd.textContent = event.code || event.slug || "";
+        const eventCode = event.code || event.slug || "";
+        codeTd.textContent = eventCode;
         [nameTd, dateTd, codeTd].forEach(cell => row.appendChild(cell));
+        const actionTd = document.createElement("td");
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "btn ghost small";
+        deleteButton.setAttribute("data-event-delete", "");
+        deleteButton.setAttribute("data-event-code", eventCode);
+        deleteButton.textContent = "Delete";
+        deleteButton.disabled = !eventCode;
+        actionTd.appendChild(deleteButton);
+        row.appendChild(actionTd);
         eventListBody.appendChild(row);
       });
     }
@@ -940,7 +985,7 @@
         showErrorSnackbar?.({ message: "Event name and date are required." });
         return;
       }
-      const submitButton = eventInfoForm.querySelector("button[type='submit']");
+      const submitButton = eventInfoSaveButton;
       submitButton?.setAttribute("disabled", "disabled");
       try {
         const formData = new FormData();
@@ -1000,7 +1045,14 @@
       }
     });
 
-    eventFilter?.addEventListener("change", renderGuestTable);
+    eventFilter?.addEventListener("change", () => {
+      const selectedCode = eventFilter.value || "";
+      if (selectedCode) {
+        handleEventTabSelect(selectedCode);
+      } else {
+        renderGuestTable();
+      }
+    });
 
     exportSmsButton?.addEventListener("click", async () => {
       exportSmsButton.setAttribute("disabled", "disabled");
@@ -1158,6 +1210,27 @@
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to delete guest." });
       }
+    }
+
+    async function deleteEvent(code) {
+      if (!code) {
+        throw new Error("Invalid event selected.");
+      }
+      const formData = new FormData();
+      formData.append("action", "delete_event");
+      formData.append("event_code", code);
+      const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status !== "ok") {
+        throw new Error(data?.message || "Failed to delete event.");
+      }
+      state.events = Array.isArray(data.events) ? data.events : state.events;
+      renderEventFilter();
+      renderGuestTable();
+      renderEventList();
+      populateGenderSelect(manualGenderSelect);
+      populateGenderSelect(editGenderSelect);
+      showDefaultToast?.(data.message || "Event deleted.");
     }
 
     function normalizeHeaderKey(value) {
@@ -1388,6 +1461,39 @@
         }
       });
 
+      eventListBody?.addEventListener("click", async (evt) => {
+        const button = evt.target instanceof HTMLElement ? evt.target.closest("[data-event-delete]") : null;
+        if (!button) {
+          return;
+        }
+        const code = button.getAttribute("data-event-code") || "";
+        if (!code) {
+          return;
+        }
+        let confirmed = true;
+        if (typeof showDialog === "function") {
+          confirmed = await showDialog("Delete this event and all associated data including invites?", {
+            confirm: true,
+            title: "Delete event",
+            okText: "Delete",
+            cancelText: "Cancel"
+          });
+        } else {
+          confirmed = window.confirm("Delete this event and all associated data including invites?");
+        }
+        if (!confirmed) {
+          return;
+        }
+        button.setAttribute("disabled", "disabled");
+        try {
+          await deleteEvent(code);
+        } catch (error) {
+          showErrorSnackbar?.({ message: error?.message || "Failed to delete event." });
+        } finally {
+          button.removeAttribute("disabled");
+        }
+      });
+
       buildTimeOptions(editTimeEnteredInput);
       buildTimeOptions(editTimeExitedInput);
 
@@ -1410,8 +1516,6 @@
 
       renderEventTabs();
       fetchGuestEvents();
-      guestSubNav?.addEventListener("click", () => setTimeout(updateGuestEventsShellVisibility, 0));
-      updateGuestEventsShellVisibility();
     });
   })();
 </script>

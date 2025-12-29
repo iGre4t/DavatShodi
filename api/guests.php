@@ -809,6 +809,67 @@ function ensureEventPurelistFiles(array &$events, string $eventsRoot): void
     unset($event);
 }
 
+function normalizeFilesystemPath(string $path): string
+{
+    $trimmed = trim($path);
+    if ($trimmed === '') {
+        return '';
+    }
+    $real = realpath($trimmed);
+    $normalized = $real !== false ? $real : $trimmed;
+    $normalized = str_replace('\\', '/', $normalized);
+    return rtrim($normalized, '/');
+}
+
+function deleteDirectoryRecursive(string $directory): bool
+{
+    if (!is_dir($directory)) {
+        return true;
+    }
+    $entries = scandir($directory);
+    if ($entries === false) {
+        return false;
+    }
+    foreach ($entries as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+        $target = $directory . DIRECTORY_SEPARATOR . $entry;
+        if (is_dir($target)) {
+            if (!deleteDirectoryRecursive($target)) {
+                return false;
+            }
+            continue;
+        }
+        if (is_file($target) && !@unlink($target)) {
+            return false;
+        }
+    }
+    return rmdir($directory);
+}
+
+function deleteDirectoryWithinRoot(string $directory, string $root): bool
+{
+    $directory = trim($directory);
+    $root = trim($root);
+    if ($directory === '' || $root === '') {
+        return false;
+    }
+    if (!is_dir($directory)) {
+        return true;
+    }
+    $normalizedRoot = normalizeFilesystemPath($root);
+    $normalizedDirectory = normalizeFilesystemPath($directory);
+    if (
+        $normalizedRoot === '' ||
+        $normalizedDirectory === '' ||
+        strpos($normalizedDirectory, $normalizedRoot) !== 0
+    ) {
+        return false;
+    }
+    return deleteDirectoryRecursive($directory);
+}
+
 function normalizeDigitString(string $value): string
 {
     $map = [
