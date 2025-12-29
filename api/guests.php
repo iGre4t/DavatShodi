@@ -15,12 +15,12 @@ const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
 const PURELIST_HEADERS = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'join_date', 'join_time', 'left_date', 'left_time'];
 const EVENT_CODE_MIN = 10000;
 const EVENT_CODE_DIGITS = 5;
+const EVENTS_ROOT = __DIR__ . '/../events';
 
-ensureEventStorageReady();
+ensureEventStorageReady(EVENTS_ROOT);
 
-function ensureEventStorageReady(): void
+function ensureEventStorageReady(string $eventsRoot): void
 {
-    $eventsRoot = __DIR__ . '/../events';
     $subDirs = [
         $eventsRoot,
         $eventsRoot . '/event',
@@ -107,7 +107,7 @@ if (empty($_SESSION['authenticated'])) {
 }
 
 $storePath = __DIR__ . '/../data/guests.json';
-$eventsRoot = __DIR__ . '/../events';
+$eventsRoot = EVENTS_ROOT;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -125,7 +125,7 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'National ID must be 10 digits.']);
             exit;
         }
-        $store = loadGuestStore($storePath);
+        $store = loadGuestStore($storePath, $eventsRoot);
         $activeEventSlug = trim((string)($store['active_event_slug'] ?? ''));
         if ($activeEventSlug === '') {
             http_response_code(422);
@@ -283,7 +283,7 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'All guest fields are required.']);
             exit;
         }
-        $store = loadGuestStore($storePath);
+        $store = loadGuestStore($storePath, $eventsRoot);
         $eventIndex = findEventIndexBySlug($store['events'], $eventSlug);
         if ($eventIndex < 0) {
             http_response_code(404);
@@ -348,7 +348,7 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
             exit;
         }
-        $store = loadGuestStore($storePath);
+        $store = loadGuestStore($storePath, $eventsRoot);
         $eventIndex = findEventIndexBySlug($store['events'], $slug);
         if ($eventIndex < 0) {
             http_response_code(404);
@@ -392,52 +392,83 @@ if ($method === 'POST') {
             'logs' => normalizeInviteLogs($store['logs'])
         ]);
         exit;
-    } elseif ($action === 'delete_guest') {
-        $slug = trim((string)($_POST['event_slug'] ?? ''));
-        $number = (int)($_POST['number'] ?? 0);
-        if ($slug === '' || $number <= 0) {
-            http_response_code(422);
-            echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
-            exit;
-        }
-        $store = loadGuestStore($storePath);
-        $eventIndex = findEventIndexBySlug($store['events'], $slug);
-        if ($eventIndex < 0) {
-            http_response_code(404);
-            echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
-            exit;
-        }
-        $guestIndex = findGuestIndexByNumber($store['events'][$eventIndex]['guests'] ?? [], $number);
-        if ($guestIndex < 0) {
-            http_response_code(404);
-            echo json_encode(['status' => 'error', 'message' => 'Guest not found.']);
-            exit;
-        }
-        array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
-        $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
-        $store['events'][$eventIndex]['updated_at'] = date('c');
-        if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
-            http_response_code(500);
-            echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
-            exit;
-        }
-        if (!saveGuestStore($storePath, $store)) {
-            http_response_code(500);
-            echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
-            exit;
-        }
-        echo json_encode([
-            'status' => 'ok',
-            'message' => 'Guest deleted successfully.',
-            'events' => normalizeEventsForResponse($store['events']),
-            'logs' => normalizeInviteLogs($store['logs'])
-        ]);
-        exit;
-    } elseif ($action !== 'save_guest_purelist') {
-        http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
-        exit;
-    }
+      } elseif ($action === 'delete_guest') {
+          $slug = trim((string)($_POST['event_slug'] ?? ''));
+          $number = (int)($_POST['number'] ?? 0);
+          if ($slug === '' || $number <= 0) {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
+              exit;
+          }
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexBySlug($store['events'], $slug);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $guestIndex = findGuestIndexByNumber($store['events'][$eventIndex]['guests'] ?? [], $number);
+          if ($guestIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Guest not found.']);
+              exit;
+          }
+          array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
+          $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
+          $store['events'][$eventIndex]['updated_at'] = date('c');
+          if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
+              exit;
+          }
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Guest deleted successfully.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
+      } elseif ($action === 'update_event') {
+          $slug = trim((string)($_POST['slug'] ?? ''));
+          $name = trim((string)($_POST['name'] ?? ''));
+          $date = trim((string)($_POST['date'] ?? ''));
+          if ($slug === '' || $name === '' || $date === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event slug, name, and date are required.']);
+              exit;
+          }
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexBySlug($store['events'], $slug);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $store['events'][$eventIndex]['name'] = $name;
+          $store['events'][$eventIndex]['date'] = $date;
+          $store['events'][$eventIndex]['updated_at'] = date('c');
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to persist event data.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Event updated successfully.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
+      } elseif ($action !== 'save_guest_purelist') {
+          http_response_code(400);
+          echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
+          exit;
+      }
 
     if ($eventName === '' || $eventDate === '') {
         http_response_code(422);
@@ -472,7 +503,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    $store = loadGuestStore($storePath);
+    $store = loadGuestStore($storePath, $eventsRoot);
     $slug = ensureUniqueSlug(slugify($eventName), $store['events']);
     if ($existingIndex >= 0) {
         $eventCode = trim((string)($store['events'][$existingIndex]['code'] ?? ''));
@@ -615,7 +646,7 @@ if ($method === 'POST') {
     exit;
 }
 
-$store = loadGuestStore($storePath);
+$store = loadGuestStore($storePath, $eventsRoot);
 $activeEventSlug = trim((string)($store['active_event_slug'] ?? ''));
 $activeEventIndex = $activeEventSlug === '' ? -1 : findEventIndexBySlug($store['events'], $activeEventSlug);
 $activeEvent = $activeEventIndex >= 0 ? $store['events'][$activeEventIndex] : [];
@@ -627,7 +658,7 @@ echo json_encode([
 ]);
 exit;
 
-function loadGuestStore(string $path): array
+function loadGuestStore(string $path, string $eventsRoot = ''): array
 {
     if (!is_file($path)) {
         return ['events' => [], 'logs' => []];
@@ -637,7 +668,11 @@ function loadGuestStore(string $path): array
         return ['events' => [], 'logs' => []];
     }
     $decoded = json_decode($content, true);
-    return normalizeStore(is_array($decoded) ? $decoded : []);
+    $store = normalizeStore(is_array($decoded) ? $decoded : []);
+    if ($eventsRoot !== '') {
+        ensureEventPurelistFiles($store['events'], $eventsRoot);
+    }
+    return $store;
 }
 
 function saveGuestStore(string $path, array $data): bool
@@ -744,6 +779,25 @@ function syncEventPurelist(array &$event, string $eventsRoot): bool
     }
     $event['purelist'] = 'events/' . getEventDirName($event) . '/purelist.csv';
     return true;
+}
+
+function ensureEventPurelistFiles(array &$events, string $eventsRoot): void
+{
+    foreach ($events as &$event) {
+        if (!is_array($event)) {
+            $event = [];
+        }
+        $eventDir = getEventDir($event, $eventsRoot);
+        if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
+            continue;
+        }
+        $purelistPath = $eventDir . '/purelist.csv';
+        if (is_file($purelistPath)) {
+            continue;
+        }
+        syncEventPurelist($event, $eventsRoot);
+    }
+    unset($event);
 }
 
 function normalizeDigitString(string $value): string
@@ -1192,8 +1246,6 @@ function createGuestInvitePages(array $guests): void
         if (!mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
             return;
         }
-    } else {
-        clearGuestInviteDirectories($invRoot);
     }
     $imageName = 'Invite Card Picture.jpg';
     $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
@@ -1441,47 +1493,3 @@ HTML;
     }
 }
 
-function clearGuestInviteDirectories(string $dir): void
-{
-    if (!is_dir($dir)) {
-        return;
-    }
-    $items = scandir($dir);
-    if ($items === false) {
-        return;
-    }
-    foreach ($items as $item) {
-        if ($item === '.' || $item === '..') {
-            continue;
-        }
-        $path = $dir . '/' . $item;
-        if (is_dir($path)) {
-            removeDirectoryTree($path);
-        } else {
-            @unlink($path);
-        }
-    }
-}
-
-function removeDirectoryTree(string $path): void
-{
-    if (!is_dir($path)) {
-        return;
-    }
-    $items = scandir($path);
-    if ($items === false) {
-        return;
-    }
-    foreach ($items as $item) {
-        if ($item === '.' || $item === '..') {
-            continue;
-        }
-        $child = $path . '/' . $item;
-        if (is_dir($child)) {
-            removeDirectoryTree($child);
-        } else {
-            @unlink($child);
-        }
-    }
-    @rmdir($path);
-}

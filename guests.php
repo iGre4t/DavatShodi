@@ -87,47 +87,93 @@
         </div>
       </div>
       <div class="sub-pane" data-pane="guest-lists-pane">
-        <div class="card">
-          <div class="table-header">
-            <h3>Guest lists</h3>
-            <div class="table-actions">
-              <label class="field inline">
-                <span class="muted small">Event</span>
-                <select id="guest-event-filter">
-                  <option value="">All events</option>
-                </select>
-              </label>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
-                <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+        <div class="sub-layout guest-lists-panel">
+          <aside class="sub-sidebar">
+            <div class="sub-header">Events</div>
+            <div class="sub-nav" id="guest-event-tabs"></div>
+          </aside>
+          <div class="sub-content">
+            <div class="card">
+              <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                  <h3>Event info</h3>
+                  <p class="muted small">Update the selected event's name and date.</p>
+                </div>
+              </div>
+              <form id="event-info-form" class="form">
+                <div class="form" style="max-width: 420px; gap: 12px;">
+                  <label class="field standard-width">
+                    <span>Event slug</span>
+                    <input id="event-info-slug" type="text" readonly />
+                  </label>
+                  <label class="field standard-width">
+                    <span>Event name</span>
+                    <input id="event-info-name" name="event_name" type="text" autocomplete="off" required />
+                  </label>
+                  <label class="field standard-width">
+                    <span>Event date (Shamsi)</span>
+                    <input
+                      id="event-info-date"
+                      name="event_date"
+                      type="text"
+                      data-jdp
+                      data-jdp-only-date="true"
+                      placeholder="Example: 1403/10/01"
+                      autocomplete="off"
+                      readonly
+                      required
+                    />
+                  </label>
+                </div>
+                <div class="section-footer">
+                  <button type="submit" class="btn primary" id="event-info-save">Save event</button>
+                </div>
+                <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
+              </form>
+            </div>
+            <div class="card">
+              <div class="table-header">
+                <h3>Guest lists</h3>
+                <div class="table-actions">
+                  <label class="field inline">
+                    <span class="muted small">Event</span>
+                    <select id="guest-event-filter">
+                      <option value="">All events</option>
+                    </select>
+                  </label>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+                    <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+                  </div>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>Event</th>
+                      <th>Event date</th>
+                      <th>First name</th>
+                      <th>Last name</th>
+                      <th>Gender</th>
+                      <th>National ID</th>
+                      <th>Phone number</th>
+                      <th>Join date</th>
+                      <th>Join time</th>
+                      <th>Left date</th>
+                      <th>Left time</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="guest-list-body">
+                    <tr>
+                      <td colspan="11" class="muted">No guest lists yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-          </div>
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>No.</th>
-                  <th>Event</th>
-                  <th>Event date</th>
-                  <th>First name</th>
-                  <th>Last name</th>
-                  <th>Gender</th>
-                  <th>National ID</th>
-                  <th>Phone number</th>
-                  <th>Join date</th>
-                  <th>Join time</th>
-                  <th>Left date</th>
-                  <th>Left time</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="guest-list-body">
-                <tr>
-                  <td colspan="11" class="muted">No guest lists yet.</td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </div>
       </div>
@@ -325,6 +371,7 @@
       eventDate: "",
       events: []
     };
+    let activeEventSlug = "";
 
     const uploadForm = document.getElementById("guest-upload-form");
     const uploadSubmit = document.getElementById("guest-upload-submit");
@@ -371,6 +418,13 @@
     const exportSmsButton = document.getElementById("export-sms-link");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
     const eventListBody = document.getElementById("guest-event-list-body");
+    const eventTabsContainer = document.getElementById("guest-event-tabs");
+    const eventInfoForm = document.getElementById("event-info-form");
+    const eventInfoNameInput = document.getElementById("event-info-name");
+    const eventInfoDateInput = document.getElementById("event-info-date");
+    const eventInfoSlugInput = document.getElementById("event-info-slug");
+    const eventInfoSaveButton = document.getElementById("event-info-save");
+    const eventInfoEmptyMessage = document.getElementById("event-info-empty");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
 
@@ -481,6 +535,7 @@
       });
       eventFilter.value = current || "";
       renderManualEventOptions();
+      renderEventTabs();
     }
 
     function renderManualEventOptions() {
@@ -499,6 +554,83 @@
         manualEventSelect.value = "";
       }
       updateManualEventDate();
+    }
+
+    function renderEventTabs() {
+      if (!eventTabsContainer) return;
+      eventTabsContainer.innerHTML = "";
+      const events = Array.isArray(state.events) ? state.events : [];
+      if (!events.length) {
+        activeEventSlug = "";
+        const emptyState = document.createElement("div");
+        emptyState.className = "muted small";
+        emptyState.textContent = "No events yet.";
+        eventTabsContainer.appendChild(emptyState);
+        updateEventInfoForm();
+        return;
+      }
+      const hasActive = events.some(ev => (ev.slug || "") === activeEventSlug);
+      if (!hasActive) {
+        activeEventSlug = events[0]?.slug || "";
+      }
+      events.forEach(event => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "sub-item event-tab";
+        button.dataset.slug = event.slug || "";
+        button.textContent = event.name || event.slug || "Unnamed event";
+        if (button.dataset.slug === activeEventSlug) {
+          button.classList.add("active");
+        }
+        button.addEventListener("click", () => handleEventTabSelect(button.dataset.slug || ""));
+        eventTabsContainer.appendChild(button);
+      });
+      updateEventInfoForm();
+    }
+
+    function handleEventTabSelect(slug) {
+      if (!slug) return;
+      activeEventSlug = slug;
+      const tabs = eventTabsContainer ? Array.from(eventTabsContainer.querySelectorAll(".event-tab")) : [];
+      tabs.forEach(tab => {
+        const targetSlug = tab.getAttribute("data-slug") || "";
+        tab.classList.toggle("active", targetSlug === slug);
+      });
+      updateEventInfoForm();
+    }
+
+    function updateEventInfoForm() {
+      const selectedEvent = state.events.find(ev => (ev.slug || "") === activeEventSlug) || null;
+      const hasEvent = Boolean(selectedEvent && selectedEvent.slug);
+      if (eventInfoSlugInput) {
+        eventInfoSlugInput.value = selectedEvent?.slug || "";
+      }
+      if (eventInfoNameInput) {
+        eventInfoNameInput.value = selectedEvent?.name || "";
+        if (hasEvent) {
+          eventInfoNameInput.removeAttribute("disabled");
+        } else {
+          eventInfoNameInput.setAttribute("disabled", "disabled");
+        }
+      }
+      if (eventInfoDateInput) {
+        eventInfoDateInput.value = selectedEvent?.date || "";
+        if (hasEvent) {
+          eventInfoDateInput.removeAttribute("disabled");
+        } else {
+          eventInfoDateInput.setAttribute("disabled", "disabled");
+        }
+      }
+      if (eventInfoSaveButton) {
+        if (hasEvent) {
+          eventInfoSaveButton.removeAttribute("disabled");
+        } else {
+          eventInfoSaveButton.setAttribute("disabled", "disabled");
+        }
+      }
+      if (eventInfoEmptyMessage) {
+        eventInfoEmptyMessage.classList.toggle("hidden", hasEvent);
+      }
     }
 
     function updateManualEventDate() {
@@ -785,6 +917,39 @@
         showDefaultToast?.(data.message || "Guest added.");
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to add guest." });
+      } finally {
+        submitButton?.removeAttribute("disabled");
+      }
+    });
+
+    eventInfoForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!activeEventSlug) return;
+      const name = (eventInfoNameInput?.value || "").trim();
+      const date = (eventInfoDateInput?.value || "").trim();
+      if (!name || !date) {
+        showErrorSnackbar?.({ message: "Event name and date are required." });
+        return;
+      }
+      const submitButton = eventInfoForm.querySelector("button[type='submit']");
+      submitButton?.setAttribute("disabled", "disabled");
+      try {
+        const formData = new FormData();
+        formData.append("action", "update_event");
+        formData.append("slug", activeEventSlug);
+        formData.append("name", name);
+        formData.append("date", date);
+        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== "ok") {
+          throw new Error(data?.message || "Failed to save event.");
+        }
+        state.events = Array.isArray(data.events) ? data.events : state.events;
+        renderEventFilter();
+        renderGuestTable();
+        showDefaultToast?.(data.message || "Event updated.");
+      } catch (error) {
+        showErrorSnackbar?.({ message: error?.message || "Failed to save event." });
       } finally {
         submitButton?.removeAttribute("disabled");
       }
@@ -1181,6 +1346,10 @@
       manualEventDateInput?.addEventListener("click", openJalaliPicker);
       manualEventDateInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
 
+      eventInfoDateInput?.addEventListener("focus", openJalaliPicker);
+      eventInfoDateInput?.addEventListener("click", openJalaliPicker);
+      eventInfoDateInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
+
       manualEventSelect?.addEventListener("change", updateManualEventDate);
 
       editDateEnteredInput?.addEventListener("focus", openJalaliPicker);
@@ -1230,6 +1399,7 @@
         editTimeExitedInput.value = "";
       });
 
+      renderEventTabs();
       fetchGuestEvents();
     });
   })();
