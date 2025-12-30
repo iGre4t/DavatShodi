@@ -160,6 +160,16 @@ let inviteCardPreviewCanvas = null;
 let inviteCardPreviewPlaceholder = null;
 let inviteCardDownloadLink = null;
 let inviteCardPreviewPhotoId = null;
+let positionPickerModal = null;
+let positionPickerOverlay = null;
+let positionPickerImage = null;
+let positionPickerImageShell = null;
+let positionPickerDot = null;
+let positionPickerConfirmButton = null;
+let positionPickerCancelButton = null;
+let positionPickerCurrentXInput = null;
+let positionPickerCurrentYInput = null;
+let positionPickerSelection = null;
 let siteIconValue = "";
 let siteIconPreviewImage = null;
 let siteIconPlaceholder = null;
@@ -2609,6 +2619,123 @@ async function handleInviteCardGeneration() {
   }
 }
 
+function resetPositionPickerSelection() {
+  positionPickerSelection = null;
+  if (positionPickerDot) {
+    positionPickerDot.classList.add("hidden");
+  }
+  if (positionPickerConfirmButton) {
+    positionPickerConfirmButton.setAttribute("disabled", "disabled");
+  }
+}
+
+function closePositionPickerModal() {
+  if (!positionPickerModal) {
+    return;
+  }
+  positionPickerModal.classList.add("hidden");
+  positionPickerModal.setAttribute("aria-hidden", "true");
+  resetPositionPickerSelection();
+  positionPickerCurrentXInput = null;
+  positionPickerCurrentYInput = null;
+}
+
+function handlePositionPickerImageClick(event) {
+  if (!positionPickerImage || !positionPickerDot) {
+    return;
+  }
+  const rect = positionPickerImage.getBoundingClientRect();
+  const offsetX = clampNumber(event.clientX - rect.left, 0, rect.width);
+  const offsetY = clampNumber(event.clientY - rect.top, 0, rect.height);
+  if (rect.width <= 0 || rect.height <= 0) {
+    return;
+  }
+  const naturalWidth =
+    Number(positionPickerImage.dataset.naturalWidth) ||
+    positionPickerImage.naturalWidth ||
+    rect.width;
+  const naturalHeight =
+    Number(positionPickerImage.dataset.naturalHeight) ||
+    positionPickerImage.naturalHeight ||
+    rect.height;
+  const normalizedX = Math.round(
+    (offsetX / rect.width) * naturalWidth
+  );
+  const normalizedY = Math.round(
+    (offsetY / rect.height) * naturalHeight
+  );
+  positionPickerSelection = {
+    x: normalizedX,
+    y: normalizedY
+  };
+  positionPickerDot.style.left = `${offsetX}px`;
+  positionPickerDot.style.top = `${offsetY}px`;
+  positionPickerDot.classList.remove("hidden");
+  if (positionPickerConfirmButton) {
+    positionPickerConfirmButton.removeAttribute("disabled");
+  }
+}
+
+async function openPositionPickerModal(xInput, yInput) {
+  if (!inviteCardSelectedPhoto) {
+    showErrorSnackbar({ message: "Please select a photo first." });
+    return;
+  }
+  if (!positionPickerModal || !positionPickerImage) {
+    return;
+  }
+  positionPickerCurrentXInput = xInput;
+  positionPickerCurrentYInput = yInput;
+  resetPositionPickerSelection();
+  try {
+    const photoUrl = getGalleryPhotoFileUrl(inviteCardSelectedPhoto);
+    if (!photoUrl) {
+      throw new Error("Unable to resolve the selected photo.");
+    }
+    const loadedImage = await loadImage(photoUrl, true);
+    positionPickerImage.src = photoUrl;
+    positionPickerImage.dataset.naturalWidth =
+      loadedImage.naturalWidth || loadedImage.width || 0;
+    positionPickerImage.dataset.naturalHeight =
+      loadedImage.naturalHeight || loadedImage.height || 0;
+    positionPickerModal.classList.remove("hidden");
+    positionPickerModal.setAttribute("aria-hidden", "false");
+  } catch (error) {
+    showErrorSnackbar({
+      message:
+        error?.message || "Unable to load the photo for position picking."
+    });
+  }
+}
+
+function handlePositionPickerButtonClick(event) {
+  const button = event.currentTarget;
+  if (!button) {
+    return;
+  }
+  const block = button.closest("[data-field-block]");
+  const xInput = block?.querySelector('input[data-field-coordinate="x"]');
+  const yInput = block?.querySelector('input[data-field-coordinate="y"]');
+  if (!xInput || !yInput) {
+    return;
+  }
+  void openPositionPickerModal(xInput, yInput);
+}
+
+function handlePositionPickerConfirm() {
+  if (
+    !positionPickerSelection ||
+    !positionPickerCurrentXInput ||
+    !positionPickerCurrentYInput
+  ) {
+    return;
+  }
+  positionPickerCurrentXInput.value = String(positionPickerSelection.x);
+  positionPickerCurrentYInput.value = String(positionPickerSelection.y);
+  refreshInviteCardActionState();
+  closePositionPickerModal();
+}
+
 function initStyleColorPickers() {
   qsa("[data-style-color-trigger]").forEach((trigger) => {
     const fieldAttr = trigger.dataset.styleField;
@@ -4400,6 +4527,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardPreviewCanvas = qs('[data-invite-card-canvas]');
   inviteCardPreviewPlaceholder = qs('[data-invite-card-preview-placeholder]');
   inviteCardDownloadLink = qs('[data-invite-card-download]');
+  positionPickerModal = qs('[data-position-picker-modal]');
+  positionPickerOverlay = qs('[data-position-picker-overlay]');
+  positionPickerImage = qs('[data-position-picker-image]');
+  positionPickerDot = qs('[data-position-picker-dot]');
+  positionPickerConfirmButton = qs('[data-position-picker-confirm]');
+  positionPickerCancelButton = qs('[data-position-picker-cancel]');
   inviteCardChoosePhotoButton?.addEventListener('click', () => {
     openPhotoChooserModal({
       allowMultiple: false,
@@ -4413,9 +4546,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardGenerateButton?.addEventListener('click', () => {
     void handleInviteCardGeneration();
   });
+  qsa('[data-position-picker-button]').forEach((button) =>
+    button.addEventListener('click', handlePositionPickerButtonClick)
+  );
   const inviteCardTab = qs('#tab-invite-card');
   inviteCardTab?.addEventListener('input', handleInviteCardFieldInteraction);
   inviteCardTab?.addEventListener('change', handleInviteCardFieldInteraction);
+  positionPickerOverlay?.addEventListener('click', closePositionPickerModal);
+  positionPickerCancelButton?.addEventListener('click', closePositionPickerModal);
+  positionPickerConfirmButton?.addEventListener('click', handlePositionPickerConfirm);
+  positionPickerImage?.addEventListener('click', handlePositionPickerImageClick);
   initializeInviteCardFieldControls();
   updateInviteCardPhotoPreview();
   initializeFieldControllers();

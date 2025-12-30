@@ -8,7 +8,7 @@
     <div class="section-header">
       <h3>Invite Card Generator</h3>
     </div>
-    <div class="form grid one-column">
+    <div class="invite-card-photo-row">
       <label class="field full">
         <span>Choose photo</span>
         <div class="photo-actions">
@@ -29,6 +29,8 @@
         </div>
         <p class="hint">Pick the image via the photo chooser modal.</p>
       </label>
+    </div>
+    <div class="form grid one-column invite-card-field-grid">
       <div class="field-block" data-field-block="name">
         <label class="field standard-width">
           <span>Name</span>
@@ -56,6 +58,13 @@
             <div class="coordinate-group">
               <input id="invite-card-name-x" name="invite-card-name-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
               <input id="invite-card-name-y" name="invite-card-name-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              <button
+                type="button"
+                class="btn ghost small position-picker-button"
+                data-position-picker-button
+              >
+                Position Pick
+              </button>
               <input
                 id="invite-card-name-scale"
                 name="invite-card-name-scale"
@@ -154,6 +163,13 @@
             <div class="coordinate-group">
               <input id="invite-card-national-id-x" name="invite-card-national-id-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
               <input id="invite-card-national-id-y" name="invite-card-national-id-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              <button
+                type="button"
+                class="btn ghost small position-picker-button"
+                data-position-picker-button
+              >
+                Position Pick
+              </button>
               <input
                 id="invite-card-national-id-scale"
                 name="invite-card-national-id-scale"
@@ -245,6 +261,13 @@
             <div class="coordinate-group">
               <input id="invite-card-guest-code-x" name="invite-card-guest-code-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
               <input id="invite-card-guest-code-y" name="invite-card-guest-code-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              <button
+                type="button"
+                class="btn ghost small position-picker-button"
+                data-position-picker-button
+              >
+                Position Pick
+              </button>
               <input
                 id="invite-card-guest-code-scale"
                 name="invite-card-guest-code-scale"
@@ -309,36 +332,82 @@
           </label>
         </div>
       </div>
-      <div class="invite-card-generator">
-        <button
-          type="button"
-          id="invite-card-generate"
-          class="btn primary full-width"
-          disabled
-        >
-          Generate Invite Card
-        </button>
-        <p class="muted" data-invite-card-status>
-          Select a photo and fill every field to enable the generator.
-        </p>
-      </div>
-      <div class="invite-card-preview" data-invite-card-preview>
-        <p class="muted invite-card-preview__placeholder" data-invite-card-preview-placeholder>
-          Generated cards appear here after the generator runs.
-        </p>
-        <canvas
-          data-invite-card-canvas
-          class="hidden"
-          role="img"
-          aria-label="Generated invite card preview"
-        ></canvas>
-        <a
-          class="btn primary hidden"
-          data-invite-card-download
-          download="invite-card.png"
-        >
-          Download invite card
-        </a>
+    </div>
+    <div class="invite-card-preview" data-invite-card-preview>
+      <p class="muted invite-card-preview__placeholder" data-invite-card-preview-placeholder>
+        Generated cards appear here after the generator runs.
+      </p>
+      <canvas
+        data-invite-card-canvas
+        class="hidden"
+        role="img"
+        aria-label="Generated invite card preview"
+      ></canvas>
+      <a
+        class="btn primary hidden"
+        data-invite-card-download
+        download="invite-card.png"
+      >
+        Download invite card
+      </a>
+    </div>
+    <div class="invite-card-generator">
+      <button
+        type="button"
+        id="invite-card-generate"
+        class="btn primary full-width"
+        disabled
+      >
+        Generate Invite Card
+      </button>
+      <p class="muted" data-invite-card-status>
+        Select a photo and fill every field to enable the generator.
+      </p>
+    </div>
+    <div
+      class="position-picker-modal hidden"
+      data-position-picker-modal
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="position-picker-overlay" data-position-picker-overlay></div>
+      <div class="position-picker-shell">
+        <div class="position-picker-header">
+          <h4>Pick position on photo</h4>
+          <p>Click anywhere on the photo to store that position.</p>
+        </div>
+        <div class="position-picker-content">
+          <div class="position-picker-image-shell">
+            <img
+              data-position-picker-image
+              alt="Invite card photo preview"
+              draggable="false"
+            />
+            <span
+              data-position-picker-dot
+              class="position-picker-dot hidden"
+              aria-hidden="true"
+            ></span>
+          </div>
+        </div>
+        <div class="position-picker-actions">
+          <button
+            type="button"
+            class="btn primary"
+            data-position-picker-confirm
+            disabled
+          >
+            Confirm Position
+          </button>
+          <button
+            type="button"
+            class="btn ghost"
+            data-position-picker-cancel
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   </div>

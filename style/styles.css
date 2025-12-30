@@ -157,6 +157,13 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   max-width: 1200px;
   margin: 0 auto;
 }
+.tab#tab-invite-card .invite-card-photo-row {
+  margin-bottom: 16px;
+}
+.tab#tab-invite-card .invite-card-field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
 .tab#tab-invite-card .invite-card-generator {
   margin-top: 16px;
   display: flex;
@@ -176,6 +183,83 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   border-radius: 16px;
   border: 1px solid var(--border);
   box-shadow: 0 24px 45px rgba(15, 23, 42, 0.15);
+}
+.tab#tab-invite-card .position-picker-button {
+  align-self: flex-start;
+  margin-top: 0;
+  margin-left: 4px;
+}
+.position-picker-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.position-picker-modal.hidden {
+  display: none;
+}
+.position-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 9, 34, 0.7);
+}
+.position-picker-shell {
+  position: relative;
+  z-index: 1;
+  width: min(720px, 90vw);
+  max-height: 80vh;
+  background: #fff;
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 30px 60px rgba(3, 9, 43, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.position-picker-header h4 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.position-picker-header p {
+  margin: 4px 0 0;
+  color: #334155;
+  font-size: 0.95rem;
+}
+.position-picker-content {
+  position: relative;
+  flex: 1;
+  min-height: 260px;
+}
+.position-picker-image-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #f4f5f7;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.position-picker-image-shell img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.position-picker-dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff2d55;
+  border: 2px solid #fff;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 6px rgba(255, 45, 85, 0.35);
+}
+.position-picker-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
 }
 .tab#tab-invite-card .invite-card-preview canvas + .btn {
   align-self: center;
