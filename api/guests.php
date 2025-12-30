@@ -16,7 +16,9 @@ const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
 const PURELIST_HEADERS = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'join_date', 'join_time', 'left_date', 'left_time'];
 const EVENT_CODE_MIN = 10000;
 const EVENT_CODE_DIGITS = 5;
-const EVENTS_ROOT = __DIR__ . '/../events';
+if (!defined('EVENTS_ROOT')) {
+    define('EVENTS_ROOT', __DIR__ . '/../events');
+}
 
 ensureEventStorageReady(EVENTS_ROOT);
 

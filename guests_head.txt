@@ -1,11 +1,11 @@
-<section id="tab-guests" class="tab">
+﻿<section id="tab-guests" class="tab">
   <link rel="stylesheet" href="style/jalalidatepicker.min.css" />
   <div class="sub-layout" data-sub-layout>
     <aside class="sub-sidebar">
-      <div class="sub-header">لیست مهمانان</div>
+      <div class="sub-header">┘ä█î╪│╪¬ ┘à┘ç┘à╪º┘å╪º┘å</div>
       <div class="sub-nav">
         <button type="button" class="sub-item active" data-pane="guest-upload-pane">
-          بارگذاری مهمان
+          ╪¿╪º╪▒┌»╪░╪º╪▒█î ┘à┘ç┘à╪º┘å
         </button>
         <div class="sub-event-tabs" id="guest-event-tabs"></div>
       </div>
@@ -101,7 +101,7 @@
             aria-controls="event-info-section"
             aria-selected="true"
           >
-            اطلاعات رویداد
+            ╪º╪╖┘ä╪º╪╣╪º╪¬ ╪▒┘ê█î╪»╪º╪»
           </button>
           <button
             type="button"
@@ -110,7 +110,7 @@
             aria-controls="event-guests-section"
             aria-selected="false"
           >
-            مهمانان رویداد
+            ┘à┘ç┘à╪º┘å╪º┘å ╪▒┘ê█î╪»╪º╪»
           </button>
           <button
             type="button"
@@ -119,7 +119,7 @@
             aria-controls="event-winners-section"
             aria-selected="false"
           >
-            برندگان رویداد
+            ╪¿╪▒┘å╪»┌»╪º┘å ╪▒┘ê█î╪»╪º╪»
           </button>
           <button
             type="button"
@@ -128,7 +128,7 @@
             aria-controls="event-prizes-section"
             aria-selected="false"
           >
-            جوایز رویداد
+            ╪¼┘ê╪º█î╪▓ ╪▒┘ê█î╪»╪º╪»
           </button>
         </div>
         <div class="card">
@@ -187,8 +187,8 @@
       <div class="card hidden" data-event-section="event-winners" id="event-winners-section">
         <div class="table-header">
           <div>
-            <h3>برندگان رویداد</h3>
-            <p class="muted small">لیست برندگان تایید شده مربوط به رویداد انتخاب‌شده.</p>
+            <h3>╪¿╪▒┘å╪»┌»╪º┘å ╪▒┘ê█î╪»╪º╪»</h3>
+            <p class="muted small">┘ä█î╪│╪¬ ╪¿╪▒┘å╪»┌»╪º┘å ╪¬╪º█î█î╪» ╪┤╪»┘ç ┘à╪▒╪¿┘ê╪╖ ╪¿┘ç ╪▒┘ê█î╪»╪º╪» ╪º┘å╪¬╪«╪º╪¿ΓÇî╪┤╪»┘ç.</p>
           </div>
         </div>
         <p id="event-winners-status" class="muted small" aria-live="polite"></p>
@@ -196,12 +196,12 @@
           <table>
             <thead>
               <tr>
-                <th style="width:56px;">ردیف</th>
-                <th>برنده</th>
-                <th>کد دعوت</th>
-                <th>تلفن</th>
-                <th>ملی</th>
-                <th>زمان</th>
+                <th style="width:56px;">╪▒╪»█î┘ü</th>
+                <th>╪¿╪▒┘å╪»┘ç</th>
+                <th>┌⌐╪» ╪»╪╣┘ê╪¬</th>
+                <th>╪¬┘ä┘ü┘å</th>
+                <th>┘à┘ä█î</th>
+                <th>╪▓┘à╪º┘å</th>
               </tr>
             </thead>
             <tbody id="event-winner-list-body">
@@ -215,8 +215,8 @@
       <div class="card hidden" data-event-section="event-prizes" id="event-prizes-section">
         <div class="table-header" style="flex-wrap:wrap;">
           <div>
-            <h3>جوایز رویداد</h3>
-            <p class="muted small">فهرست جوایز مجزا برای رویداد انتخاب‌شده.</p>
+            <h3>╪¼┘ê╪º█î╪▓ ╪▒┘ê█î╪»╪º╪»</h3>
+            <p class="muted small">┘ü┘ç╪▒╪│╪¬ ╪¼┘ê╪º█î╪▓ ┘à╪¼╪▓╪º ╪¿╪▒╪º█î ╪▒┘ê█î╪»╪º╪» ╪º┘å╪¬╪«╪º╪¿ΓÇî╪┤╪»┘ç.</p>
           </div>
           <form
             id="event-prize-add-form"
@@ -224,18 +224,18 @@
             style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; direction:rtl; min-width:320px;"
           >
             <label class="field standard-width" style="flex:1 1 220px; direction:rtl; text-align:right;">
-              <span>نام جایزه</span>
+              <span>┘å╪º┘à ╪¼╪º█î╪▓┘ç</span>
               <input
                 id="event-prize-name"
                 name="name"
                 type="text"
-                placeholder="نام جایزه را وارد کنید"
+                placeholder="┘å╪º┘à ╪¼╪º█î╪▓┘ç ╪▒╪º ┘ê╪º╪▒╪» ┌⌐┘å█î╪»"
                 autocomplete="off"
                 required
                 style="direction:rtl; text-align:right;"
               />
             </label>
-            <button type="submit" class="btn primary" id="event-prize-add-button">اضافه کردن</button>
+            <button type="submit" class="btn primary" id="event-prize-add-button">╪º╪╢╪º┘ü┘ç ┌⌐╪▒╪»┘å</button>
           </form>
         </div>
         <p id="event-prize-status" class="muted small" aria-live="polite" style="margin:0;"></p>
@@ -244,13 +244,13 @@
             <thead>
               <tr>
                 <th style="width:80px;">#</th>
-                <th>نام جایزه</th>
-                <th style="width:190px;">عملیات</th>
+                <th>┘å╪º┘à ╪¼╪º█î╪▓┘ç</th>
+                <th style="width:190px;">╪╣┘à┘ä█î╪º╪¬</th>
               </tr>
             </thead>
             <tbody id="event-prize-list-body">
               <tr>
-                <td colspan="3" class="muted">در حال بارگذاری جوایز...</td>
+                <td colspan="3" class="muted">╪»╪▒ ╪¡╪º┘ä ╪¿╪º╪▒┌»╪░╪º╪▒█î ╪¼┘ê╪º█î╪▓...</td>
               </tr>
             </tbody>
           </table>
@@ -647,10 +647,25 @@
       return { columns: headers, rows: dataRows };
     }
 
-    function refreshEventControls() {
+    function renderEventFilter() {
+      if (!eventFilter) return;
+      const events = Array.isArray(state.events) ? state.events : [];
+      eventFilter.innerHTML = '<option value="" disabled>Select event</option>';
+      events.forEach(event => {
+        const option = document.createElement("option");
+        const code = event.code || "";
+        option.value = code;
+        option.textContent = event.name || code || "Unnamed event";
+        eventFilter.appendChild(option);
+      });
       renderManualEventOptions();
       renderEventTabs();
-      renderGuestTable();
+      const fallbackCode = activeEventCode || events[0]?.code || "";
+      if (fallbackCode) {
+        eventFilter.value = fallbackCode;
+      } else {
+        eventFilter.selectedIndex = 0;
+      }
     }
 
     function renderManualEventOptions() {
@@ -1243,8 +1258,8 @@
     }
 
     function toEnglishDigits(value) {
-      const map = { "۰":"0","۱":"1","۲":"2","۳":"3","۴":"4","۵":"5","۶":"6","۷":"7","۸":"8","۹":"9","٠":"0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9" };
-      return String(value).replace(/[۰-۹٠-٩]/g, d => map[d] || d);
+      const map = { "█░":"0","█▒":"1","█▓":"2","█│":"3","█┤":"4","█╡":"5","█╢":"6","█╖":"7","█╕":"8","█╣":"9","┘á":"0","┘í":"1","┘ó":"2","┘ú":"3","┘ñ":"4","┘Ñ":"5","┘ª":"6","┘º":"7","┘¿":"8","┘⌐":"9" };
+      return String(value).replace(/[█░-█╣┘á-┘⌐]/g, d => map[d] || d);
     }
 
     function getNowJalaliDate() {
@@ -1487,25 +1502,25 @@
           const nationalId = String(row.national_id || row.nationalid || "").trim();
           const lotteryCode = String(row.number || row.lottery_code || row.unique_code || "").trim();
           return {
-            "کد قرعه کشی": lotteryCode,
-            "نام کامل": fullname,
-            "کدملی": nationalId,
-            "شماره تلفن": phone,
-            "لینک کارت دعوت": link
+            "┌⌐╪» ┘é╪▒╪╣┘ç ┌⌐╪┤█î": lotteryCode,
+            "┘å╪º┘à ┌⌐╪º┘à┘ä": fullname,
+            "┌⌐╪»┘à┘ä█î": nationalId,
+            "╪┤┘à╪º╪▒┘ç ╪¬┘ä┘ü┘å": phone,
+            "┘ä█î┘å┌⌐ ┌⌐╪º╪▒╪¬ ╪»╪╣┘ê╪¬": link
           };
         })
         .filter(entry =>
-          entry["کد قرعه کشی"] ||
-          entry["نام کامل"] ||
-          entry["کدملی"] ||
-          entry["شماره تلفن"] ||
-          entry["لینک کارت دعوت"]
+          entry["┌⌐╪» ┘é╪▒╪╣┘ç ┌⌐╪┤█î"] ||
+          entry["┘å╪º┘à ┌⌐╪º┘à┘ä"] ||
+          entry["┌⌐╪»┘à┘ä█î"] ||
+          entry["╪┤┘à╪º╪▒┘ç ╪¬┘ä┘ü┘å"] ||
+          entry["┘ä█î┘å┌⌐ ┌⌐╪º╪▒╪¬ ╪»╪╣┘ê╪¬"]
         );
       if (!normalized.length) {
         throw new Error("The pure CSV file did not yield any guest rows.");
       }
       const worksheet = XLSX.utils.json_to_sheet(normalized, {
-        header: ["کد قرعه کشی", "نام کامل", "کدملی", "شماره تلفن", "لینک کارت دعوت"]
+        header: ["┌⌐╪» ┘é╪▒╪╣┘ç ┌⌐╪┤█î", "┘å╪º┘à ┌⌐╪º┘à┘ä", "┌⌐╪»┘à┘ä█î", "╪┤┘à╪º╪▒┘ç ╪¬┘ä┘ü┘å", "┘ä█î┘å┌⌐ ┌⌐╪º╪▒╪¬ ╪»╪╣┘ê╪¬"]
       });
       worksheet["!cols"] = [{ wch: 15 }, { wch: 35 }, { wch: 18 }, { wch: 20 }, { wch: 45 }];
       const workbook = XLSX.utils.book_new();
@@ -1580,7 +1595,7 @@
       }
       eventWinnerListBody.innerHTML = rows
         .map((winner, index) => {
-          const fullname = escapeHtml([winner.firstname, winner.lastname].filter(Boolean).join(" ").trim() || "—");
+          const fullname = escapeHtml([winner.firstname, winner.lastname].filter(Boolean).join(" ").trim() || "ΓÇö");
           return `
             <tr>
               <td>${index + 1}</td>
@@ -1661,7 +1676,7 @@
       currentEventPrizeCode = String(code || "").trim();
       const requestId = ++eventPrizeFetchId;
       setEventPrizeStatus("Loading prizes...");
-      eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">در حال بارگذاری جوایز...</td></tr>`;
+      eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">╪»╪▒ ╪¡╪º┘ä ╪¿╪º╪▒┌»╪░╪º╪▒█î ╪¼┘ê╪º█î╪▓...</td></tr>`;
       try {
         const params = new URLSearchParams({ prize_action: "list" });
         if (currentEventPrizeCode) {

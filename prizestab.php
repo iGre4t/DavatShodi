@@ -1,6 +1,8 @@
 <?php
 const DEFAULT_PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
-const EVENTS_ROOT = __DIR__ . '/events';
+if (!defined('EVENTS_ROOT')) {
+  define('EVENTS_ROOT', __DIR__ . '/events');
+}
 
 function sanitizeEventCode(string $value): string
 {

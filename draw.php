@@ -9,7 +9,9 @@ if (empty($_SESSION['authenticated'])) {
 }
 
 const GUEST_STORE_PATH = __DIR__ . '/data/guests.json';
-const EVENTS_ROOT = __DIR__ . '/events';
+if (!defined('EVENTS_ROOT')) {
+  define('EVENTS_ROOT', __DIR__ . '/events');
+}
 const STORE_PATH = __DIR__ . '/data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
@@ -49,6 +51,42 @@ function formatSiteIconUrlForHtml(string $value): string
     return $trimmed;
   }
   return "./{$trimmed}";
+}
+
+function getPublicBasePath(): string
+{
+  $scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+  if ($scriptName === '') {
+    return '';
+  }
+
+  if (preg_match('#^(.*?)/events/[^/]+/draw\\.php$#', $scriptName, $matches)) {
+    $candidate = $matches[1];
+    if ($candidate === '' || $candidate === '/') {
+      return '';
+    }
+    return rtrim($candidate, '/');
+  }
+
+  $dir = dirname($scriptName);
+  if ($dir === '/' || $dir === '\\' || $dir === '.') {
+    return '';
+  }
+
+  return rtrim($dir, '/');
+}
+
+function buildPublicAssetUrl(string $path): string
+{
+  $base = getPublicBasePath();
+  $relative = ltrim(str_replace('\\', '/', $path), '/');
+  if ($relative === '') {
+    return $base === '' ? '' : $base;
+  }
+  if ($base === '') {
+    return '/' . $relative;
+  }
+  return $base . '/' . $relative;
 }
 
 $panelSettings = loadPanelSettings();
@@ -139,6 +177,8 @@ if ($method === 'POST') {
 
 $guestPool = buildGuestPool(GUEST_STORE_PATH, $drawEventCode);
 $winnersList = loadWinnersList(EVENTS_ROOT, $drawEventCode);
+$fontRegularUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-Regular.woff2'), ENT_QUOTES, 'UTF-8');
+$fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-Bold.woff2'), ENT_QUOTES, 'UTF-8');
 
 ?>
 <!doctype html>
@@ -153,13 +193,13 @@ $winnersList = loadWinnersList(EVENTS_ROOT, $drawEventCode);
         font-family: 'Peyda';
         font-weight: 400;
         font-style: normal;
-        src: url('style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+        src: url('<?= $fontRegularUrl ?>') format('woff2');
       }
       @font-face {
         font-family: 'Peyda';
         font-weight: 700;
         font-style: normal;
-        src: url('style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+        src: url('<?= $fontBoldUrl ?>') format('woff2');
       }
 
       :root {

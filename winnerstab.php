@@ -1,5 +1,7 @@
 <?php
-const EVENTS_ROOT = __DIR__ . '/events';
+if (!defined('EVENTS_ROOT')) {
+  define('EVENTS_ROOT', __DIR__ . '/events');
+}
 const GUEST_STORE_PATH = __DIR__ . '/data/guests.json';
 
 function respondWinnersJson(array $payload, int $statusCode = 200): void
