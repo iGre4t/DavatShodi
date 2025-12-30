@@ -125,15 +125,6 @@
                 data-style-color-preview="name"
                 aria-label="باز کردن انتخاب رنگ برای Name"
               ></button>
-              <button
-                type="button"
-                class="btn ghost small color-picker-trigger"
-                data-style-color-trigger
-                data-style-field="name"
-                aria-label="باز کردن انتخاب رنگ برای Name"
-              >
-                انتخاب رنگ
-              </button>
             </div>
           </label>
         </div>
@@ -239,15 +230,6 @@
                 data-style-color-preview="national-id"
                 aria-label="باز کردن انتخاب رنگ برای National ID QR Code"
               ></button>
-              <button
-                type="button"
-                class="btn ghost small color-picker-trigger"
-                data-style-color-trigger
-                data-style-field="national-id"
-                aria-label="باز کردن انتخاب رنگ برای National ID QR Code"
-              >
-                انتخاب رنگ
-              </button>
             </div>
           </label>
         </div>
@@ -346,15 +328,6 @@
                 data-style-color-preview="guest-code"
                 aria-label="باز کردن انتخاب رنگ برای Guest code"
               ></button>
-              <button
-                type="button"
-                class="btn ghost small color-picker-trigger"
-                data-style-color-trigger
-                data-style-field="guest-code"
-                aria-label="باز کردن انتخاب رنگ برای Guest code"
-              >
-                انتخاب رنگ
-              </button>
             </div>
           </label>
         </div>
