@@ -2251,10 +2251,37 @@ function openPhotoMapperModal() {
   }
 }
 
+function handleMapPhotoClick() {
+  if (!inviteCardSelectedPhoto) {
+    openPhotoChooserModal({
+      allowMultiple: false,
+      onChoose: (selectedPhotos = []) => {
+        const nextPhoto = selectedPhotos[0] ?? null;
+        if (!nextPhoto) {
+          return;
+        }
+        inviteCardSelectedPhoto = nextPhoto;
+        updateInviteCardPhotoPreview();
+        inviteCardPhotoMapping = null;
+        if (inviteCardMapSelectionInput) {
+          inviteCardMapSelectionInput.value = "";
+        }
+        updateInviteCardMapInfo();
+        setTimeout(() => {
+          openPhotoMapperModal();
+        }, 0);
+      }
+    });
+    return;
+  }
+  openPhotoMapperModal();
+}
+
 function closePhotoMapperModal() {
   if (!photoMapperModalElement) {
     return;
   }
+  inviteCardMapPhotoButton?.focus({ preventScroll: true });
   photoMapperModalElement.classList.add("hidden");
   photoMapperModalElement.setAttribute("aria-hidden", "true");
   photoMapperIsSelecting = false;
@@ -4212,6 +4239,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardMapSelectionInput = qs('#invite-card-map-selection');
   inviteCardMapInfoLabel = qs('[data-invite-card-map-info]');
   inviteCardMapPhotoButton = qs('#invite-card-map-photo');
+  if (inviteCardMapSelectionInput?.value) {
+    try {
+      const parsed = JSON.parse(inviteCardMapSelectionInput.value);
+      if (parsed && parsed.photoId && parsed.selection) {
+        inviteCardPhotoMapping = parsed;
+      }
+    } catch {
+      inviteCardPhotoMapping = null;
+    }
+  }
   inviteCardChoosePhotoButton?.addEventListener('click', () => {
     openPhotoChooserModal({
       allowMultiple: false,
@@ -4230,7 +4267,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   });
-  inviteCardMapPhotoButton?.addEventListener('click', openPhotoMapperModal);
+  inviteCardMapPhotoButton?.addEventListener('click', handleMapPhotoClick);
   updateInviteCardPhotoPreview();
   updateInviteCardMapInfo();
   photoMapperModalElement = qs('#photo-mapper-modal');
