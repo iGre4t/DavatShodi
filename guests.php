@@ -1096,9 +1096,7 @@
       return { key: "ended", text: "Event Status: Event Ended" };
     }
 
-    let eventStatusInterval = null;
-
-    let eventStatusInterval = null;
+    let guestsEventStatusInterval = null;
 
     function refreshEventStatuses(applyImmediately = false) {
       const statuses = {};
@@ -1114,11 +1112,11 @@
     }
 
     function startEventStatusTicker() {
-      if (eventStatusInterval) {
+      if (guestsEventStatusInterval) {
         return;
       }
       refreshEventStatuses(true);
-      eventStatusInterval = setInterval(() => {
+      guestsEventStatusInterval = setInterval(() => {
         refreshEventStatuses(true);
       }, 60 * 1000);
     }

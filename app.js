@@ -133,6 +133,11 @@ let photoChooserChooseButton;
 let photoChooserCancelButton;
 let photoChooserUploadButton;
 let photoChooserReopenContext = null;
+let inviteCardSelectedPhoto = null;
+let inviteCardPhotoPreviewImage = null;
+let inviteCardPhotoPlaceholder = null;
+let inviteCardPhotoLabel = null;
+let inviteCardChoosePhotoButton = null;
 let siteIconValue = "";
 let siteIconPreviewImage = null;
 let siteIconPlaceholder = null;
@@ -2179,6 +2184,36 @@ function getGalleryThumbnailUrl(photoOrId, options = {}) {
   )}&mode=${encodeURIComponent(mode)}&v=${timestamp}`;
 }
 
+function updateInviteCardPhotoPreview() {
+  if (!inviteCardPhotoPreviewImage || !inviteCardPhotoPlaceholder || !inviteCardPhotoLabel) {
+    return;
+  }
+  if (!inviteCardSelectedPhoto) {
+    inviteCardPhotoPreviewImage.classList.add("hidden");
+    inviteCardPhotoPreviewImage.removeAttribute("src");
+    inviteCardPhotoPlaceholder.classList.remove("hidden");
+    inviteCardPhotoLabel.textContent = "No photo selected.";
+    return;
+  }
+  inviteCardPhotoPlaceholder.classList.add("hidden");
+  inviteCardPhotoLabel.textContent =
+    inviteCardSelectedPhoto.title || "Photo selected";
+  const previewUrl = getGalleryThumbnailUrl(inviteCardSelectedPhoto, {
+    mode: GALLERY_THUMB_PREVIEW_MODE
+  });
+  if (previewUrl) {
+    inviteCardPhotoPreviewImage.src = previewUrl;
+    inviteCardPhotoPreviewImage.alt =
+      inviteCardSelectedPhoto.altText ||
+      inviteCardSelectedPhoto.title ||
+      "Selected photo";
+    inviteCardPhotoPreviewImage.classList.remove("hidden");
+  } else {
+    inviteCardPhotoPreviewImage.classList.add("hidden");
+    inviteCardPhotoPreviewImage.removeAttribute("src");
+  }
+}
+
 function formatGalleryPhotoDate(rawValue) {
   if (!rawValue) {
     return "";
@@ -3460,6 +3495,7 @@ function setActiveTab(tab) {
     users: 'Users',
     settings: 'Account Settings',
     guests: 'List of guests',
+    'invite-card': 'Invite Card Generator',
     events: 'Events',
     gallery: 'Photo Gallery',
     invite: 'Invite',
@@ -3937,6 +3973,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   qs('#add-user')?.addEventListener('click', () => openUserModal());
   // Cancel button simply hides the modal.
   qs('#user-cancel')?.addEventListener('click', closeUserModal);
+  inviteCardChoosePhotoButton = qs('#invite-card-choose-photo');
+  inviteCardPhotoPreviewImage = qs('[data-invite-card-photo-preview-image]');
+  inviteCardPhotoPlaceholder = qs('[data-invite-card-photo-placeholder]');
+  inviteCardPhotoLabel = qs('[data-invite-card-photo-label]');
+  inviteCardChoosePhotoButton?.addEventListener('click', () => {
+    openPhotoChooserModal({
+      allowMultiple: false,
+      initialSelection: inviteCardSelectedPhoto ? [inviteCardSelectedPhoto.id] : [],
+      onChoose: (selectedPhotos = []) => {
+        inviteCardSelectedPhoto = selectedPhotos[0] ?? null;
+        updateInviteCardPhotoPreview();
+      }
+    });
+  });
+  updateInviteCardPhotoPreview();
   // Handles form submissions by updating the local state and syncing back to the server.
   qs('#user-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
