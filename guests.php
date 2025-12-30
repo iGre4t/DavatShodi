@@ -159,22 +159,39 @@
                   <span>Event name</span>
                   <input id="event-info-name" name="event_name" type="text" autocomplete="off" required />
                 </label>
-                <label class="field standard-width">
-                  <span>Event date (Shamsi)</span>
-                  <input
-                    id="event-info-date"
-                    name="event_date"
-                    type="text"
+              <label class="field standard-width">
+                <span>Event date (Shamsi)</span>
+                <input
+                  id="event-info-date"
+                  name="event_date"
+                  type="text"
                     data-jdp
                     data-jdp-only-date="true"
                     placeholder="Example: 1403/10/01"
-                    autocomplete="off"
-                    readonly
-                    required
-                  />
-                </label>
+                  autocomplete="off"
+                  readonly
+                  required
+                />
+              </label>
+              <div class="field standard-width">
+                <span>Event entry time period</span>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;">
+                  <label class="field" style="flex:1 1 180px; margin:0;">
+                    <span>Event join start time</span>
+                    <input id="event-info-join-start-time" name="join_start_time" type="time" step="60" />
+                  </label>
+                  <label class="field" style="flex:1 1 180px; margin:0;">
+                    <span>Event join limit time</span>
+                    <input id="event-info-join-limit-time" name="join_limit_time" type="time" step="60" />
+                  </label>
+                  <label class="field" style="flex:1 1 180px; margin:0;">
+                    <span>Event end time</span>
+                    <input id="event-info-join-end-time" name="join_end_time" type="time" step="60" />
+                  </label>
+                </div>
               </div>
-              <div class="section-footer" style="display:flex; gap:8px; flex-wrap:wrap;">
+            </div>
+            <div class="section-footer" style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button type="submit" class="btn primary" id="event-info-save">Save event</button>
                 <button type="button" class="btn ghost" id="event-info-delete" disabled>Delete event</button>
               </div>
@@ -198,7 +215,7 @@
                 style="align-items:flex-start; display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px;"
               >
                 <div style="display:flex; align-items:center; gap:8px;">
-                  <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+                  <button type="button" class="btn" id="export-sms-link">Export SMS Link</button>
                   <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
                 </div>
                 <button type="button" class="btn primary" id="open-manual-modal-event">Add guest manually</button>
@@ -594,6 +611,9 @@
     const eventInfoSaveButton = document.getElementById("event-info-save");
     const eventInfoDeleteButton = document.getElementById("event-info-delete");
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
+    const eventInfoJoinStartInput = document.getElementById("event-info-join-start-time");
+    const eventInfoJoinLimitInput = document.getElementById("event-info-join-limit-time");
+    const eventInfoJoinEndInput = document.getElementById("event-info-join-end-time");
     const guestEventPane = document.querySelector(".sub-pane[data-pane=\"guest-event-pane\"]");
     const eventSectionTabs = guestEventPane?.querySelector("[data-event-section-tabs]");
     const eventSections = Array.from(guestEventPane?.querySelectorAll("[data-event-section]") || []);
@@ -870,6 +890,30 @@
           eventInfoDateInput.removeAttribute("disabled");
         } else {
           eventInfoDateInput.setAttribute("disabled", "disabled");
+        }
+      }
+      if (eventInfoJoinStartInput) {
+        eventInfoJoinStartInput.value = selectedEvent?.join_start_time || "";
+        if (hasEvent) {
+          eventInfoJoinStartInput.removeAttribute("disabled");
+        } else {
+          eventInfoJoinStartInput.setAttribute("disabled", "disabled");
+        }
+      }
+      if (eventInfoJoinLimitInput) {
+        eventInfoJoinLimitInput.value = selectedEvent?.join_limit_time || "";
+        if (hasEvent) {
+          eventInfoJoinLimitInput.removeAttribute("disabled");
+        } else {
+          eventInfoJoinLimitInput.setAttribute("disabled", "disabled");
+        }
+      }
+      if (eventInfoJoinEndInput) {
+        eventInfoJoinEndInput.value = selectedEvent?.join_end_time || "";
+        if (hasEvent) {
+          eventInfoJoinEndInput.removeAttribute("disabled");
+        } else {
+          eventInfoJoinEndInput.setAttribute("disabled", "disabled");
         }
       }
       if (eventInfoSaveButton) {
@@ -1219,6 +1263,22 @@
         showErrorSnackbar?.({ message: "Please select an event and date before adding a guest." });
         return;
       }
+      const normalizedNationalId = normalizeNationalIdInput(manualNationalIdInput?.value || "");
+      if (!normalizedNationalId) {
+        showErrorSnackbar?.({ message: "National ID is required and must contain numbers only." });
+        return;
+      }
+      const existingGuests = Array.isArray(selectedEvent.guests) ? selectedEvent.guests : [];
+      const isDuplicateNationalId = existingGuests.some(guest =>
+        normalizeNationalIdInput(guest.national_id) === normalizedNationalId
+      );
+      if (isDuplicateNationalId) {
+        showErrorSnackbar?.({ message: "A guest with this national ID already exists for this event." });
+        return;
+      }
+      if (manualNationalIdInput) {
+        manualNationalIdInput.value = normalizedNationalId;
+      }
       const payload = {
         action: "add_manual_guest",
         event_code: selectedCode,
@@ -1227,7 +1287,7 @@
         firstname: (manualFirstnameInput?.value || "").trim(),
         lastname: (manualLastnameInput?.value || "").trim(),
         gender: manualGenderSelect?.value || "",
-        national_id: (manualNationalIdInput?.value || "").trim(),
+        national_id: normalizedNationalId,
         phone_number: (manualPhoneInput?.value || "").trim()
       };
       const submitButton = manualForm.querySelector("button[type='submit']");
@@ -1261,11 +1321,33 @@
       if (!activeEventCode) return;
       const name = (eventInfoNameInput?.value || "").trim();
       const date = (eventInfoDateInput?.value || "").trim();
+      const joinStart = (eventInfoJoinStartInput?.value || "").trim();
+      const joinLimit = (eventInfoJoinLimitInput?.value || "").trim();
+      const joinEnd = (eventInfoJoinEndInput?.value || "").trim();
       if (!name || !date) {
         showErrorSnackbar?.({ message: "Event name and date are required." });
         return;
       }
+      const startMinutes = parseTimeToMinutes(joinStart);
+      const limitMinutes = parseTimeToMinutes(joinLimit);
+      if (joinStart && startMinutes === null) {
+        showErrorSnackbar?.({ message: "Join start time must be a valid 24-hour time." });
+        return;
+      }
+      if (joinLimit && limitMinutes === null) {
+        showErrorSnackbar?.({ message: "Join limit time must be a valid 24-hour time." });
+        return;
+      }
+      if (startMinutes !== null && limitMinutes !== null && limitMinutes < startMinutes) {
+        showErrorSnackbar?.({ message: "Join limit time cannot be before the start time." });
+        return;
+      }
       const submitButton = eventInfoSaveButton;
+      const endMinutes = parseTimeToMinutes(joinEnd);
+      if (joinEnd && endMinutes === null) {
+        showErrorSnackbar?.({ message: "Event end time must be a valid 24-hour time." });
+        return;
+      }
       submitButton?.setAttribute("disabled", "disabled");
       try {
         const formData = new FormData();
@@ -1273,6 +1355,9 @@
         formData.append("code", activeEventCode);
         formData.append("name", name);
         formData.append("date", date);
+        formData.append("join_start_time", joinStart);
+        formData.append("join_limit_time", joinLimit);
+        formData.append("join_end_time", joinEnd);
         const response = await fetch("./api/guests.php", { method: "POST", body: formData });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.status !== "ok") {
@@ -1386,6 +1471,18 @@
     function composeDateTime(date, time) {
       if (!date) return "";
       return time ? `${date} ${time}` : date;
+    }
+
+    function normalizeNationalIdInput(value) {
+      return String(value ?? "").replace(/\D/g, "");
+    }
+
+    function parseTimeToMinutes(value) {
+      if (!value) return null;
+      const normalized = String(value).trim();
+      const match = normalized.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+      if (!match) return null;
+      return Number(match[1]) * 60 + Number(match[2]);
     }
 
     function toEnglishDigits(value) {

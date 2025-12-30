@@ -422,6 +422,7 @@ if ($method === 'POST') {
           array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
           $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
           $store['events'][$eventIndex]['updated_at'] = date('c');
+          $store['events'][$eventIndex]['join_end_time'] = $normalizedJoinEnd;
           if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
               http_response_code(500);
               echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
@@ -443,10 +444,40 @@ if ($method === 'POST') {
           $eventCode = trim((string)($_POST['code'] ?? ''));
           $name = trim((string)($_POST['name'] ?? ''));
           $date = trim((string)($_POST['date'] ?? ''));
+          $joinStartTime = trim((string)($_POST['join_start_time'] ?? ''));
+          $joinLimitTime = trim((string)($_POST['join_limit_time'] ?? ''));
+          $joinEndTime = trim((string)($_POST['join_end_time'] ?? ''));
           if ($eventCode === '' || $name === '' || $date === '') {
               http_response_code(422);
               echo json_encode(['status' => 'error', 'message' => 'Event code, name, and date are required.']);
               exit;
+          }
+          $normalizedJoinStart = $joinStartTime === '' ? '' : formatEventTimeValue($joinStartTime);
+          if ($joinStartTime !== '' && $normalizedJoinStart === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Join start time must be a valid 24-hour time.']);
+              exit;
+          }
+          $normalizedJoinLimit = $joinLimitTime === '' ? '' : formatEventTimeValue($joinLimitTime);
+          if ($joinLimitTime !== '' && $normalizedJoinLimit === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Join limit time must be a valid 24-hour time.']);
+              exit;
+          }
+          $normalizedJoinEnd = $joinEndTime === '' ? '' : formatEventTimeValue($joinEndTime);
+          if ($joinEndTime !== '' && $normalizedJoinEnd === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event end time must be a valid 24-hour time.']);
+              exit;
+          }
+          if ($normalizedJoinStart !== '' && $normalizedJoinLimit !== '') {
+              $startMinutes = getEventTimeMinutes($normalizedJoinStart);
+              $limitMinutes = getEventTimeMinutes($normalizedJoinLimit);
+              if ($limitMinutes < $startMinutes) {
+                  http_response_code(422);
+                  echo json_encode(['status' => 'error', 'message' => 'Join limit time cannot be before the start time.']);
+                  exit;
+              }
           }
           $store = loadGuestStore($storePath, $eventsRoot);
           $eventIndex = findEventIndexByCode($store['events'], $eventCode);
@@ -457,6 +488,8 @@ if ($method === 'POST') {
           }
           $store['events'][$eventIndex]['name'] = $name;
           $store['events'][$eventIndex]['date'] = $date;
+          $store['events'][$eventIndex]['join_start_time'] = $normalizedJoinStart;
+          $store['events'][$eventIndex]['join_limit_time'] = $normalizedJoinLimit;
           $store['events'][$eventIndex]['updated_at'] = date('c');
           if (!saveGuestStore($storePath, $store)) {
               http_response_code(500);
@@ -664,6 +697,9 @@ if ($method === 'POST') {
         'code' => $eventCode,
         'name' => $eventName,
         'date' => $eventDate,
+        'join_start_time' => '',
+        'join_limit_time' => '',
+        'join_end_time' => '',
         'mapping' => $mapping,
         'purelist' => 'events/' . $eventCode . '/' . $purelistFilename,
         'guest_count' => count($guests),
@@ -1172,6 +1208,24 @@ function normalizeInviteCodeDigits(string $value): string
     return str_pad($digits, 4, '0', STR_PAD_LEFT);
 }
 
+function formatEventTimeValue(string $value): string
+{
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return '';
+    }
+    if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $trimmed, $matches)) {
+        return '';
+    }
+    return sprintf('%02d:%02d', (int)$matches[1], (int)$matches[2]);
+}
+
+function getEventTimeMinutes(string $value): int
+{
+    [$hours, $minutes] = explode(':', $value);
+    return ((int)$hours) * 60 + ((int)$minutes);
+}
+
 function normalizeStore(array $store): array
 {
     $store['events'] = is_array($store['events'] ?? null) ? array_values($store['events']) : [];
@@ -1182,6 +1236,9 @@ function normalizeStore(array $store): array
             $event = [];
         }
         ensureEventHasCode($event, $nextEventCode);
+        $event['join_start_time'] = formatEventTimeValue((string)($event['join_start_time'] ?? ''));
+        $event['join_limit_time'] = formatEventTimeValue((string)($event['join_limit_time'] ?? ''));
+        $event['join_end_time'] = formatEventTimeValue((string)($event['join_end_time'] ?? ''));
         $event['purelist'] = 'events/' . getEventDirName($event) . '/purelist.csv';
         $event['guests'] = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
         foreach ($event['guests'] as &$guest) {
@@ -1274,6 +1331,9 @@ function normalizeEventsForResponse(array $events): array
             'code' => (string)($event['code'] ?? ''),
             'name' => (string)($event['name'] ?? ''),
             'date' => (string)($event['date'] ?? ''),
+            'join_start_time' => (string)($event['join_start_time'] ?? ''),
+            'join_limit_time' => (string)($event['join_limit_time'] ?? ''),
+            'join_end_time' => (string)($event['join_end_time'] ?? ''),
             'guest_count' => (int)($event['guest_count'] ?? count($guests)),
             'mapping' => is_array($event['mapping'] ?? null) ? $event['mapping'] : [],
             'purelist' => (string)($event['purelist'] ?? ''),
