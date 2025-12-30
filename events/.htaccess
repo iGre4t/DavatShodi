@@ -1,8 +1,8 @@
 RewriteEngine On
-RewriteBase /events/
+RewriteBase /
 
 # Route event-specific draw/prize URLs to the central scripts with the event code
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^([^/]+)/draw\.php$ /draw.php?event_code=$1 [L,QSA]
-RewriteRule ^([^/]+)/prizes\.php$ /prizes.php?event_code=$1 [L,QSA]
+RewriteRule ^([^/]+)/draw\.php$ ../draw.php?event_code=$1 [L,QSA]
+RewriteRule ^([^/]+)/prizes\.php$ ../prizes.php?event_code=$1 [L,QSA]

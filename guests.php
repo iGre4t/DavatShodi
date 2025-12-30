@@ -131,7 +131,8 @@
             جوایز رویداد
           </button>
         </div>
-        <div class="card">
+        <div class="event-section" data-event-section="event-info" id="event-info-section">
+          <div class="card">
           <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
             <div>
               <h3>Event info</h3>
@@ -168,23 +169,23 @@
             </div>
             <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
           </form>
+          </div>
         </div>
-        <div class="card">
+        <div class="event-section hidden" data-event-section="event-guests" id="event-guests-section">
+          <div class="card">
           <div class="table-header">
             <h3>Guest lists</h3>
             <div class="table-actions">
-              <label class="field inline">
-                <span class="muted small">Event</span>
-                <select id="guest-event-filter">
-                  <option value="">All events</option>
-                </select>
-              </label>
+              <div class="muted small" id="active-guest-event-label">
+                Event: <strong id="active-guest-event-name">—</strong>
+              </div>
               <div style="display:flex; align-items:center; gap:8px;">
                 <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
                 <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
-        </div>
-      </div>
-      <div class="card hidden" data-event-section="event-winners" id="event-winners-section">
+              </div>
+            </div>
+      <div class="event-section hidden" data-event-section="event-winners" id="event-winners-section">
+        <div class="card hidden" data-event-section="event-winners" id="event-winners-section">
         <div class="table-header">
           <div>
             <h3>برندگان رویداد</h3>
@@ -211,8 +212,10 @@
             </tbody>
           </table>
         </div>
+        </div>
       </div>
-      <div class="card hidden" data-event-section="event-prizes" id="event-prizes-section">
+      <div class="event-section hidden" data-event-section="event-prizes" id="event-prizes-section">
+        <div class="card hidden" data-event-section="event-prizes" id="event-prizes-section">
         <div class="table-header" style="flex-wrap:wrap;">
           <div>
             <h3>جوایز رویداد</h3>
@@ -255,34 +258,6 @@
             </tbody>
           </table>
         </div>
-      </div>
-      </div>
-          <div class="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>No.</th>
-                  <th>Event</th>
-                  <th>Event date</th>
-                  <th>First name</th>
-                  <th>Last name</th>
-                  <th>Gender</th>
-                  <th>National ID</th>
-                  <th>Phone number</th>
-                  <th>Join date</th>
-                  <th>Join time</th>
-                  <th>Left date</th>
-                  <th>Left time</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="guest-list-body">
-                <tr>
-                  <td colspan="11" class="muted">No guest lists yet.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </div>
       </div>
     </div>
@@ -488,7 +463,6 @@
     const fileInput = document.getElementById("guest-file");
     const fileTrigger = document.getElementById("guest-file-trigger");
     const fileNameLabel = document.getElementById("guest-file-name");
-    const eventFilter = document.getElementById("guest-event-filter");
     const guestListBody = document.getElementById("guest-list-body");
     const mappingModal = document.getElementById("guest-mapping-modal");
     const mappingForm = document.getElementById("guest-mapping-form");
@@ -533,6 +507,7 @@
     const eventInfoCodeInput = document.getElementById("event-info-slug");
     const eventInfoSaveButton = document.getElementById("event-info-save");
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
+    const activeGuestEventLabel = document.getElementById("active-guest-event-name");
     const eventSectionTabs = document.querySelector("[data-event-section-tabs]");
     const eventSections = Array.from(document.querySelectorAll("[data-event-section]"));
     const eventWinnerListBody = document.getElementById("event-winner-list-body");
@@ -675,13 +650,11 @@
     function getActiveGuestEvent() {
       const events = Array.isArray(state.events) ? state.events : [];
       if (!events.length) return null;
-      const code = activeEventCode || eventFilter?.value || "";
-      if (!code) return null;
-      const foundEvent = events.find(ev => (ev.code || "") === code) || null;
-      if (!activeEventCode && foundEvent) {
-        activeEventCode = foundEvent.code || "";
+      if (!activeEventCode) {
+        activeEventCode = events[0]?.code || "";
       }
-      return foundEvent;
+      if (!activeEventCode) return null;
+      return events.find(ev => (ev.code || "") === activeEventCode) || null;
     }
 
     function renderEventTabs() {
@@ -729,9 +702,6 @@
     function handleEventTabSelect(code) {
       if (!code) return;
       activeEventCode = code;
-      if (eventFilter) {
-        eventFilter.value = code;
-      }
       const tabs = eventTabsContainer ? Array.from(eventTabsContainer.querySelectorAll(".event-tab")) : [];
       tabs.forEach(tab => {
         const targetCode = tab.getAttribute("data-code") || "";
@@ -776,6 +746,12 @@
       if (eventInfoEmptyMessage) {
         eventInfoEmptyMessage.classList.toggle("hidden", hasEvent);
       }
+      updateActiveEventLabel(selectedEvent);
+    }
+
+    function updateActiveEventLabel(event) {
+      if (!activeGuestEventLabel) return;
+      activeGuestEventLabel.textContent = event?.name || event?.code || "—";
     }
 
     function updateManualEventDate() {
@@ -956,8 +932,7 @@
         const payload = await response.json();
         if (payload.status !== "ok") throw new Error(payload.message || "Unable to load guest lists.");
         state.events = Array.isArray(payload.events) ? payload.events : [];
-        renderEventFilter();
-        renderGuestTable();
+        refreshEventControls();
         renderEventWinners();
         loadEventPrizesForCode(activeEventCode);
         populateGenderSelect(manualGenderSelect);
@@ -988,8 +963,7 @@
         throw new Error(message);
       }
       state.events = Array.isArray(payload.events) ? payload.events : state.events;
-      renderEventFilter();
-      renderGuestTable();
+      refreshEventControls();
       showDefaultToast?.(payload.message || "Guest list saved.");
     }
 
@@ -1085,8 +1059,7 @@
           throw new Error(data?.message || "Failed to add guest.");
         }
         state.events = Array.isArray(data.events) ? data.events : state.events;
-        renderEventFilter();
-        renderGuestTable();
+        refreshEventControls();
         populateGenderSelect(manualGenderSelect);
         populateGenderSelect(editGenderSelect);
         manualForm.reset();
@@ -1123,8 +1096,7 @@
           throw new Error(data?.message || "Failed to save event.");
         }
         state.events = Array.isArray(data.events) ? data.events : state.events;
-        renderEventFilter();
-        renderGuestTable();
+        refreshEventControls();
         showDefaultToast?.(data.message || "Event updated.");
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to save event." });
@@ -1166,15 +1138,6 @@
         showErrorSnackbar?.({ message: error?.message || "Failed to update guest." });
       } finally {
         submitButton?.removeAttribute("disabled");
-      }
-    });
-
-    eventFilter?.addEventListener("change", () => {
-      const selectedCode = eventFilter.value || "";
-      if (selectedCode) {
-        handleEventTabSelect(selectedCode);
-      } else {
-        renderGuestTable();
       }
     });
 
@@ -1349,8 +1312,7 @@
         throw new Error(data?.message || "Failed to delete event.");
       }
       state.events = Array.isArray(data.events) ? data.events : state.events;
-      renderEventFilter();
-      renderGuestTable();
+      refreshEventControls();
       renderEventList();
       populateGenderSelect(manualGenderSelect);
       populateGenderSelect(editGenderSelect);
@@ -1397,10 +1359,7 @@
     }
 
     function resolvePureListCsvPath() {
-      const selectedCode = eventFilter?.value || "";
-      const activeEvent = selectedCode
-        ? state.events.find(ev => (ev.code || "") === selectedCode)
-        : state.events[0];
+      const activeEvent = getActiveGuestEvent();
       const path = activeEvent && typeof activeEvent.purelist === "string"
         ? activeEvent.purelist.trim()
         : "";
