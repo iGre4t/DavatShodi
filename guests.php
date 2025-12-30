@@ -1034,11 +1034,25 @@
     }
 
     function getTehranNowTimestamp() {
-      const now = Date.now();
-      const localOffsetMinutes = new Date().getTimezoneOffset();
-      const tehranOffsetMinutes = - (3 * 60 + 30);
-      const utcNow = now + localOffsetMinutes * 60 * 1000;
-      return utcNow - tehranOffsetMinutes * 60 * 1000;
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Tehran",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
+      const parts = formatter.formatToParts(new Date());
+      const values = {};
+      parts.forEach(({ type, value }) => {
+        if (!type || !value) return;
+        values[type] = value;
+      });
+      const iso = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}+03:30`;
+      const parsed = Date.parse(iso);
+      return Number.isNaN(parsed) ? Date.now() : parsed;
     }
 
     function evaluateEventStatus() {
@@ -1063,9 +1077,11 @@
         return { key: "upcoming", text: "Event Status: Event Upcoming" };
       }
       const compare = compareJalaliDates(todayJalali, eventJalali);
+      if (compare > 0) {
+        return { key: "ended", text: "Event Status: Event Ended" };
+      }
       const startDiff = eventStartTs - nowTimestamp;
-      const endDiff = eventEndTs - nowTimestamp;
-      if (compare < 0 || (compare === 0 && nowTimestamp < eventStartTs)) {
+      if (compare < 0 || nowTimestamp < eventStartTs) {
         return {
           key: "upcoming",
           text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
