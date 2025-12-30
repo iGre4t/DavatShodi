@@ -2490,11 +2490,28 @@
         resetEventInviteCardFields();
         return;
       }
-      if (template.photo_id) {
-        inviteCardSelectedPhoto =
-          (window.GALLERY_PHOTOS || []).find(photo => String(photo.id) === String(template.photo_id)) || null;
+      const cachedPhoto =
+        template.photo_id && template.photo_id !== ""
+          ? (window.GALLERY_PHOTOS || []).find(
+              photo => String(photo.id) === String(template.photo_id)
+            ) || null
+          : null;
+      if (cachedPhoto) {
+        inviteCardSelectedPhoto = cachedPhoto;
       } else {
-        inviteCardSelectedPhoto = null;
+        const photoSource =
+          (template.photo_path || "").trim() ||
+          (template.photo_filename || "").trim();
+        if (photoSource) {
+          inviteCardSelectedPhoto = {
+            id: template.photo_id ? Number(template.photo_id) : null,
+            filename: photoSource,
+            title: template.photo_title || "",
+            altText: template.photo_alt || ""
+          };
+        } else {
+          inviteCardSelectedPhoto = null;
+        }
       }
       updateInviteCardPhotoPreview?.();
       template.fields.forEach(field => applyTemplateField(field));

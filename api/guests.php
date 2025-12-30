@@ -45,6 +45,47 @@ function ensureEventStorageReady(string $eventsRoot): void
     }
 }
 
+function persistInviteCardTemplatePhoto(string $photoFilename, string $eventDirName): ?string
+{
+    $clean = trim($photoFilename);
+    if ($clean === '') {
+        return null;
+    }
+    $clean = str_replace(['..\\', '../'], '', $clean);
+    $clean = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $clean);
+    $clean = trim($clean, DIRECTORY_SEPARATOR);
+    if ($clean === '') {
+        return null;
+    }
+    $projectRoot = realpath(__DIR__ . '/../');
+    if ($projectRoot === false) {
+        return null;
+    }
+    $sourcePath = realpath($projectRoot . DIRECTORY_SEPARATOR . $clean);
+    if ($sourcePath === false) {
+        return null;
+    }
+    $normalizedRoot = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $projectRoot);
+    $normalizedSource = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $sourcePath);
+    if (strpos($normalizedSource, $normalizedRoot) !== 0) {
+        return null;
+    }
+    $extension = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION));
+    if ($extension === '') {
+        $extension = 'png';
+    }
+    $targetDir = EVENTS_ROOT . DIRECTORY_SEPARATOR . $eventDirName . DIRECTORY_SEPARATOR . 'invite-card';
+    if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+        return null;
+    }
+    $targetFilename = 'template-photo.' . $extension;
+    $targetPath = $targetDir . DIRECTORY_SEPARATOR . $targetFilename;
+    if (!copy($sourcePath, $targetPath)) {
+        return null;
+    }
+    return 'events/' . $eventDirName . '/invite-card/' . $targetFilename;
+}
+
 function allocateEventCode(array &$store): string
 {
     $next = max(EVENT_CODE_MIN, (int)($store['next_event_code'] ?? EVENT_CODE_MIN));
@@ -512,51 +553,61 @@ if ($method === 'POST') {
               'logs' => normalizeInviteLogs($store['logs'])
           ]);
           exit;
-      } elseif ($action === 'save_invite_card_template') {
-          $eventCode = trim((string)($_POST['event_code'] ?? ''));
-          $templatePayload = (string)($_POST['template'] ?? '');
-          if ($eventCode === '' || $templatePayload === '') {
-              http_response_code(422);
-              echo json_encode(['status' => 'error', 'message' => 'Event code and template data are required.']);
-              exit;
-          }
-          $decoded = json_decode($templatePayload, true);
-          if (!is_array($decoded)) {
-              http_response_code(422);
-              echo json_encode(['status' => 'error', 'message' => 'Invalid template payload.']);
-              exit;
-          }
-          $fields = is_array($decoded['fields'] ?? null) ? array_values($decoded['fields']) : [];
-          $photoId = trim((string)($decoded['photo_id'] ?? ''));
-          $photoTitle = trim((string)($decoded['photo_title'] ?? ''));
-          $photoFilename = trim((string)($decoded['photo_filename'] ?? ''));
-          $store = loadGuestStore($storePath, $eventsRoot);
-          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
-          if ($eventIndex < 0) {
-              http_response_code(404);
-              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
-              exit;
-          }
-          $store['events'][$eventIndex]['invite_card_template'] = [
-              'photo_id' => $photoId,
-              'photo_title' => $photoTitle,
-              'photo_filename' => $photoFilename,
-              'fields' => $fields,
-              'updated_at' => date('c')
-          ];
-          $store['events'][$eventIndex]['updated_at'] = date('c');
-          if (!saveGuestStore($storePath, $store)) {
-              http_response_code(500);
-              echo json_encode(['status' => 'error', 'message' => 'Unable to persist invite card template.']);
-              exit;
-          }
-          echo json_encode([
-              'status' => 'ok',
-              'message' => 'Invite card template saved.',
-              'events' => normalizeEventsForResponse($store['events']),
-              'logs' => normalizeInviteLogs($store['logs'])
-          ]);
-          exit;
+        } elseif ($action === 'save_invite_card_template') {
+            $eventCode = trim((string)($_POST['event_code'] ?? ''));
+            $templatePayload = (string)($_POST['template'] ?? '');
+            if ($eventCode === '' || $templatePayload === '') {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Event code and template data are required.']);
+                exit;
+            }
+            $decoded = json_decode($templatePayload, true);
+            if (!is_array($decoded)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invalid template payload.']);
+                exit;
+            }
+            $fields = is_array($decoded['fields'] ?? null) ? array_values($decoded['fields']) : [];
+            $photoId = trim((string)($decoded['photo_id'] ?? ''));
+            $photoTitle = trim((string)($decoded['photo_title'] ?? ''));
+            $photoAlt = trim((string)($decoded['photo_alt'] ?? ''));
+            $photoFilename = trim((string)($decoded['photo_filename'] ?? ''));
+            $store = loadGuestStore($storePath, $eventsRoot);
+            $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+            if ($eventIndex < 0) {
+                http_response_code(404);
+                echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+                exit;
+            }
+            $eventDirName = getEventDirName($store['events'][$eventIndex]);
+            $templateData = [
+                'photo_id' => $photoId,
+                'photo_title' => $photoTitle,
+                'photo_filename' => $photoFilename,
+                'photo_alt' => $photoAlt,
+                'fields' => $fields,
+                'updated_at' => date('c')
+            ];
+            if ($photoFilename !== '') {
+                $photoPath = persistInviteCardTemplatePhoto($photoFilename, $eventDirName);
+                if ($photoPath !== null) {
+                    $templateData['photo_path'] = $photoPath;
+                }
+            }
+            $store['events'][$eventIndex]['invite_card_template'] = $templateData;
+            $store['events'][$eventIndex]['updated_at'] = date('c');
+            if (!saveGuestStore($storePath, $store)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to persist invite card template.']);
+                exit;
+            }
+            echo json_encode([
+                'status' => 'ok',
+                'message' => 'Invite card template saved.',
+                'events' => normalizeEventsForResponse($store['events']),
+                'logs' => normalizeInviteLogs($store['logs'])
+            ]);
+            exit;
       } elseif ($action === 'delete_event') {
           $eventCode = trim((string)($_POST['event_code'] ?? ''));
           if ($eventCode === '') {

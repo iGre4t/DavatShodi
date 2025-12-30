@@ -2426,6 +2426,7 @@ function buildInviteCardTemplatePayload() {
     photo_id: inviteCardSelectedPhoto?.id ?? "",
     photo_title: inviteCardSelectedPhoto?.title ?? "",
     photo_filename: inviteCardSelectedPhoto?.filename ?? "",
+    photo_alt: inviteCardSelectedPhoto?.altText ?? "",
     fields: collectInviteCardFieldData()
   };
 }
