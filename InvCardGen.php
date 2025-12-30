@@ -68,9 +68,34 @@
             <span>Font size (px)</span>
             <input data-field-size type="number" min="8" value="16" />
           </label>
-          <label class="field standard-width">
+          <label class="field standard-width color-picker-field">
             <span>Font color</span>
-            <input data-field-color type="color" value="#111111" />
+            <div class="appearance-input-group invite-color-field">
+              <input
+                type="text"
+                class="appearance-hex-field"
+                readonly
+                aria-label="Font color value for Name field"
+                data-style-color-hex="name"
+              />
+              <button
+                type="button"
+                class="appearance-preview color-picker-trigger"
+                data-style-color-trigger
+                data-style-field="name"
+                data-style-color-preview="name"
+                aria-label="باز کردن انتخاب رنگ برای Name"
+              ></button>
+              <button
+                type="button"
+                class="btn ghost small color-picker-trigger"
+                data-style-color-trigger
+                data-style-field="name"
+                aria-label="باز کردن انتخاب رنگ برای Name"
+              >
+                انتخاب رنگ
+              </button>
+            </div>
           </label>
         </div>
       </div>
@@ -139,9 +164,34 @@
             <span>Font size (px)</span>
             <input data-field-size type="number" min="8" value="16" />
           </label>
-          <label class="field standard-width">
+          <label class="field standard-width color-picker-field">
             <span>Font color</span>
-            <input data-field-color type="color" value="#111111" />
+            <div class="appearance-input-group invite-color-field">
+              <input
+                type="text"
+                class="appearance-hex-field"
+                readonly
+                aria-label="Font color value for National ID QR Code"
+                data-style-color-hex="national-id"
+              />
+              <button
+                type="button"
+                class="appearance-preview color-picker-trigger"
+                data-style-color-trigger
+                data-style-field="national-id"
+                data-style-color-preview="national-id"
+                aria-label="باز کردن انتخاب رنگ برای National ID QR Code"
+              ></button>
+              <button
+                type="button"
+                class="btn ghost small color-picker-trigger"
+                data-style-color-trigger
+                data-style-field="national-id"
+                aria-label="باز کردن انتخاب رنگ برای National ID QR Code"
+              >
+                انتخاب رنگ
+              </button>
+            </div>
           </label>
         </div>
       </div>
@@ -204,9 +254,34 @@
             <span>Font size (px)</span>
             <input data-field-size type="number" min="8" value="16" />
           </label>
-          <label class="field standard-width">
+          <label class="field standard-width color-picker-field">
             <span>Font color</span>
-            <input data-field-color type="color" value="#111111" />
+            <div class="appearance-input-group invite-color-field">
+              <input
+                type="text"
+                class="appearance-hex-field"
+                readonly
+                aria-label="Font color value for Guest code"
+                data-style-color-hex="guest-code"
+              />
+              <button
+                type="button"
+                class="appearance-preview color-picker-trigger"
+                data-style-color-trigger
+                data-style-field="guest-code"
+                data-style-color-preview="guest-code"
+                aria-label="باز کردن انتخاب رنگ برای Guest code"
+              ></button>
+              <button
+                type="button"
+                class="btn ghost small color-picker-trigger"
+                data-style-color-trigger
+                data-style-field="guest-code"
+                aria-label="باز کردن انتخاب رنگ برای Guest code"
+              >
+                انتخاب رنگ
+              </button>
+            </div>
           </label>
         </div>
       </div>

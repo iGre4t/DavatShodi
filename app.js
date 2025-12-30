@@ -74,6 +74,20 @@ const COLOR_PICKER_GRID = {
 };
 const appearancePickerGridState = {};
 let activeAppearancePickerKey = null;
+const STYLE_COLOR_PICKER_KEY = "__style_color_picker";
+const STYLE_COLOR_PICKER_HSL_BASE = APPEARANCE_HSL_BASE.text;
+const styleColorPickerGridState = {};
+let styleColorPickerContext = null;
+const styleFieldColorState = {
+  name: "#111111",
+  nationalId: "#111111",
+  guestCode: "#111111"
+};
+const STYLE_FIELD_KEY_MAP = {
+  name: "name",
+  "national-id": "nationalId",
+  "guest-code": "guestCode"
+};
 const SHARED_GENERAL_SETTINGS =
   typeof window !== "undefined" &&
   window.GENERAL_SETTINGS &&
@@ -1439,6 +1453,38 @@ function applyAppearancePalette(state, { persist = false } = {}) {
   return palette;
 }
 
+function getStyleFieldKey(dataKey) {
+  return STYLE_FIELD_KEY_MAP[dataKey] || dataKey;
+}
+
+function updateStyleColorPreview(fieldKey, color) {
+  const normalizedColor = ensureHexColor(color) || "#111111";
+  const preview = qs(`[data-style-color-preview="${fieldKey}"]`);
+  if (preview) {
+    preview.style.background = normalizedColor;
+  }
+  const hexInput = qs(`[data-style-color-hex="${fieldKey}"]`);
+  if (hexInput) {
+    hexInput.value = normalizedColor;
+  }
+}
+
+function openStyleColorPicker(fieldKey, initialColor, onChoose, title = "Choose color") {
+  const modal = qs("#appearance-picker-modal");
+  if (!modal) {
+    return;
+  }
+  styleColorPickerContext = {
+    color: ensureHexColor(initialColor) || "#111111",
+    onChoose: typeof onChoose === "function" ? onChoose : null,
+    title
+  };
+  activeAppearancePickerKey = null;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  refreshModalPicker(null, styleColorPickerContext.color);
+}
+
 function refreshFieldValue(key, color) {
   const normalized = ensureHexColor(color) || DEFAULT_APPEARANCE[key];
   const input = qs(`[data-appearance-hex="${key}"]`);
@@ -1454,31 +1500,37 @@ function refreshFieldValue(key, color) {
 function refreshModalPicker(key, color) {
   const modal = qs("#appearance-picker-modal");
   const picker = qs("[data-appearance-modal-picker]");
-  if (!modal || !picker || !key) {
+  const isStyleMode = !key && Boolean(styleColorPickerContext);
+  if (!modal || !picker || (!key && !styleColorPickerContext)) {
     return;
   }
-  const normalized = ensureHexColor(color) || DEFAULT_APPEARANCE[key];
+  const contextKey = key || STYLE_COLOR_PICKER_KEY;
+  const normalizedColor = ensureHexColor(isStyleMode ? styleColorPickerContext.color : color) || (key ? DEFAULT_APPEARANCE[key] : styleColorPickerContext?.color || "#111111");
+  const gridStateMap = isStyleMode ? styleColorPickerGridState : appearancePickerGridState;
+  const base = isStyleMode ? STYLE_COLOR_PICKER_HSL_BASE : APPEARANCE_HSL_BASE[key];
+  const gridState = gridStateMap[contextKey] || normalizeGridHsl(base, isStyleMode ? "text" : key);
+  gridStateMap[contextKey] = gridState;
   const handle = picker.querySelector(".default-color-picker__handle");
   const slider = picker.querySelector("input[type='range']");
-  const gridState = appearancePickerGridState[key] || normalizeGridHsl(APPEARANCE_HSL_BASE[key], key);
-  appearancePickerGridState[key] = gridState;
   const handleCoords = gridCoordsFromHsl(gridState);
   if (handle) {
-    handle.style.background = normalized;
+    handle.style.background = normalizedColor;
     handle.style.left = `${handleCoords.x * 100}%`;
     handle.style.top = `${handleCoords.y * 100}%`;
   }
   if (slider) {
-    const hue = getHueFromColor(normalized);
+    const hue = getHueFromColor(normalizedColor);
     slider.value = hue;
-    const accent = adjustHexLightness(normalized, 0.18) || normalized;
-    slider.style.setProperty("--slider-thumb", normalized);
-    picker.style.setProperty("--picker-base", normalized);
+    const accent = adjustHexLightness(normalizedColor, 0.18) || normalizedColor;
+    slider.style.setProperty("--slider-thumb", normalizedColor);
+    picker.style.setProperty("--picker-base", normalizedColor);
     picker.style.setProperty("--picker-accent", accent);
   }
   const title = qs("#appearance-picker-title");
   if (title) {
-    title.textContent = APPEARANCE_LABELS[key] || "Choose color";
+    title.textContent = isStyleMode
+      ? styleColorPickerContext?.title || "Choose color"
+      : APPEARANCE_LABELS[key] || "Choose color";
   }
 }
 
@@ -1535,6 +1587,7 @@ function closeColorPickerModal() {
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   activeAppearancePickerKey = null;
+  styleColorPickerContext = null;
 }
 
 function initAppearanceControls() {
@@ -1574,31 +1627,57 @@ function initAppearanceControls() {
   const modalPicker = qs("[data-appearance-modal-picker]");
   const slider = modalPicker?.querySelector("input[type='range']");
   slider?.addEventListener("input", () => {
+    const hue = Number(slider.value) || 0;
+    if (styleColorPickerContext) {
+      const gridHsl =
+        styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] ||
+        normalizeGridHsl(STYLE_COLOR_PICKER_HSL_BASE, "text");
+      const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
+      styleColorPickerContext.color = nextColor;
+      styleColorPickerContext.onChoose?.(nextColor);
+      refreshModalPicker(null, nextColor);
+      return;
+    }
     if (!activeAppearancePickerKey) {
       return;
     }
-    const hue = Number(slider.value) || 0;
-    const gridHsl = appearancePickerGridState[activeAppearancePickerKey] || normalizeGridHsl(APPEARANCE_HSL_BASE[activeAppearancePickerKey], activeAppearancePickerKey);
+    const gridHsl =
+      appearancePickerGridState[activeAppearancePickerKey] ||
+      normalizeGridHsl(APPEARANCE_HSL_BASE[activeAppearancePickerKey], activeAppearancePickerKey);
     const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
     updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
   });
   const pickerGrid = modalPicker?.querySelector(".default-color-picker__grid");
   let isPickerDragging = false;
   const handleGridInteraction = (event) => {
-    if (!pickerGrid || !activeAppearancePickerKey) {
+    if (!pickerGrid) {
       return;
     }
     const rect = pickerGrid.getBoundingClientRect();
     const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
     const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
     const { s, l } = hslFromGridCoords({ x, y });
+    if (styleColorPickerContext) {
+      styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] = { s, l };
+      const hue =
+        Number(slider?.value ?? getHueFromColor(styleColorPickerContext.color)) || 0;
+      const nextColor = hslToHex({ h: hue, s, l });
+      styleColorPickerContext.color = nextColor;
+      styleColorPickerContext.onChoose?.(nextColor);
+      refreshModalPicker(null, nextColor);
+      return;
+    }
+    if (!activeAppearancePickerKey) {
+      return;
+    }
     appearancePickerGridState[activeAppearancePickerKey] = { s, l };
-    const hue = Number(slider?.value ?? getHueFromColor(currentAppearanceState[activeAppearancePickerKey])) || 0;
+    const hue =
+      Number(slider?.value ?? getHueFromColor(currentAppearanceState[activeAppearancePickerKey])) || 0;
     const nextColor = hslToHex({ h: hue, s, l });
     updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
   };
   pickerGrid?.addEventListener("pointerdown", (event) => {
-    if (!activeAppearancePickerKey) {
+    if (!activeAppearancePickerKey && !styleColorPickerContext) {
       return;
     }
     isPickerDragging = true;
@@ -2244,6 +2323,29 @@ function initializeFieldControllers() {
     typeSelect.addEventListener("change", update);
     typeSelect.addEventListener("input", update);
     update();
+  });
+}
+
+function initStyleColorPickers() {
+  qsa("[data-style-color-trigger]").forEach((trigger) => {
+    const fieldAttr = trigger.dataset.styleField;
+    if (!fieldAttr) {
+      return;
+    }
+    const stateKey = getStyleFieldKey(fieldAttr);
+    const applyColor = (nextColor) => {
+      styleFieldColorState[stateKey] = ensureHexColor(nextColor) || "#111111";
+      updateStyleColorPreview(fieldAttr, styleFieldColorState[stateKey]);
+    };
+    applyColor(styleFieldColorState[stateKey]);
+    trigger.addEventListener("click", () => {
+      openStyleColorPicker(
+        stateKey,
+        styleFieldColorState[stateKey],
+        (nextColor) => applyColor(nextColor),
+        `Font color (${fieldAttr})`
+      );
+    });
   });
 }
 
@@ -4022,6 +4124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   updateInviteCardPhotoPreview();
   initializeFieldControllers();
+  initStyleColorPickers();
   // Handles form submissions by updating the local state and syncing back to the server.
   qs('#user-form')?.addEventListener('submit', (e) => {
     e.preventDefault();

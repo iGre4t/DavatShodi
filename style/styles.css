@@ -150,7 +150,7 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   grid-template-columns: 1fr;
 }
 .tab#tab-invite-card .form.grid.one-column {
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
 }
 .tab#tab-invite-card .card {
@@ -189,6 +189,24 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   color: var(--muted);
   font-weight: 600;
 }
+.color-picker-field {
+  margin-bottom: 0;
+}
+.color-picker-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #111;
+  flex-shrink: 0;
+}
 .coordinate-group input {
   grid-column: span 2;
 }
@@ -225,6 +243,10 @@ input[type="text"], input[type="password"], input[type="email"], input[type="sea
   padding: 12px 14px;
   font-size: 15px;
   outline: none;
+}
+select {
+  padding-right: 34px;
+  padding-inline-end: 48px;
 }
 select {
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
@@ -475,6 +497,21 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+.appearance-input-group.invite-color-field {
+  gap: 10px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+.appearance-input-group.invite-color-field .appearance-hex-field {
+  flex: 1;
+  max-width: 220px;
+}
+.appearance-input-group.invite-color-field .appearance-preview {
+  flex-shrink: 0;
+}
+.appearance-input-group.invite-color-field .btn.small {
+  min-width: 110px;
 }
 .appearance-hex-field {
   width: 150px;
