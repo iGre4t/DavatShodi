@@ -4015,21 +4015,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       allowMultiple: false,
       initialSelection: inviteCardSelectedPhoto ? [inviteCardSelectedPhoto.id] : [],
       onChoose: (selectedPhotos = []) => {
-        const nextPhoto = selectedPhotos[0] ?? null;
-        if (!nextPhoto || inviteCardPhotoMapping?.photoId !== nextPhoto.id) {
-          inviteCardPhotoMapping = null;
-          if (inviteCardMapSelectionInput) {
-            inviteCardMapSelectionInput.value = "";
-          }
-        }
-        inviteCardSelectedPhoto = nextPhoto;
+        inviteCardSelectedPhoto = selectedPhotos[0] ?? null;
         updateInviteCardPhotoPreview();
-        updateInviteCardMapInfo();
       }
     });
   });
   updateInviteCardPhotoPreview();
-  updateInviteCardMapInfo();
   initializeFieldControllers();
   // Handles form submissions by updating the local state and syncing back to the server.
   qs('#user-form')?.addEventListener('submit', (e) => {
