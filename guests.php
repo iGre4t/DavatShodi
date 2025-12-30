@@ -457,6 +457,7 @@
                   style="flex:1 1 180px;"
                 />
                 <select id="edit-time-exited" name="time_exited" class="field" style="flex:0 0 120px;"></select>
+                <button type="button" class="btn ghost" id="edit-now-exit-btn" style="flex:0 0 auto;">Current date and time</button>
                 <button type="button" class="btn ghost" id="edit-clear-exit-btn" style="flex:0 0 auto;">Remove</button>
               </div>
             </label>
@@ -589,6 +590,7 @@
     const editTimeExitedInput = document.getElementById("edit-time-exited");
     const editNowButton = document.getElementById("edit-now-btn");
     const editClearExitButton = document.getElementById("edit-clear-exit-btn");
+    const editNowExitButton = document.getElementById("edit-now-exit-btn");
     let editContext = null;
     const manualModal = document.getElementById("guest-manual-modal");
     const manualCloseButtons = $qsa("[data-guest-manual-close]", manualModal || document);
@@ -2263,6 +2265,15 @@
         const sec = String(now.getSeconds()).padStart(2, "0");
         editDateEnteredInput.value = getNowJalaliDate();
         ensureSelectHasTime(editTimeEnteredInput, `${hh}:${min}:${sec}`);
+      });
+
+      editNowExitButton?.addEventListener("click", () => {
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, "0");
+        const min = String(now.getMinutes()).padStart(2, "0");
+        const sec = String(now.getSeconds()).padStart(2, "0");
+        editDateExitedInput.value = getNowJalaliDate();
+        ensureSelectHasTime(editTimeExitedInput, `${hh}:${min}:${sec}`);
       });
 
       editClearEnteredButton?.addEventListener("click", () => {
