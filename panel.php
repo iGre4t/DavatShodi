@@ -1015,6 +1015,7 @@ $accountEmail = $currentUser['email'] ?? '';
     <script>
       window.__CURRENT_USER_NAME = <?= json_encode($topbarUserName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     </script>
+    <script src="scripts/invite-card-renderer.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
