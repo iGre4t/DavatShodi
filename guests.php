@@ -576,12 +576,15 @@
     let activeEventCode = "";
     let manualLockedEventCode = "";
     const inviteCardFieldDefaults = {};
-    const inviteCardPrefixContainer = document.querySelector("[data-prefix-container]");
-    const inviteCardPrefixPlaceholder = document.querySelector("[data-invite-prefix-placeholder]");
-    const inviteCardGenderSelect = document.querySelector("[data-invite-card-gender]");
+    const prefixStyleColorState = {};
+    const prefixStyleFontOptions = ["PeydaWebFaNum", "PeydaWebFaNum-Bold", "remixicon"];
+    const prefixStyleWeightOptions = ["400", "500", "600", "700"];
     let lastInviteCardTemplateSignature = "";
     let lastInviteCardPrefixGenders = null;
     let lastInviteCardGenderOptions = null;
+    const inviteCardPrefixContainer = document.querySelector("[data-prefix-container]");
+    const inviteCardPrefixPlaceholder = document.querySelector("[data-invite-prefix-placeholder]");
+    const inviteCardGenderSelect = document.querySelector("[data-invite-card-gender]");
 
     const uploadForm = document.getElementById("guest-upload-form");
     const uploadSubmit = document.getElementById("guest-upload-submit");
@@ -2053,7 +2056,66 @@
       inviteCardGenderSelect.disabled = normalizedGenders.length === 0;
     }
 
-    function renderInviteCardPrefixInputs(genders, prefixes = {}, force = false) {
+    function getPrefixStyleStateKey(gender) {
+      const normalized = (gender ?? "").trim();
+      return normalized ? `prefix-${normalized}` : "prefix";
+    }
+
+    function updatePrefixStyleColorPreview(stateKey, color) {
+      const normalizedColor = ensureHexColor(color) || "#111111";
+      const preview = inviteCardPrefixContainer?.querySelector(
+        `[data-prefix-style-color-preview="${stateKey}"]`
+      );
+      if (preview) {
+        preview.style.background = normalizedColor;
+      }
+      const hexInput = inviteCardPrefixContainer?.querySelector(
+        `[data-prefix-style-color-hex="${stateKey}"]`
+      );
+      if (hexInput) {
+        hexInput.value = normalizedColor;
+      }
+    }
+
+    function initPrefixStyleColorPickers() {
+      inviteCardPrefixContainer?.querySelectorAll("[data-prefix-style-color-trigger]").forEach((trigger) => {
+        const gender = (trigger.dataset.prefixStyleGender ?? "").trim();
+        const stateKey = trigger.dataset.prefixStyleColorField;
+        if (!stateKey) {
+          return;
+        }
+        const applyColor = (nextColor) => {
+          prefixStyleColorState[stateKey] = ensureHexColor(nextColor) || "#111111";
+          updatePrefixStyleColorPreview(stateKey, prefixStyleColorState[stateKey]);
+        };
+        applyColor(prefixStyleColorState[stateKey] ?? "#111111");
+        trigger.addEventListener("click", () => {
+          openStyleColorPicker(
+            stateKey,
+            prefixStyleColorState[stateKey],
+            (nextColor) => applyColor(nextColor),
+            `Font color (prefix for ${gender || "Guest"})`
+          );
+        });
+      });
+    }
+
+    function getNameFieldFontSizeValue() {
+      const nameBlock = findInviteCardFieldBlock("name");
+      return nameBlock?.querySelector("[data-field-size]")?.value ?? "";
+    }
+
+    function syncPrefixFontSizes() {
+      if (!inviteCardPrefixContainer) {
+        return;
+      }
+      const sizeValue = getNameFieldFontSizeValue();
+      inviteCardPrefixContainer.querySelectorAll("[data-prefix-style-size]").forEach((input) => {
+        input.value = sizeValue;
+      });
+    }
+
+    function renderInviteCardPrefixInputs(genders, prefixes = {}, styles = {}, force = false) {
       if (!inviteCardPrefixContainer) {
         return;
       }
@@ -2070,30 +2132,147 @@
       }
       lastInviteCardPrefixGenders = normalizedGenders;
       inviteCardPrefixContainer.innerHTML = "";
+      Object.keys(prefixStyleColorState).forEach((key) => delete prefixStyleColorState[key]);
       if (!normalizedGenders.length) {
         inviteCardPrefixPlaceholder?.classList.remove("hidden");
         return;
       }
       inviteCardPrefixPlaceholder?.classList.add("hidden");
+      const normalizedPrefixes = {};
+      Object.entries(prefixes || {}).forEach(([rawGender, value]) => {
+        const normalizedGender = (rawGender ?? "").trim();
+        if (!normalizedGender) return;
+        normalizedPrefixes[normalizedGender] = value ?? "";
+      });
+      const normalizedStyles = {};
+      Object.entries(styles || {}).forEach(([rawGender, value]) => {
+        const normalizedGender = (rawGender ?? "").trim();
+        if (!normalizedGender) return;
+        normalizedStyles[normalizedGender] = value || {};
+      });
       normalizedGenders.forEach((gender) => {
-        const row = document.createElement("label");
-        row.className = "field standard-width invite-card-prefix-row";
+        const prefixValue = normalizedPrefixes[gender] ?? "";
+        const styleValue = normalizedStyles[gender] ?? {};
+        const fontFamily = styleValue.fontFamily || prefixStyleFontOptions[0];
+        const fontWeight = styleValue.fontWeight || prefixStyleWeightOptions[0];
+        const fontSizeRaw =
+          typeof styleValue.fontSize !== "undefined"
+            ? styleValue.fontSize
+            : styleValue.font_size;
+        const fontSizeValue =
+          fontSizeRaw !== null && typeof fontSizeRaw !== "undefined" ? String(fontSizeRaw) : "";
+        const colorValue = ensureHexColor(styleValue.color) || "#111111";
+        const stateKey = getPrefixStyleStateKey(gender);
+        const row = document.createElement("div");
+        row.className = "invite-card-prefix-row";
+
+        const label = document.createElement("label");
+        label.className = "field standard-width invite-card-prefix-input";
         const span = document.createElement("span");
         span.textContent = `Prefix for ${gender}`;
         const input = document.createElement("input");
         input.type = "text";
         input.dataset.prefixInput = "";
         input.dataset.prefixGender = gender;
-        input.value = prefixes[gender] ?? "";
-        row.appendChild(span);
-        row.appendChild(input);
+        input.value = prefixValue;
+        label.appendChild(span);
+        label.appendChild(input);
+        row.appendChild(label);
+
+        const styleController = document.createElement("div");
+        styleController.className = "style-controller invite-card-prefix-style";
+        styleController.dataset.prefixStyleController = gender;
+        styleController.dataset.prefixStyleGender = gender;
+
+        const fontLabel = document.createElement("label");
+        fontLabel.className = "field standard-width";
+        const fontSpan = document.createElement("span");
+        fontSpan.textContent = "Font";
+        const fontSelect = document.createElement("select");
+        fontSelect.dataset.prefixStyleFont = "";
+        prefixStyleFontOptions.forEach((optionValue) => {
+          const option = document.createElement("option");
+          option.value = optionValue;
+          option.textContent = optionValue;
+          if (optionValue === fontFamily) {
+            option.selected = true;
+          }
+          fontSelect.appendChild(option);
+        });
+        fontLabel.appendChild(fontSpan);
+        fontLabel.appendChild(fontSelect);
+
+        const weightLabel = document.createElement("label");
+        weightLabel.className = "field standard-width";
+        const weightSpan = document.createElement("span");
+        weightSpan.textContent = "Font weight";
+        const weightSelect = document.createElement("select");
+        weightSelect.dataset.prefixStyleWeight = "";
+        prefixStyleWeightOptions.forEach((optionValue) => {
+          const option = document.createElement("option");
+          option.value = optionValue;
+          option.textContent = optionValue;
+          if (optionValue === fontWeight) {
+            option.selected = true;
+          }
+          weightSelect.appendChild(option);
+        });
+        weightLabel.appendChild(weightSpan);
+        weightLabel.appendChild(weightSelect);
+
+        const sizeLabel = document.createElement("label");
+        sizeLabel.className = "field standard-width";
+        const sizeSpan = document.createElement("span");
+        sizeSpan.textContent = "Font size (px)";
+        const sizeInput = document.createElement("input");
+        sizeInput.type = "number";
+        sizeInput.min = "8";
+        sizeInput.disabled = true;
+        sizeInput.dataset.prefixStyleSize = "";
+        sizeInput.value = fontSizeValue;
+        sizeLabel.appendChild(sizeSpan);
+        sizeLabel.appendChild(sizeInput);
+
+        const colorLabel = document.createElement("label");
+        colorLabel.className = "field standard-width color-picker-field";
+        const colorSpan = document.createElement("span");
+        colorSpan.textContent = "Font color";
+        const colorGroup = document.createElement("div");
+        colorGroup.className = "appearance-input-group invite-color-field";
+        const colorHex = document.createElement("input");
+        colorHex.type = "text";
+        colorHex.className = "appearance-hex-field";
+        colorHex.readOnly = true;
+        colorHex.dataset.prefixStyleColorHex = stateKey;
+        const colorButton = document.createElement("button");
+        colorButton.type = "button";
+        colorButton.className = "appearance-preview color-picker-trigger";
+        colorButton.dataset.prefixStyleColorTrigger = "";
+        colorButton.dataset.prefixStyleColorField = stateKey;
+        colorButton.dataset.prefixStyleColorPreview = stateKey;
+        colorButton.dataset.prefixStyleGender = gender;
+        colorButton.setAttribute("aria-label", `Select color for prefix of ${gender}`);
+        colorGroup.appendChild(colorHex);
+        colorGroup.appendChild(colorButton);
+        colorLabel.appendChild(colorSpan);
+        colorLabel.appendChild(colorGroup);
+
+        styleController.appendChild(fontLabel);
+        styleController.appendChild(weightLabel);
+        styleController.appendChild(sizeLabel);
+        styleController.appendChild(colorLabel);
+        row.appendChild(styleController);
+
         inviteCardPrefixContainer.appendChild(row);
-      });
-      inviteCardPrefixContainer.querySelectorAll("[data-prefix-input]").forEach((input) => {
+        prefixStyleColorState[stateKey] = colorValue;
+        updatePrefixStyleColorPreview(stateKey, colorValue);
+
         input.addEventListener("input", () => {
           refreshInviteCardActionState?.();
         });
       });
+      initPrefixStyleColorPickers();
+      syncPrefixFontSizes();
     }
 
     function readInviteCardGenderPrefixes() {
@@ -2107,6 +2286,31 @@
           return;
         }
         result[gender] = (input.value ?? "").trim();
+      });
+      return result;
+    }
+
+    function readInviteCardPrefixStyles() {
+      const result = {};
+      if (!inviteCardPrefixContainer) {
+        return result;
+      }
+      inviteCardPrefixContainer.querySelectorAll("[data-prefix-style-controller]").forEach((controller) => {
+        const gender = (controller.dataset.prefixStyleGender ?? "").trim();
+        if (!gender) {
+          return;
+        }
+        const fontFamily = controller.querySelector("[data-prefix-style-font]")?.value || prefixStyleFontOptions[0];
+        const fontWeight = controller.querySelector("[data-prefix-style-weight]")?.value || prefixStyleWeightOptions[0];
+        const sizeValue = controller.querySelector("[data-prefix-style-size]")?.value ?? "";
+        const parsedSize = Number.parseFloat(sizeValue);
+        const colorValue = controller.querySelector("[data-prefix-style-color-hex]")?.value ?? "";
+        result[gender] = {
+          fontFamily,
+          fontWeight,
+          fontSize: Number.isFinite(parsedSize) ? parsedSize : null,
+          color: ensureHexColor(colorValue) || "#111111"
+        };
       });
       return result;
     }
@@ -2127,15 +2331,18 @@
     function prepareInviteCardGenderControls(template = null, force = false) {
       const genders = getAvailableGenders();
       const prefixes = template?.gender_prefixes ?? {};
+      const prefixStyles = template?.gender_prefix_styles ?? {};
       const previewGender = (template?.preview_gender ?? "") || "";
       renderInviteCardGenderDropdown(genders, previewGender, force);
-      renderInviteCardPrefixInputs(genders, prefixes, force);
+      renderInviteCardPrefixInputs(genders, prefixes, prefixStyles, force);
     }
 
     if (typeof window === "object" && window) {
       window.getNamePrefixForGender = getNamePrefixForGender;
       window.getSelectedPreviewGender = getSelectedPreviewGender;
       window.readInviteCardGenderPrefixes = readInviteCardGenderPrefixes;
+      window.readInviteCardPrefixStyles = readInviteCardPrefixStyles;
+      window.syncPrefixFontSizes = syncPrefixFontSizes;
     }
 
     function buildQuarterHourOptions(select) {
@@ -2563,12 +2770,13 @@
           colorState[colorKey] = colorValue;
         }
         updateStyleColorPreview?.(fieldId, colorValue);
-        updateFieldStyleState?.(block);
-      });
-      inviteCardSelectedPhoto = null;
-      updateInviteCardPhotoPreview?.();
-      resetInviteCardPreviewState?.();
-      refreshInviteCardActionState?.();
+      updateFieldStyleState?.(block);
+    });
+    inviteCardSelectedPhoto = null;
+    updateInviteCardPhotoPreview?.();
+    resetInviteCardPreviewState?.();
+    syncPrefixFontSizes();
+    refreshInviteCardActionState?.();
     }
 
     function applyTemplateField(field) {
@@ -2667,6 +2875,7 @@
       }
       updateInviteCardPhotoPreview?.();
       template.fields.forEach(field => applyTemplateField(field));
+      syncPrefixFontSizes();
       refreshInviteCardActionState?.();
     }
 

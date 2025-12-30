@@ -66,7 +66,7 @@ $previewText = 'کلاغ پیر رفت به گردش';
   }
 </style>
 <section id="tab-typography" class="tab">
-  <div class="cards">
+  <div class="cards cards--single-column">
     <div class="card">
       <div class="table-header">
         <h3>Upload font</h3>

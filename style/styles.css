@@ -171,13 +171,27 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
 }
 #tab-invite-card .invite-card-prefix-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
-#tab-invite-card .invite-card-prefix-row input {
-  flex: 1 1 auto;
-  min-width: 120px;
+#tab-invite-card .invite-card-prefix-input {
+  width: 100%;
+}
+#tab-invite-card .invite-card-prefix-input input {
+  width: 100%;
+}
+#tab-invite-card .invite-card-prefix-style {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+#tab-invite-card .invite-card-prefix-style .field.standard-width {
+  min-width: 140px;
+}
+#tab-invite-card .invite-card-prefix-style .color-picker-field {
+  min-width: 190px;
 }
 #tab-invite-card .invite-card-generator {
   margin-top: 16px;

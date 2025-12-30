@@ -2454,6 +2454,13 @@ function queryInviteCardGenderPrefixes() {
   return {};
 }
 
+function queryInviteCardPrefixStyles() {
+  if (typeof window !== "undefined" && typeof window.readInviteCardPrefixStyles === "function") {
+    return window.readInviteCardPrefixStyles();
+  }
+  return {};
+}
+
 function buildInviteCardTemplatePayload() {
   return {
     photo_id: inviteCardSelectedPhoto?.id ?? "",
@@ -2462,6 +2469,7 @@ function buildInviteCardTemplatePayload() {
     photo_alt: inviteCardSelectedPhoto?.altText ?? "",
     fields: collectInviteCardFieldData(),
     gender_prefixes: queryInviteCardGenderPrefixes(),
+    gender_prefix_styles: queryInviteCardPrefixStyles(),
     preview_gender: querySelectedPreviewGender()
   };
 }
@@ -2499,6 +2507,13 @@ function handleInviteCardFieldInteraction(event) {
   }
   if (!event.target.closest("[data-field-block]")) {
     return;
+  }
+  const isNameSizeInput =
+    event.target instanceof HTMLInputElement &&
+    event.target.matches("[data-field-size]") &&
+    event.target.closest('[data-field-block="name"]');
+  if (isNameSizeInput) {
+    window.syncPrefixFontSizes?.();
   }
   refreshInviteCardActionState();
 }

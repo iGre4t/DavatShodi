@@ -581,6 +581,29 @@ if ($method === 'POST') {
                 }
                 $prefixes[$normalizedGender] = trim((string)$value);
             }
+            $prefixStyles = [];
+            foreach ((array)($decoded['gender_prefix_styles'] ?? []) as $gender => $styleData) {
+                $normalizedGender = trim((string)$gender);
+                if ($normalizedGender === '' || !is_array($styleData)) {
+                    continue;
+                }
+                $fontFamily = trim((string)($styleData['fontFamily'] ?? $styleData['font_family'] ?? ''));
+                $fontWeight = trim((string)($styleData['fontWeight'] ?? $styleData['font_weight'] ?? ''));
+                $rawSize = $styleData['fontSize'] ?? $styleData['font_size'] ?? null;
+                $fontSizeValue = null;
+                if (is_numeric($rawSize)) {
+                    $fontSizeValue = (float)$rawSize;
+                } elseif (is_string($rawSize) && preg_match('/^\d+(\.\d+)?$/', $rawSize)) {
+                    $fontSizeValue = (float)$rawSize;
+                }
+                $color = trim((string)($styleData['color'] ?? ''));
+                $prefixStyles[$normalizedGender] = [
+                    'fontFamily' => $fontFamily,
+                    'fontWeight' => $fontWeight,
+                    'fontSize' => $fontSizeValue,
+                    'color' => $color
+                ];
+            }
             $store = loadGuestStore($storePath, $eventsRoot);
             $eventIndex = findEventIndexByCode($store['events'], $eventCode);
             if ($eventIndex < 0) {
@@ -596,6 +619,7 @@ if ($method === 'POST') {
                 'photo_alt' => $photoAlt,
                 'fields' => $fields,
                 'gender_prefixes' => $prefixes,
+                'gender_prefix_styles' => $prefixStyles,
                 'preview_gender' => $previewGender,
                 'updated_at' => date('c')
             ];
