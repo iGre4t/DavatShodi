@@ -486,17 +486,28 @@ if ($method === 'POST') {
           }
           $event = $store['events'][$eventIndex];
           $eventDir = getEventDir($event, $eventsRoot);
-          $invRoot = __DIR__ . '/../inv';
-          $invEventDir = $invRoot . '/' . $eventCode;
           if (!deleteDirectoryWithinRoot($eventDir, $eventsRoot)) {
               http_response_code(500);
               echo json_encode(['status' => 'error', 'message' => 'Failed to remove event files.']);
               exit;
           }
-          if (!deleteDirectoryWithinRoot($invEventDir, $invRoot)) {
-              http_response_code(500);
-              echo json_encode(['status' => 'error', 'message' => 'Failed to remove invite directories for the event.']);
-              exit;
+          $invRoot = __DIR__ . '/../inv';
+          $guestCodes = [];
+          foreach ($event['guests'] ?? [] as $guest) {
+              $code = normalizeInviteCodeDigits((string)($guest['invite_code'] ?? ''));
+              if ($code === '') {
+                  continue;
+              }
+              $guestCodes[] = $code;
+          }
+          $guestCodes = array_values(array_unique($guestCodes));
+          foreach ($guestCodes as $code) {
+              $codeDir = $invRoot . '/' . $code;
+              if (!deleteDirectoryWithinRoot($codeDir, $invRoot)) {
+                  http_response_code(500);
+                  echo json_encode(['status' => 'error', 'message' => "Failed to remove invite directory for code {$code}."]);
+                  exit;
+              }
           }
           array_splice($store['events'], $eventIndex, 1);
           if (trim((string)($store['active_event_code'] ?? '')) === $eventCode) {
@@ -1311,14 +1322,6 @@ function createGuestInvitePages(array $guests, string $eventCode): void
             return;
         }
     }
-    $eventCode = trim($eventCode);
-    if ($eventCode === '') {
-        $eventCode = 'event';
-    }
-    $eventInvRoot = $invRoot . '/' . $eventCode;
-    if (!is_dir($eventInvRoot) && !mkdir($eventInvRoot, 0755, true) && !is_dir($eventInvRoot)) {
-        return;
-    }
     $imageName = 'Invite Card Picture.jpg';
     $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
     $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
@@ -1334,7 +1337,7 @@ function createGuestInvitePages(array $guests, string $eventCode): void
         if ($code === '') {
             continue;
         }
-        $guestDir = $eventInvRoot . '/' . $code;
+        $guestDir = $invRoot . '/' . $code;
         if (!is_dir($guestDir) && !@mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
             error_log('Unable to create invite directory for ' . $code);
             continue;

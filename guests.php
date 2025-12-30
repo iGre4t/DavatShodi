@@ -1151,8 +1151,10 @@
         state.eventDate = date;
         populateMappingSelects(parsed.columns);
         hideCardProgress();
-        hideMappingProgress();
-        showModal(mappingModal);
+        requestAnimationFrame(() => {
+          hideMappingProgress();
+          showModal(mappingModal);
+        });
       } catch (error) {
         hideCardProgress();
         showErrorSnackbar?.({ message: error?.message || "Failed to read the uploaded file." });
