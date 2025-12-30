@@ -947,6 +947,54 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
   background: transparent;
   cursor: pointer;
 }
+/* Default top tab list style (named 'default top tab list') */
+.default-top-tab-list {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.default-top-tab-list::-webkit-scrollbar {
+  height: 6px;
+}
+.default-top-tab-list::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.3);
+  border-radius: 999px;
+}
+.default-top-tab-list__tab {
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 12px 12px 0 0;
+  padding: 10px 18px;
+  background: #f5f5f5;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.default-top-tab-list__tab:hover,
+.default-top-tab-list__tab:focus-visible {
+  background: #fff;
+  border-color: var(--border);
+  outline: none;
+}
+.default-top-tab-list__tab.active,
+.default-top-tab-list__tab[aria-selected="true"] {
+  background: #fff;
+  border-color: var(--border);
+  border-bottom-color: #fff;
+  color: var(--primary-600);
+  box-shadow: 0 -2px 0 0 var(--primary-600) inset;
+}
 .nav-icon {
   width: 22px;
   height: 22px;

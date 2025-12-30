@@ -56,7 +56,12 @@ $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['pan
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$drawEventCode = trim((string)($_GET['event_code'] ?? ''));
+$drawEventCode = '';
+if (defined('EVENT_SCOPED_EVENT_CODE')) {
+  $drawEventCode = trim((string)EVENT_SCOPED_EVENT_CODE);
+} else {
+  $drawEventCode = trim((string)($_GET['event_code'] ?? ''));
+}
 $drawEventCode = preg_replace('/[^A-Za-z0-9_-]+/', '', $drawEventCode);
 
 if ($method === 'POST') {

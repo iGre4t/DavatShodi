@@ -558,6 +558,11 @@ if ($method === 'POST') {
         echo json_encode(['status' => 'error', 'message' => 'Unable to create event directory.']);
         exit;
     }
+    if (!ensureEventEntryPoints($eventDir, $eventCode)) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Unable to prepare event draw/prize pages.']);
+        exit;
+    }
 
     $uploadedFileInfo = null;
     if (isset($_FILES['guest_file']) && is_array($_FILES['guest_file'])) {
@@ -800,6 +805,11 @@ function ensureEventPurelistFiles(array &$events, string $eventsRoot): void
         if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
             continue;
         }
+        $candidateCode = trim((string)($event['code'] ?? ''));
+        if ($candidateCode === '') {
+            $candidateCode = getEventDirName($event);
+        }
+        ensureEventEntryPoints($eventDir, $candidateCode);
         $purelistPath = $eventDir . '/purelist.csv';
         if (is_file($purelistPath)) {
             continue;
@@ -807,6 +817,36 @@ function ensureEventPurelistFiles(array &$events, string $eventsRoot): void
         syncEventPurelist($event, $eventsRoot);
     }
     unset($event);
+}
+
+function ensureEventEntryPoints(string $eventDir, string $eventCode = ''): bool
+{
+    $eventCode = trim((string)$eventCode);
+    if ($eventCode === '') {
+        $eventCode = basename(trim((string)$eventDir));
+    }
+    if ($eventCode === '') {
+        return false;
+    }
+    if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
+        return false;
+    }
+    $drawPath = $eventDir . '/draw.php';
+    $prizePath = $eventDir . '/prizes.php';
+    $drawWritten = writeEventEntryPoint($drawPath, $eventCode, 'draw.php');
+    $prizeWritten = writeEventEntryPoint($prizePath, $eventCode, 'prizes.php');
+    return $drawWritten && $prizeWritten;
+}
+
+function writeEventEntryPoint(string $filePath, string $eventCode, string $targetScript): bool
+{
+    $eventCode = trim((string)$eventCode);
+    if ($eventCode === '') {
+        return false;
+    }
+    $exportedCode = var_export($eventCode, true);
+    $content = "<?php\nif (!defined('EVENT_SCOPED_EVENT_CODE')) {\n    define('EVENT_SCOPED_EVENT_CODE', {$exportedCode});\n}\nrequire dirname(dirname(__DIR__)) . '/{$targetScript}';\n";
+    return file_put_contents($filePath, $content) !== false;
 }
 
 function normalizeFilesystemPath(string $path): string

@@ -92,13 +92,14 @@
           </div>
         </div>
 
+      </div>
+      <div class="sub-pane" data-pane="guest-event-pane">
         <div class="card">
           <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
             <div>
               <h3>Event info</h3>
               <p class="muted small">Update the selected event's name and date.</p>
             </div>
-            <button type="submit" class="btn primary" id="event-info-save" form="event-info-form">Save event</button>
           </div>
           <form id="event-info-form" class="form">
             <div class="form" style="max-width: 420px; gap: 12px;">
@@ -124,6 +125,9 @@
                   required
                 />
               </label>
+            </div>
+            <div class="section-footer">
+              <button type="submit" class="btn primary" id="event-info-save">Save event</button>
             </div>
             <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
           </form>
@@ -171,7 +175,6 @@
             </table>
           </div>
         </div>
-
       </div>
     </div>
   </div>
@@ -423,6 +426,8 @@
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
+    const subPaneButtons = document.querySelectorAll(".sub-sidebar .sub-nav [data-pane]");
+    const subPanes = document.querySelectorAll(".sub-content .sub-pane");
 
     function showModal(modal) {
       if (!modal) return;
@@ -562,10 +567,7 @@
     function getActiveGuestEvent() {
       const events = Array.isArray(state.events) ? state.events : [];
       if (!events.length) return null;
-      let code = activeEventCode || eventFilter?.value || "";
-      if (!code) {
-        code = events[0]?.code || "";
-      }
+      const code = activeEventCode || eventFilter?.value || "";
       if (!code) return null;
       const foundEvent = events.find(ev => (ev.code || "") === code) || null;
       if (!activeEventCode && foundEvent) {
@@ -607,6 +609,15 @@
       updateEventInfoForm();
     }
 
+    function setActivePane(targetPane) {
+      subPanes?.forEach(pane => {
+        pane.classList.toggle("active", pane.dataset.pane === targetPane);
+      });
+      subPaneButtons?.forEach(button => {
+        button.classList.toggle("active", button.dataset.pane === targetPane);
+      });
+    }
+
     function handleEventTabSelect(code) {
       if (!code) return;
       activeEventCode = code;
@@ -619,6 +630,7 @@
         tab.classList.toggle("active", targetCode === code);
       });
       updateEventInfoForm();
+      setActivePane("guest-event-pane");
       renderGuestTable();
     }
 
@@ -1516,6 +1528,12 @@
 
       renderEventTabs();
       fetchGuestEvents();
+      setActivePane("guest-upload-pane");
+      subPaneButtons?.forEach(button => {
+        button.addEventListener("click", () => {
+          setActivePane(button.dataset.pane);
+        });
+      });
     });
   })();
 </script>
