@@ -1033,6 +1033,14 @@
       });
     }
 
+    function getTehranNowTimestamp() {
+      const now = Date.now();
+      const localOffsetMinutes = new Date().getTimezoneOffset();
+      const tehranOffsetMinutes = - (3 * 60 + 30);
+      const utcNow = now + localOffsetMinutes * 60 * 1000;
+      return utcNow - tehranOffsetMinutes * 60 * 1000;
+    }
+
     function evaluateEventStatus() {
       const ready = areEventInfoFieldsComplete();
       if (!ready) {
@@ -1045,7 +1053,7 @@
       if (!dateValue || !startValue || !limitValue || !endValue) {
         return { key: "not-ready", text: "Event Status: Event Not Ready" };
       }
-      const nowTimestamp = Date.now();
+      const nowTimestamp = getTehranNowTimestamp();
       const todayJalali = parseJalaliDate(getNowJalaliDate());
       const eventJalali = parseJalaliDate(dateValue);
       const eventStartTs = buildTehranTimestamp(dateValue, startValue);
