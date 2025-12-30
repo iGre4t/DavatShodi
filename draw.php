@@ -570,7 +570,18 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       const confirmBtn = document.getElementById('confirm-guest');
       const winnersContainer = document.getElementById('winner-items');
       const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
-      const prizeHintEl = document.getElementById('event-prize-hint');
+      const prizeHintEl = document.getElementById('event-prize-hint') || (() => {
+        const caption = document.querySelector('.draw-shell .caption');
+        if (!caption) {
+          return null;
+        }
+        const el = document.createElement('p');
+        el.id = 'event-prize-hint';
+        el.className = 'status';
+        el.setAttribute('aria-live', 'polite');
+        caption.insertAdjacentElement('afterend', el);
+        return el;
+      })();
 
       let animationInterval = null;
       let stopTimeouts = [];

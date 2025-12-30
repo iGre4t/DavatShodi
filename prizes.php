@@ -43,6 +43,9 @@ function saveJsonPayload(string $path, array $payload): bool
 
 function loadPrizeDrawState(string $path): array
 {
+  if ($path === '' || !is_file($path)) {
+    return ['drawn_ids' => [], 'cards' => []];
+  }
   $payload = loadJsonPayload($path);
   $drawn = is_array($payload['drawn_ids'] ?? null) ? $payload['drawn_ids'] : [];
   $cards = is_array($payload['cards'] ?? null) ? $payload['cards'] : [];
@@ -204,6 +207,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $scopeCode = getScopedEventCode();
   $prizeListPath = resolvePrizeListPath($scopeCode);
   $prizeStatePath = resolvePrizeStatePath($scopeCode);
+  if ($scopeCode === '' || $prizeListPath === '' || $prizeStatePath === '') {
+    respondJson(['status' => 'error', 'message' => 'Event code is required.'], 400);
+  }
   $rawInput = file_get_contents('php://input');
   $payload = json_decode($rawInput ?: '', true);
   $action = strtolower(trim((string)($payload['action'] ?? '')));
@@ -294,7 +300,15 @@ $cardAssignments = normalizeCardAssignments($drawState['cards']);
 $drawnPrizeIds = array_values(array_unique($drawState['drawn_ids']));
 $remainingPrizes = max(0, count($prizeList) - count($drawnPrizeIds));
 $filledCardSlots = count(array_filter($cardAssignments, static fn ($entry) => $entry !== null));
-$canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
+$eventHasCode = $eventCode !== '';
+$eventHasPrizes = $eventHasCode && count($prizeList) > 0;
+$eventPrizeHint = '';
+if (!$eventHasCode) {
+  $eventPrizeHint = 'Open this page from /events/{code}/prizes.php to manage that event.';
+} elseif (!$eventHasPrizes) {
+  $eventPrizeHint = 'Define at least one prize for this event before starting the draw.';
+}
+$canDraw = $eventHasCode && $eventHasPrizes && $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
 
 ?>
 <!doctype html>
@@ -686,9 +700,14 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
       <?php endfor; ?>
     </div>
     <script>
-      (function () {
+    (function () {
         const API_PATH = 'prizes.php';
         window.__PRIZE_LIST = window.__PRIZE_LIST || <?= json_encode($prizeList, JSON_UNESCAPED_UNICODE); ?>;
+        const EVENT_CODE = <?= json_encode($eventCode, JSON_UNESCAPED_UNICODE); ?>;
+        const EVENT_HAS_EVENT_CODE = <?= json_encode($eventHasCode, JSON_UNESCAPED_UNICODE); ?>;
+        const EVENT_HAS_PRIZES = <?= json_encode($eventHasPrizes, JSON_UNESCAPED_UNICODE); ?>;
+        const EVENT_DRAW_HINT = <?= json_encode($eventPrizeHint, JSON_UNESCAPED_UNICODE); ?>;
+        const eventDrawEnabled = EVENT_HAS_EVENT_CODE && EVENT_HAS_PRIZES;
         const prizeList = Array.isArray(window.__PRIZE_LIST) ? window.__PRIZE_LIST : [];
         const initialCardAssignments = <?= json_encode($cardAssignments, JSON_UNESCAPED_UNICODE); ?>;
         let currentCardAssignments = initialCardAssignments.map((entry) => (entry ? { ...entry } : null));
@@ -698,6 +717,24 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         const prizeCards = Array.from(document.querySelectorAll('.prize-card'));
         const prizeValueEl = document.getElementById('prize-value');
         const startBtn = document.getElementById('start-draw');
+        const prizeHintEl = document.getElementById('prize-status-hint') || (() => {
+          const caption = document.querySelector('.draw-shell .caption');
+          if (!caption) {
+            return null;
+          }
+          const el = document.createElement('p');
+          el.id = 'prize-status-hint';
+          el.className = 'status';
+          el.setAttribute('aria-live', 'polite');
+          caption.insertAdjacentElement('afterend', el);
+          return el;
+        })();
+        const updatePrizeHint = () => {
+          if (!prizeHintEl) {
+            return;
+          }
+          prizeHintEl.textContent = EVENT_DRAW_HINT || '';
+        };
 
         let prizeAnimationInterval = null;
         let revealTimer = null;
@@ -826,7 +863,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
           prizeValueEl.textContent = drawResult.prize.name || '---';
           revealCard(drawResult.prize.name || '', drawResult.card_index, drawResult.prize.id ?? 0, drawResult.prize.row ?? 0);
           remainingPrizes = drawResult.remaining ?? remainingPrizes;
-          canDraw = Boolean(drawResult.can_draw);
+          canDraw = eventDrawEnabled && Boolean(drawResult.can_draw);
           drawnPrizeIds = drawResult.drawn_ids ?? drawnPrizeIds;
           startBtn.disabled = !canDraw;
         };
@@ -845,7 +882,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         };
 
         const startDraw = () => {
-          if (!canDraw) {
+          if (!eventDrawEnabled || !canDraw) {
             return;
           }
           cancelAnimation();
@@ -891,7 +928,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
             currentCardAssignments = assignments.map((entry) => (entry ? { ...entry } : null));
             drawnPrizeIds = payload.drawn_ids ?? [];
             remainingPrizes = payload.remaining ?? prizeList.length;
-            canDraw = Boolean(payload.can_draw);
+            canDraw = eventDrawEnabled && Boolean(payload.can_draw);
             applyCardState(currentCardAssignments);
             prizeValueEl.textContent = '---';
             resetValueState();
@@ -938,6 +975,7 @@ $canDraw = $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
         setCode('0000');
         resetValueState();
         startBtn.disabled = !canDraw;
+        updatePrizeHint();
       })();
     </script>
   </body>

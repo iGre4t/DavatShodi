@@ -1,5 +1,4 @@
 <?php
-const DEFAULT_PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
 if (!defined('EVENTS_ROOT')) {
   define('EVENTS_ROOT', __DIR__ . '/events');
 }
@@ -18,15 +17,15 @@ function ensureEventDirectory(string $eventCode): string
   return $directory;
 }
 
-function resolvePrizeCsvPath(string $eventCode = ''): string
+function resolvePrizeCsvPath(string $eventCode): string
 {
   $code = sanitizeEventCode($eventCode);
   if ($code === '') {
-    return DEFAULT_PRIZE_LIST_PATH;
+    return '';
   }
   $directory = ensureEventDirectory($code);
   if ($directory === '') {
-    return DEFAULT_PRIZE_LIST_PATH;
+    return '';
   }
   return $directory . '/prizelist.csv';
 }
@@ -93,11 +92,18 @@ function writePrizes(string $path, array $prizes): bool
 }
 
 $eventCode = trim((string)($_REQUEST['event_code'] ?? ''));
+$eventCode = sanitizeEventCode($eventCode);
+if ($eventCode === '') {
+  respondPrizesJson(['status' => 'error', 'message' => 'event_code is required.'], 400);
+}
 $action = strtolower(trim((string)($_REQUEST['prize_action'] ?? '')));
 if ($action === '') {
   respondPrizesJson(['status' => 'error', 'message' => 'prize_action is required.'], 400);
 }
 $csvPath = resolvePrizeCsvPath($eventCode);
+if ($csvPath === '') {
+  respondPrizesJson(['status' => 'error', 'message' => 'Unable to access event prize list.'], 500);
+}
 $prizes = readPrizes($csvPath);
 switch ($action) {
   case 'list':

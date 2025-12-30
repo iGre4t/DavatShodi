@@ -13,6 +13,13 @@
     <div class="sub-content">
       <div class="sub-pane active" data-pane="guest-upload-pane">
         <div class="card" data-event-section="event-info" id="event-info-section">
+          <div id="guest-upload-card-progress" class="card-progress hidden" role="status" aria-live="polite">
+            <div class="loader-ring" aria-hidden="true">
+              <span></span>
+              <span></span>
+            </div>
+            <p class="card-progress__message" data-card-progress-message>در حال آماده‌سازی فایل...</p>
+          </div>
           <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
             <div>
               <h3>List of guests</h3>
@@ -173,12 +180,15 @@
           <div class="card">
             <div class="table-header">
               <h3>Guest lists</h3>
-            <div class="table-actions" style="align-items:flex-start;">
+              <div
+                class="table-actions"
+                style="align-items:flex-start; display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px;"
+              >
                 <div style="display:flex; align-items:center; gap:8px;">
                   <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
-                  <button type="button" class="btn" id="open-manual-modal-event">Add guest manually</button>
                   <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
                 </div>
+                <button type="button" class="btn primary" id="open-manual-modal-event">Add guest manually</button>
               </div>
             </div>
             <div class="table-wrapper">
@@ -500,6 +510,9 @@
     const mappingProgressOverlay = document.getElementById("guest-mapping-progress");
     const mappingProgressMessage = mappingProgressOverlay?.querySelector("[data-guest-mapping-progress-message]");
     const defaultMappingProgressText = "در حال ساخت لیست مهمانان...";
+    const guestUploadCardProgress = document.getElementById("guest-upload-card-progress");
+    const cardProgressMessage = guestUploadCardProgress?.querySelector("[data-card-progress-message]");
+    const defaultCardProgressText = "در حال آماده‌سازی فایل...";
     let jalaliPickerInitialized = false;
 
     const editModal = document.getElementById("guest-edit-modal");
@@ -999,6 +1012,23 @@
       setMappingProgressText(defaultMappingProgressText);
     }
 
+    function setCardProgressText(message) {
+      if (!cardProgressMessage) return;
+      cardProgressMessage.textContent = message || defaultCardProgressText;
+    }
+
+    function showCardProgress(message) {
+      if (!guestUploadCardProgress) return;
+      setCardProgressText(message);
+      guestUploadCardProgress.classList.remove("hidden");
+    }
+
+    function hideCardProgress() {
+      if (!guestUploadCardProgress) return;
+      guestUploadCardProgress.classList.add("hidden");
+      setCardProgressText(defaultCardProgressText);
+    }
+
     function getAvailableGenders() {
       const set = new Set();
       state.events.forEach(event => {
@@ -1111,6 +1141,7 @@
         return;
       }
       uploadSubmit?.setAttribute("disabled", "disabled");
+      showCardProgress("در حال آماده‌سازی فایل...");
       try {
         const parsed = await parseGuestFile(file);
         state.columns = parsed.columns;
@@ -1119,12 +1150,15 @@
         state.eventName = name;
         state.eventDate = date;
         populateMappingSelects(parsed.columns);
+        hideCardProgress();
         hideMappingProgress();
         showModal(mappingModal);
       } catch (error) {
+        hideCardProgress();
         showErrorSnackbar?.({ message: error?.message || "Failed to read the uploaded file." });
       } finally {
         uploadSubmit?.removeAttribute("disabled");
+        hideCardProgress();
       }
     });
 
@@ -1723,6 +1757,12 @@
     async function loadEventPrizesForCode(code = "") {
       if (!eventPrizeListBody) return;
       currentEventPrizeCode = String(code || "").trim();
+      if (!currentEventPrizeCode) {
+        eventPrizes = [];
+        eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">Select an event to manage prizes.</td></tr>`;
+        setEventPrizeStatus("Select an event to view prizes.");
+        return;
+      }
       const requestId = ++eventPrizeFetchId;
       setEventPrizeStatus("Loading prizes...");
       eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">Loading prizes...</td></tr>`;
@@ -1752,11 +1792,13 @@
     }
 
     async function sendEventPrizeAction(action, data = {}) {
+      if (!currentEventPrizeCode) {
+        setEventPrizeStatus("Select an event before updating prizes.", true);
+        return;
+      }
       const formData = new FormData();
       formData.append("prize_action", action);
-      if (currentEventPrizeCode) {
-        formData.append("event_code", currentEventPrizeCode);
-      }
+      formData.append("event_code", currentEventPrizeCode);
       Object.entries(data).forEach(([key, value]) => {
         formData.append(key, value);
       });

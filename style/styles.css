@@ -1194,6 +1194,39 @@ switch { display: flex; align-items: center; gap: 10px; }
   width: var(--loader-size);
   height: var(--loader-size);
 }
+.card {
+  position: relative;
+  overflow: hidden;
+}
+.card-progress {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px;
+  z-index: 2;
+  border-radius: inherit;
+}
+.card-progress.hidden {
+  display: none;
+}
+.card-progress .loader-ring {
+  --loader-size: 58px;
+  width: var(--loader-size);
+  height: var(--loader-size);
+}
+.card-progress__message {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
 .modal-progress__message {
   margin: 0;
   font-weight: 600;
