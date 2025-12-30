@@ -1058,34 +1058,6 @@
       return Number.isNaN(parsed) ? Date.now() : parsed;
     }
 
-    function getTehranTimeParts() {
-      const formatter = new Intl.DateTimeFormat("en-US", {
-        timeZone: "Asia/Tehran",
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
-      });
-      const parts = formatter.formatToParts(new Date());
-      const values = {};
-      parts.forEach(({ type, value }) => {
-        if (!type || !value) return;
-        values[type] = value;
-      });
-      if (!values.hour || !values.minute || !values.second) {
-        return null;
-      }
-      return {
-        hour: Number(values.hour),
-        minute: Number(values.minute),
-        second: Number(values.second)
-      };
-    }
-
-    function timePartsToSeconds(parts) {
-      if (!parts) return null;
-      return parts.hour * 3600 + parts.minute * 60 + parts.second;
-    }
 
     function evaluateEventStatus() {
       const ready = areEventInfoFieldsComplete();
@@ -1118,23 +1090,14 @@
           text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
         };
       }
-      const nowTimeParts = getTehranTimeParts();
-      const startTimeParts = parseTimeSegments(startValue);
-      const endTimeParts = parseTimeSegments(endValue);
-      const nowSeconds = timePartsToSeconds(nowTimeParts);
-      const startSeconds = timePartsToSeconds(startTimeParts);
-      const endSeconds = timePartsToSeconds(endTimeParts);
-      if (nowSeconds === null || startSeconds === null || endSeconds === null) {
-        return { key: "ended", text: "Event Status: Event Ended" };
-      }
-      if (nowSeconds < startSeconds) {
-        const diffMs = (startSeconds - nowSeconds) * 1000;
+      if (nowTimestamp < eventStartTs) {
+        const startDiff = eventStartTs - nowTimestamp;
         return {
           key: "upcoming",
-          text: `Event Status: Starts in ${formatDuration(diffMs)}`
+          text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
         };
       }
-      if (nowSeconds <= endSeconds) {
+      if (nowTimestamp <= eventEndTs) {
         return { key: "ongoing", text: "Event Status: Event Ongoing" };
       }
       return { key: "ended", text: "Event Status: Event Ended" };
@@ -2657,17 +2620,6 @@
       buildQuarterHourOptions(eventInfoJoinStartInput);
       buildQuarterHourOptions(eventInfoJoinLimitInput);
       buildQuarterHourOptions(eventInfoJoinEndInput);
-      const eventInfoInputElements = [
-        eventInfoNameInput,
-        eventInfoDateInput,
-        eventInfoJoinStartInput,
-        eventInfoJoinLimitInput,
-        eventInfoJoinEndInput
-      ].filter(Boolean);
-      eventInfoInputElements.forEach(input => {
-        input.addEventListener("input", updateEventInfoStatus);
-        input.addEventListener("change", updateEventInfoStatus);
-      });
 
       editNowButton?.addEventListener("click", () => {
         const now = new Date();
