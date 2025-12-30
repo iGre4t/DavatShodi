@@ -146,7 +146,17 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
 .muted { color: var(--muted); }
 
 .form { display: grid; gap: 14px; }
-.form.single-column { grid-template-columns: 1fr; }
+.form.single-column {
+  grid-template-columns: 1fr;
+}
+.tab#tab-invite-card .form.grid.one-column {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.tab#tab-invite-card .card {
+  max-width: 1200px;
+  margin: 0 auto;
+}
 .field { display: grid; gap: 6px; }
 .coordinate-group {
   display: grid;
