@@ -304,9 +304,9 @@ $eventHasCode = $eventCode !== '';
 $eventHasPrizes = $eventHasCode && count($prizeList) > 0;
 $eventPrizeHint = '';
 if (!$eventHasCode) {
-  $eventPrizeHint = 'Open this page from /events/{code}/prizes.php to manage that event.';
+  $eventPrizeHint = 'برای مدیریت جوایز لطفاً از مسیر /events/{code}/prizes.php استفاده کنید.';
 } elseif (!$eventHasPrizes) {
-  $eventPrizeHint = 'Define at least one prize for this event before starting the draw.';
+  $eventPrizeHint = 'برای شروع قرعه‌کشی حداقل یک جایزه برای این رویداد تعریف کنید.';
 }
 $canDraw = $eventHasCode && $eventHasPrizes && $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
 

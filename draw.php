@@ -104,14 +104,6 @@ $drawEventCode = sanitizeEventCode($drawEventCode);
 if ($drawEventCode === '') {
   $drawEventCode = sanitizeEventCode(loadGuestStoreForDraw(GUEST_STORE_PATH)['active_event_code'] ?? '');
 }
-$eventPrizeListPath = resolveEventPrizeListPath($drawEventCode);
-$eventHasPrizes = hasEventPrizeEntries($eventPrizeListPath);
-$eventPrizeHint = '';
-if ($drawEventCode === '') {
-  $eventPrizeHint = 'Open this draw page from /events/{code}/draw.php to target a specific event.';
-} elseif (!$eventHasPrizes) {
-  $eventPrizeHint = 'Define at least one prize for this event before running the draw.';
-}
 
 if ($method === 'POST') {
   header('Content-Type: application/json; charset=UTF-8');
@@ -698,12 +690,12 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
           setCode('0000');
           renderWinnerList(winners);
           window.__WINNERS_LIST = winners;
-          updateStartButtonAvailability();
+          startBtn.disabled = getAvailableGuests().length === 0;
           confirmBtn.disabled = true;
         } catch (error) {
           flashError('Unable to reset winners list.');
           confirmBtn.disabled = true;
-          updateStartButtonAvailability();
+          startBtn.disabled = getAvailableGuests().length === 0;
         }
       };
 
@@ -712,8 +704,8 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
 
       startBtn.addEventListener('click', () => {
         const availableGuests = getAvailableGuests();
-        if (!EVENT_HAS_EVENT_CODE || !EVENT_HAS_PRIZES || availableGuests.length === 0) {
-          updateStartButtonAvailability();
+        if (!availableGuests.length) {
+          startBtn.disabled = true;
           return;
         }
         cancelAnimation();
@@ -746,7 +738,8 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
             if (index === 3) {
               cancelAnimation();
               confirmBtn.disabled = false;
-              updateStartButtonAvailability();
+              const hasRemaining = getAvailableGuests().length > 0;
+              startBtn.disabled = !hasRemaining;
               renderWinner(currentWinner);
             }
           }, delay);
@@ -816,8 +809,9 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         }
       });
 
-      updatePrizeHint();
-      updateStartButtonAvailability();
+      if (!getAvailableGuests().length) {
+        startBtn.disabled = true;
+      }
       renderWinnerList(winnersList);
     </script>
   </body>

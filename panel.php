@@ -166,23 +166,6 @@ $accountEmail = $currentUser['email'] ?? '';
             <span>لیست میهمانان</span>
           </button>
           
-          <button class="nav-item" data-tab="prizes">
-            <span class="nav-icon ri ri-gift-line" aria-hidden="true"></span>
-            <span>جوایز</span>
-          </button>
-          <button
-            type="button"
-            class="nav-item"
-            data-external-target="draw.php"
-            title="Jump to draw page"
-          >
-            <span class="nav-icon ri ri-ticket-2-line" aria-hidden="true"></span>
-            <span>Draw Pot</span>
-          </button>
-          <button class="nav-item" data-tab="winners">
-            <span class="nav-icon ri ri-trophy-line" aria-hidden="true"></span>
-            <span>برندگان</span>
-          </button>
           <button
             type="button"
             class="nav-item"
@@ -190,7 +173,7 @@ $accountEmail = $currentUser['email'] ?? '';
             title="Jump to invite page"
           >
             <span class="nav-icon ri ri-mail-add-line" aria-hidden="true"></span>
-            <span>Invite</span>
+            <span>دعوت</span>
           </button>
           <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
           <button class="nav-item" data-tab="gallery">
