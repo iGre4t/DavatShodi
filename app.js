@@ -2645,6 +2645,7 @@ function handlePositionPickerImageClick(event) {
     return;
   }
   const rect = positionPickerImage.getBoundingClientRect();
+  const containerRect = positionPickerImageShell?.getBoundingClientRect();
   const offsetX = clampNumber(event.clientX - rect.left, 0, rect.width);
   const offsetY = clampNumber(event.clientY - rect.top, 0, rect.height);
   if (rect.width <= 0 || rect.height <= 0) {
@@ -2668,8 +2669,12 @@ function handlePositionPickerImageClick(event) {
     x: normalizedX,
     y: normalizedY
   };
-  positionPickerDot.style.left = `${offsetX}px`;
-  positionPickerDot.style.top = `${offsetY}px`;
+  const positionalLeft =
+    offsetX + (containerRect ? rect.left - containerRect.left : 0);
+  const positionalTop =
+    offsetY + (containerRect ? rect.top - containerRect.top : 0);
+  positionPickerDot.style.left = `${positionalLeft}px`;
+  positionPickerDot.style.top = `${positionalTop}px`;
   positionPickerDot.classList.remove("hidden");
   if (positionPickerConfirmButton) {
     positionPickerConfirmButton.removeAttribute("disabled");
