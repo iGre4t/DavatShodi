@@ -150,7 +150,7 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
 .field { display: grid; gap: 6px; }
 .coordinate-group {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 .field-block {
@@ -170,11 +170,20 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   padding: 10px;
   border-radius: 10px;
   background: #fafafa;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
 }
 .controller-label {
   font-size: 12px;
   color: var(--muted);
   font-weight: 600;
+}
+.coordinate-group input {
+  grid-column: span 2;
+}
+.style-controller .field.standard-width {
+  grid-column: span 2;
 }
 .position-controller-set {
   display: flex;

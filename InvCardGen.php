@@ -22,6 +22,14 @@
               <option value="text">Text</option>
             </select>
           </label>
+          <label class="field standard-width">
+            <span>Alignment</span>
+            <select data-field-alignment>
+              <option value="rtl">RTL</option>
+              <option value="ltr">LTR</option>
+              <option value="center">Center</option>
+            </select>
+          </label>
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
@@ -85,6 +93,14 @@
               <option value="text">Text</option>
             </select>
           </label>
+          <label class="field standard-width">
+            <span>Alignment</span>
+            <select data-field-alignment>
+              <option value="rtl">RTL</option>
+              <option value="ltr">LTR</option>
+              <option value="center">Center</option>
+            </select>
+          </label>
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
@@ -142,6 +158,14 @@
               <option value="text">Text</option>
             </select>
           </label>
+          <label class="field standard-width">
+            <span>Alignment</span>
+            <select data-field-alignment>
+              <option value="rtl">RTL</option>
+              <option value="ltr">LTR</option>
+              <option value="center">Center</option>
+            </select>
+          </label>
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
@@ -186,14 +210,6 @@
           </label>
         </div>
       </div>
-      <label class="field standard-width">
-        <span>Alignment</span>
-        <select id="invite-card-alignment" name="invite-card-alignment">
-          <option value="rtl">RTL</option>
-          <option value="ltr">LTR</option>
-          <option value="center">Center</option>
-        </select>
-      </label>
       <label class="field full">
         <span>Choose photo</span>
         <div class="photo-actions">
