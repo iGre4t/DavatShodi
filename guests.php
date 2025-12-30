@@ -425,7 +425,7 @@
 
           <div class="form" style="gap:12px; margin-top:8px;">
             <label class="field">
-              <span>Date and time entered</span>
+              <span>Join date and time</span>
               <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <input
                   id="edit-date-entered"
@@ -443,7 +443,7 @@
               </div>
             </label>
             <label class="field">
-              <span>Date and time exited</span>
+              <span>Left date and time</span>
               <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <input
                   id="edit-date-exited"
@@ -625,9 +625,10 @@
     const eventPrizeForm = document.getElementById("event-prize-add-form");
     const eventPrizeInput = document.getElementById("event-prize-name");
     const eventPrizeAddButton = document.getElementById("event-prize-add-button");
-    const eventPrizeStatus = document.getElementById("event-prize-status");
-    const eventPrizeListBody = document.getElementById("event-prize-list-body");
-    const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
+      const eventPrizeStatus = document.getElementById("event-prize-status");
+      const eventPrizeListBody = document.getElementById("event-prize-list-body");
+      const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
+      const INVITE_BASE_URL = "https://davatshodi.ir/l/inv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
     const subPaneButtons = document.querySelectorAll(".sub-sidebar .sub-nav [data-pane]");
     const subPanes = document.querySelectorAll(".sub-content .sub-pane");
@@ -898,7 +899,7 @@
         }
       }
       if (eventInfoJoinStartInput) {
-        eventInfoJoinStartInput.value = selectedEvent?.join_start_time || "";
+        eventInfoJoinStartInput.value = selectTimeValue(selectedEvent?.join_start_time || "");
         if (hasEvent) {
           eventInfoJoinStartInput.removeAttribute("disabled");
         } else {
@@ -906,7 +907,7 @@
         }
       }
       if (eventInfoJoinLimitInput) {
-        eventInfoJoinLimitInput.value = selectedEvent?.join_limit_time || "";
+        eventInfoJoinLimitInput.value = selectTimeValue(selectedEvent?.join_limit_time || "");
         if (hasEvent) {
           eventInfoJoinLimitInput.removeAttribute("disabled");
         } else {
@@ -914,7 +915,7 @@
         }
       }
       if (eventInfoJoinEndInput) {
-        eventInfoJoinEndInput.value = selectedEvent?.join_end_time || "";
+        eventInfoJoinEndInput.value = selectTimeValue(selectedEvent?.join_end_time || "");
         if (hasEvent) {
           eventInfoJoinEndInput.removeAttribute("disabled");
         } else {
@@ -1509,6 +1510,28 @@
       return Number(match[1]) * 60 + Number(match[2]);
     }
 
+    function selectTimeValue(value) {
+      if (!value) return "";
+      return String(value).slice(0, 5);
+    }
+
+    function ensureSelectHasTime(select, value) {
+      if (!select) return;
+      const timeValue = selectTimeValue(value);
+      if (!timeValue) {
+        select.value = "";
+        return;
+      }
+      let option = Array.from(select.options).find(opt => opt.value === timeValue);
+      if (!option) {
+        option = document.createElement("option");
+        option.value = timeValue;
+        option.textContent = timeValue;
+        select.appendChild(option);
+      }
+      select.value = timeValue;
+    }
+
     function toEnglishDigits(value) {
       const map = { "۰":"0","۱":"1","۲":"2","۳":"3","۴":"4","۵":"5","۶":"6","۷":"7","۸":"8","۹":"9","٠":"0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9" };
       return String(value).replace(/[۰-۹٠-٩]/g, d => map[d] || d);
@@ -1758,6 +1781,18 @@
       URL.revokeObjectURL(url);
     }
 
+    function buildInviteLink(code) {
+      const raw = String(code ?? "").trim();
+      if (!raw) {
+        return "";
+      }
+      if (/^https?:\/\//i.test(raw)) {
+        return raw;
+      }
+      const cleaned = raw.replace(/^\/+|\/+$/g, "");
+      return `${INVITE_BASE_URL}/${cleaned}`;
+    }
+
     function buildSmsWorkbook(rows) {
       const normalized = rows
         .map(row => {
@@ -1784,7 +1819,7 @@
           entry["Invite link"]
         );
       if (!normalized.length) {
-        throw new Error("The pure CSV file did not yield any guest rows.");
+        throw new Error("No guests contain enough data to export SMS links.");
       }
       const worksheet = XLSX.utils.json_to_sheet(normalized, {
         header: ["Lottery code", "Full name", "National ID", "Phone number", "Invite link"]
@@ -1800,7 +1835,31 @@
     }
 
     async function exportSmsLinks() {
-      const rows = await loadPureListCsvRows(resolvePureListCsvPath());
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        throw new Error("Select an event before exporting SMS links.");
+      }
+      const guests = Array.isArray(activeEvent.guests) ? activeEvent.guests : [];
+      if (!guests.length) {
+        throw new Error("No guests have been added to this event yet.");
+      }
+      const rows = guests.map(guest => {
+        const firstname = String(guest.firstname || guest.first_name || "").trim();
+        const lastname = String(guest.lastname || guest.last_name || "").trim();
+        const nationalId = String(guest.national_id || guest.nationalid || "").trim();
+        const phone = String(guest.phone_number || guest.phone || "").trim();
+        const inviteCode = String(guest.invite_code || guest.code || guest.number || "").trim();
+        const providedLink = String(guest.sms_link || guest.link || guest.smsLink || "").trim();
+        const link = providedLink || buildInviteLink(inviteCode);
+        return {
+          number: inviteCode || String(guest.number ?? ""),
+          firstname,
+          lastname,
+          national_id: nationalId,
+          phone_number: phone,
+          sms_link: link
+        };
+      });
       const workbook = buildSmsWorkbook(rows);
       const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
       const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -2141,10 +2200,11 @@
       buildQuarterHourOptions(eventInfoJoinEndInput);
 
       editNowButton?.addEventListener("click", () => {
-        const hh = String(new Date().getHours()).padStart(2, "0");
-        const min = String(new Date().getMinutes()).padStart(2, "0");
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, "0");
+        const min = String(now.getMinutes()).padStart(2, "0");
         editDateEnteredInput.value = getNowJalaliDate();
-        editTimeEnteredInput.value = `${hh}:${min}`;
+        ensureSelectHasTime(editTimeEnteredInput, `${hh}:${min}`);
       });
 
       editClearEnteredButton?.addEventListener("click", () => {

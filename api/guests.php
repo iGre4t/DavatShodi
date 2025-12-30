@@ -422,7 +422,6 @@ if ($method === 'POST') {
           array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
           $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
           $store['events'][$eventIndex]['updated_at'] = date('c');
-          $store['events'][$eventIndex]['join_end_time'] = $normalizedJoinEnd;
           if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
               http_response_code(500);
               echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
@@ -490,6 +489,7 @@ if ($method === 'POST') {
           $store['events'][$eventIndex]['date'] = $date;
           $store['events'][$eventIndex]['join_start_time'] = $normalizedJoinStart;
           $store['events'][$eventIndex]['join_limit_time'] = $normalizedJoinLimit;
+          $store['events'][$eventIndex]['join_end_time'] = $normalizedJoinEnd;
           $store['events'][$eventIndex]['updated_at'] = date('c');
           if (!saveGuestStore($storePath, $store)) {
               http_response_code(500);
@@ -1214,16 +1214,21 @@ function formatEventTimeValue(string $value): string
     if ($trimmed === '') {
         return '';
     }
-    if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $trimmed, $matches)) {
+    if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/', $trimmed, $matches)) {
         return '';
     }
-    return sprintf('%02d:%02d', (int)$matches[1], (int)$matches[2]);
+    $hours = (int)$matches[1];
+    $minutes = (int)$matches[2];
+    $seconds = isset($matches[3]) && $matches[3] !== '' ? (int)$matches[3] : 0;
+    return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
 }
 
 function getEventTimeMinutes(string $value): int
 {
-    [$hours, $minutes] = explode(':', $value);
-    return ((int)$hours) * 60 + ((int)$minutes);
+    $parts = explode(':', $value);
+    $hours = isset($parts[0]) ? (int)$parts[0] : 0;
+    $minutes = isset($parts[1]) ? (int)$parts[1] : 0;
+    return ($hours * 60) + $minutes;
 }
 
 function normalizeStore(array $store): array
