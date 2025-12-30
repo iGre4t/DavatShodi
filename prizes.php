@@ -13,9 +13,9 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
-const PRIZE_STATE_PATH = __DIR__ . '/data/prize_draw_state.json';
+const DEFAULT_PRIZE_STATE_PATH = __DIR__ . '/data/prize_draw_state.json';
 const PRIZE_GRID_CARD_COUNT = 12;
-const PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
+const DEFAULT_PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
 
 function respondJson(array $payload, int $statusCode = 200): void
 {
@@ -40,9 +40,9 @@ function saveJsonPayload(string $path, array $payload): bool
   return file_put_contents($path, $encoded) !== false;
 }
 
-function loadPrizeDrawState(): array
+function loadPrizeDrawState(string $path): array
 {
-  $payload = loadJsonPayload(PRIZE_STATE_PATH);
+  $payload = loadJsonPayload($path);
   $drawn = is_array($payload['drawn_ids'] ?? null) ? $payload['drawn_ids'] : [];
   $cards = is_array($payload['cards'] ?? null) ? $payload['cards'] : [];
   return [
@@ -51,9 +51,9 @@ function loadPrizeDrawState(): array
   ];
 }
 
-function persistPrizeDrawState(array $state): bool
+function persistPrizeDrawState(string $path, array $state): bool
 {
-  return saveJsonPayload(PRIZE_STATE_PATH, $state);
+  return saveJsonPayload($path, $state);
 }
 
 function normalizeCardAssignments(array $cards): array
@@ -77,10 +77,46 @@ function normalizeCardAssignments(array $cards): array
   return $result;
 }
 
-function handleDrawPrizeAction(): void
+function sanitizeEventCode(string $value): string
 {
-  $prizeList = loadPrizeList(PRIZE_LIST_PATH);
-  $state = loadPrizeDrawState();
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  return preg_replace('/[^A-Za-z0-9_-]+/', '', $trimmed);
+}
+
+function getScopedEventCode(): string
+{
+  if (defined('EVENT_SCOPED_EVENT_CODE')) {
+    return sanitizeEventCode((string)EVENT_SCOPED_EVENT_CODE);
+  }
+  return sanitizeEventCode((string)($_GET['event_code'] ?? ''));
+}
+
+function resolvePrizeListPath(string $eventCode): string
+{
+  if ($eventCode !== '') {
+    $candidate = __DIR__ . '/events/' . $eventCode . '/prizelist.csv';
+    if (is_file($candidate)) {
+      return $candidate;
+    }
+  }
+  return DEFAULT_PRIZE_LIST_PATH;
+}
+
+function resolvePrizeStatePath(string $eventCode): string
+{
+  if ($eventCode === '') {
+    return DEFAULT_PRIZE_STATE_PATH;
+  }
+  return __DIR__ . '/data/prize_draw_state_' . $eventCode . '.json';
+}
+
+function handleDrawPrizeAction(string $listPath, string $statePath): void
+{
+  $prizeList = loadPrizeList($listPath);
+  $state = loadPrizeDrawState($statePath);
   $normalized = normalizeCardAssignments($state['cards']);
   $drawnIds = array_unique($state['drawn_ids']);
   $available = array_values(array_filter($prizeList, static fn ($entry) => !in_array($entry['id'], $drawnIds, true)));
@@ -106,7 +142,7 @@ function handleDrawPrizeAction(): void
     'row' => $selected['row']
   ];
   $state['cards'] = array_values(array_filter($state['cards'], static fn ($entry) => is_array($entry)));
-  if (!persistPrizeDrawState($state)) {
+  if (!persistPrizeDrawState($statePath, $state)) {
     respondJson(['status' => 'error', 'message' => 'Unable to persist prize state.'], 500);
   }
   $normalized = normalizeCardAssignments($state['cards']);
@@ -128,11 +164,11 @@ function handleDrawPrizeAction(): void
   ]);
 }
 
-function handleResetPrizeState(): void
+function handleResetPrizeState(string $statePath, string $listPath): void
 {
-  $prizeList = loadPrizeList(PRIZE_LIST_PATH);
+  $prizeList = loadPrizeList($listPath);
   $state = ['drawn_ids' => [], 'cards' => []];
-  if (!persistPrizeDrawState($state)) {
+  if (!persistPrizeDrawState($statePath, $state)) {
     respondJson(['status' => 'error', 'message' => 'Unable to reset prize state.'], 500);
   }
   $normalized = normalizeCardAssignments($state['cards']);
@@ -148,14 +184,17 @@ function handleResetPrizeState(): void
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $scopeCode = getScopedEventCode();
+  $prizeListPath = resolvePrizeListPath($scopeCode);
+  $prizeStatePath = resolvePrizeStatePath($scopeCode);
   $rawInput = file_get_contents('php://input');
   $payload = json_decode($rawInput ?: '', true);
   $action = strtolower(trim((string)($payload['action'] ?? '')));
   if ($action === 'draw_prize') {
-    handleDrawPrizeAction();
+    handleDrawPrizeAction($prizeListPath, $prizeStatePath);
   }
   if ($action === 'reset_draw') {
-    handleResetPrizeState();
+    handleResetPrizeState($prizeStatePath, $prizeListPath);
   }
   respondJson(['status' => 'error', 'message' => 'Unsupported action.'], 400);
 }
@@ -229,8 +268,11 @@ function loadPrizeList(string $path): array
 $panelSettings = loadPanelSettings();
 $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName']);
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
-$prizeList = loadPrizeList(PRIZE_LIST_PATH);
-$drawState = loadPrizeDrawState();
+$eventCode = getScopedEventCode();
+$prizeListPath = resolvePrizeListPath($eventCode);
+$prizeStatePath = resolvePrizeStatePath($eventCode);
+$prizeList = loadPrizeList($prizeListPath);
+$drawState = loadPrizeDrawState($prizeStatePath);
 $cardAssignments = normalizeCardAssignments($drawState['cards']);
 $drawnPrizeIds = array_values(array_unique($drawState['drawn_ids']));
 $remainingPrizes = max(0, count($prizeList) - count($drawnPrizeIds));

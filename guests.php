@@ -133,135 +133,162 @@
         </div>
         <div class="event-section" data-event-section="event-info" id="event-info-section">
           <div class="card">
-          <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-            <div>
-              <h3>Event info</h3>
-              <p class="muted small">Update the selected event's name and date.</p>
+            <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+              <div>
+                <h3>Event info</h3>
+                <p class="muted small">Update the selected event's name and date.</p>
+              </div>
             </div>
-          </div>
-          <form id="event-info-form" class="form">
-            <div class="form" style="max-width: 420px; gap: 12px;">
-              <label class="field standard-width">
-                <span>Event code</span>
-                <input id="event-info-slug" type="text" readonly />
-              </label>
-              <label class="field standard-width">
-                <span>Event name</span>
-                <input id="event-info-name" name="event_name" type="text" autocomplete="off" required />
-              </label>
-              <label class="field standard-width">
-                <span>Event date (Shamsi)</span>
-                <input
-                  id="event-info-date"
-                  name="event_date"
-                  type="text"
-                  data-jdp
-                  data-jdp-only-date="true"
-                  placeholder="Example: 1403/10/01"
-                  autocomplete="off"
-                  readonly
-                  required
-                />
-              </label>
-            </div>
-            <div class="section-footer">
-              <button type="submit" class="btn primary" id="event-info-save">Save event</button>
-            </div>
-            <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
-          </form>
+            <form id="event-info-form" class="form">
+              <div class="form" style="max-width: 420px; gap: 12px;">
+                <label class="field standard-width">
+                  <span>Event code</span>
+                  <input id="event-info-slug" type="text" readonly />
+                </label>
+                <label class="field standard-width">
+                  <span>Event name</span>
+                  <input id="event-info-name" name="event_name" type="text" autocomplete="off" required />
+                </label>
+                <label class="field standard-width">
+                  <span>Event date (Shamsi)</span>
+                  <input
+                    id="event-info-date"
+                    name="event_date"
+                    type="text"
+                    data-jdp
+                    data-jdp-only-date="true"
+                    placeholder="Example: 1403/10/01"
+                    autocomplete="off"
+                    readonly
+                    required
+                  />
+                </label>
+              </div>
+              <div class="section-footer">
+                <button type="submit" class="btn primary" id="event-info-save">Save event</button>
+              </div>
+              <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
+            </form>
           </div>
         </div>
         <div class="event-section hidden" data-event-section="event-guests" id="event-guests-section">
           <div class="card">
-          <div class="table-header">
-            <h3>Guest lists</h3>
-            <div class="table-actions">
-              <div class="muted small" id="active-guest-event-label">
-                Event: <strong id="active-guest-event-name">—</strong>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
-                <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+            <div class="table-header">
+              <h3>Guest lists</h3>
+              <div class="table-actions" style="align-items:flex-start;">
+                <div class="muted small" id="active-guest-event-label">
+                  Event: <strong id="active-guest-event-name">--</strong>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+                  <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+                </div>
               </div>
             </div>
-      <div class="event-section hidden" data-event-section="event-winners" id="event-winners-section">
-        <div class="card hidden" data-event-section="event-winners" id="event-winners-section">
-        <div class="table-header">
-          <div>
-            <h3>برندگان رویداد</h3>
-            <p class="muted small">لیست برندگان تایید شده مربوط به رویداد انتخاب‌شده.</p>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>Event</th>
+                    <th>Event date</th>
+                    <th>First name</th>
+                    <th>Last name</th>
+                    <th>Gender</th>
+                    <th>National ID</th>
+                    <th>Phone number</th>
+                    <th>Join date</th>
+                    <th>Join time</th>
+                    <th>Left date</th>
+                    <th>Left time</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="guest-list-body">
+                  <tr>
+                    <td colspan="13" class="muted">No guest lists yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-        <p id="event-winners-status" class="muted small" aria-live="polite"></p>
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th style="width:56px;">ردیف</th>
-                <th>برنده</th>
-                <th>کد دعوت</th>
-                <th>تلفن</th>
-                <th>ملی</th>
-                <th>زمان</th>
-              </tr>
-            </thead>
-            <tbody id="event-winner-list-body">
-              <tr>
-                <td colspan="6" class="muted">Loading winners...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        </div>
-      </div>
-      <div class="event-section hidden" data-event-section="event-prizes" id="event-prizes-section">
-        <div class="card hidden" data-event-section="event-prizes" id="event-prizes-section">
-        <div class="table-header" style="flex-wrap:wrap;">
-          <div>
-            <h3>جوایز رویداد</h3>
-            <p class="muted small">فهرست جوایز مجزا برای رویداد انتخاب‌شده.</p>
+        <div class="event-section hidden" data-event-section="event-winners" id="event-winners-section">
+          <div class="card">
+            <div class="table-header">
+              <div>
+                <h3>??????? ??????</h3>
+                <p class="muted small">???? ??????? ????? ??? ????? ?? ?????? ??????????.</p>
+              </div>
+            </div>
+            <p id="event-winners-status" class="muted small" aria-live="polite"></p>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:56px;">????</th>
+                    <th>?????</th>
+                    <th>?? ????</th>
+                    <th>????</th>
+                    <th>???</th>
+                    <th>????</th>
+                  </tr>
+                </thead>
+                <tbody id="event-winner-list-body">
+                  <tr>
+                    <td colspan="6" class="muted">?? ??? ???????? ???????...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <form
-            id="event-prize-add-form"
-            class="form"
-            style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; direction:rtl; min-width:320px;"
-          >
-            <label class="field standard-width" style="flex:1 1 220px; direction:rtl; text-align:right;">
-              <span>نام جایزه</span>
-              <input
-                id="event-prize-name"
-                name="name"
-                type="text"
-                placeholder="نام جایزه را وارد کنید"
-                autocomplete="off"
-                required
-                style="direction:rtl; text-align:right;"
-              />
-            </label>
-            <button type="submit" class="btn primary" id="event-prize-add-button">اضافه کردن</button>
-          </form>
         </div>
-        <p id="event-prize-status" class="muted small" aria-live="polite" style="margin:0;"></p>
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th style="width:80px;">#</th>
-                <th>نام جایزه</th>
-                <th style="width:190px;">عملیات</th>
-              </tr>
-            </thead>
-            <tbody id="event-prize-list-body">
-              <tr>
-                <td colspan="3" class="muted">در حال بارگذاری جوایز...</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="event-section hidden" data-event-section="event-prizes" id="event-prizes-section">
+          <div class="card">
+            <div class="table-header" style="flex-wrap:wrap;">
+              <div>
+                <h3>????? ??????</h3>
+                <p class="muted small">????? ????? ??????? ???? ?????? ??????????.</p>
+              </div>
+              <form
+                id="event-prize-add-form"
+                class="form"
+                style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; direction:rtl; min-width:320px;"
+              >
+                <label class="field standard-width" style="flex:1 1 220px; direction:rtl; text-align:right;">
+                  <span>??? ?????</span>
+                  <input
+                    id="event-prize-name"
+                    name="name"
+                    type="text"
+                    placeholder="??? ????? ?? ???? ????"
+                    autocomplete="off"
+                    required
+                    style="direction:rtl; text-align:right;"
+                  />
+                </label>
+                <button type="submit" class="btn primary" id="event-prize-add-button">????? ????</button>
+              </form>
+            </div>
+            <p id="event-prize-status" class="muted small" aria-live="polite" style="margin:0;"></p>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:80px;">#</th>
+                    <th>??? ?????</th>
+                    <th style="width:190px;">??????</th>
+                  </tr>
+                </thead>
+                <tbody id="event-prize-list-body">
+                  <tr>
+                    <td colspan="3" class="muted">?? ??? ???????? ?????...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <div id="guest-mapping-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="guest-mapping-title">
     <div class="modal-card">
