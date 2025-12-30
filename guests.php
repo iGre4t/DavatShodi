@@ -294,6 +294,8 @@
           </div>
         </div>
 
+</section>
+
   <div id="guest-mapping-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="guest-mapping-title">
     <div class="modal-card">
       <div class="modal-header">
@@ -474,7 +476,6 @@
       </div>
     </div>
   </div>
-</section>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <script src="style/jalalidatepicker.min.js" defer></script>

@@ -537,7 +537,6 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
     </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">قرعه‌کشی مشهد مقدس</p>
-      <p id="event-prize-hint" class="status" aria-live="polite"></p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="کد قرعه‌کشی فعلی">
         <?php for ($idx = 0; $idx < 4; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
@@ -559,9 +558,6 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       window.__WINNERS_LIST = window.__WINNERS_LIST || <?= json_encode($winnersList, JSON_UNESCAPED_UNICODE); ?>;
       const EVENT_CODE = <?= json_encode($drawEventCode, JSON_UNESCAPED_UNICODE); ?>;
       const DRAW_API_PATH = 'draw.php' + (EVENT_CODE ? '?event_code=' + encodeURIComponent(EVENT_CODE) : '');
-      const EVENT_HAS_EVENT_CODE = <?= json_encode($drawEventCode !== '', JSON_UNESCAPED_UNICODE); ?>;
-      const EVENT_HAS_PRIZES = <?= json_encode($eventHasPrizes, JSON_UNESCAPED_UNICODE); ?>;
-      const EVENT_PRIZE_HINT = <?= json_encode($eventPrizeHint, JSON_UNESCAPED_UNICODE); ?>;
       const guestPool = Array.isArray(window.__GUEST_POOL) ? window.__GUEST_POOL : [];
       let winnersList = Array.isArray(window.__WINNERS_LIST) ? window.__WINNERS_LIST : [];
       const codeDisplay = document.getElementById('code-display');
@@ -570,18 +566,6 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       const confirmBtn = document.getElementById('confirm-guest');
       const winnersContainer = document.getElementById('winner-items');
       const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
-      const prizeHintEl = document.getElementById('event-prize-hint') || (() => {
-        const caption = document.querySelector('.draw-shell .caption');
-        if (!caption) {
-          return null;
-        }
-        const el = document.createElement('p');
-        el.id = 'event-prize-hint';
-        el.className = 'status';
-        el.setAttribute('aria-live', 'polite');
-        caption.insertAdjacentElement('afterend', el);
-        return el;
-      })();
 
       let animationInterval = null;
       let stopTimeouts = [];
@@ -635,21 +619,6 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         const key = createGuestSelectionKey(guest);
         return key !== '' && !chosenGuestKeys.has(key);
       });
-      const canAttemptDraw = () => (
-        EVENT_HAS_EVENT_CODE && EVENT_HAS_PRIZES && getAvailableGuests().length > 0
-      );
-      const updateStartButtonAvailability = () => {
-        if (!startBtn) {
-          return;
-        }
-        startBtn.disabled = !canAttemptDraw();
-      };
-      const updatePrizeHint = () => {
-        if (!prizeHintEl) {
-          return;
-        }
-        prizeHintEl.textContent = EVENT_PRIZE_HINT || '';
-      };
 
       const cancelAnimation = () => {
         if (animationInterval !== null) {
