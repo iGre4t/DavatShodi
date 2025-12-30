@@ -138,6 +138,13 @@
         </div>
         <div class="event-section" data-event-section="event-info" id="event-info-section">
           <div class="card">
+            <div class="card-progress hidden" role="status" aria-live="polite">
+              <div class="loader-ring" aria-hidden="true">
+                <span></span>
+                <span></span>
+              </div>
+              <p class="card-progress__message" data-card-progress-message>Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡â€ŒØ³Ø§Ø²ÛŒ ÙØ§ÛŒÙ„...</p>
+            </div>
             <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
               <div>
                 <h3>Event info</h3>
@@ -178,6 +185,13 @@
         </div>
         <div class="event-section hidden" data-event-section="event-guests" id="event-guests-section">
           <div class="card">
+            <div class="card-progress hidden" role="status" aria-live="polite">
+              <div class="loader-ring" aria-hidden="true">
+                <span></span>
+                <span></span>
+              </div>
+              <p class="card-progress__message" data-card-progress-message>Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡â€ŒØ³Ø§Ø²ÛŒ ÙØ§ÛŒÙ„...</p>
+            </div>
             <div class="table-header">
               <h3>Guest lists</h3>
               <div
@@ -221,6 +235,13 @@
         </div>
         <div class="event-section hidden" data-event-section="event-winners" id="event-winners-section">
           <div class="card">
+            <div class="card-progress hidden" role="status" aria-live="polite">
+              <div class="loader-ring" aria-hidden="true">
+                <span></span>
+                <span></span>
+              </div>
+              <p class="card-progress__message" data-card-progress-message>Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡â€ŒØ³Ø§Ø²ÛŒ ÙØ§ÛŒÙ„...</p>
+            </div>
             <div class="table-header">
           <div>
             <h3>Event winners</h3>
@@ -250,6 +271,13 @@
         </div>
         <div class="event-section hidden" data-event-section="event-prizes" id="event-prizes-section">
           <div class="card">
+            <div class="card-progress hidden" role="status" aria-live="polite">
+              <div class="loader-ring" aria-hidden="true">
+                <span></span>
+                <span></span>
+              </div>
+              <p class="card-progress__message" data-card-progress-message>Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡â€ŒØ³Ø§Ø²ÛŒ ÙØ§ÛŒÙ„...</p>
+            </div>
             <div class="table-header" style="flex-wrap:wrap;">
           <div>
             <h3>Event prizes</h3>
@@ -347,6 +375,13 @@
       <div class="modal-header">
         <h3 id="guest-edit-title">Edit guest</h3>
       </div>
+      <div class="modal-progress hidden" role="status" aria-live="polite">
+        <div class="loader-ring" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </div>
+        <p class="modal-progress__message" data-modal-progress-message>Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡â€ŒØ³Ø§Ø²ÛŒ...</p>
+      </div>
       <div class="modal-body">
         <form id="guest-edit-form" class="form">
           <div class="grid">
@@ -423,6 +458,13 @@
       <div class="modal-header">
         <h3 id="guest-manual-title">Add guest manually</h3>
         <button type="button" class="icon-btn" data-guest-manual-close aria-label="Close manual modal">X</button>
+      </div>
+      <div class="modal-progress hidden" role="status" aria-live="polite">
+        <div class="loader-ring" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </div>
+        <p class="modal-progress__message" data-modal-progress-message>Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡â€ŒØ³Ø§Ø²ÛŒ...</p>
       </div>
       <div class="modal-body">
         <form id="guest-manual-form" class="form">

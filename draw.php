@@ -1085,42 +1085,6 @@ function sanitizeEventCode(string $value): string
   return preg_replace('/[^A-Za-z0-9_-]+/', '', $trimmed);
 }
 
-function resolveEventPrizeListPath(string $eventCode): string
-{
-  $code = sanitizeEventCode($eventCode);
-  if ($code === '') {
-    return '';
-  }
-  $directory = rtrim(EVENTS_ROOT, '/\\') . DIRECTORY_SEPARATOR . $code;
-  if (!is_dir($directory)) {
-    return '';
-  }
-  return $directory . '/prizelist.csv';
-}
-
-function hasEventPrizeEntries(string $path): bool
-{
-  if ($path === '' || !is_file($path)) {
-    return false;
-  }
-  $handle = fopen($path, 'r');
-  if ($handle === false) {
-    return false;
-  }
-  fgetcsv($handle);
-  while (($row = fgetcsv($handle)) !== false) {
-    if (!is_array($row)) {
-      continue;
-    }
-    $name = trim((string)($row[1] ?? $row[0] ?? ''));
-    if ($name !== '') {
-      fclose($handle);
-      return true;
-    }
-  }
-  fclose($handle);
-  return false;
-}
 
 function deleteWinnerRecords(string $eventsRoot, string $targetEventCode = ''): bool
 {
