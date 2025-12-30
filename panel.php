@@ -163,7 +163,7 @@ $accountEmail = $currentUser['email'] ?? '';
           <!-- Guests tab is routed to guests.php; content will be added later. -->
           <button class="nav-item" data-tab="guests">
             <span class="nav-icon ri ri-team-line" aria-hidden="true"></span>
-            <span>لیست میهمانان</span>
+            <span>مهمانان و رویدادها</span>
           </button>
           
           <button

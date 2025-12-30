@@ -306,7 +306,7 @@ $eventPrizeHint = '';
 if (!$eventHasCode) {
   $eventPrizeHint = 'برای مدیریت جوایز لطفاً از مسیر /events/{code}/prizes.php استفاده کنید.';
 } elseif (!$eventHasPrizes) {
-  $eventPrizeHint = 'برای شروع قرعه‌کشی حداقل یک جایزه برای این رویداد تعریف کنید.';
+  $eventPrizeHint = 'برای شروع قرعه‌کشی لطفاً حداقل یک جایزه برای این رویداد تعریف کنید.';
 }
 $canDraw = $eventHasCode && $eventHasPrizes && $remainingPrizes > 0 && $filledCardSlots < PRIZE_GRID_CARD_COUNT;
 

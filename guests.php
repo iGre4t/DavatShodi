@@ -24,7 +24,6 @@
             <div>
               <h3>List of guests</h3>
             </div>
-            <button type="button" class="btn" id="open-manual-modal">Add guest manually</button>
           </div>
           <form id="guest-upload-form" class="form" enctype="multipart/form-data">
             <div class="form" style="max-width: 420px; gap: 12px;">
@@ -575,8 +574,7 @@
     let editContext = null;
     const manualModal = document.getElementById("guest-manual-modal");
     const manualCloseButtons = $qsa("[data-guest-manual-close]", manualModal || document);
-    const manualOpenButton = document.getElementById("open-manual-modal");
-    const manualForm = document.getElementById("guest-manual-form");
+      const manualForm = document.getElementById("guest-manual-form");
     const manualEventSelect = document.getElementById("manual-event-select");
     const manualEventDateInput = document.getElementById("manual-event-date");
     const manualFirstnameInput = document.getElementById("manual-firstname");
@@ -1243,6 +1241,7 @@
           throw new Error(data?.message || "Failed to add guest.");
         }
         state.events = Array.isArray(data.events) ? data.events : state.events;
+        activeEventCode = selectedCode;
         refreshEventControls();
         populateGenderSelect(manualGenderSelect);
         populateGenderSelect(editGenderSelect);
@@ -1918,10 +1917,6 @@
       editDateExitedInput?.addEventListener("focus", openJalaliPicker);
       editDateExitedInput?.addEventListener("click", openJalaliPicker);
       editDateExitedInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
-
-      manualOpenButton?.addEventListener("click", () => {
-        openManualModal();
-      });
 
       manualEventPaneAddButton?.addEventListener("click", () => {
         if (!activeEventCode) {

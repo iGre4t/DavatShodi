@@ -703,6 +703,7 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       showIdleWinnerText();
 
       startBtn.addEventListener('click', () => {
+        // Placeholder note: draws are permitted even if the prize list is empty; the prize view enforces its own guard.
         const availableGuests = getAvailableGuests();
         if (!availableGuests.length) {
           startBtn.disabled = true;
