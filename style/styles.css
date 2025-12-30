@@ -157,6 +157,29 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   max-width: 1200px;
   margin: 0 auto;
 }
+.tab#tab-invite-card .invite-card-generator {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tab#tab-invite-card .invite-card-preview {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  text-align: center;
+}
+.tab#tab-invite-card .invite-card-preview canvas {
+  width: min(480px, 100%);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 45px rgba(15, 23, 42, 0.15);
+}
+.tab#tab-invite-card .invite-card-preview canvas + .btn {
+  align-self: center;
+}
 .field { display: grid; gap: 6px; }
 .coordinate-group {
   display: grid;

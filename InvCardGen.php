@@ -9,16 +9,37 @@
       <h3>Invite Card Generator</h3>
     </div>
     <div class="form grid one-column">
+      <label class="field full">
+        <span>Choose photo</span>
+        <div class="photo-actions">
+          <button type="button" class="btn ghost" id="invite-card-choose-photo">
+            Choose photo
+          </button>
+          <span class="muted" data-invite-card-photo-label>No photo selected.</span>
+        </div>
+        <div class="photo-preview" data-invite-card-photo-preview>
+          <img
+            data-invite-card-photo-preview-image
+            class="hidden"
+            alt="Selected invite card photo"
+          />
+          <div class="photo-placeholder" data-invite-card-photo-placeholder>
+            Select a photo from the gallery.
+          </div>
+        </div>
+        <p class="hint">Pick the image via the photo chooser modal.</p>
+      </label>
       <div class="field-block" data-field-block="name">
         <label class="field standard-width">
           <span>Name</span>
-          <input id="invite-card-name" type="text" />
+          <input id="invite-card-name" type="text" data-field-value />
         </label>
         <div class="field-controls">
           <label class="field standard-width">
             <span>Field type</span>
             <select data-field-type>
               <option value="photo" selected>Photo</option>
+              <option value="qr">QR Code</option>
               <option value="text">Text</option>
             </select>
           </label>
@@ -33,8 +54,8 @@
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
-              <input id="invite-card-name-x" name="invite-card-name-x" type="text" inputmode="decimal" placeholder="x" />
-              <input id="invite-card-name-y" name="invite-card-name-y" type="text" inputmode="decimal" placeholder="y" />
+              <input id="invite-card-name-x" name="invite-card-name-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
+              <input id="invite-card-name-y" name="invite-card-name-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
               <input
                 id="invite-card-name-scale"
                 name="invite-card-name-scale"
@@ -108,6 +129,7 @@
             inputmode="numeric"
             pattern="\d{0,10}"
             maxlength="10"
+            data-field-value
           />
         </label>
         <div class="field-controls">
@@ -115,6 +137,7 @@
             <span>Field type</span>
             <select data-field-type>
               <option value="photo" selected>Photo</option>
+              <option value="qr">QR Code</option>
               <option value="text">Text</option>
             </select>
           </label>
@@ -129,8 +152,8 @@
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
-              <input id="invite-card-national-id-x" name="invite-card-national-id-x" type="text" inputmode="decimal" placeholder="x" />
-              <input id="invite-card-national-id-y" name="invite-card-national-id-y" type="text" inputmode="decimal" placeholder="y" />
+              <input id="invite-card-national-id-x" name="invite-card-national-id-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
+              <input id="invite-card-national-id-y" name="invite-card-national-id-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
               <input
                 id="invite-card-national-id-scale"
                 name="invite-card-national-id-scale"
@@ -198,13 +221,14 @@
       <div class="field-block" data-field-block="guest-code">
         <label class="field standard-width">
           <span>Guest code</span>
-          <input id="invite-card-guest-code" type="text" />
+          <input id="invite-card-guest-code" type="text" data-field-value />
         </label>
         <div class="field-controls">
           <label class="field standard-width">
             <span>Field type</span>
             <select data-field-type>
               <option value="photo" selected>Photo</option>
+              <option value="qr">QR Code</option>
               <option value="text">Text</option>
             </select>
           </label>
@@ -219,8 +243,8 @@
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
-              <input id="invite-card-guest-code-x" name="invite-card-guest-code-x" type="text" inputmode="decimal" placeholder="x" />
-              <input id="invite-card-guest-code-y" name="invite-card-guest-code-y" type="text" inputmode="decimal" placeholder="y" />
+              <input id="invite-card-guest-code-x" name="invite-card-guest-code-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
+              <input id="invite-card-guest-code-y" name="invite-card-guest-code-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
               <input
                 id="invite-card-guest-code-scale"
                 name="invite-card-guest-code-scale"
@@ -285,28 +309,36 @@
           </label>
         </div>
       </div>
-      <label class="field full">
-        <span>Choose photo</span>
-        <div class="photo-actions">
-          <button type="button" class="btn ghost" id="invite-card-choose-photo">
-            Choose photo
-          </button>
-          <span class="muted" data-invite-card-photo-label>No photo selected.</span>
-        </div>
-        <div class="photo-preview" data-invite-card-photo-preview>
-          <img
-            data-invite-card-photo-preview-image
-            class="hidden"
-            alt="Selected invite card photo"
-          />
-          <div class="photo-placeholder" data-invite-card-photo-placeholder>
-            Select a photo from the gallery.
-          </div>
-        </div>
-        <p class="hint">Pick the image via the photo chooser modal.</p>
-      </label>
-      <div class="section-footer">
-        <!-- Map Photo button removed per request -->
+      <div class="invite-card-generator">
+        <button
+          type="button"
+          id="invite-card-generate"
+          class="btn primary full-width"
+          disabled
+        >
+          Generate Invite Card
+        </button>
+        <p class="muted" data-invite-card-status>
+          Select a photo and fill every field to enable the generator.
+        </p>
+      </div>
+      <div class="invite-card-preview" data-invite-card-preview>
+        <p class="muted invite-card-preview__placeholder" data-invite-card-preview-placeholder>
+          Generated cards appear here after the generator runs.
+        </p>
+        <canvas
+          data-invite-card-canvas
+          class="hidden"
+          role="img"
+          aria-label="Generated invite card preview"
+        ></canvas>
+        <a
+          class="btn primary hidden"
+          data-invite-card-download
+          download="invite-card.png"
+        >
+          Download invite card
+        </a>
       </div>
     </div>
   </div>

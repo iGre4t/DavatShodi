@@ -152,6 +152,14 @@ let inviteCardPhotoPreviewImage = null;
 let inviteCardPhotoPlaceholder = null;
 let inviteCardPhotoLabel = null;
 let inviteCardChoosePhotoButton = null;
+let inviteCardFieldControls = [];
+const INVITE_CARD_DEFAULT_QR_SIZE = 160;
+let inviteCardGenerateButton = null;
+let inviteCardStatusLabel = null;
+let inviteCardPreviewCanvas = null;
+let inviteCardPreviewPlaceholder = null;
+let inviteCardDownloadLink = null;
+let inviteCardPreviewPhotoId = null;
 let siteIconValue = "";
 let siteIconPreviewImage = null;
 let siteIconPlaceholder = null;
@@ -2264,33 +2272,57 @@ function getGalleryThumbnailUrl(photoOrId, options = {}) {
 }
 
 function updateInviteCardPhotoPreview() {
-  if (!inviteCardPhotoPreviewImage || !inviteCardPhotoPlaceholder || !inviteCardPhotoLabel) {
-    return;
+    if (!inviteCardPhotoPreviewImage || !inviteCardPhotoPlaceholder || !inviteCardPhotoLabel) {
+      return;
+    }
+    const hasPhoto = Boolean(inviteCardSelectedPhoto);
+    const currentPhotoId = inviteCardSelectedPhoto?.id ?? null;
+    const photoChanged = inviteCardPreviewPhotoId !== currentPhotoId;
+    setInviteCardFieldsEnabled(hasPhoto);
+    if (hasPhoto && photoChanged) {
+      resetInviteCardPreviewState();
+    }
+    if (!hasPhoto) {
+      inviteCardPhotoPreviewImage.classList.add("hidden");
+      inviteCardPhotoPreviewImage.removeAttribute("src");
+      inviteCardPhotoPlaceholder.classList.remove("hidden");
+      inviteCardPhotoLabel.textContent = "No photo selected.";
+      resetInviteCardPreviewState();
+      refreshInviteCardActionState();
+      return;
+    }
+    inviteCardPhotoPlaceholder.classList.add("hidden");
+    inviteCardPhotoLabel.textContent =
+      inviteCardSelectedPhoto.title || "Photo selected";
+    const previewUrl = getGalleryThumbnailUrl(inviteCardSelectedPhoto, {
+      mode: GALLERY_THUMB_PREVIEW_MODE
+    });
+    if (previewUrl) {
+      inviteCardPhotoPreviewImage.src = previewUrl;
+      inviteCardPhotoPreviewImage.alt =
+        inviteCardSelectedPhoto.altText ||
+        inviteCardSelectedPhoto.title ||
+        "Selected photo";
+      inviteCardPhotoPreviewImage.classList.remove("hidden");
+    } else {
+      inviteCardPhotoPreviewImage.classList.add("hidden");
+      inviteCardPhotoPreviewImage.removeAttribute("src");
+    }
+    refreshInviteCardActionState();
   }
-  if (!inviteCardSelectedPhoto) {
-    inviteCardPhotoPreviewImage.classList.add("hidden");
-    inviteCardPhotoPreviewImage.removeAttribute("src");
-    inviteCardPhotoPlaceholder.classList.remove("hidden");
-    inviteCardPhotoLabel.textContent = "No photo selected.";
-    return;
-  }
-  inviteCardPhotoPlaceholder.classList.add("hidden");
-  inviteCardPhotoLabel.textContent =
-    inviteCardSelectedPhoto.title || "Photo selected";
-  const previewUrl = getGalleryThumbnailUrl(inviteCardSelectedPhoto, {
-    mode: GALLERY_THUMB_PREVIEW_MODE
+
+function setInviteCardFieldsEnabled(enabled) {
+  const isEnabled = Boolean(enabled);
+  inviteCardFieldControls.forEach((control) => {
+    control.disabled = !isEnabled;
   });
-  if (previewUrl) {
-    inviteCardPhotoPreviewImage.src = previewUrl;
-    inviteCardPhotoPreviewImage.alt =
-      inviteCardSelectedPhoto.altText ||
-      inviteCardSelectedPhoto.title ||
-      "Selected photo";
-    inviteCardPhotoPreviewImage.classList.remove("hidden");
-  } else {
-    inviteCardPhotoPreviewImage.classList.add("hidden");
-    inviteCardPhotoPreviewImage.removeAttribute("src");
-  }
+}
+
+function initializeInviteCardFieldControls() {
+  inviteCardFieldControls = qsa(
+    "#tab-invite-card [data-field-block] input, #tab-invite-card [data-field-block] select, #tab-invite-card [data-field-block] button"
+  );
+  setInviteCardFieldsEnabled(Boolean(inviteCardSelectedPhoto));
 }
 
 function updateFieldStyleState(block) {
@@ -2324,6 +2356,257 @@ function initializeFieldControllers() {
     typeSelect.addEventListener("input", update);
     update();
   });
+}
+
+const INVITE_CARD_ALIGNMENT_MAP = {
+  rtl: "right",
+  ltr: "left",
+  center: "center"
+};
+
+function parseCoordinateInput(rawValue) {
+  const candidate = Number.parseFloat(String(rawValue ?? "").trim());
+  return Number.isFinite(candidate) ? candidate : 0;
+}
+
+function parseScaleInput(rawValue) {
+  const candidate = Number.parseFloat(String(rawValue ?? "").trim());
+  return Number.isFinite(candidate) ? candidate : null;
+}
+
+function collectInviteCardFieldData() {
+  const blocks = qsa("#tab-invite-card [data-field-block]");
+  return blocks.map((block) => {
+    const fieldId = (block.dataset.fieldBlock ?? "").trim();
+    const valueInput = block.querySelector("[data-field-value]");
+    const value = (valueInput?.value ?? "").trim();
+    const type = (block.querySelector("[data-field-type]")?.value ?? "text").trim();
+    const alignment = (block.querySelector("[data-field-alignment]")?.value ?? "center").trim();
+    const fontFamily = block.querySelector("[data-field-font]")?.value || "PeydaWebFaNum";
+    const fontWeight = block.querySelector("[data-field-weight]")?.value || "400";
+    const fontSizeInput = block.querySelector("[data-field-size]");
+    const fontSize = Math.max(8, Number.parseFloat(fontSizeInput?.value ?? "16") || 16);
+    const xCoordinate = parseCoordinateInput(
+      block.querySelector('input[data-field-coordinate="x"]')?.value
+    );
+    const yCoordinate = parseCoordinateInput(
+      block.querySelector('input[data-field-coordinate="y"]')?.value
+    );
+    const scaleValue = parseScaleInput(block.querySelector("[data-scale-input]")?.value);
+    const colorKey = getStyleFieldKey(fieldId);
+    const color = ensureHexColor(styleFieldColorState[colorKey]) || "#111111";
+    return {
+      id: fieldId,
+      value,
+      type,
+      alignment,
+      fontFamily,
+      fontWeight,
+      fontSize,
+      x: xCoordinate,
+      y: yCoordinate,
+      scale: scaleValue,
+      color
+    };
+  });
+}
+
+function isInviteCardReady() {
+  if (!inviteCardSelectedPhoto) {
+    return false;
+  }
+  const fields = collectInviteCardFieldData();
+  return fields.every((field) => field.value !== "");
+}
+
+function refreshInviteCardActionState() {
+  const ready = isInviteCardReady();
+  const hasPhoto = Boolean(inviteCardSelectedPhoto);
+  if (inviteCardGenerateButton) {
+    inviteCardGenerateButton.disabled = !ready;
+  }
+  if (inviteCardStatusLabel) {
+    let message = "Select a photo and fill every field to enable the generator.";
+    if (!hasPhoto) {
+      message = "Pick a photo to begin composing your invite card.";
+    } else if (!ready) {
+      message = "Fill every field to enable the generator.";
+    } else {
+      message = "Ready to generate an invite card.";
+    }
+    inviteCardStatusLabel.textContent = message;
+  }
+}
+
+function handleInviteCardFieldInteraction(event) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  if (!event.target.closest("[data-field-block]")) {
+    return;
+  }
+  refreshInviteCardActionState();
+}
+
+function resetInviteCardPreviewState() {
+  if (inviteCardPreviewCanvas) {
+    inviteCardPreviewCanvas.classList.add("hidden");
+  }
+  if (inviteCardPreviewPlaceholder) {
+    inviteCardPreviewPlaceholder.classList.remove("hidden");
+  }
+  if (inviteCardDownloadLink) {
+    inviteCardDownloadLink.classList.add("hidden");
+  }
+  inviteCardPreviewPhotoId = null;
+}
+
+function clampNumber(value, min = 0, max = Infinity) {
+  const num = Number(value);
+  if (Number.isNaN(num)) {
+    return min;
+  }
+  return Math.min(Math.max(num, min), max);
+}
+
+function loadImage(src, crossOrigin = false) {
+  return new Promise((resolve, reject) => {
+    if (!src) {
+      reject(new Error("Invalid image source."));
+      return;
+    }
+    const image = new Image();
+    if (crossOrigin) {
+      image.crossOrigin = "anonymous";
+    }
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to load image."));
+    image.src = src;
+  });
+}
+
+function getQrCodeUrl(data, size) {
+  const encoded = encodeURIComponent(String(data ?? ""));
+  const normalizedSize = Math.max(32, Math.min(Math.round(size), 768));
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${normalizedSize}x${normalizedSize}&margin=2&data=${encoded}`;
+}
+
+async function renderInviteCardCanvas(fields) {
+  if (!inviteCardSelectedPhoto) {
+    throw new Error("No base photo selected.");
+  }
+  const photoUrl = getGalleryPhotoFileUrl(inviteCardSelectedPhoto);
+  if (!photoUrl) {
+    throw new Error("Unable to resolve the photo URL.");
+  }
+  const baseImage = await loadImage(photoUrl, true);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, baseImage.naturalWidth || baseImage.width);
+  canvas.height = Math.max(1, baseImage.naturalHeight || baseImage.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Unable to obtain canvas context.");
+  }
+  ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+  for (const field of fields) {
+    if (field.type === "text" && field.value) {
+      drawInviteCardText(ctx, field);
+    } else if (field.type === "qr" && field.value) {
+      await drawInviteCardQr(ctx, field);
+    }
+  }
+  return canvas;
+}
+
+function drawInviteCardText(ctx, field) {
+  ctx.save();
+  ctx.fillStyle = field.color;
+  ctx.font = `${field.fontWeight} ${field.fontSize}px ${field.fontFamily}`;
+  const align = INVITE_CARD_ALIGNMENT_MAP[field.alignment] ?? "center";
+  ctx.textAlign = align;
+  ctx.textBaseline = "top";
+  ctx.direction = field.alignment === "rtl" ? "rtl" : "ltr";
+  const lineHeight = field.fontSize * 1.3;
+  const chunks = String(field.value).split(/\r?\n/);
+  const safeX = clampNumber(field.x, 0, ctx.canvas.width);
+  const safeY = clampNumber(field.y, 0, ctx.canvas.height);
+  chunks.forEach((chunk, index) => {
+    ctx.fillText(chunk, safeX, safeY + index * lineHeight);
+  });
+  ctx.restore();
+}
+
+async function drawInviteCardQr(ctx, field) {
+  const size = field.scale && field.scale > 0 ? field.scale : INVITE_CARD_DEFAULT_QR_SIZE;
+  const normalizedSize = Math.max(32, Math.min(Math.round(size), ctx.canvas.width, ctx.canvas.height));
+  const qrImage = await loadImage(getQrCodeUrl(field.value, normalizedSize), true);
+  const startX = clampNumber(field.x, 0, ctx.canvas.width - normalizedSize);
+  const startY = clampNumber(field.y, 0, ctx.canvas.height - normalizedSize);
+  ctx.drawImage(qrImage, startX, startY, normalizedSize, normalizedSize);
+}
+
+function formatInviteCardDownloadName(baseName) {
+  const normalized = (baseName ?? "invite-card")
+    .toString()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9_-]/g, "");
+  return normalized || "invite-card";
+}
+
+function showInviteCardPreview(canvas) {
+  if (!inviteCardPreviewCanvas) {
+    return;
+  }
+  const context = inviteCardPreviewCanvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  inviteCardPreviewCanvas.width = canvas.width;
+  inviteCardPreviewCanvas.height = canvas.height;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(canvas, 0, 0);
+  inviteCardPreviewCanvas.classList.remove("hidden");
+  if (inviteCardPreviewPlaceholder) {
+    inviteCardPreviewPlaceholder.classList.add("hidden");
+  }
+  if (inviteCardDownloadLink) {
+    const downloadName = formatInviteCardDownloadName(
+      inviteCardSelectedPhoto?.title || inviteCardSelectedPhoto?.filename
+    );
+    inviteCardDownloadLink.href = inviteCardPreviewCanvas.toDataURL("image/png");
+    inviteCardDownloadLink.download = `${downloadName}.png`;
+    inviteCardDownloadLink.classList.remove("hidden");
+  }
+  inviteCardPreviewPhotoId = inviteCardSelectedPhoto?.id ?? null;
+}
+
+async function handleInviteCardGeneration() {
+  if (!inviteCardSelectedPhoto) {
+    showErrorSnackbar({ message: "Please select a photo first." });
+    return;
+  }
+  const fields = collectInviteCardFieldData();
+  if (!fields.every((field) => field.value)) {
+    showErrorSnackbar({ message: "Fill every field before generating the card." });
+    return;
+  }
+  inviteCardGenerateButton?.setAttribute("disabled", "disabled");
+  if (inviteCardStatusLabel) {
+    inviteCardStatusLabel.textContent = "Generating invite card...";
+  }
+  try {
+    const previewCanvas = await renderInviteCardCanvas(fields);
+    showInviteCardPreview(previewCanvas);
+    if (inviteCardStatusLabel) {
+      inviteCardStatusLabel.textContent = "Invite card generated successfully.";
+    }
+    showDefaultToast("Invite card generated. Download it below if needed.");
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Unable to generate the invite card." });
+  } finally {
+    refreshInviteCardActionState();
+  }
 }
 
 function initStyleColorPickers() {
@@ -4112,6 +4395,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardPhotoPreviewImage = qs('[data-invite-card-photo-preview-image]');
   inviteCardPhotoPlaceholder = qs('[data-invite-card-photo-placeholder]');
   inviteCardPhotoLabel = qs('[data-invite-card-photo-label]');
+  inviteCardGenerateButton = qs('#invite-card-generate');
+  inviteCardStatusLabel = qs('[data-invite-card-status]');
+  inviteCardPreviewCanvas = qs('[data-invite-card-canvas]');
+  inviteCardPreviewPlaceholder = qs('[data-invite-card-preview-placeholder]');
+  inviteCardDownloadLink = qs('[data-invite-card-download]');
   inviteCardChoosePhotoButton?.addEventListener('click', () => {
     openPhotoChooserModal({
       allowMultiple: false,
@@ -4122,6 +4410,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   });
+  inviteCardGenerateButton?.addEventListener('click', () => {
+    void handleInviteCardGeneration();
+  });
+  const inviteCardTab = qs('#tab-invite-card');
+  inviteCardTab?.addEventListener('input', handleInviteCardFieldInteraction);
+  inviteCardTab?.addEventListener('change', handleInviteCardFieldInteraction);
+  initializeInviteCardFieldControls();
   updateInviteCardPhotoPreview();
   initializeFieldControllers();
   initStyleColorPickers();
