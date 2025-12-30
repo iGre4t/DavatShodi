@@ -149,28 +149,28 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
 .form.single-column {
   grid-template-columns: 1fr;
 }
-.tab#tab-invite-card .form.grid.one-column {
+#tab-invite-card .form.grid.one-column {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
 }
-.tab#tab-invite-card .card {
+#tab-invite-card .card {
   max-width: 1200px;
   margin: 0 auto;
 }
-.tab#tab-invite-card .invite-card-photo-row {
+#tab-invite-card .invite-card-photo-row {
   margin-bottom: 16px;
 }
-.tab#tab-invite-card .invite-card-field-grid {
+#tab-invite-card .invite-card-field-grid {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
 }
-.tab#tab-invite-card .invite-card-generator {
+#tab-invite-card .invite-card-generator {
   margin-top: 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.tab#tab-invite-card .invite-card-preview {
+#tab-invite-card .invite-card-preview {
   margin-top: 16px;
   display: flex;
   flex-direction: column;
@@ -178,13 +178,13 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   align-items: center;
   text-align: center;
 }
-.tab#tab-invite-card .invite-card-preview canvas {
+#tab-invite-card .invite-card-preview canvas {
   width: min(480px, 100%);
   border-radius: 16px;
   border: 1px solid var(--border);
   box-shadow: 0 24px 45px rgba(15, 23, 42, 0.15);
 }
-.tab#tab-invite-card .position-picker-button {
+#tab-invite-card .position-picker-button {
   align-self: flex-start;
   margin-top: 0;
   margin-left: 4px;
@@ -262,7 +262,7 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   gap: 12px;
   justify-content: flex-end;
 }
-.tab#tab-invite-card .invite-card-preview canvas + .btn {
+#tab-invite-card .invite-card-preview canvas + .btn {
   align-self: center;
 }
 .field { display: grid; gap: 6px; }

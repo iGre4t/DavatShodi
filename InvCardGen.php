@@ -3,7 +3,7 @@
  * Invite Card Generator tab markup.
  */
 ?>
-<section id="tab-invite-card" class="tab">
+<section id="tab-invite-card">
   <div class="card">
     <div class="section-header">
       <h3>Invite Card Generator</h3>

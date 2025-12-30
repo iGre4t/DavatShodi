@@ -165,11 +165,6 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-team-line" aria-hidden="true"></span>
             <span>مهمانان و رویدادها</span>
           </button>
-          <button class="nav-item" data-tab="invite-card">
-            <span class="nav-icon ri ri-v-card-line" aria-hidden="true"></span>
-            <span>Invite Card Generator</span>
-          </button>
-          
           <button
             type="button"
             class="nav-item"
@@ -345,8 +340,6 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/winnerstab.php'; ?>
         <?php include __DIR__ . '/gallery-tab.php'; ?>
         <?php include __DIR__ . '/invitepanel.php'; ?>
-        <?php include __DIR__ . '/InvCardGen.php'; ?>
-
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
             <div class="sub-layout" data-sub-layout>

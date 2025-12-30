@@ -2421,6 +2421,15 @@ function collectInviteCardFieldData() {
   });
 }
 
+function buildInviteCardTemplatePayload() {
+  return {
+    photo_id: inviteCardSelectedPhoto?.id ?? "",
+    photo_title: inviteCardSelectedPhoto?.title ?? "",
+    photo_filename: inviteCardSelectedPhoto?.filename ?? "",
+    fields: collectInviteCardFieldData()
+  };
+}
+
 function isInviteCardReady() {
   if (!inviteCardSelectedPhoto) {
     return false;
@@ -2605,12 +2614,14 @@ async function handleInviteCardGeneration() {
   if (inviteCardStatusLabel) {
     inviteCardStatusLabel.textContent = "Generating invite card...";
   }
-  try {
-    const previewCanvas = await renderInviteCardCanvas(fields);
-    showInviteCardPreview(previewCanvas);
-    if (inviteCardStatusLabel) {
-      inviteCardStatusLabel.textContent = "Invite card generated successfully.";
-    }
+    try {
+      const previewCanvas = await renderInviteCardCanvas(fields);
+      showInviteCardPreview(previewCanvas);
+      const templatePayload = buildInviteCardTemplatePayload();
+      window.saveEventInviteCardTemplate?.(templatePayload);
+      if (inviteCardStatusLabel) {
+        inviteCardStatusLabel.textContent = "Invite card generated successfully.";
+      }
     showDefaultToast("Invite card generated. Download it below if needed.");
   } catch (error) {
     showErrorSnackbar({ message: error?.message || "Unable to generate the invite card." });

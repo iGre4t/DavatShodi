@@ -512,6 +512,51 @@ if ($method === 'POST') {
               'logs' => normalizeInviteLogs($store['logs'])
           ]);
           exit;
+      } elseif ($action === 'save_invite_card_template') {
+          $eventCode = trim((string)($_POST['event_code'] ?? ''));
+          $templatePayload = (string)($_POST['template'] ?? '');
+          if ($eventCode === '' || $templatePayload === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event code and template data are required.']);
+              exit;
+          }
+          $decoded = json_decode($templatePayload, true);
+          if (!is_array($decoded)) {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Invalid template payload.']);
+              exit;
+          }
+          $fields = is_array($decoded['fields'] ?? null) ? array_values($decoded['fields']) : [];
+          $photoId = trim((string)($decoded['photo_id'] ?? ''));
+          $photoTitle = trim((string)($decoded['photo_title'] ?? ''));
+          $photoFilename = trim((string)($decoded['photo_filename'] ?? ''));
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $store['events'][$eventIndex]['invite_card_template'] = [
+              'photo_id' => $photoId,
+              'photo_title' => $photoTitle,
+              'photo_filename' => $photoFilename,
+              'fields' => $fields,
+              'updated_at' => date('c')
+          ];
+          $store['events'][$eventIndex]['updated_at'] = date('c');
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Unable to persist invite card template.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Invite card template saved.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
       } elseif ($action === 'delete_event') {
           $eventCode = trim((string)($_POST['event_code'] ?? ''));
           if ($eventCode === '') {
@@ -1354,6 +1399,7 @@ function normalizeEventsForResponse(array $events): array
             'source' => is_array($event['source'] ?? null) ? $event['source'] : null,
             'guests' => $guests,
             'created_at' => (string)($event['created_at'] ?? ''),
+            'invite_card_template' => is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [],
             'updated_at' => (string)($event['updated_at'] ?? '')
         ];
     }, $events));

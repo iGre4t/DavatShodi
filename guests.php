@@ -134,6 +134,15 @@
           >
             Event prizes
           </button>
+          <button
+            type="button"
+            class="default-top-tab-list__tab"
+            data-event-section-target="event-invite-card"
+            aria-controls="event-invite-card-section"
+            aria-selected="false"
+          >
+            Invite Card Generator
+          </button>
         </div>
         <div class="event-section" data-event-section="event-info" id="event-info-section">
           <div class="card">
@@ -344,6 +353,10 @@
               </table>
             </div>
           </div>
+        </div>
+
+        <div class="event-section hidden" data-event-section="event-invite-card" id="event-invite-card-section">
+          <?php include __DIR__ . '/InvCardGen.php'; ?>
         </div>
 
 </section>
@@ -562,6 +575,7 @@
     };
     let activeEventCode = "";
     let manualLockedEventCode = "";
+    const inviteCardFieldDefaults = {};
 
     const uploadForm = document.getElementById("guest-upload-form");
     const uploadSubmit = document.getElementById("guest-upload-submit");
@@ -825,6 +839,7 @@
       renderManualEventOptions();
       renderEventTabs();
       renderGuestTable();
+      applyEventInviteCardTemplate();
     }
 
     function renderManualEventOptions(forceEventCode = "") {
@@ -946,6 +961,7 @@
       renderGuestTable();
       renderEventWinners();
       loadEventPrizesForCode(activeEventCode);
+      applyEventInviteCardTemplate();
     }
 
     function updateEventInfoForm() {
@@ -2312,6 +2328,212 @@
       });
     }
 
+    function getInviteCardFieldBlocks() {
+      const container = document.getElementById("tab-invite-card");
+      if (!container) {
+        return [];
+      }
+      return $qsa("[data-field-block]", container);
+    }
+
+    function findInviteCardFieldBlock(fieldId) {
+      if (!fieldId) {
+        return null;
+      }
+      const normalized = String(fieldId).trim();
+      return getInviteCardFieldBlocks().find(
+        (block) => (block.dataset.fieldBlock || "").trim() === normalized
+      ) || null;
+    }
+
+    function cacheInviteCardFieldDefaults() {
+      const colorState = typeof styleFieldColorState === "object" ? styleFieldColorState : null;
+      getInviteCardFieldBlocks().forEach((block) => {
+        const fieldId = (block.dataset.fieldBlock || "").trim();
+        if (!fieldId) {
+          return;
+        }
+        inviteCardFieldDefaults[fieldId] = {
+          value: block.querySelector("[data-field-value]")?.value || "",
+          type: block.querySelector("[data-field-type]")?.value || "",
+          alignment: block.querySelector("[data-field-alignment]")?.value || "",
+          fontFamily: block.querySelector("[data-field-font]")?.value || "",
+          fontWeight: block.querySelector("[data-field-weight]")?.value || "",
+          fontSize: block.querySelector("[data-field-size]")?.value || "",
+          x: block.querySelector('input[data-field-coordinate="x"]')?.value || "",
+          y: block.querySelector('input[data-field-coordinate="y"]')?.value || "",
+          scale: block.querySelector("[data-scale-input]")?.value || "",
+          color: ensureHexColor(colorState?.[getStyleFieldKey(fieldId)] ?? "") || "#111111"
+        };
+      });
+    }
+
+    function resetEventInviteCardFields() {
+      const colorState = typeof styleFieldColorState === "object" ? styleFieldColorState : null;
+      getInviteCardFieldBlocks().forEach((block) => {
+        const fieldId = (block.dataset.fieldBlock || "").trim();
+        const defaults = inviteCardFieldDefaults[fieldId] || {};
+        const valueInput = block.querySelector("[data-field-value]");
+        if (valueInput) {
+          valueInput.value = defaults.value || "";
+        }
+        const typeSelect = block.querySelector("[data-field-type]");
+        if (typeSelect) {
+          typeSelect.value = defaults.type || typeSelect.options[0]?.value || "text";
+        }
+        const alignmentSelect = block.querySelector("[data-field-alignment]");
+        if (alignmentSelect) {
+          alignmentSelect.value = defaults.alignment || alignmentSelect.options[0]?.value || "";
+        }
+        const fontSelect = block.querySelector("[data-field-font]");
+        if (fontSelect) {
+          fontSelect.value = defaults.fontFamily || fontSelect.options[0]?.value || "";
+        }
+        const weightSelect = block.querySelector("[data-field-weight]");
+        if (weightSelect) {
+          weightSelect.value = defaults.fontWeight || weightSelect.options[0]?.value || "";
+        }
+        const sizeInput = block.querySelector("[data-field-size]");
+        if (sizeInput) {
+          sizeInput.value = defaults.fontSize || "";
+        }
+        const xInput = block.querySelector('input[data-field-coordinate="x"]');
+        if (xInput) {
+          xInput.value = defaults.x || "";
+        }
+        const yInput = block.querySelector('input[data-field-coordinate="y"]');
+        if (yInput) {
+          yInput.value = defaults.y || "";
+        }
+        const scaleInput = block.querySelector("[data-scale-input]");
+        if (scaleInput) {
+          scaleInput.value = defaults.scale || "";
+        }
+        const colorKey = getStyleFieldKey(fieldId);
+        const colorValue = defaults.color || "#111111";
+        if (colorState) {
+          colorState[colorKey] = colorValue;
+        }
+        updateStyleColorPreview?.(fieldId, colorValue);
+        updateFieldStyleState?.(block);
+      });
+      inviteCardSelectedPhoto = null;
+      updateInviteCardPhotoPreview?.();
+      resetInviteCardPreviewState?.();
+      refreshInviteCardActionState?.();
+    }
+
+    function applyTemplateField(field) {
+      const colorState = typeof styleFieldColorState === "object" ? styleFieldColorState : null;
+      const fieldId = (field?.id ?? "").toString().trim();
+      if (!fieldId) {
+        return;
+      }
+      const block = findInviteCardFieldBlock(fieldId);
+      if (!block) {
+        return;
+      }
+      const valueInput = block.querySelector("[data-field-value]");
+      if (valueInput && typeof field.value === "string") {
+        valueInput.value = field.value;
+      }
+      const typeSelect = block.querySelector("[data-field-type]");
+      if (typeSelect && field.type) {
+        typeSelect.value = field.type;
+      }
+      const alignmentSelect = block.querySelector("[data-field-alignment]");
+      if (alignmentSelect && field.alignment) {
+        alignmentSelect.value = field.alignment;
+      }
+      const fontSelect = block.querySelector("[data-field-font]");
+      if (fontSelect && field.fontFamily) {
+        fontSelect.value = field.fontFamily;
+      }
+      const weightSelect = block.querySelector("[data-field-weight]");
+      if (weightSelect && field.fontWeight) {
+        weightSelect.value = field.fontWeight;
+      }
+      const sizeInput = block.querySelector("[data-field-size]");
+      if (sizeInput && field.fontSize) {
+        sizeInput.value = String(field.fontSize);
+      }
+      const xInput = block.querySelector('input[data-field-coordinate="x"]');
+      if (xInput && typeof field.x !== "undefined") {
+        xInput.value = String(field.x);
+      }
+      const yInput = block.querySelector('input[data-field-coordinate="y"]');
+      if (yInput && typeof field.y !== "undefined") {
+        yInput.value = String(field.y);
+      }
+      const scaleInput = block.querySelector("[data-scale-input]");
+      if (scaleInput && typeof field.scale !== "undefined") {
+        scaleInput.value = String(field.scale);
+      }
+      const colorKey = getStyleFieldKey(fieldId);
+      const colorValue = ensureHexColor(field.color) || "#111111";
+      if (colorState) {
+        colorState[colorKey] = colorValue;
+      }
+      updateStyleColorPreview?.(fieldId, colorValue);
+      updateFieldStyleState?.(block);
+    }
+
+    function applyEventInviteCardTemplate() {
+      const events = Array.isArray(state.events) ? state.events : [];
+      if (!activeEventCode) {
+        resetEventInviteCardFields();
+        return;
+      }
+      const selectedEvent = events.find(ev => (ev.code || "") === activeEventCode);
+      const template = selectedEvent?.invite_card_template;
+      if (!template || !Array.isArray(template.fields) || !template.fields.length) {
+        resetEventInviteCardFields();
+        return;
+      }
+      if (template.photo_id) {
+        inviteCardSelectedPhoto =
+          (window.GALLERY_PHOTOS || []).find(photo => String(photo.id) === String(template.photo_id)) || null;
+      } else {
+        inviteCardSelectedPhoto = null;
+      }
+      updateInviteCardPhotoPreview?.();
+      template.fields.forEach(field => applyTemplateField(field));
+      refreshInviteCardActionState?.();
+    }
+
+    async function persistEventInviteCardTemplate(payload) {
+      if (!activeEventCode) {
+        showErrorSnackbar?.({ message: "Select an event before saving the invite card template." });
+        return;
+      }
+      if (!payload || typeof payload !== "object") {
+        return;
+      }
+      const formData = new FormData();
+      formData.append("action", "save_invite_card_template");
+      formData.append("event_code", activeEventCode);
+      formData.append("template", JSON.stringify(payload));
+      try {
+        const response = await fetch("./api/guests.php", {
+          method: "POST",
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== "ok") {
+          throw new Error(data.message || "Unable to save invite card template.");
+        }
+        state.events = Array.isArray(data.events) ? data.events : state.events;
+        refreshEventControls();
+        showDefaultToast?.("Invite card template saved.");
+      } catch (error) {
+        showErrorSnackbar?.({ message: error?.message || "Unable to save invite card template." });
+      }
+    }
+
+    window.saveEventInviteCardTemplate = function(templatePayload) {
+      void persistEventInviteCardTemplate(templatePayload);
+    };
+
     function setEventWinnersStatus(message, isError = false) {
       if (!eventWinnersStatus) return;
       eventWinnersStatus.textContent = message || "";
@@ -2746,6 +2968,7 @@
         }
       });
       fetchEventWinners();
+      cacheInviteCardFieldDefaults();
 
       renderEventTabs();
       fetchGuestEvents();
