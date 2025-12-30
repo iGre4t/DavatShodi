@@ -178,15 +178,15 @@
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;">
                   <label class="field" style="flex:1 1 180px; margin:0;">
                     <span>Event join start time</span>
-                    <input id="event-info-join-start-time" name="join_start_time" type="time" step="60" />
+                    <select id="event-info-join-start-time" name="join_start_time" class="field"></select>
                   </label>
                   <label class="field" style="flex:1 1 180px; margin:0;">
                     <span>Event join limit time</span>
-                    <input id="event-info-join-limit-time" name="join_limit_time" type="time" step="60" />
+                    <select id="event-info-join-limit-time" name="join_limit_time" class="field"></select>
                   </label>
                   <label class="field" style="flex:1 1 180px; margin:0;">
                     <span>Event end time</span>
-                    <input id="event-info-join-end-time" name="join_end_time" type="time" step="60" />
+                    <select id="event-info-join-end-time" name="join_end_time" class="field"></select>
                   </label>
                 </div>
               </div>
@@ -591,7 +591,10 @@
     let editContext = null;
     const manualModal = document.getElementById("guest-manual-modal");
     const manualCloseButtons = $qsa("[data-guest-manual-close]", manualModal || document);
-      const manualForm = document.getElementById("guest-manual-form");
+    const manualModalProgress = manualModal?.querySelector(".modal-progress");
+    const manualModalProgressMessage = manualModalProgress?.querySelector("[data-modal-progress-message]");
+    const defaultManualModalProgressText = (manualModalProgressMessage?.textContent || "").trim() || "در حال انجام...";
+    const manualForm = document.getElementById("guest-manual-form");
     const manualEventSelect = document.getElementById("manual-event-select");
     const manualEventDateInput = document.getElementById("manual-event-date");
     const manualFirstnameInput = document.getElementById("manual-firstname");
@@ -649,6 +652,7 @@
     function closeManualModal() {
       manualLockedEventCode = "";
       manualEventSelect?.removeAttribute("disabled");
+      hideManualModalProgress();
       hideModal(manualModal);
     }
 
@@ -792,6 +796,7 @@
           manualEventSelect.removeAttribute("disabled");
         }
       }
+      hideManualModalProgress();
       showModal(manualModal);
     }
 
@@ -1114,6 +1119,23 @@
       setCardProgressText(defaultCardProgressText);
     }
 
+    function setManualModalProgressText(message) {
+      if (!manualModalProgressMessage) return;
+      manualModalProgressMessage.textContent = message || defaultManualModalProgressText;
+    }
+
+    function showManualModalProgress(message) {
+      if (!manualModalProgress) return;
+      setManualModalProgressText(message);
+      manualModalProgress.classList.remove("hidden");
+    }
+
+    function hideManualModalProgress() {
+      if (!manualModalProgress) return;
+      manualModalProgress.classList.add("hidden");
+      setManualModalProgressText(defaultManualModalProgressText);
+    }
+
     function getAvailableGenders() {
       const set = new Set();
       state.events.forEach(event => {
@@ -1291,6 +1313,7 @@
         phone_number: (manualPhoneInput?.value || "").trim()
       };
       const submitButton = manualForm.querySelector("button[type='submit']");
+      showManualModalProgress("Adding guest...");
       submitButton?.setAttribute("disabled", "disabled");
       try {
         const formData = new FormData();
@@ -1313,6 +1336,7 @@
         showErrorSnackbar?.({ message: error?.message || "Failed to add guest." });
       } finally {
         submitButton?.removeAttribute("disabled");
+        hideManualModalProgress();
       }
     });
 
@@ -1525,6 +1549,25 @@
         option.textContent = t;
         select.appendChild(option);
       });
+    }
+
+    function buildQuarterHourOptions(select) {
+      if (!select) return;
+      select.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "--:--";
+      select.appendChild(placeholder);
+      for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          const hh = String(h).padStart(2, "0");
+          const mm = String(m).padStart(2, "0");
+          const option = document.createElement("option");
+          option.value = `${hh}:${mm}`;
+          option.textContent = `${hh}:${mm}`;
+          select.appendChild(option);
+        }
+      }
     }
 
     function openEditModal(code, number) {
@@ -2093,6 +2136,9 @@
 
       buildTimeOptions(editTimeEnteredInput);
       buildTimeOptions(editTimeExitedInput);
+      buildQuarterHourOptions(eventInfoJoinStartInput);
+      buildQuarterHourOptions(eventInfoJoinLimitInput);
+      buildQuarterHourOptions(eventInfoJoinEndInput);
 
       editNowButton?.addEventListener("click", () => {
         const hh = String(new Date().getHours()).padStart(2, "0");
