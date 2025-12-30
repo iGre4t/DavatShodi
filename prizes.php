@@ -13,9 +13,10 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
-const DEFAULT_PRIZE_STATE_PATH = __DIR__ . '/data/prize_draw_state.json';
+if (!defined('EVENTS_ROOT')) {
+  define('EVENTS_ROOT', __DIR__ . '/events');
+}
 const PRIZE_GRID_CARD_COUNT = 12;
-const DEFAULT_PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
 
 function respondJson(array $payload, int $statusCode = 200): void
 {
@@ -53,6 +54,9 @@ function loadPrizeDrawState(string $path): array
 
 function persistPrizeDrawState(string $path, array $state): bool
 {
+  if ($path === '') {
+    return false;
+  }
   return saveJsonPayload($path, $state);
 }
 
@@ -96,25 +100,35 @@ function getScopedEventCode(): string
 
 function resolvePrizeListPath(string $eventCode): string
 {
-  if ($eventCode !== '') {
-    $candidate = __DIR__ . '/events/' . $eventCode . '/prizelist.csv';
-    if (is_file($candidate)) {
-      return $candidate;
-    }
+  $code = sanitizeEventCode($eventCode);
+  if ($code === '') {
+    return '';
   }
-  return DEFAULT_PRIZE_LIST_PATH;
+  $directory = rtrim(EVENTS_ROOT, '/\\') . DIRECTORY_SEPARATOR . $code;
+  if (!is_dir($directory)) {
+    return '';
+  }
+  return $directory . '/prizelist.csv';
 }
 
 function resolvePrizeStatePath(string $eventCode): string
 {
-  if ($eventCode === '') {
-    return DEFAULT_PRIZE_STATE_PATH;
+  $code = sanitizeEventCode($eventCode);
+  if ($code === '') {
+    return '';
   }
-  return __DIR__ . '/data/prize_draw_state_' . $eventCode . '.json';
+  $dataDirectory = __DIR__ . '/data';
+  if (!is_dir($dataDirectory) && !mkdir($dataDirectory, 0755, true) && !is_dir($dataDirectory)) {
+    return '';
+  }
+  return $dataDirectory . '/prize_draw_state_' . $code . '.json';
 }
 
 function handleDrawPrizeAction(string $listPath, string $statePath): void
 {
+  if ($listPath === '' || $statePath === '') {
+    respondJson(['status' => 'error', 'message' => 'Event context is missing.'], 400);
+  }
   $prizeList = loadPrizeList($listPath);
   $state = loadPrizeDrawState($statePath);
   $normalized = normalizeCardAssignments($state['cards']);
@@ -166,6 +180,9 @@ function handleDrawPrizeAction(string $listPath, string $statePath): void
 
 function handleResetPrizeState(string $statePath, string $listPath): void
 {
+  if ($listPath === '' || $statePath === '') {
+    respondJson(['status' => 'error', 'message' => 'Event context is missing.'], 400);
+  }
   $prizeList = loadPrizeList($listPath);
   $state = ['drawn_ids' => [], 'cards' => []];
   if (!persistPrizeDrawState($statePath, $state)) {

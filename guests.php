@@ -16,7 +16,6 @@
           <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
             <div>
               <h3>List of guests</h3>
-              <p class="muted small">Upload an event guest list or add guests manually, then generate a clean list.</p>
             </div>
             <button type="button" class="btn" id="open-manual-modal">Add guest manually</button>
           </div>
@@ -64,7 +63,6 @@
         <div class="card hidden" data-event-section="event-guests" id="event-guests-section">
           <div class="table-header">
             <h3>Saved events</h3>
-            <p class="muted small">Each event shows its name, Shamsi date, and unique invite code.</p>
           </div>
           <div class="table-wrapper">
             <table>
@@ -136,7 +134,6 @@
             <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
               <div>
                 <h3>Event info</h3>
-                <p class="muted small">Update the selected event's name and date.</p>
               </div>
             </div>
             <form id="event-info-form" class="form">
@@ -164,10 +161,11 @@
                   />
                 </label>
               </div>
-              <div class="section-footer">
+              <div class="section-footer" style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button type="submit" class="btn primary" id="event-info-save">Save event</button>
+                <button type="button" class="btn ghost" id="event-info-delete" disabled>Delete event</button>
               </div>
-              <p id="event-info-empty" class="muted small hidden" style="margin-top: 8px;">No events available yet.</p>
+              <p id="event-info-empty" class="hidden" style="margin-top: 8px;">No events available yet.</p>
             </form>
           </div>
         </div>
@@ -175,12 +173,10 @@
           <div class="card">
             <div class="table-header">
               <h3>Guest lists</h3>
-              <div class="table-actions" style="align-items:flex-start;">
-                <div class="muted small" id="active-guest-event-label">
-                  Event: <strong id="active-guest-event-name">--</strong>
-                </div>
+            <div class="table-actions" style="align-items:flex-start;">
                 <div style="display:flex; align-items:center; gap:8px;">
                   <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
+                  <button type="button" class="btn" id="open-manual-modal-event">Add guest manually</button>
                   <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
                 </div>
               </div>
@@ -218,7 +214,6 @@
             <div class="table-header">
           <div>
             <h3>Event winners</h3>
-            <p class="muted small">Review the people marked as winners for the selected event.</p>
           </div>
             </div>
             <p id="event-winners-status" class="muted small" aria-live="polite"></p>
@@ -248,7 +243,6 @@
             <div class="table-header" style="flex-wrap:wrap;">
           <div>
             <h3>Event prizes</h3>
-            <p class="muted small">Manage the prizes that winners can be assigned.</p>
           </div>
               <form
                 id="event-prize-add-form"
@@ -296,8 +290,14 @@
         <h3 id="guest-mapping-title">Map columns to guest fields</h3>
         <button type="button" class="icon-btn" data-guest-mapping-close aria-label="Close mapping modal">X</button>
       </div>
+      <div id="guest-mapping-progress" class="modal-progress hidden" role="status" aria-live="polite">
+        <div class="loader-ring" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </div>
+        <p class="modal-progress__message" data-guest-mapping-progress-message>در حال آماده‌سازی...</p>
+      </div>
       <div class="modal-body">
-        <p class="muted small">Choose which columns from your upload match each required field.</p>
         <form id="guest-mapping-form" class="form">
           <div class="grid">
             <label class="field">
@@ -482,6 +482,7 @@
       events: []
     };
     let activeEventCode = "";
+    let manualLockedEventCode = "";
 
     const uploadForm = document.getElementById("guest-upload-form");
     const uploadSubmit = document.getElementById("guest-upload-submit");
@@ -496,6 +497,9 @@
     const mappingSubmit = document.getElementById("guest-mapping-submit");
     const mappingSelects = mappingForm ? mappingForm.querySelectorAll("[data-guest-column]") : [];
     const mappingCloseButtons = $qsa("[data-guest-mapping-close]", mappingModal || document);
+    const mappingProgressOverlay = document.getElementById("guest-mapping-progress");
+    const mappingProgressMessage = mappingProgressOverlay?.querySelector("[data-guest-mapping-progress-message]");
+    const defaultMappingProgressText = "در حال ساخت لیست مهمانان...";
     let jalaliPickerInitialized = false;
 
     const editModal = document.getElementById("guest-edit-modal");
@@ -524,6 +528,7 @@
     const manualGenderSelect = document.getElementById("manual-gender");
     const manualNationalIdInput = document.getElementById("manual-national-id");
     const manualPhoneInput = document.getElementById("manual-phone");
+    const manualEventPaneAddButton = document.getElementById("open-manual-modal-event");
     const exportSmsButton = document.getElementById("export-sms-link");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
     const eventListBody = document.getElementById("guest-event-list-body");
@@ -533,10 +538,11 @@
     const eventInfoDateInput = document.getElementById("event-info-date");
     const eventInfoCodeInput = document.getElementById("event-info-slug");
     const eventInfoSaveButton = document.getElementById("event-info-save");
+    const eventInfoDeleteButton = document.getElementById("event-info-delete");
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
-    const activeGuestEventLabel = document.getElementById("active-guest-event-name");
-    const eventSectionTabs = document.querySelector("[data-event-section-tabs]");
-    const eventSections = Array.from(document.querySelectorAll("[data-event-section]"));
+    const guestEventPane = document.querySelector(".sub-pane[data-pane=\"guest-event-pane\"]");
+    const eventSectionTabs = guestEventPane?.querySelector("[data-event-section-tabs]");
+    const eventSections = Array.from(guestEventPane?.querySelectorAll("[data-event-section]") || []);
     const eventWinnerListBody = document.getElementById("event-winner-list-body");
     const eventWinnersStatus = document.getElementById("event-winners-status");
     const eventPrizeForm = document.getElementById("event-prize-add-form");
@@ -548,6 +554,7 @@
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
     const subPaneButtons = document.querySelectorAll(".sub-sidebar .sub-nav [data-pane]");
     const subPanes = document.querySelectorAll(".sub-content .sub-pane");
+    let currentSubPane = "guest-upload-pane";
     let cachedWinners = [];
     let winnersLoaded = false;
     let eventPrizes = [];
@@ -565,22 +572,36 @@
       modal.classList.add("hidden");
     }
 
+    function closeManualModal() {
+      manualLockedEventCode = "";
+      manualEventSelect?.removeAttribute("disabled");
+      hideModal(manualModal);
+    }
+
     mappingCloseButtons.forEach(btn => {
       btn.addEventListener("click", evt => {
         evt.preventDefault();
         hideModal(mappingModal);
+        hideMappingProgress();
       });
+    });
+
+    mappingModal?.addEventListener("click", evt => {
+      if (evt.target === mappingModal) {
+        hideModal(mappingModal);
+        hideMappingProgress();
+      }
     });
 
     manualCloseButtons.forEach(btn => {
       btn.addEventListener("click", evt => {
         evt.preventDefault();
-        hideModal(manualModal);
+        closeManualModal();
       });
     });
 
     manualModal?.addEventListener("click", evt => {
-      if (evt.target === manualModal) hideModal(manualModal);
+      if (evt.target === manualModal) closeManualModal();
     });
 
     editCloseButtons.forEach(btn => {
@@ -655,9 +676,9 @@
       renderGuestTable();
     }
 
-    function renderManualEventOptions() {
+    function renderManualEventOptions(forceEventCode = "") {
       if (!manualEventSelect) return;
-      const current = manualEventSelect.value;
+      const previous = manualEventSelect.value;
       manualEventSelect.innerHTML = '<option value="">Select an event</option>';
       state.events.forEach(event => {
         const option = document.createElement("option");
@@ -666,12 +687,38 @@
         option.textContent = event.name || code || "Unnamed event";
         manualEventSelect.appendChild(option);
       });
-      if (current && state.events.some(ev => (ev.code || "") === current)) {
-        manualEventSelect.value = current;
+      const requestedCode = forceEventCode || manualLockedEventCode;
+      const hasRequested = Boolean(
+        requestedCode && state.events.some(ev => (ev.code || "") === requestedCode)
+      );
+      if (hasRequested) {
+        manualEventSelect.value = requestedCode;
+      } else if (previous && state.events.some(ev => (ev.code || "") === previous)) {
+        manualEventSelect.value = previous;
       } else {
         manualEventSelect.value = "";
       }
+      if (manualLockedEventCode && manualEventSelect.value !== manualLockedEventCode) {
+        manualLockedEventCode = "";
+      }
       updateManualEventDate();
+    }
+
+    function openManualModal({ forceEventCode = "", lockEventSelection = false } = {}) {
+      const shouldLock =
+        lockEventSelection &&
+        Boolean(forceEventCode) &&
+        state.events.some(ev => (ev.code || "") === forceEventCode);
+      manualLockedEventCode = shouldLock ? forceEventCode : "";
+      renderManualEventOptions(forceEventCode);
+      if (manualEventSelect) {
+        if (shouldLock) {
+          manualEventSelect.setAttribute("disabled", "disabled");
+        } else {
+          manualEventSelect.removeAttribute("disabled");
+        }
+      }
+      showModal(manualModal);
     }
 
     function getActiveGuestEvent() {
@@ -708,32 +755,40 @@
         const code = event.code || "";
         button.dataset.code = code;
         button.textContent = event.name || code || "Unnamed event";
-        if (button.dataset.code === activeEventCode) {
-          button.classList.add("active");
-        }
         button.addEventListener("click", () => handleEventTabSelect(button.dataset.code || ""));
         eventTabsContainer.appendChild(button);
       });
       updateEventInfoForm();
+      refreshEventTabActiveState();
+    }
+
+    function getEventTabs() {
+      if (!eventTabsContainer) return [];
+      return Array.from(eventTabsContainer.querySelectorAll(".event-tab"));
+    }
+
+    function refreshEventTabActiveState() {
+      const tabs = getEventTabs();
+      tabs.forEach(tab => {
+        const shouldBeActive = currentSubPane === "guest-event-pane" && tab.dataset.code === activeEventCode;
+        tab.classList.toggle("active", shouldBeActive);
+      });
     }
 
     function setActivePane(targetPane) {
+      currentSubPane = targetPane;
       subPanes?.forEach(pane => {
         pane.classList.toggle("active", pane.dataset.pane === targetPane);
       });
       subPaneButtons?.forEach(button => {
         button.classList.toggle("active", button.dataset.pane === targetPane);
       });
+      refreshEventTabActiveState();
     }
 
     function handleEventTabSelect(code) {
       if (!code) return;
       activeEventCode = code;
-      const tabs = eventTabsContainer ? Array.from(eventTabsContainer.querySelectorAll(".event-tab")) : [];
-      tabs.forEach(tab => {
-        const targetCode = tab.getAttribute("data-code") || "";
-        tab.classList.toggle("active", targetCode === code);
-      });
       updateEventInfoForm();
       setActivePane("guest-event-pane");
       renderGuestTable();
@@ -770,15 +825,16 @@
           eventInfoSaveButton.setAttribute("disabled", "disabled");
         }
       }
+      if (eventInfoDeleteButton) {
+        if (hasEvent) {
+          eventInfoDeleteButton.removeAttribute("disabled");
+        } else {
+          eventInfoDeleteButton.setAttribute("disabled", "disabled");
+        }
+      }
       if (eventInfoEmptyMessage) {
         eventInfoEmptyMessage.classList.toggle("hidden", hasEvent);
       }
-      updateActiveEventLabel(selectedEvent);
-    }
-
-    function updateActiveEventLabel(event) {
-      if (!activeGuestEventLabel) return;
-      activeGuestEventLabel.textContent = event?.name || event?.code || "—";
     }
 
     function updateManualEventDate() {
@@ -926,6 +982,23 @@
         );
     }
 
+    function setMappingProgressText(message) {
+      if (!mappingProgressMessage) return;
+      mappingProgressMessage.textContent = message || defaultMappingProgressText;
+    }
+
+    function showMappingProgress(message) {
+      if (!mappingProgressOverlay) return;
+      setMappingProgressText(message);
+      mappingProgressOverlay.classList.remove("hidden");
+    }
+
+    function hideMappingProgress() {
+      if (!mappingProgressOverlay) return;
+      mappingProgressOverlay.classList.add("hidden");
+      setMappingProgressText(defaultMappingProgressText);
+    }
+
     function getAvailableGenders() {
       const set = new Set();
       state.events.forEach(event => {
@@ -974,6 +1047,7 @@
       if (!guests.length) {
         throw new Error("No guest rows were found after mapping. Please review your selections.");
       }
+      setMappingProgressText("در حال ارسال فایل به سرور...");
       const formData = new FormData();
       formData.append("action", "save_guest_purelist");
       formData.append("event_name", state.eventName);
@@ -984,6 +1058,7 @@
         formData.append("guest_file", state.file, state.file.name || "guest-list");
       }
       const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+      setMappingProgressText("در حال ساخت لیست مهمانان...");
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.status !== "ok") {
         const message = payload?.message || "Failed to save guest list.";
@@ -1006,6 +1081,7 @@
         return;
       }
       mappingSubmit?.setAttribute("disabled", "disabled");
+      showMappingProgress("در حال بارگذاری فایل...");
       try {
         await savePureList(mapping);
         hideModal(mappingModal);
@@ -1017,6 +1093,7 @@
         showErrorSnackbar?.({ message: error?.message || "Failed to save guest list." });
       } finally {
         mappingSubmit?.removeAttribute("disabled");
+        hideMappingProgress();
       }
     });
 
@@ -1042,6 +1119,7 @@
         state.eventName = name;
         state.eventDate = date;
         populateMappingSelects(parsed.columns);
+        hideMappingProgress();
         showModal(mappingModal);
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to read the uploaded file." });
@@ -1091,7 +1169,7 @@
         populateGenderSelect(editGenderSelect);
         manualForm.reset();
         updateManualEventDate();
-        hideModal(manualModal);
+        closeManualModal();
         showDefaultToast?.(data.message || "Guest added.");
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to add guest." });
@@ -1755,8 +1833,15 @@
       editDateExitedInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
 
       manualOpenButton?.addEventListener("click", () => {
-        renderManualEventOptions();
-        showModal(manualModal);
+        openManualModal();
+      });
+
+      manualEventPaneAddButton?.addEventListener("click", () => {
+        if (!activeEventCode) {
+          showErrorSnackbar?.({ message: "Please select an event before adding a guest manually." });
+          return;
+        }
+        openManualModal({ forceEventCode: activeEventCode, lockEventSelection: true });
       });
 
       guestListBody?.addEventListener("click", (evt) => {
@@ -1773,6 +1858,19 @@
         }
       });
 
+      async function confirmEventDeletionPrompt() {
+        const message = "Delete this event and all associated data including invites?";
+        if (typeof showDialog === "function") {
+          return await showDialog(message, {
+            confirm: true,
+            title: "Delete event",
+            okText: "Delete",
+            cancelText: "Cancel"
+          });
+        }
+        return window.confirm(message);
+      }
+
       eventListBody?.addEventListener("click", async (evt) => {
         const button = evt.target instanceof HTMLElement ? evt.target.closest("[data-event-delete]") : null;
         if (!button) {
@@ -1782,17 +1880,7 @@
         if (!code) {
           return;
         }
-        let confirmed = true;
-        if (typeof showDialog === "function") {
-          confirmed = await showDialog("Delete this event and all associated data including invites?", {
-            confirm: true,
-            title: "Delete event",
-            okText: "Delete",
-            cancelText: "Cancel"
-          });
-        } else {
-          confirmed = window.confirm("Delete this event and all associated data including invites?");
-        }
+        const confirmed = await confirmEventDeletionPrompt();
         if (!confirmed) {
           return;
         }
@@ -1803,6 +1891,24 @@
           showErrorSnackbar?.({ message: error?.message || "Failed to delete event." });
         } finally {
           button.removeAttribute("disabled");
+        }
+      });
+
+      eventInfoDeleteButton?.addEventListener("click", async () => {
+        if (!activeEventCode) {
+          return;
+        }
+        const confirmed = await confirmEventDeletionPrompt();
+        if (!confirmed) {
+          return;
+        }
+        eventInfoDeleteButton.setAttribute("disabled", "disabled");
+        try {
+          await deleteEvent(activeEventCode);
+        } catch (error) {
+          showErrorSnackbar?.({ message: error?.message || "Failed to delete event." });
+        } finally {
+          eventInfoDeleteButton.removeAttribute("disabled");
         }
       });
 

@@ -1171,9 +1171,35 @@ switch { display: flex; align-items: center; gap: 10px; }
 /* Modal */
 .modal.hidden { display: none; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: grid; place-items: center; z-index: 50; }
-.modal-card { width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 16px; }
+.modal-card { position: relative; width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 16px; }
 .modal-card h3 { margin: 0 0 12px; font-size: 16px; }
 .modal-card .hint { margin-top: 0; margin-bottom: 0; text-align: left; }
+.modal-progress {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px;
+  border-radius: inherit;
+  z-index: 2;
+}
+.modal-progress .loader-ring {
+  --loader-size: 58px;
+  width: var(--loader-size);
+  height: var(--loader-size);
+}
+.modal-progress__message {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .modal.color-modal {
   backdrop-filter: blur(4px);

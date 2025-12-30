@@ -100,7 +100,18 @@ if (defined('EVENT_SCOPED_EVENT_CODE')) {
 } else {
   $drawEventCode = trim((string)($_GET['event_code'] ?? ''));
 }
-$drawEventCode = preg_replace('/[^A-Za-z0-9_-]+/', '', $drawEventCode);
+$drawEventCode = sanitizeEventCode($drawEventCode);
+if ($drawEventCode === '') {
+  $drawEventCode = sanitizeEventCode(loadGuestStoreForDraw(GUEST_STORE_PATH)['active_event_code'] ?? '');
+}
+$eventPrizeListPath = resolveEventPrizeListPath($drawEventCode);
+$eventHasPrizes = hasEventPrizeEntries($eventPrizeListPath);
+$eventPrizeHint = '';
+if ($drawEventCode === '') {
+  $eventPrizeHint = 'Open this draw page from /events/{code}/draw.php to target a specific event.';
+} elseif (!$eventHasPrizes) {
+  $eventPrizeHint = 'Define at least one prize for this event before running the draw.';
+}
 
 if ($method === 'POST') {
   header('Content-Type: application/json; charset=UTF-8');
@@ -526,6 +537,7 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
     </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">قرعه‌کشی مشهد مقدس</p>
+      <p id="event-prize-hint" class="status" aria-live="polite"></p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="کد قرعه‌کشی فعلی">
         <?php for ($idx = 0; $idx < 4; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
@@ -547,6 +559,9 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       window.__WINNERS_LIST = window.__WINNERS_LIST || <?= json_encode($winnersList, JSON_UNESCAPED_UNICODE); ?>;
       const EVENT_CODE = <?= json_encode($drawEventCode, JSON_UNESCAPED_UNICODE); ?>;
       const DRAW_API_PATH = 'draw.php' + (EVENT_CODE ? '?event_code=' + encodeURIComponent(EVENT_CODE) : '');
+      const EVENT_HAS_EVENT_CODE = <?= json_encode($drawEventCode !== '', JSON_UNESCAPED_UNICODE); ?>;
+      const EVENT_HAS_PRIZES = <?= json_encode($eventHasPrizes, JSON_UNESCAPED_UNICODE); ?>;
+      const EVENT_PRIZE_HINT = <?= json_encode($eventPrizeHint, JSON_UNESCAPED_UNICODE); ?>;
       const guestPool = Array.isArray(window.__GUEST_POOL) ? window.__GUEST_POOL : [];
       let winnersList = Array.isArray(window.__WINNERS_LIST) ? window.__WINNERS_LIST : [];
       const codeDisplay = document.getElementById('code-display');
@@ -555,6 +570,7 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       const confirmBtn = document.getElementById('confirm-guest');
       const winnersContainer = document.getElementById('winner-items');
       const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
+      const prizeHintEl = document.getElementById('event-prize-hint');
 
       let animationInterval = null;
       let stopTimeouts = [];
@@ -608,6 +624,21 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         const key = createGuestSelectionKey(guest);
         return key !== '' && !chosenGuestKeys.has(key);
       });
+      const canAttemptDraw = () => (
+        EVENT_HAS_EVENT_CODE && EVENT_HAS_PRIZES && getAvailableGuests().length > 0
+      );
+      const updateStartButtonAvailability = () => {
+        if (!startBtn) {
+          return;
+        }
+        startBtn.disabled = !canAttemptDraw();
+      };
+      const updatePrizeHint = () => {
+        if (!prizeHintEl) {
+          return;
+        }
+        prizeHintEl.textContent = EVENT_PRIZE_HINT || '';
+      };
 
       const cancelAnimation = () => {
         if (animationInterval !== null) {
@@ -687,12 +718,12 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
           setCode('0000');
           renderWinnerList(winners);
           window.__WINNERS_LIST = winners;
-          startBtn.disabled = getAvailableGuests().length === 0;
+          updateStartButtonAvailability();
           confirmBtn.disabled = true;
         } catch (error) {
           flashError('Unable to reset winners list.');
           confirmBtn.disabled = true;
-          startBtn.disabled = getAvailableGuests().length === 0;
+          updateStartButtonAvailability();
         }
       };
 
@@ -701,8 +732,8 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
 
       startBtn.addEventListener('click', () => {
         const availableGuests = getAvailableGuests();
-        if (!availableGuests.length) {
-          startBtn.disabled = true;
+        if (!EVENT_HAS_EVENT_CODE || !EVENT_HAS_PRIZES || availableGuests.length === 0) {
+          updateStartButtonAvailability();
           return;
         }
         cancelAnimation();
@@ -735,8 +766,7 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
             if (index === 3) {
               cancelAnimation();
               confirmBtn.disabled = false;
-              const hasRemaining = getAvailableGuests().length > 0;
-              startBtn.disabled = !hasRemaining;
+              updateStartButtonAvailability();
               renderWinner(currentWinner);
             }
           }, delay);
@@ -806,10 +836,8 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         }
       });
 
-      if (!getAvailableGuests().length) {
-        startBtn.disabled = true;
-      }
-
+      updatePrizeHint();
+      updateStartButtonAvailability();
       renderWinnerList(winnersList);
     </script>
   </body>
@@ -1072,6 +1100,52 @@ function readCsvRows(string $path): array
   }
   fclose($handle);
   return $rows;
+}
+
+function sanitizeEventCode(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  return preg_replace('/[^A-Za-z0-9_-]+/', '', $trimmed);
+}
+
+function resolveEventPrizeListPath(string $eventCode): string
+{
+  $code = sanitizeEventCode($eventCode);
+  if ($code === '') {
+    return '';
+  }
+  $directory = rtrim(EVENTS_ROOT, '/\\') . DIRECTORY_SEPARATOR . $code;
+  if (!is_dir($directory)) {
+    return '';
+  }
+  return $directory . '/prizelist.csv';
+}
+
+function hasEventPrizeEntries(string $path): bool
+{
+  if ($path === '' || !is_file($path)) {
+    return false;
+  }
+  $handle = fopen($path, 'r');
+  if ($handle === false) {
+    return false;
+  }
+  fgetcsv($handle);
+  while (($row = fgetcsv($handle)) !== false) {
+    if (!is_array($row)) {
+      continue;
+    }
+    $name = trim((string)($row[1] ?? $row[0] ?? ''));
+    if ($name !== '') {
+      fclose($handle);
+      return true;
+    }
+  }
+  fclose($handle);
+  return false;
 }
 
 function deleteWinnerRecords(string $eventsRoot, string $targetEventCode = ''): bool
