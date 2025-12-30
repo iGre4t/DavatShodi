@@ -1045,24 +1045,25 @@
       if (!dateValue || !startValue || !limitValue || !endValue) {
         return { key: "not-ready", text: "Event Status: Event Not Ready" };
       }
-      const now = new Date();
+      const nowTimestamp = Date.now();
       const todayJalali = parseJalaliDate(getNowJalaliDate());
       const eventJalali = parseJalaliDate(dateValue);
-      const eventStart = buildEventDateTime(dateValue, startValue);
-      const eventEnd = buildEventDateTime(dateValue, endValue);
-      if (!todayJalali || !eventJalali || !eventStart || !eventEnd) {
+      const eventStartTs = buildTehranTimestamp(dateValue, startValue);
+      const eventLimitTs = buildTehranTimestamp(dateValue, limitValue);
+      const eventEndTs = buildTehranTimestamp(dateValue, endValue);
+      if (!todayJalali || !eventJalali || eventStartTs === null || eventEndTs === null) {
         return { key: "upcoming", text: "Event Status: Event Upcoming" };
       }
       const compare = compareJalaliDates(todayJalali, eventJalali);
-      const startDiff = eventStart.getTime() - now.getTime();
-      const endDiff = eventEnd.getTime() - now.getTime();
-      if (compare < 0 || (compare === 0 && startDiff > 0 && now < eventStart)) {
+      const startDiff = eventStartTs - nowTimestamp;
+      const endDiff = eventEndTs - nowTimestamp;
+      if (compare < 0 || (compare === 0 && nowTimestamp < eventStartTs)) {
         return {
           key: "upcoming",
           text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
         };
       }
-      if (compare === 0 && now >= eventStart && endDiff >= 0) {
+      if (compare === 0 && nowTimestamp >= eventStartTs && nowTimestamp <= eventEndTs) {
         return { key: "ongoing", text: "Event Status: Event Ongoing" };
       }
       return { key: "ended", text: "Event Status: Event Ended" };
@@ -1841,18 +1842,23 @@
       return { hours, minutes, seconds };
     }
 
-    function buildEventDateTime(dateValue, timeValue) {
+    const TEHRAN_OFFSET_MINUTES = 3 * 60 + 30;
+
+    function buildTehranTimestamp(dateValue, timeValue) {
       const dateParts = parseJalaliDate(dateValue);
       const timeParts = parseTimeSegments(timeValue);
       if (!dateParts || !timeParts) return null;
-      return jalaaliToDateObject(
-        dateParts.year,
-        dateParts.month,
-        dateParts.day,
+      const gregorian = toGregorian(dateParts.year, dateParts.month, dateParts.day);
+      if (!gregorian) return null;
+      const timestamp = Date.UTC(
+        gregorian.gy,
+        gregorian.gm - 1,
+        gregorian.gd,
         timeParts.hours,
         timeParts.minutes,
         timeParts.seconds
       );
+      return timestamp - TEHRAN_OFFSET_MINUTES * 60 * 1000;
     }
 
     function formatDuration(milliseconds) {
@@ -1879,7 +1885,12 @@
 
     function getNowJalaliDate() {
       try {
-        const formatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric", month: "2-digit", day: "2-digit" });
+        const formatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          timeZone: "Asia/Tehran"
+        });
         const parts = formatter.format(new Date());
         return toEnglishDigits(parts).replace(/-/g, "/");
       } catch {
