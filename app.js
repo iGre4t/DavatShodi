@@ -2214,6 +2214,37 @@ function updateInviteCardPhotoPreview() {
   }
 }
 
+function updateFieldStyleState(block) {
+  if (!block) {
+    return;
+  }
+  const typeSelect = block.querySelector("[data-field-type]");
+  const scaleInput = block.querySelector("[data-scale-input]");
+  const styleController = block.querySelector("[data-field-style-controller]");
+  const isText = typeSelect?.value === "text";
+  if (styleController) {
+    styleController.classList.toggle("hidden", !isText);
+  }
+  if (scaleInput) {
+    scaleInput.disabled = Boolean(isText);
+    if (isText) {
+      scaleInput.value = "";
+    }
+  }
+}
+
+function initializeFieldControllers() {
+  const blocks = qsa("[data-field-block]");
+  blocks.forEach((block) => {
+    const typeSelect = block.querySelector("[data-field-type]");
+    if (!typeSelect) {
+      return;
+    }
+    const update = () => updateFieldStyleState(block);
+    typeSelect.addEventListener("change", update);
+    update();
+  });
+}
 
 function formatGalleryPhotoDate(rawValue) {
   if (!rawValue) {
@@ -3998,6 +4029,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   updateInviteCardPhotoPreview();
   updateInviteCardMapInfo();
+  initializeFieldControllers();
   // Handles form submissions by updating the local state and syncing back to the server.
   qs('#user-form')?.addEventListener('submit', (e) => {
     e.preventDefault();

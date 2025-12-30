@@ -153,6 +153,39 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
+.field-block {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.field-controls {
+  display: grid;
+  gap: 10px;
+}
+.style-controller {
+  border: 1px dashed var(--border);
+  padding: 10px;
+  border-radius: 10px;
+  background: #fafafa;
+}
+.controller-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.position-controller-set {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.position-controller-set .controller-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
 /* Keep compact fields from spanning the whole card on large screens. */
 .field.standard-width {
   width: min(420px, 100%);

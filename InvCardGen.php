@@ -9,32 +9,183 @@
       <h3>Invite Card Generator</h3>
     </div>
     <div class="form grid one-column">
-      <label class="field standard-width">
-        <span>Coordinates (x, y, scale)</span>
-        <div class="coordinate-group">
-          <input
-            id="invite-card-x"
-            name="invite-card-x"
-            type="text"
-            inputmode="decimal"
-            placeholder="x"
-          />
-          <input
-            id="invite-card-y"
-            name="invite-card-y"
-            type="text"
-            inputmode="decimal"
-            placeholder="y"
-          />
-          <input
-            id="invite-card-scale"
-            name="invite-card-scale"
-            type="text"
-            inputmode="decimal"
-            placeholder="scale"
-          />
+      <div class="field-block" data-field-block="name">
+        <label class="field standard-width">
+          <span>Name</span>
+          <input id="invite-card-name" type="text" />
+        </label>
+        <div class="field-controls">
+          <label class="field standard-width">
+            <span>Field type</span>
+            <select data-field-type>
+              <option value="photo" selected>Photo</option>
+              <option value="text">Text</option>
+            </select>
+          </label>
+          <div class="position-controller-set" data-field-position>
+            <label class="controller-label">Position Controller</label>
+            <div class="coordinate-group">
+              <input id="invite-card-name-x" name="invite-card-name-x" type="text" inputmode="decimal" placeholder="x" />
+              <input id="invite-card-name-y" name="invite-card-name-y" type="text" inputmode="decimal" placeholder="y" />
+              <input
+                id="invite-card-name-scale"
+                name="invite-card-name-scale"
+                type="text"
+                inputmode="decimal"
+                placeholder="scale"
+                data-scale-input
+              />
+            </div>
+          </div>
         </div>
-      </label>
+        <div class="style-controller hidden" data-field-style-controller>
+          <label class="field standard-width">
+            <span>Font</span>
+            <select data-field-font>
+              <option value="PeydaWebFaNum">PeydaWebFaNum</option>
+              <option value="PeydaWebFaNum-Bold">PeydaWebFaNum Bold</option>
+              <option value="remixicon">Remixicon</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Font weight</span>
+            <select data-field-weight>
+              <option value="400">400</option>
+              <option value="500">500</option>
+              <option value="600">600</option>
+              <option value="700">700</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Font size (px)</span>
+            <input data-field-size type="number" min="8" value="16" />
+          </label>
+          <label class="field standard-width">
+            <span>Font color</span>
+            <input data-field-color type="color" value="#111111" />
+          </label>
+        </div>
+      </div>
+      <div class="field-block" data-field-block="national-id">
+        <label class="field standard-width">
+          <span>National ID QR Code</span>
+          <input
+            id="invite-card-national-id"
+            type="text"
+            inputmode="numeric"
+            pattern="\d{0,10}"
+            maxlength="10"
+          />
+        </label>
+        <div class="field-controls">
+          <label class="field standard-width">
+            <span>Field type</span>
+            <select data-field-type>
+              <option value="photo" selected>Photo</option>
+              <option value="text">Text</option>
+            </select>
+          </label>
+          <div class="position-controller-set" data-field-position>
+            <label class="controller-label">Position Controller</label>
+            <div class="coordinate-group">
+              <input id="invite-card-national-id-x" name="invite-card-national-id-x" type="text" inputmode="decimal" placeholder="x" />
+              <input id="invite-card-national-id-y" name="invite-card-national-id-y" type="text" inputmode="decimal" placeholder="y" />
+              <input
+                id="invite-card-national-id-scale"
+                name="invite-card-national-id-scale"
+                type="text"
+                inputmode="decimal"
+                placeholder="scale"
+                data-scale-input
+              />
+            </div>
+          </div>
+        </div>
+        <div class="style-controller hidden" data-field-style-controller>
+          <label class="field standard-width">
+            <span>Font</span>
+            <select data-field-font>
+              <option value="PeydaWebFaNum">PeydaWebFaNum</option>
+              <option value="PeydaWebFaNum-Bold">PeydaWebFaNum Bold</option>
+              <option value="remixicon">Remixicon</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Font weight</span>
+            <select data-field-weight>
+              <option value="400">400</option>
+              <option value="500">500</option>
+              <option value="600">600</option>
+              <option value="700">700</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Font size (px)</span>
+            <input data-field-size type="number" min="8" value="16" />
+          </label>
+          <label class="field standard-width">
+            <span>Font color</span>
+            <input data-field-color type="color" value="#111111" />
+          </label>
+        </div>
+      </div>
+      <div class="field-block" data-field-block="guest-code">
+        <label class="field standard-width">
+          <span>Guest code</span>
+          <input id="invite-card-guest-code" type="text" />
+        </label>
+        <div class="field-controls">
+          <label class="field standard-width">
+            <span>Field type</span>
+            <select data-field-type>
+              <option value="photo" selected>Photo</option>
+              <option value="text">Text</option>
+            </select>
+          </label>
+          <div class="position-controller-set" data-field-position>
+            <label class="controller-label">Position Controller</label>
+            <div class="coordinate-group">
+              <input id="invite-card-guest-code-x" name="invite-card-guest-code-x" type="text" inputmode="decimal" placeholder="x" />
+              <input id="invite-card-guest-code-y" name="invite-card-guest-code-y" type="text" inputmode="decimal" placeholder="y" />
+              <input
+                id="invite-card-guest-code-scale"
+                name="invite-card-guest-code-scale"
+                type="text"
+                inputmode="decimal"
+                placeholder="scale"
+                data-scale-input
+              />
+            </div>
+          </div>
+        </div>
+        <div class="style-controller hidden" data-field-style-controller>
+          <label class="field standard-width">
+            <span>Font</span>
+            <select data-field-font>
+              <option value="PeydaWebFaNum">PeydaWebFaNum</option>
+              <option value="PeydaWebFaNum-Bold">PeydaWebFaNum Bold</option>
+              <option value="remixicon">Remixicon</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Font weight</span>
+            <select data-field-weight>
+              <option value="400">400</option>
+              <option value="500">500</option>
+              <option value="600">600</option>
+              <option value="700">700</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Font size (px)</span>
+            <input data-field-size type="number" min="8" value="16" />
+          </label>
+          <label class="field standard-width">
+            <span>Font color</span>
+            <input data-field-color type="color" value="#111111" />
+          </label>
+        </div>
+      </div>
       <label class="field standard-width">
         <span>Alignment</span>
         <select id="invite-card-alignment" name="invite-card-alignment">
@@ -42,24 +193,6 @@
           <option value="ltr">LTR</option>
           <option value="center">Center</option>
         </select>
-      </label>
-      <label class="field standard-width">
-        <span>Name</span>
-        <input id="invite-card-name" type="text" />
-      </label>
-      <label class="field standard-width">
-        <span>National ID code</span>
-        <input
-          id="invite-card-national-id"
-          type="text"
-          inputmode="numeric"
-          pattern="\d{0,10}"
-          maxlength="10"
-        />
-      </label>
-      <label class="field standard-width">
-        <span>Guest code</span>
-        <input id="invite-card-guest-code" type="text" />
       </label>
       <label class="field full">
         <span>Choose photo</span>
