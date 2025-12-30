@@ -4095,6 +4095,7 @@ function setActiveTab(tab) {
     'invite-card': 'Invite Card Generator',
     events: 'Events',
     gallery: 'Photo Gallery',
+    typography: 'Typography',
     invite: 'Invite',
     devsettings: 'Developer Settings'
   };
