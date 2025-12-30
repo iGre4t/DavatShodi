@@ -152,9 +152,9 @@
             </div>
             <div
               class="section-actions"
-              style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;"
+              style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;"
             >
-              <button type="button" class="btn secondary" id="event-pot-open">Event Pot</button>
+              <button type="button" class="btn primary" id="event-pot-open">Event Pot</button>
               <button type="button" class="btn ghost" id="copy-event-pot-link">Copy Event Pot Link</button>
             </div>
             <form id="event-info-form" class="form">
@@ -641,7 +641,6 @@
     const eventPrizeAddButton = document.getElementById("event-prize-add-button");
       const eventPrizeStatus = document.getElementById("event-prize-status");
       const eventPrizeListBody = document.getElementById("event-prize-list-body");
-      const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
       const INVITE_BASE_URL = "https://davatshodi.ir/l/inv";
     const EVENT_POT_BASE_URL = "https://davatshodi.ir/l/events";
     const eventPotOpenButton = document.getElementById("event-pot-open");
@@ -1092,6 +1091,19 @@
       manualEventDateInput.value = (selectedEvent?.date || "").trim();
     }
 
+    function getGuestEntryAndExitParts(guest) {
+      const entrySource = guest.join_date
+        ? `${guest.join_date} ${guest.join_time || ""}`.trim()
+        : guest.date_entered || "";
+      const exitSource = guest.left_date
+        ? `${guest.left_date} ${guest.left_time || ""}`.trim()
+        : guest.date_exited || "";
+      return {
+        entered: splitDateTime(entrySource),
+        exited: splitDateTime(exitSource)
+      };
+    }
+
     function renderGuestTable() {
       if (!guestListBody) return;
       guestListBody.innerHTML = "";
@@ -1132,14 +1144,7 @@
         return;
       }
       const rows = guests.map((guest, index) => {
-        const entrySource = guest.join_date
-          ? `${guest.join_date} ${guest.join_time || ""}`.trim()
-          : guest.date_entered || "";
-        const exitSource = guest.left_date
-          ? `${guest.left_date} ${guest.left_time || ""}`.trim()
-          : guest.date_exited || "";
-        const enteredParts = splitDateTime(entrySource);
-        const exitedParts = splitDateTime(exitSource);
+        const { entered: enteredParts, exited: exitedParts } = getGuestEntryAndExitParts(guest);
         return {
           number: guest.number || index + 1,
           event: activeEvent.name || "",
@@ -2001,54 +2006,55 @@
         .replace(/[^a-z0-9]/g, "");
     }
 
-    function headerNameMatches(value, target) {
-      return normalizeHeaderKey(value) === normalizeHeaderKey(target);
+    const PRESENT_GUEST_EXPORT_HEADERS = [
+      "No.",
+      "Event",
+      "Event date",
+      "First name",
+      "Last name",
+      "Gender",
+      "National ID",
+      "Phone number",
+      "Join date",
+      "Join time",
+      "Left date",
+      "Left time"
+    ];
+
+    function sanitizeFileName(value) {
+      if (!value) return "";
+      return String(value)
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
+        .replace(/\s+/g, " ")
+        .replace(/-+/g, "-")
+        .replace(/^-+|-+$/g, "");
     }
 
-    async function loadPureListWorkbook(path = PURE_LIST_CSV_PATH) {
-      const response = await fetch(path, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("Unable to retrieve the pure CSV guest list.");
-      }
-      const raw = await response.text();
-      if (!raw.trim()) {
-        throw new Error("The pure CSV file is empty.");
-      }
-      const workbook = XLSX.read(raw, { type: "string", raw: false });
-      const sheetName = workbook.SheetNames[0];
-      if (!sheetName) {
-        throw new Error("The pure CSV file does not contain any sheets.");
-      }
-      return { workbook, sheetName };
-    }
-
-    async function loadPureListSheetData(path = PURE_LIST_CSV_PATH) {
-      const { workbook, sheetName } = await loadPureListWorkbook(path);
-      const sheet = workbook.Sheets[sheetName];
-      const headerRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-      const headers = Array.isArray(headerRows[0])
-        ? headerRows[0].map((header) => (header ?? ""))
-        : [];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-      return { rows, headers };
-    }
-
-    function resolvePureListCsvPath() {
-      const activeEvent = getActiveGuestEvent();
-      const path = activeEvent && typeof activeEvent.purelist === "string"
-        ? activeEvent.purelist.trim()
-        : "";
-      return path || PURE_LIST_CSV_PATH;
-    }
-
-    async function loadPureListCsvRows(path = PURE_LIST_CSV_PATH) {
-      const data = await loadPureListSheetData(path);
-      return data.rows;
-    }
-
-    function isSmsHeaderName(header) {
-      const normalized = normalizeHeaderKey(header);
-      return normalized === "smslink" || normalized === "invitesmslink";
+    function getPresentGuestExportRows(event) {
+      const rows = [];
+      const guests = Array.isArray(event?.guests) ? event.guests : [];
+      guests.forEach((guest, index) => {
+        const { entered, exited } = getGuestEntryAndExitParts(guest);
+        if (!entered.date || !entered.time || !exited.date || !exited.time) {
+          return;
+        }
+        rows.push({
+          "No.": guest.number || index + 1,
+          Event: event.name || "",
+          "Event date": event.date || "",
+          "First name": guest.firstname || "",
+          "Last name": guest.lastname || "",
+          Gender: guest.gender || "",
+          "National ID": guest.national_id || "",
+          "Phone number": guest.phone_number || "",
+          "Join date": entered.date,
+          "Join time": entered.time,
+          "Left date": exited.date,
+          "Left time": exited.time
+        });
+      });
+      return { headers: PRESENT_GUEST_EXPORT_HEADERS, rows };
     }
 
     function buildPresentGuestsWorkbook(rows, headers) {
@@ -2070,40 +2076,24 @@
     }
 
     async function exportPresentGuests() {
-      const { rows, headers } = await loadPureListSheetData(resolvePureListCsvPath());
-      const headerKeys = headers.map((header) => header ?? "");
-      const dateEnteredHeader =
-        headerKeys.find(header => headerNameMatches(header, "join_date")) ||
-        headerKeys.find(header => headerNameMatches(header, "date_entered"));
-      const dateExitedHeader =
-        headerKeys.find(header => headerNameMatches(header, "left_date")) ||
-        headerKeys.find(header => headerNameMatches(header, "date_exited"));
-      if (!dateEnteredHeader || !dateExitedHeader) {
-        throw new Error("Entry and exit columns are missing from the guest list.");
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        throw new Error("Select an event before exporting present guests.");
       }
-      const presentRows = rows.filter(row => {
-        const entered = String(row[dateEnteredHeader] ?? "").trim();
-        const exited = String(row[dateExitedHeader] ?? "").trim();
-        return entered !== "" && exited !== "";
-      });
-      if (!presentRows.length) {
+      const { rows, headers } = getPresentGuestExportRows(activeEvent);
+      if (!rows.length) {
         throw new Error("No guests have both entry and exit timestamps yet.");
       }
-      const exportHeaders = headerKeys.filter(header => header !== "" && !isSmsHeaderName(header));
-      const normalizedRows = presentRows.map(row => {
-        const normalized = {};
-        exportHeaders.forEach(header => {
-          normalized[header] = row[header] ?? "";
-        });
-        return normalized;
-      });
-      const workbook = buildPresentGuestsWorkbook(normalizedRows, exportHeaders);
+      const workbook = buildPresentGuestsWorkbook(rows, headers);
       const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
       const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "present-guest-list.xlsx";
+      const sanitizedName = sanitizeFileName(activeEvent.name || "");
+      const fallbackName = sanitizeFileName(activeEvent.code || "") || "present-guest-list";
+      const fileNameBase = sanitizedName || fallbackName;
+      anchor.download = `${fileNameBase}-present-guest-list.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
