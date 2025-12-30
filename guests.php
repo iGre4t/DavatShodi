@@ -1055,10 +1055,14 @@
       }
       const compare = compareJalaliDates(todayJalali, eventJalali);
       const startDiff = eventStart.getTime() - now.getTime();
-      if (compare < 0 || (compare === 0 && now < eventStart)) {
-        return { key: "upcoming", text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}` };
+      const endDiff = eventEnd.getTime() - now.getTime();
+      if (compare < 0 || (compare === 0 && startDiff > 0 && now < eventStart)) {
+        return {
+          key: "upcoming",
+          text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
+        };
       }
-      if (compare === 0 && now >= eventStart && now <= eventEnd) {
+      if (compare === 0 && now >= eventStart && endDiff >= 0) {
         return { key: "ongoing", text: "Event Status: Event Ongoing" };
       }
       return { key: "ended", text: "Event Status: Event Ended" };
@@ -1806,7 +1810,8 @@
 
     function parseJalaliDate(value) {
       if (!value) return null;
-      const parts = String(value).split("/");
+      const normalizedValue = toEnglishDigits(value);
+      const parts = normalizedValue.split("/");
       if (parts.length !== 3) return null;
       const [year, month, day] = parts.map(part => Number(part));
       if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
@@ -1824,7 +1829,8 @@
 
     function parseTimeSegments(value) {
       if (!value) return null;
-      const parts = String(value).split(":");
+      const normalizedValue = toEnglishDigits(value);
+      const parts = normalizedValue.split(":");
       if (parts.length < 2) return null;
       const hours = Number(parts[0]);
       const minutes = Number(parts[1]);
