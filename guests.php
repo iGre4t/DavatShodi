@@ -1842,23 +1842,21 @@
       return { hours, minutes, seconds };
     }
 
-    const TEHRAN_OFFSET_MINUTES = 3 * 60 + 30;
-
     function buildTehranTimestamp(dateValue, timeValue) {
       const dateParts = parseJalaliDate(dateValue);
       const timeParts = parseTimeSegments(timeValue);
       if (!dateParts || !timeParts) return null;
       const gregorian = toGregorian(dateParts.year, dateParts.month, dateParts.day);
       if (!gregorian) return null;
-      const timestamp = Date.UTC(
-        gregorian.gy,
-        gregorian.gm - 1,
-        gregorian.gd,
-        timeParts.hours,
-        timeParts.minutes,
-        timeParts.seconds
-      );
-      return timestamp - TEHRAN_OFFSET_MINUTES * 60 * 1000;
+      const gyro = String(gregorian.gy).padStart(4, "0");
+      const gmo = String(gregorian.gm).padStart(2, "0");
+      const gdo = String(gregorian.gd).padStart(2, "0");
+      const h = String(timeParts.hours).padStart(2, "0");
+      const m = String(timeParts.minutes).padStart(2, "0");
+      const s = String(timeParts.seconds).padStart(2, "0");
+      const iso = `${gyro}-${gmo}-${gdo}T${h}:${m}:${s}+03:30`;
+      const parsed = Date.parse(iso);
+      return Number.isNaN(parsed) ? null : parsed;
     }
 
     function formatDuration(milliseconds) {
