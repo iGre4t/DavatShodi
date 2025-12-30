@@ -56,8 +56,25 @@
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
-              <input id="invite-card-name-x" name="invite-card-name-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
-              <input id="invite-card-name-y" name="invite-card-name-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              <label class="coordinate-input">
+                <span>X</span>
+                <input id="invite-card-name-x" name="invite-card-name-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
+              </label>
+              <label class="coordinate-input">
+                <span>Y</span>
+                <input id="invite-card-name-y" name="invite-card-name-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              </label>
+              <label class="coordinate-input">
+                <span>Scale</span>
+                <input
+                  id="invite-card-name-scale"
+                  name="invite-card-name-scale"
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="scale"
+                  data-scale-input
+                />
+              </label>
               <button
                 type="button"
                 class="btn ghost small position-picker-button"
@@ -65,14 +82,6 @@
               >
                 Position Pick
               </button>
-              <input
-                id="invite-card-name-scale"
-                name="invite-card-name-scale"
-                type="text"
-                inputmode="decimal"
-                placeholder="scale"
-                data-scale-input
-              />
             </div>
           </div>
         </div>
@@ -161,8 +170,25 @@
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
-              <input id="invite-card-national-id-x" name="invite-card-national-id-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
-              <input id="invite-card-national-id-y" name="invite-card-national-id-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              <label class="coordinate-input">
+                <span>X</span>
+                <input id="invite-card-national-id-x" name="invite-card-national-id-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
+              </label>
+              <label class="coordinate-input">
+                <span>Y</span>
+                <input id="invite-card-national-id-y" name="invite-card-national-id-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              </label>
+              <label class="coordinate-input">
+                <span>Scale</span>
+                <input
+                  id="invite-card-national-id-scale"
+                  name="invite-card-national-id-scale"
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="scale"
+                  data-scale-input
+                />
+              </label>
               <button
                 type="button"
                 class="btn ghost small position-picker-button"
@@ -170,14 +196,6 @@
               >
                 Position Pick
               </button>
-              <input
-                id="invite-card-national-id-scale"
-                name="invite-card-national-id-scale"
-                type="text"
-                inputmode="decimal"
-                placeholder="scale"
-                data-scale-input
-              />
             </div>
           </div>
         </div>
@@ -259,8 +277,25 @@
           <div class="position-controller-set" data-field-position>
             <label class="controller-label">Position Controller</label>
             <div class="coordinate-group">
-              <input id="invite-card-guest-code-x" name="invite-card-guest-code-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
-              <input id="invite-card-guest-code-y" name="invite-card-guest-code-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              <label class="coordinate-input">
+                <span>X</span>
+                <input id="invite-card-guest-code-x" name="invite-card-guest-code-x" type="text" inputmode="decimal" placeholder="x" data-field-coordinate="x" />
+              </label>
+              <label class="coordinate-input">
+                <span>Y</span>
+                <input id="invite-card-guest-code-y" name="invite-card-guest-code-y" type="text" inputmode="decimal" placeholder="y" data-field-coordinate="y" />
+              </label>
+              <label class="coordinate-input">
+                <span>Scale</span>
+                <input
+                  id="invite-card-guest-code-scale"
+                  name="invite-card-guest-code-scale"
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="scale"
+                  data-scale-input
+                />
+              </label>
               <button
                 type="button"
                 class="btn ghost small position-picker-button"
@@ -268,14 +303,6 @@
               >
                 Position Pick
               </button>
-              <input
-                id="invite-card-guest-code-scale"
-                name="invite-card-guest-code-scale"
-                type="text"
-                inputmode="decimal"
-                placeholder="scale"
-                data-scale-input
-              />
             </div>
           </div>
         </div>
