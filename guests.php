@@ -147,7 +147,7 @@
             <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
               <div>
                 <h3>Event info</h3>
-                <p id="event-info-status" class="muted small" aria-live="polite">Event Status: Event Not Ready</p>
+                <p id="event-info-status" class="muted small event-info-status status-not-ready" aria-live="polite">Event Status: Event Not Ready</p>
               </div>
             </div>
             <form id="event-info-form" class="form">
@@ -971,6 +971,8 @@
       const ready = areEventInfoFieldsComplete();
       if (eventInfoStatusText) {
         eventInfoStatusText.textContent = `Event Status: ${ready ? "Event Upcoming" : "Event Not Ready"}`;
+        eventInfoStatusText.classList.toggle("status-upcoming", ready);
+        eventInfoStatusText.classList.toggle("status-not-ready", !ready);
       }
       updateEventSectionTabAccessibility(ready);
       if (!ready) {
