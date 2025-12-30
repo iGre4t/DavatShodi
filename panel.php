@@ -166,7 +166,7 @@ $accountEmail = $currentUser['email'] ?? '';
             <span>مهمانان و رویدادها</span>
           </button>
           <button class="nav-item" data-tab="invite-card">
-            <span class="nav-icon ri ri-id-card-line" aria-hidden="true"></span>
+            <span class="nav-icon ri ri-v-card-line" aria-hidden="true"></span>
             <span>Invite Card Generator</span>
           </button>
           
