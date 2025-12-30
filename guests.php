@@ -150,6 +150,13 @@
                 <p id="event-info-status" class="muted small event-info-status status-not-ready" aria-live="polite">Event Status: Event Not Ready</p>
               </div>
             </div>
+            <div
+              class="section-actions"
+              style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;"
+            >
+              <button type="button" class="btn secondary" id="event-pot-open">Event Pot</button>
+              <button type="button" class="btn ghost" id="copy-event-pot-link">Copy Event Pot Link</button>
+            </div>
             <form id="event-info-form" class="form">
               <div class="form" style="max-width: 420px; gap: 12px;">
                 <label class="field standard-width">
@@ -636,6 +643,9 @@
       const eventPrizeListBody = document.getElementById("event-prize-list-body");
       const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
       const INVITE_BASE_URL = "https://davatshodi.ir/l/inv";
+    const EVENT_POT_BASE_URL = "https://davatshodi.ir/l/events";
+    const eventPotOpenButton = document.getElementById("event-pot-open");
+    const copyEventPotLinkButton = document.getElementById("copy-event-pot-link");
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
     const subPaneButtons = document.querySelectorAll(".sub-sidebar .sub-nav [data-pane]");
     const subPanes = document.querySelectorAll(".sub-content .sub-pane");
@@ -655,6 +665,37 @@
     function hideModal(modal) {
       if (!modal) return;
       modal.classList.add("hidden");
+    }
+
+    function copyTextToClipboard(text) {
+      if (!text) {
+        return Promise.reject(new Error("No text to copy."));
+      }
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        return navigator.clipboard.writeText(text);
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const successful = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (!successful) {
+        return Promise.reject(new Error("Copy command failed."));
+      }
+      return Promise.resolve();
+    }
+
+    function buildEventPotDrawUrl(eventCode = "") {
+      const code = String(eventCode || activeEventCode || "").trim();
+      if (!code) {
+        return "";
+      }
+      return `${EVENT_POT_BASE_URL}/${encodeURIComponent(code)}/draw.php`;
     }
 
     function closeManualModal() {
@@ -1016,7 +1057,7 @@
       const compare = compareJalaliDates(todayJalali, eventJalali);
       const startDiff = eventStart.getTime() - now.getTime();
       if (compare < 0 || (compare === 0 && now < eventStart)) {
-        return { key: "upcoming", text: `Event starts in ${formatDuration(Math.max(startDiff, 0))}` };
+        return { key: "upcoming", text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}` };
       }
       if (compare === 0 && now >= eventStart && now <= eventEnd) {
         return { key: "ongoing", text: "Event Status: Event Ongoing" };
@@ -2442,6 +2483,29 @@
           return;
         }
         openManualModal({ forceEventCode: activeEventCode, lockEventSelection: true });
+      });
+
+      eventPotOpenButton?.addEventListener("click", () => {
+        const drawUrl = buildEventPotDrawUrl();
+        if (!drawUrl) {
+          showErrorSnackbar?.({ message: "Please select an event before opening the Event Pot." });
+          return;
+        }
+        window.open(drawUrl, "_blank");
+      });
+      copyEventPotLinkButton?.addEventListener("click", () => {
+        const drawUrl = buildEventPotDrawUrl();
+        if (!drawUrl) {
+          showErrorSnackbar?.({ message: "Please select an event before copying the Event Pot link." });
+          return;
+        }
+        copyTextToClipboard(drawUrl)
+          .then(() => {
+            showDefaultToast?.("Event Pot link copied to clipboard.");
+          })
+          .catch((error) => {
+            showErrorSnackbar?.({ message: error?.message || "Failed to copy link." });
+          });
       });
 
       guestListBody?.addEventListener("click", (evt) => {
