@@ -147,6 +147,7 @@
             <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
               <div>
                 <h3>Event info</h3>
+                <p id="event-info-status" class="muted small" aria-live="polite">Event Status: Event Not Ready</p>
               </div>
             </div>
             <form id="event-info-form" class="form">
@@ -614,6 +615,7 @@
     const eventInfoSaveButton = document.getElementById("event-info-save");
     const eventInfoDeleteButton = document.getElementById("event-info-delete");
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
+    const eventInfoStatusText = document.getElementById("event-info-status");
     const eventInfoJoinStartInput = document.getElementById("event-info-join-start-time");
     const eventInfoJoinLimitInput = document.getElementById("event-info-join-limit-time");
     const eventInfoJoinEndInput = document.getElementById("event-info-join-end-time");
@@ -938,6 +940,39 @@
       }
       if (eventInfoEmptyMessage) {
         eventInfoEmptyMessage.classList.toggle("hidden", hasEvent);
+      }
+      updateEventInfoStatus();
+    }
+
+    function areEventInfoFieldsComplete() {
+      const requiredFields = [
+        eventInfoNameInput,
+        eventInfoDateInput,
+        eventInfoJoinStartInput,
+        eventInfoJoinLimitInput,
+        eventInfoJoinEndInput
+      ].filter(Boolean);
+      return requiredFields.every(field => (field.value ?? "").trim() !== "");
+    }
+
+    function updateEventSectionTabAccessibility(isReady) {
+      eventSectionTabs?.querySelectorAll("[data-event-section-target]").forEach(tab => {
+        if (tab.dataset.eventSectionTarget === "event-info") {
+          tab.removeAttribute("disabled");
+          return;
+        }
+        tab.disabled = !isReady;
+      });
+    }
+
+    function updateEventInfoStatus() {
+      const ready = areEventInfoFieldsComplete();
+      if (eventInfoStatusText) {
+        eventInfoStatusText.textContent = `Event Status: ${ready ? "Event Upcoming" : "Event Not Ready"}`;
+      }
+      updateEventSectionTabAccessibility(ready);
+      if (!ready) {
+        setActiveEventSection("event-info");
       }
     }
 
@@ -2209,6 +2244,17 @@
       buildQuarterHourOptions(eventInfoJoinStartInput);
       buildQuarterHourOptions(eventInfoJoinLimitInput);
       buildQuarterHourOptions(eventInfoJoinEndInput);
+      const eventInfoInputElements = [
+        eventInfoNameInput,
+        eventInfoDateInput,
+        eventInfoJoinStartInput,
+        eventInfoJoinLimitInput,
+        eventInfoJoinEndInput
+      ].filter(Boolean);
+      eventInfoInputElements.forEach(input => {
+        input.addEventListener("input", updateEventInfoStatus);
+        input.addEventListener("change", updateEventInfoStatus);
+      });
 
       editNowButton?.addEventListener("click", () => {
         const now = new Date();
@@ -2231,10 +2277,11 @@
 
       eventSectionTabs?.addEventListener("click", (evt) => {
         const button = evt.target.closest("[data-event-section-target]");
-        if (!button) return;
+        if (!button || button.disabled) return;
         setActiveEventSection(button.dataset.eventSectionTarget || "event-info");
       });
       setActiveEventSection("event-info");
+      updateEventInfoStatus();
       eventPrizeForm?.addEventListener("submit", async (evt) => {
         evt.preventDefault();
         if (!eventPrizeInput) return;
