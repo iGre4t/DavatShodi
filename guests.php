@@ -216,27 +216,27 @@
         <div class="event-section hidden" data-event-section="event-winners" id="event-winners-section">
           <div class="card">
             <div class="table-header">
-              <div>
-                <h3>??????? ??????</h3>
-                <p class="muted small">???? ??????? ????? ??? ????? ?? ?????? ??????????.</p>
-              </div>
+          <div>
+            <h3>Event winners</h3>
+            <p class="muted small">Review the people marked as winners for the selected event.</p>
+          </div>
             </div>
             <p id="event-winners-status" class="muted small" aria-live="polite"></p>
             <div class="table-wrapper">
               <table>
                 <thead>
-                  <tr>
-                    <th style="width:56px;">????</th>
-                    <th>?????</th>
-                    <th>?? ????</th>
-                    <th>????</th>
-                    <th>???</th>
-                    <th>????</th>
-                  </tr>
+                <tr>
+                  <th style="width:56px;">No.</th>
+                  <th>Full name</th>
+                  <th>Invite code</th>
+                  <th>Phone number</th>
+                  <th>National ID</th>
+                  <th>Timestamp</th>
+                </tr>
                 </thead>
                 <tbody id="event-winner-list-body">
                   <tr>
-                    <td colspan="6" class="muted">?? ??? ???????? ???????...</td>
+                    <td colspan="6" class="muted">Loading winners...</td>
                   </tr>
                 </tbody>
               </table>
@@ -246,28 +246,28 @@
         <div class="event-section hidden" data-event-section="event-prizes" id="event-prizes-section">
           <div class="card">
             <div class="table-header" style="flex-wrap:wrap;">
-              <div>
-                <h3>????? ??????</h3>
-                <p class="muted small">????? ????? ??????? ???? ?????? ??????????.</p>
-              </div>
+          <div>
+            <h3>Event prizes</h3>
+            <p class="muted small">Manage the prizes that winners can be assigned.</p>
+          </div>
               <form
                 id="event-prize-add-form"
                 class="form"
                 style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; direction:rtl; min-width:320px;"
               >
-                <label class="field standard-width" style="flex:1 1 220px; direction:rtl; text-align:right;">
-                  <span>??? ?????</span>
+                  <label class="field standard-width" style="flex:1 1 220px; direction:rtl; text-align:right;">
+                    <span>Prize name</span>
                   <input
                     id="event-prize-name"
                     name="name"
                     type="text"
-                    placeholder="??? ????? ?? ???? ????"
+                    placeholder="Prize name or description"
                     autocomplete="off"
                     required
                     style="direction:rtl; text-align:right;"
                   />
                 </label>
-                <button type="submit" class="btn primary" id="event-prize-add-button">????? ????</button>
+                <button type="submit" class="btn primary" id="event-prize-add-button">Add prize</button>
               </form>
             </div>
             <p id="event-prize-status" class="muted small" aria-live="polite" style="margin:0;"></p>
@@ -276,13 +276,13 @@
                 <thead>
                   <tr>
                     <th style="width:80px;">#</th>
-                    <th>??? ?????</th>
-                    <th style="width:190px;">??????</th>
+                    <th>Prize name</th>
+                    <th style="width:190px;">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="event-prize-list-body">
                   <tr>
-                    <td colspan="3" class="muted">?? ??? ???????? ?????...</td>
+                    <td colspan="3" class="muted">No prizes yet.</td>
                   </tr>
                 </tbody>
               </table>
