@@ -2242,6 +2242,7 @@ function initializeFieldControllers() {
     }
     const update = () => updateFieldStyleState(block);
     typeSelect.addEventListener("change", update);
+    typeSelect.addEventListener("input", update);
     update();
   });
 }
