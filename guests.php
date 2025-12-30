@@ -2,10 +2,10 @@
   <link rel="stylesheet" href="style/jalalidatepicker.min.css" />
   <div class="sub-layout" data-sub-layout>
     <aside class="sub-sidebar">
-      <div class="sub-header">لیست مهمانان</div>
+      <div class="sub-header">Guest list</div>
       <div class="sub-nav">
         <button type="button" class="sub-item active" data-pane="guest-upload-pane">
-          بارگذاری مهمان
+          Guest upload
         </button>
         <div class="sub-event-tabs" id="guest-event-tabs"></div>
       </div>
@@ -101,7 +101,7 @@
             aria-controls="event-info-section"
             aria-selected="true"
           >
-            اطلاعات رویداد
+            Event info
           </button>
           <button
             type="button"
@@ -110,7 +110,7 @@
             aria-controls="event-guests-section"
             aria-selected="false"
           >
-            مهمانان رویداد
+            Event guests
           </button>
           <button
             type="button"
@@ -119,7 +119,7 @@
             aria-controls="event-winners-section"
             aria-selected="false"
           >
-            برندگان رویداد
+            Event winners
           </button>
           <button
             type="button"
@@ -128,7 +128,7 @@
             aria-controls="event-prizes-section"
             aria-selected="false"
           >
-            جوایز رویداد
+            Event prizes
           </button>
         </div>
         <div class="event-section" data-event-section="event-info" id="event-info-section">
@@ -1473,25 +1473,25 @@
           const nationalId = String(row.national_id || row.nationalid || "").trim();
           const lotteryCode = String(row.number || row.lottery_code || row.unique_code || "").trim();
           return {
-            "کد قرعه کشی": lotteryCode,
-            "نام کامل": fullname,
-            "کدملی": nationalId,
-            "شماره تلفن": phone,
-            "لینک کارت دعوت": link
+            "Lottery code": lotteryCode,
+            "Full name": fullname,
+            "National ID": nationalId,
+            "Phone number": phone,
+            "Invite link": link
           };
         })
         .filter(entry =>
-          entry["کد قرعه کشی"] ||
-          entry["نام کامل"] ||
-          entry["کدملی"] ||
-          entry["شماره تلفن"] ||
-          entry["لینک کارت دعوت"]
+          entry["Lottery code"] ||
+          entry["Full name"] ||
+          entry["National ID"] ||
+          entry["Phone number"] ||
+          entry["Invite link"]
         );
       if (!normalized.length) {
         throw new Error("The pure CSV file did not yield any guest rows.");
       }
       const worksheet = XLSX.utils.json_to_sheet(normalized, {
-        header: ["کد قرعه کشی", "نام کامل", "کدملی", "شماره تلفن", "لینک کارت دعوت"]
+        header: ["Lottery code", "Full name", "National ID", "Phone number", "Invite link"]
       });
       worksheet["!cols"] = [{ wch: 15 }, { wch: 35 }, { wch: 18 }, { wch: 20 }, { wch: 45 }];
       const workbook = XLSX.utils.book_new();
@@ -1647,7 +1647,7 @@
       currentEventPrizeCode = String(code || "").trim();
       const requestId = ++eventPrizeFetchId;
       setEventPrizeStatus("Loading prizes...");
-      eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">در حال بارگذاری جوایز...</td></tr>`;
+      eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">Loading prizes...</td></tr>`;
       try {
         const params = new URLSearchParams({ prize_action: "list" });
         if (currentEventPrizeCode) {
