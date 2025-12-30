@@ -576,6 +576,12 @@
     let activeEventCode = "";
     let manualLockedEventCode = "";
     const inviteCardFieldDefaults = {};
+    const inviteCardPrefixContainer = document.querySelector("[data-prefix-container]");
+    const inviteCardPrefixPlaceholder = document.querySelector("[data-invite-prefix-placeholder]");
+    const inviteCardGenderSelect = document.querySelector("[data-invite-card-gender]");
+    let lastInviteCardTemplateSignature = "";
+    let lastInviteCardPrefixGenders = null;
+    let lastInviteCardGenderOptions = null;
 
     const uploadForm = document.getElementById("guest-upload-form");
     const uploadSubmit = document.getElementById("guest-upload-submit");
@@ -839,7 +845,6 @@
       renderManualEventOptions();
       renderEventTabs();
       renderGuestTable();
-      applyEventInviteCardTemplate();
     }
 
     function renderManualEventOptions(forceEventCode = "") {
@@ -1393,6 +1398,7 @@
         if (payload.status !== "ok") throw new Error(payload.message || "Unable to load guest lists.");
         state.events = Array.isArray(payload.events) ? payload.events : [];
         refreshEventControls();
+        applyEventInviteCardTemplate();
         renderEventWinners();
         loadEventPrizesForCode(activeEventCode);
         populateGenderSelect(manualGenderSelect);
@@ -1426,6 +1432,7 @@
       }
       state.events = Array.isArray(payload.events) ? payload.events : state.events;
       refreshEventControls();
+      applyEventInviteCardTemplate();
       showDefaultToast?.(payload.message || "Guest list saved.");
     }
 
@@ -1549,6 +1556,7 @@
         state.events = Array.isArray(data.events) ? data.events : state.events;
         activeEventCode = selectedCode;
         refreshEventControls();
+        applyEventInviteCardTemplate();
         populateGenderSelect(manualGenderSelect);
         populateGenderSelect(editGenderSelect);
         manualForm.reset();
@@ -1616,6 +1624,7 @@
         }
         state.events = Array.isArray(data.events) ? data.events : state.events;
         refreshEventControls();
+        applyEventInviteCardTemplate();
         showDefaultToast?.(data.message || "Event updated.");
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to save event." });
@@ -1991,6 +2000,144 @@
       });
     }
 
+    function arraysMatch(a, b) {
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+      }
+      return a.every((value, index) => value === b[index]);
+    }
+
+    function escapeCssSelector(value) {
+      if (!value) {
+        return "";
+      }
+      if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+        return CSS.escape(value);
+      }
+      return value.replace(/(["\\])/g, "\\$1");
+    }
+
+    function getSelectedPreviewGender() {
+      return (inviteCardGenderSelect?.value ?? "").trim();
+    }
+
+    function renderInviteCardGenderDropdown(genders, selected = "", force = false) {
+      if (!inviteCardGenderSelect) {
+        return;
+      }
+      const normalizedGenders = Array.from(
+        new Set((genders || []).map((gender) => (gender || "").trim()).filter(Boolean))
+      );
+      if (!force && arraysMatch(normalizedGenders, lastInviteCardGenderOptions)) {
+        inviteCardGenderSelect.disabled = normalizedGenders.length === 0;
+        if (normalizedGenders.includes(selected)) {
+          inviteCardGenderSelect.value = selected;
+        } else {
+          inviteCardGenderSelect.value = "";
+        }
+        return;
+      }
+      lastInviteCardGenderOptions = normalizedGenders;
+      inviteCardGenderSelect.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Use entered name without prefix";
+      inviteCardGenderSelect.appendChild(placeholder);
+      normalizedGenders.forEach((gender) => {
+        const option = document.createElement("option");
+        option.value = gender;
+        option.textContent = gender;
+        inviteCardGenderSelect.appendChild(option);
+      });
+      inviteCardGenderSelect.value = normalizedGenders.includes(selected) ? selected : "";
+      inviteCardGenderSelect.disabled = normalizedGenders.length === 0;
+    }
+
+    function renderInviteCardPrefixInputs(genders, prefixes = {}, force = false) {
+      if (!inviteCardPrefixContainer) {
+        return;
+      }
+      const normalizedGenders = Array.from(
+        new Set((genders || []).map((gender) => (gender || "").trim()).filter(Boolean))
+      );
+      if (!force && arraysMatch(normalizedGenders, lastInviteCardPrefixGenders)) {
+        if (!normalizedGenders.length) {
+          inviteCardPrefixPlaceholder?.classList.remove("hidden");
+        } else {
+          inviteCardPrefixPlaceholder?.classList.add("hidden");
+        }
+        return;
+      }
+      lastInviteCardPrefixGenders = normalizedGenders;
+      inviteCardPrefixContainer.innerHTML = "";
+      if (!normalizedGenders.length) {
+        inviteCardPrefixPlaceholder?.classList.remove("hidden");
+        return;
+      }
+      inviteCardPrefixPlaceholder?.classList.add("hidden");
+      normalizedGenders.forEach((gender) => {
+        const row = document.createElement("label");
+        row.className = "field standard-width invite-card-prefix-row";
+        const span = document.createElement("span");
+        span.textContent = `Prefix for ${gender}`;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.dataset.prefixInput = "";
+        input.dataset.prefixGender = gender;
+        input.value = prefixes[gender] ?? "";
+        row.appendChild(span);
+        row.appendChild(input);
+        inviteCardPrefixContainer.appendChild(row);
+      });
+      inviteCardPrefixContainer.querySelectorAll("[data-prefix-input]").forEach((input) => {
+        input.addEventListener("input", () => {
+          refreshInviteCardActionState?.();
+        });
+      });
+    }
+
+    function readInviteCardGenderPrefixes() {
+      const result = {};
+      if (!inviteCardPrefixContainer) {
+        return result;
+      }
+      inviteCardPrefixContainer.querySelectorAll("[data-prefix-input]").forEach((input) => {
+        const gender = (input.dataset.prefixGender ?? "").trim();
+        if (!gender) {
+          return;
+        }
+        result[gender] = (input.value ?? "").trim();
+      });
+      return result;
+    }
+
+    function getNamePrefixForGender(gender) {
+      if (!gender || !inviteCardPrefixContainer) {
+        return "";
+      }
+      const normalizedGender = gender.trim();
+      if (!normalizedGender) {
+        return "";
+      }
+      const selector = `[data-prefix-input][data-prefix-gender="${escapeCssSelector(normalizedGender)}"]`;
+      const input = inviteCardPrefixContainer.querySelector(selector);
+      return (input?.value ?? "").trim();
+    }
+
+    function prepareInviteCardGenderControls(template = null, force = false) {
+      const genders = getAvailableGenders();
+      const prefixes = template?.gender_prefixes ?? {};
+      const previewGender = (template?.preview_gender ?? "") || "";
+      renderInviteCardGenderDropdown(genders, previewGender, force);
+      renderInviteCardPrefixInputs(genders, prefixes, force);
+    }
+
+    if (typeof window === "object" && window) {
+      window.getNamePrefixForGender = getNamePrefixForGender;
+      window.getSelectedPreviewGender = getSelectedPreviewGender;
+      window.readInviteCardGenderPrefixes = readInviteCardGenderPrefixes;
+    }
+
     function buildQuarterHourOptions(select) {
       if (!select) return;
       select.innerHTML = "";
@@ -2076,6 +2223,7 @@
       }
       state.events = Array.isArray(data.events) ? data.events : state.events;
       refreshEventControls();
+      applyEventInviteCardTemplate();
       renderEventList();
       populateGenderSelect(manualGenderSelect);
       populateGenderSelect(editGenderSelect);
@@ -2486,6 +2634,10 @@
       }
       const selectedEvent = events.find(ev => (ev.code || "") === activeEventCode);
       const template = selectedEvent?.invite_card_template;
+      const templateSignature = template ? JSON.stringify(template) : "";
+      const templateChanged = templateSignature !== lastInviteCardTemplateSignature;
+      prepareInviteCardGenderControls(template, templateChanged);
+      lastInviteCardTemplateSignature = templateSignature;
       if (!template || !Array.isArray(template.fields) || !template.fields.length) {
         resetEventInviteCardFields();
         return;
@@ -2541,6 +2693,7 @@
         }
         state.events = Array.isArray(data.events) ? data.events : state.events;
         refreshEventControls();
+        applyEventInviteCardTemplate();
         showDefaultToast?.("Invite card template saved.");
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Unable to save invite card template." });

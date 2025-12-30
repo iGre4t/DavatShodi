@@ -177,7 +177,12 @@ $accountEmail = $currentUser['email'] ?? '';
           <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
           <button class="nav-item" data-tab="gallery">
             <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
-            <span>گالری عکس</span>
+            <span>Ú¯Ø§Ù„Ø±ÛŒ Ø¹Ú©Ø³</span>
+          </button>
+          <!-- Typography tab provides font uploads and previews. -->
+          <button class="nav-item" data-tab="typography">
+            <span class="nav-icon ri ri-font-color" aria-hidden="true"></span>
+            <span>Typography</span>
           </button>
           <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
           <button class="nav-item" data-tab="devsettings">
@@ -340,6 +345,7 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/winnerstab.php'; ?>
         <?php include __DIR__ . '/gallery-tab.php'; ?>
         <?php include __DIR__ . '/invitepanel.php'; ?>
+        <?php include __DIR__ . '/typography.php'; ?>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
             <div class="sub-layout" data-sub-layout>

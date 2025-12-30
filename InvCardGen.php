@@ -4,10 +4,10 @@
  */
 ?>
 <section id="tab-invite-card">
-  <div class="card">
-    <div class="section-header">
-      <h3>Invite Card Generator</h3>
-    </div>
+      <div class="card">
+        <div class="section-header">
+          <h3>Invite Card Generator</h3>
+        </div>
     <div class="invite-card-photo-row">
       <label class="field full">
         <span>Choose photo</span>
@@ -30,8 +30,8 @@
         <p class="hint">Pick the image via the photo chooser modal.</p>
       </label>
     </div>
-    <div class="form grid one-column invite-card-field-grid">
-      <div class="field-block" data-field-block="name">
+        <div class="form grid one-column invite-card-field-grid">
+          <div class="field-block" data-field-block="name">
         <label class="field standard-width">
           <span>Name</span>
           <input id="invite-card-name" type="text" data-field-value />
@@ -127,6 +127,11 @@
               ></button>
             </div>
           </label>
+        </div>
+        <div class="invite-card-prefixes" data-prefix-container>
+          <p class="muted small" data-invite-prefix-placeholder>
+            Set a gender-specific prefix so the name field can be rendered per guest gender.
+          </p>
         </div>
       </div>
       <div class="field-block" data-field-block="national-id">
@@ -352,6 +357,12 @@
       </a>
     </div>
     <div class="invite-card-generator">
+      <label class="field standard-width">
+        <span>Preview gender</span>
+        <select data-invite-card-gender>
+          <option value="">Use entered name</option>
+        </select>
+      </label>
       <button
         type="button"
         id="invite-card-generate"

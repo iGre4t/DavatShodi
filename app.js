@@ -160,6 +160,7 @@ let inviteCardPreviewCanvas = null;
 let inviteCardPreviewPlaceholder = null;
 let inviteCardDownloadLink = null;
 let inviteCardPreviewPhotoId = null;
+let inviteCardGenderSelect = null;
 let positionPickerModal = null;
 let positionPickerOverlay = null;
 let positionPickerImage = null;
@@ -2386,10 +2387,18 @@ function parseScaleInput(rawValue) {
 
 function collectInviteCardFieldData() {
   const blocks = qsa("#tab-invite-card [data-field-block]");
+  const previewGender = querySelectedPreviewGender();
   return blocks.map((block) => {
     const fieldId = (block.dataset.fieldBlock ?? "").trim();
     const valueInput = block.querySelector("[data-field-value]");
-    const value = (valueInput?.value ?? "").trim();
+    const rawValue = (valueInput?.value ?? "").trim();
+    let value = rawValue;
+    if (fieldId === "name" && rawValue) {
+      const prefix = queryNamePrefixForGender(previewGender);
+      if (prefix) {
+        value = `${prefix} ${rawValue}`.trim();
+      }
+    }
     const type = (block.querySelector("[data-field-type]")?.value ?? "text").trim();
     const alignment = (block.querySelector("[data-field-alignment]")?.value ?? "center").trim();
     const fontFamily = block.querySelector("[data-field-font]")?.value || "PeydaWebFaNum";
@@ -2421,13 +2430,39 @@ function collectInviteCardFieldData() {
   });
 }
 
+function querySelectedPreviewGender() {
+  if (typeof window !== "undefined" && typeof window.getSelectedPreviewGender === "function") {
+    return window.getSelectedPreviewGender();
+  }
+  return "";
+}
+
+function queryNamePrefixForGender(gender) {
+  if (!gender) {
+    return "";
+  }
+  if (typeof window !== "undefined" && typeof window.getNamePrefixForGender === "function") {
+    return window.getNamePrefixForGender(gender);
+  }
+  return "";
+}
+
+function queryInviteCardGenderPrefixes() {
+  if (typeof window !== "undefined" && typeof window.readInviteCardGenderPrefixes === "function") {
+    return window.readInviteCardGenderPrefixes();
+  }
+  return {};
+}
+
 function buildInviteCardTemplatePayload() {
   return {
     photo_id: inviteCardSelectedPhoto?.id ?? "",
     photo_title: inviteCardSelectedPhoto?.title ?? "",
     photo_filename: inviteCardSelectedPhoto?.filename ?? "",
     photo_alt: inviteCardSelectedPhoto?.altText ?? "",
-    fields: collectInviteCardFieldData()
+    fields: collectInviteCardFieldData(),
+    gender_prefixes: queryInviteCardGenderPrefixes(),
+    preview_gender: querySelectedPreviewGender()
   };
 }
 
@@ -4544,6 +4579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardPreviewCanvas = qs('[data-invite-card-canvas]');
   inviteCardPreviewPlaceholder = qs('[data-invite-card-preview-placeholder]');
   inviteCardDownloadLink = qs('[data-invite-card-download]');
+  inviteCardGenderSelect = qs('[data-invite-card-gender]');
   positionPickerModal = qs('[data-position-picker-modal]');
   positionPickerOverlay = qs('[data-position-picker-overlay]');
   positionPickerImage = qs('[data-position-picker-image]');
@@ -4569,6 +4605,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const inviteCardTab = qs('#tab-invite-card');
   inviteCardTab?.addEventListener('input', handleInviteCardFieldInteraction);
   inviteCardTab?.addEventListener('change', handleInviteCardFieldInteraction);
+  inviteCardGenderSelect?.addEventListener('change', () => {
+    refreshInviteCardActionState();
+  });
   positionPickerOverlay?.addEventListener('click', closePositionPickerModal);
   positionPickerCancelButton?.addEventListener('click', closePositionPickerModal);
   positionPickerConfirmButton?.addEventListener('click', handlePositionPickerConfirm);

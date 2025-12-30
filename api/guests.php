@@ -572,6 +572,15 @@ if ($method === 'POST') {
             $photoTitle = trim((string)($decoded['photo_title'] ?? ''));
             $photoAlt = trim((string)($decoded['photo_alt'] ?? ''));
             $photoFilename = trim((string)($decoded['photo_filename'] ?? ''));
+            $previewGender = trim((string)($decoded['preview_gender'] ?? ''));
+            $prefixes = [];
+            foreach ((array)($decoded['gender_prefixes'] ?? []) as $gender => $value) {
+                $normalizedGender = trim((string)$gender);
+                if ($normalizedGender === '') {
+                    continue;
+                }
+                $prefixes[$normalizedGender] = trim((string)$value);
+            }
             $store = loadGuestStore($storePath, $eventsRoot);
             $eventIndex = findEventIndexByCode($store['events'], $eventCode);
             if ($eventIndex < 0) {
@@ -586,6 +595,8 @@ if ($method === 'POST') {
                 'photo_filename' => $photoFilename,
                 'photo_alt' => $photoAlt,
                 'fields' => $fields,
+                'gender_prefixes' => $prefixes,
+                'preview_gender' => $previewGender,
                 'updated_at' => date('c')
             ];
             if ($photoFilename !== '') {

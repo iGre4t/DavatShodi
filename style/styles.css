@@ -164,6 +164,21 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
 }
+#tab-invite-card .invite-card-prefixes {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+#tab-invite-card .invite-card-prefix-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+#tab-invite-card .invite-card-prefix-row input {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
 #tab-invite-card .invite-card-generator {
   margin-top: 16px;
   display: flex;
