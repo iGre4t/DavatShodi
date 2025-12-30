@@ -1050,9 +1050,41 @@
         if (!type || !value) return;
         values[type] = value;
       });
+      if (!values.year || !values.month || !values.day || !values.hour || !values.minute || !values.second) {
+        return Date.now();
+      }
       const iso = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}+03:30`;
       const parsed = Date.parse(iso);
       return Number.isNaN(parsed) ? Date.now() : parsed;
+    }
+
+    function getTehranTimeParts() {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Tehran",
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+      const parts = formatter.formatToParts(new Date());
+      const values = {};
+      parts.forEach(({ type, value }) => {
+        if (!type || !value) return;
+        values[type] = value;
+      });
+      if (!values.hour || !values.minute || !values.second) {
+        return null;
+      }
+      return {
+        hour: Number(values.hour),
+        minute: Number(values.minute),
+        second: Number(values.second)
+      };
+    }
+
+    function timePartsToSeconds(parts) {
+      if (!parts) return null;
+      return parts.hour * 3600 + parts.minute * 60 + parts.second;
     }
 
     function evaluateEventStatus() {
@@ -1071,7 +1103,6 @@
       const todayJalali = parseJalaliDate(getNowJalaliDate());
       const eventJalali = parseJalaliDate(dateValue);
       const eventStartTs = buildTehranTimestamp(dateValue, startValue);
-      const eventLimitTs = buildTehranTimestamp(dateValue, limitValue);
       const eventEndTs = buildTehranTimestamp(dateValue, endValue);
       if (!todayJalali || !eventJalali || eventStartTs === null || eventEndTs === null) {
         return { key: "upcoming", text: "Event Status: Event Upcoming" };
@@ -1080,14 +1111,30 @@
       if (compare > 0) {
         return { key: "ended", text: "Event Status: Event Ended" };
       }
-      const startDiff = eventStartTs - nowTimestamp;
-      if (compare < 0 || nowTimestamp < eventStartTs) {
+      if (compare < 0) {
+        const startDiff = eventStartTs - nowTimestamp;
         return {
           key: "upcoming",
           text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
         };
       }
-      if (compare === 0 && nowTimestamp >= eventStartTs && nowTimestamp <= eventEndTs) {
+      const nowTimeParts = getTehranTimeParts();
+      const startTimeParts = parseTimeSegments(startValue);
+      const endTimeParts = parseTimeSegments(endValue);
+      const nowSeconds = timePartsToSeconds(nowTimeParts);
+      const startSeconds = timePartsToSeconds(startTimeParts);
+      const endSeconds = timePartsToSeconds(endTimeParts);
+      if (nowSeconds === null || startSeconds === null || endSeconds === null) {
+        return { key: "ended", text: "Event Status: Event Ended" };
+      }
+      if (nowSeconds < startSeconds) {
+        const diffMs = (startSeconds - nowSeconds) * 1000;
+        return {
+          key: "upcoming",
+          text: `Event Status: Starts in ${formatDuration(diffMs)}`
+        };
+      }
+      if (nowSeconds <= endSeconds) {
         return { key: "ongoing", text: "Event Status: Event Ongoing" };
       }
       return { key: "ended", text: "Event Status: Event Ended" };
