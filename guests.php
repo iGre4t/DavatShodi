@@ -557,7 +557,8 @@
       file: null,
       eventName: "",
       eventDate: "",
-      events: []
+      events: [],
+      eventStatuses: {}
     };
     let activeEventCode = "";
     let manualLockedEventCode = "";
@@ -820,6 +821,7 @@
     }
 
     function refreshEventControls() {
+      refreshEventStatuses();
       renderManualEventOptions();
       renderEventTabs();
       renderGuestTable();
@@ -1012,17 +1014,6 @@
       updateEventInfoStatus();
     }
 
-    function areEventInfoFieldsComplete() {
-      const requiredFields = [
-        eventInfoNameInput,
-        eventInfoDateInput,
-        eventInfoJoinStartInput,
-        eventInfoJoinLimitInput,
-        eventInfoJoinEndInput
-      ].filter(Boolean);
-      return requiredFields.every(field => (field.value ?? "").trim() !== "");
-    }
-
     function updateEventSectionTabAccessibility(isReady) {
       eventSectionTabs?.querySelectorAll("[data-event-section-target]").forEach(tab => {
         if (tab.dataset.eventSectionTarget === "event-info") {
@@ -1058,43 +1049,45 @@
       return Number.isNaN(parsed) ? Date.now() : parsed;
     }
 
+    const DEFAULT_EVENT_STATUS = { key: "not-ready", text: "Event Status: Event Not Ready" };
 
-    function evaluateEventStatus() {
-      const ready = areEventInfoFieldsComplete();
-      if (!ready) {
-        return { key: "not-ready", text: "Event Status: Event Not Ready" };
-      }
-      const dateValue = (eventInfoDateInput?.value || "").trim();
-      const startValue = normalizeTimeOption(eventInfoJoinStartInput?.value || "");
-      const limitValue = normalizeTimeOption(eventInfoJoinLimitInput?.value || "");
-      const endValue = normalizeTimeOption(eventInfoJoinEndInput?.value || "");
-      if (!dateValue || !startValue || !limitValue || !endValue) {
-        return { key: "not-ready", text: "Event Status: Event Not Ready" };
+    function computeEventStatusFromEvent(event) {
+      if (!event) return DEFAULT_EVENT_STATUS;
+      const dateValue = (event.date || "").trim();
+      const startValue = normalizeTimeOption(event.join_start_time || "");
+      const endValue = normalizeTimeOption(event.join_end_time || "");
+      if (!dateValue || !startValue || !endValue) {
+        return DEFAULT_EVENT_STATUS;
       }
       const nowTimestamp = getTehranNowTimestamp();
       const todayJalali = parseJalaliDate(getNowJalaliDate());
       const eventJalali = parseJalaliDate(dateValue);
       const eventStartTs = buildTehranTimestamp(dateValue, startValue);
       const eventEndTs = buildTehranTimestamp(dateValue, endValue);
-      if (!todayJalali || !eventJalali || eventStartTs === null || eventEndTs === null) {
-        return { key: "upcoming", text: "Event Status: Event Upcoming" };
+      if (
+        !todayJalali ||
+        !eventJalali ||
+        eventStartTs === null ||
+        eventEndTs === null
+      ) {
+        return DEFAULT_EVENT_STATUS;
       }
       const compare = compareJalaliDates(todayJalali, eventJalali);
       if (compare > 0) {
         return { key: "ended", text: "Event Status: Event Ended" };
       }
       if (compare < 0) {
-        const startDiff = eventStartTs - nowTimestamp;
+        const diff = Math.max(eventStartTs - nowTimestamp, 0);
         return {
           key: "upcoming",
-          text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
+          text: `Event Status: Starts in ${formatDuration(diff)}`
         };
       }
       if (nowTimestamp < eventStartTs) {
-        const startDiff = eventStartTs - nowTimestamp;
+        const diff = Math.max(eventStartTs - nowTimestamp, 0);
         return {
           key: "upcoming",
-          text: `Event Status: Starts in ${formatDuration(Math.max(startDiff, 0))}`
+          text: `Event Status: Starts in ${formatDuration(diff)}`
         };
       }
       if (nowTimestamp <= eventEndTs) {
@@ -1105,15 +1098,33 @@
 
     let eventStatusInterval = null;
 
-    function startEventStatusTicker() {
-      if (eventStatusInterval) return;
-      eventStatusInterval = setInterval(() => {
+    let eventStatusInterval = null;
+
+    function refreshEventStatuses(applyImmediately = false) {
+      const statuses = {};
+      (state.events || []).forEach(event => {
+        const code = (event.code || event.slug || "").trim();
+        if (!code) return;
+        statuses[code] = computeEventStatusFromEvent(event);
+      });
+      state.eventStatuses = statuses;
+      if (applyImmediately) {
         updateEventInfoStatus();
-      }, 15 * 1000);
+      }
+    }
+
+    function startEventStatusTicker() {
+      if (eventStatusInterval) {
+        return;
+      }
+      refreshEventStatuses(true);
+      eventStatusInterval = setInterval(() => {
+        refreshEventStatuses(true);
+      }, 60 * 1000);
     }
 
     function updateEventInfoStatus() {
-      const status = evaluateEventStatus();
+      const status = state.eventStatuses[activeEventCode] || DEFAULT_EVENT_STATUS;
       const ready = status.key !== "not-ready";
       if (eventInfoStatusText) {
         const statusClasses = [
