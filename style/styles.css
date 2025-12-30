@@ -229,21 +229,24 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
 }
 .position-picker-content {
   position: relative;
-  flex: 1;
+  align-items: center;
+  justify-content: center;
   min-height: 260px;
-  overflow: hidden;
 }
 .position-picker-image-shell {
   position: relative;
-  width: 100%;
-  height: 100%;
+  width: min(540px, 90vw);
+  max-height: min(65vh, calc(80vh - 120px));
   background: #f4f5f7;
   border-radius: 16px;
   overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .position-picker-image-shell img {
   max-width: 100%;
-  max-height: min(65vh, calc(80vh - 120px));
+  max-height: 100%;
   object-fit: contain;
   display: block;
 }
