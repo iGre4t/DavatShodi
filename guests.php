@@ -12,7 +12,7 @@
     </aside>
     <div class="sub-content">
       <div class="sub-pane active" data-pane="guest-upload-pane">
-        <div class="card">
+        <div class="card" data-event-section="event-info" id="event-info-section">
           <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
             <div>
               <h3>List of guests</h3>
@@ -61,7 +61,7 @@
             </div>
           </form>
         </div>
-        <div class="card">
+        <div class="card hidden" data-event-section="event-guests" id="event-guests-section">
           <div class="table-header">
             <h3>Saved events</h3>
             <p class="muted small">Each event shows its name, Shamsi date, and unique invite code.</p>
@@ -87,6 +87,50 @@
 
       </div>
       <div class="sub-pane" data-pane="guest-event-pane">
+        <div
+          class="default-top-tab-list"
+          role="tablist"
+          aria-label="Event sections"
+          data-event-section-tabs
+          data-style="default top tab list"
+        >
+          <button
+            type="button"
+            class="default-top-tab-list__tab active"
+            data-event-section-target="event-info"
+            aria-controls="event-info-section"
+            aria-selected="true"
+          >
+            اطلاعات رویداد
+          </button>
+          <button
+            type="button"
+            class="default-top-tab-list__tab"
+            data-event-section-target="event-guests"
+            aria-controls="event-guests-section"
+            aria-selected="false"
+          >
+            مهمانان رویداد
+          </button>
+          <button
+            type="button"
+            class="default-top-tab-list__tab"
+            data-event-section-target="event-winners"
+            aria-controls="event-winners-section"
+            aria-selected="false"
+          >
+            برندگان رویداد
+          </button>
+          <button
+            type="button"
+            class="default-top-tab-list__tab"
+            data-event-section-target="event-prizes"
+            aria-controls="event-prizes-section"
+            aria-selected="false"
+          >
+            جوایز رویداد
+          </button>
+        </div>
         <div class="card">
           <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
             <div>
@@ -138,9 +182,81 @@
               <div style="display:flex; align-items:center; gap:8px;">
                 <button type="button" class="btn primary" id="export-sms-link">Export SMS Link</button>
                 <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
-              </div>
-            </div>
+        </div>
+      </div>
+      <div class="card hidden" data-event-section="event-winners" id="event-winners-section">
+        <div class="table-header">
+          <div>
+            <h3>برندگان رویداد</h3>
+            <p class="muted small">لیست برندگان تایید شده مربوط به رویداد انتخاب‌شده.</p>
           </div>
+        </div>
+        <p id="event-winners-status" class="muted small" aria-live="polite"></p>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:56px;">ردیف</th>
+                <th>برنده</th>
+                <th>کد دعوت</th>
+                <th>تلفن</th>
+                <th>ملی</th>
+                <th>زمان</th>
+              </tr>
+            </thead>
+            <tbody id="event-winner-list-body">
+              <tr>
+                <td colspan="6" class="muted">Loading winners...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card hidden" data-event-section="event-prizes" id="event-prizes-section">
+        <div class="table-header" style="flex-wrap:wrap;">
+          <div>
+            <h3>جوایز رویداد</h3>
+            <p class="muted small">فهرست جوایز مجزا برای رویداد انتخاب‌شده.</p>
+          </div>
+          <form
+            id="event-prize-add-form"
+            class="form"
+            style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; direction:rtl; min-width:320px;"
+          >
+            <label class="field standard-width" style="flex:1 1 220px; direction:rtl; text-align:right;">
+              <span>نام جایزه</span>
+              <input
+                id="event-prize-name"
+                name="name"
+                type="text"
+                placeholder="نام جایزه را وارد کنید"
+                autocomplete="off"
+                required
+                style="direction:rtl; text-align:right;"
+              />
+            </label>
+            <button type="submit" class="btn primary" id="event-prize-add-button">اضافه کردن</button>
+          </form>
+        </div>
+        <p id="event-prize-status" class="muted small" aria-live="polite" style="margin:0;"></p>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:80px;">#</th>
+                <th>نام جایزه</th>
+                <th style="width:190px;">عملیات</th>
+              </tr>
+            </thead>
+            <tbody id="event-prize-list-body">
+              <tr>
+                <td colspan="3" class="muted">در حال بارگذاری جوایز...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div>
           <div class="table-wrapper">
             <table>
               <thead>
@@ -417,10 +533,24 @@
     const eventInfoCodeInput = document.getElementById("event-info-slug");
     const eventInfoSaveButton = document.getElementById("event-info-save");
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
+    const eventSectionTabs = document.querySelector("[data-event-section-tabs]");
+    const eventSections = Array.from(document.querySelectorAll("[data-event-section]"));
+    const eventWinnerListBody = document.getElementById("event-winner-list-body");
+    const eventWinnersStatus = document.getElementById("event-winners-status");
+    const eventPrizeForm = document.getElementById("event-prize-add-form");
+    const eventPrizeInput = document.getElementById("event-prize-name");
+    const eventPrizeAddButton = document.getElementById("event-prize-add-button");
+    const eventPrizeStatus = document.getElementById("event-prize-status");
+    const eventPrizeListBody = document.getElementById("event-prize-list-body");
     const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
     const editClearEnteredButton = document.getElementById("edit-clear-entered-btn");
     const subPaneButtons = document.querySelectorAll(".sub-sidebar .sub-nav [data-pane]");
     const subPanes = document.querySelectorAll(".sub-content .sub-pane");
+    let cachedWinners = [];
+    let winnersLoaded = false;
+    let eventPrizes = [];
+    let currentEventPrizeCode = "";
+    let eventPrizeFetchId = 0;
 
     function showModal(modal) {
       if (!modal) return;
@@ -625,6 +755,8 @@
       updateEventInfoForm();
       setActivePane("guest-event-pane");
       renderGuestTable();
+      renderEventWinners();
+      loadEventPrizesForCode(activeEventCode);
     }
 
     function updateEventInfoForm() {
@@ -841,6 +973,8 @@
         state.events = Array.isArray(payload.events) ? payload.events : [];
         renderEventFilter();
         renderGuestTable();
+        renderEventWinners();
+        loadEventPrizesForCode(activeEventCode);
         populateGenderSelect(manualGenderSelect);
         populateGenderSelect(editGenderSelect);
       } catch (error) {
@@ -1059,17 +1193,17 @@
       }
     });
 
-    exportSmsButton?.addEventListener("click", async () => {
-      exportSmsButton.setAttribute("disabled", "disabled");
-      try {
-        await exportSmsLinks();
-        showDefaultToast?.("SMS links download started.");
-      } catch (error) {
-        showErrorSnackbar?.({ message: error?.message || "Failed to export SMS links." });
-      } finally {
-        exportSmsButton.removeAttribute("disabled");
-      }
-    });
+      exportSmsButton?.addEventListener("click", async () => {
+        exportSmsButton.setAttribute("disabled", "disabled");
+        try {
+          await exportSmsLinks();
+          showDefaultToast?.("SMS links download started.");
+        } catch (error) {
+          showErrorSnackbar?.({ message: error?.message || "Failed to export SMS links." });
+        } finally {
+          exportSmsButton.removeAttribute("disabled");
+        }
+      });
 
     exportPresentGuestButton?.addEventListener("click", async () => {
       exportPresentGuestButton.setAttribute("disabled", "disabled");
@@ -1413,6 +1547,208 @@
       URL.revokeObjectURL(url);
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function setActiveEventSection(sectionKey) {
+      if (!sectionKey) return;
+      eventSections?.forEach(section => {
+        if (!section) return;
+        section.classList.toggle("hidden", section.dataset.eventSection !== sectionKey);
+      });
+      eventSectionTabs?.querySelectorAll("[data-event-section-target]").forEach(tab => {
+        const isSelected = tab.dataset.eventSectionTarget === sectionKey;
+        tab.classList.toggle("active", isSelected);
+        tab.setAttribute("aria-selected", isSelected ? "true" : "false");
+      });
+    }
+
+    function setEventWinnersStatus(message, isError = false) {
+      if (!eventWinnersStatus) return;
+      eventWinnersStatus.textContent = message || "";
+      if (isError) {
+        eventWinnersStatus.style.color = "var(--primary)";
+      } else {
+        eventWinnersStatus.style.color = "";
+      }
+    }
+
+    function renderEventWinners(code = activeEventCode) {
+      if (!eventWinnerListBody) return;
+      const normalizedCode = String(code || "").trim();
+      const rows = normalizedCode
+        ? cachedWinners.filter(entry => {
+          const entryCode = String(entry.event_code || entry.event_slug || "").trim();
+          return entryCode && entryCode === normalizedCode;
+        })
+        : [];
+      if (!rows.length) {
+        const message = winnersLoaded ? "No winners yet for this event." : "Loading winners...";
+        eventWinnerListBody.innerHTML = `<tr><td colspan="6" class="muted">${message}</td></tr>`;
+        return;
+      }
+      eventWinnerListBody.innerHTML = rows
+        .map((winner, index) => {
+          const fullname = escapeHtml([winner.firstname, winner.lastname].filter(Boolean).join(" ").trim() || "—");
+          return `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${fullname}</td>
+              <td>${escapeHtml(winner.code || winner.invite_code || "")}</td>
+              <td>${escapeHtml(winner.phone_number || winner.phone || "")}</td>
+              <td>${escapeHtml(winner.national_id || "")}</td>
+              <td>${escapeHtml(winner.timestamp || winner.created_at || "")}</td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+
+    async function fetchEventWinners() {
+      if (!eventWinnerListBody) return;
+      setEventWinnersStatus("Loading winners...");
+      try {
+        const response = await fetch("winnerstab.php?winner_action=list", { cache: "no-store" });
+        const payload = await response.json();
+        if (!response.ok || payload.status !== "ok") {
+          throw new Error(payload.message || "Unable to load winners.");
+        }
+        cachedWinners = Array.isArray(payload.winners) ? payload.winners : [];
+        winnersLoaded = true;
+        renderEventWinners();
+        const message = cachedWinners.length ? `Loaded ${cachedWinners.length} winner(s).` : "No winners yet.";
+        setEventWinnersStatus(message);
+      } catch (error) {
+        winnersLoaded = true;
+        setEventWinnersStatus(error?.message || "Failed to load winners.", true);
+        eventWinnerListBody.innerHTML = `<tr><td colspan="6" class="muted">Unable to load winners.</td></tr>`;
+      }
+    }
+
+    function setEventPrizeStatus(message, isError = false) {
+      if (!eventPrizeStatus) return;
+      eventPrizeStatus.textContent = message || "";
+      if (isError) {
+        eventPrizeStatus.style.color = "var(--primary)";
+      } else {
+        eventPrizeStatus.style.color = "";
+      }
+    }
+
+    function renderEventPrizeTable() {
+      if (!eventPrizeListBody) return;
+      if (!eventPrizes.length) {
+        eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">No prizes defined yet.</td></tr>`;
+        return;
+      }
+      eventPrizeListBody.innerHTML = eventPrizes
+        .map(prize => `
+          <tr data-prize-id="${prize.id}">
+            <td>${prize.id}</td>
+            <td style="width:100%;">
+              <label class="field standard-width" style="margin:0;">
+                <input
+                  type="text"
+                  class="event-prize-inline-input"
+                  data-prize-id="${prize.id}"
+                  value="${escapeHtml(prize.name)}"
+                  data-original="${escapeHtml(prize.name)}"
+                  style="direction:rtl; text-align:right;"
+                />
+              </label>
+            </td>
+            <td>
+              <button type="button" class="btn ghost" data-event-prize-action="delete" data-prize-id="${prize.id}">Delete</button>
+            </td>
+          </tr>
+        `)
+        .join("");
+    }
+
+    async function loadEventPrizesForCode(code = "") {
+      if (!eventPrizeListBody) return;
+      currentEventPrizeCode = String(code || "").trim();
+      const requestId = ++eventPrizeFetchId;
+      setEventPrizeStatus("Loading prizes...");
+      eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">در حال بارگذاری جوایز...</td></tr>`;
+      try {
+        const params = new URLSearchParams({ prize_action: "list" });
+        if (currentEventPrizeCode) {
+          params.set("event_code", currentEventPrizeCode);
+        }
+        const response = await fetch(`prizestab.php?${params.toString()}`, { cache: "no-store" });
+        const payload = await response.json();
+        if (requestId !== eventPrizeFetchId) {
+          return;
+        }
+        if (!response.ok || payload.status !== "ok") {
+          throw new Error(payload.message || "Unable to load prizes.");
+        }
+        eventPrizes = Array.isArray(payload.prizes) ? payload.prizes : [];
+        renderEventPrizeTable();
+        setEventPrizeStatus(eventPrizes.length ? `Loaded ${eventPrizes.length} prize(s).` : "No prizes yet.");
+      } catch (error) {
+        if (requestId !== eventPrizeFetchId) {
+          return;
+        }
+        setEventPrizeStatus(error?.message || "Unable to load prizes.", true);
+        eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">Unable to load prizes.</td></tr>`;
+      }
+    }
+
+    async function sendEventPrizeAction(action, data = {}) {
+      const formData = new FormData();
+      formData.append("prize_action", action);
+      if (currentEventPrizeCode) {
+        formData.append("event_code", currentEventPrizeCode);
+      }
+      Object.entries(data).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+      const response = await fetch("prizestab.php", {
+        method: "POST",
+        body: formData
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.status !== "ok") {
+        throw new Error(payload.message || "Unable to save prize changes.");
+      }
+      eventPrizes = Array.isArray(payload.prizes) ? payload.prizes : eventPrizes;
+      renderEventPrizeTable();
+      setEventPrizeStatus(payload.message || "Changes saved.");
+      return payload;
+    }
+
+    function handleEventPrizeInlineUpdate(input) {
+      if (!input) return;
+      const id = input.getAttribute("data-prize-id");
+      if (!id) return;
+      const original = (input.getAttribute("data-original") ?? "").trim();
+      const value = (input.value ?? "").trim();
+      if (value === original) {
+        input.value = original;
+        return;
+      }
+      input.setAttribute("disabled", "disabled");
+      sendEventPrizeAction("update", { id, name: value })
+        .then(() => {
+          input.setAttribute("data-original", value);
+        })
+        .catch(error => {
+          setEventPrizeStatus(error?.message || "Unable to update prize.", true);
+          input.value = original;
+        })
+        .finally(() => {
+          input.removeAttribute("disabled");
+        });
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
       fileTrigger?.addEventListener("click", (e) => {
         e.preventDefault();
@@ -1518,6 +1854,84 @@
         editDateExitedInput.value = "";
         editTimeExitedInput.value = "";
       });
+
+      eventSectionTabs?.addEventListener("click", (evt) => {
+        const button = evt.target.closest("[data-event-section-target]");
+        if (!button) return;
+        setActiveEventSection(button.dataset.eventSectionTarget || "event-info");
+      });
+      setActiveEventSection("event-info");
+      eventPrizeForm?.addEventListener("submit", async (evt) => {
+        evt.preventDefault();
+        if (!eventPrizeInput) return;
+        const name = (eventPrizeInput.value || "").trim();
+        if (!name) {
+          setEventPrizeStatus("Prize name cannot be empty.", true);
+          return;
+        }
+        eventPrizeAddButton?.setAttribute("disabled", "disabled");
+        try {
+          await sendEventPrizeAction("add", { name });
+          eventPrizeForm.reset();
+          eventPrizeInput.focus();
+        } catch (error) {
+          setEventPrizeStatus(error?.message || "Unable to add prize.", true);
+        } finally {
+          eventPrizeAddButton?.removeAttribute("disabled");
+        }
+      });
+      eventPrizeListBody?.addEventListener("focusin", (evt) => {
+        const input = evt.target.closest(".event-prize-inline-input");
+        if (input) {
+          input.setAttribute("data-original", input.value ?? "");
+        }
+      });
+      eventPrizeListBody?.addEventListener("focusout", (evt) => {
+        const input = evt.target.closest(".event-prize-inline-input");
+        if (!input) return;
+        if (
+          evt.relatedTarget &&
+          evt.relatedTarget.closest &&
+          evt.relatedTarget.closest("[data-event-prize-action=\"delete\"]")
+        ) {
+          return;
+        }
+        handleEventPrizeInlineUpdate(input);
+      });
+      eventPrizeListBody?.addEventListener("keydown", (evt) => {
+        if (evt.key !== "Enter") return;
+        const input = evt.target.closest(".event-prize-inline-input");
+        if (!input) return;
+        evt.preventDefault();
+        input.blur();
+      });
+      eventPrizeListBody?.addEventListener("click", async (evt) => {
+        const button = evt.target.closest("[data-event-prize-action=\"delete\"]");
+        if (!button) return;
+        const id = button.getAttribute("data-prize-id");
+        if (!id) return;
+        const confirmDeletion =
+          typeof showDialog === "function"
+            ? await showDialog("Delete this prize?", {
+                confirm: true,
+                title: "Delete prize",
+                okText: "Delete",
+                cancelText: "Cancel"
+              })
+            : window.confirm("Delete this prize?");
+        if (!confirmDeletion) {
+          return;
+        }
+        button.setAttribute("disabled", "disabled");
+        try {
+          await sendEventPrizeAction("delete", { id });
+        } catch (error) {
+          setEventPrizeStatus(error?.message || "Unable to delete prize.", true);
+        } finally {
+          button.removeAttribute("disabled");
+        }
+      });
+      fetchEventWinners();
 
       renderEventTabs();
       fetchGuestEvents();

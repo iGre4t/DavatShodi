@@ -1,5 +1,25 @@
 <?php
-$csvPath = __DIR__ . '/prizelist.csv';
+const DEFAULT_PRIZE_LIST_PATH = __DIR__ . '/prizelist.csv';
+const EVENTS_ROOT = __DIR__ . '/events';
+
+function sanitizeEventCode(string $value): string
+{
+  $clean = preg_replace('/[^a-zA-Z0-9_-]/', '', trim((string)$value));
+  return $clean ?? '';
+}
+
+function resolvePrizeCsvPath(string $eventCode = ''): string
+{
+  $code = sanitizeEventCode($eventCode);
+  if ($code === '') {
+    return DEFAULT_PRIZE_LIST_PATH;
+  }
+  $directory = EVENTS_ROOT . '/' . $code;
+  if (!is_dir($directory)) {
+    @mkdir($directory, 0755, true);
+  }
+  return $directory . '/prizelist.csv';
+}
 
 function respondPrizesJson(array $payload, int $statusCode = 200): void {
   if (!headers_sent()) {
@@ -55,9 +75,11 @@ function writePrizes(string $path, array $prizes): bool {
   return true;
 }
 
+$eventCode = trim((string)($_REQUEST['event_code'] ?? ''));
 $action = trim((string)($_REQUEST['prize_action'] ?? ''));
 if ($action !== '') {
   $action = strtolower($action);
+  $csvPath = resolvePrizeCsvPath($eventCode);
   $prizes = readPrizes($csvPath);
   switch ($action) {
     case 'list':
