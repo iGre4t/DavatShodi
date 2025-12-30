@@ -10,6 +10,40 @@
     </div>
     <div class="form grid one-column">
       <label class="field standard-width">
+        <span>Coordinates (x, y, scale)</span>
+        <div class="coordinate-group">
+          <input
+            id="invite-card-x"
+            name="invite-card-x"
+            type="text"
+            inputmode="decimal"
+            placeholder="x"
+          />
+          <input
+            id="invite-card-y"
+            name="invite-card-y"
+            type="text"
+            inputmode="decimal"
+            placeholder="y"
+          />
+          <input
+            id="invite-card-scale"
+            name="invite-card-scale"
+            type="text"
+            inputmode="decimal"
+            placeholder="scale"
+          />
+        </div>
+      </label>
+      <label class="field standard-width">
+        <span>Alignment</span>
+        <select id="invite-card-alignment" name="invite-card-alignment">
+          <option value="rtl">RTL</option>
+          <option value="ltr">LTR</option>
+          <option value="center">Center</option>
+        </select>
+      </label>
+      <label class="field standard-width">
         <span>Name</span>
         <input id="invite-card-name" type="text" />
       </label>
@@ -22,6 +56,10 @@
           pattern="\d{0,10}"
           maxlength="10"
         />
+      </label>
+      <label class="field standard-width">
+        <span>Guest code</span>
+        <input id="invite-card-guest-code" type="text" />
       </label>
       <label class="field full">
         <span>Choose photo</span>
@@ -44,9 +82,7 @@
         <p class="hint">Pick the image via the photo chooser modal.</p>
       </label>
       <div class="section-footer">
-        <button type="button" class="btn primary" id="invite-card-map-photo">Map Photo</button>
-        <input type="hidden" id="invite-card-map-selection" />
-        <p class="muted" data-invite-card-map-info>Mapping info not saved yet.</p>
+        <!-- Map Photo button removed per request -->
       </div>
     </div>
   </div>

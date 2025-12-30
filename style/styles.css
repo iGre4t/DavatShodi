@@ -148,6 +148,11 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
 .form { display: grid; gap: 14px; }
 .form.single-column { grid-template-columns: 1fr; }
 .field { display: grid; gap: 6px; }
+.coordinate-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
 /* Keep compact fields from spanning the whole card on large screens. */
 .field.standard-width {
   width: min(420px, 100%);
@@ -168,6 +173,12 @@ input[type="text"], input[type="password"], input[type="email"], input[type="sea
   padding: 12px 14px;
   font-size: 15px;
   outline: none;
+}
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) calc(50% + 1px), calc(100% - 14px) calc(50% + 1px);
+  background-size: 8px 8px, 8px 8px;
+  background-repeat: no-repeat;
 }
 .numeric-field,
 input[type="number"] {
@@ -1205,39 +1216,6 @@ switch { display: flex; align-items: center; gap: 10px; }
 .modal-card { position: relative; width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 16px; }
 .modal-card h3 { margin: 0 0 12px; font-size: 16px; }
 .modal-card .hint { margin-top: 0; margin-bottom: 0; text-align: left; }
-.photo-mapper-modal {
-  max-width: 840px;
-}
-.photo-mapper-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  text-align: center;
-}
-.photo-mapper-image-wrapper {
-  position: relative;
-  width: min(720px, 100%);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  background: #fff;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
-  user-select: none;
-  touch-action: none;
-}
-.photo-mapper-image-wrapper img {
-  width: 100%;
-  height: auto;
-  display: block;
-  pointer-events: none;
-}
-.photo-mapper-selection {
-  position: absolute;
-  border: 2px dashed var(--primary);
-  background: rgba(225, 29, 46, 0.16);
-  touch-action: none;
-}
 .modal-progress {
   position: absolute;
   inset: 0;
