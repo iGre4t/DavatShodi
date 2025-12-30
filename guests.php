@@ -590,6 +590,9 @@
     const editTimeExitedInput = document.getElementById("edit-time-exited");
     const editNowButton = document.getElementById("edit-now-btn");
     const editClearExitButton = document.getElementById("edit-clear-exit-btn");
+    const editModalProgress = editModal?.querySelector(".modal-progress");
+    const editModalProgressMessage = editModalProgress?.querySelector("[data-modal-progress-message]");
+    const defaultEditModalProgressText = (editModalProgressMessage?.textContent || "").trim() || "در حال انجام...";
     const editNowExitButton = document.getElementById("edit-now-exit-btn");
     let editContext = null;
     const manualModal = document.getElementById("guest-manual-modal");
@@ -661,6 +664,29 @@
       hideModal(manualModal);
     }
 
+    function setEditModalProgressText(message) {
+      if (!editModalProgressMessage) return;
+      editModalProgressMessage.textContent = message || defaultEditModalProgressText;
+    }
+
+    function showEditModalProgress(message) {
+      if (!editModalProgress) return;
+      setEditModalProgressText(message);
+      editModalProgress.classList.remove("hidden");
+    }
+
+    function hideEditModalProgress() {
+      if (!editModalProgress) return;
+      editModalProgress.classList.add("hidden");
+      setEditModalProgressText(defaultEditModalProgressText);
+    }
+
+    function closeEditModal() {
+      editContext = null;
+      hideEditModalProgress();
+      hideModal(editModal);
+    }
+
     mappingCloseButtons.forEach(btn => {
       btn.addEventListener("click", evt => {
         evt.preventDefault();
@@ -690,12 +716,12 @@
     editCloseButtons.forEach(btn => {
       btn.addEventListener("click", evt => {
         evt.preventDefault();
-        hideModal(editModal);
+        closeEditModal();
       });
     });
 
     editModal?.addEventListener("click", evt => {
-      if (evt.target === editModal) hideModal(editModal);
+      if (evt.target === editModal) closeEditModal();
     });
 
     function normalizeHeader(value, idx) {
@@ -1454,6 +1480,7 @@
       };
       const submitButton = editForm.querySelector("button[type='submit']");
       submitButton?.setAttribute("disabled", "disabled");
+      showEditModalProgress("در حال بروزرسانی مهمان...");
       try {
         const formData = new FormData();
         Object.entries(payload).forEach(([k, v]) => formData.append(k, v));
@@ -1464,12 +1491,13 @@
         }
         state.events = Array.isArray(data.events) ? data.events : state.events;
         renderGuestTable();
-        hideModal(editModal);
+        closeEditModal();
         showDefaultToast?.(data.message || "Guest updated.");
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to update guest." });
       } finally {
         submitButton?.removeAttribute("disabled");
+        hideEditModalProgress();
       }
     });
 
