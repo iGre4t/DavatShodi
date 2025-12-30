@@ -478,6 +478,15 @@ if ($method === 'POST') {
                   exit;
               }
           }
+          if ($normalizedJoinEnd !== '' && $normalizedJoinLimit !== '') {
+              $limitMinutes = getEventTimeMinutes($normalizedJoinLimit);
+              $endMinutes = getEventTimeMinutes($normalizedJoinEnd);
+              if ($endMinutes <= $limitMinutes) {
+                  http_response_code(422);
+                  echo json_encode(['status' => 'error', 'message' => 'Event end time must be after the join limit time.']);
+                  exit;
+              }
+          }
           $store = loadGuestStore($storePath, $eventsRoot);
           $eventIndex = findEventIndexByCode($store['events'], $eventCode);
           if ($eventIndex < 0) {

@@ -993,12 +993,50 @@
       });
     }
 
-    function updateEventInfoStatus() {
+    function evaluateEventStatus() {
       const ready = areEventInfoFieldsComplete();
+      if (!ready) {
+        return { key: "not-ready", text: "Event Status: Event Not Ready" };
+      }
+      const dateValue = (eventInfoDateInput?.value || "").trim();
+      const startValue = normalizeTimeOption(eventInfoJoinStartInput?.value || "");
+      const limitValue = normalizeTimeOption(eventInfoJoinLimitInput?.value || "");
+      const endValue = normalizeTimeOption(eventInfoJoinEndInput?.value || "");
+      if (!dateValue || !startValue || !limitValue || !endValue) {
+        return { key: "not-ready", text: "Event Status: Event Not Ready" };
+      }
+      const now = new Date();
+      const todayJalali = parseJalaliDate(getNowJalaliDate());
+      const eventJalali = parseJalaliDate(dateValue);
+      const eventStart = buildEventDateTime(dateValue, startValue);
+      const eventEnd = buildEventDateTime(dateValue, endValue);
+      if (!todayJalali || !eventJalali || !eventStart || !eventEnd) {
+        return { key: "upcoming", text: "Event Status: Event Upcoming" };
+      }
+      const compare = compareJalaliDates(todayJalali, eventJalali);
+      const startDiff = eventStart.getTime() - now.getTime();
+      if (compare < 0 || (compare === 0 && now < eventStart)) {
+        return { key: "upcoming", text: `Event starts in ${formatDuration(Math.max(startDiff, 0))}` };
+      }
+      if (compare === 0 && now >= eventStart && now <= eventEnd) {
+        return { key: "ongoing", text: "Event Status: Event Ongoing" };
+      }
+      return { key: "ended", text: "Event Status: Event Ended" };
+    }
+
+    function updateEventInfoStatus() {
+      const status = evaluateEventStatus();
+      const ready = status.key !== "not-ready";
       if (eventInfoStatusText) {
-        eventInfoStatusText.textContent = `Event Status: ${ready ? "Event Upcoming" : "Event Not Ready"}`;
-        eventInfoStatusText.classList.toggle("status-upcoming", ready);
-        eventInfoStatusText.classList.toggle("status-not-ready", !ready);
+        const statusClasses = [
+          "status-not-ready",
+          "status-upcoming",
+          "status-ongoing",
+          "status-ended"
+        ];
+        statusClasses.forEach(cls => eventInfoStatusText.classList.remove(cls));
+        eventInfoStatusText.classList.add(`status-${status.key}`);
+        eventInfoStatusText.textContent = status.text;
       }
       updateEventSectionTabAccessibility(ready);
       if (!ready) {
@@ -1438,6 +1476,10 @@
         showErrorSnackbar?.({ message: "Event end time must be a valid 24-hour time." });
         return;
       }
+      if (limitMinutes !== null && endMinutes !== null && endMinutes <= limitMinutes) {
+        showErrorSnackbar?.({ message: "Event end time must be after the join limit time." });
+        return;
+      }
       submitButton?.setAttribute("disabled", "disabled");
       try {
         const formData = new FormData();
@@ -1608,6 +1650,174 @@
         select.appendChild(option);
       }
       select.value = timeValue;
+    }
+
+    const jalaliBreaks = [
+      -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181,
+      1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178
+    ];
+
+    function div(a, b) {
+      return Math.floor(a / b);
+    }
+
+    function mod(a, b) {
+      return a - div(a, b) * b;
+    }
+
+    function jalCal(jy, withoutLeap = false) {
+      const bl = jalaliBreaks.length;
+      let gy = jy + 621;
+      let leapJ = -14;
+      let jp = jalaliBreaks[0];
+      let jm;
+      let jump;
+      let leap;
+      let leapG;
+      let march;
+      let n;
+      let i;
+
+      if (jy < jp || jy >= jalaliBreaks[bl - 1]) {
+        return null;
+      }
+
+      for (i = 1; i < bl; i += 1) {
+        jm = jalaliBreaks[i];
+        jump = jm - jp;
+        if (jy < jm) {
+          break;
+        }
+        leapJ = leapJ + div(jump, 33) * 8 + div(mod(jump, 33), 4);
+        jp = jm;
+      }
+      n = jy - jp;
+      leapJ = leapJ + div(n, 33) * 8 + div(mod(n, 33) + 3, 4);
+      if (mod(jump, 33) === 4 && jump - n === 4) {
+        leapJ += 1;
+      }
+      leapG = div(gy, 4) - div((div(gy, 100) + 1) * 3, 4) - 150;
+      march = 20 + leapJ - leapG;
+      if (withoutLeap) {
+        return { gy, march };
+      }
+      if (jump - n < 6) {
+        n = n - jump + div(jump + 4, 33) * 33;
+      }
+      leap = mod(mod(n + 1, 33) - 1, 4);
+      if (leap === -1) {
+        leap = 4;
+      }
+      return { leap, gy, march };
+    }
+
+    function g2d(gy, gm, gd) {
+      let d = div((gy + div(gm - 8, 6) + 100100) * 1461, 4)
+        + div(153 * mod(gm + 9, 12) + 2, 5)
+        + gd - 34840408;
+      d = d - div(div(gy + 100100 + div(gm - 8, 6), 100) * 3, 4) + 752;
+      return d;
+    }
+
+    function j2d(jy, jm, jd) {
+      const r = jalCal(jy, true);
+      if (!r) return null;
+      return g2d(r.gy, 3, r.march) + (jm - 1) * 31 - div(jm, 7) * (jm - 7) + jd - 1;
+    }
+
+    function d2g(jdn) {
+      let j = 4 * jdn + 139361631;
+      j = j + div(div(4 * jdn + 183187720, 146097) * 3, 4) * 4 - 3908;
+      const i = div(mod(j, 1461), 4) * 5 + 308;
+      const gd = div(mod(i, 153), 5) + 1;
+      const gm = mod(div(i, 153), 12) + 1;
+      const gy = div(j, 1461) - 100100 + div(8 - gm, 6);
+      return { gy, gm, gd };
+    }
+
+    function toGregorian(jy, jm, jd) {
+      const date = j2d(jy, jm, jd);
+      if (date === null) {
+        return null;
+      }
+      return d2g(date);
+    }
+
+    function jalaaliToDateObject(jy, jm, jd, h = 0, m = 0, s = 0) {
+      const gregorianDate = toGregorian(jy, jm, jd);
+      if (!gregorianDate) {
+        return null;
+      }
+      return new Date(
+        gregorianDate.gy,
+        gregorianDate.gm - 1,
+        gregorianDate.gd,
+        h,
+        m,
+        s
+      );
+    }
+
+    function parseJalaliDate(value) {
+      if (!value) return null;
+      const parts = String(value).split("/");
+      if (parts.length !== 3) return null;
+      const [year, month, day] = parts.map(part => Number(part));
+      if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
+        return null;
+      }
+      return { year, month, day };
+    }
+
+    function compareJalaliDates(a, b) {
+      if (!a || !b) return 0;
+      if (a.year !== b.year) return a.year - b.year;
+      if (a.month !== b.month) return a.month - b.month;
+      return a.day - b.day;
+    }
+
+    function parseTimeSegments(value) {
+      if (!value) return null;
+      const parts = String(value).split(":");
+      if (parts.length < 2) return null;
+      const hours = Number(parts[0]);
+      const minutes = Number(parts[1]);
+      const seconds = parts.length > 2 ? Number(parts[2]) : 0;
+      if (Number.isNaN(hours) || Number.isNaN(minutes) || Number.isNaN(seconds)) {
+        return null;
+      }
+      return { hours, minutes, seconds };
+    }
+
+    function buildEventDateTime(dateValue, timeValue) {
+      const dateParts = parseJalaliDate(dateValue);
+      const timeParts = parseTimeSegments(timeValue);
+      if (!dateParts || !timeParts) return null;
+      return jalaaliToDateObject(
+        dateParts.year,
+        dateParts.month,
+        dateParts.day,
+        timeParts.hours,
+        timeParts.minutes,
+        timeParts.seconds
+      );
+    }
+
+    function formatDuration(milliseconds) {
+      if (milliseconds <= 0) {
+        return "less than a minute";
+      }
+      const totalSeconds = Math.floor(milliseconds / 1000);
+      const days = Math.floor(totalSeconds / 86400);
+      const hours = Math.floor((totalSeconds % 86400) / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      const parts = [];
+      if (days) parts.push(`${days}d`);
+      if (hours) parts.push(`${hours}h`);
+      if (minutes) parts.push(`${minutes}m`);
+      if (!parts.length || seconds) parts.push(`${seconds}s`);
+      return parts.join(" ");
     }
 
     function toEnglishDigits(value) {
@@ -1871,8 +2081,8 @@
       return `${INVITE_BASE_URL}/${cleaned}`;
     }
 
-    function buildSmsWorkbook(rows) {
-      const normalized = rows
+      function buildSmsWorkbook(rows) {
+        const normalized = rows
         .map(row => {
           const firstname = String(row.firstname || row.first_name || "").trim();
           const lastname = String(row.lastname || row.last_name || "").trim();
@@ -1908,11 +2118,42 @@
       const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
       const existingView = hasViews ? workbook.Workbook.Views[0] : {};
       workbook.Workbook = workbook.Workbook || {};
-      workbook.Workbook.Views = [{ ...existingView, RTL: true }];
-      return workbook;
-    }
+        workbook.Workbook.Views = [{ ...existingView, RTL: true }];
+        return workbook;
+      }
 
-    async function exportSmsLinks() {
+      function getEventLabelForExport(event) {
+        if (!event) return "";
+        return (
+          event.name ||
+          event.event_name ||
+          event.title ||
+          event.slug ||
+          event.code ||
+          ""
+        );
+      }
+
+      function sanitizeFilenameSegment(value) {
+        const normalized = String(value ?? "").trim();
+        if (!normalized) return "";
+        return normalized
+          .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-+|-+$/g, "");
+      }
+
+      function buildSmsExportFilename(event) {
+        const label = sanitizeFilenameSegment(getEventLabelForExport(event));
+        const segments = ["sms-link-list"];
+        if (label) {
+          segments.push(label);
+        }
+        return `${segments.join("-")}.xlsx`;
+      }
+
+      async function exportSmsLinks() {
       const activeEvent = getActiveGuestEvent();
       if (!activeEvent) {
         throw new Error("Select an event before exporting SMS links.");
@@ -1943,8 +2184,8 @@
       const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "sms-link-list.xlsx";
+        anchor.href = url;
+        anchor.download = buildSmsExportFilename(activeEvent);
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
