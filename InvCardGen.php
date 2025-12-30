@@ -45,6 +45,8 @@
       </label>
       <div class="section-footer">
         <button type="button" class="btn primary" id="invite-card-map-photo">Map Photo</button>
+        <input type="hidden" id="invite-card-map-selection" />
+        <p class="muted" data-invite-card-map-info>Mapping info not saved yet.</p>
       </div>
     </div>
   </div>

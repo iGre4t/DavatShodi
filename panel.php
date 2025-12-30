@@ -589,9 +589,46 @@ $accountEmail = $currentUser['email'] ?? '';
                     <div id="dev-sql-result" class="sql-result hidden" aria-live="polite">
                       <p class="muted" data-sql-result-message></p>
                       <div data-sql-result-body></div>
-                    </div>
-                  </div>
-                </div>
+    </div>
+  </div>
+</div>
+
+    <div
+      id="photo-mapper-modal"
+      class="modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="photo-mapper-title"
+    >
+      <div class="modal-card large photo-mapper-modal">
+        <div class="modal-card-header">
+          <h3 id="photo-mapper-title">Photo Mapper</h3>
+          <button
+            type="button"
+            class="icon-btn"
+            data-photo-mapper-close
+            aria-label="Close Photo Mapper"
+          >
+            <span class="ri ri-close-line" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="photo-mapper-body">
+          <div class="photo-mapper-image-wrapper" data-photo-mapper-wrapper>
+            <img
+              data-photo-mapper-image
+              alt="Selected photo preview"
+              loading="lazy"
+            />
+            <div class="photo-mapper-selection hidden" data-photo-mapper-selection></div>
+          </div>
+          <p class="hint">Click and drag to make a marquee selection on the photo. Use the save button to store the mapped area.</p>
+          <div class="modal-actions">
+            <button type="button" class="btn" id="photo-mapper-cancel">Cancel</button>
+            <button type="button" class="btn primary" id="photo-mapper-save">Save selection</button>
+          </div>
+        </div>
+      </div>
+    </div>
                 <div class="sub-pane" data-pane="printer-settings">
                   <div class="card settings-section">
                     <div class="section-header">

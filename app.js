@@ -138,6 +138,20 @@ let inviteCardPhotoPreviewImage = null;
 let inviteCardPhotoPlaceholder = null;
 let inviteCardPhotoLabel = null;
 let inviteCardChoosePhotoButton = null;
+let inviteCardMapPhotoButton = null;
+let photoMapperModalElement = null;
+let photoMapperImageWrapper = null;
+let photoMapperImageElement = null;
+let photoMapperSelectionElement = null;
+let photoMapperSaveButton = null;
+let photoMapperCancelButton = null;
+let photoMapperIsSelecting = false;
+let photoMapperStartPoint = null;
+let photoMapperSelectionRect = null;
+let photoMapperNormalizedSelection = null;
+let inviteCardMapSelectionInput = null;
+let inviteCardMapInfoLabel = null;
+let inviteCardPhotoMapping = null;
 let siteIconValue = "";
 let siteIconPreviewImage = null;
 let siteIconPlaceholder = null;
@@ -2214,6 +2228,224 @@ function updateInviteCardPhotoPreview() {
   }
 }
 
+function openPhotoMapperModal() {
+  if (!inviteCardSelectedPhoto) {
+    showErrorSnackbar({ message: "Please choose a photo before mapping." });
+    return;
+  }
+  if (!photoMapperModalElement || !photoMapperImageElement) {
+    return;
+  }
+  const photoUrl = getGalleryPhotoFileUrl(inviteCardSelectedPhoto);
+  photoMapperImageElement.src = photoUrl;
+  photoMapperModalElement.classList.remove("hidden");
+  photoMapperModalElement.setAttribute("aria-hidden", "false");
+  photoMapperIsSelecting = false;
+  photoMapperStartPoint = null;
+  photoMapperSelectionRect = null;
+  hidePhotoMapperSelection();
+  if (inviteCardPhotoMapping?.photoId === inviteCardSelectedPhoto.id) {
+    photoMapperNormalizedSelection = inviteCardPhotoMapping.selection;
+  } else {
+    photoMapperNormalizedSelection = null;
+  }
+}
+
+function closePhotoMapperModal() {
+  if (!photoMapperModalElement) {
+    return;
+  }
+  photoMapperModalElement.classList.add("hidden");
+  photoMapperModalElement.setAttribute("aria-hidden", "true");
+  photoMapperIsSelecting = false;
+  photoMapperStartPoint = null;
+  photoMapperSelectionRect = null;
+  hidePhotoMapperSelection();
+}
+
+function hidePhotoMapperSelection() {
+  if (!photoMapperSelectionElement) {
+    return;
+  }
+  photoMapperSelectionElement.classList.add("hidden");
+  photoMapperSelectionElement.style.left = "";
+  photoMapperSelectionElement.style.top = "";
+  photoMapperSelectionElement.style.width = "";
+  photoMapperSelectionElement.style.height = "";
+}
+
+function updatePhotoMapperSelectionElement(rect) {
+  if (!photoMapperSelectionElement || !rect) {
+    hidePhotoMapperSelection();
+    return;
+  }
+  photoMapperSelectionElement.style.left = `${rect.x}px`;
+  photoMapperSelectionElement.style.top = `${rect.y}px`;
+  photoMapperSelectionElement.style.width = `${rect.width}px`;
+  photoMapperSelectionElement.style.height = `${rect.height}px`;
+  photoMapperSelectionElement.classList.remove("hidden");
+}
+
+function getPhotoMapperImageRect() {
+  return photoMapperImageElement ? photoMapperImageElement.getBoundingClientRect() : null;
+}
+
+function getPhotoMapperRelativeCoords(event) {
+  const rect = getPhotoMapperImageRect();
+  if (!rect) {
+    return null;
+  }
+  const point =
+    (event.touches && event.touches[0]) ||
+    (event.changedTouches && event.changedTouches[0]) ||
+    event;
+  if (!point) {
+    return null;
+  }
+  const x = clamp(point.clientX - rect.left, 0, rect.width);
+  const y = clamp(point.clientY - rect.top, 0, rect.height);
+  return { x, y };
+}
+
+function createRectFromPoints(start, end) {
+  if (!start || !end) {
+    return null;
+  }
+  const x = Math.min(start.x, end.x);
+  const y = Math.min(start.y, end.y);
+  const width = Math.max(1, Math.abs(end.x - start.x));
+  const height = Math.max(1, Math.abs(end.y - start.y));
+  return { x, y, width, height };
+}
+
+function handlePhotoMapperPointerDown(event) {
+  if (event.button !== undefined && event.button !== 0) {
+    return;
+  }
+  const coords = getPhotoMapperRelativeCoords(event);
+  if (!coords) {
+    return;
+  }
+  photoMapperIsSelecting = true;
+  photoMapperStartPoint = coords;
+  photoMapperSelectionRect = { x: coords.x, y: coords.y, width: 0, height: 0 };
+  photoMapperNormalizedSelection = null;
+  updatePhotoMapperSelectionElement(photoMapperSelectionRect);
+  event.preventDefault();
+}
+
+function handlePhotoMapperPointerMove(event) {
+  if (!photoMapperIsSelecting) {
+    return;
+  }
+  const coords = getPhotoMapperRelativeCoords(event);
+  if (!coords || !photoMapperStartPoint) {
+    return;
+  }
+  photoMapperSelectionRect = createRectFromPoints(photoMapperStartPoint, coords);
+  updatePhotoMapperSelectionElement(photoMapperSelectionRect);
+  event.preventDefault();
+}
+
+function handlePhotoMapperPointerUp(event) {
+  if (!photoMapperIsSelecting) {
+    return;
+  }
+  const coords = getPhotoMapperRelativeCoords(event) || photoMapperStartPoint;
+  if (!coords || !photoMapperStartPoint) {
+    photoMapperIsSelecting = false;
+    return;
+  }
+  photoMapperSelectionRect = createRectFromPoints(photoMapperStartPoint, coords);
+  updatePhotoMapperSelectionElement(photoMapperSelectionRect);
+  photoMapperNormalizedSelection = computeNormalizedSelection(photoMapperSelectionRect);
+  photoMapperIsSelecting = false;
+  event.preventDefault();
+}
+
+function computeNormalizedSelection(rect) {
+  const imageRect = getPhotoMapperImageRect();
+  if (!rect || !imageRect) {
+    return null;
+  }
+  const left = clamp(rect.x / imageRect.width, 0, 1);
+  const top = clamp(rect.y / imageRect.height, 0, 1);
+  const width = clamp(rect.width / imageRect.width, 0, 1 - left);
+  const height = clamp(rect.height / imageRect.height, 0, 1 - top);
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+  return { left, top, width, height };
+}
+
+function convertNormalizedToRect(normalized) {
+  const imageRect = getPhotoMapperImageRect();
+  if (!normalized || !imageRect) {
+    return null;
+  }
+  return {
+    x: normalized.left * imageRect.width,
+    y: normalized.top * imageRect.height,
+    width: normalized.width * imageRect.width,
+    height: normalized.height * imageRect.height
+  };
+}
+
+function applyNormalizedSelection(normalized) {
+  if (!normalized) {
+    hidePhotoMapperSelection();
+    return;
+  }
+  const rect = convertNormalizedToRect(normalized);
+  if (!rect) {
+    hidePhotoMapperSelection();
+    return;
+  }
+  photoMapperSelectionRect = rect;
+  updatePhotoMapperSelectionElement(rect);
+}
+
+function handlePhotoMapperImageLoad() {
+  if (photoMapperNormalizedSelection) {
+    applyNormalizedSelection(photoMapperNormalizedSelection);
+  } else {
+    hidePhotoMapperSelection();
+  }
+}
+
+function savePhotoMapperSelection() {
+  if (!photoMapperNormalizedSelection) {
+    showErrorSnackbar({ message: "Please make a selection before saving." });
+    return;
+  }
+  inviteCardPhotoMapping = {
+    photoId: inviteCardSelectedPhoto?.id ?? null,
+    selection: photoMapperNormalizedSelection
+  };
+  if (inviteCardMapSelectionInput) {
+    inviteCardMapSelectionInput.value = JSON.stringify(inviteCardPhotoMapping);
+  }
+  updateInviteCardMapInfo();
+  closePhotoMapperModal();
+  showDefaultToast("Mapped selection saved.");
+}
+
+function formatPhotoMapperInfo(selection) {
+  if (!selection) {
+    return "Mapping info not saved yet.";
+  }
+  const percent = (value) => Math.round((value ?? 0) * 100);
+  return `Mapped area: left ${percent(selection.left)}%, top ${percent(selection.top)}%, ${percent(selection.width)}% wide, ${percent(selection.height)}% tall.`;
+}
+
+function updateInviteCardMapInfo() {
+  if (!inviteCardMapInfoLabel) {
+    return;
+  }
+  inviteCardMapInfoLabel.textContent = formatPhotoMapperInfo(inviteCardPhotoMapping?.selection);
+}
+
+
 function formatGalleryPhotoDate(rawValue) {
   if (!rawValue) {
     return "";
@@ -3977,17 +4209,55 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardPhotoPreviewImage = qs('[data-invite-card-photo-preview-image]');
   inviteCardPhotoPlaceholder = qs('[data-invite-card-photo-placeholder]');
   inviteCardPhotoLabel = qs('[data-invite-card-photo-label]');
+  inviteCardMapSelectionInput = qs('#invite-card-map-selection');
+  inviteCardMapInfoLabel = qs('[data-invite-card-map-info]');
+  inviteCardMapPhotoButton = qs('#invite-card-map-photo');
   inviteCardChoosePhotoButton?.addEventListener('click', () => {
     openPhotoChooserModal({
       allowMultiple: false,
       initialSelection: inviteCardSelectedPhoto ? [inviteCardSelectedPhoto.id] : [],
       onChoose: (selectedPhotos = []) => {
-        inviteCardSelectedPhoto = selectedPhotos[0] ?? null;
+        const nextPhoto = selectedPhotos[0] ?? null;
+        if (!nextPhoto || inviteCardPhotoMapping?.photoId !== nextPhoto.id) {
+          inviteCardPhotoMapping = null;
+          if (inviteCardMapSelectionInput) {
+            inviteCardMapSelectionInput.value = "";
+          }
+        }
+        inviteCardSelectedPhoto = nextPhoto;
         updateInviteCardPhotoPreview();
+        updateInviteCardMapInfo();
       }
     });
   });
+  inviteCardMapPhotoButton?.addEventListener('click', openPhotoMapperModal);
   updateInviteCardPhotoPreview();
+  updateInviteCardMapInfo();
+  photoMapperModalElement = qs('#photo-mapper-modal');
+  photoMapperImageWrapper = qs('[data-photo-mapper-wrapper]');
+  photoMapperImageElement = qs('[data-photo-mapper-image]');
+  photoMapperSelectionElement = qs('[data-photo-mapper-selection]');
+  photoMapperSaveButton = qs('#photo-mapper-save');
+  photoMapperCancelButton = qs('#photo-mapper-cancel');
+  const photoMapperCloseButton = qs('[data-photo-mapper-close]');
+  photoMapperSaveButton?.addEventListener('click', savePhotoMapperSelection);
+  photoMapperCancelButton?.addEventListener('click', closePhotoMapperModal);
+  photoMapperCloseButton?.addEventListener('click', closePhotoMapperModal);
+  photoMapperModalElement?.addEventListener('click', (event) => {
+    if (event.target === photoMapperModalElement) {
+      closePhotoMapperModal();
+    }
+  });
+  photoMapperImageWrapper?.addEventListener('mousedown', handlePhotoMapperPointerDown);
+  photoMapperImageWrapper?.addEventListener('touchstart', (event) => {
+    handlePhotoMapperPointerDown(event);
+    event.preventDefault();
+  }, { passive: false });
+  document.addEventListener('mousemove', handlePhotoMapperPointerMove);
+  document.addEventListener('mouseup', handlePhotoMapperPointerUp);
+  document.addEventListener('touchmove', handlePhotoMapperPointerMove, { passive: false });
+  document.addEventListener('touchend', handlePhotoMapperPointerUp);
+  photoMapperImageElement?.addEventListener('load', handlePhotoMapperImageLoad);
   // Handles form submissions by updating the local state and syncing back to the server.
   qs('#user-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
