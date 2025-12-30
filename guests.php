@@ -1510,14 +1510,25 @@
       return Number(match[1]) * 60 + Number(match[2]);
     }
 
-    function selectTimeValue(value) {
+    function normalizeTimeOption(value) {
       if (!value) return "";
-      return String(value).slice(0, 5);
+      const normalized = String(value).trim();
+      const match = normalized.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+      if (!match) return "";
+      const hh = match[1].padStart(2, "0");
+      const mm = match[2];
+      const ss = match[3];
+      return ss ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+    }
+
+    function selectTimeValue(value) {
+      const normalized = normalizeTimeOption(value);
+      return normalized ? normalized.slice(0, 5) : "";
     }
 
     function ensureSelectHasTime(select, value) {
       if (!select) return;
-      const timeValue = selectTimeValue(value);
+      const timeValue = normalizeTimeOption(value);
       if (!timeValue) {
         select.value = "";
         return;
@@ -2203,8 +2214,9 @@
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, "0");
         const min = String(now.getMinutes()).padStart(2, "0");
+        const sec = String(now.getSeconds()).padStart(2, "0");
         editDateEnteredInput.value = getNowJalaliDate();
-        ensureSelectHasTime(editTimeEnteredInput, `${hh}:${min}`);
+        ensureSelectHasTime(editTimeEnteredInput, `${hh}:${min}:${sec}`);
       });
 
       editClearEnteredButton?.addEventListener("click", () => {
