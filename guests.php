@@ -1103,6 +1103,15 @@
       return { key: "ended", text: "Event Status: Event Ended" };
     }
 
+    let eventStatusInterval = null;
+
+    function startEventStatusTicker() {
+      if (eventStatusInterval) return;
+      eventStatusInterval = setInterval(() => {
+        updateEventInfoStatus();
+      }, 15 * 1000);
+    }
+
     function updateEventInfoStatus() {
       const status = evaluateEventStatus();
       const ready = status.key !== "not-ready";
@@ -2656,6 +2665,7 @@
       });
       setActiveEventSection("event-info");
       updateEventInfoStatus();
+      startEventStatusTicker();
       eventPrizeForm?.addEventListener("submit", async (evt) => {
         evt.preventDefault();
         if (!eventPrizeInput) return;
