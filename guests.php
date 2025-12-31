@@ -585,6 +585,7 @@
     const inviteCardPrefixContainer = document.querySelector("[data-prefix-container]");
     const inviteCardPrefixPlaceholder = document.querySelector("[data-invite-prefix-placeholder]");
     const inviteCardGenderSelect = document.querySelector("[data-invite-card-gender]");
+    const PURE_LIST_CSV_PATH = "./events/event/purelist.csv";
 
     const uploadForm = document.getElementById("guest-upload-form");
     const uploadSubmit = document.getElementById("guest-upload-submit");
@@ -2913,6 +2914,50 @@
       void persistEventInviteCardTemplate(templatePayload);
     };
 
+    function resolvePureListCsvPath() {
+      if (!state.events.length) {
+        return PURE_LIST_CSV_PATH;
+      }
+      const code = activeEventCode || state.events[0]?.code || "";
+      const activeEvent = code
+        ? state.events.find(ev => (ev.code || "") === code)
+        : null;
+      const path =
+        activeEvent && typeof activeEvent.purelist === "string"
+          ? activeEvent.purelist.trim()
+          : "";
+      return path || PURE_LIST_CSV_PATH;
+    }
+
+    async function loadPureListWorkbook(path = PURE_LIST_CSV_PATH) {
+      const response = await fetch(path, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Unable to retrieve the guest list.");
+      }
+      const raw = await response.text();
+      if (!raw.trim()) {
+        throw new Error("The guest list file is empty.");
+      }
+      if (typeof XLSX === "undefined") {
+        throw new Error("Guest list parser is unavailable.");
+      }
+      const workbook = XLSX.read(raw, { type: "string", raw: false });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        throw new Error("The guest list file contains no sheets.");
+      }
+      return { workbook, sheetName };
+    }
+
+    async function loadPureListCsvRows(path = PURE_LIST_CSV_PATH) {
+      const { workbook, sheetName } = await loadPureListWorkbook(path);
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) {
+        throw new Error("Unable to read the guest list sheet.");
+      }
+      return XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    }
+
     function normalizePureListRow(row) {
       const normalized = {};
       if (!row || typeof row !== "object") {
@@ -2931,7 +2976,15 @@
       if (!normalizedRow || !searchValue) {
         return false;
       }
-      const candidateKeys = ["number", "code", "guestcode", "invitecode"];
+      const candidateKeys = [
+        "number",
+        "code",
+        "guestcode",
+        "guest_code",
+        "invitecode",
+        "invite_code",
+        "unique_code"
+      ];
       const loweredSearch = searchValue.toLowerCase();
       for (const key of candidateKeys) {
         const candidateValue = (normalizedRow[key] ?? "").toLowerCase();
@@ -2956,7 +3009,7 @@
       const normalizedSearch = trimmedCode.toLowerCase();
       const numericCandidate = Number.parseInt(normalizedSearch, 10);
       const numericSearch = Number.isFinite(numericCandidate) ? numericCandidate : null;
-      const { rows } = await loadPureListSheetData(resolvePureListCsvPath());
+      const rows = await loadPureListCsvRows(resolvePureListCsvPath());
       if (!Array.isArray(rows) || !rows.length) {
         throw new Error("The purelist file is empty.");
       }
@@ -2968,9 +3021,9 @@
         .find(({ normalized }) =>
           matchesGuestCode(normalized, normalizedSearch, numericSearch)
         );
-      if (!matched) {
-        throw new Error(`Guest with code "${trimmedCode}" not found.`);
-      }
+        if (!matched) {
+          throw new Error(`Guest with code "${trimmedCode}" not found.`);
+        }
       const normalizedRow = matched.normalized;
       return {
         number: normalizedRow.number || "",
