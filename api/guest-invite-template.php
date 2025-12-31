@@ -328,6 +328,22 @@
           });
         }
 
+        async function loadFirstAvailableImage(candidates) {
+          const urls = Array.isArray(candidates) ? candidates : [candidates];
+          for (const candidate of urls) {
+            const trimmed = (candidate || '').toString().trim();
+            if (!trimmed) {
+              continue;
+            }
+            try {
+              return await loadImage(trimmed);
+            } catch (error) {
+              console.debug('Fallback image failed:', trimmed, error);
+            }
+          }
+          throw new Error('هیچکدام از تصاویر کارت قابل بارگذاری نبود.');
+        }
+
         function drawInviteCardText(ctx, field) {
           ctx.save();
           ctx.fillStyle = field.color;
@@ -362,11 +378,14 @@
           if (!canvasEl) {
             throw new Error('فضای رندر کارت در دسترس نیست.');
           }
-          const basePhotoUrl = photoUrl || fallbackPhoto;
-          if (!basePhotoUrl) {
+          const candidates = Array.isArray(photoUrl) ? photoUrl.slice() : [];
+          if ((fallbackPhoto || '').toString().trim() !== '') {
+            candidates.push(fallbackPhoto);
+          }
+          if (candidates.length === 0) {
             throw new Error('تصویر پس‌زمینه کارت تعیین نشده است.');
           }
-          const photo = await loadImage(basePhotoUrl);
+          const photo = await loadFirstAvailableImage(candidates);
           const width = Math.max(1, photo.naturalWidth || photo.width || 1);
           const height = Math.max(1, photo.naturalHeight || photo.height || 1);
           canvasEl.width = width;
@@ -414,9 +433,14 @@
             if (!fields.length) {
               throw new Error('قالب کارت دعوت تنظیم نشده است.');
             }
-            const photoUrl =
-              (template.photo_path ?? '') || (template.photo_filename ?? '') || fallbackPhoto;
-            const previewCanvas = await renderInviteCardCanvas(canvas, photoUrl.toString().trim(), fields);
+            const photoCandidates = [];
+            if (template.photo_path) {
+              photoCandidates.push(template.photo_path);
+            }
+            if (template.photo_filename) {
+              photoCandidates.push(template.photo_filename);
+            }
+            const previewCanvas = await renderInviteCardCanvas(canvas, photoCandidates, fields);
             if (downloadLink) {
               downloadLink.href = previewCanvas.toDataURL('image/png');
               downloadLink.download = formatDownloadName(guest);

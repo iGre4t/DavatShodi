@@ -1556,7 +1556,13 @@ function createGuestInvitePages(array $guests, array $event): void
     $eventName = trim((string)($event['name'] ?? ''));
     $templateData = is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [];
     if (isset($templateData['photo_path'])) {
-        $templateData['photo_path'] = '/' . ltrim((string)$templateData['photo_path'], '/');
+        $normalizedPhotoPath = '/' . ltrim((string)$templateData['photo_path'], '/');
+        $absolutePath = realpath(__DIR__ . '/../' . ltrim($normalizedPhotoPath, '/'));
+        if ($absolutePath === false || !is_file($absolutePath)) {
+            unset($templateData['photo_path']);
+        } else {
+            $templateData['photo_path'] = $normalizedPhotoPath;
+        }
     }
 
     $basePayload = [
