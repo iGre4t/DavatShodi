@@ -1520,7 +1520,7 @@ function computeGuestStats(array $event): array
     ];
 }
 
-function createGuestInvitePages(array $guests, string $eventCode): void
+function createGuestInvitePages(array $guests, array $event): void
 {
     $invRoot = __DIR__ . '/../inv';
     if (!is_dir($invRoot)) {
