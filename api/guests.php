@@ -642,6 +642,10 @@ if ($method === 'POST') {
                 'events' => normalizeEventsForResponse($store['events']),
                 'logs' => normalizeInviteLogs($store['logs'])
             ]);
+            createGuestInvitePages(
+                $store['events'][$eventIndex]['guests'] ?? [],
+                $store['events'][$eventIndex] ?? []
+            );
             exit;
       } elseif ($action === 'delete_event') {
           $eventCode = trim((string)($_POST['event_code'] ?? ''));
