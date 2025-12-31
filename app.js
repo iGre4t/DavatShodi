@@ -2508,6 +2508,13 @@ function refreshInviteCardActionState() {
   updateCreateAllInviteCardsActionState();
 }
 
+function setInviteCardStatusText(message) {
+  if (!inviteCardStatusLabel) {
+    return;
+  }
+  inviteCardStatusLabel.textContent = message;
+}
+
 function updateCreateAllInviteCardsActionState() {
   if (!createAllInviteCardsButton) {
     return;
@@ -2823,7 +2830,7 @@ async function handleCreateAllInviteCards() {
   if (!activeEvent) {
     const message = "Select an event before creating invite cards.";
     showErrorSnackbar?.({ message });
-    inviteCardStatusLabel?.textContent = message;
+    setInviteCardStatusText(message);
     return;
   }
   const guests = Array.isArray(activeEvent.guests) ? activeEvent.guests : [];
@@ -2836,13 +2843,13 @@ async function handleCreateAllInviteCards() {
   if (!eligibleGuests.length) {
     const message = "No guests with invite codes were found.";
     showErrorSnackbar?.({ message });
-    inviteCardStatusLabel?.textContent = message;
+    setInviteCardStatusText(message);
     return;
   }
   if (!inviteCardSelectedPhoto) {
     const message = "Pick a photo before generating invite cards.";
     showErrorSnackbar?.({ message });
-    inviteCardStatusLabel?.textContent = message;
+    setInviteCardStatusText(message);
     return;
   }
   createAllInviteCardsButton.setAttribute("disabled", "disabled");
@@ -2852,7 +2859,7 @@ async function handleCreateAllInviteCards() {
       const progressText = `Generating card ${index + 1}/${eligibleGuests.length} for ${
         guest.inviteCode || guest.firstname || guest.lastname || "guest"
       }`;
-      inviteCardStatusLabel?.textContent = progressText;
+      setInviteCardStatusText(progressText);
       applyGuestToInviteCardFields(guest);
       const fields = collectInviteCardFieldData();
       if (!fields.every((field) => field.value)) {
@@ -2863,12 +2870,12 @@ async function handleCreateAllInviteCards() {
       await uploadGuestInviteCardImage(guest.inviteCode, imageData);
     }
     const message = `Generated ${eligibleGuests.length} invite cards.`;
-    inviteCardStatusLabel?.textContent = message;
+    setInviteCardStatusText(message);
     showDefaultToast?.(message);
   } catch (error) {
     const message = error?.message || "Unable to create invite cards.";
     showErrorSnackbar?.({ message });
-    inviteCardStatusLabel?.textContent = message;
+    setInviteCardStatusText(message);
   } finally {
     createAllInviteCardsButton.removeAttribute("disabled");
     refreshInviteCardActionState();

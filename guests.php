@@ -578,6 +578,9 @@
       return "";
     }
 
+    const showDefaultToast = (...args) => window.showDefaultToast?.(...args);
+    const showErrorSnackbar = (...args) => window.showErrorSnackbar?.(...args);
+
     const state = {
       columns: [],
       rows: [],
