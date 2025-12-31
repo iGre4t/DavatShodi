@@ -378,7 +378,7 @@ if ($method === 'POST') {
         }
         createGuestInvitePages(
             $store['events'][$eventIndex]['guests'] ?? [],
-            (string)($store['events'][$eventIndex]['code'] ?? '')
+            $store['events'][$eventIndex] ?? []
         );
         echo json_encode([
             'status' => 'ok',
@@ -861,7 +861,7 @@ if ($method === 'POST') {
 
         createGuestInvitePages(
             $store['events'][$eventIndex]['guests'] ?? [],
-            (string)($store['events'][$eventIndex]['code'] ?? '')
+            $store['events'][$eventIndex] ?? []
         );
 
     echo json_encode([
@@ -1073,8 +1073,8 @@ function deleteDirectoryWithinRoot(string $directory, string $root): bool
 function normalizeDigitString(string $value): string
 {
     $map = [
-        '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
-        '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9'
+        'Û°' => '0', 'Û±' => '1', 'Û²' => '2', 'Û³' => '3', 'Û´' => '4',
+        'Ûµ' => '5', 'Û¶' => '6', 'Û·' => '7', 'Û¸' => '8', 'Û¹' => '9'
     ];
     $normalized = strtr($value, $map);
     return preg_replace('/\D+/', '', $normalized) ?? '';
@@ -1324,16 +1324,16 @@ function ensureInviteCode($event, array &$guest): string
 function convertDigitsToPersian(string $value): string
 {
     $map = [
-        '0' => '۰',
-        '1' => '۱',
-        '2' => '۲',
-        '3' => '۳',
-        '4' => '۴',
-        '5' => '۵',
-        '6' => '۶',
-        '7' => '۷',
-        '8' => '۸',
-        '9' => '۹'
+        '0' => 'Û°',
+        '1' => 'Û±',
+        '2' => 'Û²',
+        '3' => 'Û³',
+        '4' => 'Û´',
+        '5' => 'Ûµ',
+        '6' => 'Û¶',
+        '7' => 'Û·',
+        '8' => 'Û¸',
+        '9' => 'Û¹'
     ];
     return strtr($value, $map);
 }
@@ -1503,7 +1503,7 @@ function computeGuestStats(array $event): array
         }
         $gender = trim((string)($guest['gender'] ?? ''));
         if ($gender === '') {
-            $gender = 'نامشخص';
+            $gender = 'Ù†Ø§Ù…Ø´Ø®Øµ';
         }
         $invitedByGender[$gender] = ($invitedByGender[$gender] ?? 0) + 1;
         $entered = trim((string)($guest['date_entered'] ?? ''));
@@ -1528,16 +1528,38 @@ function createGuestInvitePages(array $guests, string $eventCode): void
             return;
         }
     }
+
     $imageName = 'Invite Card Picture.jpg';
     $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
-    $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
+    $fallbackPhoto = '/events/eventcard/' . rawurlencode($imageName);
     if (is_file($cardImagePath)) {
         $content = @file_get_contents($cardImagePath);
         if ($content !== false) {
             $mime = mime_content_type($cardImagePath) ?: 'image/jpeg';
-            $imageUrl = 'data:' . $mime . ';base64,' . base64_encode($content);
+            $fallbackPhoto = 'data:' . $mime . ';base64,' . base64_encode($content);
         }
     }
+
+    $templatePath = __DIR__ . '/guest-invite-template.php';
+    $templateContent = is_file($templatePath) ? (string)@file_get_contents($templatePath) : '';
+    if ($templateContent === '') {
+        error_log('Guest invite template is missing.');
+        return;
+    }
+
+    $eventCode = trim((string)($event['code'] ?? ''));
+    $eventName = trim((string)($event['name'] ?? ''));
+    $templateData = is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [];
+
+    $basePayload = [
+        'event' => [
+            'code' => $eventCode,
+            'name' => $eventName
+        ],
+        'template' => $templateData,
+        'fallbackPhoto' => $fallbackPhoto
+    ];
+
     foreach ($guests as $guest) {
         $code = trim((string)($guest['invite_code'] ?? ''));
         if ($code === '') {
@@ -1548,226 +1570,29 @@ function createGuestInvitePages(array $guests, string $eventCode): void
             error_log('Unable to create invite directory for ' . $code);
             continue;
         }
-        $fullName = trim((string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? ''));
-        if ($fullName === '') {
-            $fullName = 'Guest';
+
+        $guestData = [
+            'firstname' => trim((string)($guest['firstname'] ?? '')),
+            'lastname' => trim((string)($guest['lastname'] ?? '')),
+            'gender' => trim((string)($guest['gender'] ?? '')),
+            'national_id' => normalizeNationalId((string)($guest['national_id'] ?? '')),
+            'phone_number' => trim((string)($guest['phone_number'] ?? '')),
+            'sms_link' => trim((string)($guest['sms_link'] ?? '')),
+            'number' => (int)($guest['number'] ?? 0),
+            'invite_code' => $code
+        ];
+
+        $payload = $basePayload;
+        $payload['guest'] = $guestData;
+        $payloadJson = json_encode(
+            $payload,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+        );
+        if ($payloadJson === false) {
+            $payloadJson = 'null';
         }
-        $safeName = htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $safeCode = htmlspecialchars($code, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $persianCode = convertDigitsToPersian((string)$safeCode);
-        $nationalId = normalizeNationalId((string)($guest['national_id'] ?? ''));
-        $safeNationalId = htmlspecialchars($nationalId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $qrElement = '';
-        if ($nationalId !== '') {
-            $qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . rawurlencode($nationalId);
-            $qrElement = "<img class=\"qr\" src=\"{$qrSrc}\" alt=\"QR ???? {$safeName}\">";
-        }
-        $page = <<<HTML
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>کارت دعوت رویداد همراه با نامی آشنا</title>
-  <link rel="icon" id="site-icon-link" href="data:,">
-  <link rel="preload" href="/style/fonts/PeydaWebFaNum-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-  <link rel="preload" href="/style/fonts/PeydaWebFaNum-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-  <link rel="stylesheet" href="/style/invite-card.css">
-  <script src="/General%20Setting/general-settings.js" defer></script>
-  <script>
-    (function () {
-      const iconEl = document.getElementById('site-icon-link');
-      const applyIcon = () => {
-        if (!iconEl) {
-          return;
-        }
-        const iconUrl = window.GENERAL_SETTINGS?.siteIcon;
-        if (iconUrl) {
-          iconEl.href = iconUrl;
-        }
-      };
-      if (window.GENERAL_SETTINGS) {
-        applyIcon();
-      } else {
-        window.addEventListener('load', applyIcon);
-      }
-    })();
-  </script>
-  <style>
-    @font-face {
-      font-family: 'Peyda';
-      font-style: normal;
-      font-weight: 400;
-      src: url('/style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
-    }
 
-    @font-face {
-      font-family: 'Peyda';
-      font-style: normal;
-      font-weight: 700;
-      src: url('/style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
-    }
-
-    :root {
-      color-scheme: only light;
-    }
-
-    html,
-    body {
-      height: 100%;
-      margin: 0;
-      padding: 0.2rem 0.35rem 0.4rem;
-      background: radial-gradient(circle at top, #fff7f1 0%, #f3f4f6 45%, #e2e8f0 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
-      color: #111;
-      direction: rtl;
-    }
-
-    .device {
-      width: min(340px, 92vw);
-      aspect-ratio: 9 / 16;
-      min-height: 700px;
-      max-height: min(96vh, 780px);
-      background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 60%, #eef2ff 100%);
-      border-radius: 40px;
-      box-shadow: 0 35px 60px rgba(15, 23, 42, 0.25);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-      margin: 0 auto;
-      padding: 0.6rem 0.5rem 0.65rem;
-    }
-
-    .device::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      pointer-events: none;
-    }
-
-    .screen {
-      flex: 1;
-      margin: 0.05rem 0;
-      border-radius: 32px;
-      background: linear-gradient(180deg, #ffffff 0%, #f3f5ff 55%, #e3ebff 100%);
-      box-shadow: inset 0 2px 12px rgba(15, 23, 42, 0.1), 0 12px 30px rgba(15, 23, 42, 0.15);
-      display: flex;
-      flex-direction: column;
-      gap: 0.45rem;
-      overflow: hidden;
-    }
-
-    .card-image-shell {
-      flex: 1;
-      background: #dce6ff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0.8rem;
-    }
-
-    .card-image-shell img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      border-radius: 18px;
-      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
-    }
-
-    .message {
-      flex: 0 0 auto;
-      padding: 1.5rem 1.25rem 1.8rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      background: transparent;
-    }
-
-    .greeting {
-      margin: 0;
-      font-size: 1rem;
-      color: #52606d;
-    }
-
-    .name {
-      margin: 0;
-      font-size: clamp(1.1rem, 3vw, 1.3rem);
-      font-weight: 700;
-      color: #0f172a;
-    }
-
-    .qr {
-      width: 110px;
-      height: 110px;
-      border-radius: 16px;
-      background: #fff;
-      padding: 0.4rem;
-      box-shadow: 0 18px 35px rgba(15, 23, 42, 0.25);
-      margin-top: 0.3rem;
-      margin-bottom: 0.8rem;
-    }
-
-    .code {
-      margin: 0 0 5px;
-      font-family: 'Peyda';
-      font-size: clamp(1.4rem, 3vw, 1.8rem);
-      letter-spacing: 0.35em;
-      font-weight: 600;
-      color: #0f172a;
-      direction: ltr;
-      display: block;
-      line-height: 1.1;
-      width: 100%;
-      text-align: center;
-      white-space: nowrap;
-    }
-
-    @media (max-width: 480px) {
-      .device {
-        width: min(340px, 95vw);
-        border-radius: 28px;
-      }
-      .message {
-        padding: 1.25rem 1rem 1.6rem;
-      }
-      .code {
-        letter-spacing: 0.3em;
-        font-size: clamp(1.8rem, 4vw, 2.4rem);
-      }
-      .name {
-        font-size: clamp(1.5rem, 4vw, 1.9rem);
-      }
-    }
-</style>
-</head>
-  <body>
-    <div class="device">
-      <div class="screen">
-        <div class="card-image-shell">
-          <img src="{$imageUrl}" alt="???? ???? ??????">
-        </div>
-        <div class="message">
-          <p class="greeting">مهمان محترم</p>
-          <p class="name">{$safeName}</p>
-          {$qrElement}
-          <p class="code">{$persianCode}</p>
-        </div>
-      </div>
-    </div>
-  </body>
-  </html>
-HTML;
+        $page = str_replace('__GUEST_INVITE_PAYLOAD__', $payloadJson, $templateContent);
         if (@file_put_contents($guestDir . '/index.php', $page) === false) {
             error_log('Failed to write invite page for ' . $code);
         }

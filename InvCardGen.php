@@ -424,7 +424,7 @@
 
     <div class="card guest-invite-card">
       <div class="section-header">
-        <h3>Guest Invite Card</h3>
+        <h3>Guest Invite Card Generator</h3>
       </div>
       <div class="form guest-invite-form">
         <label class="field standard-width">
