@@ -421,5 +421,34 @@
         </div>
       </div>
     </div>
+
+    <div class="card guest-invite-card">
+      <div class="section-header">
+        <h3>Guest Invite Card</h3>
+      </div>
+      <div class="form guest-invite-form">
+        <label class="field standard-width">
+          <span>Guest code</span>
+          <input
+            type="text"
+            data-guest-invite-code
+            placeholder="Enter a guest code from the current event"
+            autocomplete="off"
+          />
+        </label>
+        <button
+          type="button"
+          class="btn primary full-width"
+          data-guest-invite-generate
+          disabled
+        >
+          Generate Guest Card
+        </button>
+        <p class="muted small" data-guest-invite-status>
+          Enter a guest code from the event purelist to auto-fill the template and generate a card.
+        </p>
+      </div>
+    </div>
+
   </div>
 </section>

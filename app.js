@@ -154,6 +154,8 @@ let inviteCardPhotoLabel = null;
 let inviteCardChoosePhotoButton = null;
 let inviteCardFieldControls = [];
 const INVITE_CARD_DEFAULT_QR_SIZE = 160;
+const GUEST_INVITE_DEFAULT_STATUS =
+  "Enter a guest code from the selected event to auto-generate the invite card.";
 let inviteCardGenerateButton = null;
 let inviteCardStatusLabel = null;
 let inviteCardPreviewCanvas = null;
@@ -161,6 +163,9 @@ let inviteCardPreviewPlaceholder = null;
 let inviteCardDownloadLink = null;
 let inviteCardPreviewPhotoId = null;
 let inviteCardGenderSelect = null;
+let guestInviteCodeInput = null;
+let guestInviteGenerateButton = null;
+let guestInviteStatusLabel = null;
 let positionPickerModal = null;
 let positionPickerOverlay = null;
 let positionPickerImage = null;
@@ -2624,6 +2629,98 @@ function formatInviteCardDownloadName(baseName) {
   return normalized || "invite-card";
 }
 
+function setInviteCardFieldValue(fieldId, value) {
+  const input = qs(`#invite-card-${fieldId}`);
+  if (!input) {
+    return;
+  }
+  input.value = String(value ?? "").trim();
+  const inputEvent = new Event("input", { bubbles: true });
+  input.dispatchEvent(inputEvent);
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setGuestInviteStatus(message, isError = false) {
+  if (!guestInviteStatusLabel) {
+    return;
+  }
+  guestInviteStatusLabel.textContent = message || GUEST_INVITE_DEFAULT_STATUS;
+  guestInviteStatusLabel.classList.toggle("guest-invite-status--error", Boolean(isError));
+}
+
+function isGuestInviteReady() {
+  return Boolean(guestInviteCodeInput?.value?.trim());
+}
+
+function updateGuestInviteActionState() {
+  if (!guestInviteGenerateButton) {
+    return;
+  }
+  guestInviteGenerateButton.disabled = !isGuestInviteReady();
+}
+
+function applyGuestToInviteCardFields(guest = {}) {
+  const nameValue = [guest.firstname, guest.lastname].filter(Boolean).join(" ").trim();
+  const displayName =
+    nameValue || guest.inviteCode || guest.code || guest.number || guest.smsLink || "";
+  setInviteCardFieldValue("name", displayName);
+  setInviteCardFieldValue("national-id", guest.nationalId || guest.national_id || "");
+  setInviteCardFieldValue(
+    "guest-code",
+    guest.inviteCode || guest.code || guest.number || guest.smsLink || ""
+  );
+  const genderValue = (guest.gender || "").trim();
+  if (genderValue && inviteCardGenderSelect) {
+    const optionExists = Array.from(inviteCardGenderSelect.options).some(
+      (option) => option.value === genderValue
+    );
+    if (optionExists) {
+      inviteCardGenderSelect.value = genderValue;
+      inviteCardGenderSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+  refreshInviteCardActionState();
+}
+
+async function handleGuestInviteCardGeneration() {
+  const code = guestInviteCodeInput?.value?.trim() ?? "";
+  if (!code) {
+    setGuestInviteStatus("Guest code is required.", true);
+    updateGuestInviteActionState();
+    return;
+  }
+  const fetchGuest = typeof window !== "undefined" ? window.fetchGuestInviteCardRow : null;
+  if (typeof fetchGuest !== "function") {
+    const message = "Guest lookup is currently unavailable.";
+    setGuestInviteStatus(message, true);
+    return;
+  }
+  guestInviteGenerateButton?.setAttribute("disabled", "disabled");
+  setGuestInviteStatus("Loading guest data...");
+  try {
+    const guest = await fetchGuest(code);
+    if (!guest) {
+      throw new Error("Guest not found.");
+    }
+    applyGuestToInviteCardFields(guest);
+    await handleInviteCardGeneration();
+    const guestName =
+      [guest.firstname, guest.lastname].filter(Boolean).join(" ").trim() ||
+      guest.inviteCode ||
+      guest.number ||
+      guest.code ||
+      code;
+    setGuestInviteStatus(`Generated guest invite card for ${guestName}.`);
+  } catch (error) {
+    const message = error?.message || "Unable to generate the guest invite card.";
+    showErrorSnackbar?.({ message });
+    setGuestInviteStatus(message, true);
+  } finally {
+    guestInviteGenerateButton?.removeAttribute("disabled");
+    updateGuestInviteActionState();
+  }
+}
+
 function showInviteCardPreview(canvas) {
   if (!inviteCardPreviewCanvas) {
     return;
@@ -4624,6 +4721,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardGenderSelect?.addEventListener('change', () => {
     refreshInviteCardActionState();
   });
+  guestInviteCodeInput = qs('[data-guest-invite-code]');
+  guestInviteGenerateButton = qs('[data-guest-invite-generate]');
+  guestInviteStatusLabel = qs('[data-guest-invite-status]');
+  guestInviteCodeInput?.addEventListener('input', () => {
+    setGuestInviteStatus(GUEST_INVITE_DEFAULT_STATUS);
+    updateGuestInviteActionState();
+  });
+  guestInviteGenerateButton?.addEventListener('click', () => {
+    void handleGuestInviteCardGeneration();
+  });
+  setGuestInviteStatus(GUEST_INVITE_DEFAULT_STATUS);
+  updateGuestInviteActionState();
   positionPickerOverlay?.addEventListener('click', closePositionPickerModal);
   positionPickerCancelButton?.addEventListener('click', closePositionPickerModal);
   positionPickerConfirmButton?.addEventListener('click', handlePositionPickerConfirm);

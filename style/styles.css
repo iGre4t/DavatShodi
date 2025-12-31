@@ -218,6 +218,17 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
   margin-top: 0;
   margin-left: 4px;
 }
+#tab-invite-card .guest-invite-card {
+  margin-top: 24px;
+}
+#tab-invite-card .guest-invite-card .guest-invite-form {
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+}
+#tab-invite-card .guest-invite-card .guest-invite-status--error {
+  color: var(--primary);
+}
 .position-picker-modal {
   position: fixed;
   inset: 0;

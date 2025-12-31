@@ -2913,6 +2913,84 @@
       void persistEventInviteCardTemplate(templatePayload);
     };
 
+    function normalizePureListRow(row) {
+      const normalized = {};
+      if (!row || typeof row !== "object") {
+        return normalized;
+      }
+      Object.entries(row).forEach(([key, value]) => {
+        const headerKey = normalizeHeaderKey(key);
+        const rawValue = value ?? "";
+        normalized[headerKey] =
+          rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+      });
+      return normalized;
+    }
+
+    function matchesGuestCode(normalizedRow, searchValue, numericSearch) {
+      if (!normalizedRow || !searchValue) {
+        return false;
+      }
+      const candidateKeys = ["number", "code", "guestcode", "invitecode"];
+      const loweredSearch = searchValue.toLowerCase();
+      for (const key of candidateKeys) {
+        const candidateValue = (normalizedRow[key] ?? "").toLowerCase();
+        if (candidateValue && candidateValue === loweredSearch) {
+          return true;
+        }
+      }
+      if (numericSearch !== null && Number.isFinite(numericSearch)) {
+        const rowNumber = Number.parseInt(normalizedRow.number || "", 10);
+        if (!Number.isNaN(rowNumber) && rowNumber === numericSearch) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    async function fetchGuestInviteCardRow(code) {
+      const trimmedCode = (code ?? "").toString().trim();
+      if (!trimmedCode) {
+        throw new Error("Guest code is required.");
+      }
+      const normalizedSearch = trimmedCode.toLowerCase();
+      const numericCandidate = Number.parseInt(normalizedSearch, 10);
+      const numericSearch = Number.isFinite(numericCandidate) ? numericCandidate : null;
+      const { rows } = await loadPureListSheetData(resolvePureListCsvPath());
+      if (!Array.isArray(rows) || !rows.length) {
+        throw new Error("The purelist file is empty.");
+      }
+      const matched = rows
+        .map((row) => ({
+          normalized: normalizePureListRow(row),
+          source: row || {}
+        }))
+        .find(({ normalized }) =>
+          matchesGuestCode(normalized, normalizedSearch, numericSearch)
+        );
+      if (!matched) {
+        throw new Error(`Guest with code "${trimmedCode}" not found.`);
+      }
+      const normalizedRow = matched.normalized;
+      return {
+        number: normalizedRow.number || "",
+        inviteCode: normalizedRow.invitecode || normalizedRow.code || normalizedRow.number || "",
+        firstname: normalizedRow.firstname || "",
+        lastname: normalizedRow.lastname || "",
+        gender: normalizedRow.gender || "",
+        nationalId: normalizedRow.nationalid || "",
+        phoneNumber: normalizedRow.phonenumber || "",
+        smsLink: normalizedRow.smslink || "",
+        joinDate: normalizedRow.joindate || normalizedRow.dateentered || "",
+        joinTime: normalizedRow.jointime || "",
+        dateEntered: normalizedRow.dateentered || "",
+        dateExited: normalizedRow.dateexited || "",
+        raw: matched.source
+      };
+    }
+
+    window.fetchGuestInviteCardRow = fetchGuestInviteCardRow;
+
     function setEventWinnersStatus(message, isError = false) {
       if (!eventWinnersStatus) return;
       eventWinnersStatus.textContent = message || "";
