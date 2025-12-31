@@ -378,8 +378,7 @@ if ($method === 'POST') {
         }
         createGuestInvitePages(
             $store['events'][$eventIndex]['guests'] ?? [],
-            (string)($store['events'][$eventIndex]['code'] ?? ''),
-            $store['events'][$eventIndex] ?? []
+            (string)($store['events'][$eventIndex]['code'] ?? '')
         );
         echo json_encode([
             'status' => 'ok',
@@ -862,8 +861,7 @@ if ($method === 'POST') {
 
         createGuestInvitePages(
             $store['events'][$eventIndex]['guests'] ?? [],
-            (string)($store['events'][$eventIndex]['code'] ?? ''),
-            $store['events'][$eventIndex] ?? []
+            (string)($store['events'][$eventIndex]['code'] ?? '')
         );
 
     echo json_encode([
@@ -1522,7 +1520,7 @@ function computeGuestStats(array $event): array
     ];
 }
 
-function createGuestInvitePages(array $guests, string $eventCode, array $event = []): void
+function createGuestInvitePages(array $guests, string $eventCode): void
 {
     $invRoot = __DIR__ . '/../inv';
     if (!is_dir($invRoot)) {
@@ -1530,43 +1528,18 @@ function createGuestInvitePages(array $guests, string $eventCode, array $event =
             return;
         }
     }
-    $template = is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [];
-    $normalizeAssetPath = static function (string $value): string {
-        $clean = trim(str_replace('\\', '/', $value));
-        if ($clean === '') {
-            return '';
+    $imageName = 'Invite Card Picture.jpg';
+    $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
+    $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
+    if (is_file($cardImagePath)) {
+        $content = @file_get_contents($cardImagePath);
+        if ($content !== false) {
+            $mime = mime_content_type($cardImagePath) ?: 'image/jpeg';
+            $imageUrl = 'data:' . $mime . ';base64,' . base64_encode($content);
         }
-        $parts = array_filter(explode('/', $clean), static function ($segment) {
-            return $segment !== '' && $segment !== '.';
-        });
-        $resolved = [];
-        foreach ($parts as $segment) {
-            if ($segment === '..') {
-                array_pop($resolved);
-                continue;
-            }
-            $resolved[] = $segment;
-        }
-        if (empty($resolved)) {
-            return '';
-        }
-        return '/' . implode('/', $resolved);
-    };
-    $photoSource = $normalizeAssetPath((string)($template['photo_path'] ?? ''));
-    if ($photoSource === '') {
-        $photoSource = $normalizeAssetPath((string)($template['photo_filename'] ?? ''));
     }
-    $defaultPhotoUrl = '/events/eventcard/Invite Card Picture.jpg';
-    $photoUrl = $photoSource !== '' ? $photoSource : $defaultPhotoUrl;
-    $templatePayload = [
-        'fields' => is_array($template['fields'] ?? null) ? array_values($template['fields']) : [],
-        'gender_prefixes' => is_array($template['gender_prefixes'] ?? null) ? $template['gender_prefixes'] : [],
-        'gender_prefix_styles' => is_array($template['gender_prefix_styles'] ?? null) ? $template['gender_prefix_styles'] : [],
-        'preview_gender' => (string)($template['preview_gender'] ?? ''),
-        'photo_url' => $photoUrl
-    ];
     foreach ($guests as $guest) {
-        $code = normalizeInviteCodeDigits((string)($guest['invite_code'] ?? ''));
+        $code = trim((string)($guest['invite_code'] ?? ''));
         if ($code === '') {
             continue;
         }
@@ -1575,253 +1548,225 @@ function createGuestInvitePages(array $guests, string $eventCode, array $event =
             error_log('Unable to create invite directory for ' . $code);
             continue;
         }
-        $guestPayload = [
-            'firstname' => (string)($guest['firstname'] ?? ''),
-            'lastname' => (string)($guest['lastname'] ?? ''),
-            'gender' => (string)($guest['gender'] ?? ''),
-            'national_id' => normalizeNationalId((string)($guest['national_id'] ?? '')),
-            'invite_code' => $code,
-            'number' => (string)($guest['number'] ?? ''),
-            'phone_number' => (string)($guest['phone_number'] ?? '')
-        ];
-        $payload = [
-            'guest' => $guestPayload,
-            'template' => $templatePayload,
-            'event_code' => $eventCode
-        ];
-        $payloadJson = json_encode(
-            $payload,
-            JSON_UNESCAPED_UNICODE
-                | JSON_UNESCAPED_SLASHES
-                | JSON_HEX_TAG
-                | JSON_HEX_AMP
-                | JSON_HEX_APOS
-                | JSON_HEX_QUOT
-        );
-        if ($payloadJson === false) {
-            error_log('Failed to encode invite payload for ' . $code);
-            continue;
-        }
-        $fullName = trim($guestPayload['firstname'] . ' ' . $guestPayload['lastname']);
+        $fullName = trim((string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? ''));
         if ($fullName === '') {
-            $fullName = 'مهمان';
+            $fullName = 'Guest';
         }
-        $safeTitle = htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeName = htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeCode = htmlspecialchars($code, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $persianCode = convertDigitsToPersian((string)$safeCode);
+        $nationalId = normalizeNationalId((string)($guest['national_id'] ?? ''));
+        $safeNationalId = htmlspecialchars($nationalId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $qrElement = '';
+        if ($nationalId !== '') {
+            $qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . rawurlencode($nationalId);
+            $qrElement = "<img class=\"qr\" src=\"{$qrSrc}\" alt=\"QR ???? {$safeName}\">";
+        }
         $page = <<<HTML
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{$safeTitle}</title>
+  <meta name="color-scheme" content="light">
+  <title>کارت دعوت رویداد همراه با نامی آشنا</title>
+  <link rel="icon" id="site-icon-link" href="data:,">
   <link rel="preload" href="/style/fonts/PeydaWebFaNum-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
   <link rel="preload" href="/style/fonts/PeydaWebFaNum-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
   <link rel="stylesheet" href="/style/invite-card.css">
+  <script src="/General%20Setting/general-settings.js" defer></script>
+  <script>
+    (function () {
+      const iconEl = document.getElementById('site-icon-link');
+      const applyIcon = () => {
+        if (!iconEl) {
+          return;
+        }
+        const iconUrl = window.GENERAL_SETTINGS?.siteIcon;
+        if (iconUrl) {
+          iconEl.href = iconUrl;
+        }
+      };
+      if (window.GENERAL_SETTINGS) {
+        applyIcon();
+      } else {
+        window.addEventListener('load', applyIcon);
+      }
+    })();
+  </script>
   <style>
+    @font-face {
+      font-family: 'Peyda';
+      font-style: normal;
+      font-weight: 400;
+      src: url('/style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+    }
+
+    @font-face {
+      font-family: 'Peyda';
+      font-style: normal;
+      font-weight: 700;
+      src: url('/style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+    }
+
     :root {
       color-scheme: only light;
     }
 
+    html,
     body {
+      height: 100%;
       margin: 0;
-      min-height: 100vh;
+      padding: 0.2rem 0.35rem 0.4rem;
+      background: radial-gradient(circle at top, #fff7f1 0%, #f3f4f6 45%, #e2e8f0 100%);
       display: flex;
-      justify-content: center;
       align-items: center;
-      background: radial-gradient(circle at 20% 20%, #0d1121 0%, #050912 55%, #020409 100%);
+      justify-content: center;
       font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
-      color: #f8fafc;
+      color: #111;
+      direction: rtl;
     }
 
-    .invite-fullscreen {
-      width: 100%;
-      min-height: 100vh;
-      padding: 1.5rem 1.25rem;
+    .device {
+      width: min(340px, 92vw);
+      aspect-ratio: 9 / 16;
+      min-height: 700px;
+      max-height: min(96vh, 780px);
+      background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 60%, #eef2ff 100%);
+      border-radius: 40px;
+      box-shadow: 0 35px 60px rgba(15, 23, 42, 0.25);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      margin: 0 auto;
+      padding: 0.6rem 0.5rem 0.65rem;
+    }
+
+    .device::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      pointer-events: none;
+    }
+
+    .screen {
+      flex: 1;
+      margin: 0.05rem 0;
+      border-radius: 32px;
+      background: linear-gradient(180deg, #ffffff 0%, #f3f5ff 55%, #e3ebff 100%);
+      box-shadow: inset 0 2px 12px rgba(15, 23, 42, 0.1), 0 12px 30px rgba(15, 23, 42, 0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      overflow: hidden;
+    }
+
+    .card-image-shell {
+      flex: 1;
+      background: #dce6ff;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 0.8rem;
     }
 
-    .invite-stage {
-      width: min(420px, 100%);
-      text-align: center;
-    }
-
-    .invite-card-output {
+    .card-image-shell img {
       width: 100%;
-      height: auto;
-      border-radius: 18px;
-      box-shadow: 0 25px 70px rgba(2, 6, 23, 0.75);
+      height: 100%;
+      object-fit: cover;
       display: block;
+      border-radius: 18px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
     }
 
-    .invite-card-output.hidden {
-      display: none;
+    .message {
+      flex: 0 0 auto;
+      padding: 1.5rem 1.25rem 1.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      background: transparent;
     }
 
-    .invite-status,
-    .invite-error {
-      margin-top: 1rem;
+    .greeting {
+      margin: 0;
       font-size: 1rem;
+      color: #52606d;
     }
 
-    .invite-error {
-      color: #f87171;
+    .name {
+      margin: 0;
+      font-size: clamp(1.1rem, 3vw, 1.3rem);
+      font-weight: 700;
+      color: #0f172a;
     }
 
-    .hidden {
-      display: none;
+    .qr {
+      width: 110px;
+      height: 110px;
+      border-radius: 16px;
+      background: #fff;
+      padding: 0.4rem;
+      box-shadow: 0 18px 35px rgba(15, 23, 42, 0.25);
+      margin-top: 0.3rem;
+      margin-bottom: 0.8rem;
     }
-  </style>
+
+    .code {
+      margin: 0 0 5px;
+      font-family: 'Peyda';
+      font-size: clamp(1.4rem, 3vw, 1.8rem);
+      letter-spacing: 0.35em;
+      font-weight: 600;
+      color: #0f172a;
+      direction: ltr;
+      display: block;
+      line-height: 1.1;
+      width: 100%;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 480px) {
+      .device {
+        width: min(340px, 95vw);
+        border-radius: 28px;
+      }
+      .message {
+        padding: 1.25rem 1rem 1.6rem;
+      }
+      .code {
+        letter-spacing: 0.3em;
+        font-size: clamp(1.8rem, 4vw, 2.4rem);
+      }
+      .name {
+        font-size: clamp(1.5rem, 4vw, 1.9rem);
+      }
+    }
+</style>
 </head>
-<body>
-  <main class="invite-fullscreen">
-    <div class="invite-stage">
-      <img
-        id="invite-card-output"
-        class="invite-card-output hidden"
-        alt="کارت دعوت {$safeTitle}"
-      />
-      <div id="invite-render-status" class="invite-status">
-        در حال ساخت کارت دعوت...
+  <body>
+    <div class="device">
+      <div class="screen">
+        <div class="card-image-shell">
+          <img src="{$imageUrl}" alt="???? ???? ??????">
+        </div>
+        <div class="message">
+          <p class="greeting">مهمان محترم</p>
+          <p class="name">{$safeName}</p>
+          {$qrElement}
+          <p class="code">{$persianCode}</p>
+        </div>
       </div>
-      <p id="invite-error-message" class="invite-error hidden"></p>
     </div>
-  </main>
-  <script id="invite-data" type="application/json">{$payloadJson}</script>
-  <script src="/scripts/invite-card-renderer.js"></script>
-  <script>
-    (function () {
-      const payloadElement = document.getElementById("invite-data");
-      const statusEl = document.getElementById("invite-render-status");
-      const errorEl = document.getElementById("invite-error-message");
-      const outputEl = document.getElementById("invite-card-output");
-      if (!payloadElement || !statusEl || !outputEl) {
-        return;
-      }
-      let payload = {};
-      try {
-        payload = JSON.parse(payloadElement.textContent || "{}");
-      } catch (error) {
-        showMessage("خطا در بارگذاری اطلاعات کارت دعوت.");
-        return;
-      }
-      const template = payload.template || {};
-      const guest = payload.guest || {};
-      const guestName = [guest.firstname, guest.lastname].filter(Boolean).join(" ").trim();
-      if (guestName) {
-        document.title = `کارت دعوت ${guestName}`;
-      }
-      const fields = Array.isArray(template.fields) ? template.fields : [];
-      const photoUrl = (template.photo_url ?? "").toString().trim();
-      if (!fields.length) {
-        showMessage("قالب کارت دعوت هنوز آماده نشده است. لطفاً پیش‌فرض کارت را تعیین کنید.");
-        return;
-      }
-      if (!photoUrl) {
-        showMessage("تصویر پایه کارت دعوت یافت نشد.");
-        return;
-      }
-      const preparedFields = fields.map((field) => {
-        const entry = { ...field };
-        entry.value = resolveFieldValue(field, guest, template);
-        return entry;
-      });
-      function resolveFieldValue(field, guestData, templateData) {
-        const identifier = (field?.id ?? "").toString().trim().toLowerCase();
-        if (identifier === "name") {
-          return formatGuestName(guestData, templateData.gender_prefixes ?? {}, templateData.preview_gender ?? "");
-        }
-        if (identifier === "national-id") {
-          return (guestData.national_id ?? "").toString().trim();
-        }
-        if (identifier === "guest-code") {
-          return (
-            (guestData.invite_code ?? guestData.code ?? guestData.number ?? "")
-              .toString()
-              .trim()
-          );
-        }
-        return field?.value ?? "";
-      }
-      function formatGuestName(guestData, prefixes, fallbackGender) {
-        const parts = [guestData.firstname, guestData.lastname]
-          .map((segment) => (segment ?? "").toString().trim())
-          .filter(Boolean);
-        if (!parts.length) {
-          return "";
-        }
-        const genderKey = (guestData.gender ?? fallbackGender ?? "").toString().trim();
-        const prefix = findPrefixForGender(genderKey, prefixes);
-        return `${prefix ? prefix + " " : ""}${parts.join(" ")}`.trim();
-      }
-      function findPrefixForGender(gender, prefixes) {
-        if (!gender || !prefixes || typeof prefixes !== "object") {
-          return "";
-        }
-        const normalized = gender.trim();
-        if (normalized === "") {
-          return "";
-        }
-        if (Object.prototype.hasOwnProperty.call(prefixes, normalized)) {
-          return (prefixes[normalized] ?? "").toString().trim();
-        }
-        const lower = normalized.toLowerCase();
-        for (const key in prefixes) {
-          if (
-            Object.prototype.hasOwnProperty.call(prefixes, key) &&
-            String(key ?? "").toLowerCase() === lower
-          ) {
-            return (prefixes[key] ?? "").toString().trim();
-          }
-        }
-        return "";
-      }
-      function showMessage(message) {
-        if (statusEl) {
-          statusEl.textContent = message;
-          statusEl.classList.remove("hidden");
-        }
-        if (errorEl) {
-          errorEl.textContent = message;
-          errorEl.classList.remove("hidden");
-        }
-        if (outputEl) {
-          outputEl.classList.add("hidden");
-        }
-      }
-      function clearMessage() {
-        if (statusEl) {
-          statusEl.classList.add("hidden");
-        }
-        if (errorEl) {
-          errorEl.classList.add("hidden");
-        }
-      }
-      async function renderCard() {
-        const renderer = window.renderInviteCardFromSource;
-        if (typeof renderer !== "function") {
-          showMessage("قادر به بارگذاری موتور کارت دعوت نیستیم.");
-          return;
-        }
-        try {
-          const canvas = await renderer(photoUrl, preparedFields);
-          const dataUrl = canvas.toDataURL("image/png");
-          if (outputEl) {
-            outputEl.src = dataUrl;
-            outputEl.alt = guestName ? `کارت دعوت ${guestName}` : "کارت دعوت";
-            outputEl.classList.remove("hidden");
-          }
-          clearMessage();
-        } catch (error) {
-          showMessage((error?.message || "خطا در ساخت کارت دعوت.")?.toString());
-        }
-      }
-      document.addEventListener("DOMContentLoaded", renderCard);
-    })();
-  </script>
-</body>
-</html>
+  </body>
+  </html>
 HTML;
         if (@file_put_contents($guestDir . '/index.php', $page) === false) {
             error_log('Failed to write invite page for ' . $code);
