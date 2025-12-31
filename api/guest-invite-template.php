@@ -23,7 +23,7 @@
       :root {
         font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
         --vh: 1vh;
-        background-color: #020204;
+        background-color: #ffffff;
       }
       * {
         box-sizing: border-box;
@@ -32,7 +32,7 @@
         margin: 0;
         min-height: 100vh;
         height: calc(var(--vh, 1vh) * 100);
-        background: linear-gradient(180deg, #030409, #07080f 70%, #040406);
+        background: #ffffff;
         color: #ffffff;
         display: flex;
         align-items: center;
@@ -50,7 +50,7 @@
         text-align: center;
       }
       .guest-invite-loader {
-        background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(0, 0, 0, 0.85) 70%);
+        background: #ffffff;
         transition: opacity 0.3s ease, visibility 0.3s ease;
       }
       .guest-invite-loader.hidden {
@@ -86,7 +86,7 @@
         }
       }
       .guest-invite-canvas-shell {
-        background: #05060c;
+        background: #ffffff;
         opacity: 0;
         transition: opacity 0.35s ease;
       }
@@ -95,12 +95,12 @@
       }
       .guest-invite-canvas-shell canvas {
         display: block;
-        width: min(100vw, calc(var(--vh, 1vh) * 100 * 0.5625));
+        width: 100%;
         max-width: 100%;
+        height: auto;
         max-height: calc(var(--vh, 1vh) * 100);
-        aspect-ratio: 9 / 16;
         border-radius: 0;
-        box-shadow: 0 0 40px rgba(0, 0, 0, 0.65);
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.25);
       }
       @media (min-width: 768px) {
         .guest-invite-canvas-shell canvas {
