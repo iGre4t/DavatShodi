@@ -83,7 +83,8 @@ function persistInviteCardTemplatePhoto(string $photoFilename, string $eventDirN
     if (!copy($sourcePath, $targetPath)) {
         return null;
     }
-    return 'events/' . $eventDirName . '/invite-card/' . $targetFilename;
+    $relativePath = 'events/' . $eventDirName . '/invite-card/' . $targetFilename;
+    return '/' . ltrim($relativePath, '/');
 }
 
 function allocateEventCode(array &$store): string
@@ -1554,6 +1555,9 @@ function createGuestInvitePages(array $guests, array $event): void
     $eventCode = trim((string)($event['code'] ?? ''));
     $eventName = trim((string)($event['name'] ?? ''));
     $templateData = is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [];
+    if (isset($templateData['photo_path'])) {
+        $templateData['photo_path'] = '/' . ltrim((string)$templateData['photo_path'], '/');
+    }
 
     $basePayload = [
         'event' => [
