@@ -92,6 +92,8 @@
               <option value="PeydaWebFaNum">PeydaWebFaNum</option>
               <option value="PeydaWebFaNum-Bold">PeydaWebFaNum Bold</option>
               <option value="remixicon">Remixicon</option>
+              <option value="IRANSansX-Bold">IRANSansX Bold</option>
+              <option value="IRANSansXFaNum-Bold">IRANSansX FaNum Bold</option>
             </select>
           </label>
           <label class="field standard-width">
@@ -202,6 +204,8 @@
               <option value="PeydaWebFaNum">PeydaWebFaNum</option>
               <option value="PeydaWebFaNum-Bold">PeydaWebFaNum Bold</option>
               <option value="remixicon">Remixicon</option>
+              <option value="IRANSansX-Bold">IRANSansX Bold</option>
+              <option value="IRANSansXFaNum-Bold">IRANSansX FaNum Bold</option>
             </select>
           </label>
           <label class="field standard-width">
@@ -300,6 +304,8 @@
               <option value="PeydaWebFaNum">PeydaWebFaNum</option>
               <option value="PeydaWebFaNum-Bold">PeydaWebFaNum Bold</option>
               <option value="remixicon">Remixicon</option>
+              <option value="IRANSansX-Bold">IRANSansX Bold</option>
+              <option value="IRANSansXFaNum-Bold">IRANSansX FaNum Bold</option>
             </select>
           </label>
           <label class="field standard-width">

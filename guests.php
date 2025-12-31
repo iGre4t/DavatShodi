@@ -594,7 +594,13 @@
     let manualLockedEventCode = "";
     const inviteCardFieldDefaults = {};
     const prefixStyleColorState = {};
-    const prefixStyleFontOptions = ["PeydaWebFaNum", "PeydaWebFaNum-Bold", "remixicon"];
+    const prefixStyleFontOptions = [
+      "PeydaWebFaNum",
+      "PeydaWebFaNum-Bold",
+      "remixicon",
+      "IRANSansX-Bold",
+      "IRANSansXFaNum-Bold"
+    ];
     const prefixStyleWeightOptions = ["400", "500", "600", "700"];
     let lastInviteCardTemplateSignature = "";
     let lastInviteCardPrefixGenders = null;

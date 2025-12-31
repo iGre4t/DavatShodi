@@ -93,6 +93,20 @@
   font-style: normal;
   font-display: swap;
 }
+@font-face {
+  font-family: 'IRANSansX-Bold';
+  src: url('fonts/IRANSansX-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IRANSansXFaNum-Bold';
+  src: url('fonts/IRANSansXFaNum-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
