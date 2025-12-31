@@ -163,6 +163,7 @@ let inviteCardPreviewPlaceholder = null;
 let inviteCardDownloadLink = null;
 let inviteCardPreviewPhotoId = null;
 let inviteCardGenderSelect = null;
+let createAllInviteCardsButton = null;
 let guestInviteCodeInput = null;
 let guestInviteGenerateButton = null;
 let guestInviteStatusLabel = null;
@@ -2504,6 +2505,20 @@ function refreshInviteCardActionState() {
     }
     inviteCardStatusLabel.textContent = message;
   }
+  updateCreateAllInviteCardsActionState();
+}
+
+function updateCreateAllInviteCardsActionState() {
+  if (!createAllInviteCardsButton) {
+    return;
+  }
+  const activeEvent = window.getActiveGuestEvent ? window.getActiveGuestEvent() : null;
+  const guests = Array.isArray(activeEvent?.guests) ? activeEvent.guests : [];
+  const hasGuestsWithCode = guests.some((guest) => {
+    const inviteCode = (guest?.invite_code || guest?.code || guest?.number || "").toString().trim();
+    return inviteCode !== "";
+  });
+  createAllInviteCardsButton.disabled = !isInviteCardReady() || !hasGuestsWithCode;
 }
 
 function handleInviteCardFieldInteraction(event) {
@@ -2762,18 +2777,100 @@ async function handleInviteCardGeneration() {
   if (inviteCardStatusLabel) {
     inviteCardStatusLabel.textContent = "Generating invite card...";
   }
-    try {
-      const previewCanvas = await renderInviteCardCanvas(fields);
-      showInviteCardPreview(previewCanvas);
-      const templatePayload = buildInviteCardTemplatePayload();
-      window.saveEventInviteCardTemplate?.(templatePayload);
-      if (inviteCardStatusLabel) {
-        inviteCardStatusLabel.textContent = "Invite card generated successfully.";
-      }
+  try {
+    const previewCanvas = await renderInviteCardCanvas(fields);
+    showInviteCardPreview(previewCanvas);
+    const templatePayload = buildInviteCardTemplatePayload();
+    window.saveEventInviteCardTemplate?.(templatePayload);
+    if (inviteCardStatusLabel) {
+      inviteCardStatusLabel.textContent = "Invite card generated successfully.";
+    }
     showDefaultToast("Invite card generated. Download it below if needed.");
   } catch (error) {
     showErrorSnackbar({ message: error?.message || "Unable to generate the invite card." });
   } finally {
+    refreshInviteCardActionState();
+  }
+}
+
+async function uploadGuestInviteCardImage(inviteCode, imageData) {
+  if (!inviteCode) {
+    throw new Error("Invite code is required.");
+  }
+  if (!imageData) {
+    throw new Error("Invite card image data is missing.");
+  }
+  const formData = new FormData();
+  formData.append("action", "save_generated_invite_card");
+  formData.append("invite_code", inviteCode);
+  formData.append("image_data", imageData);
+  const response = await fetch("./api/guests.php", {
+    method: "POST",
+    body: formData
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.status !== "ok") {
+    throw new Error(payload.message || "Unable to save generated invite card.");
+  }
+  return payload;
+}
+
+async function handleCreateAllInviteCards() {
+  if (!createAllInviteCardsButton) {
+    return;
+  }
+  const activeEvent = window.getActiveGuestEvent ? window.getActiveGuestEvent() : null;
+  if (!activeEvent) {
+    const message = "Select an event before creating invite cards.";
+    showErrorSnackbar?.({ message });
+    inviteCardStatusLabel?.textContent = message;
+    return;
+  }
+  const guests = Array.isArray(activeEvent.guests) ? activeEvent.guests : [];
+  const eligibleGuests = guests
+    .map((guest) => ({
+      ...guest,
+      inviteCode: (guest?.invite_code || guest?.code || guest?.number || "").toString().trim()
+    }))
+    .filter((guest) => guest.inviteCode);
+  if (!eligibleGuests.length) {
+    const message = "No guests with invite codes were found.";
+    showErrorSnackbar?.({ message });
+    inviteCardStatusLabel?.textContent = message;
+    return;
+  }
+  if (!inviteCardSelectedPhoto) {
+    const message = "Pick a photo before generating invite cards.";
+    showErrorSnackbar?.({ message });
+    inviteCardStatusLabel?.textContent = message;
+    return;
+  }
+  createAllInviteCardsButton.setAttribute("disabled", "disabled");
+  try {
+    for (let index = 0; index < eligibleGuests.length; index += 1) {
+      const guest = eligibleGuests[index];
+      const progressText = `Generating card ${index + 1}/${eligibleGuests.length} for ${
+        guest.inviteCode || guest.firstname || guest.lastname || "guest"
+      }`;
+      inviteCardStatusLabel?.textContent = progressText;
+      applyGuestToInviteCardFields(guest);
+      const fields = collectInviteCardFieldData();
+      if (!fields.every((field) => field.value)) {
+        throw new Error("Incomplete invite card fields when preparing guest data.");
+      }
+      const canvas = await renderInviteCardCanvas(fields);
+      const imageData = canvas.toDataURL("image/jpeg", 0.95);
+      await uploadGuestInviteCardImage(guest.inviteCode, imageData);
+    }
+    const message = `Generated ${eligibleGuests.length} invite cards.`;
+    inviteCardStatusLabel?.textContent = message;
+    showDefaultToast?.(message);
+  } catch (error) {
+    const message = error?.message || "Unable to create invite cards.";
+    showErrorSnackbar?.({ message });
+    inviteCardStatusLabel?.textContent = message;
+  } finally {
+    createAllInviteCardsButton.removeAttribute("disabled");
     refreshInviteCardActionState();
   }
 }
@@ -4693,6 +4790,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardPreviewPlaceholder = qs('[data-invite-card-preview-placeholder]');
   inviteCardDownloadLink = qs('[data-invite-card-download]');
   inviteCardGenderSelect = qs('[data-invite-card-gender]');
+  createAllInviteCardsButton = qs('[data-invite-card-create-all]');
   positionPickerModal = qs('[data-position-picker-modal]');
   positionPickerOverlay = qs('[data-position-picker-overlay]');
   positionPickerImage = qs('[data-position-picker-image]');
@@ -4711,6 +4809,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   inviteCardGenerateButton?.addEventListener('click', () => {
     void handleInviteCardGeneration();
+  });
+  createAllInviteCardsButton?.addEventListener('click', () => {
+    void handleCreateAllInviteCards();
   });
   qsa('[data-position-picker-button]').forEach((button) =>
     button.addEventListener('click', handlePositionPickerButtonClick)
@@ -4741,6 +4842,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateInviteCardPhotoPreview();
   initializeFieldControllers();
   initStyleColorPickers();
+  refreshInviteCardActionState();
   // Handles form submissions by updating the local state and syncing back to the server.
   qs('#user-form')?.addEventListener('submit', (e) => {
     e.preventDefault();

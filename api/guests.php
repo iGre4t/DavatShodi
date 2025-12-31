@@ -648,7 +648,47 @@ if ($method === 'POST') {
                 $store['events'][$eventIndex] ?? []
             );
             exit;
-      } elseif ($action === 'delete_event') {
+        } elseif ($action === 'save_generated_invite_card') {
+            $inviteCode = normalizeInviteCodeDigits((string)($_POST['invite_code'] ?? ''));
+            $imageData = (string)($_POST['image_data'] ?? '');
+            if ($inviteCode === '' || $imageData === '') {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invite code and image data are required.']);
+                exit;
+            }
+            if (!preg_match('/^data:image\\/(png|jpe?g);base64,(.+)$/i', $imageData, $matches)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invalid image payload.']);
+                exit;
+            }
+            $decoded = base64_decode($matches[2], true);
+            if ($decoded === false) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to decode image data.']);
+                exit;
+            }
+            $invRoot = __DIR__ . '/../inv';
+            if (!is_dir($invRoot) && !mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to create invite storage.']);
+                exit;
+            }
+            $guestDir = $invRoot . '/' . $inviteCode;
+            if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to create invite directory.']);
+                exit;
+            }
+            $targetPath = $guestDir . '/InviteCard.jpg';
+            if (file_put_contents($targetPath, $decoded) === false) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Failed to save invite card image.']);
+                exit;
+            }
+            ensureGuestInviteIndexPage($inviteCode);
+            echo json_encode(['status' => 'ok']);
+            exit;
+        } elseif ($action === 'delete_event') {
           $eventCode = trim((string)($_POST['event_code'] ?? ''));
           if ($eventCode === '') {
               http_response_code(422);
@@ -1534,88 +1574,73 @@ function createGuestInvitePages(array $guests, array $event): void
         }
     }
 
-    $imageName = 'Invite Card Picture.jpg';
-    $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
-    $fallbackPhoto = '/events/eventcard/' . rawurlencode($imageName);
-    if (is_file($cardImagePath)) {
-        $content = @file_get_contents($cardImagePath);
-        if ($content !== false) {
-            $mime = mime_content_type($cardImagePath) ?: 'image/jpeg';
-            $fallbackPhoto = 'data:' . $mime . ';base64,' . base64_encode($content);
-        }
-    }
-
-    $templatePath = __DIR__ . '/guest-invite-template.php';
-    $templateContent = is_file($templatePath) ? (string)@file_get_contents($templatePath) : '';
-    if ($templateContent === '') {
-        error_log('Guest invite template is missing.');
-        return;
-    }
-
-    $eventCode = trim((string)($event['code'] ?? ''));
-    $eventName = trim((string)($event['name'] ?? ''));
-    $templateData = is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [];
-    $projectRoot = realpath(__DIR__ . '/../');
-    if ($projectRoot !== false && isset($templateData['photo_path'])) {
-        $normalizedPhotoPath = '/' . ltrim((string)$templateData['photo_path'], '/');
-        $absolutePath = realpath($projectRoot . DIRECTORY_SEPARATOR . ltrim($normalizedPhotoPath, '/'));
-        if ($absolutePath !== false && is_file($absolutePath)) {
-            $templateData['photo_path'] = $normalizedPhotoPath;
-            $photoContent = @file_get_contents($absolutePath);
-            if ($photoContent !== false) {
-                $mimeType = mime_content_type($absolutePath) ?: 'image/jpeg';
-                $templateData['photo_data'] = 'data:' . $mimeType . ';base64,' . base64_encode($photoContent);
-            }
-        } else {
-            unset($templateData['photo_path'], $templateData['photo_data']);
-        }
-    }
-
-    $basePayload = [
-        'event' => [
-            'code' => $eventCode,
-            'name' => $eventName
-        ],
-        'template' => $templateData,
-        'fallbackPhoto' => $fallbackPhoto
-    ];
-
     foreach ($guests as $guest) {
-        $code = trim((string)($guest['invite_code'] ?? ''));
+        $code = normalizeInviteCodeDigits((string)($guest['invite_code'] ?? $guest['code'] ?? ''));
         if ($code === '') {
             continue;
         }
         $guestDir = $invRoot . '/' . $code;
-        if (!is_dir($guestDir) && !@mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+        if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
             error_log('Unable to create invite directory for ' . $code);
             continue;
         }
+        ensureGuestInviteIndexPage($code);
+    }
+}
 
-        $guestData = [
-            'firstname' => trim((string)($guest['firstname'] ?? '')),
-            'lastname' => trim((string)($guest['lastname'] ?? '')),
-            'gender' => trim((string)($guest['gender'] ?? '')),
-            'national_id' => normalizeNationalId((string)($guest['national_id'] ?? '')),
-            'phone_number' => trim((string)($guest['phone_number'] ?? '')),
-            'sms_link' => trim((string)($guest['sms_link'] ?? '')),
-            'number' => (int)($guest['number'] ?? 0),
-            'invite_code' => $code
-        ];
-
-        $payload = $basePayload;
-        $payload['guest'] = $guestData;
-        $payloadJson = json_encode(
-            $payload,
-            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
-        );
-        if ($payloadJson === false) {
-            $payloadJson = 'null';
-        }
-
-        $page = str_replace('__GUEST_INVITE_PAYLOAD__', $payloadJson, $templateContent);
-        if (@file_put_contents($guestDir . '/index.php', $page) === false) {
-            error_log('Failed to write invite page for ' . $code);
+function ensureGuestInviteIndexPage(string $code): void
+{
+    $normalized = normalizeInviteCodeDigits($code);
+    if ($normalized === '') {
+        return;
+    }
+    $invRoot = __DIR__ . '/../inv';
+    if (!is_dir($invRoot)) {
+        if (!mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
+            return;
         }
     }
+    $guestDir = $invRoot . '/' . $normalized;
+    if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+        return;
+    }
+    $indexPath = $guestDir . '/index.php';
+    $page = <<<'HTML'
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Card Invite</title>
+    <style>
+      :root {
+        background: #ffffff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #ffffff;
+      }
+      img {
+        max-width: 100%;
+        max-height: 100vh;
+        height: auto;
+        display: block;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.2);
+      }
+    </style>
+  </head>
+  <body>
+    <img src="InviteCard.jpg" alt="Invite Card" loading="eager" />
+  </body>
+</html>
+HTML;
+    @file_put_contents($indexPath, $page);
 }
 

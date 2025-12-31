@@ -375,6 +375,20 @@
         Select a photo and fill every field to enable the generator.
       </p>
     </div>
+    <div class="invite-card-bulk">
+      <button
+        type="button"
+        class="btn ghost full-width"
+        data-invite-card-create-all
+        disabled
+      >
+        Create All Invite Cards
+      </button>
+      <p class="muted small">
+        Once the template is ready, generate InviteCard.jpg for every guest so their invite page
+        directly shows the saved card.
+      </p>
+    </div>
     <div
       class="position-picker-modal hidden"
       data-position-picker-modal

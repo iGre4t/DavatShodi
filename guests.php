@@ -2339,6 +2339,7 @@
     }
 
     if (typeof window === "object" && window) {
+      window.getActiveGuestEvent = getActiveGuestEvent;
       window.getNamePrefixForGender = getNamePrefixForGender;
       window.getSelectedPreviewGender = getSelectedPreviewGender;
       window.readInviteCardGenderPrefixes = readInviteCardGenderPrefixes;
