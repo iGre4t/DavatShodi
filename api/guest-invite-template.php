@@ -2,25 +2,28 @@
 <html lang="fa" dir="rtl">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Guest Invite Card Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Guest Invite Card</title>
     <link rel="icon" href="data:," />
     <style>
       @font-face {
         font-family: 'Peyda';
         font-style: normal;
         font-weight: 400;
-        src: url('/style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+        src: url('https://davatshodi.ir/style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2'),
+             url('https://davatshodi.ir/style/fonts/PeydaWebFaNum-Regular.woff') format('woff');
       }
       @font-face {
         font-family: 'Peyda';
         font-style: normal;
         font-weight: 700;
-        src: url('/style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+        src: url('https://davatshodi.ir/style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2'),
+             url('https://davatshodi.ir/style/fonts/PeydaWebFaNum-Bold.woff') format('woff');
       }
       :root {
-        color-scheme: only light;
         font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
+        --vh: 1vh;
+        background-color: #020204;
       }
       * {
         box-sizing: border-box;
@@ -28,137 +31,95 @@
       body {
         margin: 0;
         min-height: 100vh;
+        height: calc(var(--vh, 1vh) * 100);
+        background: linear-gradient(180deg, #030409, #07080f 70%, #040406);
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .guest-invite-loader,
+      .guest-invite-canvas-shell {
+        position: absolute;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 1rem;
-        background: radial-gradient(circle at top, #fdf4ff 0%, #dbeafe 45%, #e2e8f0 100%);
-        color: #0f172a;
-      }
-      .guest-invite-shell {
-        width: min(720px, 100%);
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 36px;
-        padding: 32px;
-        box-shadow: 0 25px 60px rgba(15, 23, 42, 0.25);
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
         text-align: center;
       }
-      .guest-invite-label {
-        margin: 0;
-        font-size: 0.9rem;
-        letter-spacing: 0.3em;
-        text-transform: uppercase;
-        color: #475569;
+      .guest-invite-loader {
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(0, 0, 0, 0.85) 70%);
+        transition: opacity 0.3s ease, visibility 0.3s ease;
       }
-      .guest-invite-name {
-        margin: 6px 0;
-        font-size: clamp(1.8rem, 4vw, 2.4rem);
+      .guest-invite-loader.hidden {
+        opacity: 0;
+        visibility: hidden;
       }
-      .guest-invite-code {
-        margin: 0;
-        font-size: 1rem;
-        color: #1d4ed8;
-        font-weight: 600;
-      }
-      .guest-invite-event {
-        margin: 0;
-        font-size: 0.95rem;
-        color: #475569;
-      }
-      .guest-invite-canvas-shell {
+      .guest-invite-progress {
         display: flex;
         flex-direction: column;
-        gap: 12px;
         align-items: center;
+        gap: 0.75rem;
+        max-width: 320px;
       }
-      canvas {
-        width: min(460px, 100%);
-        max-width: 100%;
-        border-radius: 28px;
-        background: #fff;
-        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
+      .guest-invite-progress[data-tone='error'] p {
+        color: #f87171;
       }
-      .guest-invite-status {
+      .guest-invite-progress p {
         margin: 0;
-        font-size: 0.95rem;
-        color: #475569;
-        min-height: 1.2rem;
+        font-size: 1rem;
+        line-height: 1.5;
       }
-      .guest-invite-status[data-tone='error'] {
-        color: #dc2626;
+      .guest-invite-spinner {
+        width: 78px;
+        height: 78px;
+        border-radius: 50%;
+        border: 4px solid rgba(255, 255, 255, 0.18);
+        border-top-color: #38bdf8;
+        animation: spin 1.2s linear infinite;
       }
-      .guest-invite-actions {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 12px;
-      }
-      .btn {
-        border: none;
-        border-radius: 999px;
-        padding: 12px 30px;
-        font-size: 0.95rem;
-        cursor: pointer;
-        font-weight: 600;
-        transition: transform 0.2s ease;
-      }
-      .btn.primary {
-        background: #1d4ed8;
-        color: #fff;
-      }
-      .btn.ghost {
-        background: transparent;
-        color: #1d4ed8;
-        border: 2px solid #1d4ed8;
-      }
-      .btn.disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-        transform: none;
-      }
-      .btn:focus-visible {
-        outline: 3px solid rgba(37, 99, 235, 0.5);
-        outline-offset: 2px;
-      }
-      .btn:not(.disabled):hover {
-        transform: translateY(-2px);
-      }
-      @media (max-width: 600px) {
-        .guest-invite-shell {
-          padding: 24px;
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
         }
-        canvas {
-          width: 100%;
-        }
-        .btn {
-          flex: 1 1 180px;
+      }
+      .guest-invite-canvas-shell {
+        background: #05060c;
+        opacity: 0;
+        transition: opacity 0.35s ease;
+      }
+      .guest-invite-canvas-shell.visible {
+        opacity: 1;
+      }
+      .guest-invite-canvas-shell canvas {
+        display: block;
+        width: min(100vw, calc(var(--vh, 1vh) * 100 * 0.5625));
+        max-width: 100%;
+        max-height: calc(var(--vh, 1vh) * 100);
+        aspect-ratio: 9 / 16;
+        border-radius: 0;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.65);
+      }
+      @media (min-width: 768px) {
+        .guest-invite-canvas-shell canvas {
+          width: min(60vw, 480px);
         }
       }
     </style>
   </head>
   <body>
-    <main class="guest-invite-shell">
-      <header class="guest-invite-header">
-        <p class="guest-invite-label">Guest Invite Card Generator</p>
-        <h1 id="guest-invite-name" class="guest-invite-name">مهمان</h1>
-        <p id="guest-invite-code" class="guest-invite-code"></p>
-        <p id="guest-invite-event-name" class="guest-invite-event"></p>
-      </header>
-      <div class="guest-invite-canvas-shell">
-        <canvas id="guest-invite-canvas" aria-label="پیش‌نمایش کارت دعوت"></canvas>
-        <p id="guest-invite-status" class="guest-invite-status" aria-live="polite">در حال آماده‌سازی کارت دعوت...</p>
+    <div class="guest-invite-loader" id="guest-invite-loader" aria-live="polite">
+      <div class="guest-invite-progress" id="guest-invite-progress">
+        <div class="guest-invite-spinner" aria-hidden="true"></div>
+        <p id="guest-invite-loader-message">در حال آماده‌سازی کارت دعوت...</p>
       </div>
-      <div class="guest-invite-actions">
-        <a id="guest-invite-download" class="btn ghost disabled" aria-hidden="true">دانلود کارت</a>
-        <button type="button" id="guest-invite-refresh" class="btn primary">تولید دوباره</button>
-      </div>
-    </main>
-    <script>
-      window.GUEST_INVITE_PAYLOAD = __GUEST_INVITE_PAYLOAD__;
-    </script>
+    </div>
+    <div class="guest-invite-canvas-shell" id="guest-invite-canvas-shell" aria-live="polite">
+      <canvas id="guest-invite-canvas" aria-label="کارت دعوت"></canvas>
+    </div>
+    <script>window.GUEST_INVITE_PAYLOAD = __GUEST_INVITE_PAYLOAD__;</script>
     <script>
       (function () {
         const INVITE_CARD_ALIGNMENT_MAP = { rtl: 'right', ltr: 'left', center: 'center' };
@@ -169,42 +130,32 @@
         const template = payload.template || {};
         const fallbackPhoto = (payload.fallbackPhoto || '').toString();
         const canvas = document.getElementById('guest-invite-canvas');
-        const statusEl = document.getElementById('guest-invite-status');
-        const downloadLink = document.getElementById('guest-invite-download');
-        const refreshButton = document.getElementById('guest-invite-refresh');
-        const nameEl = document.getElementById('guest-invite-name');
-        const codeEl = document.getElementById('guest-invite-code');
-        const eventNameEl = document.getElementById('guest-invite-event-name');
+        const loader = document.getElementById('guest-invite-loader');
+        const progressPanel = document.getElementById('guest-invite-progress');
+        const loaderMessage = document.getElementById('guest-invite-loader-message');
+        const canvasShell = document.getElementById('guest-invite-canvas-shell');
 
-        function setText(element, value) {
-          if (!element) {
-            return;
-          }
-          element.textContent = value || '';
+        function updateViewportHeight() {
+          const vh = window.innerHeight * 0.01;
+          document.documentElement.style.setProperty('--vh', `${vh}px`);
         }
 
-        setText(nameEl, formatGuestName(guest, template) || 'مهمان');
-        const inviteCode = guest.invite_code || guest.code || '';
-        if (inviteCode) {
-          setText(codeEl, `کد دعوت: ${inviteCode}`);
-          codeEl.classList.remove('hidden');
-        } else {
-          codeEl.classList.add('hidden');
-        }
-        if (eventNameEl && payload.event && payload.event.name) {
-          setText(eventNameEl, payload.event.name);
+        function setLoaderMessage(message, isError = false) {
+          if (loaderMessage) {
+            loaderMessage.textContent = message || '';
+          }
+          if (progressPanel) {
+            if (isError) {
+              progressPanel.setAttribute('data-tone', 'error');
+            } else {
+              progressPanel.removeAttribute('data-tone');
+            }
+          }
         }
 
-        function setStatus(message, tone = '') {
-          if (!statusEl) {
-            return;
-          }
-          statusEl.textContent = message || '';
-          if (tone) {
-            statusEl.setAttribute('data-tone', tone);
-          } else {
-            statusEl.removeAttribute('data-tone');
-          }
+        function hideLoader() {
+          loader?.classList.add('hidden');
+          canvasShell?.classList.add('visible');
         }
 
         function formatGuestName(guestData, templateData) {
@@ -405,29 +356,12 @@
           return canvasEl;
         }
 
-        function formatDownloadName(guestData) {
-          const codeCandidate = (guestData.invite_code || guestData.code || guestData.number || 'guest-card')
-            .toString()
-            .replace(/[^a-z0-9-]/gi, '-')
-            .replace(/-+/g, '-');
-          return `invite-card-${codeCandidate || 'guest'}.png`;
-        }
-
-        function setBusy(isBusy) {
-          if (refreshButton) {
-            refreshButton.disabled = Boolean(isBusy);
-          }
-        }
-
         async function generateCard() {
           if (!canvas) {
-            setStatus('فضای رندر کارت در دسترس نیست.', 'error');
+            setLoaderMessage('فضای رندر کارت در دسترس نیست.', true);
             return;
           }
-          setStatus('در حال ساخت کارت دعوت...');
-          setBusy(true);
-          downloadLink?.classList.add('disabled');
-          downloadLink?.setAttribute('aria-hidden', 'true');
+          setLoaderMessage('در حال ساخت کارت دعوت...');
           try {
             const fields = buildFields(template, guest);
             if (!fields.length) {
@@ -443,30 +377,22 @@
             if (template.photo_filename) {
               photoCandidates.push(template.photo_filename);
             }
-            const previewCanvas = await renderInviteCardCanvas(canvas, photoCandidates, fields);
-            if (downloadLink) {
-              downloadLink.href = previewCanvas.toDataURL('image/png');
-              downloadLink.download = formatDownloadName(guest);
-              downloadLink.classList.remove('disabled');
-              downloadLink.removeAttribute('aria-hidden');
-            }
-            setStatus('کارت دعوت آماده است.');
+            await renderInviteCardCanvas(canvas, photoCandidates, fields);
+            hideLoader();
           } catch (error) {
-            setStatus(
+            setLoaderMessage(
               (error && error.message) || 'امکان تولید کارت دعوت وجود ندارد.',
-              'error'
+              true
             );
-          } finally {
-            setBusy(false);
           }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-          refreshButton?.addEventListener('click', generateCard);
+          updateViewportHeight();
+          window.addEventListener('resize', updateViewportHeight);
           generateCard();
         });
       })();
     </script>
   </body>
 </html>
-'@
