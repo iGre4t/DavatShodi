@@ -1555,13 +1555,19 @@ function createGuestInvitePages(array $guests, array $event): void
     $eventCode = trim((string)($event['code'] ?? ''));
     $eventName = trim((string)($event['name'] ?? ''));
     $templateData = is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [];
-    if (isset($templateData['photo_path'])) {
+    $projectRoot = realpath(__DIR__ . '/../');
+    if ($projectRoot !== false && isset($templateData['photo_path'])) {
         $normalizedPhotoPath = '/' . ltrim((string)$templateData['photo_path'], '/');
-        $absolutePath = realpath(__DIR__ . '/../' . ltrim($normalizedPhotoPath, '/'));
-        if ($absolutePath === false || !is_file($absolutePath)) {
-            unset($templateData['photo_path']);
-        } else {
+        $absolutePath = realpath($projectRoot . DIRECTORY_SEPARATOR . ltrim($normalizedPhotoPath, '/'));
+        if ($absolutePath !== false && is_file($absolutePath)) {
             $templateData['photo_path'] = $normalizedPhotoPath;
+            $photoContent = @file_get_contents($absolutePath);
+            if ($photoContent !== false) {
+                $mimeType = mime_content_type($absolutePath) ?: 'image/jpeg';
+                $templateData['photo_data'] = 'data:' . $mimeType . ';base64,' . base64_encode($photoContent);
+            }
+        } else {
+            unset($templateData['photo_path'], $templateData['photo_data']);
         }
     }
 

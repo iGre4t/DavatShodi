@@ -434,6 +434,9 @@
               throw new Error('قالب کارت دعوت تنظیم نشده است.');
             }
             const photoCandidates = [];
+            if (template.photo_data) {
+              photoCandidates.push(template.photo_data);
+            }
             if (template.photo_path) {
               photoCandidates.push(template.photo_path);
             }
