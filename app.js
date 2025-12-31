@@ -158,6 +158,11 @@ const GUEST_INVITE_DEFAULT_STATUS =
   "Enter a guest code from the selected event to auto-generate the invite card.";
 let inviteCardGenerateButton = null;
 let inviteCardStatusLabel = null;
+let progressForCardsElement = null;
+let progressForCardsFill = null;
+let progressForCardsCompletedCount = null;
+let progressForCardsRemainingCount = null;
+let progressForCardsStatus = null;
 let inviteCardPreviewCanvas = null;
 let inviteCardPreviewPlaceholder = null;
 let inviteCardDownloadLink = null;
@@ -2515,6 +2520,52 @@ function setInviteCardStatusText(message) {
   inviteCardStatusLabel.textContent = message;
 }
 
+function toggleProgressForCards(show) {
+  if (!progressForCardsElement) {
+    return;
+  }
+  progressForCardsElement.classList.toggle("hidden", !show);
+}
+
+function setProgressForCardsStatus(text) {
+  if (!progressForCardsStatus) {
+    return;
+  }
+  progressForCardsStatus.textContent = text || "";
+}
+
+function updateProgressForCardsStats(completed, remaining) {
+  if (progressForCardsCompletedCount) {
+    progressForCardsCompletedCount.textContent = String(completed);
+  }
+  if (progressForCardsRemainingCount) {
+    progressForCardsRemainingCount.textContent = String(remaining);
+  }
+  if (progressForCardsFill) {
+    const total = completed + remaining;
+    const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+    progressForCardsFill.style.width = `${percent}%`;
+  }
+}
+
+function startProgressForCards(total) {
+  if (!progressForCardsElement || total <= 0) {
+    return;
+  }
+  toggleProgressForCards(true);
+  updateProgressForCardsStats(0, total);
+  setProgressForCardsStatus(`Preparing to generate ${total} card${total === 1 ? "" : "s"}...`);
+}
+
+function stopProgressForCards() {
+  if (!progressForCardsElement) {
+    return;
+  }
+  toggleProgressForCards(false);
+  updateProgressForCardsStats(0, 0);
+  setProgressForCardsStatus("");
+}
+
 function updateCreateAllInviteCardsActionState() {
   if (!createAllInviteCardsButton) {
     return;
@@ -2852,6 +2903,8 @@ async function handleCreateAllInviteCards() {
     setInviteCardStatusText(message);
     return;
   }
+  const totalGuests = eligibleGuests.length;
+  startProgressForCards(totalGuests);
   createAllInviteCardsButton.setAttribute("disabled", "disabled");
   try {
     for (let index = 0; index < eligibleGuests.length; index += 1) {
@@ -2860,6 +2913,10 @@ async function handleCreateAllInviteCards() {
         guest.inviteCode || guest.firstname || guest.lastname || "guest"
       }`;
       setInviteCardStatusText(progressText);
+      const completed = index + 1;
+      const remaining = Math.max(0, totalGuests - completed);
+      updateProgressForCardsStats(completed, remaining);
+      setProgressForCardsStatus(progressText);
       applyGuestToInviteCardFields(guest);
       const fields = collectInviteCardFieldData();
       if (!fields.every((field) => field.value)) {
@@ -2877,6 +2934,7 @@ async function handleCreateAllInviteCards() {
     showErrorSnackbar?.({ message });
     setInviteCardStatusText(message);
   } finally {
+    stopProgressForCards();
     createAllInviteCardsButton.removeAttribute("disabled");
     refreshInviteCardActionState();
   }
@@ -4804,6 +4862,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   positionPickerDot = qs('[data-position-picker-dot]');
   positionPickerConfirmButton = qs('[data-position-picker-confirm]');
   positionPickerCancelButton = qs('[data-position-picker-cancel]');
+  progressForCardsElement = qs('[data-progress-for-cards]');
+  progressForCardsFill = qs('[data-progress-for-cards-fill]');
+  progressForCardsCompletedCount = qs('[data-progress-for-cards-completed]');
+  progressForCardsRemainingCount = qs('[data-progress-for-cards-remaining]');
+  progressForCardsStatus = qs('[data-progress-for-cards-status]');
   inviteCardChoosePhotoButton?.addEventListener('click', () => {
     openPhotoChooserModal({
       allowMultiple: false,

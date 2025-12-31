@@ -394,6 +394,25 @@
         Once the template is ready, generate InviteCard.jpg for every guest so their invite page
         directly shows the saved card.
       </p>
+      <div class="progress-for-cards hidden" data-progress-for-cards>
+        <div class="progress-for-cards__header">
+          <span class="progress-for-cards__title">Progress for Cards</span>
+          <span class="muted small" data-progress-for-cards-status></span>
+        </div>
+        <div class="progress-for-cards__stats">
+          <div>
+            <span class="progress-for-cards__count" data-progress-for-cards-completed>0</span>
+            completed
+          </div>
+          <div>
+            <span class="progress-for-cards__count" data-progress-for-cards-remaining>0</span>
+            remaining
+          </div>
+        </div>
+        <div class="progress-for-cards__bar">
+          <span class="progress-for-cards__fill" data-progress-for-cards-fill style="width: 0%"></span>
+        </div>
+      </div>
     </div>
     <div
       class="position-picker-modal hidden"
