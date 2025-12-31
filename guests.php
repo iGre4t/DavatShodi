@@ -564,6 +564,20 @@
     const $qs = (sel, root = document) => root.querySelector(sel);
     const $qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+    function ensureHexColor(value) {
+      if (typeof value !== "string") {
+        return "";
+      }
+      const trimmed = value.trim();
+      if (/^#([0-9a-fA-F]{6})$/.test(trimmed)) {
+        return trimmed.toLowerCase();
+      }
+      if (/^[0-9a-fA-F]{6}$/.test(trimmed)) {
+        return `#${trimmed.toLowerCase()}`;
+      }
+      return "";
+    }
+
     const state = {
       columns: [],
       rows: [],
