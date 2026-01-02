@@ -3,11 +3,138 @@ declare(strict_types=1);
 
 session_start();
 
+require_once __DIR__ . '/../lib/event_entrypoints.php';
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
+ini_set('log_errors', '1');
+
 date_default_timezone_set('Asia/Tehran');
 
 header('Content-Type: application/json; charset=UTF-8');
 
-const INVITE_BASE_URL = 'https://davatshodi.ir/mci/inv';
+const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
+const PURELIST_HEADERS = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'join_date', 'join_time', 'left_date', 'left_time'];
+const EVENT_CODE_MIN = 10000;
+const EVENT_CODE_DIGITS = 5;
+if (!defined('EVENTS_ROOT')) {
+    define('EVENTS_ROOT', __DIR__ . '/../events');
+}
+
+ensureEventStorageReady(EVENTS_ROOT);
+
+function ensureEventStorageReady(string $eventsRoot): void
+{
+    $subDirs = [
+        $eventsRoot,
+        $eventsRoot . '/event',
+        $eventsRoot . '/eventcard'
+    ];
+    foreach ($subDirs as $path) {
+        if (is_dir($path)) {
+            continue;
+        }
+        if (!@mkdir($path, 0755, true) && !is_dir($path)) {
+            error_log('Failed to create events path: ' . $path);
+        }
+    }
+    $purelistPath = $eventsRoot . '/event/purelist.csv';
+    if (!is_file($purelistPath)) {
+        if (@file_put_contents($purelistPath, implode(',', PURELIST_HEADERS) . "\n") === false) {
+            error_log('Failed to initialize purelist header: ' . $purelistPath);
+        }
+    }
+}
+
+function persistInviteCardTemplatePhoto(string $photoFilename, string $eventDirName): ?string
+{
+    $clean = trim($photoFilename);
+    if ($clean === '') {
+        return null;
+    }
+    $clean = str_replace(['..\\', '../'], '', $clean);
+    $clean = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $clean);
+    $clean = trim($clean, DIRECTORY_SEPARATOR);
+    if ($clean === '') {
+        return null;
+    }
+    $projectRoot = realpath(__DIR__ . '/../');
+    if ($projectRoot === false) {
+        return null;
+    }
+    $sourcePath = realpath($projectRoot . DIRECTORY_SEPARATOR . $clean);
+    if ($sourcePath === false) {
+        return null;
+    }
+    $normalizedRoot = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $projectRoot);
+    $normalizedSource = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $sourcePath);
+    if (strpos($normalizedSource, $normalizedRoot) !== 0) {
+        return null;
+    }
+    $extension = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION));
+    if ($extension === '') {
+        $extension = 'png';
+    }
+    $targetDir = EVENTS_ROOT . DIRECTORY_SEPARATOR . $eventDirName . DIRECTORY_SEPARATOR . 'invite-card';
+    if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+        return null;
+    }
+    $targetFilename = 'template-photo.' . $extension;
+    $targetPath = $targetDir . DIRECTORY_SEPARATOR . $targetFilename;
+    if (!copy($sourcePath, $targetPath)) {
+        return null;
+    }
+    $relativePath = 'events/' . $eventDirName . '/invite-card/' . $targetFilename;
+    return '/' . ltrim($relativePath, '/');
+}
+
+function allocateEventCode(array &$store): string
+{
+    $next = max(EVENT_CODE_MIN, (int)($store['next_event_code'] ?? EVENT_CODE_MIN));
+    $store['next_event_code'] = $next + 1;
+    return str_pad((string)$next, EVENT_CODE_DIGITS, '0', STR_PAD_LEFT);
+}
+
+function allocateGuestNumber(array &$store): int
+{
+    $next = max(1, (int)($store['next_guest_number'] ?? 1));
+    $store['next_guest_number'] = $next + 1;
+    return $next;
+}
+
+function isEventCodeValid(string $value): bool
+{
+    return preg_match('/^\d{' . EVENT_CODE_DIGITS . ',}$/', $value) === 1;
+}
+
+function getEventDirName(array $event): string
+{
+    $code = trim((string)($event['code'] ?? ''));
+    if ($code !== '') {
+        return $code;
+    }
+    $fallback = trim((string)($event['slug'] ?? ''));
+    return $fallback !== '' ? $fallback : 'event';
+}
+
+function ensureEventHasCode(array &$event, int &$nextEventCode): void
+{
+    $code = trim((string)($event['code'] ?? ''));
+    if (isEventCodeValid($code)) {
+        $numeric = (int)$code;
+        if ($numeric >= $nextEventCode) {
+            $nextEventCode = $numeric + 1;
+        }
+        $event['code'] = str_pad((string)$numeric, EVENT_CODE_DIGITS, '0', STR_PAD_LEFT);
+        return;
+    }
+    $event['code'] = str_pad((string)$nextEventCode, EVENT_CODE_DIGITS, '0', STR_PAD_LEFT);
+    $nextEventCode++;
+}
+
+function getEventDir(array $event, string $eventsRoot): string
+{
+    return $eventsRoot . '/' . getEventDirName($event);
+}
 
 function buildInviteLink(string $code): string
 {
@@ -25,7 +152,7 @@ if (empty($_SESSION['authenticated'])) {
 }
 
 $storePath = __DIR__ . '/../data/guests.json';
-$eventsRoot = __DIR__ . '/../events';
+$eventsRoot = EVENTS_ROOT;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -43,24 +170,40 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'National ID must be 10 digits.']);
             exit;
         }
-        $store = loadGuestStore($storePath);
+        $store = loadGuestStore($storePath, $eventsRoot);
+        $activeEventCode = trim((string)($store['active_event_code'] ?? ''));
+        if ($activeEventCode === '') {
+            http_response_code(422);
+            echo json_encode([
+                'status' => 'error',
+            'message' => 'No active event selected. Please set the active event from the Winners tab.'
+        ]);
+        exit;
+        }
+        $activeEventIndex = findEventIndexByCode($store['events'], $activeEventCode);
+        if ($activeEventIndex < 0) {
+            http_response_code(422);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'The selected active event no longer exists. Please choose another event.'
+            ]);
+            exit;
+        }
         $now = createNowTime();
         $nowString = $now->format('Y-m-d H:i:s');
-        $todaySlugs = getTodayEventSlugs($store['events']);
-        $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, $todaySlugs);
-        if ($match === null && empty($todaySlugs)) {
-            $match = findGuestByNationalIdForSlugs($store['events'], $nationalId, []);
-        }
+        $nowShamsiParts = formatPersianDateTimeParts($now);
+        $match = findGuestByNationalIdForCodes($store['events'], $nationalId, [$activeEventCode]);
         if ($match === null) {
+            $activeEventName = (string)($store['events'][$activeEventIndex]['name'] ?? '');
             $log = appendInviteLog($store, [
                 'type' => 'not_found',
                 'national_id' => $nationalId,
-                'event_slug' => '',
-                'event_name' => '',
+                'event_code' => $activeEventCode,
+                'event_name' => $activeEventName,
                 'guest_name' => '',
                 'invite_code' => '',
                 'timestamp' => $nowString,
-                'message' => 'National ID not found for today.'
+                'message' => 'National ID not found in the active event list.'
             ]);
             if (!saveGuestStore($storePath, $store)) {
                 http_response_code(500);
@@ -71,7 +214,8 @@ if ($method === 'POST') {
                 'status' => 'ok',
                 'outcome' => 'not_found',
                 'log' => $log,
-                'logs' => normalizeInviteLogs($store['logs'])
+                'logs' => normalizeInviteLogs($store['logs']),
+                'stats' => computeGuestStats($store['events'][$activeEventIndex] ?? [])
             ]);
             exit;
         }
@@ -80,17 +224,19 @@ if ($method === 'POST') {
         $guestIndex = $match['guest_index'];
         $event = &$store['events'][$eventIndex];
         $guest = &$event['guests'][$guestIndex];
-        $eventSlug = (string)($event['slug'] ?? '');
+        $eventCode = (string)($event['code'] ?? '');
         $eventName = (string)($event['name'] ?? '');
         $guest['national_id'] = normalizeNationalId((string)($guest['national_id'] ?? ''));
         $inviteCode = ensureInviteCode($event, $guest);
-        $entered = trim((string)($guest['date_entered'] ?? ''));
+        $entered = trim((string)($guest['join_date'] ?? $guest['date_entered'] ?? ''));
         $exited = trim((string)($guest['date_exited'] ?? ''));
         $outcome = '';
         $message = '';
 
         if ($entered === '') {
-            $guest['date_entered'] = $nowString;
+            $guest['join_date'] = $nowShamsiParts['date'];
+            $guest['join_time'] = $nowShamsiParts['time'];
+            $guest['date_entered'] = composeDateTimeString($guest['join_date'], $guest['join_time']);
             $outcome = 'enter';
             $message = 'Guest marked as entered.';
         } elseif ($exited !== '') {
@@ -102,7 +248,9 @@ if ($method === 'POST') {
                 ? (($now->getTimestamp() - $enteredAt->getTimestamp()) / 60)
                 : 10;
             if ($minutesSinceEnter >= 5) {
-                $guest['date_exited'] = $nowString;
+                $guest['left_date'] = $nowShamsiParts['date'];
+                $guest['left_time'] = $nowShamsiParts['time'];
+                $guest['date_exited'] = composeDateTimeString($guest['left_date'], $guest['left_time']);
                 $outcome = 'exit';
                 $message = 'Guest marked as exited.';
             } else {
@@ -110,6 +258,7 @@ if ($method === 'POST') {
                 $message = 'Repeated scan too soon after entry.';
             }
         }
+        normalizeGuestDateFields($guest);
 
         $guestName = trim(
             (string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? '')
@@ -117,11 +266,15 @@ if ($method === 'POST') {
         $log = appendInviteLog($store, [
             'type' => $outcome,
             'national_id' => $nationalId,
-            'event_slug' => $eventSlug,
+            'event_code' => $eventCode,
             'event_name' => $eventName,
             'guest_name' => $guestName,
             'invite_code' => $inviteCode,
             'timestamp' => $nowString,
+            'join_date' => (string)($guest['join_date'] ?? ''),
+            'join_time' => (string)($guest['join_time'] ?? ''),
+            'left_date' => (string)($guest['left_date'] ?? ''),
+            'left_time' => (string)($guest['left_time'] ?? ''),
             'date_entered' => (string)($guest['date_entered'] ?? ''),
             'date_exited' => (string)($guest['date_exited'] ?? ''),
             'message' => $message
@@ -142,18 +295,23 @@ if ($method === 'POST') {
                 'full_name' => $guestName,
                 'national_id' => (string)($guest['national_id'] ?? ''),
                 'invite_code' => $inviteCode,
+                'join_date' => (string)($guest['join_date'] ?? ''),
+                'join_time' => (string)($guest['join_time'] ?? ''),
+                'left_date' => (string)($guest['left_date'] ?? ''),
+                'left_time' => (string)($guest['left_time'] ?? ''),
                 'date_entered' => (string)($guest['date_entered'] ?? ''),
                 'date_exited' => (string)($guest['date_exited'] ?? ''),
-                'event_slug' => $eventSlug,
+                'event_code' => $eventCode,
                 'event_name' => $eventName
             ],
             'log' => $log,
-            'logs' => normalizeInviteLogs($store['logs'])
+            'logs' => normalizeInviteLogs($store['logs']),
+            'stats' => computeGuestStats($store['events'][$activeEventIndex] ?? [])
         ]);
         exit;
     } elseif ($action === 'add_manual_guest') {
-        $eventSlug = trim((string)($_POST['event_slug'] ?? ''));
-        if ($eventSlug === '') {
+        $eventCode = trim((string)($_POST['event_code'] ?? ''));
+        if ($eventCode === '') {
             http_response_code(422);
             echo json_encode(['status' => 'error', 'message' => 'Please select an event before adding a guest.']);
             exit;
@@ -170,8 +328,8 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'All guest fields are required.']);
             exit;
         }
-        $store = loadGuestStore($storePath);
-        $eventIndex = findEventIndexBySlug($store['events'], $eventSlug);
+        $store = loadGuestStore($storePath, $eventsRoot);
+        $eventIndex = findEventIndexByCode($store['events'], $eventCode);
         if ($eventIndex < 0) {
             http_response_code(404);
             echo json_encode(['status' => 'error', 'message' => 'Selected event was not found.']);
@@ -195,9 +353,8 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Event name and date are required.']);
             exit;
         }
-        $nextNumber = getNextGuestNumber($storeEvent);
-        $storeEvent['guests'][] = [
-            'number' => $nextNumber,
+        $manualGuest = [
+            'number' => allocateGuestNumber($store),
             'firstname' => $firstname,
             'lastname' => $lastname,
             'gender' => $gender,
@@ -206,9 +363,11 @@ if ($method === 'POST') {
             'date_entered' => $dateEntered,
             'date_exited' => $dateExited
         ];
+        normalizeGuestDateFields($manualGuest);
+        $storeEvent['guests'][] = $manualGuest;
         $storeEvent['guest_count'] = count($storeEvent['guests']);
         $storeEvent['updated_at'] = date('c');
-        if (!syncEventPurelist($storeEvent, $eventSlug, $eventsRoot)) {
+        if (!syncEventPurelist($storeEvent, $eventsRoot)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
             exit;
@@ -218,7 +377,10 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
             exit;
         }
-        createGuestInvitePages($store['events'][$eventIndex]['guests'] ?? []);
+        createGuestInvitePages(
+            $store['events'][$eventIndex]['guests'] ?? [],
+            $store['events'][$eventIndex] ?? []
+        );
         echo json_encode([
             'status' => 'ok',
             'message' => 'Guest added successfully.',
@@ -227,15 +389,15 @@ if ($method === 'POST') {
         ]);
         exit;
     } elseif ($action === 'update_guest') {
-        $slug = trim((string)($_POST['event_slug'] ?? ''));
+        $eventCode = trim((string)($_POST['event_code'] ?? ''));
         $number = (int)($_POST['number'] ?? 0);
-        if ($slug === '' || $number <= 0) {
+        if ($eventCode === '' || $number <= 0) {
             http_response_code(422);
             echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
             exit;
         }
-        $store = loadGuestStore($storePath);
-        $eventIndex = findEventIndexBySlug($store['events'], $slug);
+        $store = loadGuestStore($storePath, $eventsRoot);
+        $eventIndex = findEventIndexByCode($store['events'], $eventCode);
         if ($eventIndex < 0) {
             http_response_code(404);
             echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
@@ -259,7 +421,13 @@ if ($method === 'POST') {
                 'date_exited' => trim((string)($_POST['date_exited'] ?? ''))
             ]
         );
+        normalizeGuestDateFields($store['events'][$eventIndex]['guests'][$guestIndex]);
         $store['events'][$eventIndex]['updated_at'] = date('c');
+        if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
+            exit;
+        }
         if (!saveGuestStore($storePath, $store)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
@@ -272,47 +440,314 @@ if ($method === 'POST') {
             'logs' => normalizeInviteLogs($store['logs'])
         ]);
         exit;
-    } elseif ($action === 'delete_guest') {
-        $slug = trim((string)($_POST['event_slug'] ?? ''));
-        $number = (int)($_POST['number'] ?? 0);
-        if ($slug === '' || $number <= 0) {
-            http_response_code(422);
-            echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
+      } elseif ($action === 'delete_guest') {
+          $eventCode = trim((string)($_POST['event_code'] ?? ''));
+          $number = (int)($_POST['number'] ?? 0);
+          if ($eventCode === '' || $number <= 0) {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Invalid guest reference.']);
+              exit;
+          }
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $guestIndex = findGuestIndexByNumber($store['events'][$eventIndex]['guests'] ?? [], $number);
+          if ($guestIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Guest not found.']);
+              exit;
+          }
+          array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
+          $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
+          $store['events'][$eventIndex]['updated_at'] = date('c');
+          if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
+              exit;
+          }
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Guest deleted successfully.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
+      } elseif ($action === 'update_event') {
+          $eventCode = trim((string)($_POST['code'] ?? ''));
+          $name = trim((string)($_POST['name'] ?? ''));
+          $date = trim((string)($_POST['date'] ?? ''));
+          $joinStartTime = trim((string)($_POST['join_start_time'] ?? ''));
+          $joinLimitTime = trim((string)($_POST['join_limit_time'] ?? ''));
+          $joinEndTime = trim((string)($_POST['join_end_time'] ?? ''));
+          if ($eventCode === '' || $name === '' || $date === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event code, name, and date are required.']);
+              exit;
+          }
+          $normalizedJoinStart = $joinStartTime === '' ? '' : formatEventTimeValue($joinStartTime);
+          if ($joinStartTime !== '' && $normalizedJoinStart === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Join start time must be a valid 24-hour time.']);
+              exit;
+          }
+          $normalizedJoinLimit = $joinLimitTime === '' ? '' : formatEventTimeValue($joinLimitTime);
+          if ($joinLimitTime !== '' && $normalizedJoinLimit === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Join limit time must be a valid 24-hour time.']);
+              exit;
+          }
+          $normalizedJoinEnd = $joinEndTime === '' ? '' : formatEventTimeValue($joinEndTime);
+          if ($joinEndTime !== '' && $normalizedJoinEnd === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event end time must be a valid 24-hour time.']);
+              exit;
+          }
+          if ($normalizedJoinStart !== '' && $normalizedJoinLimit !== '') {
+              $startMinutes = getEventTimeMinutes($normalizedJoinStart);
+              $limitMinutes = getEventTimeMinutes($normalizedJoinLimit);
+              if ($limitMinutes < $startMinutes) {
+                  http_response_code(422);
+                  echo json_encode(['status' => 'error', 'message' => 'Join limit time cannot be before the start time.']);
+                  exit;
+              }
+          }
+          if ($normalizedJoinEnd !== '' && $normalizedJoinLimit !== '') {
+              $limitMinutes = getEventTimeMinutes($normalizedJoinLimit);
+              $endMinutes = getEventTimeMinutes($normalizedJoinEnd);
+              if ($endMinutes <= $limitMinutes) {
+                  http_response_code(422);
+                  echo json_encode(['status' => 'error', 'message' => 'Event end time must be after the join limit time.']);
+                  exit;
+              }
+          }
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $store['events'][$eventIndex]['name'] = $name;
+          $store['events'][$eventIndex]['date'] = $date;
+          $store['events'][$eventIndex]['join_start_time'] = $normalizedJoinStart;
+          $store['events'][$eventIndex]['join_limit_time'] = $normalizedJoinLimit;
+          $store['events'][$eventIndex]['join_end_time'] = $normalizedJoinEnd;
+          $store['events'][$eventIndex]['updated_at'] = date('c');
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to persist event data.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Event updated successfully.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
+        } elseif ($action === 'save_invite_card_template') {
+            $eventCode = trim((string)($_POST['event_code'] ?? ''));
+            $templatePayload = (string)($_POST['template'] ?? '');
+            if ($eventCode === '' || $templatePayload === '') {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Event code and template data are required.']);
+                exit;
+            }
+            $decoded = json_decode($templatePayload, true);
+            if (!is_array($decoded)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invalid template payload.']);
+                exit;
+            }
+            $fields = is_array($decoded['fields'] ?? null) ? array_values($decoded['fields']) : [];
+            $photoId = trim((string)($decoded['photo_id'] ?? ''));
+            $photoTitle = trim((string)($decoded['photo_title'] ?? ''));
+            $photoAlt = trim((string)($decoded['photo_alt'] ?? ''));
+            $photoFilename = trim((string)($decoded['photo_filename'] ?? ''));
+            $previewGender = trim((string)($decoded['preview_gender'] ?? ''));
+            $prefixes = [];
+            foreach ((array)($decoded['gender_prefixes'] ?? []) as $gender => $value) {
+                $normalizedGender = trim((string)$gender);
+                if ($normalizedGender === '') {
+                    continue;
+                }
+                $prefixes[$normalizedGender] = trim((string)$value);
+            }
+            $prefixStyles = [];
+            foreach ((array)($decoded['gender_prefix_styles'] ?? []) as $gender => $styleData) {
+                $normalizedGender = trim((string)$gender);
+                if ($normalizedGender === '' || !is_array($styleData)) {
+                    continue;
+                }
+                $fontFamily = trim((string)($styleData['fontFamily'] ?? $styleData['font_family'] ?? ''));
+                $fontWeight = trim((string)($styleData['fontWeight'] ?? $styleData['font_weight'] ?? ''));
+                $rawSize = $styleData['fontSize'] ?? $styleData['font_size'] ?? null;
+                $fontSizeValue = null;
+                if (is_numeric($rawSize)) {
+                    $fontSizeValue = (float)$rawSize;
+                } elseif (is_string($rawSize) && preg_match('/^\d+(\.\d+)?$/', $rawSize)) {
+                    $fontSizeValue = (float)$rawSize;
+                }
+                $color = trim((string)($styleData['color'] ?? ''));
+                $prefixStyles[$normalizedGender] = [
+                    'fontFamily' => $fontFamily,
+                    'fontWeight' => $fontWeight,
+                    'fontSize' => $fontSizeValue,
+                    'color' => $color
+                ];
+            }
+            $store = loadGuestStore($storePath, $eventsRoot);
+            $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+            if ($eventIndex < 0) {
+                http_response_code(404);
+                echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+                exit;
+            }
+            $eventDirName = getEventDirName($store['events'][$eventIndex]);
+            $templateData = [
+                'photo_id' => $photoId,
+                'photo_title' => $photoTitle,
+                'photo_filename' => $photoFilename,
+                'photo_alt' => $photoAlt,
+                'fields' => $fields,
+                'gender_prefixes' => $prefixes,
+                'gender_prefix_styles' => $prefixStyles,
+                'preview_gender' => $previewGender,
+                'updated_at' => date('c')
+            ];
+            if ($photoFilename !== '') {
+                $photoPath = persistInviteCardTemplatePhoto($photoFilename, $eventDirName);
+                if ($photoPath !== null) {
+                    $templateData['photo_path'] = $photoPath;
+                }
+            }
+            $store['events'][$eventIndex]['invite_card_template'] = $templateData;
+            $store['events'][$eventIndex]['updated_at'] = date('c');
+            if (!saveGuestStore($storePath, $store)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to persist invite card template.']);
+                exit;
+            }
+            echo json_encode([
+                'status' => 'ok',
+                'message' => 'Invite card template saved.',
+                'events' => normalizeEventsForResponse($store['events']),
+                'logs' => normalizeInviteLogs($store['logs'])
+            ]);
+            createGuestInvitePages(
+                $store['events'][$eventIndex]['guests'] ?? [],
+                $store['events'][$eventIndex] ?? []
+            );
             exit;
-        }
-        $store = loadGuestStore($storePath);
-        $eventIndex = findEventIndexBySlug($store['events'], $slug);
-        if ($eventIndex < 0) {
-            http_response_code(404);
-            echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+        } elseif ($action === 'save_generated_invite_card') {
+            $inviteCode = normalizeInviteCodeDigits((string)($_POST['invite_code'] ?? ''));
+            $imageData = (string)($_POST['image_data'] ?? '');
+            if ($inviteCode === '' || $imageData === '') {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invite code and image data are required.']);
+                exit;
+            }
+            if (!preg_match('/^data:image\\/(png|jpe?g);base64,(.+)$/i', $imageData, $matches)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invalid image payload.']);
+                exit;
+            }
+            $decoded = base64_decode($matches[2], true);
+            if ($decoded === false) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to decode image data.']);
+                exit;
+            }
+            $invRoot = __DIR__ . '/../inv';
+            if (!is_dir($invRoot) && !mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to create invite storage.']);
+                exit;
+            }
+            $guestDir = $invRoot . '/' . $inviteCode;
+            if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to create invite directory.']);
+                exit;
+            }
+            $targetPath = $guestDir . '/InviteCard.jpg';
+            if (file_put_contents($targetPath, $decoded) === false) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Failed to save invite card image.']);
+                exit;
+            }
+            ensureGuestInviteIndexPage($inviteCode);
+            echo json_encode(['status' => 'ok']);
             exit;
-        }
-        $guestIndex = findGuestIndexByNumber($store['events'][$eventIndex]['guests'] ?? [], $number);
-        if ($guestIndex < 0) {
-            http_response_code(404);
-            echo json_encode(['status' => 'error', 'message' => 'Guest not found.']);
-            exit;
-        }
-        array_splice($store['events'][$eventIndex]['guests'], $guestIndex, 1);
-        $store['events'][$eventIndex]['guest_count'] = count($store['events'][$eventIndex]['guests']);
-        $store['events'][$eventIndex]['updated_at'] = date('c');
-        if (!saveGuestStore($storePath, $store)) {
-            http_response_code(500);
-            echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
-            exit;
-        }
-        echo json_encode([
-            'status' => 'ok',
-            'message' => 'Guest deleted successfully.',
-            'events' => normalizeEventsForResponse($store['events']),
-            'logs' => normalizeInviteLogs($store['logs'])
-        ]);
-        exit;
-    } elseif ($action !== 'save_guest_purelist') {
-        http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
-        exit;
-    }
+        } elseif ($action === 'delete_event') {
+          $eventCode = trim((string)($_POST['event_code'] ?? ''));
+          if ($eventCode === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event code is required for deletion.']);
+              exit;
+          }
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $event = $store['events'][$eventIndex];
+          $eventDir = getEventDir($event, $eventsRoot);
+          if (!deleteDirectoryWithinRoot($eventDir, $eventsRoot)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to remove event files.']);
+              exit;
+          }
+          $invRoot = __DIR__ . '/../inv';
+          $guestCodes = [];
+          foreach ($event['guests'] ?? [] as $guest) {
+              $code = normalizeInviteCodeDigits((string)($guest['invite_code'] ?? ''));
+              if ($code === '') {
+                  continue;
+              }
+              $guestCodes[] = $code;
+          }
+          $guestCodes = array_values(array_unique($guestCodes));
+          foreach ($guestCodes as $code) {
+              $codeDir = $invRoot . '/' . $code;
+              if (!deleteDirectoryWithinRoot($codeDir, $invRoot)) {
+                  http_response_code(500);
+                  echo json_encode(['status' => 'error', 'message' => "Failed to remove invite directory for code {$code}."]);
+                  exit;
+              }
+          }
+          array_splice($store['events'], $eventIndex, 1);
+          if (trim((string)($store['active_event_code'] ?? '')) === $eventCode) {
+              $store['active_event_code'] = '';
+          }
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to persist event data.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Event deleted successfully.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
+      } elseif ($action !== 'save_guest_purelist') {
+          http_response_code(400);
+          echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
+          exit;
+      }
 
     if ($eventName === '' || $eventDate === '') {
         http_response_code(422);
@@ -347,12 +782,17 @@ if ($method === 'POST') {
         exit;
     }
 
-    $store = loadGuestStore($storePath);
-    $slug = ensureUniqueSlug(slugify($eventName), $store['events']);
-    $eventDir = $eventsRoot . '/' . $slug;
+    $store = loadGuestStore($storePath, $eventsRoot);
+    $eventCode = allocateEventCode($store);
+    $eventDir = getEventDir(['code' => $eventCode], $eventsRoot);
     if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Unable to create event directory.']);
+        exit;
+    }
+    if (!ensureEventEntryPoints($eventDir, $eventCode)) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Unable to prepare event draw/prize pages.']);
         exit;
     }
 
@@ -370,7 +810,7 @@ if ($method === 'POST') {
             }
             $uploadedFileInfo = [
                 'filename' => $targetName,
-                'path' => 'events/' . $slug . '/' . $targetName
+                'path' => 'events/' . $eventCode . '/' . $targetName
             ];
         }
     }
@@ -388,9 +828,8 @@ if ($method === 'POST') {
         return $entry;
     }, $rows);
 
-    // Add sequential numbers starting from 1 for this pure list.
-    foreach ($guests as $idx => &$guest) {
-        $guest['number'] = $idx + 1;
+    foreach ($guests as &$guest) {
+        $guest['number'] = allocateGuestNumber($store);
         $guest['date_entered'] = $guest['date_entered'] ?? '';
         $guest['date_exited'] = $guest['date_exited'] ?? '';
     }
@@ -410,6 +849,7 @@ if ($method === 'POST') {
 
     foreach ($guests as &$guest) {
         ensureInviteCode(null, $guest);
+        normalizeGuestDateFields($guest);
     }
     unset($guest);
 
@@ -428,7 +868,7 @@ if ($method === 'POST') {
         $csvGuests[] = $guestRow;
     }
 
-    $csvHeaders = array_merge(['number'], $requiredKeys, ['sms_link', 'date_entered', 'date_exited']);
+    $csvHeaders = array_merge(['number'], $requiredKeys, ['sms_link', 'join_date', 'join_time', 'left_date', 'left_time']);
     $csvContent = buildCsv($csvGuests, $csvHeaders);
     $purelistFilename = 'purelist.csv';
     $purelistPath = $eventDir . '/' . $purelistFilename;
@@ -438,13 +878,15 @@ if ($method === 'POST') {
         exit;
     }
 
-    $existingIndex = findEventIndexBySlug($store['events'], $slug);
     $eventRecord = [
-        'slug' => $slug,
+        'code' => $eventCode,
         'name' => $eventName,
         'date' => $eventDate,
+        'join_start_time' => '',
+        'join_limit_time' => '',
+        'join_end_time' => '',
         'mapping' => $mapping,
-        'purelist' => 'events/' . $slug . '/' . $purelistFilename,
+        'purelist' => 'events/' . $eventCode . '/' . $purelistFilename,
         'guest_count' => count($guests),
         'guests' => $guests,
         'updated_at' => date('c')
@@ -452,16 +894,9 @@ if ($method === 'POST') {
     if ($uploadedFileInfo) {
         $eventRecord['source'] = $uploadedFileInfo;
     }
-    $eventIndex = $existingIndex;
-    if ($existingIndex >= 0) {
-        $eventRecord['created_at'] = $store['events'][$existingIndex]['created_at'] ?? $eventRecord['updated_at'];
-        $store['events'][$existingIndex] = array_merge($store['events'][$existingIndex], $eventRecord);
-        $eventIndex = $existingIndex;
-    } else {
-        $eventRecord['created_at'] = $eventRecord['updated_at'];
-        $store['events'][] = $eventRecord;
-        $eventIndex = count($store['events']) - 1;
-    }
+    $eventRecord['created_at'] = $eventRecord['updated_at'];
+    $store['events'][] = $eventRecord;
+    $eventIndex = count($store['events']) - 1;
 
     if (!saveGuestStore($storePath, $store)) {
         http_response_code(500);
@@ -469,7 +904,10 @@ if ($method === 'POST') {
         exit;
     }
 
-    createGuestInvitePages($store['events'][$eventIndex]['guests'] ?? []);
+        createGuestInvitePages(
+            $store['events'][$eventIndex]['guests'] ?? [],
+            $store['events'][$eventIndex] ?? []
+        );
 
     echo json_encode([
         'status' => 'ok',
@@ -480,15 +918,19 @@ if ($method === 'POST') {
     exit;
 }
 
-$store = loadGuestStore($storePath);
+$store = loadGuestStore($storePath, $eventsRoot);
+$activeEventCode = trim((string)($store['active_event_code'] ?? ''));
+$activeEventIndex = $activeEventCode === '' ? -1 : findEventIndexByCode($store['events'], $activeEventCode);
+$activeEvent = $activeEventIndex >= 0 ? $store['events'][$activeEventIndex] : [];
 echo json_encode([
     'status' => 'ok',
     'events' => normalizeEventsForResponse($store['events']),
-    'logs' => normalizeInviteLogs($store['logs'])
+    'logs' => normalizeInviteLogs($store['logs']),
+    'stats' => computeGuestStats($activeEvent)
 ]);
 exit;
 
-function loadGuestStore(string $path): array
+function loadGuestStore(string $path, string $eventsRoot = ''): array
 {
     if (!is_file($path)) {
         return ['events' => [], 'logs' => []];
@@ -498,7 +940,11 @@ function loadGuestStore(string $path): array
         return ['events' => [], 'logs' => []];
     }
     $decoded = json_decode($content, true);
-    return normalizeStore(is_array($decoded) ? $decoded : []);
+    $store = normalizeStore(is_array($decoded) ? $decoded : []);
+    if ($eventsRoot !== '') {
+        ensureEventPurelistFiles($store['events'], $eventsRoot);
+    }
+    return $store;
 }
 
 function saveGuestStore(string $path, array $data): bool
@@ -515,40 +961,17 @@ function saveGuestStore(string $path, array $data): bool
     return file_put_contents($path, $encoded) !== false;
 }
 
-function slugify(string $value): string
+function findEventIndexByCode(array $events, string $code): int
 {
-    $value = strtolower(trim($value));
-    $value = preg_replace('/[^a-z0-9\-_\s]+/', '', $value) ?? '';
-    $value = preg_replace('/[\s_]+/', '-', $value) ?? '';
-    $value = trim($value, '-');
-    return $value !== '' ? $value : 'event';
-}
-
-function ensureUniqueSlug(string $slug, array $events): string
-{
-    $existingIndex = findEventIndexBySlug($events, $slug);
-    if ($existingIndex >= 0) {
-        return $slug;
+    $normalizedCode = trim((string)$code);
+    if ($normalizedCode === '') {
+        return -1;
     }
-    $existing = array_fill_keys(array_map(static function ($event) {
-        return (string)($event['slug'] ?? '');
-    }, $events), true);
-    $candidate = $slug;
-    $suffix = 1;
-    while (isset($existing[$candidate]) && $existing[$candidate] === true) {
-        $candidate = $slug . '-' . $suffix;
-        $suffix++;
-    }
-    return $candidate;
-}
-
-function findEventIndexBySlug(array $events, string $slug): int
-{
     foreach ($events as $index => $event) {
         if (!is_array($event)) {
             continue;
         }
-        if ((string)($event['slug'] ?? '') === $slug) {
+        if (trim((string)($event['code'] ?? '')) === $normalizedCode) {
             return (int)$index;
         }
     }
@@ -577,9 +1000,9 @@ function escapeCsv($value): string
     return $needsQuotes ? '"' . $escaped . '"' : $escaped;
 }
 
-function syncEventPurelist(array &$event, string $slug, string $eventsRoot): bool
+function syncEventPurelist(array &$event, string $eventsRoot): bool
 {
-    $eventDir = $eventsRoot . '/' . $slug;
+    $eventDir = getEventDir($event, $eventsRoot);
     if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
         return false;
     }
@@ -594,23 +1017,109 @@ function syncEventPurelist(array &$event, string $slug, string $eventsRoot): boo
         $guest['sms_link'] = buildInviteLink($code);
         $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
         $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
+        normalizeGuestDateFields($guest);
     }
     unset($guest);
-    $headers = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'date_entered', 'date_exited'];
+    $headers = PURELIST_HEADERS;
     $csvContent = buildCsv($guests, $headers);
     $purelistPath = $eventDir . '/purelist.csv';
     if (file_put_contents($purelistPath, $csvContent) === false) {
         return false;
     }
-    $event['purelist'] = 'events/' . $slug . '/purelist.csv';
+    $event['purelist'] = 'events/' . getEventDirName($event) . '/purelist.csv';
     return true;
+}
+
+function ensureEventPurelistFiles(array &$events, string $eventsRoot): void
+{
+    foreach ($events as &$event) {
+        if (!is_array($event)) {
+            $event = [];
+        }
+        $eventDir = getEventDir($event, $eventsRoot);
+        if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
+            continue;
+        }
+        $candidateCode = trim((string)($event['code'] ?? ''));
+        if ($candidateCode === '') {
+            $candidateCode = getEventDirName($event);
+        }
+        ensureEventEntryPoints($eventDir, $candidateCode);
+        $purelistPath = $eventDir . '/purelist.csv';
+        if (is_file($purelistPath)) {
+            continue;
+        }
+        syncEventPurelist($event, $eventsRoot);
+    }
+    unset($event);
+}
+
+function normalizeFilesystemPath(string $path): string
+{
+    $trimmed = trim($path);
+    if ($trimmed === '') {
+        return '';
+    }
+    $real = realpath($trimmed);
+    $normalized = $real !== false ? $real : $trimmed;
+    $normalized = str_replace('\\', '/', $normalized);
+    return rtrim($normalized, '/');
+}
+
+function deleteDirectoryRecursive(string $directory): bool
+{
+    if (!is_dir($directory)) {
+        return true;
+    }
+    $entries = scandir($directory);
+    if ($entries === false) {
+        return false;
+    }
+    foreach ($entries as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+        $target = $directory . DIRECTORY_SEPARATOR . $entry;
+        if (is_dir($target)) {
+            if (!deleteDirectoryRecursive($target)) {
+                return false;
+            }
+            continue;
+        }
+        if (is_file($target) && !@unlink($target)) {
+            return false;
+        }
+    }
+    return rmdir($directory);
+}
+
+function deleteDirectoryWithinRoot(string $directory, string $root): bool
+{
+    $directory = trim($directory);
+    $root = trim($root);
+    if ($directory === '' || $root === '') {
+        return false;
+    }
+    if (!is_dir($directory)) {
+        return true;
+    }
+    $normalizedRoot = normalizeFilesystemPath($root);
+    $normalizedDirectory = normalizeFilesystemPath($directory);
+    if (
+        $normalizedRoot === '' ||
+        $normalizedDirectory === '' ||
+        strpos($normalizedDirectory, $normalizedRoot) !== 0
+    ) {
+        return false;
+    }
+    return deleteDirectoryRecursive($directory);
 }
 
 function normalizeDigitString(string $value): string
 {
     $map = [
-        '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
-        '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9'
+        'Û°' => '0', 'Û±' => '1', 'Û²' => '2', 'Û³' => '3', 'Û´' => '4',
+        'Ûµ' => '5', 'Û¶' => '6', 'Û·' => '7', 'Û¸' => '8', 'Û¹' => '9'
     ];
     $normalized = strtr($value, $map);
     return preg_replace('/\D+/', '', $normalized) ?? '';
@@ -626,18 +1135,6 @@ function normalizeNationalId(string $value): string
         $digits = str_pad($digits, 10, '0', STR_PAD_LEFT);
     }
     return $digits;
-}
-
-function getNextGuestNumber(array $event): int
-{
-    $max = 0;
-    foreach ($event['guests'] ?? [] as $guest) {
-        $num = (int)($guest['number'] ?? 0);
-        if ($num > $max) {
-            $max = $num;
-        }
-    }
-    return $max + 1;
 }
 
 function findGuestIndexByNumber(array $guests, int $number): int
@@ -659,6 +1156,111 @@ function createNowTime(): DateTimeImmutable
 {
     $tzName = date_default_timezone_get() ?: 'Asia/Tehran';
     return new DateTimeImmutable('now', new DateTimeZone($tzName));
+}
+
+function formatPersianDateTimeParts(DateTimeInterface $date): array
+{
+    $tz = $date->getTimezone();
+    if (!class_exists('IntlDateFormatter')) {
+        return splitDateTimeValue($date->format('Y/m/d H:i:s'));
+    }
+    $dateFormatter = new IntlDateFormatter(
+        'fa_IR@calendar=persian;numbers=latn',
+        IntlDateFormatter::NONE,
+        IntlDateFormatter::NONE,
+        $tz,
+        IntlDateFormatter::TRADITIONAL,
+        'yyyy/MM/dd'
+    );
+    $timeFormatter = new IntlDateFormatter(
+        'fa_IR@calendar=persian;numbers=latn',
+        IntlDateFormatter::NONE,
+        IntlDateFormatter::NONE,
+        $tz,
+        IntlDateFormatter::TRADITIONAL,
+        'HH:mm:ss'
+    );
+    $dateText = $dateFormatter !== false ? $dateFormatter->format($date) : '';
+    $timeText = $timeFormatter !== false ? $timeFormatter->format($date) : '';
+    if (!is_string($dateText) || trim($dateText) === '') {
+        $dateText = $date->format('Y/m/d');
+    }
+    if (!is_string($timeText) || trim($timeText) === '') {
+        $timeText = $date->format('H:i:s');
+    }
+    return [
+        'date' => trim($dateText),
+        'time' => trim($timeText)
+    ];
+}
+
+function splitDateTimeValue(string $value): array
+{
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return ['date' => '', 'time' => ''];
+    }
+    if (preg_match('/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/', $trimmed, $matches)) {
+        return [
+            'date' => "{$matches[1]}/{$matches[2]}/{$matches[3]}",
+            'time' => "{$matches[4]}:{$matches[5]}:{$matches[6]}"
+        ];
+    }
+    $normalized = str_replace(['T', 't'], ' ', $trimmed);
+    $parts = preg_split('/\s+/', $normalized);
+    $datePart = $parts[0] ?? '';
+    $timePart = $parts[1] ?? '';
+    if ($timePart === '' && strpos($datePart, 'T') !== false) {
+        [$datePart, $timePart] = array_pad(explode('T', $datePart, 2), 2, '');
+    }
+    if ($timePart === '' && strpos($datePart, ':') !== false && strpos($datePart, '/') === false && strpos($datePart, '-') === false) {
+        return ['', $datePart];
+    }
+    return [$datePart, $timePart];
+}
+
+function composeDateTimeString(string $date, string $time): string
+{
+    $date = trim($date);
+    $time = trim($time);
+    if ($date === '') {
+        return '';
+    }
+    return $time === '' ? $date : "{$date} {$time}";
+}
+
+function normalizeGuestDateFields(array &$guest): void
+{
+    $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
+    $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
+
+    $existingJoin = [
+        'date' => trim((string)($guest['join_date'] ?? '')),
+        'time' => trim((string)($guest['join_time'] ?? ''))
+    ];
+    $enteredParts = splitDateTimeValue($guest['date_entered']);
+    if ($existingJoin['date'] === '' && $enteredParts['date'] !== '') {
+        $existingJoin = $enteredParts;
+    }
+    $guest['join_date'] = $existingJoin['date'];
+    $guest['join_time'] = $existingJoin['time'];
+    if ($guest['date_entered'] === '' && $guest['join_date'] !== '') {
+        $guest['date_entered'] = composeDateTimeString($guest['join_date'], $guest['join_time']);
+    }
+
+    $existingLeft = [
+        'date' => trim((string)($guest['left_date'] ?? '')),
+        'time' => trim((string)($guest['left_time'] ?? ''))
+    ];
+    $exitedParts = splitDateTimeValue($guest['date_exited']);
+    if ($existingLeft['date'] === '' && $exitedParts['date'] !== '') {
+        $existingLeft = $exitedParts;
+    }
+    $guest['left_date'] = $existingLeft['date'];
+    $guest['left_time'] = $existingLeft['time'];
+    if ($guest['date_exited'] === '' && $guest['left_date'] !== '') {
+        $guest['date_exited'] = composeDateTimeString($guest['left_date'], $guest['left_time']);
+    }
 }
 
 function parseDateTimeValue(string $value, DateTimeZone $tz): ?DateTimeImmutable
@@ -716,31 +1318,17 @@ function isEventDateToday(string $eventDate): bool
     return false;
 }
 
-function getTodayEventSlugs(array $events): array
+function findGuestByNationalIdForCodes(array $events, string $nationalId, array $allowedCodes = []): ?array
 {
-    $slugs = [];
-    foreach ($events as $event) {
-        if (!is_array($event)) {
-            continue;
-        }
-        if (isEventDateToday((string)($event['date'] ?? ''))) {
-            $slugs[] = (string)($event['slug'] ?? '');
-        }
-    }
-    return array_values(array_filter(array_unique($slugs)));
-}
-
-function findGuestByNationalIdForSlugs(array $events, string $nationalId, array $allowedSlugs = []): ?array
-{
-    $allowed = array_filter($allowedSlugs, static function ($value) {
+    $allowed = array_filter($allowedCodes, static function ($value) {
         return trim((string)$value) !== '';
     });
     foreach ($events as $eventIndex => $event) {
         if (!is_array($event)) {
             continue;
         }
-        $slug = (string)($event['slug'] ?? '');
-        if (!empty($allowed) && !in_array($slug, $allowed, true)) {
+        $code = (string)($event['code'] ?? '');
+        if (!empty($allowed) && !in_array($code, $allowed, true)) {
             continue;
         }
         foreach ($event['guests'] ?? [] as $guestIndex => $guest) {
@@ -778,6 +1366,23 @@ function ensureInviteCode($event, array &$guest): string
     return $code;
 }
 
+function convertDigitsToPersian(string $value): string
+{
+    $map = [
+        '0' => 'Û°',
+        '1' => 'Û±',
+        '2' => 'Û²',
+        '3' => 'Û³',
+        '4' => 'Û´',
+        '5' => 'Ûµ',
+        '6' => 'Û¶',
+        '7' => 'Û·',
+        '8' => 'Û¸',
+        '9' => 'Û¹'
+    ];
+    return strtr($value, $map);
+}
+
 function normalizeInviteCodeDigits(string $value): string
 {
     $digits = preg_replace('/\D+/', '', $value);
@@ -788,32 +1393,70 @@ function normalizeInviteCodeDigits(string $value): string
     return str_pad($digits, 4, '0', STR_PAD_LEFT);
 }
 
+function formatEventTimeValue(string $value): string
+{
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return '';
+    }
+    if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/', $trimmed, $matches)) {
+        return '';
+    }
+    $hours = (int)$matches[1];
+    $minutes = (int)$matches[2];
+    $seconds = isset($matches[3]) && $matches[3] !== '' ? (int)$matches[3] : 0;
+    return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+}
+
+function getEventTimeMinutes(string $value): int
+{
+    $parts = explode(':', $value);
+    $hours = isset($parts[0]) ? (int)$parts[0] : 0;
+    $minutes = isset($parts[1]) ? (int)$parts[1] : 0;
+    return ($hours * 60) + $minutes;
+}
+
 function normalizeStore(array $store): array
 {
     $store['events'] = is_array($store['events'] ?? null) ? array_values($store['events']) : [];
+    $nextEventCode = max(EVENT_CODE_MIN, (int)($store['next_event_code'] ?? EVENT_CODE_MIN));
+    $nextGuestNumber = max(1, (int)($store['next_guest_number'] ?? 1));
     foreach ($store['events'] as &$event) {
         if (!is_array($event)) {
             $event = [];
         }
-        $event['slug'] = (string)($event['slug'] ?? '');
+        ensureEventHasCode($event, $nextEventCode);
+        $event['join_start_time'] = formatEventTimeValue((string)($event['join_start_time'] ?? ''));
+        $event['join_limit_time'] = formatEventTimeValue((string)($event['join_limit_time'] ?? ''));
+        $event['join_end_time'] = formatEventTimeValue((string)($event['join_end_time'] ?? ''));
+        $event['purelist'] = 'events/' . getEventDirName($event) . '/purelist.csv';
         $event['guests'] = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
-        foreach ($event['guests'] as $idx => &$guest) {
+        foreach ($event['guests'] as &$guest) {
             if (!is_array($guest)) {
                 $guest = [];
             }
-            if (!isset($guest['number']) || (int)($guest['number'] ?? 0) <= 0) {
-                $guest['number'] = $idx + 1;
+            $number = (int)($guest['number'] ?? 0);
+            if ($number <= 0) {
+                $number = $nextGuestNumber;
+                $nextGuestNumber++;
+            } elseif ($number >= $nextGuestNumber) {
+                $nextGuestNumber = $number + 1;
             }
+            $guest['number'] = $number;
             $guest['national_id'] = normalizeNationalId((string)($guest['national_id'] ?? ''));
             $guest['date_entered'] = (string)($guest['date_entered'] ?? '');
             $guest['date_exited'] = (string)($guest['date_exited'] ?? '');
             $guest['invite_code'] = ensureInviteCode($event, $guest);
+            normalizeGuestDateFields($guest);
         }
         unset($guest);
         $event['guest_count'] = count($event['guests']);
     }
     unset($event);
+    $store['next_event_code'] = $nextEventCode;
+    $store['next_guest_number'] = $nextGuestNumber;
     $store['logs'] = is_array($store['logs'] ?? null) ? array_values($store['logs']) : [];
+    $store['active_event_code'] = trim((string)($store['active_event_code'] ?? ''));
     return $store;
 }
 
@@ -832,13 +1475,19 @@ function normalizeInviteLog(array $log): array
     $log['id'] = (string)($log['id'] ?? uniqid('log_', true));
     $log['type'] = (string)($log['type'] ?? '');
     $log['national_id'] = normalizeNationalId((string)($log['national_id'] ?? ''));
-    $log['event_slug'] = (string)($log['event_slug'] ?? '');
+    $log['event_code'] = (string)($log['event_code'] ?? '');
     $log['event_name'] = (string)($log['event_name'] ?? '');
     $log['guest_name'] = trim((string)($log['guest_name'] ?? ''));
     $log['invite_code'] = normalizeInviteCodeDigits((string)($log['invite_code'] ?? ''));
     $log['timestamp'] = (string)($log['timestamp'] ?? date('Y-m-d H:i:s'));
     $log['date_entered'] = (string)($log['date_entered'] ?? '');
     $log['date_exited'] = (string)($log['date_exited'] ?? '');
+    $enteredParts = splitDateTimeValue($log['date_entered']);
+    $log['join_date'] = (string)($log['join_date'] ?? $enteredParts['date']);
+    $log['join_time'] = (string)($log['join_time'] ?? $enteredParts['time']);
+    $exitedParts = splitDateTimeValue($log['date_exited']);
+    $log['left_date'] = (string)($log['left_date'] ?? $exitedParts['date']);
+    $log['left_time'] = (string)($log['left_time'] ?? $exitedParts['time']);
     $log['message'] = (string)($log['message'] ?? '');
     return $log;
 }
@@ -865,157 +1514,132 @@ function normalizeEventsForResponse(array $events): array
             $guest['invite_code'] = ensureInviteCode($event, $guest);
             $guest['date_entered'] = $guest['date_entered'] ?? '';
             $guest['date_exited'] = $guest['date_exited'] ?? '';
+            normalizeGuestDateFields($guest);
         }
         unset($guest);
         return [
-            'slug' => (string)($event['slug'] ?? ''),
+            'code' => (string)($event['code'] ?? ''),
             'name' => (string)($event['name'] ?? ''),
             'date' => (string)($event['date'] ?? ''),
+            'join_start_time' => (string)($event['join_start_time'] ?? ''),
+            'join_limit_time' => (string)($event['join_limit_time'] ?? ''),
+            'join_end_time' => (string)($event['join_end_time'] ?? ''),
             'guest_count' => (int)($event['guest_count'] ?? count($guests)),
             'mapping' => is_array($event['mapping'] ?? null) ? $event['mapping'] : [],
             'purelist' => (string)($event['purelist'] ?? ''),
             'source' => is_array($event['source'] ?? null) ? $event['source'] : null,
             'guests' => $guests,
             'created_at' => (string)($event['created_at'] ?? ''),
+            'invite_card_template' => is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [],
             'updated_at' => (string)($event['updated_at'] ?? '')
         ];
     }, $events));
 }
 
-function createGuestInvitePages(array $guests): void
+function computeGuestStats(array $event): array
+{
+    $guests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
+    $totalPresent = 0;
+    $presentByGender = [];
+    $invitedByGender = [];
+    foreach ($guests as $guest) {
+        if (!is_array($guest)) {
+            continue;
+        }
+        $gender = trim((string)($guest['gender'] ?? ''));
+        if ($gender === '') {
+            $gender = 'Ù†Ø§Ù…Ø´Ø®Øµ';
+        }
+        $invitedByGender[$gender] = ($invitedByGender[$gender] ?? 0) + 1;
+        $entered = trim((string)($guest['date_entered'] ?? ''));
+        if ($entered !== '') {
+            $totalPresent++;
+            $presentByGender[$gender] = ($presentByGender[$gender] ?? 0) + 1;
+        }
+    }
+    return [
+        'total_present' => $totalPresent,
+        'total_invited' => count($guests),
+        'present_by_gender' => $presentByGender,
+        'invited_by_gender' => $invitedByGender
+    ];
+}
+
+function createGuestInvitePages(array $guests, array $event): void
 {
     $invRoot = __DIR__ . '/../inv';
     if (!is_dir($invRoot)) {
         if (!mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
             return;
         }
-    } else {
-        clearGuestInviteDirectories($invRoot);
     }
-    $imageName = 'Invite Card Picture.jpg';
-    $cardImagePath = __DIR__ . '/../events/eventcard/' . $imageName;
-    $imageUrl = '/events/eventcard/' . rawurlencode($imageName);
-    if (is_file($cardImagePath)) {
-        $content = @file_get_contents($cardImagePath);
-        if ($content !== false) {
-            $mime = mime_content_type($cardImagePath) ?: 'image/jpeg';
-            $imageUrl = 'data:' . $mime . ';base64,' . base64_encode($content);
-        }
-    }
+
     foreach ($guests as $guest) {
-        $code = trim((string)($guest['invite_code'] ?? ''));
+        $code = normalizeInviteCodeDigits((string)($guest['invite_code'] ?? $guest['code'] ?? ''));
         if ($code === '') {
             continue;
         }
         $guestDir = $invRoot . '/' . $code;
         if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+            error_log('Unable to create invite directory for ' . $code);
             continue;
         }
-        $fullName = trim((string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? ''));
-        if ($fullName === '') {
-            $fullName = 'Guest';
+        ensureGuestInviteIndexPage($code);
+    }
+}
+
+function ensureGuestInviteIndexPage(string $code): void
+{
+    $normalized = normalizeInviteCodeDigits($code);
+    if ($normalized === '') {
+        return;
+    }
+    $invRoot = __DIR__ . '/../inv';
+    if (!is_dir($invRoot)) {
+        if (!mkdir($invRoot, 0755, true) && !is_dir($invRoot)) {
+            return;
         }
-        $safeName = htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $safeCode = htmlspecialchars($code, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $nationalId = normalizeNationalId((string)($guest['national_id'] ?? ''));
-        $safeNationalId = htmlspecialchars($nationalId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $qrElement = '';
-        if ($nationalId !== '') {
-            $qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . rawurlencode($nationalId);
-            $qrElement = "<img class="qr" src="{$qrSrc}" alt="QR ???? {$safeName}">";
-        }
-        $page = <<<HTML
-<!DOCTYPE html>
+    }
+    $guestDir = $invRoot . '/' . $normalized;
+    if (!is_dir($guestDir) && !mkdir($guestDir, 0755, true) && !is_dir($guestDir)) {
+        return;
+    }
+    $indexPath = $guestDir . '/index.php';
+    $page = <<<'HTML'
+<!doctype html>
 <html lang="fa" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>???? ???? ?????? ????? ?? ???? ????</title>
-  <link rel="icon" id="site-icon" href="data:,">
-  <link rel="preload" href="/style/fonts/PeydaWebFaNum-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-  <link rel="preload" href="/style/fonts/PeydaWebFaNum-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-  <link rel="stylesheet" href="/style/invite-card.css">
-  <script src="/General%20Setting/general-settings.js" defer></script>
-  <script>
-    (function () {
-      const iconEl = document.getElementById('site-icon');
-      const applyIcon = () => {
-        if (!iconEl) {
-          return;
-        }
-        const iconUrl = window.GENERAL_SETTINGS?.siteIcon;
-        if (iconUrl) {
-          iconEl.href = iconUrl;
-        }
-      };
-      if (window.GENERAL_SETTINGS) {
-        applyIcon();
-      } else {
-        window.addEventListener('load', applyIcon);
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Card Invite</title>
+    <style>
+      :root {
+        background: #ffffff;
       }
-    })();
-  </script>
-</head>
-<body>
-  <div class="device">
-    <div class="card-image-shell">
-      <img src="{$imageUrl}" alt="???? ???? ??????">
-    </div>
-    <div class="message">
-      <p class="greeting">???? ???? ?????? ????? ?? ???? ????</p>
-      <p class="name">{$safeName}</p>
-      {$qrElement}
-      <p class="code">{$safeCode}</p>
-    </div>
-  </div>
-</body>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #ffffff;
+      }
+      img {
+        max-width: 100%;
+        max-height: 100vh;
+        height: auto;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <img src="InviteCard.jpg" alt="Invite Card" loading="eager" />
+  </body>
 </html>
 HTML;
-    }
+    @file_put_contents($indexPath, $page);
 }
 
-function clearGuestInviteDirectories(string $dir): void
-{
-    if (!is_dir($dir)) {
-        return;
-    }
-    $items = scandir($dir);
-    if ($items === false) {
-        return;
-    }
-    foreach ($items as $item) {
-        if ($item === '.' || $item === '..') {
-            continue;
-        }
-        $path = $dir . '/' . $item;
-        if (is_dir($path)) {
-            removeDirectoryTree($path);
-        } else {
-            @unlink($path);
-        }
-    }
-}
-
-function removeDirectoryTree(string $path): void
-{
-    if (!is_dir($path)) {
-        return;
-    }
-    $items = scandir($path);
-    if ($items === false) {
-        return;
-    }
-    foreach ($items as $item) {
-        if ($item === '.' || $item === '..') {
-            continue;
-        }
-        $child = $path . '/' . $item;
-        if (is_dir($child)) {
-            removeDirectoryTree($child);
-        } else {
-            @unlink($child);
-        }
-    }
-    @rmdir($path);
-}

@@ -41,7 +41,7 @@ const DEFAULT_SETTINGS = {
   }
 };
 const SITE_ICON_DEFAULT_DATA_URI = "data:,";
-const DEFAULT_APPEARANCE = {
+const FALLBACK_APPEARANCE = {
   primary: "#e11d2e",
   background: "#ffffff",
   text: "#111111",
@@ -53,8 +53,6 @@ const APPEARANCE_TEXT_KEY = "frontend_appearance_text";
 const APPEARANCE_TOGGLE_KEY = "frontend_appearance_toggle";
 const APPEARANCE_HINT_DEFAULT = "Fine-tune the UI colors directly from the developer lab.";
 const LOCAL_UNCATEGORIZED_CATEGORY_NAME = "--no category--";
-let currentAppearanceState = { ...DEFAULT_APPEARANCE };
-let savedAppearanceState = { ...DEFAULT_APPEARANCE };
 const APPEARANCE_KEYS = ["primary", "background", "text", "toggle"];
 const APPEARANCE_HSL_BASE = {
   primary: { s: 0.78, l: 0.54 },
@@ -76,12 +74,45 @@ const COLOR_PICKER_GRID = {
 };
 const appearancePickerGridState = {};
 let activeAppearancePickerKey = null;
+const STYLE_COLOR_PICKER_KEY = "__style_color_picker";
+const STYLE_COLOR_PICKER_HSL_BASE = APPEARANCE_HSL_BASE.text;
+const styleColorPickerGridState = {};
+let styleColorPickerContext = null;
+const styleFieldColorState = {
+  name: "#111111",
+  nationalId: "#111111",
+  guestCode: "#111111"
+};
+const STYLE_FIELD_KEY_MAP = {
+  name: "name",
+  "national-id": "nationalId",
+  "guest-code": "guestCode"
+};
 const SHARED_GENERAL_SETTINGS =
   typeof window !== "undefined" &&
   window.GENERAL_SETTINGS &&
   typeof window.GENERAL_SETTINGS === "object"
     ? window.GENERAL_SETTINGS
     : null;
+const SHARED_APPEARANCE = (() => {
+  const appearance = SHARED_GENERAL_SETTINGS?.appearance;
+  if (!appearance || typeof appearance !== "object") {
+    return {};
+  }
+  return APPEARANCE_KEYS.reduce((acc, key) => {
+    const color = ensureHexColor(appearance[key] ?? "");
+    if (color) {
+      acc[key] = color;
+    }
+    return acc;
+  }, {});
+})();
+const DEFAULT_APPEARANCE = {
+  ...FALLBACK_APPEARANCE,
+  ...SHARED_APPEARANCE
+};
+let currentAppearanceState = { ...DEFAULT_APPEARANCE };
+let savedAppearanceState = { ...DEFAULT_APPEARANCE };
 let SERVER_SETTINGS = {
   ...DEFAULT_SETTINGS,
   ...(SHARED_GENERAL_SETTINGS ?? {})
@@ -116,6 +147,41 @@ let photoChooserChooseButton;
 let photoChooserCancelButton;
 let photoChooserUploadButton;
 let photoChooserReopenContext = null;
+let inviteCardSelectedPhoto = null;
+let inviteCardPhotoPreviewImage = null;
+let inviteCardPhotoPlaceholder = null;
+let inviteCardPhotoLabel = null;
+let inviteCardChoosePhotoButton = null;
+let inviteCardFieldControls = [];
+const INVITE_CARD_DEFAULT_QR_SIZE = 160;
+const GUEST_INVITE_DEFAULT_STATUS =
+  "Enter a guest code from the selected event to auto-generate the invite card.";
+let inviteCardGenerateButton = null;
+let inviteCardStatusLabel = null;
+let progressForCardsElement = null;
+let progressForCardsFill = null;
+let progressForCardsCompletedCount = null;
+let progressForCardsRemainingCount = null;
+let progressForCardsStatus = null;
+let inviteCardPreviewCanvas = null;
+let inviteCardPreviewPlaceholder = null;
+let inviteCardDownloadLink = null;
+let inviteCardPreviewPhotoId = null;
+let inviteCardGenderSelect = null;
+let createAllInviteCardsButton = null;
+let guestInviteCodeInput = null;
+let guestInviteGenerateButton = null;
+let guestInviteStatusLabel = null;
+let positionPickerModal = null;
+let positionPickerOverlay = null;
+let positionPickerImage = null;
+let positionPickerImageShell = null;
+let positionPickerDot = null;
+let positionPickerConfirmButton = null;
+let positionPickerCancelButton = null;
+let positionPickerCurrentXInput = null;
+let positionPickerCurrentYInput = null;
+let positionPickerSelection = null;
 let siteIconValue = "";
 let siteIconPreviewImage = null;
 let siteIconPlaceholder = null;
@@ -140,6 +206,16 @@ let backupImportTrigger = null;
 let backupFileChosen = null;
 let pendingBackupImportFile = null;
 let backupSettingsFormElement = null;
+
+let PRINTER_DEVICES = [];
+let PRINTER_SETTINGS = {
+  printerId: "",
+  layout: "",
+  paperSize: "",
+  pagesPerPaper: "",
+  margin: "",
+  scale: ""
+};
 let backupSaveButton = null;
 
 function normalizeValue(value) {
@@ -438,6 +514,7 @@ async function loadServerData() {
     }
     updateGalleryStateFromPayload(payload);
     updateBackupListFromPayload(payload);
+    updatePrinterStateFromPayload(payload);
     applyServerSettings(); // Save server-provided defaults for the next session.
     SERVER_DATA_LOADED = true;
   } catch (err) {
@@ -709,6 +786,235 @@ function setBackupControlsSubmitting(isSubmitting) {
     }
     control.disabled = Boolean(isSubmitting);
   });
+}
+
+function updatePrinterStateFromPayload(payload = {}) {
+  PRINTER_DEVICES = Array.isArray(payload.printerDevices) ? payload.printerDevices : [];
+  PRINTER_SETTINGS = normalizePrinterSettings(payload.printerSettings ?? {}, PRINTER_DEVICES);
+  renderPrinterSettingsForm();
+}
+
+function normalizePrinterSettings(settings, devices) {
+  const availableIds = (devices || []).map(device => device?.id).filter(Boolean);
+  const defaultDeviceId = availableIds[0] || "";
+  const requestedId = String(settings.printerId ?? "").trim();
+  const printerId = availableIds.includes(requestedId) ? requestedId : defaultDeviceId;
+  const device = getPrinterDeviceById(printerId) || devices[0] || {};
+  return {
+    printerId,
+    layout: pickPrinterOption(settings.layout, device.layouts, device.layouts?.[0] || ""),
+    paperSize: pickPrinterOption(settings.paperSize, device.paperSizes, device.paperSizes?.[0] || ""),
+    pagesPerPaper: pickPrinterOption(settings.pagesPerPaper, device.pagesPerPaper, device.pagesPerPaper?.[0] || ""),
+    margin: pickPrinterOption(settings.margin, device.margins, device.margins?.[0] || ""),
+    scale: pickPrinterOption(settings.scale, device.scales, device.scales?.[0] || "")
+  };
+}
+
+function pickPrinterOption(value, options, fallback = "") {
+  const candidate = String(value ?? "").trim();
+  if (Array.isArray(options)) {
+    for (const option of options) {
+      if (candidate !== "" && String(option) === candidate) {
+        return candidate;
+      }
+    }
+    if (options.length) {
+      return String(options[0]);
+    }
+  }
+  return String(fallback);
+}
+
+function getPrinterDeviceById(id) {
+  if (!id) {
+    return null;
+  }
+  return PRINTER_DEVICES.find(device => device?.id === id) || null;
+}
+
+function renderPrinterSettingsForm() {
+  const deviceSelect = qs("#printer-device");
+  const layoutSelect = qs("#printer-layout");
+  const paperSizeSelect = qs("#printer-paper-size");
+  const pagesSelect = qs("#printer-pages-per-paper");
+  const marginSelect = qs("#printer-margin");
+  const scaleSelect = qs("#printer-scale");
+  const saveBtn = qs("#printer-settings-save");
+  if (!deviceSelect || !layoutSelect || !paperSizeSelect || !pagesSelect || !marginSelect || !scaleSelect) {
+    return;
+  }
+  if (!PRINTER_DEVICES.length) {
+    populatePrinterSelect(deviceSelect, [], "", "device", "No printers configured");
+    [layoutSelect, paperSizeSelect, pagesSelect, marginSelect, scaleSelect].forEach(select =>
+      populatePrinterSelect(select, [], "", "fallback", "No options available")
+    );
+    if (saveBtn) {
+      saveBtn.disabled = true;
+    }
+    return;
+  }
+  PRINTER_SETTINGS = normalizePrinterSettings(PRINTER_SETTINGS, PRINTER_DEVICES);
+  populatePrinterSelect(deviceSelect, PRINTER_DEVICES, PRINTER_SETTINGS.printerId, "device");
+  const activeDevice = getPrinterDeviceById(deviceSelect.value) || PRINTER_DEVICES[0];
+  populatePrinterSelect(layoutSelect, activeDevice.layouts || [], PRINTER_SETTINGS.layout, "layout");
+  populatePrinterSelect(paperSizeSelect, activeDevice.paperSizes || [], PRINTER_SETTINGS.paperSize, "paperSize");
+  populatePrinterSelect(pagesSelect, activeDevice.pagesPerPaper || [], PRINTER_SETTINGS.pagesPerPaper, "pagesPerPaper");
+  populatePrinterSelect(marginSelect, activeDevice.margins || [], PRINTER_SETTINGS.margin, "margin");
+  populatePrinterSelect(scaleSelect, activeDevice.scales || [], PRINTER_SETTINGS.scale, "scale");
+  if (saveBtn) {
+    saveBtn.disabled = !PRINTER_DEVICES.length;
+  }
+}
+
+function populatePrinterSelect(select, options, selectedValue, field, emptyLabel = "No options available") {
+  if (!select) {
+    return;
+  }
+  select.innerHTML = "";
+  if (!Array.isArray(options) || options.length === 0) {
+    select.disabled = true;
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = emptyLabel;
+    select.appendChild(option);
+    return;
+  }
+  options.forEach(item => {
+    const option = document.createElement("option");
+    if (field === "device") {
+      option.value = item?.id || "";
+      option.textContent = item?.name || item?.id || "Unknown printer";
+    } else {
+      const value = String(item ?? "");
+      option.value = value;
+      option.textContent = formatPrinterOptionLabel(field, value);
+    }
+    if (option.value === String(selectedValue)) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+  select.disabled = false;
+}
+
+function formatPrinterOptionLabel(field, value) {
+  if (value === "") {
+    return "";
+  }
+  if (field === "scale") {
+    return value.endsWith("%") ? value : `${value}%`;
+  }
+  if (field === "pagesPerPaper") {
+    return `${value} per paper`;
+  }
+  return value;
+}
+
+function handlePrinterDeviceChange() {
+  const select = qs("#printer-device");
+  if (!select) {
+    return;
+  }
+  PRINTER_SETTINGS = normalizePrinterSettings(
+    { ...PRINTER_SETTINGS, printerId: select.value },
+    PRINTER_DEVICES
+  );
+  renderPrinterSettingsForm();
+}
+
+function collectPrinterSettingsFromControls() {
+  return {
+    printerId: qs("#printer-device")?.value ?? "",
+    layout: qs("#printer-layout")?.value ?? "",
+    paperSize: qs("#printer-paper-size")?.value ?? "",
+    pagesPerPaper: qs("#printer-pages-per-paper")?.value ?? "",
+    margin: qs("#printer-margin")?.value ?? "",
+    scale: qs("#printer-scale")?.value ?? ""
+  };
+}
+
+async function handlePrinterSettingsSave() {
+  const saveBtn = qs("#printer-settings-save");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+  }
+  const settings = collectPrinterSettingsFromControls();
+  try {
+    const result = await syncPrinterSettings(settings);
+    if (Array.isArray(result.printerDevices)) {
+      PRINTER_DEVICES = result.printerDevices;
+    }
+    PRINTER_SETTINGS = normalizePrinterSettings(result.printerSettings ?? settings, PRINTER_DEVICES);
+    renderPrinterSettingsForm();
+    showDefaultToast(result.message || "Printer settings saved.");
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Failed to save printer settings." });
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = !PRINTER_DEVICES.length;
+    }
+  }
+}
+
+async function syncPrinterSettings(settings) {
+  return postJsonAction({
+    action: "save_printer_settings",
+    printer_settings: settings
+  });
+}
+
+async function handleAppearanceSave() {
+  const previousAppearanceState = { ...savedAppearanceState };
+  applyAppearancePalette(currentAppearanceState, { persist: true });
+  updateAppearanceInputs(currentAppearanceState);
+  const appliedState = { ...currentAppearanceState };
+  const success = await syncSettings({ appearance: appliedState });
+  if (!success) {
+    applyAppearancePalette(previousAppearanceState, { persist: true });
+    updateAppearanceInputs(previousAppearanceState);
+    showErrorSnackbar({ message: "Failed to save appearance settings." });
+    return;
+  }
+  refreshGlobalAppearanceDefaults(appliedState);
+  showActionSnackbar({
+    message: "Appearance preferences saved.",
+    instructionLabel: "Undo change",
+    onAction: () => {
+      void handleAppearanceUndo(previousAppearanceState, appliedState);
+    }
+  });
+}
+
+async function handleAppearanceUndo(targetState, fallbackState) {
+  applyAppearancePalette(targetState, { persist: true });
+  updateAppearanceInputs(targetState);
+  const reverted = await syncSettings({ appearance: targetState });
+  if (!reverted) {
+    applyAppearancePalette(fallbackState, { persist: true });
+    updateAppearanceInputs(fallbackState);
+    showErrorSnackbar({ message: "Failed to revert appearance." });
+    return;
+  }
+  refreshGlobalAppearanceDefaults(targetState);
+  showDefaultToast("Appearance reverted to previous colors.");
+}
+
+function refreshGlobalAppearanceDefaults(state) {
+  if (!state || typeof state !== "object") {
+    return;
+  }
+  APPEARANCE_KEYS.forEach(key => {
+    const color = ensureHexColor(state[key]);
+    if (color) {
+      DEFAULT_APPEARANCE[key] = color;
+    }
+  });
+  if (typeof window !== "undefined" && window.GENERAL_SETTINGS && typeof window.GENERAL_SETTINGS === "object") {
+    window.GENERAL_SETTINGS.appearance = {
+      ...(window.GENERAL_SETTINGS.appearance || {}),
+      ...DEFAULT_APPEARANCE
+    };
+  }
 }
 
 function triggerBackupDownload(content, filename, mime = "application/json", encoding) {
@@ -1177,6 +1483,38 @@ function applyAppearancePalette(state, { persist = false } = {}) {
   return palette;
 }
 
+function getStyleFieldKey(dataKey) {
+  return STYLE_FIELD_KEY_MAP[dataKey] || dataKey;
+}
+
+function updateStyleColorPreview(fieldKey, color) {
+  const normalizedColor = ensureHexColor(color) || "#111111";
+  const preview = qs(`[data-style-color-preview="${fieldKey}"]`);
+  if (preview) {
+    preview.style.background = normalizedColor;
+  }
+  const hexInput = qs(`[data-style-color-hex="${fieldKey}"]`);
+  if (hexInput) {
+    hexInput.value = normalizedColor;
+  }
+}
+
+function openStyleColorPicker(fieldKey, initialColor, onChoose, title = "Choose color") {
+  const modal = qs("#appearance-picker-modal");
+  if (!modal) {
+    return;
+  }
+  styleColorPickerContext = {
+    color: ensureHexColor(initialColor) || "#111111",
+    onChoose: typeof onChoose === "function" ? onChoose : null,
+    title
+  };
+  activeAppearancePickerKey = null;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  refreshModalPicker(null, styleColorPickerContext.color);
+}
+
 function refreshFieldValue(key, color) {
   const normalized = ensureHexColor(color) || DEFAULT_APPEARANCE[key];
   const input = qs(`[data-appearance-hex="${key}"]`);
@@ -1192,31 +1530,37 @@ function refreshFieldValue(key, color) {
 function refreshModalPicker(key, color) {
   const modal = qs("#appearance-picker-modal");
   const picker = qs("[data-appearance-modal-picker]");
-  if (!modal || !picker || !key) {
+  const isStyleMode = !key && Boolean(styleColorPickerContext);
+  if (!modal || !picker || (!key && !styleColorPickerContext)) {
     return;
   }
-  const normalized = ensureHexColor(color) || DEFAULT_APPEARANCE[key];
+  const contextKey = key || STYLE_COLOR_PICKER_KEY;
+  const normalizedColor = ensureHexColor(isStyleMode ? styleColorPickerContext.color : color) || (key ? DEFAULT_APPEARANCE[key] : styleColorPickerContext?.color || "#111111");
+  const gridStateMap = isStyleMode ? styleColorPickerGridState : appearancePickerGridState;
+  const base = isStyleMode ? STYLE_COLOR_PICKER_HSL_BASE : APPEARANCE_HSL_BASE[key];
+  const gridState = gridStateMap[contextKey] || normalizeGridHsl(base, isStyleMode ? "text" : key);
+  gridStateMap[contextKey] = gridState;
   const handle = picker.querySelector(".default-color-picker__handle");
   const slider = picker.querySelector("input[type='range']");
-  const gridState = appearancePickerGridState[key] || normalizeGridHsl(APPEARANCE_HSL_BASE[key], key);
-  appearancePickerGridState[key] = gridState;
   const handleCoords = gridCoordsFromHsl(gridState);
   if (handle) {
-    handle.style.background = normalized;
+    handle.style.background = normalizedColor;
     handle.style.left = `${handleCoords.x * 100}%`;
     handle.style.top = `${handleCoords.y * 100}%`;
   }
   if (slider) {
-    const hue = getHueFromColor(normalized);
+    const hue = getHueFromColor(normalizedColor);
     slider.value = hue;
-    const accent = adjustHexLightness(normalized, 0.18) || normalized;
-    slider.style.setProperty("--slider-thumb", normalized);
-    picker.style.setProperty("--picker-base", normalized);
+    const accent = adjustHexLightness(normalizedColor, 0.18) || normalizedColor;
+    slider.style.setProperty("--slider-thumb", normalizedColor);
+    picker.style.setProperty("--picker-base", normalizedColor);
     picker.style.setProperty("--picker-accent", accent);
   }
   const title = qs("#appearance-picker-title");
   if (title) {
-    title.textContent = APPEARANCE_LABELS[key] || "Choose color";
+    title.textContent = isStyleMode
+      ? styleColorPickerContext?.title || "Choose color"
+      : APPEARANCE_LABELS[key] || "Choose color";
   }
 }
 
@@ -1273,15 +1617,20 @@ function closeColorPickerModal() {
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   activeAppearancePickerKey = null;
+  styleColorPickerContext = null;
 }
 
 function initAppearanceControls() {
   const stored = loadAppearanceState();
-  if (stored.primary || stored.background || stored.text || stored.toggle) {
+  const hasLocalStored = APPEARANCE_KEYS.some(key => Boolean(stored[key]));
+  const hasSharedAppearance = Object.keys(SHARED_APPEARANCE).length > 0;
+  if (hasLocalStored && !hasSharedAppearance) {
     currentAppearanceState = {
       ...DEFAULT_APPEARANCE,
       ...stored
     };
+  } else {
+    currentAppearanceState = { ...DEFAULT_APPEARANCE };
   }
   applyAppearancePalette(currentAppearanceState, { persist: false });
   updateAppearanceInputs(currentAppearanceState);
@@ -1308,31 +1657,57 @@ function initAppearanceControls() {
   const modalPicker = qs("[data-appearance-modal-picker]");
   const slider = modalPicker?.querySelector("input[type='range']");
   slider?.addEventListener("input", () => {
+    const hue = Number(slider.value) || 0;
+    if (styleColorPickerContext) {
+      const gridHsl =
+        styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] ||
+        normalizeGridHsl(STYLE_COLOR_PICKER_HSL_BASE, "text");
+      const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
+      styleColorPickerContext.color = nextColor;
+      styleColorPickerContext.onChoose?.(nextColor);
+      refreshModalPicker(null, nextColor);
+      return;
+    }
     if (!activeAppearancePickerKey) {
       return;
     }
-    const hue = Number(slider.value) || 0;
-    const gridHsl = appearancePickerGridState[activeAppearancePickerKey] || normalizeGridHsl(APPEARANCE_HSL_BASE[activeAppearancePickerKey], activeAppearancePickerKey);
+    const gridHsl =
+      appearancePickerGridState[activeAppearancePickerKey] ||
+      normalizeGridHsl(APPEARANCE_HSL_BASE[activeAppearancePickerKey], activeAppearancePickerKey);
     const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
     updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
   });
   const pickerGrid = modalPicker?.querySelector(".default-color-picker__grid");
   let isPickerDragging = false;
   const handleGridInteraction = (event) => {
-    if (!pickerGrid || !activeAppearancePickerKey) {
+    if (!pickerGrid) {
       return;
     }
     const rect = pickerGrid.getBoundingClientRect();
     const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
     const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
     const { s, l } = hslFromGridCoords({ x, y });
+    if (styleColorPickerContext) {
+      styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] = { s, l };
+      const hue =
+        Number(slider?.value ?? getHueFromColor(styleColorPickerContext.color)) || 0;
+      const nextColor = hslToHex({ h: hue, s, l });
+      styleColorPickerContext.color = nextColor;
+      styleColorPickerContext.onChoose?.(nextColor);
+      refreshModalPicker(null, nextColor);
+      return;
+    }
+    if (!activeAppearancePickerKey) {
+      return;
+    }
     appearancePickerGridState[activeAppearancePickerKey] = { s, l };
-    const hue = Number(slider?.value ?? getHueFromColor(currentAppearanceState[activeAppearancePickerKey])) || 0;
+    const hue =
+      Number(slider?.value ?? getHueFromColor(currentAppearanceState[activeAppearancePickerKey])) || 0;
     const nextColor = hslToHex({ h: hue, s, l });
     updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
   };
   pickerGrid?.addEventListener("pointerdown", (event) => {
-    if (!activeAppearancePickerKey) {
+    if (!activeAppearancePickerKey && !styleColorPickerContext) {
       return;
     }
     isPickerDragging = true;
@@ -1367,19 +1742,7 @@ function initAppearanceControls() {
     }
   });
   qs("#save-appearance-settings")?.addEventListener("click", () => {
-    const previousAppearanceState = { ...savedAppearanceState };
-    applyAppearancePalette(currentAppearanceState, { persist: true });
-    updateAppearanceInputs(currentAppearanceState);
-    showActionSnackbar({
-      message: "Appearance preferences saved.",
-      instructionLabel: "Undo change",
-      onAction: () => {
-        currentAppearanceState = { ...previousAppearanceState };
-        applyAppearancePalette(currentAppearanceState, { persist: true });
-        updateAppearanceInputs(currentAppearanceState);
-        showDefaultToast("Appearance reverted to previous colors.");
-      }
-    });
+    void handleAppearanceSave();
   });
   qs("#reset-appearance-settings")?.addEventListener("click", () => {
     const previousAppearanceState = { ...savedAppearanceState };
@@ -1928,6 +2291,798 @@ function getGalleryThumbnailUrl(photoOrId, options = {}) {
   return `./api/gallery-thumb.php?id=${encodeURIComponent(
     String(id)
   )}&mode=${encodeURIComponent(mode)}&v=${timestamp}`;
+}
+
+function updateInviteCardPhotoPreview() {
+    if (!inviteCardPhotoPreviewImage || !inviteCardPhotoPlaceholder || !inviteCardPhotoLabel) {
+      return;
+    }
+    const hasPhoto = Boolean(inviteCardSelectedPhoto);
+    const currentPhotoId = inviteCardSelectedPhoto?.id ?? null;
+    const photoChanged = inviteCardPreviewPhotoId !== currentPhotoId;
+    setInviteCardFieldsEnabled(hasPhoto);
+    if (hasPhoto && photoChanged) {
+      resetInviteCardPreviewState();
+    }
+    if (!hasPhoto) {
+      inviteCardPhotoPreviewImage.classList.add("hidden");
+      inviteCardPhotoPreviewImage.removeAttribute("src");
+      inviteCardPhotoPlaceholder.classList.remove("hidden");
+      inviteCardPhotoLabel.textContent = "No photo selected.";
+      resetInviteCardPreviewState();
+      refreshInviteCardActionState();
+      return;
+    }
+    inviteCardPhotoPlaceholder.classList.add("hidden");
+    inviteCardPhotoLabel.textContent =
+      inviteCardSelectedPhoto.title || "Photo selected";
+    const previewUrl = getGalleryThumbnailUrl(inviteCardSelectedPhoto, {
+      mode: GALLERY_THUMB_PREVIEW_MODE
+    });
+    if (previewUrl) {
+      inviteCardPhotoPreviewImage.src = previewUrl;
+      inviteCardPhotoPreviewImage.alt =
+        inviteCardSelectedPhoto.altText ||
+        inviteCardSelectedPhoto.title ||
+        "Selected photo";
+      inviteCardPhotoPreviewImage.classList.remove("hidden");
+    } else {
+      inviteCardPhotoPreviewImage.classList.add("hidden");
+      inviteCardPhotoPreviewImage.removeAttribute("src");
+    }
+    refreshInviteCardActionState();
+  }
+
+function setInviteCardFieldsEnabled(enabled) {
+  const isEnabled = Boolean(enabled);
+  inviteCardFieldControls.forEach((control) => {
+    control.disabled = !isEnabled;
+  });
+}
+
+function initializeInviteCardFieldControls() {
+  inviteCardFieldControls = qsa(
+    "#tab-invite-card [data-field-block] input, #tab-invite-card [data-field-block] select, #tab-invite-card [data-field-block] button"
+  );
+  setInviteCardFieldsEnabled(Boolean(inviteCardSelectedPhoto));
+}
+
+function updateFieldStyleState(block) {
+  if (!block) {
+    return;
+  }
+  const typeSelect = block.querySelector("[data-field-type]");
+  const scaleInput = block.querySelector("[data-scale-input]");
+  const styleController = block.querySelector("[data-field-style-controller]");
+  const isText = typeSelect?.value === "text";
+  if (styleController) {
+    styleController.classList.toggle("hidden", !isText);
+  }
+  if (scaleInput) {
+    scaleInput.disabled = Boolean(isText);
+    if (isText) {
+      scaleInput.value = "";
+    }
+  }
+}
+
+function initializeFieldControllers() {
+  const blocks = qsa("[data-field-block]");
+  blocks.forEach((block) => {
+    const typeSelect = block.querySelector("[data-field-type]");
+    if (!typeSelect) {
+      return;
+    }
+    const update = () => updateFieldStyleState(block);
+    typeSelect.addEventListener("change", update);
+    typeSelect.addEventListener("input", update);
+    update();
+  });
+}
+
+const INVITE_CARD_ALIGNMENT_MAP = {
+  rtl: "right",
+  ltr: "left",
+  center: "center"
+};
+
+function parseCoordinateInput(rawValue) {
+  const candidate = Number.parseFloat(String(rawValue ?? "").trim());
+  return Number.isFinite(candidate) ? candidate : 0;
+}
+
+function parseScaleInput(rawValue) {
+  const candidate = Number.parseFloat(String(rawValue ?? "").trim());
+  return Number.isFinite(candidate) ? candidate : null;
+}
+
+function collectInviteCardFieldData() {
+  const blocks = qsa("#tab-invite-card [data-field-block]");
+  const previewGender = querySelectedPreviewGender();
+  return blocks.map((block) => {
+    const fieldId = (block.dataset.fieldBlock ?? "").trim();
+    const valueInput = block.querySelector("[data-field-value]");
+    const rawValue = (valueInput?.value ?? "").trim();
+    let value = rawValue;
+    if (fieldId === "name" && rawValue) {
+      const prefix = queryNamePrefixForGender(previewGender);
+      if (prefix) {
+        value = `${prefix} ${rawValue}`.trim();
+      }
+    }
+    const type = (block.querySelector("[data-field-type]")?.value ?? "text").trim();
+    const alignment = (block.querySelector("[data-field-alignment]")?.value ?? "center").trim();
+    const fontFamily = block.querySelector("[data-field-font]")?.value || "PeydaWebFaNum";
+    const fontWeight = block.querySelector("[data-field-weight]")?.value || "400";
+    const fontSizeInput = block.querySelector("[data-field-size]");
+    const fontSize = Math.max(8, Number.parseFloat(fontSizeInput?.value ?? "16") || 16);
+    const xCoordinate = parseCoordinateInput(
+      block.querySelector('input[data-field-coordinate="x"]')?.value
+    );
+    const yCoordinate = parseCoordinateInput(
+      block.querySelector('input[data-field-coordinate="y"]')?.value
+    );
+    const scaleValue = parseScaleInput(block.querySelector("[data-scale-input]")?.value);
+    const colorKey = getStyleFieldKey(fieldId);
+    const color = ensureHexColor(styleFieldColorState[colorKey]) || "#111111";
+    return {
+      id: fieldId,
+      value,
+      type,
+      alignment,
+      fontFamily,
+      fontWeight,
+      fontSize,
+      x: xCoordinate,
+      y: yCoordinate,
+      scale: scaleValue,
+      color
+    };
+  });
+}
+
+function querySelectedPreviewGender() {
+  if (typeof window !== "undefined" && typeof window.getSelectedPreviewGender === "function") {
+    return window.getSelectedPreviewGender();
+  }
+  return "";
+}
+
+function queryNamePrefixForGender(gender) {
+  if (!gender) {
+    return "";
+  }
+  if (typeof window !== "undefined" && typeof window.getNamePrefixForGender === "function") {
+    return window.getNamePrefixForGender(gender);
+  }
+  return "";
+}
+
+function queryInviteCardGenderPrefixes() {
+  if (typeof window !== "undefined" && typeof window.readInviteCardGenderPrefixes === "function") {
+    return window.readInviteCardGenderPrefixes();
+  }
+  return {};
+}
+
+function queryInviteCardPrefixStyles() {
+  if (typeof window !== "undefined" && typeof window.readInviteCardPrefixStyles === "function") {
+    return window.readInviteCardPrefixStyles();
+  }
+  return {};
+}
+
+function buildInviteCardTemplatePayload() {
+  return {
+    photo_id: inviteCardSelectedPhoto?.id ?? "",
+    photo_title: inviteCardSelectedPhoto?.title ?? "",
+    photo_filename: inviteCardSelectedPhoto?.filename ?? "",
+    photo_alt: inviteCardSelectedPhoto?.altText ?? "",
+    fields: collectInviteCardFieldData(),
+    gender_prefixes: queryInviteCardGenderPrefixes(),
+    gender_prefix_styles: queryInviteCardPrefixStyles(),
+    preview_gender: querySelectedPreviewGender()
+  };
+}
+
+function isInviteCardReady() {
+  if (!inviteCardSelectedPhoto) {
+    return false;
+  }
+  const fields = collectInviteCardFieldData();
+  return fields.every((field) => field.value !== "");
+}
+
+function refreshInviteCardActionState() {
+  const ready = isInviteCardReady();
+  const hasPhoto = Boolean(inviteCardSelectedPhoto);
+  if (inviteCardGenerateButton) {
+    inviteCardGenerateButton.disabled = !ready;
+  }
+  if (inviteCardStatusLabel) {
+    let message = "Select a photo and fill every field to enable the generator.";
+    if (!hasPhoto) {
+      message = "Pick a photo to begin composing your invite card.";
+    } else if (!ready) {
+      message = "Fill every field to enable the generator.";
+    } else {
+      message = "Ready to generate an invite card.";
+    }
+    inviteCardStatusLabel.textContent = message;
+  }
+  updateCreateAllInviteCardsActionState();
+}
+
+function setInviteCardStatusText(message) {
+  if (!inviteCardStatusLabel) {
+    return;
+  }
+  inviteCardStatusLabel.textContent = message;
+}
+
+function toggleProgressForCards(show) {
+  if (!progressForCardsElement) {
+    return;
+  }
+  progressForCardsElement.classList.toggle("hidden", !show);
+}
+
+function setProgressForCardsStatus(text) {
+  if (!progressForCardsStatus) {
+    return;
+  }
+  progressForCardsStatus.textContent = text || "";
+}
+
+function updateProgressForCardsStats(completed, remaining) {
+  if (progressForCardsCompletedCount) {
+    progressForCardsCompletedCount.textContent = String(completed);
+  }
+  if (progressForCardsRemainingCount) {
+    progressForCardsRemainingCount.textContent = String(remaining);
+  }
+  if (progressForCardsFill) {
+    const total = completed + remaining;
+    const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+    progressForCardsFill.style.width = `${percent}%`;
+  }
+}
+
+function startProgressForCards(total) {
+  if (!progressForCardsElement || total <= 0) {
+    return;
+  }
+  toggleProgressForCards(true);
+  updateProgressForCardsStats(0, total);
+  setProgressForCardsStatus(`Preparing to generate ${total} card${total === 1 ? "" : "s"}...`);
+}
+
+function stopProgressForCards() {
+  if (!progressForCardsElement) {
+    return;
+  }
+  toggleProgressForCards(false);
+  updateProgressForCardsStats(0, 0);
+  setProgressForCardsStatus("");
+}
+
+function updateCreateAllInviteCardsActionState() {
+  if (!createAllInviteCardsButton) {
+    return;
+  }
+  const activeEvent = window.getActiveGuestEvent ? window.getActiveGuestEvent() : null;
+  const guests = Array.isArray(activeEvent?.guests) ? activeEvent.guests : [];
+  const hasGuestsWithCode = guests.some((guest) => {
+    const inviteCode = (guest?.invite_code || guest?.code || guest?.number || "").toString().trim();
+    return inviteCode !== "";
+  });
+  createAllInviteCardsButton.disabled = !isInviteCardReady() || !hasGuestsWithCode;
+}
+
+function handleInviteCardFieldInteraction(event) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  if (!event.target.closest("[data-field-block]")) {
+    return;
+  }
+  const isNameSizeInput =
+    event.target instanceof HTMLInputElement &&
+    event.target.matches("[data-field-size]") &&
+    event.target.closest('[data-field-block="name"]');
+  if (isNameSizeInput) {
+    window.syncPrefixFontSizes?.();
+  }
+  refreshInviteCardActionState();
+}
+
+function resetInviteCardPreviewState() {
+  if (inviteCardPreviewCanvas) {
+    inviteCardPreviewCanvas.classList.add("hidden");
+  }
+  if (inviteCardPreviewPlaceholder) {
+    inviteCardPreviewPlaceholder.classList.remove("hidden");
+  }
+  if (inviteCardDownloadLink) {
+    inviteCardDownloadLink.classList.add("hidden");
+  }
+  inviteCardPreviewPhotoId = null;
+}
+
+function clampNumber(value, min = 0, max = Infinity) {
+  const num = Number(value);
+  if (Number.isNaN(num)) {
+    return min;
+  }
+  return Math.min(Math.max(num, min), max);
+}
+
+function loadImage(src, crossOrigin = false) {
+  return new Promise((resolve, reject) => {
+    if (!src) {
+      reject(new Error("Invalid image source."));
+      return;
+    }
+    const image = new Image();
+    if (crossOrigin) {
+      image.crossOrigin = "anonymous";
+    }
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to load image."));
+    image.src = src;
+  });
+}
+
+function getQrCodeUrl(data, size) {
+  const encoded = encodeURIComponent(String(data ?? ""));
+  const normalizedSize = Math.max(32, Math.min(Math.round(size), 768));
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${normalizedSize}x${normalizedSize}&margin=2&data=${encoded}`;
+}
+
+async function renderInviteCardCanvas(fields) {
+  if (!inviteCardSelectedPhoto) {
+    throw new Error("No base photo selected.");
+  }
+  const photoUrl = getGalleryPhotoFileUrl(inviteCardSelectedPhoto);
+  if (!photoUrl) {
+    throw new Error("Unable to resolve the photo URL.");
+  }
+  const baseImage = await loadImage(photoUrl, true);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, baseImage.naturalWidth || baseImage.width);
+  canvas.height = Math.max(1, baseImage.naturalHeight || baseImage.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Unable to obtain canvas context.");
+  }
+  ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+  for (const field of fields) {
+    if (field.type === "text" && field.value) {
+      drawInviteCardText(ctx, field);
+    } else if (field.type === "qr" && field.value) {
+      await drawInviteCardQr(ctx, field);
+    }
+  }
+  return canvas;
+}
+
+function drawInviteCardText(ctx, field) {
+  ctx.save();
+  ctx.fillStyle = field.color;
+  ctx.font = `${field.fontWeight} ${field.fontSize}px ${field.fontFamily}`;
+  const align = INVITE_CARD_ALIGNMENT_MAP[field.alignment] ?? "center";
+  ctx.textAlign = align;
+  ctx.textBaseline = "top";
+  ctx.direction = field.alignment === "rtl" ? "rtl" : "ltr";
+  const lineHeight = field.fontSize * 1.3;
+  const chunks = String(field.value).split(/\r?\n/);
+  const safeX = clampNumber(field.x, 0, ctx.canvas.width);
+  const safeY = clampNumber(field.y, 0, ctx.canvas.height);
+  chunks.forEach((chunk, index) => {
+    ctx.fillText(chunk, safeX, safeY + index * lineHeight);
+  });
+  ctx.restore();
+}
+
+async function drawInviteCardQr(ctx, field) {
+  const size = field.scale && field.scale > 0 ? field.scale : INVITE_CARD_DEFAULT_QR_SIZE;
+  const normalizedSize = Math.max(32, Math.min(Math.round(size), ctx.canvas.width, ctx.canvas.height));
+  const qrImage = await loadImage(getQrCodeUrl(field.value, normalizedSize), true);
+  const startX = clampNumber(field.x, 0, ctx.canvas.width - normalizedSize);
+  const startY = clampNumber(field.y, 0, ctx.canvas.height - normalizedSize);
+  ctx.drawImage(qrImage, startX, startY, normalizedSize, normalizedSize);
+}
+
+function formatInviteCardDownloadName(baseName) {
+  const normalized = (baseName ?? "invite-card")
+    .toString()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9_-]/g, "");
+  return normalized || "invite-card";
+}
+
+function setInviteCardFieldValue(fieldId, value) {
+  const input = qs(`#invite-card-${fieldId}`);
+  if (!input) {
+    return;
+  }
+  input.value = String(value ?? "").trim();
+  const inputEvent = new Event("input", { bubbles: true });
+  input.dispatchEvent(inputEvent);
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setGuestInviteStatus(message, isError = false) {
+  if (!guestInviteStatusLabel) {
+    return;
+  }
+  guestInviteStatusLabel.textContent = message || GUEST_INVITE_DEFAULT_STATUS;
+  guestInviteStatusLabel.classList.toggle("guest-invite-status--error", Boolean(isError));
+}
+
+function isGuestInviteReady() {
+  return Boolean(guestInviteCodeInput?.value?.trim());
+}
+
+function updateGuestInviteActionState() {
+  if (!guestInviteGenerateButton) {
+    return;
+  }
+  guestInviteGenerateButton.disabled = !isGuestInviteReady();
+}
+
+function applyGuestToInviteCardFields(guest = {}) {
+  const nameValue = [guest.firstname, guest.lastname].filter(Boolean).join(" ").trim();
+  const displayName =
+    nameValue || guest.inviteCode || guest.code || guest.number || guest.smsLink || "";
+  setInviteCardFieldValue("name", displayName);
+  setInviteCardFieldValue("national-id", guest.nationalId || guest.national_id || "");
+  setInviteCardFieldValue(
+    "guest-code",
+    guest.inviteCode || guest.code || guest.number || guest.smsLink || ""
+  );
+  const genderValue = (guest.gender || "").trim();
+  if (genderValue && inviteCardGenderSelect) {
+    const optionExists = Array.from(inviteCardGenderSelect.options).some(
+      (option) => option.value === genderValue
+    );
+    if (optionExists) {
+      inviteCardGenderSelect.value = genderValue;
+      inviteCardGenderSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+  refreshInviteCardActionState();
+}
+
+async function handleGuestInviteCardGeneration() {
+  const code = guestInviteCodeInput?.value?.trim() ?? "";
+  if (!code) {
+    setGuestInviteStatus("Guest code is required.", true);
+    updateGuestInviteActionState();
+    return;
+  }
+  const fetchGuest = typeof window !== "undefined" ? window.fetchGuestInviteCardRow : null;
+  if (typeof fetchGuest !== "function") {
+    const message = "Guest lookup is currently unavailable.";
+    setGuestInviteStatus(message, true);
+    return;
+  }
+  guestInviteGenerateButton?.setAttribute("disabled", "disabled");
+  setGuestInviteStatus("Loading guest data...");
+  try {
+    const guest = await fetchGuest(code);
+    if (!guest) {
+      throw new Error("Guest not found.");
+    }
+    applyGuestToInviteCardFields(guest);
+    await handleInviteCardGeneration();
+    const guestName =
+      [guest.firstname, guest.lastname].filter(Boolean).join(" ").trim() ||
+      guest.inviteCode ||
+      guest.number ||
+      guest.code ||
+      code;
+    setGuestInviteStatus(`Generated guest invite card for ${guestName}.`);
+  } catch (error) {
+    const message = error?.message || "Unable to generate the guest invite card.";
+    showErrorSnackbar?.({ message });
+    setGuestInviteStatus(message, true);
+  } finally {
+    guestInviteGenerateButton?.removeAttribute("disabled");
+    updateGuestInviteActionState();
+  }
+}
+
+function showInviteCardPreview(canvas) {
+  if (!inviteCardPreviewCanvas) {
+    return;
+  }
+  const context = inviteCardPreviewCanvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  inviteCardPreviewCanvas.width = canvas.width;
+  inviteCardPreviewCanvas.height = canvas.height;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(canvas, 0, 0);
+  inviteCardPreviewCanvas.classList.remove("hidden");
+  if (inviteCardPreviewPlaceholder) {
+    inviteCardPreviewPlaceholder.classList.add("hidden");
+  }
+  if (inviteCardDownloadLink) {
+    const downloadName = formatInviteCardDownloadName(
+      inviteCardSelectedPhoto?.title || inviteCardSelectedPhoto?.filename
+    );
+    inviteCardDownloadLink.href = inviteCardPreviewCanvas.toDataURL("image/png");
+    inviteCardDownloadLink.download = `${downloadName}.png`;
+    inviteCardDownloadLink.classList.remove("hidden");
+  }
+  inviteCardPreviewPhotoId = inviteCardSelectedPhoto?.id ?? null;
+}
+
+async function handleInviteCardGeneration() {
+  if (!inviteCardSelectedPhoto) {
+    showErrorSnackbar({ message: "Please select a photo first." });
+    return;
+  }
+  const fields = collectInviteCardFieldData();
+  if (!fields.every((field) => field.value)) {
+    showErrorSnackbar({ message: "Fill every field before generating the card." });
+    return;
+  }
+  inviteCardGenerateButton?.setAttribute("disabled", "disabled");
+  if (inviteCardStatusLabel) {
+    inviteCardStatusLabel.textContent = "Generating invite card...";
+  }
+  try {
+    const previewCanvas = await renderInviteCardCanvas(fields);
+    showInviteCardPreview(previewCanvas);
+    const templatePayload = buildInviteCardTemplatePayload();
+    window.saveEventInviteCardTemplate?.(templatePayload);
+    if (inviteCardStatusLabel) {
+      inviteCardStatusLabel.textContent = "Invite card generated successfully.";
+    }
+    showDefaultToast("Invite card generated. Download it below if needed.");
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Unable to generate the invite card." });
+  } finally {
+    refreshInviteCardActionState();
+  }
+}
+
+async function uploadGuestInviteCardImage(inviteCode, imageData) {
+  if (!inviteCode) {
+    throw new Error("Invite code is required.");
+  }
+  if (!imageData) {
+    throw new Error("Invite card image data is missing.");
+  }
+  const formData = new FormData();
+  formData.append("action", "save_generated_invite_card");
+  formData.append("invite_code", inviteCode);
+  formData.append("image_data", imageData);
+  const response = await fetch("./api/guests.php", {
+    method: "POST",
+    body: formData
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.status !== "ok") {
+    throw new Error(payload.message || "Unable to save generated invite card.");
+  }
+  return payload;
+}
+
+async function handleCreateAllInviteCards() {
+  if (!createAllInviteCardsButton) {
+    return;
+  }
+  const activeEvent = window.getActiveGuestEvent ? window.getActiveGuestEvent() : null;
+  if (!activeEvent) {
+    const message = "Select an event before creating invite cards.";
+    showErrorSnackbar?.({ message });
+    setInviteCardStatusText(message);
+    return;
+  }
+  const guests = Array.isArray(activeEvent.guests) ? activeEvent.guests : [];
+  const eligibleGuests = guests
+    .map((guest) => ({
+      ...guest,
+      inviteCode: (guest?.invite_code || guest?.code || guest?.number || "").toString().trim()
+    }))
+    .filter((guest) => guest.inviteCode);
+  if (!eligibleGuests.length) {
+    const message = "No guests with invite codes were found.";
+    showErrorSnackbar?.({ message });
+    setInviteCardStatusText(message);
+    return;
+  }
+  if (!inviteCardSelectedPhoto) {
+    const message = "Pick a photo before generating invite cards.";
+    showErrorSnackbar?.({ message });
+    setInviteCardStatusText(message);
+    return;
+  }
+  const totalGuests = eligibleGuests.length;
+  startProgressForCards(totalGuests);
+  createAllInviteCardsButton.setAttribute("disabled", "disabled");
+  try {
+    for (let index = 0; index < eligibleGuests.length; index += 1) {
+      const guest = eligibleGuests[index];
+      const progressText = `Generating card ${index + 1}/${eligibleGuests.length} for ${
+        guest.inviteCode || guest.firstname || guest.lastname || "guest"
+      }`;
+      setInviteCardStatusText(progressText);
+      const completed = index + 1;
+      const remaining = Math.max(0, totalGuests - completed);
+      updateProgressForCardsStats(completed, remaining);
+      setProgressForCardsStatus(progressText);
+      applyGuestToInviteCardFields(guest);
+      const fields = collectInviteCardFieldData();
+      if (!fields.every((field) => field.value)) {
+        throw new Error("Incomplete invite card fields when preparing guest data.");
+      }
+      const canvas = await renderInviteCardCanvas(fields);
+      const imageData = canvas.toDataURL("image/jpeg", 0.95);
+      await uploadGuestInviteCardImage(guest.inviteCode, imageData);
+    }
+    const message = `Generated ${eligibleGuests.length} invite cards.`;
+    setInviteCardStatusText(message);
+    showDefaultToast?.(message);
+  } catch (error) {
+    const message = error?.message || "Unable to create invite cards.";
+    showErrorSnackbar?.({ message });
+    setInviteCardStatusText(message);
+  } finally {
+    stopProgressForCards();
+    createAllInviteCardsButton.removeAttribute("disabled");
+    refreshInviteCardActionState();
+  }
+}
+
+function resetPositionPickerSelection() {
+  positionPickerSelection = null;
+  if (positionPickerDot) {
+    positionPickerDot.classList.add("hidden");
+  }
+  if (positionPickerConfirmButton) {
+    positionPickerConfirmButton.setAttribute("disabled", "disabled");
+  }
+}
+
+function closePositionPickerModal() {
+  if (!positionPickerModal) {
+    return;
+  }
+  positionPickerModal.classList.add("hidden");
+  positionPickerModal.setAttribute("aria-hidden", "true");
+  resetPositionPickerSelection();
+  positionPickerCurrentXInput = null;
+  positionPickerCurrentYInput = null;
+}
+
+function handlePositionPickerImageClick(event) {
+  if (!positionPickerImage || !positionPickerDot) {
+    return;
+  }
+  const rect = positionPickerImage.getBoundingClientRect();
+  const containerRect = positionPickerImageShell?.getBoundingClientRect();
+  const offsetX = clampNumber(event.clientX - rect.left, 0, rect.width);
+  const offsetY = clampNumber(event.clientY - rect.top, 0, rect.height);
+  if (rect.width <= 0 || rect.height <= 0) {
+    return;
+  }
+  const naturalWidth =
+    Number(positionPickerImage.dataset.naturalWidth) ||
+    positionPickerImage.naturalWidth ||
+    rect.width;
+  const naturalHeight =
+    Number(positionPickerImage.dataset.naturalHeight) ||
+    positionPickerImage.naturalHeight ||
+    rect.height;
+  const normalizedX = Math.round(
+    (offsetX / rect.width) * naturalWidth
+  );
+  const normalizedY = Math.round(
+    (offsetY / rect.height) * naturalHeight
+  );
+  positionPickerSelection = {
+    x: normalizedX,
+    y: normalizedY
+  };
+  const positionalLeft =
+    offsetX + (containerRect ? rect.left - containerRect.left : 0);
+  const positionalTop =
+    offsetY + (containerRect ? rect.top - containerRect.top : 0);
+  positionPickerDot.style.left = `${positionalLeft}px`;
+  positionPickerDot.style.top = `${positionalTop}px`;
+  positionPickerDot.classList.remove("hidden");
+  if (positionPickerConfirmButton) {
+    positionPickerConfirmButton.removeAttribute("disabled");
+  }
+}
+
+async function openPositionPickerModal(xInput, yInput) {
+  if (!inviteCardSelectedPhoto) {
+    showErrorSnackbar({ message: "Please select a photo first." });
+    return;
+  }
+  if (!positionPickerModal || !positionPickerImage) {
+    return;
+  }
+  positionPickerCurrentXInput = xInput;
+  positionPickerCurrentYInput = yInput;
+  resetPositionPickerSelection();
+  try {
+    const photoUrl = getGalleryPhotoFileUrl(inviteCardSelectedPhoto);
+    if (!photoUrl) {
+      throw new Error("Unable to resolve the selected photo.");
+    }
+    const loadedImage = await loadImage(photoUrl, true);
+    positionPickerImage.src = photoUrl;
+    positionPickerImage.dataset.naturalWidth =
+      loadedImage.naturalWidth || loadedImage.width || 0;
+    positionPickerImage.dataset.naturalHeight =
+      loadedImage.naturalHeight || loadedImage.height || 0;
+    positionPickerModal.classList.remove("hidden");
+    positionPickerModal.setAttribute("aria-hidden", "false");
+  } catch (error) {
+    showErrorSnackbar({
+      message:
+        error?.message || "Unable to load the photo for position picking."
+    });
+  }
+}
+
+function handlePositionPickerButtonClick(event) {
+  const button = event.currentTarget;
+  if (!button) {
+    return;
+  }
+  const block = button.closest("[data-field-block]");
+  const xInput = block?.querySelector('input[data-field-coordinate="x"]');
+  const yInput = block?.querySelector('input[data-field-coordinate="y"]');
+  if (!xInput || !yInput) {
+    return;
+  }
+  void openPositionPickerModal(xInput, yInput);
+}
+
+function handlePositionPickerConfirm() {
+  if (
+    !positionPickerSelection ||
+    !positionPickerCurrentXInput ||
+    !positionPickerCurrentYInput
+  ) {
+    return;
+  }
+  positionPickerCurrentXInput.value = String(positionPickerSelection.x);
+  positionPickerCurrentYInput.value = String(positionPickerSelection.y);
+  refreshInviteCardActionState();
+  closePositionPickerModal();
+}
+
+function initStyleColorPickers() {
+  qsa("[data-style-color-trigger]").forEach((trigger) => {
+    const fieldAttr = trigger.dataset.styleField;
+    if (!fieldAttr) {
+      return;
+    }
+    const stateKey = getStyleFieldKey(fieldAttr);
+    const applyColor = (nextColor) => {
+      styleFieldColorState[stateKey] = ensureHexColor(nextColor) || "#111111";
+      updateStyleColorPreview(fieldAttr, styleFieldColorState[stateKey]);
+    };
+    applyColor(styleFieldColorState[stateKey]);
+    trigger.addEventListener("click", () => {
+      openStyleColorPicker(
+        stateKey,
+        styleFieldColorState[stateKey],
+        (nextColor) => applyColor(nextColor),
+        `Font color (${fieldAttr})`
+      );
+    });
+  });
 }
 
 function formatGalleryPhotoDate(rawValue) {
@@ -3211,7 +4366,10 @@ function setActiveTab(tab) {
     users: 'Users',
     settings: 'Account Settings',
     guests: 'List of guests',
+    'invite-card': 'Invite Card Generator',
+    events: 'Events',
     gallery: 'Photo Gallery',
+    typography: 'Typography',
     invite: 'Invite',
     devsettings: 'Developer Settings'
   };
@@ -3231,6 +4389,30 @@ function getUserDisplayName(user) {
     normalizeValue(user.fullname) ||
     normalizeValue(user.username)
   );
+}
+
+function ensureUserPasswordField() {
+  if (qs('#user-password')) {
+    return;
+  }
+  const emailInput = qs('#user-email');
+  const emailLabel = emailInput?.closest('label');
+  if (!emailLabel) {
+    return;
+  }
+  const passwordLabel = document.createElement('label');
+  passwordLabel.className = 'field';
+  passwordLabel.dataset.passwordField = '';
+  const labelText = document.createElement('span');
+  labelText.textContent = 'Password (min 8 characters)';
+  const passwordInput = document.createElement('input');
+  passwordInput.id = 'user-password';
+  passwordInput.type = 'password';
+  passwordInput.autocomplete = 'new-password';
+  passwordInput.minLength = 8;
+  passwordLabel.appendChild(labelText);
+  passwordLabel.appendChild(passwordInput);
+  emailLabel.insertAdjacentElement('afterend', passwordLabel);
 }
 
 // Rebuilds the users table from the current USER_DB snapshot.
@@ -3290,6 +4472,8 @@ function openUserModal(user = null) {
   const idInput = qs('#user-id-number');
   const emailInput = qs('#user-email');
   const activeInput = qs('#user-active');
+  const passwordInput = qs('#user-password');
+  const passwordField = qs('[data-password-field]');
   if (codeInput) {
     codeInput.value = user?.code ?? getNextUserCode();
   }
@@ -3307,6 +4491,13 @@ function openUserModal(user = null) {
   }
   if (emailInput) {
     emailInput.value = user?.email ?? '';
+  }
+  if (passwordInput) {
+    passwordInput.value = '';
+    passwordInput.required = !user;
+  }
+  if (passwordField) {
+    passwordField.classList.toggle('hidden', Boolean(user));
   }
   if (idInput) {
     idInput.value = user?.id_number ?? '';
@@ -3410,16 +4601,16 @@ function renderClock(){
     hour12:false,
     timeZone: tz
   });
-  const englishParts = new Intl.DateTimeFormat('en-US', {
+  const persianFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-    numberingSystem: 'latn',
     timeZone: tz
-  }).formatToParts(now);
-  const partValue = (type) => englishParts.find(p => p.type === type)?.value || '';
-  const dateLabel = `${partValue('weekday')}, ${partValue('month')} ${partValue('day')} ${partValue('year')}`.trim();
+  });
+  const parts = persianFormatter.formatToParts(now);
+  const getPart = (type) => parts.find(p => p.type === type)?.value || '';
+  const dateLabel = `${getPart('weekday')}، ${getPart('day')} ${getPart('month')} ${getPart('year')}`.trim();
   const displayName = (window.__CURRENT_USER_NAME || PANEL_TITLE_DEFAULT);
   el.innerHTML = `<span class="time">${time}</span><span class="date">${dateLabel}</span><span class="user">${displayName}</span>`;
 }
@@ -3446,6 +4637,9 @@ function showDialog(message, opts = {}){
     alert(message);
     return true;
   }
+  const defaultTitleText = titleEl ? titleEl.textContent : 'Message';
+  const defaultOkText = okBtn.textContent;
+  const defaultCancelText = cancelBtn.textContent;
   textEl.textContent = message;
   if (titleEl) titleEl.textContent = opts.title || 'Message';
   if (opts.okText) okBtn.textContent = opts.okText;
@@ -3474,14 +4668,32 @@ function showDialog(message, opts = {}){
       modal.classList.add('hidden');
       okBtn.onclick = null;
       cancelBtn.onclick = null;
+      if (titleEl) titleEl.textContent = defaultTitleText;
+      okBtn.textContent = defaultOkText;
+      cancelBtn.textContent = defaultCancelText;
       resolve(result);
     };
-    okBtn.onclick = () => close(true);
-    cancelBtn.onclick = () => close(false);
-    document.addEventListener("keydown", handleKey);
-    modal.classList.remove('hidden');
-    if (!opts.confirm) cancelBtn.classList.add('hidden'); else cancelBtn.classList.remove('hidden');
-  });
+      okBtn.onclick = () => close(true);
+      cancelBtn.onclick = () => close(false);
+      document.addEventListener("keydown", handleKey);
+      modal.classList.remove('hidden');
+      if (!opts.confirm) cancelBtn.classList.add('hidden'); else cancelBtn.classList.remove('hidden');
+    });
+}
+
+async function confirmExternalExit(targetUrl){
+  const confirmed = await showDialog(
+    'You are exiting panel, are you sure?',
+    {
+      title: 'Leaving panel',
+      okText: "I'm sure",
+      cancelText: 'Cancel',
+      confirm: true
+    }
+  );
+  if (confirmed) {
+    window.location.href = targetUrl;
+  }
 }
 
 function populateTimezoneSelect(){
@@ -3540,6 +4752,12 @@ function initSubSidebars(){
     });
   });
 }
+
+function initPrinterSettingsControls() {
+  qs("#printer-device")?.addEventListener("change", handlePrinterDeviceChange);
+  qs("#printer-settings-save")?.addEventListener("click", handlePrinterSettingsSave);
+  renderPrinterSettingsForm();
+}
 // Bootstraps the UI once DOM is ready: load data, render galleries/users, and attach all handlers.
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -3555,6 +4773,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   photoChooserSearchCountElement = qs("[data-photo-chooser-search-count]");
   renderGalleryGrid();
   initPhotoUploaders();
+  initPrinterSettingsControls();
   const loadMoreGalleryPhotos = qs("#gallery-load-more");
   loadMoreGalleryPhotos?.addEventListener("click", () => {
     galleryVisibleCount += GALLERY_GRID_LOAD_STEP;
@@ -3567,13 +4786,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Clicking a nav-item switches tabs and refreshes the header/title.
   const navContainer = qs('.nav');
-  navContainer?.addEventListener('click', (event) => {
+  navContainer?.addEventListener('click', async (event) => {
     const target = event.target;
-    const btn = target && target instanceof Element ? target.closest('.nav-item[data-tab]') : null;
+    const btn = target && target instanceof Element ? target.closest('.nav-item') : null;
     if (!btn) return;
-    event.preventDefault();
+    const externalTarget = btn.dataset.externalTarget;
+    if (externalTarget) {
+      event.preventDefault();
+      await confirmExternalExit(externalTarget);
+      return;
+    }
     const tab = btn.dataset.tab;
     if (tab) {
+      event.preventDefault();
       setActiveTab(tab);
     }
   });
@@ -3604,6 +4829,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   document.addEventListener('keydown', handleHomeShortcut);
 
+  ensureUserPasswordField();
   renderClock();
   setInterval(renderClock, 1000);
 
@@ -3619,6 +4845,74 @@ document.addEventListener('DOMContentLoaded', async () => {
   qs('#add-user')?.addEventListener('click', () => openUserModal());
   // Cancel button simply hides the modal.
   qs('#user-cancel')?.addEventListener('click', closeUserModal);
+  inviteCardChoosePhotoButton = qs('#invite-card-choose-photo');
+  inviteCardPhotoPreviewImage = qs('[data-invite-card-photo-preview-image]');
+  inviteCardPhotoPlaceholder = qs('[data-invite-card-photo-placeholder]');
+  inviteCardPhotoLabel = qs('[data-invite-card-photo-label]');
+  inviteCardGenerateButton = qs('#invite-card-generate');
+  inviteCardStatusLabel = qs('[data-invite-card-status]');
+  inviteCardPreviewCanvas = qs('[data-invite-card-canvas]');
+  inviteCardPreviewPlaceholder = qs('[data-invite-card-preview-placeholder]');
+  inviteCardDownloadLink = qs('[data-invite-card-download]');
+  inviteCardGenderSelect = qs('[data-invite-card-gender]');
+  createAllInviteCardsButton = qs('[data-invite-card-create-all]');
+  positionPickerModal = qs('[data-position-picker-modal]');
+  positionPickerOverlay = qs('[data-position-picker-overlay]');
+  positionPickerImage = qs('[data-position-picker-image]');
+  positionPickerDot = qs('[data-position-picker-dot]');
+  positionPickerConfirmButton = qs('[data-position-picker-confirm]');
+  positionPickerCancelButton = qs('[data-position-picker-cancel]');
+  progressForCardsElement = qs('[data-progress-for-cards]');
+  progressForCardsFill = qs('[data-progress-for-cards-fill]');
+  progressForCardsCompletedCount = qs('[data-progress-for-cards-completed]');
+  progressForCardsRemainingCount = qs('[data-progress-for-cards-remaining]');
+  progressForCardsStatus = qs('[data-progress-for-cards-status]');
+  inviteCardChoosePhotoButton?.addEventListener('click', () => {
+    openPhotoChooserModal({
+      allowMultiple: false,
+      initialSelection: inviteCardSelectedPhoto ? [inviteCardSelectedPhoto.id] : [],
+      onChoose: (selectedPhotos = []) => {
+        inviteCardSelectedPhoto = selectedPhotos[0] ?? null;
+        updateInviteCardPhotoPreview();
+      }
+    });
+  });
+  inviteCardGenerateButton?.addEventListener('click', () => {
+    void handleInviteCardGeneration();
+  });
+  createAllInviteCardsButton?.addEventListener('click', () => {
+    void handleCreateAllInviteCards();
+  });
+  qsa('[data-position-picker-button]').forEach((button) =>
+    button.addEventListener('click', handlePositionPickerButtonClick)
+  );
+  const inviteCardTab = qs('#tab-invite-card');
+  inviteCardTab?.addEventListener('input', handleInviteCardFieldInteraction);
+  inviteCardTab?.addEventListener('change', handleInviteCardFieldInteraction);
+  inviteCardGenderSelect?.addEventListener('change', () => {
+    refreshInviteCardActionState();
+  });
+  guestInviteCodeInput = qs('[data-guest-invite-code]');
+  guestInviteGenerateButton = qs('[data-guest-invite-generate]');
+  guestInviteStatusLabel = qs('[data-guest-invite-status]');
+  guestInviteCodeInput?.addEventListener('input', () => {
+    setGuestInviteStatus(GUEST_INVITE_DEFAULT_STATUS);
+    updateGuestInviteActionState();
+  });
+  guestInviteGenerateButton?.addEventListener('click', () => {
+    void handleGuestInviteCardGeneration();
+  });
+  setGuestInviteStatus(GUEST_INVITE_DEFAULT_STATUS);
+  updateGuestInviteActionState();
+  positionPickerOverlay?.addEventListener('click', closePositionPickerModal);
+  positionPickerCancelButton?.addEventListener('click', closePositionPickerModal);
+  positionPickerConfirmButton?.addEventListener('click', handlePositionPickerConfirm);
+  positionPickerImage?.addEventListener('click', handlePositionPickerImageClick);
+  initializeInviteCardFieldControls();
+  updateInviteCardPhotoPreview();
+  initializeFieldControllers();
+  initStyleColorPickers();
+  refreshInviteCardActionState();
   // Handles form submissions by updating the local state and syncing back to the server.
   qs('#user-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -3628,14 +4922,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const email = qs('#user-email').value.trim();
     const codeInput = qs('#user-code');
     const codeValue = (codeInput?.value ?? "").trim();
-    const workId = qs('#user-work-id').value.trim();
-    const idNumber = qs('#user-id-number').value.trim();
-    const activeInput = qs('#user-active');
-    const isActive = activeInput ? activeInput.checked : true;
-    if (!username) {
-      showErrorSnackbar({ message: 'Username is required.' });
-      return;
-    }
+  const workId = qs('#user-work-id').value.trim();
+  const idNumber = qs('#user-id-number').value.trim();
+  const activeInput = qs('#user-active');
+  const isActive = activeInput ? activeInput.checked : true;
+  const passwordInput = qs('#user-password');
+  const password = passwordInput?.value ?? '';
+  const isAddMode = !editingUserCode;
+  if (!username) {
+    showErrorSnackbar({ message: 'Username is required.' });
+    return;
+  }
     if (!fullname) {
       showErrorSnackbar({ message: 'Full name is required.' });
       return;
@@ -3662,9 +4959,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const normalizedPhone = normalizeDigits(phone);
     if (normalizedPhone.length !== 11) {
-      showErrorSnackbar({ message: 'Phone number must contain 11 digits.' });
-      return;
-    }
+    showErrorSnackbar({ message: 'Phone number must contain 11 digits.' });
+    return;
+  }
     const duplicatePhone = USER_DB.some(u => {
       if (editingUserCode && u.code === editingUserCode) {
         return false;
@@ -3685,12 +4982,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const existingEmail = String(u.email ?? '').toLowerCase();
         return existingEmail !== '' && existingEmail === normalizedEmail;
       });
-      if (duplicateEmail) {
-        showErrorSnackbar({ message: 'Email must be unique.' });
-        return;
-      }
+    if (duplicateEmail) {
+      showErrorSnackbar({ message: 'Email must be unique.' });
+      return;
     }
-    const normalizedId = normalizeDigits(idNumber);
+  }
+  if (isAddMode) {
+    if (password === '') {
+      showErrorSnackbar({ message: 'Password is required.' });
+      return;
+    }
+    if (password.length < 8) {
+      showErrorSnackbar({ message: 'Password must be at least eight characters.' });
+      return;
+    }
+  }
+  const normalizedId = normalizeDigits(idNumber);
     if (normalizedId) {
       const duplicateIdNumber = USER_DB.some(u => {
         if (editingUserCode && u.code === editingUserCode) {
@@ -3715,6 +5022,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       active: isActive
     };
     payload.email = email;
+    const backendPayload = { ...payload };
+    if (isAddMode) {
+      backendPayload.password = password;
+    }
     if (editingUserCode) {
       const index = USER_DB.findIndex(u => u.code === editingUserCode);
       if (index >= 0) {
@@ -3761,7 +5072,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateKpis();
     closeUserModal();
     showDefaultToast('User added successfully.');
-    syncUserToBackend('add_user', newUser);
+    syncUserToBackend('add_user', backendPayload);
   });
   // Delete modal buttons drive the confirm/cancel flow.
   qs('#user-delete-cancel')?.addEventListener('click', closeDeleteModal);

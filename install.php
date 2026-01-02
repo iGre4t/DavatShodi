@@ -142,6 +142,8 @@ function getFieldValue(array $values, string $key, string $default = ''): string
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Installation</title>
     <link rel="icon" href="data:," />
+    <script src="General%20Setting/general-settings.js"></script>
+    <script src="style/appearance.js"></script>
     <link rel="stylesheet" href="style/styles.css" />
     <style>
       body.login-body {
@@ -234,8 +236,8 @@ function getFieldValue(array $values, string $key, string $default = ''): string
       }
 
       .install-form input:focus {
-        border-color: #e11d2e;
-        box-shadow: 0 0 0 3px rgba(225, 29, 46, 0.18);
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px var(--primary-focus);
         outline: none;
       }
 
@@ -245,14 +247,14 @@ function getFieldValue(array $values, string $key, string $default = ''): string
         border-radius: 14px;
         padding: 14px 16px;
         font-size: 1rem;
-        background: #e11d2e;
+        background: var(--primary);
         color: #fff;
         cursor: pointer;
         transition: background 0.2s ease;
       }
 
       .install-form button:hover {
-        background: #c51625;
+        background: var(--primary-600);
       }
 
       .hint {

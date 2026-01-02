@@ -1,34 +1,38 @@
 <section id="tab-invite" class="tab">
-  <div class="card">
-    <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-      <div>
-        <h3>Invite</h3>
-        <p class="muted small">Scan today's invited guests by national ID.</p>
+    <div class="card">
+      <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <div>
+          <h3>اطلاعات ورود</h3>
+          <p class="muted small">کد ملی مهمان را وارد کنید یا اسکن کنید.</p>
+        </div>
       </div>
-      <button type="button" class="btn ghost" id="invite-refresh">Refresh</button>
-    </div>
-    <form id="invite-form" class="form" autocomplete="off">
-      <label class="field standard-width">
-        <span>National ID (10 digits)</span>
-        <input
-          id="invite-national-id"
+      <form id="invite-form" class="form" autocomplete="off">
+        <label class="field standard-width">
+          <span>کد ملی (۱۰ رقم)</span>
+          <input
+            id="invite-national-id"
           name="national_id"
           type="text"
           inputmode="numeric"
           pattern="\d*"
           maxlength="10"
-          placeholder="0000000000"
+          placeholder="٠٠٠٠٠٠٠٠٠٠"
           autocomplete="off"
           required
         />
-      </label>
+        </label>
       <p id="invite-status" class="hint" aria-live="polite"></p>
-    </form>
-  </div>
+      </form>
+
+      <div class="invite-stats-shell">
+        <div class="invite-stats-title">آمار مهمان‌ها</div>
+        <div class="invite-stats-grid" id="invite-stats-grid"></div>
+      </div>
+    </div>
 
   <div class="card">
     <div class="section-header">
-      <h3>Present guests</h3>
+      <h3>مهمان‌های حاضر</h3>
     </div>
     <div id="invite-log-list" class="invite-log-list" role="list"></div>
   </div>
@@ -36,8 +40,8 @@
   <div id="invite-entry-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invite-entry-title">
     <div class="modal-card" style="max-width:420px;">
       <div class="modal-header">
-        <h3 id="invite-entry-title">Guest ready to enter</h3>
-        <button type="button" class="icon-btn" data-invite-entry-close aria-label="Close entry modal">X</button>
+        <h3 id="invite-entry-title">مهمان آماده ورود</h3>
+        <button type="button" class="icon-btn" data-invite-entry-close aria-label="بستن">X</button>
       </div>
       <div class="modal-body">
         <div class="invite-summary">
@@ -45,42 +49,54 @@
           <div class="muted small" id="invite-guest-id">-</div>
           <div class="muted small" id="invite-guest-code">-</div>
         </div>
-        <p class="muted small">Press Enter or click print to generate the 80mm badge.</p>
+        <p class="muted small">برای چاپ کارت، Enter یا گزینه چاپ را بزنید.</p>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn ghost" data-invite-entry-close>Cancel</button>
-        <button type="button" class="btn primary" id="invite-print-btn">Print</button>
+        <button type="button" class="btn ghost" data-invite-entry-close>لغو</button>
+        <button type="button" class="btn primary" id="invite-print-btn">چاپ کارت</button>
       </div>
     </div>
   </div>
 
   <div id="invite-exited-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invite-exited-title">
     <div class="modal-card" style="max-width:420px;">
-      <div class="modal-header">
-        <h3 id="invite-exited-title">Guest has left</h3>
-        <button type="button" class="icon-btn" data-invite-exited-close aria-label="Close exit modal">X</button>
-      </div>
+    <div class="modal-header">
+      <h3 id="invite-exited-title">خروج تکراری</h3>
+      <button type="button" class="icon-btn" data-invite-exited-close aria-label="بستن">X</button>
+    </div>
       <div class="modal-body">
         <p id="invite-exited-message" class="muted"></p>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn primary" data-invite-exited-close>OK</button>
+        <button type="button" class="btn primary" data-invite-exited-close>تأیید</button>
       </div>
     </div>
   </div>
 
   <div id="invite-print-area" aria-hidden="true">
     <div class="invite-print-card">
+      <div class="invite-print-salutation">مهمان محترم</div>
       <div class="invite-print-name" id="invite-print-name"></div>
+      <p class="invite-print-greeting">به رویداد همراه با نامی آشنا خوش آمدید</p>
+      <div class="invite-print-label">کد قرعه کشی شما</div>
       <div class="invite-print-code" id="invite-print-code"></div>
+      <div class="invite-print-entry-info">
+        <span id="invite-print-entry-line"></span>
+      </div>
     </div>
   </div>
 
   <style>
+    #invite-status {
+      display: none;
+    }
     #tab-invite .invite-log-list {
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+    #invite-status {
+      display: none;
     }
     #tab-invite .invite-log {
       border: 1px solid #e2e8f0;
@@ -89,6 +105,84 @@
       display: grid;
       gap: 4px;
       background: #f8fafc;
+    }
+    #tab-invite .invite-log-grid {
+      display: grid;
+      gap: 4px;
+      border-top: 1px dashed rgba(15, 23, 42, 0.1);
+      padding-top: 8px;
+      margin-top: 6px;
+    }
+    #tab-invite .invite-log-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 10pt;
+      direction: rtl;
+    }
+    #tab-invite .invite-log-label {
+      color: #475569;
+      opacity: 0.9;
+      font-size: 9pt;
+    }
+    #tab-invite .invite-log-value {
+      font-weight: 600;
+      text-align: right;
+      max-width: 60%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #tab-invite .invite-log-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+    #tab-invite .invite-log-print-btn {
+      padding: 4px 10px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+    .invite-stats-shell {
+      margin-top: 18px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+    }
+    .invite-stats-title {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: #475569;
+      font-weight: 600;
+    }
+    .invite-stats-grid {
+      display: grid;
+      gap: 6px;
+    }
+    .invite-stats-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12pt;
+      direction: rtl;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .invite-stats-value {
+      display: flex;
+      gap: 2px;
+      align-items: baseline;
+    }
+    .invite-stats-primary {
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .invite-stats-secondary {
+      font-weight: 500;
+      color: #475569;
+    }
+    #tab-invite .card + .card {
+      margin-top: 20px;
     }
     #tab-invite .invite-log.enter {
       background: #e5f9ed;
@@ -136,28 +230,68 @@
       left: -9999px;
     }
     #invite-print-area .invite-print-card {
-      width: 80mm;
-      min-height: 80mm;
-      padding: 16mm 10mm;
+      width: 72mm;
+      height: 72mm;
+      padding: 10mm 6mm;
       display: grid;
-      align-items: center;
-      justify-items: center;
-      gap: 10mm;
+      gap: 4mm;
       text-align: center;
-      font-family: Arial, sans-serif;
+      font-family: 'PeydaWebFaNum', 'PeydaWebFaNum', sans-serif;
+      line-height: 1.2;
       border: 1px solid #000;
+      box-sizing: border-box;
+      overflow: hidden;
+      justify-items: center;
+      align-content: center;
     }
     #invite-print-area .invite-print-name {
-      font-size: 16pt;
+      font-size: 14pt;
       font-weight: 700;
       word-break: break-word;
     }
+    .invite-print-salutation {
+      font-size: 9pt;
+      letter-spacing: 0.5pt;
+      text-transform: uppercase;
+      opacity: 0.8;
+    }
+    .invite-print-entry-info {
+      display: grid;
+      gap: 0.4mm;
+      font-size: 8pt;
+      line-height: 1.2;
+      direction: rtl;
+      margin-top: 1mm;
+    }
+    .invite-print-entry-info span {
+      white-space: nowrap;
+    }
+    .invite-print-greeting,
+    .invite-print-note {
+      font-size: 10pt;
+      margin: 0;
+    }
+    #invite-print-area .invite-print-label {
+      font-size: 11pt;
+      font-weight: 600;
+      letter-spacing: 0.3pt;
+    }
     #invite-print-area .invite-print-code {
-      font-size: 28pt;
+      font-size: 18pt;
       font-weight: 800;
-      letter-spacing: 2pt;
+      letter-spacing: 1pt;
+    }
+    @page {
+      size: 72mm 72mm portrait;
+      margin: 0;
     }
     @media print {
+      html, body {
+        width: 72mm;
+        height: 72mm;
+        margin: 0;
+        padding: 0;
+      }
       body * {
         visibility: hidden !important;
       }
@@ -167,7 +301,12 @@
       #invite-print-area {
         position: absolute;
         inset: 0;
-        margin: 0 auto;
+        margin: 0;
+        width: 72mm;
+        height: 72mm;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
     }
   </style>
@@ -178,7 +317,6 @@
       const inviteForm = document.getElementById("invite-form");
       const statusBox = document.getElementById("invite-status");
       const logList = document.getElementById("invite-log-list");
-      const refreshButton = document.getElementById("invite-refresh");
       const entryModal = document.getElementById("invite-entry-modal");
       const exitModal = document.getElementById("invite-exited-modal");
       const entryCloseButtons = entryModal ? entryModal.querySelectorAll("[data-invite-entry-close]") : [];
@@ -190,17 +328,50 @@
       const exitedMessageEl = document.getElementById("invite-exited-message");
       const printNameEl = document.getElementById("invite-print-name");
       const printCodeEl = document.getElementById("invite-print-code");
+      const statsGrid = document.getElementById("invite-stats-grid");
+      const entryLineEl = document.getElementById("invite-print-entry-line");
+      const persianTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      });
+      const persianWeekdayFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+        weekday: "long"
+      });
+      const persianDateFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      });
       let logs = [];
       let lastGuest = null;
       let loading = false;
 
       const statusLabels = {
-        enter: "Entered",
-        exit: "Exited",
-        spam: "Spam scan",
-        more_exit: "Second exit",
-        not_found: "Not found"
+        enter: "ورود",
+        exit: "خروج",
+        spam: "اسکن تکراری",
+        more_exit: "خروج دوباره",
+        not_found: "یافت نشد"
       };
+
+      const messageTranslations = {
+        "Guest marked as entered.": "مهمان وارد شده",
+        "Guest marked as exited.": "مهمان خارج شده",
+        "Repeated scan too soon after entry.": "اسکن تکراری ثبت شد",
+        "Guest already exited earlier.": "مهمان قبلاً خارج شده بود.",
+        "National ID not found in the active event list.": "کد ملی در فهرست فعال یافت نشد."
+      };
+
+      function showToast(message) {
+        if (!message) return;
+        window.showDefaultToast?.({ message });
+      }
+
+      function showSnackbar(message) {
+        if (!message) return;
+        window.showErrorSnackbar?.({ message });
+      }
 
       const toneByOutcome = {
         enter: "success",
@@ -209,6 +380,7 @@
         more_exit: "warn",
         not_found: "error"
       };
+      let currentStats = null;
 
       function sanitizeDigits(value) {
         return (value || "").replace(/\D+/g, "").slice(0, 10);
@@ -224,12 +396,85 @@
         }
       }
 
-      function formatTimestamp(value) {
-        if (!value) return "";
+      const logDateFormatter = new Intl.DateTimeFormat("fa-IR", {
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      });
+      const logTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      });
+
+      function formatTimestampParts(value) {
+        if (!value) return null;
         const iso = value.includes("T") ? value : value.replace(" ", "T");
         const dt = new Date(iso);
-        if (Number.isNaN(dt.getTime())) return value;
-        return dt.toLocaleString();
+        if (Number.isNaN(dt.getTime())) return null;
+        return {
+          dateText: logDateFormatter.format(dt),
+          timeText: logTimeFormatter.format(dt)
+        };
+      }
+
+      function formatTimestamp(value) {
+        const parts = formatTimestampParts(value);
+        if (!parts) return "";
+        return `${parts.dateText} ${parts.timeText}`;
+      }
+
+      function translateLogMessage(value) {
+        if (!value) return "";
+        return messageTranslations[value] || value;
+      }
+
+      function parseEntryTimestamp(value) {
+        const trimmed = (value || "").trim();
+        if (!trimmed) return null;
+        const isoCandidate = trimmed.replace(/\s+/g, "T");
+        const parsed = new Date(isoCandidate);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed;
+        }
+        const altCandidate = trimmed.replace(/[\\/]/g, "-").replace(/\s+/g, "T");
+        const altParsed = new Date(altCandidate);
+        if (!Number.isNaN(altParsed.getTime())) {
+          return altParsed;
+        }
+        return null;
+      }
+
+      function buildEntryLine(value) {
+        const dateObj = parseEntryTimestamp(value);
+        if (!dateObj) {
+          return "";
+        }
+        const timeText = persianTimeFormatter.format(dateObj);
+        const dateParts = persianDateFormatter.formatToParts(dateObj);
+        const dayPart = dateParts.find((part) => part.type === "day")?.value || "";
+        const monthPart = dateParts.find((part) => part.type === "month")?.value || "";
+        const yearPart = dateParts.find((part) => part.type === "year")?.value || "";
+        const weekday = persianWeekdayFormatter.format(dateObj);
+        const hasFullDate = Boolean(weekday && dayPart && monthPart && yearPart);
+        const dateSegment = hasFullDate ? `روز ${weekday} ${dayPart} ${monthPart} ${yearPart}` : "";
+        if (timeText && dateSegment) {
+          return `ورود ساعت ${timeText} ${dateSegment}`;
+        }
+        if (timeText) {
+          return `ورود ساعت ${timeText}`;
+        }
+        if (dateSegment) {
+          return `ورود ${dateSegment}`;
+        }
+        return "";
+      }
+
+      function updateEntryInfo(value) {
+        const entryLine = buildEntryLine(value);
+        if (entryLineEl) {
+          entryLineEl.textContent = entryLine;
+        }
       }
 
       function sortLogs(list) {
@@ -240,6 +485,56 @@
         });
       }
 
+      function createRatioItem(label, present, total) {
+        const item = document.createElement("div");
+        item.className = "invite-stats-item";
+        const labelEl = document.createElement("span");
+        labelEl.textContent = label;
+        const valueEl = document.createElement("span");
+        valueEl.className = "invite-stats-value";
+        const primary = document.createElement("span");
+        primary.className = "invite-stats-primary";
+        primary.textContent = String(present ?? 0);
+        const secondary = document.createElement("span");
+        secondary.className = "invite-stats-secondary";
+        secondary.textContent = `/${total ?? 0}`;
+        valueEl.appendChild(primary);
+        valueEl.appendChild(secondary);
+        item.appendChild(labelEl);
+        item.appendChild(valueEl);
+        return item;
+      }
+
+      function renderStats(stats) {
+        if (!statsGrid) return;
+        if (stats) {
+          currentStats = stats;
+        }
+        statsGrid.innerHTML = "";
+        if (!currentStats) {
+          statsGrid.textContent = "در حال بارگذاری آمار...";
+          return;
+        }
+        statsGrid.appendChild(
+          createRatioItem(
+            "تعداد مهمانان حاضر",
+            currentStats.total_present ?? 0,
+            currentStats.total_invited ?? 0
+          )
+        );
+        const genders = Array.from(
+          new Set([
+            ...Object.keys(currentStats.present_by_gender || {}),
+            ...Object.keys(currentStats.invited_by_gender || {})
+          ])
+        );
+        genders.forEach((gender) => {
+          const present = currentStats.present_by_gender?.[gender] ?? 0;
+          const invited = currentStats.invited_by_gender?.[gender] ?? 0;
+          statsGrid.appendChild(createRatioItem(`${gender}`, present, invited));
+        });
+      }
+
       function renderLogs() {
         if (!logList) return;
         const items = sortLogs(logs);
@@ -247,7 +542,7 @@
         if (!items.length) {
           const empty = document.createElement("p");
           empty.className = "muted";
-          empty.textContent = "No scans yet.";
+          empty.textContent = "هنوز اسکن انجام نشده.";
           logList.appendChild(empty);
           return;
         }
@@ -259,36 +554,75 @@
 
           const title = document.createElement("div");
           title.className = "invite-log-title";
-          const label = statusLabels[type] || "Update";
-          title.textContent = log?.event_name ? `${label} · ${log.event_name}` : label;
+          const label = statusLabels[type] || "به‌روزرسانی";
+          const labelWithName = log?.guest_name ? `${label} · ${log.guest_name}` : label;
+          title.textContent = labelWithName;
 
-          const name = document.createElement("div");
-          name.className = "invite-log-name";
-          name.textContent = log?.guest_name || "Guest";
+          const infoGrid = document.createElement("div");
+          infoGrid.className = "invite-log-grid";
 
-          const code = document.createElement("div");
-          code.className = "invite-log-code";
-          code.textContent = log?.invite_code ? `Code: ${log.invite_code}` : "";
+          const addRow = (labelText, valueText) => {
+            if (!valueText) return;
+            const row = document.createElement("div");
+            row.className = "invite-log-row";
+            const labelEl = document.createElement("span");
+            labelEl.className = "invite-log-label";
+            labelEl.textContent = labelText;
+            const valueEl = document.createElement("span");
+            valueEl.className = "invite-log-value";
+            valueEl.textContent = valueText;
+            row.appendChild(labelEl);
+            row.appendChild(valueEl);
+            infoGrid.appendChild(row);
+          };
 
-          const meta = document.createElement("div");
-          meta.className = "invite-log-meta";
-          const parts = [];
-          if (log?.timestamp) parts.push(formatTimestamp(log.timestamp));
-          if (log?.national_id) parts.push(`ID: ${log.national_id}`);
-          meta.textContent = parts.join(" · ");
-
-          const note = document.createElement("div");
-          note.className = "muted small";
-          note.textContent = log?.message || "";
+          if (log?.invite_code) {
+            addRow("کد قرعه‌کشی", log.invite_code);
+          }
+          addRow("کد ملی", log?.national_id);
+          const timestampParts = formatTimestampParts(log?.timestamp);
+          if (timestampParts) {
+            addRow("تاریخ ورود", timestampParts.dateText);
+            addRow("زمان ورود", timestampParts.timeText);
+          }
+          const messageText = translateLogMessage(log?.message);
+          if (messageText) {
+            addRow("پیام", messageText);
+          }
 
           container.appendChild(title);
-          container.appendChild(name);
-          if (code.textContent) container.appendChild(code);
-          container.appendChild(meta);
-          if (note.textContent) container.appendChild(note);
+          container.appendChild(infoGrid);
+          if (type === "enter" && log?.guest_name) {
+            const actions = document.createElement("div");
+            actions.className = "invite-log-actions";
+            const printAction = document.createElement("button");
+            printAction.type = "button";
+            printAction.className = "btn ghost small invite-log-print-btn";
+            printAction.textContent = "چاپ رسید";
+            printAction.addEventListener("click", () => {
+            const guestForPrint = {
+                full_name: log.guest_name,
+                firstname: log?.firstname,
+                lastname: log?.lastname,
+                national_id: log?.national_id,
+                invite_code: log?.invite_code,
+                join_date: log?.join_date,
+                join_time: log?.join_time,
+                left_date: log?.left_date,
+                left_time: log?.left_time,
+                date_entered: log?.date_entered,
+                date_exited: log?.date_exited,
+                entryTimestamp: log?.timestamp
+              };
+              updatePrintArea(guestForPrint);
+              window.print();
+            });
+            actions.appendChild(printAction);
+            container.appendChild(actions);
+          }
           logList.appendChild(container);
         });
-      }
+  }
 
       function mergeLogs(nextLogs) {
         if (!Array.isArray(nextLogs)) return;
@@ -313,17 +647,21 @@
       }
 
       function updatePrintArea(guest = {}) {
-        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "Guest";
+        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (printNameEl) printNameEl.textContent = fullName;
         if (printCodeEl) printCodeEl.textContent = guest.invite_code || "----";
+        const entryValue = guest.join_date
+          ? `${guest.join_date} ${guest.join_time || ""}`.trim()
+          : guest.entryTimestamp || guest.date_entered;
+        updateEntryInfo(entryValue);
       }
 
       function openEntryModal(guest = {}) {
         lastGuest = guest;
-        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "Guest";
+        const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (guestNameEl) guestNameEl.textContent = fullName;
-        if (guestIdEl) guestIdEl.textContent = guest.national_id ? `National ID: ${guest.national_id}` : "";
-        if (guestCodeEl) guestCodeEl.textContent = guest.invite_code ? `Unique code: ${guest.invite_code}` : "";
+        if (guestIdEl) guestIdEl.textContent = guest.national_id ? `کد ملی: ${guest.national_id}` : "";
+        if (guestCodeEl) guestCodeEl.textContent = guest.invite_code ? `کد یکتا: ${guest.invite_code}` : "";
         updatePrintArea(guest);
         showModal(entryModal);
         printButton?.focus();
@@ -331,7 +669,7 @@
 
       function openExitedModal(message) {
         if (exitedMessageEl) {
-          exitedMessageEl.textContent = message || "Guest has already exited.";
+          exitedMessageEl.textContent = message || "مهمان قبلاً خارج شده است.";
         }
         showModal(exitModal);
       }
@@ -350,6 +688,7 @@
           if (response.ok && data.status === "ok" && Array.isArray(data.logs)) {
             logs = data.logs;
             renderLogs();
+            renderStats(data.stats);
           }
         } catch (_) {
           // ignore initial load errors
@@ -359,7 +698,7 @@
       async function scanNationalId(value) {
         if (loading) return;
         loading = true;
-        setStatus("Checking guest...", "info");
+        setStatus("در حال بررسی مهمان...", "info");
         const formData = new FormData();
         formData.append("action", "scan_invite");
         formData.append("national_id", value);
@@ -367,39 +706,59 @@
           const response = await fetch("./api/guests.php", { method: "POST", body: formData });
           const data = await response.json().catch(() => ({}));
           if (!response.ok || data.status !== "ok") {
-            throw new Error(data?.message || "Unable to scan guest.");
+            throw new Error(data?.message || "عدم امکان اسکن مهمان.");
           }
           if (Array.isArray(data.logs)) {
             mergeLogs(data.logs);
           } else if (data.log) {
             mergeLogs([data.log]);
           }
+          renderStats(data.stats);
           const outcome = data.outcome;
           const guest = data.guest || {};
+          const guestDisplayName =
+            guest.full_name ||
+            `${guest.firstname || ""} ${guest.lastname || ""}`.trim() ||
+            "مهمان";
           const tone = toneByOutcome[outcome] || "";
           if (outcome === "enter") {
-            setStatus("Guest found. Ready to print badge.", "success");
-            openEntryModal(guest);
-            window.showDefaultToast?.({ message: "Entry recorded." });
+            const successMessage = `ورود ${guestDisplayName} ثبت شد.`;
+            setStatus(successMessage, "success");
+            showToast(successMessage);
+            const entryTimestamp = guest.join_date
+              ? `${guest.join_date} ${guest.join_time || ""}`.trim()
+              : data.log?.timestamp || guest.date_entered;
+            const guestForModal = { ...guest, entryTimestamp };
+            openEntryModal(guestForModal);
           } else if (outcome === "exit") {
-            setStatus("Guest left the ceremony.", tone || "info");
-            window.showDefaultToast?.({ message: "Exit recorded." });
+            const successMessage = `خروج ${guestDisplayName} ثبت شد.`;
+            setStatus(successMessage, tone || "info");
+            showToast(successMessage);
           } else if (outcome === "spam") {
-            setStatus("Scan ignored (less than 5 minutes from entry).", tone || "warn");
-            window.showDefaultToast?.({ message: "Spam scan saved." });
+            const warnMessage = "اسکن تکراری ثبت شد (کمتر از ۵ دقیقه).";
+            setStatus(warnMessage, tone || "warn");
+            showSnackbar("اسکن تکراری ثبت شد.");
           } else if (outcome === "more_exit") {
-            const exitedAt = guest?.date_exited ? formatTimestamp(guest.date_exited) : "";
-            setStatus("Guest already exited earlier.", tone || "warn");
-            openExitedModal(`User already left on ${exitedAt || "this session"}.`);
+            const exitValue = guest?.left_date
+              ? `${guest.left_date} ${guest.left_time || ""}`.trim()
+              : guest.date_exited || "";
+            const exitedParts = exitValue ? formatTimestampParts(exitValue) : null;
+            const hasExit = Boolean(exitedParts);
+            const exitMessage = hasExit
+              ? `UcOOñO"Oñ ${guestDisplayName} O_Oñ ${exitedParts.dateText}OO O3OO1O¦ ${exitedParts.timeText} OrOOñOª O'O_UØ O"U^O_.`
+              : `UcOOñO"Oñ ${guestDisplayName} U,O"U,OU< O_Oñ OUOU+ OªU,O3UØ OrOOñOª O'O_UØ O"U^O_.`;
+            setStatus("U.UØU.OU+ U,O"U,OU< OrOOñOª O'O_UØ O"U^O_.", tone || "warn");
+            openExitedModal(exitMessage);
           } else if (outcome === "not_found") {
-            setStatus("National ID not found in today's list.", "error");
-            window.showErrorSnackbar?.({ message: "National ID not found in today's list." });
+            setStatus("کد ملی در فهرست فعال یافت نشد.", "error");
+            showSnackbar("کد ملی در فهرست فعال یافت نشد.");
           } else {
-            setStatus(data?.message || "Status updated.", tone || "");
+            setStatus(data?.message || "وضعیت به‌روزرسانی شد.", tone || "");
           }
         } catch (error) {
-          setStatus(error?.message || "Unable to scan guest.", "error");
-          window.showErrorSnackbar?.({ message: error?.message || "Unable to scan guest." });
+          const errMsg = error?.message || "خطا در اسکن مهمان.";
+          setStatus(errMsg, "error");
+          showSnackbar(errMsg);
         } finally {
           loading = false;
           if (nationalInput) {
@@ -427,13 +786,10 @@
         if (value.length === 10) {
           scanNationalId(value);
         } else {
-          setStatus("National ID must be 10 digits.", "warn");
+          const invalidMsg = "کد ملی باید ۱۰ رقم باشد.";
+          setStatus(invalidMsg, "warn");
+          showSnackbar(invalidMsg);
         }
-      });
-
-      refreshButton?.addEventListener("click", () => {
-        loadInviteData();
-        setStatus("Logs refreshed.", "info");
       });
 
       printButton?.addEventListener("click", () => triggerPrint());
@@ -455,8 +811,14 @@
       });
 
       renderLogs();
+      renderStats();
       document.addEventListener("DOMContentLoaded", () => {
         loadInviteData();
+        setInterval(() => {
+          if (!loading) {
+            loadInviteData();
+          }
+        }, 5000);
       });
     })();
   </script>
