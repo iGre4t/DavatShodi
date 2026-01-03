@@ -16,6 +16,8 @@ const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
 const PURELIST_HEADERS = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'join_date', 'join_time', 'left_date', 'left_time'];
 const EVENT_CODE_MIN = 10000;
 const EVENT_CODE_DIGITS = 5;
+const TEHRAN_TIME_API_URL = 'https://worldtimeapi.org/api/timezone/Asia/Tehran';
+const TEHRAN_TIME_CACHE_TTL = 60;
 if (!defined('EVENTS_ROOT')) {
     define('EVENTS_ROOT', __DIR__ . '/../events');
 }
@@ -1158,6 +1160,58 @@ function createNowTime(): DateTimeImmutable
     return new DateTimeImmutable('now', new DateTimeZone($tzName));
 }
 
+function fetchRemoteTehranDatetime(): ?DateTimeImmutable
+{
+    static $cache = null;
+    static $cacheAt = 0;
+    $now = time();
+    if ($cache instanceof DateTimeImmutable && ($cacheAt + TEHRAN_TIME_CACHE_TTL) > $now) {
+        return $cache;
+    }
+    $context = stream_context_create([
+        'http' => ['timeout' => 2]
+    ]);
+    $body = @file_get_contents(TEHRAN_TIME_API_URL, false, $context);
+    if ($body === false) {
+        return $cache instanceof DateTimeImmutable ? $cache : null;
+    }
+    $payload = json_decode($body, true);
+    if (!is_array($payload)) {
+        return $cache instanceof DateTimeImmutable ? $cache : null;
+    }
+    $datetime = trim((string)($payload['datetime'] ?? ''));
+    if ($datetime === '') {
+        return $cache instanceof DateTimeImmutable ? $cache : null;
+    }
+    try {
+        $dt = new DateTimeImmutable($datetime);
+    } catch (\Exception $e) {
+        return $cache instanceof DateTimeImmutable ? $cache : null;
+    }
+    $cache = $dt;
+    $cacheAt = $now;
+    return $cache;
+}
+
+function getRemoteTehranDatetime(): DateTimeImmutable
+{
+    $remote = fetchRemoteTehranDatetime();
+    if ($remote instanceof DateTimeImmutable) {
+        return $remote->setTimezone(new DateTimeZone('Asia/Tehran'));
+    }
+    return createNowTime();
+}
+
+function getRemoteTehranJalaliParts(): array
+{
+    $remote = getRemoteTehranDatetime();
+    return gregorianToJalali(
+        (int)$remote->format('Y'),
+        (int)$remote->format('m'),
+        (int)$remote->format('d')
+    );
+}
+
 function formatPersianDateTimeParts(DateTimeInterface $date): array
 {
     $tz = $date->getTimezone();
@@ -1507,9 +1561,7 @@ function normalizeEventDateDigits(string $value): string
         '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
         '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
         '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
-        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
-        "A>Aø" => '0', "A>Añ" => '1', "A>Aý" => '2', "A>A3" => '3', "A>A'" => '4',
-        "A>Aæ" => '5', "A>A\x14" => '6', "A>Aú" => '7', "A>A," => '8', "A>A1" => '9'
+        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9'
     ];
     return strtr($value, $map);
 }
@@ -1551,6 +1603,22 @@ function compareDateParts(array $a, array $b): int
     return 0;
 }
 
+function resolveEventJalaliParts(string $value): ?array
+{
+    $parts = parseEventDateParts($value);
+    if ($parts === null) {
+        return null;
+    }
+    if ($parts['calendar'] === 'jalali') {
+        return [
+            'year' => $parts['year'],
+            'month' => $parts['month'],
+            'day' => $parts['day']
+        ];
+    }
+    return gregorianToJalali($parts['year'], $parts['month'], $parts['day']);
+}
+
 function gregorianToJalali(int $gy, int $gm, int $gd): array
 {
     $gDaysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -1584,16 +1652,6 @@ function gregorianToJalali(int $gy, int $gm, int $gd): array
     return ['year' => $jy, 'month' => $jm, 'day' => $jd];
 }
 
-function getTehranNowJalaliDateParts(): array
-{
-    $now = createNowTime();
-    return gregorianToJalali(
-        (int)$now->format('Y'),
-        (int)$now->format('n'),
-        (int)$now->format('j')
-    );
-}
-
 function buildEventStatusFromEvent(array $event): array
 {
     $default = ['key' => 'not-ready', 'text' => 'Event Status: Event Not Ready'];
@@ -1601,20 +1659,11 @@ function buildEventStatusFromEvent(array $event): array
     if ($dateValue === '') {
         return $default;
     }
-    $eventParts = parseEventDateParts($dateValue);
+    $eventParts = resolveEventJalaliParts($dateValue);
     if ($eventParts === null) {
         return $default;
     }
-    if ($eventParts['calendar'] === 'jalali') {
-        $today = getTehranNowJalaliDateParts();
-    } else {
-        $now = createNowTime();
-        $today = [
-            'year' => (int)$now->format('Y'),
-            'month' => (int)$now->format('n'),
-            'day' => (int)$now->format('j')
-        ];
-    }
+    $today = getRemoteTehranJalaliParts();
     $compare = compareDateParts($eventParts, $today);
     if ($compare < 0) {
         return ['key' => 'ended', 'text' => 'Event Status: Event Ended'];
