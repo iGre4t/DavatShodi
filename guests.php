@@ -156,7 +156,6 @@
             <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
               <div>
                 <h3>Event info</h3>
-                <p id="event-info-status" class="muted small event-info-status status-not-ready" aria-live="polite">Event Status: Event Not Ready</p>
               </div>
             </div>
             <div
@@ -587,8 +586,7 @@
       file: null,
       eventName: "",
       eventDate: "",
-      events: [],
-      eventStatuses: {}
+      events: []
     };
     let activeEventCode = "";
     let manualLockedEventCode = "";
@@ -675,7 +673,6 @@
     const eventInfoSaveButton = document.getElementById("event-info-save");
     const eventInfoDeleteButton = document.getElementById("event-info-delete");
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
-    const eventInfoStatusText = document.getElementById("event-info-status");
     const eventInfoJoinStartInput = document.getElementById("event-info-join-start-time");
     const eventInfoJoinLimitInput = document.getElementById("event-info-join-limit-time");
     const eventInfoJoinEndInput = document.getElementById("event-info-join-end-time");
@@ -1059,7 +1056,10 @@
       if (eventInfoEmptyMessage) {
         eventInfoEmptyMessage.classList.toggle("hidden", hasEvent);
       }
-      updateEventInfoStatus();
+      updateEventSectionTabAccessibility(hasEvent);
+      if (!hasEvent) {
+        setActiveEventSection("event-info");
+      }
     }
 
     function updateEventSectionTabAccessibility(isReady) {
@@ -1070,58 +1070,6 @@
         }
         tab.disabled = !isReady;
       });
-    }
-
-    const DEFAULT_EVENT_STATUS = { key: "not-ready", text: "Event Status: Event Not Ready" };
-
-    let guestsEventStatusInterval = null;
-
-    function refreshEventStatuses(applyImmediately = false) {
-      const statuses = {};
-      (state.events || []).forEach(event => {
-        const code = (event.code || event.slug || "").trim();
-        if (!code) return;
-        const status = event?.status;
-        if (status && typeof status.key === "string" && status.key !== "") {
-          statuses[code] = status;
-        } else {
-          statuses[code] = DEFAULT_EVENT_STATUS;
-        }
-      });
-      state.eventStatuses = statuses;
-      if (applyImmediately) {
-        updateEventInfoStatus();
-      }
-    }
-
-    function startEventStatusTicker() {
-      if (guestsEventStatusInterval) {
-        return;
-      }
-      refreshEventStatuses(true);
-      guestsEventStatusInterval = setInterval(() => {
-        refreshEventStatuses(true);
-      }, 60 * 1000);
-    }
-
-    function updateEventInfoStatus() {
-      const status = state.eventStatuses[activeEventCode] || DEFAULT_EVENT_STATUS;
-      const ready = status.key !== "not-ready";
-      if (eventInfoStatusText) {
-        const statusClasses = [
-          "status-not-ready",
-          "status-upcoming",
-          "status-ongoing",
-          "status-ended"
-        ];
-        statusClasses.forEach(cls => eventInfoStatusText.classList.remove(cls));
-        eventInfoStatusText.classList.add(`status-${status.key}`);
-        eventInfoStatusText.textContent = status.text;
-      }
-      updateEventSectionTabAccessibility(ready);
-      if (!ready) {
-        setActiveEventSection("event-info");
-      }
     }
 
     function updateManualEventDate() {
@@ -3168,8 +3116,6 @@
         setActiveEventSection(button.dataset.eventSectionTarget || "event-info");
       });
       setActiveEventSection("event-info");
-      updateEventInfoStatus();
-      startEventStatusTicker();
       eventPrizeForm?.addEventListener("submit", async (evt) => {
         evt.preventDefault();
         if (!eventPrizeInput) return;
