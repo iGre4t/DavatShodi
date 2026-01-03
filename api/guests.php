@@ -1501,6 +1501,170 @@ function normalizeInviteLogs(array $logs): array
     return array_values($normalized);
 }
 
+function normalizeEventDateDigits(string $value): string
+{
+    $map = [
+        '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+        '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+        '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9'
+    ];
+    return strtr($value, $map);
+}
+
+function jalaliDiv(int $a, int $b): int
+{
+    if ($b === 0) {
+        throw new DivisionByZeroError('Division by zero in jalaliDiv.');
+    }
+    return (int)floor($a / $b);
+}
+
+function jalaliMod(int $a, int $b): int
+{
+    return $a - jalaliDiv($a, $b) * $b;
+}
+
+function jalaliBreaks(): array
+{
+    return [
+        -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181,
+        1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178
+    ];
+}
+
+function jalaliCal(int $jy, bool $withoutLeap = false): array
+{
+    $jalaliBreaks = jalaliBreaks();
+    $bl = count($jalaliBreaks);
+    $gy = $jy + 621;
+    $leapJ = -14;
+    $jp = $jalaliBreaks[0];
+    $jump = 0;
+    for ($i = 1; $i < $bl; $i++) {
+        $jm = $jalaliBreaks[$i];
+        $jump = $jm - $jp;
+        if ($jy < $jm) {
+            break;
+        }
+        $leapJ += jalaliDiv($jump, 33) * 8 + jalaliDiv(jalaliMod($jump, 33) + 3, 4);
+        $jp = $jm;
+    }
+    $n = $jy - $jp;
+    $leapJ += jalaliDiv($n, 33) * 8 + jalaliDiv(jalaliMod($n, 33) + 3, 4);
+    if (jalaliMod($jump, 33) === 4 && $jump - $n === 4) {
+        $leapJ += 1;
+    }
+    $leapG = jalaliDiv($gy, 4) - jalaliDiv((jalaliDiv($gy, 100) + 1) * 3, 4) - 150;
+    $march = 20 + $leapJ - $leapG;
+    if ($withoutLeap) {
+        return ['gy' => $gy, 'march' => $march];
+    }
+    if ($jump - $n < 6) {
+        $n = $n - $jump + jalaliDiv($jump + 4, 33) * 33;
+    }
+    $leap = jalaliMod(jalaliMod($n + 1, 33) - 1, 4);
+    if ($leap === -1) {
+        $leap = 4;
+    }
+    return ['leap' => $leap, 'gy' => $gy, 'march' => $march];
+}
+
+function g2d(int $gy, int $gm, int $gd): int
+{
+    $d = jalaliDiv(($gy + jalaliDiv($gm - 8, 6) + 100100) * 1461, 4)
+        + jalaliDiv(153 * jalaliMod($gm + 9, 12) + 2, 5)
+        + $gd - 34840408;
+    $d = $d - jalaliDiv(jalaliDiv($gy + 100100 + jalaliDiv($gm - 8, 6), 100) * 3, 4) + 752;
+    return $d;
+}
+
+function j2d(int $jy, int $jm, int $jd): ?int
+{
+    $r = jalaliCal($jy, true);
+    if (!$r) {
+        return null;
+    }
+    return g2d($r['gy'], 3, $r['march'])
+        + ($jm - 1) * 31
+        - jalaliDiv($jm, 7) * ($jm - 7)
+        + $jd
+        - 1;
+}
+
+function d2g(int $jdn): array
+{
+    $j = 4 * $jdn + 139361631;
+    $j = $j + jalaliDiv(jalaliDiv(4 * $jdn + 183187720, 146097) * 3, 4) * 4 - 3908;
+    $i = jalaliDiv(jalaliMod($j, 1461), 4) * 5 + 308;
+    $gd = jalaliMod(jalaliDiv($i, 153), 5) + 1;
+    $gm = jalaliMod(jalaliDiv($i, 153), 12) + 1;
+    $gy = jalaliDiv($j, 1461) - 100100 + jalaliDiv(8 - $gm, 6);
+    return ['gy' => $gy, 'gm' => $gm, 'gd' => $gd];
+}
+
+function convertJalaliToGregorianDate(int $jy, int $jm, int $jd): ?array
+{
+    $date = j2d($jy, $jm, $jd);
+    if ($date === null) {
+        return null;
+    }
+    return d2g($date);
+}
+
+function parseEventDateToDateTime(string $value): ?DateTimeImmutable
+{
+    $normalized = trim(str_replace('-', '/', normalizeEventDateDigits($value)));
+    if ($normalized === '') {
+        return null;
+    }
+    if (!preg_match('/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/', $normalized, $matches)) {
+        return null;
+    }
+    $year = (int)$matches[1];
+    $month = (int)$matches[2];
+    $day = (int)$matches[3];
+    $tz = new DateTimeZone(date_default_timezone_get() ?: 'Asia/Tehran');
+    if ($year >= 1300 && $year <= 1600) {
+        $gregorian = convertJalaliToGregorianDate($year, $month, $day);
+        if ($gregorian !== null) {
+            [$gy, $gm, $gd] = $gregorian;
+            try {
+                return (new DateTimeImmutable(sprintf('%04d-%02d-%02d', $gy, $gm, $gd), $tz))->setTime(0, 0, 0);
+            } catch (Throwable $exception) {
+                // ignore invalid date
+            }
+        }
+    }
+    try {
+        return (new DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $day), $tz))->setTime(0, 0, 0);
+    } catch (Throwable $exception) {
+        return null;
+    }
+}
+
+function buildEventStatusFromEvent(array $event): array
+{
+    $default = ['key' => 'not-ready', 'text' => 'Event Status: Event Not Ready'];
+    $dateValue = trim((string)($event['date'] ?? ''));
+    if ($dateValue === '') {
+        return $default;
+    }
+    $eventDate = parseEventDateToDateTime($dateValue);
+    if ($eventDate === null) {
+        return $default;
+    }
+    $today = createNowTime()->format('Y-m-d');
+    $eventDay = $eventDate->format('Y-m-d');
+    if ($eventDay < $today) {
+        return ['key' => 'ended', 'text' => 'Event Status: Event Ended'];
+    }
+    if ($eventDay > $today) {
+        return ['key' => 'upcoming', 'text' => 'Event Status: Event Upcoming'];
+    }
+    return ['key' => 'ongoing', 'text' => 'Event Status: Event Ongoing'];
+}
+
 function normalizeEventsForResponse(array $events): array
 {
     return array_values(array_map(static function ($event) {
@@ -1530,6 +1694,7 @@ function normalizeEventsForResponse(array $events): array
             'source' => is_array($event['source'] ?? null) ? $event['source'] : null,
             'guests' => $guests,
             'created_at' => (string)($event['created_at'] ?? ''),
+            'status' => buildEventStatusFromEvent($event),
             'invite_card_template' => is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [],
             'updated_at' => (string)($event['updated_at'] ?? '')
         ];

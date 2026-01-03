@@ -179,6 +179,11 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
             <span>Ú¯Ø§Ù„Ø±ÛŒ Ø¹Ú©Ø³</span>
           </button>
+          <!-- Features tab placeholder has no content yet but reserves a nav entry. -->
+          <button class="nav-item" data-tab="features">
+            <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
+            <span>Features</span>
+          </button>
           <!-- Typography tab provides font uploads and previews. -->
           <button class="nav-item" data-tab="typography">
             <span class="nav-icon ri ri-font-color" aria-hidden="true"></span>
@@ -346,6 +351,7 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/gallery-tab.php'; ?>
         <?php include __DIR__ . '/invitepanel.php'; ?>
         <?php include __DIR__ . '/typography.php'; ?>
+        <?php include __DIR__ . '/features.php'; ?>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
             <div class="sub-layout" data-sub-layout>
@@ -357,9 +363,6 @@ $accountEmail = $currentUser['email'] ?? '';
               </button>
               <button type="button" class="sub-item" data-pane="appearance">
                 ظاهر
-              </button>
-              <button type="button" class="sub-item" data-pane="beta-test">
-                بتا تست
               </button>
               <button type="button" class="sub-item" data-pane="database">
                 پایگاه داده
@@ -463,35 +466,6 @@ $accountEmail = $currentUser['email'] ?? '';
                       <button type="button" class="btn ghost" id="reset-appearance-settings">بازنشانی</button>
                     </div>
                     <p class="hint" id="appearance-hint">رنگ‌های رابط کاربری را مستقیماً از آزمایشگاه توسعه تنظیم کنید.</p>
-                  </div>
-                </div>
-                <div class="sub-pane beta-test-pane" data-pane="beta-test" dir="rtl">
-                  <div class="card settings-section">
-                    <div class="section-header">
-                      <h3>اطلاع‌رسانی‌ها</h3>
-                    </div>
-                    <div class="section-footer beta-test-footer">
-                      <button type="button" class="btn secondary" data-test-toast aria-label="تست توست">
-                        آزمایش توست
-                      </button>
-                      <button
-                        type="button"
-                        class="btn secondary"
-                        data-test-snackbar
-                        aria-label="تست اسنک‌بار"
-                      >
-                        تست اسنک‌بار
-                      </button>
-                      <button
-                        type="button"
-                        class="btn secondary"
-                        data-test-error-snackbar
-                        aria-label="اسنک‌بار خطا"
-                      >
-                        اسنک‌بار خطا
-                      </button>
-                    </div>
-                    <p class="hint">نمایش یک اعلان توست برای تست.</p>
                   </div>
                 </div>
                 <div class="sub-pane" data-pane="database">
@@ -672,6 +646,49 @@ $accountEmail = $currentUser['email'] ?? '';
       </main>
     </div>
 
+    <!-- Permissions modal lets you preview which sidebar tabs could be granted; it remains client-side only. -->
+    <div id="permissions-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="permissions-modal-title">
+      <div class="modal-card default-modal-card">
+        <div class="modal-card-header">
+          <h3 id="permissions-modal-title">دسترسی ها</h3>
+          <button type="button" class="icon-btn" data-close-permissions aria-label="بستن دسترسی ها">×</button>
+        </div>
+        <p class="hint">علامت‌زدن هر گزینه صرفاً پیش‌نمایش است و تغییری در داده‌های واقعی ایجاد نمی‌کند.</p>
+        <div class="form grid one-column permissions-checkboxes">
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="home" checked />
+            <span>خانه</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="users" checked />
+            <span>کاربران</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="settings" checked />
+            <span>تنظیمات حساب</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="guests" />
+            <span>لیست مهمانان</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="gallery" />
+            <span>گالری</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="typography" />
+            <span>تایپوگرافی</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="devsettings" />
+            <span>تنظیمات توسعه‌دهنده</span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-permissions>بستن</button>
+        </div>
+      </div>
+    </div>
     <!-- User modal is populated via app.js when adding or editing a user and submits to add/update actions. -->
     <!-- Modal shared between adding/editing users; it posts to api/data.php and mirrors payload expectations. -->
     <div id="user-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">

@@ -1402,11 +1402,120 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 .section-header h3 { margin: 0; font-size: 16px; }
 .section-footer { margin-top: 12px; display: flex; justify-content: flex-end; gap: 6px; }
 .section-footer .btn { margin: 0; }
-.beta-test-pane {
+.notifications-pane {
   direction: rtl;
 }
-.beta-test-footer {
+.notifications-footer {
   justify-content: flex-start;
+}
+.cards-pane {
+  direction: rtl;
+}
+.cards-footer {
+  justify-content: flex-start;
+}
+.default-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+}
+.default-card-header h3 {
+  margin: 0;
+}
+.default-card-body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.default-card-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  direction: ltr;
+}
+.code-editor-card {
+  gap: 16px;
+}
+.code-editor {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  border-radius: 12px;
+  background: #020617;
+  color: #e0e7ff;
+  font-family: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  padding: 14px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  text-align: left;
+  resize: vertical;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4), 0 10px 40px rgba(15, 23, 42, 0.5);
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+  cursor: text;
+  caret-color: transparent;
+}
+.code-editor-editable {
+  caret-color: #f8fafc;
+}
+.code-editor:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 1);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.8), 0 10px 40px rgba(15, 23, 42, 0.6);
+}
+.code-editor-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+  display: block;
+}
+.code-editor-wrapper {
+  position: relative;
+  width: 100%;
+}
+.code-editor-copy-btn {
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e0e7ff;
+  padding: 4px 9px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  transform: scale(0.78);
+  transform-origin: top right;
+}
+.code-editor {
+  min-width: 70%;
+}
+.code-editor-copy-btn .copy-label {
+  display: none;
+}
+.code-editor-wrapper:hover .code-editor-copy-btn {
+  opacity: 1;
+}
+.code-editor-wrapper:hover .code-editor-copy-btn .copy-label {
+  display: inline;
+}
+.code-editor-copy-btn:hover,
+.code-editor-copy-btn:focus-visible {
+  background: rgba(59, 130, 246, 0.2);
 }
 .card h3 { margin: 0 0 8px; font-size: 16px; }
 
@@ -1483,7 +1592,23 @@ switch { display: flex; align-items: center; gap: 10px; }
 /* Modal */
 .modal.hidden { display: none; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: grid; place-items: center; z-index: 50; }
-.modal-card { position: relative; width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 16px; }
+.modal-card,
+.default-modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  padding: 16px;
+}
+.modal-card-body {
+  max-height: 70vh;
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 4px;
+}
 .modal-card h3 { margin: 0 0 12px; font-size: 16px; }
 .modal-card .hint { margin-top: 0; margin-bottom: 0; text-align: left; }
 .modal-progress {

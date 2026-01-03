@@ -4441,11 +4441,38 @@ function renderUsers() {
     deleteBtn.className = 'btn primary';
     deleteBtn.textContent = 'Delete';
     deleteBtn.addEventListener('click', () => openDeleteModal(user));
+    const permissionsBtn = document.createElement('button');
+    permissionsBtn.type = 'button';
+    permissionsBtn.className = 'btn ghost';
+    permissionsBtn.textContent = 'دسترسی ها';
+    permissionsBtn.addEventListener('click', () => openPermissionsModal(user));
     actionCell.appendChild(editBtn);
+    actionCell.appendChild(permissionsBtn);
     actionCell.appendChild(deleteBtn);
     tr.appendChild(actionCell);
     tbody.appendChild(tr);
   });
+}
+
+function openPermissionsModal(user) {
+  const modal = qs('#permissions-modal');
+  if (!modal) return;
+  const titleEl = qs('#permissions-modal-title');
+  const displayName = getUserDisplayName(user) || user?.username || 'کاربر';
+  if (titleEl) {
+    titleEl.textContent = `دسترسی ها · ${displayName}`;
+  }
+  modal.classList.remove('hidden');
+}
+
+function closePermissionsModal() {
+  const modal = qs('#permissions-modal');
+  if (!modal) return;
+  const titleEl = qs('#permissions-modal-title');
+  if (titleEl) {
+    titleEl.textContent = 'دسترسی ها';
+  }
+  modal.classList.add('hidden');
 }
 
 // Prepares and shows the modal that allows adding or editing a user record.
@@ -4753,6 +4780,84 @@ function initSubSidebars(){
   });
 }
 
+function openModalsPreviewModal() {
+  const modal = qs('#modals-preview-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeModalsPreviewModal() {
+  const modal = qs('#modals-preview-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function initModalsPreviewModalControls() {
+  const modal = qs('#modals-preview-modal');
+  if (!modal) return;
+  const openTrigger = qs('[data-open-modals-preview]');
+  const closeTriggers = qsa('[data-close-modals-preview]', modal);
+  openTrigger?.addEventListener('click', (event) => {
+    event.preventDefault();
+    openModalsPreviewModal();
+  });
+  closeTriggers.forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      closeModalsPreviewModal();
+    });
+  });
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      closeModalsPreviewModal();
+    }
+  });
+}
+
+function initCodeEditorControls() {
+  const editor = qs('.code-editor');
+  if (!editor) return;
+  const runButton = qs('[data-run-code]');
+  const clearButton = qs('[data-clear-code]');
+  const copyButton = qs('[data-copy-code]');
+  const bidiRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+  runButton?.addEventListener('click', (event) => {
+    event.preventDefault();
+    showDefaultToast('Code execution is stubbed; nothing was sent to a shell.', {
+      duration: DEFAULT_TOAST_DURATION
+    });
+  });
+  clearButton?.addEventListener('click', (event) => {
+    event.preventDefault();
+    editor.value = '';
+    editor.focus();
+    showDefaultToast('Editor cleared.', { duration: 1500 });
+  });
+  const adjustDirection = () => {
+    const firstChar = (editor.value.trimStart().charAt(0) || '');
+    const direction = firstChar && bidiRegex.test(firstChar) ? 'rtl' : 'ltr';
+    editor.setAttribute('dir', direction);
+  };
+  adjustDirection();
+  editor.addEventListener('input', adjustDirection);
+  copyButton?.addEventListener('click', async (event) => {
+    event.preventDefault();
+    const text = editor.value;
+    if (!text) {
+      showDefaultToast('Nothing to copy.', { duration: 1200 });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      showDefaultToast('Code copied.', { duration: 1500 });
+    } catch (error) {
+      showDefaultToast('Copy failed. Please highlight and copy manually.', { duration: 2000 });
+    }
+  });
+}
+
 function initPrinterSettingsControls() {
   qs("#printer-device")?.addEventListener("change", handlePrinterDeviceChange);
   qs("#printer-settings-save")?.addEventListener("click", handlePrinterSettingsSave);
@@ -4801,6 +4906,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       event.preventDefault();
       setActiveTab(tab);
     }
+  });
+  qsa('[data-close-permissions]').forEach(btn => {
+    btn.addEventListener('click', closePermissionsModal);
   });
   const isEditableShortcutTarget = (element) => {
     if (!element) return false;
@@ -5545,6 +5653,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   resetGalleryCategoryForm();
   initSubSidebars();
+  initModalsPreviewModalControls();
+  initCodeEditorControls();
 
   const galleryUploadModalOpenButton = qs('#open-gallery-upload-modal');
   galleryUploadModalOpenButton?.addEventListener('click', (event) => {
