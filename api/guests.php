@@ -1507,140 +1507,91 @@ function normalizeEventDateDigits(string $value): string
         '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
         '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
         '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
-        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9'
+        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+        "A>Aø" => '0', "A>Añ" => '1', "A>Aý" => '2', "A>A3" => '3', "A>A'" => '4',
+        "A>Aæ" => '5', "A>A\x14" => '6', "A>Aú" => '7', "A>A," => '8', "A>A1" => '9'
     ];
     return strtr($value, $map);
 }
 
-function jalaliDiv(int $a, int $b): int
-{
-    if ($b === 0) {
-        throw new DivisionByZeroError('Division by zero in jalaliDiv.');
-    }
-    return (int)floor($a / $b);
-}
-
-function jalaliMod(int $a, int $b): int
-{
-    return $a - jalaliDiv($a, $b) * $b;
-}
-
-function jalaliBreaks(): array
-{
-    return [
-        -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181,
-        1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178
-    ];
-}
-
-function jalaliCal(int $jy, bool $withoutLeap = false): array
-{
-    $jalaliBreaks = jalaliBreaks();
-    $bl = count($jalaliBreaks);
-    $gy = $jy + 621;
-    $leapJ = -14;
-    $jp = $jalaliBreaks[0];
-    $jump = 0;
-    for ($i = 1; $i < $bl; $i++) {
-        $jm = $jalaliBreaks[$i];
-        $jump = $jm - $jp;
-        if ($jy < $jm) {
-            break;
-        }
-        $leapJ += jalaliDiv($jump, 33) * 8 + jalaliDiv(jalaliMod($jump, 33) + 3, 4);
-        $jp = $jm;
-    }
-    $n = $jy - $jp;
-    $leapJ += jalaliDiv($n, 33) * 8 + jalaliDiv(jalaliMod($n, 33) + 3, 4);
-    if (jalaliMod($jump, 33) === 4 && $jump - $n === 4) {
-        $leapJ += 1;
-    }
-    $leapG = jalaliDiv($gy, 4) - jalaliDiv((jalaliDiv($gy, 100) + 1) * 3, 4) - 150;
-    $march = 20 + $leapJ - $leapG;
-    if ($withoutLeap) {
-        return ['gy' => $gy, 'march' => $march];
-    }
-    if ($jump - $n < 6) {
-        $n = $n - $jump + jalaliDiv($jump + 4, 33) * 33;
-    }
-    $leap = jalaliMod(jalaliMod($n + 1, 33) - 1, 4);
-    if ($leap === -1) {
-        $leap = 4;
-    }
-    return ['leap' => $leap, 'gy' => $gy, 'march' => $march];
-}
-
-function g2d(int $gy, int $gm, int $gd): int
-{
-    $d = jalaliDiv(($gy + jalaliDiv($gm - 8, 6) + 100100) * 1461, 4)
-        + jalaliDiv(153 * jalaliMod($gm + 9, 12) + 2, 5)
-        + $gd - 34840408;
-    $d = $d - jalaliDiv(jalaliDiv($gy + 100100 + jalaliDiv($gm - 8, 6), 100) * 3, 4) + 752;
-    return $d;
-}
-
-function j2d(int $jy, int $jm, int $jd): ?int
-{
-    $r = jalaliCal($jy, true);
-    if (!$r) {
-        return null;
-    }
-    return g2d($r['gy'], 3, $r['march'])
-        + ($jm - 1) * 31
-        - jalaliDiv($jm, 7) * ($jm - 7)
-        + $jd
-        - 1;
-}
-
-function d2g(int $jdn): array
-{
-    $j = 4 * $jdn + 139361631;
-    $j = $j + jalaliDiv(jalaliDiv(4 * $jdn + 183187720, 146097) * 3, 4) * 4 - 3908;
-    $i = jalaliDiv(jalaliMod($j, 1461), 4) * 5 + 308;
-    $gd = jalaliMod(jalaliDiv($i, 153), 5) + 1;
-    $gm = jalaliMod(jalaliDiv($i, 153), 12) + 1;
-    $gy = jalaliDiv($j, 1461) - 100100 + jalaliDiv(8 - $gm, 6);
-    return ['gy' => $gy, 'gm' => $gm, 'gd' => $gd];
-}
-
-function convertJalaliToGregorianDate(int $jy, int $jm, int $jd): ?array
-{
-    $date = j2d($jy, $jm, $jd);
-    if ($date === null) {
-        return null;
-    }
-    return d2g($date);
-}
-
-function parseEventDateToDateTime(string $value): ?DateTimeImmutable
+function parseEventDateParts(string $value): ?array
 {
     $normalized = trim(str_replace('-', '/', normalizeEventDateDigits($value)));
     if ($normalized === '') {
         return null;
     }
-    if (!preg_match('/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/', $normalized, $matches)) {
+    if (!preg_match('/^(\\d{4})\\/(\\d{1,2})\\/(\\d{1,2})$/', $normalized, $matches)) {
         return null;
     }
     $year = (int)$matches[1];
     $month = (int)$matches[2];
     $day = (int)$matches[3];
-    $tz = new DateTimeZone(date_default_timezone_get() ?: 'Asia/Tehran');
-    if ($year >= 1300 && $year <= 1600) {
-        $gregorian = convertJalaliToGregorianDate($year, $month, $day);
-        if ($gregorian !== null) {
-            [$gy, $gm, $gd] = $gregorian;
-            try {
-                return (new DateTimeImmutable(sprintf('%04d-%02d-%02d', $gy, $gm, $gd), $tz))->setTime(0, 0, 0);
-            } catch (Throwable $exception) {
-                // ignore invalid date
-            }
-        }
-    }
-    try {
-        return (new DateTimeImmutable(sprintf('%04d-%02d-%02d', $year, $month, $day), $tz))->setTime(0, 0, 0);
-    } catch (Throwable $exception) {
+    if ($month < 1 || $month > 12 || $day < 1 || $day > 31) {
         return null;
     }
+    $calendar = ($year >= 1300 && $year <= 1600) ? 'jalali' : 'gregorian';
+    return [
+        'calendar' => $calendar,
+        'year' => $year,
+        'month' => $month,
+        'day' => $day
+    ];
+}
+
+function compareDateParts(array $a, array $b): int
+{
+    foreach (['year', 'month', 'day'] as $key) {
+        $aval = (int)($a[$key] ?? 0);
+        $bval = (int)($b[$key] ?? 0);
+        if ($aval === $bval) {
+            continue;
+        }
+        return $aval < $bval ? -1 : 1;
+    }
+    return 0;
+}
+
+function gregorianToJalali(int $gy, int $gm, int $gd): array
+{
+    $gDaysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    $jDaysInMonth = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+    $gy -= 1600;
+    $gm -= 1;
+    $gd -= 1;
+    $gDayNo = 365 * $gy + (int)(($gy + 3) / 4) - (int)(($gy + 99) / 100) + (int)(($gy + 399) / 400);
+    for ($i = 0; $i < $gm; ++$i) {
+        $gDayNo += $gDaysInMonth[$i];
+    }
+    if ($gm > 1 && (($gy % 4 === 0 && $gy % 100 !== 0) || ($gy % 400 === 0))) {
+        $gDayNo += 1;
+    }
+    $gDayNo += $gd;
+    $jDayNo = $gDayNo - 79;
+    $jNp = (int)floor($jDayNo / 12053);
+    $jDayNo %= 12053;
+    $jy = 979 + 33 * $jNp + 4 * (int)floor($jDayNo / 1461);
+    $jDayNo %= 1461;
+    if ($jDayNo >= 366) {
+        $jy += (int)floor(($jDayNo - 366) / 365);
+        $jDayNo = ($jDayNo - 366) % 365;
+    }
+    $jm = 0;
+    for ($i = 0; $i < 11 && $jDayNo >= $jDaysInMonth[$i]; ++$i) {
+        $jDayNo -= $jDaysInMonth[$i];
+    }
+    $jm = $i + 1;
+    $jd = $jDayNo + 1;
+    return ['year' => $jy, 'month' => $jm, 'day' => $jd];
+}
+
+function getTehranNowJalaliDateParts(): array
+{
+    $now = createNowTime();
+    return gregorianToJalali(
+        (int)$now->format('Y'),
+        (int)$now->format('n'),
+        (int)$now->format('j')
+    );
 }
 
 function buildEventStatusFromEvent(array $event): array
@@ -1650,16 +1601,25 @@ function buildEventStatusFromEvent(array $event): array
     if ($dateValue === '') {
         return $default;
     }
-    $eventDate = parseEventDateToDateTime($dateValue);
-    if ($eventDate === null) {
+    $eventParts = parseEventDateParts($dateValue);
+    if ($eventParts === null) {
         return $default;
     }
-    $today = createNowTime()->format('Y-m-d');
-    $eventDay = $eventDate->format('Y-m-d');
-    if ($eventDay < $today) {
+    if ($eventParts['calendar'] === 'jalali') {
+        $today = getTehranNowJalaliDateParts();
+    } else {
+        $now = createNowTime();
+        $today = [
+            'year' => (int)$now->format('Y'),
+            'month' => (int)$now->format('n'),
+            'day' => (int)$now->format('j')
+        ];
+    }
+    $compare = compareDateParts($eventParts, $today);
+    if ($compare < 0) {
         return ['key' => 'ended', 'text' => 'Event Status: Event Ended'];
     }
-    if ($eventDay > $today) {
+    if ($compare > 0) {
         return ['key' => 'upcoming', 'text' => 'Event Status: Event Upcoming'];
     }
     return ['key' => 'ongoing', 'text' => 'Event Status: Event Ongoing'];
