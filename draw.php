@@ -60,6 +60,21 @@ function getPublicBasePath(): string
     return '';
   }
 
+  $override = getenv('APP_PUBLIC_BASE_PATH');
+  if ($override === false && defined('APP_PUBLIC_BASE_PATH')) {
+    $override = APP_PUBLIC_BASE_PATH;
+  }
+  if (is_string($override)) {
+    $trimmedOverride = trim($override);
+    if ($trimmedOverride !== '') {
+      $overridePath = '/' . ltrim($trimmedOverride, '/');
+      if ($overridePath === '/') {
+        return '';
+      }
+      return rtrim($overridePath, '/');
+    }
+  }
+
   if (preg_match('#^(.*?)/events/[^/]+/draw\\.php$#', $scriptName, $matches)) {
     $candidate = $matches[1];
     if ($candidate === '' || $candidate === '/') {
