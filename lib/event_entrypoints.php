@@ -15,11 +15,9 @@ function ensureEventEntryPoints(string $eventDir, string $eventCode = ''): bool
     }
     $drawPath = $eventDir . '/draw.php';
     $prizePath = $eventDir . '/prizes.php';
-    $invitePath = $eventDir . '/invite.php';
     $drawWritten = writeEventEntryPoint($drawPath, $eventCode, 'draw.php');
     $prizeWritten = writeEventEntryPoint($prizePath, $eventCode, 'prizes.php');
-    $inviteWritten = writeEventEntryPoint($invitePath, $eventCode, 'invite.php');
-    return $drawWritten && $prizeWritten && $inviteWritten;
+    return $drawWritten && $prizeWritten;
 }
 
 function writeEventEntryPoint(string $filePath, string $eventCode, string $targetScript): bool
@@ -36,11 +34,5 @@ function buildEventEntryPointContent(string $eventCode, string $targetScript): s
 {
     $eventCode = trim($eventCode);
     $exportedCode = var_export($eventCode, true);
-    $baseRequire = "require dirname(dirname(__DIR__)) . '/{$targetScript}';";
-
-    if ($targetScript === 'invite.php') {
-        return "<?php\nif (!defined('EVENT_SCOPED_EVENT_CODE')) {\n    define('EVENT_SCOPED_EVENT_CODE', {$exportedCode});\n}\n\$previousScriptName = \$_SERVER['SCRIPT_NAME'] ?? null;\n\$normalizedScriptName = null;\nif (\$previousScriptName !== null) {\n    \$normalizedScriptName = preg_replace('@/events/[^/]+/invite\\\\.php$@', '/invite.php', \$previousScriptName);\n}\nif (!is_string(\$normalizedScriptName) || \$normalizedScriptName === '') {\n    \$normalizedScriptName = '/invite.php';\n}\n\$_SERVER['SCRIPT_NAME'] = \$normalizedScriptName;\n{$baseRequire}\nif (\$previousScriptName === null) {\n    unset(\$_SERVER['SCRIPT_NAME']);\n} else {\n    \$_SERVER['SCRIPT_NAME'] = \$previousScriptName;\n}\n";
-    }
-
-    return "<?php\nif (!defined('EVENT_SCOPED_EVENT_CODE')) {\n    define('EVENT_SCOPED_EVENT_CODE', {$exportedCode});\n}\n{$baseRequire}\n";
+    return "<?php\nif (!defined('EVENT_SCOPED_EVENT_CODE')) {\n    define('EVENT_SCOPED_EVENT_CODE', {$exportedCode});\n}\nrequire dirname(dirname(__DIR__)) . '/{$targetScript}';\n";
 }
