@@ -2,12 +2,12 @@
 window.GENERAL_SETTINGS = {
     "title": "Great Panel",
     "timezone": "Asia/Tehran",
-    "panelName": "Great Panel",
-    "siteIcon": "",
+    "panelName": "مدیریت رویداد",
+    "siteIcon": "uploads/gallery/gallery-6941ef2f9dfc78.96479199.svg",
     "appearance": {
-        "primary": "#e11d2e",
+        "primary": "#1d86e1",
         "background": "#ffffff",
         "text": "#111111",
-        "toggle": "#e11d2e"
+        "toggle": "#1d86e1"
     }
 };
