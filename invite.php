@@ -79,12 +79,32 @@ $panelSiteIconUrl = formatSiteIconUrlForHtml($panelSettings['siteIcon'] ?? '');
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>پنل ورود مهمانان | <?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?></title>
     <meta name="color-scheme" content="light" />
-    <script src="General%20Setting/general-settings.js"></script>
-    <script src="style/appearance.js"></script>
+<?php
+    $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+    $scriptBasePath = preg_replace('@/events/[^/]+/invite\\.php$@', '', $scriptName);
+    if ($scriptBasePath === $scriptName) {
+        $scriptBasePath = dirname($scriptName);
+    }
+    $scriptBasePath = rtrim($scriptBasePath ?? '', '/');
+    if ($scriptBasePath === '/' || $scriptBasePath === '.') {
+        $scriptBasePath = '';
+    }
+    $scriptBasePath = rtrim($scriptBasePath, '/');
+?>
+    <script src="<?= htmlspecialchars($scriptBasePath, ENT_QUOTES, 'UTF-8') ?>/General%20Setting/general-settings.js"></script>
+    <script src="<?= htmlspecialchars($scriptBasePath, ENT_QUOTES, 'UTF-8') ?>/style/appearance.js"></script>
     <link rel="icon" id="site-icon-link" href="<?= htmlspecialchars($panelSiteIconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
-    <link rel="preload" href="style/fonts/remixicon.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-    <link rel="stylesheet" href="style/styles.css" />
-    <link rel="stylesheet" href="style/remixicon.css" />
+    <link rel="preload" href="<?= htmlspecialchars($scriptBasePath, ENT_QUOTES, 'UTF-8') ?>/style/fonts/remixicon.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="stylesheet" href="<?= htmlspecialchars($scriptBasePath, ENT_QUOTES, 'UTF-8') ?>/style/styles.css" />
+    <link rel="stylesheet" href="<?= htmlspecialchars($scriptBasePath, ENT_QUOTES, 'UTF-8') ?>/style/remixicon.css" />
+    <script>
+      window.INVITE_ASSET_BASE_PATH = <?= json_encode($scriptBasePath, JSON_UNESCAPED_UNICODE) ?>;
+    </script>
+    <?php if (defined('EVENT_SCOPED_EVENT_CODE')): ?>
+      <script>
+        window.EVENT_SCOPED_EVENT_CODE = <?= json_encode(EVENT_SCOPED_EVENT_CODE, JSON_UNESCAPED_UNICODE) ?>;
+      </script>
+    <?php endif; ?>
     <style>
       /* Keep the invite tab visible in standalone mode. */
       #tab-invite { display: block; }

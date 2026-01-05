@@ -3,8 +3,40 @@ session_start();
 
 date_default_timezone_set('Asia/Tehran');
 
+function getPublicBasePath(): string
+{
+  $scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+  if ($scriptName === '') {
+    return '';
+  }
+
+  if (preg_match('#^(.*?)/events/[^/]+/prizes\\.php$#', $scriptName, $matches)) {
+    $candidate = $matches[1];
+    if ($candidate === '' || $candidate === '/') {
+      return '';
+    }
+    return rtrim($candidate, '/');
+  }
+
+  $dir = dirname($scriptName);
+  if ($dir === '/' || $dir === '\\' || $dir === '.') {
+    return '';
+  }
+
+  return rtrim($dir, '/');
+}
+
+function buildLoginRedirectUrl(): string
+{
+  $basePath = getPublicBasePath();
+  if ($basePath === '') {
+    return '/login.php';
+  }
+  return $basePath . '/login.php';
+}
+
 if (empty($_SESSION['authenticated'])) {
-  header('Location: login.php');
+  header('Location: ' . buildLoginRedirectUrl());
   exit;
 }
 

@@ -38,20 +38,20 @@
   </div>
 
   <div id="invite-entry-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invite-entry-title">
-    <div class="modal-card" style="max-width:420px;">
-      <div class="modal-header">
-        <h3 id="invite-entry-title">مهمان آماده ورود</h3>
-        <button type="button" class="icon-btn" data-invite-entry-close aria-label="بستن">X</button>
+    <div class="modal-card default-modal-card" style="max-width:420px;">
+      <div class="modal-card-header">
+        <div class="modal-card-header-start">
+          <h3 id="invite-entry-title">چاپ رسید ورود</h3>
+        </div>
       </div>
-      <div class="modal-body">
+      <div class="modal-card-body invite-entry-body">
         <div class="invite-summary">
           <div class="invite-summary-name" id="invite-guest-name">-</div>
           <div class="muted small" id="invite-guest-id">-</div>
           <div class="muted small" id="invite-guest-code">-</div>
         </div>
-        <p class="muted small">برای چاپ کارت، Enter یا گزینه چاپ را بزنید.</p>
       </div>
-      <div class="modal-actions">
+      <div class="modal-actions guide-modal-actions">
         <button type="button" class="btn ghost" data-invite-entry-close>لغو</button>
         <button type="button" class="btn primary" id="invite-print-btn">چاپ کارت</button>
       </div>
@@ -59,12 +59,14 @@
   </div>
 
   <div id="invite-exited-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invite-exited-title">
-    <div class="modal-card" style="max-width:420px;">
-    <div class="modal-header">
-      <h3 id="invite-exited-title">خروج تکراری</h3>
-      <button type="button" class="icon-btn" data-invite-exited-close aria-label="بستن">X</button>
-    </div>
-      <div class="modal-body">
+    <div class="modal-card default-modal-card" style="max-width:420px;">
+      <div class="modal-card-header">
+        <div class="modal-card-header-start">
+          <h3 id="invite-exited-title">خروج تکراری</h3>
+        </div>
+        <button type="button" class="icon-btn" data-invite-exited-close aria-label="بستن">×</button>
+      </div>
+      <div class="modal-card-body">
         <p id="invite-exited-message" class="muted"></p>
       </div>
       <div class="modal-actions">
@@ -77,7 +79,7 @@
     <div class="invite-print-card">
       <div class="invite-print-salutation">مهمان محترم</div>
       <div class="invite-print-name" id="invite-print-name"></div>
-      <p class="invite-print-greeting">به رویداد همراه با نامی آشنا خوش آمدید</p>
+      <p class="invite-print-greeting">به رویداد <span id="invite-print-event-name">همراه با نامی آشنا</span> خوش آمدید</p>
       <div class="invite-print-label">کد قرعه کشی شما</div>
       <div class="invite-print-code" id="invite-print-code"></div>
       <div class="invite-print-entry-info">
@@ -271,6 +273,30 @@
       font-size: 10pt;
       margin: 0;
     }
+    #invite-entry-modal .modal-card-header,
+    #invite-entry-modal .modal-card-header-start {
+      justify-content: flex-end;
+    }
+    #invite-entry-modal .modal-card-header-start {
+      margin-right: 0;
+      margin-left: auto;
+      text-align: right;
+      width: 100%;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .invite-entry-body {
+      max-height: 70vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .guide-modal-actions {
+      justify-content: flex-start;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
     #invite-print-area .invite-print-label {
       font-size: 11pt;
       font-weight: 600;
@@ -313,6 +339,20 @@
 
   <script>
     (() => {
+      const scopedEventCode = (window.EVENT_SCOPED_EVENT_CODE || "").trim();
+      const inviteAssetBasePath = String(window.INVITE_ASSET_BASE_PATH || "").replace(/\/+$/, "");
+      const resolveInviteAssetPath = (relativePath) => {
+        const trimmedRel = (relativePath || "").replace(/^\/+/, "");
+        if (!trimmedRel) {
+          return inviteAssetBasePath || "/";
+        }
+        if (inviteAssetBasePath) {
+          return `${inviteAssetBasePath}/${trimmedRel}`;
+        }
+        return `/${trimmedRel}`;
+      };
+      const inviteApiBase = resolveInviteAssetPath("api/guests.php");
+      const inviteApiEndpoint = scopedEventCode ? `${inviteApiBase}?event_code=${encodeURIComponent(scopedEventCode)}` : inviteApiBase;
       const nationalInput = document.getElementById("invite-national-id");
       const inviteForm = document.getElementById("invite-form");
       const statusBox = document.getElementById("invite-status");
@@ -346,6 +386,7 @@
       let logs = [];
       let lastGuest = null;
       let loading = false;
+      let entryModalEnabled = true;
 
       const statusLabels = {
         enter: "ورود",
@@ -381,6 +422,15 @@
         not_found: "error"
       };
       let currentStats = null;
+      const printEventNameEl = document.getElementById("invite-print-event-name");
+      let currentEventName = (printEventNameEl?.textContent || "همراه با نامی آشنا").trim();
+      function updateEventName(name) {
+        currentEventName = (name || "").trim() || "همراه با نامی آشنا";
+        if (printEventNameEl) {
+          printEventNameEl.textContent = currentEventName;
+        }
+      }
+      updateEventName(currentEventName);
 
       function sanitizeDigits(value) {
         return (value || "").replace(/\D+/g, "").slice(0, 10);
@@ -424,9 +474,102 @@
         return `${parts.dateText} ${parts.timeText}`;
       }
 
+      function parseShamsiDateTimeParts(value) {
+        const trimmed = (value || "").trim();
+        if (!trimmed) {
+          return null;
+        }
+        const normalized = trimmed.replace(/\s+/g, " ").replace(/[Tt]/g, " ");
+        const segments = normalized.split(" ").filter(Boolean);
+        let dateSegment = segments[0] || "";
+        let timeSegment = segments[1] || "";
+        if (!timeSegment && dateSegment.includes("T")) {
+          const splitted = dateSegment.split("T");
+          dateSegment = splitted[0] || dateSegment;
+          timeSegment = splitted[1] || "";
+        }
+        const dateParts = dateSegment.split(/[\\/\\-]/).filter(Boolean);
+        if (dateParts.length < 3) {
+          return null;
+        }
+        const year = parseInt(dateParts[0], 10);
+        const month = parseInt(dateParts[1], 10);
+        const day = parseInt(dateParts[2], 10);
+        if ([year, month, day].some((n) => Number.isNaN(n))) {
+          return null;
+        }
+        const timeParts = timeSegment.split(":").filter(Boolean);
+        const hour = parseInt(timeParts[0], 10);
+        const minute = parseInt(timeParts[1], 10);
+        const second = parseInt(timeParts[2], 10);
+        return {
+          year,
+          month,
+          day,
+          hour: Number.isNaN(hour) ? 0 : hour,
+          minute: Number.isNaN(minute) ? 0 : minute,
+          second: Number.isNaN(second) ? 0 : second
+        };
+      }
+
+      function jalaliToJdn(jy, jm, jd) {
+        if (jm < 1 || jm > 12 || jd < 1) {
+          return null;
+        }
+        const epBase = jy - (jy >= 0 ? 474 : 473);
+        const epYear = 474 + ((epBase % 2820) + 2820) % 2820;
+        const monthDays = jm <= 7 ? (jm - 1) * 31 : (jm - 7) * 30 + 186;
+        const dayNo =
+          jd +
+          monthDays +
+          Math.floor((epYear * 682 - 110) / 2816) +
+          (epYear - 1) * 365 +
+          Math.floor(epBase / 2820) * 1029983;
+        return dayNo + 1948320;
+      }
+
+      function jdnToGregorian(jdn) {
+        const j = jdn + 32044;
+        const g = Math.floor((4 * j + 3) / 146097);
+        const dg = j - Math.floor((146097 * g) / 4);
+        const c = Math.floor((4 * dg + 3) / 1461);
+        const dc = dg - Math.floor((1461 * c) / 4);
+        const b = Math.floor((5 * dc + 2) / 153);
+        const day = dc - Math.floor((153 * b + 2) / 5) + 1;
+        const month = b + 3 - 12 * Math.floor(b / 10);
+        const year = g * 100 + c - 4800 + Math.floor(b / 10);
+        return { year, month, day };
+      }
+
+      function convertShamsiToGregorian(value) {
+        const parts = parseShamsiDateTimeParts(value);
+        if (!parts) {
+          return null;
+        }
+        const jdn = jalaliToJdn(parts.year, parts.month, parts.day);
+        if (jdn === null) {
+          return null;
+        }
+        const gregorian = jdnToGregorian(jdn);
+        return {
+          year: gregorian.year,
+          month: gregorian.month,
+          day: gregorian.day,
+          hour: parts.hour,
+          minute: parts.minute,
+          second: parts.second
+        };
+      }
+
       function translateLogMessage(value) {
         if (!value) return "";
         return messageTranslations[value] || value;
+      }
+
+      function updateEntryModalPreference(eventData) {
+        if (eventData && typeof eventData.print_entry_modal === "boolean") {
+          entryModalEnabled = Boolean(eventData.print_entry_modal);
+        }
       }
 
       function parseEntryTimestamp(value) {
@@ -441,6 +584,20 @@
         const altParsed = new Date(altCandidate);
         if (!Number.isNaN(altParsed.getTime())) {
           return altParsed;
+        }
+        const shamsiConverted = convertShamsiToGregorian(trimmed);
+        if (shamsiConverted) {
+          const candidate = new Date(
+            shamsiConverted.year,
+            shamsiConverted.month - 1,
+            shamsiConverted.day,
+            shamsiConverted.hour,
+            shamsiConverted.minute,
+            shamsiConverted.second
+          );
+          if (!Number.isNaN(candidate.getTime())) {
+            return candidate;
+          }
         }
         return null;
       }
@@ -650,9 +807,10 @@
         const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (printNameEl) printNameEl.textContent = fullName;
         if (printCodeEl) printCodeEl.textContent = guest.invite_code || "----";
-        const entryValue = guest.join_date
-          ? `${guest.join_date} ${guest.join_time || ""}`.trim()
-          : guest.entryTimestamp || guest.date_entered;
+        const entryValue =
+          guest.entryTimestamp ||
+          guest.date_entered ||
+          (guest.join_date ? `${guest.join_date} ${guest.join_time || ""}`.trim() : "");
         updateEntryInfo(entryValue);
       }
 
@@ -661,7 +819,7 @@
         const fullName = guest.full_name || `${guest.firstname || ""} ${guest.lastname || ""}`.trim() || "مهمان";
         if (guestNameEl) guestNameEl.textContent = fullName;
         if (guestIdEl) guestIdEl.textContent = guest.national_id ? `کد ملی: ${guest.national_id}` : "";
-        if (guestCodeEl) guestCodeEl.textContent = guest.invite_code ? `کد یکتا: ${guest.invite_code}` : "";
+        if (guestCodeEl) guestCodeEl.textContent = guest.invite_code ? `کد مهمانی: ${guest.invite_code}` : "";
         updatePrintArea(guest);
         showModal(entryModal);
         printButton?.focus();
@@ -683,12 +841,14 @@
 
       async function loadInviteData() {
         try {
-          const response = await fetch("./api/guests.php");
+          const response = await fetch(inviteApiEndpoint);
           const data = await response.json().catch(() => ({}));
           if (response.ok && data.status === "ok" && Array.isArray(data.logs)) {
             logs = data.logs;
             renderLogs();
             renderStats(data.stats);
+            updateEventName(data.event_name);
+            updateEntryModalPreference(data.active_event);
           }
         } catch (_) {
           // ignore initial load errors
@@ -702,8 +862,11 @@
         const formData = new FormData();
         formData.append("action", "scan_invite");
         formData.append("national_id", value);
+        if (scopedEventCode) {
+          formData.append("event_code", scopedEventCode);
+        }
         try {
-          const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+          const response = await fetch(inviteApiBase, { method: "POST", body: formData });
           const data = await response.json().catch(() => ({}));
           if (!response.ok || data.status !== "ok") {
             throw new Error(data?.message || "عدم امکان اسکن مهمان.");
@@ -714,8 +877,10 @@
             mergeLogs([data.log]);
           }
           renderStats(data.stats);
-          const outcome = data.outcome;
           const guest = data.guest || {};
+          updateEventName(data.event_name || guest.event_name);
+          updateEntryModalPreference(data.active_event);
+          const outcome = data.outcome;
           const guestDisplayName =
             guest.full_name ||
             `${guest.firstname || ""} ${guest.lastname || ""}`.trim() ||
@@ -729,7 +894,10 @@
               ? `${guest.join_date} ${guest.join_time || ""}`.trim()
               : data.log?.timestamp || guest.date_entered;
             const guestForModal = { ...guest, entryTimestamp };
-            openEntryModal(guestForModal);
+            lastGuest = guestForModal;
+            if (entryModalEnabled) {
+              openEntryModal(guestForModal);
+            }
           } else if (outcome === "exit") {
             const successMessage = `خروج ${guestDisplayName} ثبت شد.`;
             setStatus(successMessage, tone || "info");
@@ -747,7 +915,7 @@
             const exitMessage = hasExit
               ? `UcOOñO"Oñ ${guestDisplayName} O_Oñ ${exitedParts.dateText}OO O3OO1O¦ ${exitedParts.timeText} OrOOñOª O'O_UØ O"U^O_.`
               : `UcOOñO"Oñ ${guestDisplayName} U,O"U,OU< O_Oñ OUOU+ OªU,O3UØ OrOOñOª O'O_UØ O"U^O_.`;
-            setStatus("U.UØU.OU+ U,O"U,OU< OrOOñOª O'O_UØ O"U^O_.", tone || "warn");
+            setStatus(`U.UØU.OU+ U,O"U,OU< OrOOñOª O'O_UØ O"U^O_.`, tone || "warn");
             openExitedModal(exitMessage);
           } else if (outcome === "not_found") {
             setStatus("کد ملی در فهرست فعال یافت نشد.", "error");
@@ -796,6 +964,13 @@
 
       entryCloseButtons?.forEach((btn) => btn.addEventListener("click", () => hideModal(entryModal)));
       exitCloseButtons?.forEach((btn) => btn.addEventListener("click", () => hideModal(exitModal)));
+      [entryModal, exitModal].forEach((modal) => {
+        modal?.addEventListener("click", (event) => {
+          if (event.target === modal) {
+            hideModal(modal);
+          }
+        });
+      });
 
       document.addEventListener("keydown", (evt) => {
         const isEntryOpen = entryModal && !entryModal.classList.contains("hidden");

@@ -4,7 +4,7 @@ session_start();
 date_default_timezone_set('Asia/Tehran');
 
 if (empty($_SESSION['authenticated'])) {
-  header('Location: login.php');
+  header('Location: ' . buildLoginRedirectUrl());
   exit;
 }
 
@@ -74,6 +74,15 @@ function getPublicBasePath(): string
   }
 
   return rtrim($dir, '/');
+}
+
+function buildLoginRedirectUrl(): string
+{
+  $basePath = getPublicBasePath();
+  if ($basePath === '') {
+    return '/login.php';
+  }
+  return $basePath . '/login.php';
 }
 
 function buildPublicAssetUrl(string $path): string
