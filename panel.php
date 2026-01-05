@@ -177,7 +177,7 @@ $accountEmail = $currentUser['email'] ?? '';
           <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
           <button class="nav-item" data-tab="gallery">
             <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
-            <span>گالری تصاویر</span>
+            <span>Ú¯Ø§Ù„Ø±ÛŒ Ø¹Ú©Ø³</span>
           </button>
           <!-- Features tab placeholder has no content yet but reserves a nav entry. -->
           <button class="nav-item" data-tab="features">

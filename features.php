@@ -93,11 +93,9 @@
           <div class="default-card-body">
             <p class="muted">
               Modal header is at the top only (no × button) and the body pledge sits beneath it aligned to the top.
-              The header should run right-to-left (RTL) so content follows the surrounding layout direction.
               The body area can grow up to 70vh and scrolls internally when content is long. Actions sit at the bottom,
               left-aligned in their own bar. Clicking outside the modal dismisses it without extra close buttons, and
               the reusable <code>.default-modal-card</code> style keeps these regions consistent.
-              The modal has no 'x' button, and clicking outside closes it.
             </p>
           </div>
         </div>
