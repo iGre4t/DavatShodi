@@ -41,11 +41,11 @@ const DEFAULT_SETTINGS = {
   }
 };
 const SITE_ICON_DEFAULT_DATA_URI = "data:,";
-const FALLBACK_APPEARANCE = {
-  primary: "#e11d2e",
+const FALLBACK_APPEARANCE_TEMPLATE = {
+  primary: "#111111",
   background: "#ffffff",
   text: "#111111",
-  toggle: "#e11d2e"
+  toggle: "#111111"
 };
 const APPEARANCE_PRIMARY_KEY = "frontend_appearance_primary";
 const APPEARANCE_BACKGROUND_KEY = "frontend_appearance_background";
@@ -108,7 +108,7 @@ const SHARED_APPEARANCE = (() => {
   }, {});
 })();
 const DEFAULT_APPEARANCE = {
-  ...FALLBACK_APPEARANCE,
+  ...FALLBACK_APPEARANCE_TEMPLATE,
   ...SHARED_APPEARANCE
 };
 let currentAppearanceState = { ...DEFAULT_APPEARANCE };
@@ -1468,12 +1468,12 @@ function applyAppearancePalette(state, { persist = false } = {}) {
   root.style.setProperty("--primary", palette.primary);
   const darker = adjustHexLightness(palette.primary, -0.18);
   root.style.setProperty("--primary-600", darker || palette.primary);
-  const focusRing = hexToRgba(palette.primary, 0.12) || "rgba(225,29,46,0.12)";
+  const focusRing = hexToRgba(palette.primary, 0.12) || "rgba(0, 0, 0, 0.12)";
   root.style.setProperty("--primary-focus", focusRing);
   root.style.setProperty("--bg", palette.background);
   root.style.setProperty("--text", palette.text);
-  const toggleBg = hexToRgba(palette.toggle, 0.12) || "rgba(225,29,46,0.08)";
-  const toggleBorder = hexToRgba(palette.toggle, 0.22) || "rgba(225,29,46,0.22)";
+  const toggleBg = hexToRgba(palette.toggle, 0.12) || "rgba(0, 0, 0, 0.08)";
+  const toggleBorder = hexToRgba(palette.toggle, 0.22) || "rgba(0, 0, 0, 0.22)";
   root.style.setProperty("--sidebar-active", toggleBg);
   root.style.setProperty("--sidebar-active-border", toggleBorder);
   currentAppearanceState = { ...palette };
