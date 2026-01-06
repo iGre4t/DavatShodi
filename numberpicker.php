@@ -361,13 +361,13 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
-      <p class="caption">قرعه کشی سریع شماره بین ۱ تا ۳۰۰</p>
+      <p class="caption">قرعه کشی مشهد مقدس</p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="نمایش شماره انتخابی">
         <?php for ($idx = 0; $idx < 3; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
         <?php endfor; ?>
       </p>
-      <p id="status-text" class="winner-message winner-message--idle">شماره انتخاب نشده</p>
+      <p id="status-text" class="winner-message winner-message--idle">برای شروع قرعه‌کشی را بزنید</p>
       <div class="cta-group">
         <button id="start-draw" class="start-btn" type="button">قرعه کشی</button>
         <button id="confirm-number" class="confirm-btn" type="button" disabled>ذخیره</button>
@@ -440,7 +440,7 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       };
 
       const showIdleText = () => {
-        statusText.textContent = 'شماره انتخاب نشده';
+        statusText.textContent = 'برای شروع قرعه‌کشی را بزنید';
         statusText.classList.add('winner-message--idle');
         statusText.classList.remove('winner-message--active');
       };
@@ -555,7 +555,7 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         }
       });
 
-      setNumberText(0);
+      showIdleText();
       renderDigits('0');
       renderNumberList(savedNumbers);
     </script>
