@@ -390,14 +390,19 @@
             </div>
           </div>
           <div class="card">
-            <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-              <div>
-                <h3>Event Setting</h3>
+              <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                  <h3>Event Setting</h3>
                 <p class="muted small" style="margin:0;">از اینجا می‌توانید برای رویدادهای گذشته، صفحات دعوت را بسازید.</p>
               </div>
-              <button type="button" class="btn primary" id="event-setting-create-invite">
-                Create Invite Page
-              </button>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn primary" id="event-setting-create-invite">
+                  Create Invite Page
+                </button>
+                <button type="button" class="btn ghost" id="event-setting-refresh-export">
+                  Refresh SMS Export
+                </button>
+              </div>
             </div>
             <p id="event-setting-status" class="muted small" style="margin:0;">Select an event to enable invite creation.</p>
           </div>
@@ -735,6 +740,7 @@
     const eventPrizeListBody = document.getElementById("event-prize-list-body");
     const eventInfoInviteButton = document.getElementById("event-info-open-invite");
     const eventSettingCreateInviteButton = document.getElementById("event-setting-create-invite");
+    const eventSettingRefreshButton = document.getElementById("event-setting-refresh-export");
     const eventSettingStatusText = document.getElementById("event-setting-status");
     const eventSettingPrintToggle = document.getElementById("event-setting-print-entry");
     const INVITE_BASE_URL = "https://davatshodi.ir/l/inv";
@@ -751,6 +757,7 @@
     let currentEventPrizeCode = "";
     let eventSettingActiveEventCode = "";
     let eventSettingPrintUpdating = false;
+    let eventSettingRefreshInProgress = false;
     let eventInfoCountdownTimer = null;
     let eventPrizeFetchId = 0;
 
@@ -1146,6 +1153,13 @@
       }
     }
 
+    function updateEventSettingRefreshState() {
+      if (!eventSettingRefreshButton) return;
+      const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
+      const hasEvent = Boolean(selectedEvent && selectedEvent.code);
+      eventSettingRefreshButton.disabled = !hasEvent || eventSettingRefreshInProgress;
+    }
+
     function updateEventSettingControls() {
       if (!eventSettingCreateInviteButton) return;
       const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
@@ -1158,6 +1172,7 @@
         }
       }
       eventSettingCreateInviteButton.disabled = !hasEvent;
+      updateEventSettingRefreshState();
       if (!hasEvent) {
         setEventSettingStatusMessage("Select an event to enable invite creation.", "idle");
         return;
@@ -1198,6 +1213,39 @@
         setEventSettingStatusMessage(message, "error");
         showErrorSnackbar?.({ message });
       } finally {
+        updateEventSettingControls();
+      }
+    }
+
+    async function refreshEventPurelist() {
+      if (!eventSettingRefreshButton || !activeEventCode) {
+        showErrorSnackbar?.({ message: "Select an event before refreshing the SMS export data." });
+        return;
+      }
+      eventSettingRefreshInProgress = true;
+      updateEventSettingRefreshState();
+      setEventSettingStatusMessage("Refreshing SMS export, please wait...", "busy");
+      try {
+        const formData = new FormData();
+        formData.append("action", "refresh_event_purelist");
+        formData.append("event_code", activeEventCode);
+        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status !== "ok") {
+          throw new Error(payload?.message || "Failed to refresh SMS export.");
+        }
+        state.events = Array.isArray(payload.events) ? payload.events : state.events;
+        refreshEventControls();
+        const message = payload.message || `SMS export refreshed for ${activeEventCode}.`;
+        setEventSettingStatusMessage(message, "success");
+        showDefaultToast?.(message);
+      } catch (error) {
+        const message = error?.message || "Failed to refresh SMS export.";
+        setEventSettingStatusMessage(message, "error");
+        showErrorSnackbar?.({ message });
+      } finally {
+        eventSettingRefreshInProgress = false;
+        updateEventSettingRefreshState();
         updateEventSettingControls();
       }
     }
@@ -3429,8 +3477,9 @@
         input?.addEventListener("input", updateEventInfoLiveStatus);
         input?.addEventListener("change", updateEventInfoLiveStatus);
       });
-      eventSettingCreateInviteButton?.addEventListener("click", () => createEventInvitePage());
-      eventSettingPrintToggle?.addEventListener("change", () => handleEventPrintToggleChange(eventSettingPrintToggle.checked));
+    eventSettingCreateInviteButton?.addEventListener("click", () => createEventInvitePage());
+    eventSettingRefreshButton?.addEventListener("click", () => refreshEventPurelist());
+    eventSettingPrintToggle?.addEventListener("change", () => handleEventPrintToggleChange(eventSettingPrintToggle.checked));
       eventInfoInviteButton?.addEventListener("click", () => openEventInvitePage());
 
       manualEventSelect?.addEventListener("change", updateManualEventDate);

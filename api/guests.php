@@ -653,9 +653,43 @@ if ($method === 'POST') {
                 echo json_encode(['status' => 'error', 'message' => 'Failed to create event entry points.']);
                 exit;
             }
+        echo json_encode([
+            'status' => 'ok',
+            'message' => 'Event invite entry page created successfully.'
+        ]);
+        exit;
+        } elseif ($action === 'refresh_event_purelist') {
+            $eventCode = trim((string)($_POST['event_code'] ?? ''));
+            if ($eventCode === '') {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Event code is required.']);
+                exit;
+            }
+            $store = loadGuestStore($storePath, $eventsRoot);
+            $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+            if ($eventIndex < 0) {
+                http_response_code(404);
+                echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+                exit;
+            }
+            $event = &$store['events'][$eventIndex];
+            if (!syncEventPurelist($event, $eventsRoot)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Failed to refresh the SMS export file.']);
+                exit;
+            }
+            $event['updated_at'] = date('c');
+            $event['guest_count'] = count($event['guests'] ?? []);
+            if (!saveGuestStore($storePath, $store)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Failed to persist event data after refresh.']);
+                exit;
+            }
             echo json_encode([
                 'status' => 'ok',
-                'message' => 'Event invite entry page created successfully.'
+                'message' => 'SMS export refreshed successfully.',
+                'events' => normalizeEventsForResponse($store['events']),
+                'active_event' => normalizeEventForResponse($event)
             ]);
             exit;
         } elseif ($action === 'save_invite_card_template') {
