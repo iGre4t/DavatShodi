@@ -94,6 +94,25 @@ $personalWorkId = $currentUser['work_id'] ?? '';
 $accountUsername = $currentUser['username'] ?? '';
 $accountPhone = $currentUser['phone'] ?? '';
 $accountEmail = $currentUser['email'] ?? '';
+
+function renderLazyTabPlaceholder(string $tabId, string $label): void
+{
+  $safeId = htmlspecialchars($tabId, ENT_QUOTES, 'UTF-8');
+  $safeLabel = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+  ?>
+  <section id="tab-<?= $safeId ?>" class="tab" data-lazy-tab="<?= $safeId ?>">
+    <div class="card placeholder-card">
+      <div class="card-progress" role="status" aria-live="polite">
+        <div class="loader-ring" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </div>
+        <p class="muted" data-tab-loader-status>Loading <?= $safeLabel ?>…</p>
+      </div>
+    </div>
+  </section>
+  <?php
+}
 ?>
 
 <!doctype html>
@@ -164,15 +183,6 @@ $accountEmail = $currentUser['email'] ?? '';
           <button class="nav-item" data-tab="guests">
             <span class="nav-icon ri ri-team-line" aria-hidden="true"></span>
             <span>مهمانان و رویدادها</span>
-          </button>
-          <button
-            type="button"
-            class="nav-item"
-            data-external-target="invite.php"
-            title="Jump to invite page"
-          >
-            <span class="nav-icon ri ri-mail-add-line" aria-hidden="true"></span>
-            <span>دعوت</span>
           </button>
           <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
           <button class="nav-item" data-tab="gallery">
@@ -346,12 +356,19 @@ $accountEmail = $currentUser['email'] ?? '';
           </div>
         </section>
 
-        <?php include __DIR__ . '/guests.php'; ?>
-        <?php include __DIR__ . '/winnerstab.php'; ?>
-        <?php include __DIR__ . '/gallery-tab.php'; ?>
-        <?php include __DIR__ . '/invitepanel.php'; ?>
-        <?php include __DIR__ . '/typography.php'; ?>
-        <?php include __DIR__ . '/features.php'; ?>
+        <?php
+        $lazyTabs = [
+          'guests' => 'Guest tools',
+          'winners' => 'Winners board',
+          'gallery' => 'Photo gallery',
+          'invite' => 'Invite console',
+          'typography' => 'Typography tools',
+          'features' => 'Features lab'
+        ];
+        foreach ($lazyTabs as $tabId => $tabLabel) {
+          renderLazyTabPlaceholder($tabId, $tabLabel);
+        }
+        ?>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
             <div class="sub-layout" data-sub-layout>

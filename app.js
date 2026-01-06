@@ -88,6 +88,17 @@ const STYLE_FIELD_KEY_MAP = {
   "national-id": "nationalId",
   "guest-code": "guestCode"
 };
+const LAZY_TAB_ENDPOINT = "./panel-tab.php";
+const LAZY_TAB_KEYS = new Set([
+  "guests",
+  "gallery",
+  "features",
+  "typography",
+  "winners",
+  "invite"
+]);
+const lazyTabLoaders = new Map();
+const lazyTabsLoaded = new Set();
 const SHARED_GENERAL_SETTINGS =
   typeof window !== "undefined" &&
   window.GENERAL_SETTINGS &&
@@ -4479,6 +4490,62 @@ async function undoGalleryPhotoUpdate(photoId, previousSnapshot) {
   }
 }
 
+function isLazyTabTarget(tab) {
+  return LAZY_TAB_KEYS.has(tab);
+}
+
+function getLazyTabPlaceholder(tab) {
+  return qs(`#tab-${tab}`);
+}
+
+function updateLazyTabStatus(section, message) {
+  const statusElement = section?.querySelector("[data-tab-loader-status]");
+  if (statusElement) {
+    statusElement.textContent = message;
+  }
+}
+
+function loadLazyTab(tab) {
+  if (!isLazyTabTarget(tab) || lazyTabsLoaded.has(tab)) {
+    return Promise.resolve();
+  }
+  if (lazyTabLoaders.has(tab)) {
+    return lazyTabLoaders.get(tab);
+  }
+  const placeholder = getLazyTabPlaceholder(tab);
+  if (!placeholder) {
+    lazyTabsLoaded.add(tab);
+    return Promise.resolve();
+  }
+  placeholder.classList.add("tab-loading");
+  const loader = (async () => {
+    const response = await fetch(`${LAZY_TAB_ENDPOINT}?tab=${encodeURIComponent(tab)}`);
+    if (!response.ok) {
+      throw new Error(`Unable to load ${tab} tab (${response.status})`);
+    }
+    const html = await response.text();
+    placeholder.insertAdjacentHTML("afterend", html);
+    const newSection = placeholder.nextElementSibling;
+    if (!newSection || newSection.id !== placeholder.id) {
+      throw new Error("Tab markup was not returned.");
+    }
+    const wasActive = placeholder.classList.contains("active");
+    newSection.classList.toggle("active", wasActive);
+    placeholder.remove();
+    lazyTabsLoaded.add(tab);
+  })();
+  lazyTabLoaders.set(tab, loader);
+  loader
+    .catch((error) => {
+      updateLazyTabStatus(placeholder, error?.message || "Unable to load tab.");
+    })
+    .finally(() => {
+      placeholder.classList.remove("tab-loading");
+      lazyTabLoaders.delete(tab);
+    });
+  return loader;
+}
+
 // Highlights the requested tab and updates the page title bar.
 function setActiveTab(tab) {
   qsa('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -4497,6 +4564,7 @@ function setActiveTab(tab) {
   };
   const el = qs('#page-title');
   if (el) el.textContent = titles[tab] || '';
+  void loadLazyTab(tab);
 }
 
 function createTextCell(value) {
