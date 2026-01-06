@@ -4505,6 +4505,53 @@ function updateLazyTabStatus(section, message) {
   }
 }
 
+function insertLazyTabContent(placeholder, html) {
+  if (!placeholder || !placeholder.parentNode) {
+    return null;
+  }
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const nodes = Array.from(template.content.childNodes);
+  let reference = placeholder;
+  let insertedSection = null;
+  const parent = placeholder.parentNode;
+  nodes.forEach(node => {
+    if (node.nodeName === "SCRIPT") {
+      const script = document.createElement("script");
+      Array.from(node.attributes).forEach(attr => {
+        script.setAttribute(attr.name, attr.value);
+      });
+      if (node.textContent) {
+        script.textContent = node.textContent;
+      }
+      parent.insertBefore(script, reference.nextSibling);
+      reference = script;
+      return;
+    }
+    parent.insertBefore(node, reference.nextSibling);
+    reference = node;
+    if (node.nodeType === Node.ELEMENT_NODE && node.id === placeholder.id) {
+      insertedSection = node;
+    }
+  });
+  return insertedSection;
+}
+
+function runLazyTabScripts(section) {
+  if (!section) return;
+  const scripts = Array.from(section.querySelectorAll("script"));
+  scripts.forEach(original => {
+    const replacement = document.createElement("script");
+    Array.from(original.attributes).forEach(attr => {
+      replacement.setAttribute(attr.name, attr.value);
+    });
+    if (!original.src) {
+      replacement.textContent = original.textContent;
+    }
+    original.replaceWith(replacement);
+  });
+}
+
 function loadLazyTab(tab) {
   if (!isLazyTabTarget(tab) || lazyTabsLoaded.has(tab)) {
     return Promise.resolve();
@@ -4524,11 +4571,11 @@ function loadLazyTab(tab) {
       throw new Error(`Unable to load ${tab} tab (${response.status})`);
     }
     const html = await response.text();
-    placeholder.insertAdjacentHTML("afterend", html);
-    const newSection = placeholder.nextElementSibling;
+    const newSection = insertLazyTabContent(placeholder, html);
     if (!newSection || newSection.id !== placeholder.id) {
       throw new Error("Tab markup was not returned.");
     }
+    runLazyTabScripts(newSection);
     const wasActive = placeholder.classList.contains("active");
     newSection.classList.toggle("active", wasActive);
     placeholder.remove();

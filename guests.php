@@ -3550,7 +3550,7 @@
         });
     }
 
-    document.addEventListener("DOMContentLoaded", () => {
+    function initGuestsTab() {
       fileTrigger?.addEventListener("click", (e) => {
         e.preventDefault();
         fileInput?.click();
@@ -3815,6 +3815,11 @@
           setActivePane(button.dataset.pane);
         });
       });
-    });
+    }
+    if (document.readyState !== "loading") {
+      initGuestsTab();
+    } else {
+      document.addEventListener("DOMContentLoaded", initGuestsTab);
+    }
   })();
 </script>
