@@ -598,7 +598,7 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
   font-weight: 600;
 }
 .backup-table tbody tr:hover {
-  background: #fff5f6;
+  background: var(--sidebar-active);
 }
 .backup-table__empty {
   text-align: center;
@@ -1545,7 +1545,7 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
   text-align: right;
 }
 thead th { background: #fafafa; color: var(--muted); font-weight: 600; }
-tbody tr:hover { background: #fff5f6; }
+tbody tr:hover { background: var(--sidebar-active); }
 
 .users-actions-cell {
   direction: ltr;
@@ -2031,7 +2031,7 @@ input[type=number] { -moz-appearance: textfield; }
 .timeline-segment { position: absolute; top: 0; bottom: 0; background: var(--primary-focus); border-right: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; justify-content: center; color: #991b1b; font-size: 12px; }
 .timeline-segment.alt { background: rgba(0,0,0,0.06); color: #111; }
 .timeline-segment .seg-del { position: absolute; top: 4px; inset-inline-end: 6px; font-size: 11px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
-.timeline-segment .seg-del:hover { background: #fff5f6; }
+.timeline-segment .seg-del:hover { background: var(--sidebar-active); }
 
 .timeline-handle { position: absolute; top: -6px; width: 10px; height: 48px; margin-inline-start: -5px; background: var(--secondary); border-radius: 3px; cursor: ew-resize; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
 .timeline-handle.locked { background: #cbd5e1; cursor: not-allowed; }
