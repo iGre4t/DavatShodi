@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 session_start();
 
 date_default_timezone_set('Asia/Tehran');
@@ -13,80 +13,10 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
-const NUMBER_RESULTS_FILE = 'numberpicker-results.csv';
-const NUMBER_MIN = 1;
-const NUMBER_MAX = 300;
-const PICKER_SCOPE = 'numberpicker';
-
-if (!defined('EVENTS_ROOT')) {
-  define('EVENTS_ROOT', __DIR__ . '/events');
-}
 
 $panelSettings = loadPanelSettings();
 $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName']);
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
-
-$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$eventCode = PICKER_SCOPE;
-
-if ($method === 'POST') {
-  header('Content-Type: application/json; charset=UTF-8');
-  $rawInput = file_get_contents('php://input');
-  $payload = json_decode($rawInput ?: '', true);
-  $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
-
-  if ($action === 'reset_numbers') {
-    if (!resetNumberRecords(EVENTS_ROOT, PICKER_SCOPE)) {
-      echo json_encode(['status' => 'error', 'message' => 'Unable to clear saved numbers.']);
-      exit;
-    }
-    echo json_encode([
-      'status' => 'ok',
-      'message' => 'Numbers cleared.',
-      'numbers' => loadNumberRecords(EVENTS_ROOT, PICKER_SCOPE)
-    ]);
-    exit;
-  }
-
-  if ($action !== 'save_number') {
-    echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
-    exit;
-  }
-
-  $number = $payload['number'] ?? null;
-  if (!is_int($number) && !is_string($number)) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid number.']);
-    exit;
-  }
-  $number = (int)$number;
-  if ($number < NUMBER_MIN || $number > NUMBER_MAX) {
-    echo json_encode(['status' => 'error', 'message' => 'Number must be between 1 and 300.']);
-    exit;
-  }
-
-  $eventDir = EVENTS_ROOT . '/' . $eventCode;
-  $entry = [
-    'timestamp' => (new DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
-    'event_code' => $eventCode,
-    'number' => $number
-  ];
-
-  if (!appendNumberRecord($eventDir, NUMBER_RESULTS_FILE, $entry)) {
-    echo json_encode(['status' => 'error', 'message' => 'Unable to persist number.']);
-    exit;
-  }
-
-  echo json_encode([
-    'status' => 'ok',
-    'message' => 'Number saved.',
-      'numbers' => loadNumberRecords(EVENTS_ROOT, PICKER_SCOPE)
-  ]);
-  exit;
-}
-
-$savedNumbers = loadNumberRecords(EVENTS_ROOT, PICKER_SCOPE);
-$fontRegularUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-Regular.woff2'), ENT_QUOTES, 'UTF-8');
-$fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-Bold.woff2'), ENT_QUOTES, 'UTF-8');
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -100,13 +30,13 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         font-family: 'Peyda';
         font-weight: 400;
         font-style: normal;
-        src: url('<?= $fontRegularUrl ?>') format('woff2');
+        src: url('<?= htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-Regular.woff2'), ENT_QUOTES, 'UTF-8') ?>') format('woff2');
       }
       @font-face {
         font-family: 'Peyda';
         font-weight: 700;
         font-style: normal;
-        src: url('<?= $fontBoldUrl ?>') format('woff2');
+        src: url('<?= htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-Bold.woff2'), ENT_QUOTES, 'UTF-8') ?>') format('woff2');
       }
 
       :root {
@@ -304,7 +234,10 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         gap: 16px;
       }
 
-      button {
+      button,
+      .start-btn,
+      .confirm-btn {
+        font-family: 'Peyda', 'Segoe UI', Tahoma, Arial, sans-serif;
         border: none;
         border-radius: 999px;
         padding: 14px 32px;
@@ -314,7 +247,9 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
       }
 
-      button:disabled {
+      button:disabled,
+      .start-btn:disabled,
+      .confirm-btn:disabled {
         opacity: 0.35;
         cursor: not-allowed;
         transform: none;
@@ -444,11 +379,10 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
     </div>
 
     <script>
-      window.__SAVED_NUMBERS = window.__SAVED_NUMBERS || <?= json_encode($savedNumbers, JSON_UNESCAPED_UNICODE); ?>;
-      const NUMBER_ENDPOINT = 'numberpicker.php';
-      const MIN_NUMBER = <?= NUMBER_MIN ?>;
-      const MAX_NUMBER = <?= NUMBER_MAX ?>;
+      const MIN_NUMBER = 1;
+      const MAX_NUMBER = 300;
       const DIGIT_COUNT = 3;
+      const STORAGE_KEY = 'numberpicker-saved-numbers';
       const codeDisplay = document.getElementById('code-display');
       const statusText = document.getElementById('status-text');
       const startBtn = document.getElementById('start-draw');
@@ -456,17 +390,29 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       const numberItems = document.getElementById('number-items');
       const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
 
+      const loadSavedNumbers = () => {
+        try {
+          const payload = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+          return Array.isArray(payload) ? payload : [];
+        } catch (error) {
+          console.error('Failed to read saved numbers from storage.', error);
+          return [];
+        }
+      };
+
+      const persistSavedNumbers = (list) => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      };
+
       let animationInterval = null;
       let stopTimeouts = [];
       let currentNumber = null;
-      const pressedShortcutKeys = new Set();
-      let resetShortcutLocked = false;
-
+      let savedNumbers = loadSavedNumbers();
       const randomDigit = () => Math.floor(Math.random() * 10).toString();
       const randomNumber = () => Math.floor(Math.random() * (MAX_NUMBER - MIN_NUMBER + 1)) + MIN_NUMBER;
 
       const padDigits = (value) => {
-        const cleaned = (value ?? '').toString().replace(/\\D+/g, '');
+        const cleaned = (value ?? '').toString().replace(/\D+/g, '');
         const normalized = cleaned === '' ? ''.padStart(DIGIT_COUNT, '0') : cleaned;
         if (normalized.length >= DIGIT_COUNT) {
           return normalized.slice(-DIGIT_COUNT);
@@ -493,10 +439,6 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         });
       };
 
-      const setCode = (value, locks = defaultLocks()) => {
-        renderDigits(padDigits(value), locks);
-      };
-
       const showIdleText = () => {
         statusText.textContent = 'شماره انتخاب نشده';
         statusText.classList.add('winner-message--idle');
@@ -509,18 +451,15 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         statusText.classList.remove('winner-message--idle');
       };
 
-      const formatStoredNumber = (value) => padDigits(value);
-
       const renderNumberItem = (entry) => {
         const container = document.createElement('div');
         container.className = 'winner-item';
         const codeEl = document.createElement('div');
         codeEl.className = 'winner-code';
-        codeEl.textContent = formatStoredNumber(entry.number ?? entry.code ?? '0');
+        codeEl.textContent = formatNumberDigits(entry.number);
         const infoEl = document.createElement('div');
         infoEl.className = 'winner-info';
-        const timestamp = entry.timestamp ? entry.timestamp : 'نامشخص';
-        infoEl.textContent = `ثبت‌شده: ${timestamp}`;
+        infoEl.textContent = 'شماره برنده';
         container.append(codeEl, infoEl);
         return container;
       };
@@ -547,40 +486,20 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         stopTimeouts = [];
       };
 
-      const flashError = (message) => {
-        console.error(message);
+      const saveCurrentNumber = () => {
+        if (currentNumber === null) {
+          return;
+        }
+        const entry = { number: currentNumber };
+        savedNumbers = [entry, ...savedNumbers];
+        persistSavedNumbers(savedNumbers);
+        renderNumberList(savedNumbers);
+        statusText.textContent = `شماره ثبت‌شده: ${formatNumberDigits(currentNumber)}`;
+        statusText.classList.add('winner-message--active');
+        statusText.classList.remove('winner-message--idle');
         confirmBtn.disabled = true;
         startBtn.disabled = false;
       };
-
-      const resetNumberList = async () => {
-        cancelAnimation();
-        confirmBtn.disabled = true;
-        currentNumber = null;
-        startBtn.disabled = true;
-        try {
-          const response = await fetch(NUMBER_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'reset_numbers' })
-          });
-          const payload = await response.json();
-          if (!response.ok || payload.status !== 'ok') {
-            throw new Error(payload?.message || 'Unable to reset numbers.');
-          }
-          renderNumberList(payload.numbers || []);
-          window.__SAVED_NUMBERS = payload.numbers || [];
-          startBtn.disabled = false;
-          showIdleText();
-          setCode('0');
-        } catch (error) {
-          flashError('مشکلی در پاک کردن شماره‌ها پیش آمد.');
-        }
-      };
-
-      setCode('0');
-      showIdleText();
-      renderNumberList(window.__SAVED_NUMBERS);
 
       startBtn.addEventListener('click', () => {
         cancelAnimation();
@@ -616,35 +535,14 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         });
       });
 
-      confirmBtn.addEventListener('click', async () => {
+      confirmBtn.addEventListener('click', () => {
         if (currentNumber === null) {
           return;
         }
-        confirmBtn.disabled = true;
-        try {
-          const response = await fetch(NUMBER_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'save_number', number: currentNumber })
-          });
-          const data = await response.json();
-          if (!response.ok || data?.status !== 'ok') {
-            throw new Error(data?.message || 'Unable to save number.');
-          }
-          const savedList = Array.isArray(data.numbers) ? data.numbers : [];
-          window.__SAVED_NUMBERS = savedList;
-          renderNumberList(savedList);
-          showIdleText();
-          currentNumber = null;
-          setCode('0');
-          startBtn.disabled = false;
-        } catch (error) {
-          flashError(error.message);
-        }
+        saveCurrentNumber();
       });
 
       document.addEventListener('keydown', (event) => {
-        pressedShortcutKeys.add(event.code);
         if (event.code === 'Enter') {
           if (!startBtn.disabled) {
             startBtn.click();
@@ -655,19 +553,11 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
             confirmBtn.click();
           }
         }
-        if (!resetShortcutLocked && pressedShortcutKeys.has('Numpad8') && pressedShortcutKeys.has('Numpad9')) {
-          resetShortcutLocked = true;
-          event.preventDefault();
-          resetNumberList();
-        }
       });
 
-      document.addEventListener('keyup', (event) => {
-        pressedShortcutKeys.delete(event.code);
-        if (event.code === 'Numpad8' || event.code === 'Numpad9') {
-          resetShortcutLocked = false;
-        }
-      });
+      setNumberText(0);
+      renderDigits('0');
+      renderNumberList(savedNumbers);
     </script>
   </body>
 </html>
@@ -730,14 +620,6 @@ function getPublicBasePath(): string
     }
   }
 
-  if (preg_match('#^(.*?)/events/[^/]+/numberpicker\.php$#', $scriptName, $matches)) {
-    $candidate = $matches[1];
-    if ($candidate === '' || $candidate === '/') {
-      return '';
-    }
-    return rtrim($candidate, '/');
-  }
-
   $dir = dirname($scriptName);
   if ($dir === '/' || $dir === '\\' || $dir === '.') {
     return '';
@@ -766,138 +648,4 @@ function buildPublicAssetUrl(string $path): string
     return '/' . $relative;
   }
   return $base . '/' . $relative;
-}
-
-function appendNumberRecord(string $eventDir, string $fileName, array $row): bool
-{
-  if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
-    return false;
-  }
-  $filePath = $eventDir . '/' . $fileName;
-  $headers = ['timestamp', 'event_code', 'number'];
-  $isNew = !is_file($filePath);
-  $handle = fopen($filePath, 'a');
-  if ($handle === false) {
-    return false;
-  }
-  if ($isNew || filesize($filePath) === 0) {
-    fputcsv($handle, $headers);
-  }
-  $line = [];
-  foreach ($headers as $name) {
-    $line[] = $row[$name] ?? '';
-  }
-  fputcsv($handle, $line);
-  fclose($handle);
-  return true;
-}
-
-function loadNumberRecords(string $eventsRoot, string $targetEventCode = ''): array
-{
-  $list = [];
-  if (!is_dir($eventsRoot)) {
-    return $list;
-  }
-  $targetEventCode = trim($targetEventCode);
-  $eventDirs = scandir($eventsRoot);
-  if ($eventDirs === false) {
-    return $list;
-  }
-  foreach ($eventDirs as $dir) {
-    if ($dir === '.' || $dir === '..') {
-      continue;
-    }
-    $eventPath = $eventsRoot . '/' . $dir;
-    if (!is_dir($eventPath)) {
-      continue;
-    }
-    if ($targetEventCode !== '' && $dir !== $targetEventCode) {
-      continue;
-    }
-    $filePath = $eventPath . '/' . NUMBER_RESULTS_FILE;
-    if (!is_file($filePath)) {
-      continue;
-    }
-    $rows = readCsvRows($filePath);
-    if ($rows) {
-      foreach ($rows as &$row) {
-        if (trim((string)($row['event_code'] ?? '')) === '') {
-          $row['event_code'] = $dir;
-        }
-      }
-      unset($row);
-      $list = array_merge($list, $rows);
-    }
-  }
-  usort($list, static fn ($a, $b) => strcmp((string)($b['timestamp'] ?? ''), (string)($a['timestamp'] ?? '')));
-  return array_values($list);
-}
-
-function resetNumberRecords(string $eventsRoot, string $targetEventCode = ''): bool
-{
-  if ($targetEventCode !== '') {
-    $eventDir = $eventsRoot . '/' . trim($targetEventCode);
-    return deleteNumberFilesInDirectory($eventDir);
-  }
-  if (!is_dir($eventsRoot)) {
-    return true;
-  }
-  $success = true;
-  $entries = scandir($eventsRoot);
-  if ($entries === false) {
-    return true;
-  }
-  foreach ($entries as $entry) {
-    if ($entry === '.' || $entry === '..') {
-      continue;
-    }
-    $eventPath = $eventsRoot . '/' . $entry;
-    if (!is_dir($eventPath)) {
-      continue;
-    }
-    if (!deleteNumberFilesInDirectory($eventPath)) {
-      $success = false;
-    }
-  }
-  return $success;
-}
-
-function deleteNumberFilesInDirectory(string $eventPath): bool
-{
-  if (!is_dir($eventPath)) {
-    return true;
-  }
-  $filePath = $eventPath . '/' . NUMBER_RESULTS_FILE;
-  if (!is_file($filePath)) {
-    return true;
-  }
-  return @unlink($filePath);
-}
-
-function readCsvRows(string $path): array
-{
-  $rows = [];
-  if (!is_file($path)) {
-    return $rows;
-  }
-  $handle = fopen($path, 'r');
-  if ($handle === false) {
-    return $rows;
-  }
-  $headers = fgetcsv($handle);
-  if ($headers === false) {
-    fclose($handle);
-    return $rows;
-  }
-  while (($line = fgetcsv($handle)) !== false) {
-    if (count($line) !== count($headers)) {
-      $line = array_pad($line, count($headers), '');
-    }
-    $combined = @array_combine($headers, $line);
-    if ($combined !== false) {
-      $rows[] = $combined;
-    }
-  }
-  fclose($handle);
-  return $rows;
 }

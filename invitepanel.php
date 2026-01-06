@@ -22,6 +22,25 @@
         />
         </label>
       <p id="invite-status" class="hint" aria-live="polite"></p>
+      <div class="progress-for-cards hidden" data-invite-entry-progress>
+        <div class="progress-for-cards__header">
+          <span class="progress-for-cards__title">اطلاعات ورود</span>
+          <span class="muted small" data-invite-entry-progress-status></span>
+        </div>
+        <div class="progress-for-cards__stats">
+          <div>
+            <span class="progress-for-cards__count" data-invite-entry-progress-completed>0</span>
+            completed
+          </div>
+          <div>
+            <span class="progress-for-cards__count" data-invite-entry-progress-remaining>0</span>
+            remaining
+          </div>
+        </div>
+        <div class="progress-for-cards__bar">
+          <span class="progress-for-cards__fill" data-invite-entry-progress-fill style="width: 0%"></span>
+        </div>
+      </div>
       </form>
 
       <div class="invite-stats-shell">
@@ -370,6 +389,11 @@
       const printCodeEl = document.getElementById("invite-print-code");
       const statsGrid = document.getElementById("invite-stats-grid");
       const entryLineEl = document.getElementById("invite-print-entry-line");
+      const inviteEntryProgressElement = document.querySelector("[data-invite-entry-progress]");
+      const inviteEntryProgressStatus = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-status]");
+      const inviteEntryProgressCompletedCount = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-completed]");
+      const inviteEntryProgressRemainingCount = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-remaining]");
+      const inviteEntryProgressFill = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-fill]");
       const persianTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
         hour: "2-digit",
         minute: "2-digit",
@@ -444,6 +468,52 @@
         } else {
           statusBox.removeAttribute("data-tone");
         }
+      }
+
+      function toggleInviteEntryProgress(show) {
+        if (!inviteEntryProgressElement) {
+          return;
+        }
+        inviteEntryProgressElement.classList.toggle("hidden", !show);
+      }
+
+      function setInviteEntryProgressStatus(message) {
+        if (!inviteEntryProgressStatus) {
+          return;
+        }
+        inviteEntryProgressStatus.textContent = message || "";
+      }
+
+      function updateInviteEntryProgressStats(completed, remaining) {
+        if (inviteEntryProgressCompletedCount) {
+          inviteEntryProgressCompletedCount.textContent = String(completed);
+        }
+        if (inviteEntryProgressRemainingCount) {
+          inviteEntryProgressRemainingCount.textContent = String(remaining);
+        }
+        if (inviteEntryProgressFill) {
+          const total = completed + remaining;
+          const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+          inviteEntryProgressFill.style.width = `${percent}%`;
+        }
+      }
+
+      function startInviteEntryProgress() {
+        if (!inviteEntryProgressElement) {
+          return;
+        }
+        toggleInviteEntryProgress(true);
+        updateInviteEntryProgressStats(0, 1);
+        setInviteEntryProgressStatus("Searching guest...");
+      }
+
+      function stopInviteEntryProgress() {
+        if (!inviteEntryProgressElement) {
+          return;
+        }
+        toggleInviteEntryProgress(false);
+        updateInviteEntryProgressStats(0, 0);
+        setInviteEntryProgressStatus("");
       }
 
       const logDateFormatter = new Intl.DateTimeFormat("fa-IR", {
@@ -858,6 +928,7 @@
       async function scanNationalId(value) {
         if (loading) return;
         loading = true;
+        startInviteEntryProgress();
         setStatus("در حال بررسی مهمان...", "info");
         const formData = new FormData();
         formData.append("action", "scan_invite");
@@ -929,6 +1000,7 @@
           showSnackbar(errMsg);
         } finally {
           loading = false;
+          stopInviteEntryProgress();
           if (nationalInput) {
             nationalInput.value = "";
             nationalInput.focus();
