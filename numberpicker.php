@@ -390,6 +390,8 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       const confirmBtn = document.getElementById('confirm-number');
       const numberItems = document.getElementById('number-items');
       const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
+      const pressedShortcutKeys = new Set();
+      let resetShortcutLocked = false;
 
       const loadSavedNumbers = () => {
         try {
@@ -495,6 +497,16 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         return container;
       };
 
+      const clearSavedNumbers = () => {
+        savedNumbers = [];
+        persistSavedNumbers(savedNumbers);
+        renderNumberList(savedNumbers);
+        showIdleText();
+        startBtn.disabled = false;
+        confirmBtn.disabled = true;
+        updateDrawAvailability();
+      };
+
       const renderNumberList = (items) => {
         const list = Array.isArray(items) ? items.slice() : [];
         numberItems.innerHTML = '';
@@ -586,7 +598,15 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         saveCurrentNumber();
       });
 
+      const handleShortcutReset = () => {
+        clearSavedNumbers();
+        statusText.textContent = 'شماره‌ها پاک شد';
+        statusText.classList.add('winner-message--active');
+        statusText.classList.remove('winner-message--idle');
+      };
+
       document.addEventListener('keydown', (event) => {
+        pressedShortcutKeys.add(event.code);
         if (event.code === 'Enter') {
           if (!startBtn.disabled) {
             startBtn.click();
@@ -596,6 +616,21 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
           if (!confirmBtn.disabled) {
             confirmBtn.click();
           }
+        }
+
+        if (!resetShortcutLocked &&
+            pressedShortcutKeys.has('Numpad8') &&
+            pressedShortcutKeys.has('Numpad9')) {
+          resetShortcutLocked = true;
+          event.preventDefault();
+          handleShortcutReset();
+        }
+      });
+
+      document.addEventListener('keyup', (event) => {
+        pressedShortcutKeys.delete(event.code);
+        if (event.code === 'Numpad8' || event.code === 'Numpad9') {
+          resetShortcutLocked = false;
         }
       });
 

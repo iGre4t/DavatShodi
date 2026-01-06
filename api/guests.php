@@ -431,6 +431,11 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Guest not found.']);
             exit;
         }
+        $dateEntered = trim((string)($_POST['date_entered'] ?? ''));
+        $dateExited = trim((string)($_POST['date_exited'] ?? ''));
+        $enteredParts = splitDateTimeValue($dateEntered);
+        $exitedParts = splitDateTimeValue($dateExited);
+
         $store['events'][$eventIndex]['guests'][$guestIndex] = array_merge(
             $store['events'][$eventIndex]['guests'][$guestIndex],
             [
@@ -439,8 +444,12 @@ if ($method === 'POST') {
                 'gender' => trim((string)($_POST['gender'] ?? '')),
                 'national_id' => normalizeNationalId((string)($_POST['national_id'] ?? '')),
                 'phone_number' => trim((string)($_POST['phone_number'] ?? '')),
-                'date_entered' => trim((string)($_POST['date_entered'] ?? '')),
-                'date_exited' => trim((string)($_POST['date_exited'] ?? ''))
+                'date_entered' => $dateEntered,
+                'date_exited' => $dateExited,
+                'join_date' => $enteredParts['date'],
+                'join_time' => $enteredParts['time'],
+                'left_date' => $exitedParts['date'],
+                'left_time' => $exitedParts['time']
             ]
         );
         normalizeGuestDateFields($store['events'][$eventIndex]['guests'][$guestIndex]);

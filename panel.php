@@ -165,15 +165,6 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-team-line" aria-hidden="true"></span>
             <span>مهمانان و رویدادها</span>
           </button>
-          <button
-            type="button"
-            class="nav-item"
-            data-external-target="invite.php"
-            title="Jump to invite page"
-          >
-            <span class="nav-icon ri ri-mail-add-line" aria-hidden="true"></span>
-            <span>دعوت</span>
-          </button>
           <!-- Gallery tab is populated by gallery-tab.php; app.js toggles it on demand. -->
           <button class="nav-item" data-tab="gallery">
             <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
