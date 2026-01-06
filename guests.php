@@ -143,6 +143,15 @@
           >
             Invite Card Generator
           </button>
+          <button
+            type="button"
+            class="default-top-tab-list__tab"
+            data-event-section-target="event-setting"
+            aria-controls="event-setting-section"
+            aria-selected="false"
+          >
+            Event Setting
+          </button>
         </div>
         <div class="event-section" data-event-section="event-info" id="event-info-section">
           <div class="card">
@@ -158,12 +167,14 @@
                 <h3>Event info</h3>
               </div>
             </div>
+            <p id="event-info-live-status" class="muted small" style="margin-top:4px;">غیرفعال</p>
             <div
               class="section-actions"
               style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;"
             >
               <button type="button" class="btn primary" id="event-pot-open">Event Pot</button>
               <button type="button" class="btn ghost" id="copy-event-pot-link">Copy Event Pot Link</button>
+              <button type="button" class="btn ghost" id="event-info-open-invite" disabled>Invite</button>
             </div>
             <form id="event-info-form" class="form">
               <div class="form" style="max-width: 420px; gap: 12px;">
@@ -201,6 +212,10 @@
                     <select id="event-info-join-limit-time" name="join_limit_time" class="field"></select>
                   </label>
                   <label class="field" style="flex:1 1 180px; margin:0;">
+                    <span>Event left time</span>
+                    <select id="event-info-left-time" name="join_left_time" class="field"></select>
+                  </label>
+                  <label class="field" style="flex:1 1 180px; margin:0;">
                     <span>Event end time</span>
                     <select id="event-info-join-end-time" name="join_end_time" class="field"></select>
                   </label>
@@ -232,6 +247,7 @@
               >
                 <div style="display:flex; align-items:center; gap:8px;">
                   <button type="button" class="btn" id="export-sms-link">Export SMS Link</button>
+                  <button type="button" class="btn ghost" id="new-sms-link-exporter">New SMS Link Exporter</button>
                   <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
                 </div>
                 <button type="button" class="btn primary" id="open-manual-modal-event">Add guest manually</button>
@@ -356,6 +372,41 @@
 
         <div class="event-section hidden" data-event-section="event-invite-card" id="event-invite-card-section">
           <?php include __DIR__ . '/InvCardGen.php'; ?>
+        </div>
+
+        <div class="event-section hidden" data-event-section="event-setting" id="event-setting-section">
+          <div class="card">
+            <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+              <div>
+                <h3>تنظیمات ورود و خروج</h3>
+                <p class="muted small" style="margin:0;">با فعال بودن این گزینه، بعد از ثبت ورود مهمان پنجره چاپ رسید نشان داده می‌شود و در غیر این‌صورت صرفاً ورود ثبت می‌شود.</p>
+              </div>
+              <label class="switch">
+                <span class="switch-label">چاپ ورود</span>
+                <span class="switch-toggle">
+                  <input type="checkbox" id="event-setting-print-entry" aria-label="چاپ ورود" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="card">
+              <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                  <h3>Event Setting</h3>
+                <p class="muted small" style="margin:0;">از اینجا می‌توانید برای رویدادهای گذشته، صفحات دعوت را بسازید.</p>
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn primary" id="event-setting-create-invite">
+                  Create Invite Page
+                </button>
+                <button type="button" class="btn ghost" id="event-setting-refresh-export">
+                  Refresh SMS Export
+                </button>
+              </div>
+            </div>
+            <p id="event-setting-status" class="muted small" style="margin:0;">Select an event to enable invite creation.</p>
+          </div>
         </div>
 
 </section>
@@ -663,6 +714,7 @@
     const manualPhoneInput = document.getElementById("manual-phone");
     const manualEventPaneAddButton = document.getElementById("open-manual-modal-event");
     const exportSmsButton = document.getElementById("export-sms-link");
+    const newSmsExporterButton = document.getElementById("new-sms-link-exporter");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
     const eventListBody = document.getElementById("guest-event-list-body");
     const eventTabsContainer = document.getElementById("guest-event-tabs");
@@ -675,7 +727,9 @@
     const eventInfoEmptyMessage = document.getElementById("event-info-empty");
     const eventInfoJoinStartInput = document.getElementById("event-info-join-start-time");
     const eventInfoJoinLimitInput = document.getElementById("event-info-join-limit-time");
+    const eventInfoLeftTimeInput = document.getElementById("event-info-left-time");
     const eventInfoJoinEndInput = document.getElementById("event-info-join-end-time");
+    const eventInfoStatusText = document.getElementById("event-info-live-status");
     const guestEventPane = document.querySelector(".sub-pane[data-pane=\"guest-event-pane\"]");
     const eventSectionTabs = guestEventPane?.querySelector("[data-event-section-tabs]");
     const eventSections = Array.from(guestEventPane?.querySelectorAll("[data-event-section]") || []);
@@ -684,9 +738,14 @@
     const eventPrizeForm = document.getElementById("event-prize-add-form");
     const eventPrizeInput = document.getElementById("event-prize-name");
     const eventPrizeAddButton = document.getElementById("event-prize-add-button");
-      const eventPrizeStatus = document.getElementById("event-prize-status");
-      const eventPrizeListBody = document.getElementById("event-prize-list-body");
-      const INVITE_BASE_URL = "https://davatshodi.ir/l/inv";
+    const eventPrizeStatus = document.getElementById("event-prize-status");
+    const eventPrizeListBody = document.getElementById("event-prize-list-body");
+    const eventInfoInviteButton = document.getElementById("event-info-open-invite");
+    const eventSettingCreateInviteButton = document.getElementById("event-setting-create-invite");
+    const eventSettingRefreshButton = document.getElementById("event-setting-refresh-export");
+    const eventSettingStatusText = document.getElementById("event-setting-status");
+    const eventSettingPrintToggle = document.getElementById("event-setting-print-entry");
+    const INVITE_BASE_URL = "https://davatshodi.ir/l/inv";
     const EVENT_POT_BASE_URL = "https://davatshodi.ir/l/events";
     const eventPotOpenButton = document.getElementById("event-pot-open");
     const copyEventPotLinkButton = document.getElementById("copy-event-pot-link");
@@ -698,6 +757,11 @@
     let winnersLoaded = false;
     let eventPrizes = [];
     let currentEventPrizeCode = "";
+    let eventSettingActiveEventCode = "";
+    let eventSettingPrintUpdating = false;
+    let eventSettingRefreshInProgress = false;
+    let newSmsExporterInProgress = false;
+    let eventInfoCountdownTimer = null;
     let eventPrizeFetchId = 0;
 
     function showModal(modal) {
@@ -868,6 +932,7 @@
       renderManualEventOptions();
       renderEventTabs();
       renderGuestTable();
+      updateNewSmsExporterState();
     }
 
     function renderManualEventOptions(forceEventCode = "") {
@@ -1030,6 +1095,14 @@
           eventInfoJoinLimitInput.setAttribute("disabled", "disabled");
         }
       }
+      if (eventInfoLeftTimeInput) {
+        eventInfoLeftTimeInput.value = selectTimeValue(selectedEvent?.join_left_time || "");
+        if (hasEvent) {
+          eventInfoLeftTimeInput.removeAttribute("disabled");
+        } else {
+          eventInfoLeftTimeInput.setAttribute("disabled", "disabled");
+        }
+      }
       if (eventInfoJoinEndInput) {
         eventInfoJoinEndInput.value = selectTimeValue(selectedEvent?.join_end_time || "");
         if (hasEvent) {
@@ -1059,6 +1132,9 @@
       if (!hasEvent) {
         setActiveEventSection("event-info");
       }
+      updateEventInfoLiveStatus();
+      updateEventInfoInviteButton(selectedEvent);
+      updateEventSettingControls();
     }
 
     function updateEventSectionTabAccessibility(isReady) {
@@ -1070,6 +1146,430 @@
         tab.disabled = !isReady;
       });
     }
+
+    function setEventSettingStatusMessage(message = "", state = "") {
+      if (!eventSettingStatusText) return;
+      eventSettingStatusText.textContent = message;
+      if (state === "") {
+        eventSettingStatusText.removeAttribute("data-state");
+      } else {
+        eventSettingStatusText.dataset.state = state;
+      }
+    }
+
+    function updateEventSettingRefreshState() {
+      if (!eventSettingRefreshButton) return;
+      const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
+      const hasEvent = Boolean(selectedEvent && selectedEvent.code);
+      eventSettingRefreshButton.disabled = !hasEvent || eventSettingRefreshInProgress;
+    }
+
+    function updateNewSmsExporterState() {
+      if (!newSmsExporterButton) return;
+      const activeEvent = getActiveGuestEvent();
+      const hasEvent = Boolean(activeEvent && (activeEvent.code || "").trim());
+      newSmsExporterButton.disabled = !hasEvent || newSmsExporterInProgress;
+    }
+
+    function updateEventSettingControls() {
+      if (!eventSettingCreateInviteButton) return;
+      const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
+      const hasEvent = Boolean(selectedEvent && selectedEvent.code);
+      const selectedCode = selectedEvent?.code || "";
+      if (selectedCode !== eventSettingActiveEventCode) {
+        eventSettingActiveEventCode = selectedCode;
+        if (eventSettingStatusText) {
+          eventSettingStatusText.removeAttribute("data-state");
+        }
+      }
+      eventSettingCreateInviteButton.disabled = !hasEvent;
+      updateEventSettingRefreshState();
+      if (!hasEvent) {
+        setEventSettingStatusMessage("Select an event to enable invite creation.", "idle");
+        return;
+      }
+      const currentState = eventSettingStatusText?.dataset.state;
+      if (currentState === "success" || currentState === "busy" || currentState === "error") {
+        updateEventSettingPrintToggleState();
+        return;
+      }
+      setEventSettingStatusMessage(`Ready to create invite page for ${selectedEvent.name || selectedEvent.code}.`, "idle");
+      updateEventSettingPrintToggleState();
+    }
+
+    async function createEventInvitePage() {
+      if (!eventSettingCreateInviteButton || !activeEventCode) {
+        showErrorSnackbar?.({ message: "Select an event before creating the invite page." });
+        return;
+      }
+      const button = eventSettingCreateInviteButton;
+      button.setAttribute("disabled", "disabled");
+      setEventSettingStatusMessage("Creating invite page, please wait...", "busy");
+      try {
+        const formData = new FormData();
+        formData.append("action", "create_event_entrypoints");
+        formData.append("event_code", activeEventCode);
+        const response = await fetch("./api/guests.php", {
+          method: "POST",
+          body: formData
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status !== "ok") {
+          throw new Error(payload?.message || "Unable to create invite entry page.");
+        }
+        setEventSettingStatusMessage(payload.message || `Invite entry created for event ${activeEventCode}.`, "success");
+        showDefaultToast?.(payload.message || "Invite entry points created.");
+      } catch (error) {
+        const message = error?.message || "Failed to create invite entry page.";
+        setEventSettingStatusMessage(message, "error");
+        showErrorSnackbar?.({ message });
+      } finally {
+        updateEventSettingControls();
+      }
+    }
+
+    async function refreshEventPurelist() {
+      if (!eventSettingRefreshButton || !activeEventCode) {
+        showErrorSnackbar?.({ message: "Select an event before refreshing the SMS export data." });
+        return;
+      }
+      eventSettingRefreshInProgress = true;
+      updateEventSettingRefreshState();
+      setEventSettingStatusMessage("Refreshing SMS export, please wait...", "busy");
+      try {
+        const formData = new FormData();
+        formData.append("action", "refresh_event_purelist");
+        formData.append("event_code", activeEventCode);
+        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status !== "ok") {
+          throw new Error(payload?.message || "Failed to refresh SMS export.");
+        }
+        state.events = Array.isArray(payload.events) ? payload.events : state.events;
+        refreshEventControls();
+        const message = payload.message || `SMS export refreshed for ${activeEventCode}.`;
+        setEventSettingStatusMessage(message, "success");
+        showDefaultToast?.(message);
+      } catch (error) {
+        const message = error?.message || "Failed to refresh SMS export.";
+        setEventSettingStatusMessage(message, "error");
+        showErrorSnackbar?.({ message });
+      } finally {
+        eventSettingRefreshInProgress = false;
+        updateEventSettingRefreshState();
+        updateEventSettingControls();
+      }
+    }
+
+    async function handleEventPrintToggleChange(value) {
+      if (!eventSettingPrintToggle) return;
+      if (!activeEventCode) {
+        eventSettingPrintToggle.checked = !value;
+        return;
+      }
+      eventSettingPrintUpdating = true;
+      updateEventSettingPrintToggleState();
+      setEventSettingStatusMessage("در حال ذخیره تنظیمات چاپ ورود...", "busy");
+      try {
+        const formData = new FormData();
+        formData.append("action", "update_event_setting");
+        formData.append("event_code", activeEventCode);
+        formData.append("print_entry_modal", value ? "1" : "0");
+        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status !== "ok") {
+          throw new Error(payload?.message || "Failed to save print setting.");
+        }
+        state.events = Array.isArray(payload.events) ? payload.events : state.events;
+        refreshEventControls();
+        setEventSettingStatusMessage(value ? "چاپ ورود فعال شد." : "چاپ ورود غیرفعال شد.", "success");
+      } catch (error) {
+        eventSettingPrintToggle.checked = !value;
+        const message = error?.message || "Failed to save print setting.";
+        setEventSettingStatusMessage(message, "error");
+      } finally {
+        eventSettingPrintUpdating = false;
+        updateEventSettingPrintToggleState();
+      }
+    }
+
+    function updateEventSettingPrintToggleState() {
+      if (!eventSettingPrintToggle) return;
+      const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
+      const hasEvent = Boolean(selectedEvent && selectedEvent.code);
+      const enabled = hasEvent ? Boolean(selectedEvent.print_entry_modal ?? true) : true;
+      eventSettingPrintToggle.checked = enabled;
+      eventSettingPrintToggle.disabled = !hasEvent || eventSettingPrintUpdating;
+    }
+
+    function getEventInviteUrl(event) {
+      const code = (event?.code || "").trim();
+      if (!code) {
+        return "";
+      }
+      return `events/${encodeURIComponent(code)}/invite.php`;
+    }
+
+    function updateEventInfoInviteButton(selectedEvent) {
+      if (!eventInfoInviteButton) return;
+      const hasEvent = Boolean(selectedEvent && selectedEvent.code);
+      eventInfoInviteButton.disabled = !hasEvent;
+    }
+
+    function openEventInvitePage() {
+      if (!eventInfoInviteButton) return;
+      const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
+      const url = getEventInviteUrl(selectedEvent);
+      if (!url) {
+        showErrorSnackbar?.({ message: "Select an event to open its invite page." });
+        return;
+      }
+      window.open(url, "_blank");
+    }
+
+    const digitTranslations = {
+      "۰": "0",
+      "۱": "1",
+      "۲": "2",
+      "۳": "3",
+      "۴": "4",
+      "۵": "5",
+      "۶": "6",
+      "۷": "7",
+      "۸": "8",
+      "۹": "9",
+      "٠": "0",
+      "١": "1",
+      "٢": "2",
+      "٣": "3",
+      "٤": "4",
+      "٥": "5",
+      "٦": "6",
+      "٧": "7",
+      "٨": "8",
+      "٩": "9"
+    };
+
+    function convertDigitsToEnglish(value) {
+      return (value || "").replace(/[۰-۹٠-٩]/g, (ch) => digitTranslations[ch] || ch);
+    }
+
+    function normalizeShamsiDate(value = "") {
+      let normalized = (value || "").trim();
+      normalized = convertDigitsToEnglish(normalized);
+      if (typeof toEnglishDigits === "function") {
+        normalized = toEnglishDigits(normalized);
+      }
+      normalized = normalized.replace(/-/g, "/");
+      normalized = normalized.replace(/[^\d/]/g, "");
+      return normalized;
+    }
+
+    function compareNormalizedShamsiDates(a = "", b = "") {
+      const left = (a || "").trim();
+      const right = (b || "").trim();
+      if (!left || !right) {
+        return null;
+      }
+      if (left === right) {
+        return 0;
+      }
+      return left > right ? 1 : -1;
+    }
+
+      function describeEventTiming(
+        normalizedEventDate,
+        normalizedTodayDate,
+        joinStart,
+        joinLimit,
+        joinLeft,
+        joinEnd
+      ) {
+        if (!normalizedEventDate || !normalizedTodayDate) {
+          return { label: "غیرفعال", relation: null, state: "" };
+        }
+        const relation = compareNormalizedShamsiDates(normalizedEventDate, normalizedTodayDate);
+        if (relation === 0) {
+          const sameDayState = describeSameDayTimeState(joinStart, joinLimit, joinLeft, joinEnd);
+          return { ...sameDayState, relation };
+        }
+        if (relation === 1) {
+          const days = daysUntilEvent(normalizedEventDate, normalizedTodayDate);
+          if (days === 1) {
+            return { label: "شروع رویداد در کمتر از یک روز دیگر", relation, state: "future" };
+          }
+          const suffix = days !== null && days > 0 ? days : 1;
+          return { label: `شروع رویداد در ${suffix} روز دیگر`, relation, state: "future" };
+        }
+        return { label: "رویداد به پایان رسیده", relation, state: "past" };
+      }
+
+    function getCurrentLocalSeconds() {
+      const now = new Date();
+      return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    }
+
+    function describeSameDayTimeState(joinStart, joinLimit, joinLeft, joinEnd) {
+      const nowSeconds = getCurrentLocalSeconds();
+      const startSeconds = parseTimeToSeconds(joinStart);
+      const limitSeconds = parseTimeToSeconds(joinLimit);
+      const leftSeconds = parseTimeToSeconds(joinLeft);
+      const endSeconds = parseTimeToSeconds(joinEnd);
+
+      if (endSeconds !== null && nowSeconds >= endSeconds) {
+        return { state: "after-end", label: "رویداد ساعاتی پیش به پایان رسیده" };
+      }
+      if (leftSeconds !== null && nowSeconds >= leftSeconds) {
+        return { state: "post-limit", label: "رویداد در حال برگزاری" };
+      }
+      if (limitSeconds !== null && nowSeconds >= limitSeconds) {
+        if (leftSeconds !== null) {
+          return { state: "running", label: "رویداد در حال برگزاری (خروج مجاز)" };
+        }
+        return { state: "post-limit", label: "رویداد در حال برگزاری" };
+      }
+      if (startSeconds !== null && nowSeconds >= startSeconds) {
+        return { state: "entry-open", label: "رویداد در حال برگزاری (ورود مجاز)" };
+      }
+      if (startSeconds !== null && nowSeconds < startSeconds) {
+        return { state: "before-start", countdownSeconds: startSeconds - nowSeconds };
+      }
+      const countdownTarget = limitSeconds ?? leftSeconds ?? endSeconds;
+      if (countdownTarget !== null && nowSeconds < countdownTarget) {
+        return { state: "before-start", countdownSeconds: countdownTarget - nowSeconds };
+      }
+      return { state: "entry-open", label: "رویداد در حال برگزاری (ورود مجاز)" };
+    }
+
+    function parseTimeToSeconds(value) {
+      if (!value) return null;
+      const normalized = String(value).trim();
+      const match = normalized.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+      if (!match) return null;
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      const seconds = match[3] ? Number(match[3]) : 0;
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+
+    function formatDurationSeconds(seconds) {
+      const total = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+      const hh = String(Math.floor(total / 3600)).padStart(2, "0");
+      const mm = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+      const ss = String(total % 60).padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
+    }
+
+    function parseNormalizedShamsiParts(value = "") {
+      if (!value) return null;
+      const parts = value.split("/");
+      if (parts.length < 3) return null;
+      const year = Number(parts[0]);
+      const month = Number(parts[1]);
+      const day = Number(parts[2]);
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+      return { year, month, day };
+    }
+
+    function jalaliToJdn(jy, jm, jd) {
+      if (![jy, jm, jd].every(n => Number.isFinite(n))) return null;
+      const epBase = jy - (jy >= 0 ? 474 : 473);
+      const epYear = 474 + (epBase % 2820);
+      const mdays = jm <= 7 ? (jm - 1) * 31 : (jm - 7) * 30 + 186;
+      const days =
+        jd +
+        mdays +
+        Math.floor((epYear * 682 - 110) / 2816) +
+        (epYear - 1) * 365 +
+        Math.floor(epBase / 2820) * 1029983;
+      return days + 1948320;
+    }
+
+    function daysUntilEvent(normalizedEventDate, normalizedTodayDate) {
+      const eventParts = parseNormalizedShamsiParts(normalizedEventDate);
+      const todayParts = parseNormalizedShamsiParts(normalizedTodayDate);
+      if (!eventParts || !todayParts) return null;
+      const eventJdn = jalaliToJdn(eventParts.year, eventParts.month, eventParts.day);
+      const todayJdn = jalaliToJdn(todayParts.year, todayParts.month, todayParts.day);
+      if (eventJdn === null || todayJdn === null) return null;
+      return eventJdn - todayJdn;
+    }
+
+    function formatTodayShamsiWithIntl() {
+      if (typeof Intl === "undefined") return "";
+      try {
+        const formatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit"
+        });
+        return formatter.format(new Date());
+      } catch (error) {
+        return "";
+      }
+    }
+
+    function resolveTodayShamsiDate() {
+      const fromHelper =
+        typeof getNowJalaliDate === "function" ? getNowJalaliDate() : "";
+      if (fromHelper) {
+        return normalizeShamsiDate(fromHelper);
+      }
+      const fromIntl = formatTodayShamsiWithIntl();
+      if (fromIntl) {
+        return normalizeShamsiDate(fromIntl);
+      }
+      return "";
+    }
+
+    function clearEventInfoCountdown() {
+      if (!eventInfoCountdownTimer) return;
+      clearTimeout(eventInfoCountdownTimer);
+      eventInfoCountdownTimer = null;
+    }
+
+    function scheduleEventInfoCountdown() {
+      clearEventInfoCountdown();
+      eventInfoCountdownTimer = window.setTimeout(() => {
+        updateEventInfoLiveStatus();
+      }, 1000);
+    }
+
+      function updateEventInfoLiveStatus() {
+        if (!eventInfoStatusText) return;
+        clearEventInfoCountdown();
+        const normalizedEventDate = normalizeShamsiDate(eventInfoDateInput?.value);
+        const todayDate = resolveTodayShamsiDate();
+        const joinStart = (eventInfoJoinStartInput?.value || "").trim();
+        const joinLimit = (eventInfoJoinLimitInput?.value || "").trim();
+        const joinLeft = (eventInfoLeftTimeInput?.value || "").trim();
+        const joinEnd = (eventInfoJoinEndInput?.value || "").trim();
+        const timing = describeEventTiming(
+          normalizedEventDate,
+          todayDate,
+          joinStart,
+          joinLimit,
+          joinLeft,
+          joinEnd
+        );
+        if (timing.state === "before-start" && Number.isFinite(timing.countdownSeconds) && timing.countdownSeconds > 0) {
+          const countdown = formatDurationSeconds(timing.countdownSeconds);
+          eventInfoStatusText.textContent = `رویداد در کمتر از ${countdown} شروع می شود`;
+          scheduleEventInfoCountdown();
+        } else {
+          eventInfoStatusText.textContent = timing.label || "وضعیت رویداد نامشخص است";
+        }
+        if (timing.relation === null) {
+          eventInfoStatusText.dataset.timing = "";
+        } else if (timing.relation === 0) {
+          eventInfoStatusText.dataset.timing = "today";
+        } else if (timing.relation === 1) {
+          eventInfoStatusText.dataset.timing = "future";
+        } else {
+          eventInfoStatusText.dataset.timing = "past";
+        }
+        eventInfoStatusText.dataset.state = timing.state || "";
+      }
 
     function updateManualEventDate() {
       if (!manualEventDateInput) return;
@@ -1164,6 +1664,7 @@
         guestListBody.appendChild(tr);
       });
       renderEventList();
+      updateNewSmsExporterState();
     }
 
     function renderEventList() {
@@ -1487,6 +1988,7 @@
       const date = (eventInfoDateInput?.value || "").trim();
       const joinStart = (eventInfoJoinStartInput?.value || "").trim();
       const joinLimit = (eventInfoJoinLimitInput?.value || "").trim();
+      const joinLeft = (eventInfoLeftTimeInput?.value || "").trim();
       const joinEnd = (eventInfoJoinEndInput?.value || "").trim();
       if (!name || !date) {
         showErrorSnackbar?.({ message: "Event name and date are required." });
@@ -1507,6 +2009,15 @@
         return;
       }
       const submitButton = eventInfoSaveButton;
+      const leftMinutes = parseTimeToMinutes(joinLeft);
+      if (joinLeft && leftMinutes === null) {
+        showErrorSnackbar?.({ message: "Event left time must be a valid 24-hour time." });
+        return;
+      }
+      if (limitMinutes !== null && leftMinutes !== null && leftMinutes <= limitMinutes) {
+        showErrorSnackbar?.({ message: "Event left time must be after the join limit time." });
+        return;
+      }
       const endMinutes = parseTimeToMinutes(joinEnd);
       if (joinEnd && endMinutes === null) {
         showErrorSnackbar?.({ message: "Event end time must be a valid 24-hour time." });
@@ -1514,6 +2025,10 @@
       }
       if (limitMinutes !== null && endMinutes !== null && endMinutes <= limitMinutes) {
         showErrorSnackbar?.({ message: "Event end time must be after the join limit time." });
+        return;
+      }
+      if (leftMinutes !== null && endMinutes !== null && endMinutes <= leftMinutes) {
+        showErrorSnackbar?.({ message: "Event left time must be before the end time." });
         return;
       }
       submitButton?.setAttribute("disabled", "disabled");
@@ -1525,6 +2040,7 @@
         formData.append("date", date);
         formData.append("join_start_time", joinStart);
         formData.append("join_limit_time", joinLimit);
+        formData.append("join_left_time", joinLeft);
         formData.append("join_end_time", joinEnd);
         const response = await fetch("./api/guests.php", { method: "POST", body: formData });
         const data = await response.json().catch(() => ({}));
@@ -1592,6 +2108,20 @@
         }
       });
 
+      newSmsExporterButton?.addEventListener("click", async () => {
+        newSmsExporterInProgress = true;
+        updateNewSmsExporterState();
+        try {
+          await exportNewSmsLinks();
+          showDefaultToast?.("New SMS links download started.");
+        } catch (error) {
+          showErrorSnackbar?.({ message: error?.message || "Failed to export SMS links." });
+        } finally {
+          newSmsExporterInProgress = false;
+          updateNewSmsExporterState();
+        }
+      });
+
     exportPresentGuestButton?.addEventListener("click", async () => {
       exportPresentGuestButton.setAttribute("disabled", "disabled");
       try {
@@ -1651,7 +2181,7 @@
     function parseTimeToMinutes(value) {
       if (!value) return null;
       const normalized = String(value).trim();
-      const match = normalized.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+      const match = normalized.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
       if (!match) return null;
       return Number(match[1]) * 60 + Number(match[2]);
     }
@@ -2302,6 +2832,60 @@
         return workbook;
       }
 
+      function buildNewSmsExportFilename(event) {
+        const label = sanitizeFilenameSegment(getEventLabelForExport(event));
+        const segments = ["new-sms-link-list"];
+        if (label) {
+          segments.push(label);
+        }
+        return `${segments.join("-")}.xlsx`;
+      }
+
+      function buildNewSmsWorkbook(rows) {
+        const normalized = rows
+          .map(row => {
+            const firstname = String(row.firstname || row.first_name || "").trim();
+            const lastname = String(row.lastname || row.last_name || "").trim();
+            const fullname = [firstname, lastname].filter(Boolean).join(" ").trim();
+            const phone = String(row.phone_number || row.phone || "").trim();
+            const nationalId = String(row.national_id || row.nationalid || "").trim();
+            const gender = String(row.gender || row.sex || "").trim();
+            const lotteryCode = String(row.number || row.lottery_code || row.unique_code || row.invite_code || "").trim();
+            const providedLink = String(row.sms_link || row.link || "").trim();
+            const link = providedLink || buildInviteLink(lotteryCode);
+            return {
+              "کد قرعه کشی": lotteryCode,
+              "نام کامل": fullname,
+              "جنسیت": gender,
+              "کدملی": nationalId,
+              "شماره تلفن": phone,
+              "لینک کارت دعوت": link
+            };
+          })
+          .filter(entry =>
+            entry["کد قرعه کشی"] ||
+            entry["نام کامل"] ||
+            entry["جنسیت"] ||
+            entry["کدملی"] ||
+            entry["شماره تلفن"] ||
+            entry["لینک کارت دعوت"]
+          );
+        if (!normalized.length) {
+          throw new Error("No guests contain enough data to export SMS links.");
+        }
+        const worksheet = XLSX.utils.json_to_sheet(normalized, {
+          header: ["کد قرعه کشی", "نام کامل", "جنسیت", "کدملی", "شماره تلفن", "لینک کارت دعوت"]
+        });
+        worksheet["!cols"] = [{ wch: 15 }, { wch: 35 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 45 }];
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "SMS Links");
+        const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
+        const existingView = hasViews ? workbook.Workbook.Views[0] : {};
+        workbook.Workbook = workbook.Workbook || {};
+        workbook.Workbook.Views = [{ ...existingView, RTL: true }];
+        return workbook;
+      }
+
       function getEventLabelForExport(event) {
         if (!event) return "";
         return (
@@ -2372,6 +2956,28 @@
       URL.revokeObjectURL(url);
     }
 
+    async function exportNewSmsLinks() {
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        throw new Error("Select an event before exporting SMS links.");
+      }
+      const guests = Array.isArray(activeEvent.guests) ? activeEvent.guests : [];
+      if (!guests.length) {
+        throw new Error("No guests have been added to this event yet.");
+      }
+      const workbook = buildNewSmsWorkbook(guests);
+      const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = buildNewSmsExportFilename(activeEvent);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }
+
     function escapeHtml(value) {
       return String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -2385,7 +2991,9 @@
       if (!sectionKey) return;
       eventSections?.forEach(section => {
         if (!section) return;
-        section.classList.toggle("hidden", section.dataset.eventSection !== sectionKey);
+        const sectionKeys = (section.dataset.eventSection || "").split(/\s+/).filter(Boolean);
+        const matches = sectionKeys.includes(sectionKey);
+        section.classList.toggle("hidden", !matches);
       });
       eventSectionTabs?.querySelectorAll("[data-event-section-target]").forEach(tab => {
         const isSelected = tab.dataset.eventSectionTarget === sectionKey;
@@ -2965,6 +3573,16 @@
       eventInfoDateInput?.addEventListener("focus", openJalaliPicker);
       eventInfoDateInput?.addEventListener("click", openJalaliPicker);
       eventInfoDateInput?.addEventListener("keydown", (evt) => openJalaliPicker(evt));
+      eventInfoDateInput?.addEventListener("input", updateEventInfoLiveStatus);
+      eventInfoDateInput?.addEventListener("change", updateEventInfoLiveStatus);
+      [eventInfoJoinStartInput, eventInfoJoinLimitInput, eventInfoLeftTimeInput, eventInfoJoinEndInput].forEach(input => {
+        input?.addEventListener("input", updateEventInfoLiveStatus);
+        input?.addEventListener("change", updateEventInfoLiveStatus);
+      });
+    eventSettingCreateInviteButton?.addEventListener("click", () => createEventInvitePage());
+    eventSettingRefreshButton?.addEventListener("click", () => refreshEventPurelist());
+    eventSettingPrintToggle?.addEventListener("change", () => handleEventPrintToggleChange(eventSettingPrintToggle.checked));
+      eventInfoInviteButton?.addEventListener("click", () => openEventInvitePage());
 
       manualEventSelect?.addEventListener("change", updateManualEventDate);
 
@@ -3079,6 +3697,7 @@
       buildTimeOptions(editTimeExitedInput);
       buildQuarterHourOptions(eventInfoJoinStartInput);
       buildQuarterHourOptions(eventInfoJoinLimitInput);
+      buildQuarterHourOptions(eventInfoLeftTimeInput);
       buildQuarterHourOptions(eventInfoJoinEndInput);
 
       editNowButton?.addEventListener("click", () => {

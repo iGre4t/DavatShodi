@@ -390,9 +390,20 @@
       >
         Create All Invite Cards
       </button>
+      <button
+        type="button"
+        class="btn ghost full-width"
+        data-invite-card-create-missing
+        disabled
+      >
+        Create Lasted Invite Cards
+      </button>
       <p class="muted small">
         Once the template is ready, generate InviteCard.jpg for every guest so their invite page
         directly shows the saved card.
+      </p>
+      <p class="muted small">
+        The new action skips guests whose inv/{guest code}/InviteCard.jpg already exists.
       </p>
       <div class="progress-for-cards hidden" data-progress-for-cards>
         <div class="progress-for-cards__header">

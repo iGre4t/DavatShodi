@@ -1,7 +1,9 @@
 RewriteEngine On
 
-# Route event-specific draw/prize URLs to the central scripts with the event code
+# Keep users anchored in the main panel: redirect any event-scoped login back to the root login.
+RewriteRule ^([^/]+)/login\.php$ /login.php [R=302,L]
+
+# Route event-specific draw/prize/invite requests to the central handlers with the event code preserved.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^([^/]+)/draw\.php$ ../draw.php?event_code=$1 [L,QSA]
-RewriteRule ^([^/]+)/prizes\.php$ ../prizes.php?event_code=$1 [L,QSA]
+RewriteRule ^([^/]+)/(draw|prizes|invite)\.php$ ../$2.php?event_code=$1 [L,QSA]

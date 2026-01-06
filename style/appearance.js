@@ -1,10 +1,4 @@
-(function applyGlobalAppearance() {
-  const defaults = {
-    primary: "#e11d2e",
-    background: "#ffffff",
-    text: "#111111",
-    toggle: "#e11d2e"
-  };
+  (function applyGlobalAppearance() {
   const storageKeys = {
     primary: "frontend_appearance_primary",
     background: "frontend_appearance_background",
@@ -51,6 +45,16 @@
     typeof window.GENERAL_SETTINGS.appearance === "object"
       ? window.GENERAL_SETTINGS.appearance
       : {};
+
+  const defaults = {
+    primary: normalizeHex(sharedAppearance.primary ?? "") || "#111111",
+    background: normalizeHex(sharedAppearance.background ?? "") || "#ffffff",
+    text: normalizeHex(sharedAppearance.text ?? "") || "#111111",
+    toggle:
+      normalizeHex(sharedAppearance.toggle ?? "") ||
+      normalizeHex(sharedAppearance.primary ?? "") ||
+      "#111111"
+  };
 
   const palette = Object.keys(defaults).reduce((acc, key) => {
     const serverColor = normalizeHex(sharedAppearance?.[key] ?? "");
@@ -153,26 +157,25 @@
     "--primary-600",
     adjustHexLightness(palette.primary, -0.18) || palette.primary
   );
-  const focusRing =
-    hexToRgba(palette.primary, 0.12) || "rgba(225, 29, 46, 0.12)";
+  const focusRing = hexToRgba(palette.primary, 0.12) || "rgba(0, 0, 0, 0.12)";
   root.style.setProperty("--primary-focus", focusRing);
   root.style.setProperty(
     "--primary-border-soft",
-    hexToRgba(palette.primary, 0.45) || "rgba(225, 29, 46, 0.45)"
+    hexToRgba(palette.primary, 0.45) || "rgba(0, 0, 0, 0.45)"
   );
   root.style.setProperty(
     "--primary-shadow",
-    hexToRgba(palette.primary, 0.25) || "rgba(225, 29, 46, 0.25)"
+    hexToRgba(palette.primary, 0.25) || "rgba(0, 0, 0, 0.25)"
   );
   root.style.setProperty(
     "--primary-shadow-heavy",
-    hexToRgba(palette.primary, 0.4) || "rgba(225, 29, 46, 0.4)"
+    hexToRgba(palette.primary, 0.4) || "rgba(0, 0, 0, 0.4)"
   );
   root.style.setProperty("--bg", palette.background);
   root.style.setProperty("--text", palette.text);
-  const toggleBg = hexToRgba(palette.toggle, 0.12) || "rgba(225, 29, 46, 0.08)";
+  const toggleBg = hexToRgba(palette.toggle, 0.12) || "rgba(0, 0, 0, 0.08)";
   const toggleBorder =
-    hexToRgba(palette.toggle, 0.22) || "rgba(225, 29, 46, 0.22)";
+    hexToRgba(palette.toggle, 0.22) || "rgba(0, 0, 0, 0.22)";
   root.style.setProperty("--sidebar-active", toggleBg);
   root.style.setProperty("--sidebar-active-border", toggleBorder);
 })();
