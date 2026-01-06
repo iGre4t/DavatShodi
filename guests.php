@@ -249,6 +249,7 @@
                   <button type="button" class="btn" id="export-sms-link">Export SMS Link</button>
                   <button type="button" class="btn ghost" id="new-sms-link-exporter">New SMS Link Exporter</button>
                   <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
+                  <button type="button" class="btn" id="export-present-guest-list-new-version">Export Present Guests New Version</button>
                 </div>
                 <button type="button" class="btn primary" id="open-manual-modal-event">Add guest manually</button>
               </div>
@@ -716,6 +717,7 @@
     const exportSmsButton = document.getElementById("export-sms-link");
     const newSmsExporterButton = document.getElementById("new-sms-link-exporter");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
+    const exportPresentGuestNewButton = document.getElementById("export-present-guest-list-new-version");
     const eventListBody = document.getElementById("guest-event-list-body");
     const eventTabsContainer = document.getElementById("guest-event-tabs");
     const eventInfoForm = document.getElementById("event-info-form");
@@ -2134,6 +2136,18 @@
       }
     });
 
+    exportPresentGuestNewButton?.addEventListener("click", async () => {
+      exportPresentGuestNewButton.setAttribute("disabled", "disabled");
+      try {
+        await exportPresentGuestsNewVersion();
+        showDefaultToast?.("New present guests download started.");
+      } catch (error) {
+        showErrorSnackbar?.({ message: error?.message || "Failed to export the new present guest list." });
+      } finally {
+        exportPresentGuestNewButton.removeAttribute("disabled");
+      }
+    });
+
     function openJalaliPicker(event) {
       event?.preventDefault?.();
       const targetInput = event?.currentTarget instanceof HTMLInputElement ? event.currentTarget : eventDateInput;
@@ -2700,6 +2714,25 @@
       "Left time"
     ];
 
+    const PRESENT_GUEST_EXPORT_HEADERS_FARSI_NEW = [
+      "شماره",
+      "رویداد",
+      "تاریخ رویداد",
+      "نام",
+      "نام خانوادگی",
+      "جنسیت",
+      "کد ملی",
+      "شماره موبایل",
+      "کد دعوت",
+      "لینک پیامکی",
+      "تاریخ ورود",
+      "ساعت ورود",
+      "تاریخ خروج",
+      "ساعت خروج",
+      "تاریخ ثبت ورود",
+      "تاریخ ثبت خروج"
+    ];
+
     function sanitizeFileName(value) {
       if (!value) return "";
       return String(value)
@@ -2734,6 +2767,90 @@
         });
       });
       return { headers: PRESENT_GUEST_EXPORT_HEADERS, rows };
+    }
+
+    function getPresentGuestNewVersionRows(event) {
+      const rows = [];
+      const guests = Array.isArray(event?.guests) ? event.guests : [];
+      guests.forEach((guest, index) => {
+        const { entered, exited } = getGuestEntryAndExitParts(guest);
+        if (!entered.date) {
+          return;
+        }
+        const inviteCode = String(guest.invite_code || guest.code || guest.number || "").trim();
+        const providedSmsLink = String(guest.sms_link || guest.link || guest.smsLink || "").trim();
+        const smsLink = providedSmsLink || buildInviteLink(inviteCode);
+        rows.push({
+          "شماره": guest.number || index + 1,
+          "رویداد": event.name || "",
+          "تاریخ رویداد": event.date || "",
+          "نام": guest.firstname || guest.first_name || "",
+          "نام خانوادگی": guest.lastname || guest.last_name || "",
+          "جنسیت": guest.gender || guest.sex || "",
+          "کد ملی": guest.national_id || guest.nationalid || "",
+          "شماره موبایل": guest.phone_number || guest.phone || "",
+          "کد دعوت": inviteCode,
+          "لینک پیامکی": smsLink,
+          "تاریخ ورود": entered.date,
+          "ساعت ورود": entered.time,
+          "تاریخ خروج": exited.date,
+          "ساعت خروج": exited.time,
+          "تاریخ ثبت ورود": String(guest.date_entered || "").trim(),
+          "تاریخ ثبت خروج": String(guest.date_exited || "").trim()
+        });
+      });
+      return { headers: PRESENT_GUEST_EXPORT_HEADERS_FARSI_NEW, rows };
+    }
+
+    function buildPresentGuestsNewVersionWorkbook(rows, headers) {
+      const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+      worksheet["!cols"] = headers.map((header) => {
+        if (header.includes("ساعت")) {
+          return { wch: 18 };
+        }
+        if (header.includes("لینک")) {
+          return { wch: 40 };
+        }
+        if (header.includes("تاریخ")) {
+          return { wch: 28 };
+        }
+        if (header.includes("شماره") || header.includes("کد")) {
+          return { wch: 22 };
+        }
+        return { wch: 24 };
+      });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "لیست مهمانان حاضر جدید");
+      const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
+      const existingView = hasViews ? workbook.Workbook.Views[0] : {};
+      workbook.Workbook = workbook.Workbook || {};
+      workbook.Workbook.Views = [{ ...existingView, RTL: true }];
+      return workbook;
+    }
+
+    async function exportPresentGuestsNewVersion() {
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        throw new Error("Select an event before exporting present guests.");
+      }
+      const { rows, headers } = getPresentGuestNewVersionRows(activeEvent);
+      if (!rows.length) {
+        throw new Error("No guests with a recorded join date found for this event.");
+      }
+      const workbook = buildPresentGuestsNewVersionWorkbook(rows, headers);
+      const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      const sanitizedName = sanitizeFileName(activeEvent.name || "");
+      const fallbackName = sanitizeFileName(activeEvent.code || "") || "present-guest-list";
+      const fileNameBase = sanitizedName || fallbackName;
+      anchor.download = `${fileNameBase}-present-guest-list-new-version.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
     }
 
     function buildPresentGuestsWorkbook(rows, headers) {
