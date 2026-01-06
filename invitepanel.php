@@ -987,14 +987,19 @@
 
       renderLogs();
       renderStats();
-      document.addEventListener("DOMContentLoaded", () => {
+      function initInvitePanel() {
         loadInviteData();
         setInterval(() => {
           if (!loading) {
             loadInviteData();
           }
         }, 5000);
-      });
+      }
+      if (document.readyState !== "loading") {
+        initInvitePanel();
+      } else {
+        document.addEventListener("DOMContentLoaded", initInvitePanel);
+      }
     })();
   </script>
 </section>

@@ -4505,7 +4505,7 @@ function updateLazyTabStatus(section, message) {
   }
 }
 
-function insertLazyTabContent(placeholder, html) {
+async function insertLazyTabContent(placeholder, html) {
   if (!placeholder || !placeholder.parentNode) {
     return null;
   }
@@ -4515,40 +4515,49 @@ function insertLazyTabContent(placeholder, html) {
   let reference = placeholder;
   let insertedSection = null;
   const parent = placeholder.parentNode;
-  nodes.forEach(node => {
+  for (const node of nodes) {
     if (node.nodeName === "SCRIPT") {
-      const script = document.createElement("script");
-      Array.from(node.attributes).forEach(attr => {
-        script.setAttribute(attr.name, attr.value);
-      });
-      if (node.textContent) {
-        script.textContent = node.textContent;
-      }
-      parent.insertBefore(script, reference.nextSibling);
+      const script = await insertScriptNode(reference, node);
       reference = script;
-      return;
+      continue;
     }
     parent.insertBefore(node, reference.nextSibling);
     reference = node;
     if (node.nodeType === Node.ELEMENT_NODE && node.id === placeholder.id) {
       insertedSection = node;
     }
-  });
+  }
   return insertedSection;
 }
 
-function runLazyTabScripts(section) {
-  if (!section) return;
-  const scripts = Array.from(section.querySelectorAll("script"));
-  scripts.forEach(original => {
-    const replacement = document.createElement("script");
-    Array.from(original.attributes).forEach(attr => {
-      replacement.setAttribute(attr.name, attr.value);
+function insertScriptNode(reference, node) {
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    Array.from(node.attributes).forEach(attr => {
+      const name = attr.name?.toLowerCase();
+      if (name === "defer") {
+        return;
+      }
+      script.setAttribute(attr.name, attr.value);
     });
-    if (!original.src) {
-      replacement.textContent = original.textContent;
+    script.textContent = node.textContent;
+    const parent = reference.parentNode;
+    if (!parent) {
+      resolve(script);
+      return;
     }
-    original.replaceWith(replacement);
+    const inserted = parent.insertBefore(script, reference.nextSibling);
+    if (script.src) {
+      const done = () => {
+        script.removeEventListener("load", done);
+        script.removeEventListener("error", done);
+        resolve(script);
+      };
+      script.addEventListener("load", done);
+      script.addEventListener("error", done);
+    } else {
+      resolve(inserted);
+    }
   });
 }
 
@@ -4571,11 +4580,10 @@ function loadLazyTab(tab) {
       throw new Error(`Unable to load ${tab} tab (${response.status})`);
     }
     const html = await response.text();
-    const newSection = insertLazyTabContent(placeholder, html);
+    const newSection = await insertLazyTabContent(placeholder, html);
     if (!newSection || newSection.id !== placeholder.id) {
       throw new Error("Tab markup was not returned.");
     }
-    runLazyTabScripts(newSection);
     const wasActive = placeholder.classList.contains("active");
     newSection.classList.toggle("active", wasActive);
     placeholder.remove();
