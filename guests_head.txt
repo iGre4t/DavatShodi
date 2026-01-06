@@ -1496,33 +1496,36 @@
         .map(row => {
           const firstname = String(row.firstname || row.first_name || "").trim();
           const lastname = String(row.lastname || row.last_name || "").trim();
-          const fullname = [firstname, lastname].filter(Boolean).join(" ").trim();
+          const fullname = [firstname, lastname].filter(Boolean).join(" " ).trim();
           const phone = String(row.phone_number || row.phone || "").trim();
           const link = String(row.sms_link || row.link || "").trim();
           const nationalId = String(row.national_id || row.nationalid || "").trim();
           const lotteryCode = String(row.number || row.lottery_code || row.unique_code || "").trim();
+          const gender = String(row.gender || row.sex || "").trim();
           return {
-            "┌⌐╪» ┘é╪▒╪╣┘ç ┌⌐╪┤█î": lotteryCode,
-            "┘å╪º┘à ┌⌐╪º┘à┘ä": fullname,
-            "┌⌐╪»┘à┘ä█î": nationalId,
-            "╪┤┘à╪º╪▒┘ç ╪¬┘ä┘ü┘å": phone,
-            "┘ä█î┘å┌⌐ ┌⌐╪º╪▒╪¬ ╪»╪╣┘ê╪¬": link
+            "?? ???? ???": lotteryCode,
+            "??? ????": fullname,
+            "?????": gender,
+            "?????": nationalId,
+            "????? ????": phone,
+            "???? ???? ????": link
           };
         })
         .filter(entry =>
-          entry["┌⌐╪» ┘é╪▒╪╣┘ç ┌⌐╪┤█î"] ||
-          entry["┘å╪º┘à ┌⌐╪º┘à┘ä"] ||
-          entry["┌⌐╪»┘à┘ä█î"] ||
-          entry["╪┤┘à╪º╪▒┘ç ╪¬┘ä┘ü┘å"] ||
-          entry["┘ä█î┘å┌⌐ ┌⌐╪º╪▒╪¬ ╪»╪╣┘ê╪¬"]
+          entry["?? ???? ???"] ||
+          entry["??? ????"] ||
+          entry["?????"] ||
+          entry["?????"] ||
+          entry["????? ????"] ||
+          entry["???? ???? ????"]
         );
       if (!normalized.length) {
         throw new Error("The pure CSV file did not yield any guest rows.");
       }
       const worksheet = XLSX.utils.json_to_sheet(normalized, {
-        header: ["┌⌐╪» ┘é╪▒╪╣┘ç ┌⌐╪┤█î", "┘å╪º┘à ┌⌐╪º┘à┘ä", "┌⌐╪»┘à┘ä█î", "╪┤┘à╪º╪▒┘ç ╪¬┘ä┘ü┘å", "┘ä█î┘å┌⌐ ┌⌐╪º╪▒╪¬ ╪»╪╣┘ê╪¬"]
+        header: ["?? ???? ???", "??? ????", "?????", "?????", "????? ????", "???? ???? ????"]
       });
-      worksheet["!cols"] = [{ wch: 15 }, { wch: 35 }, { wch: 18 }, { wch: 20 }, { wch: 45 }];
+      worksheet["!cols"] = [{ wch: 15 }, { wch: 35 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 45 }];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "SMS Links");
       const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
