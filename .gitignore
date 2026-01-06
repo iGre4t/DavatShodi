@@ -1,0 +1,6 @@
+/events/*
+!/events/.htaccess
+/General Setting/
+/data/guests.json
+/inv/
+
