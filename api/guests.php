@@ -755,20 +755,10 @@ if ($method === 'POST') {
         } elseif ($action === 'save_generated_invite_card') {
             $inviteCode = normalizeInviteCodeDigits((string)($_POST['invite_code'] ?? ''));
             $imageData = (string)($_POST['image_data'] ?? '');
+            $overwrite = filter_var($_POST['overwrite'] ?? '', FILTER_VALIDATE_BOOLEAN);
             if ($inviteCode === '' || $imageData === '') {
                 http_response_code(422);
                 echo json_encode(['status' => 'error', 'message' => 'Invite code and image data are required.']);
-                exit;
-            }
-            if (!preg_match('/^data:image\\/(png|jpe?g);base64,(.+)$/i', $imageData, $matches)) {
-                http_response_code(422);
-                echo json_encode(['status' => 'error', 'message' => 'Invalid image payload.']);
-                exit;
-            }
-            $decoded = base64_decode($matches[2], true);
-            if ($decoded === false) {
-                http_response_code(422);
-                echo json_encode(['status' => 'error', 'message' => 'Unable to decode image data.']);
                 exit;
             }
             $invRoot = __DIR__ . '/../inv';
@@ -784,6 +774,22 @@ if ($method === 'POST') {
                 exit;
             }
             $targetPath = $guestDir . '/InviteCard.jpg';
+            if (!$overwrite && is_file($targetPath)) {
+                ensureGuestInviteIndexPage($inviteCode);
+                echo json_encode(['status' => 'ok', 'message' => 'Invite card already exists.']);
+                exit;
+            }
+            if (!preg_match('/^data:image\\/(png|jpe?g);base64,(.+)$/i', $imageData, $matches)) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Invalid image payload.']);
+                exit;
+            }
+            $decoded = base64_decode($matches[2], true);
+            if ($decoded === false) {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Unable to decode image data.']);
+                exit;
+            }
             if (file_put_contents($targetPath, $decoded) === false) {
                 http_response_code(500);
                 echo json_encode(['status' => 'error', 'message' => 'Failed to save invite card image.']);

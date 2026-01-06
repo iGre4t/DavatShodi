@@ -2776,14 +2776,22 @@ async function handleGuestInviteCardGeneration() {
       throw new Error("Guest not found.");
     }
     applyGuestToInviteCardFields(guest);
-    await handleInviteCardGeneration();
+    const previewCanvas = await handleInviteCardGeneration();
+    if (!previewCanvas) {
+      throw new Error("Unable to render the invite card preview.");
+    }
+    const imageData = previewCanvas.toDataURL("image/jpeg", 0.95);
+    const payload = await uploadGuestInviteCardImage(guest.inviteCode, imageData);
     const guestName =
       [guest.firstname, guest.lastname].filter(Boolean).join(" ").trim() ||
       guest.inviteCode ||
       guest.number ||
       guest.code ||
       code;
-    setGuestInviteStatus(`Generated guest invite card for ${guestName}.`);
+    const backendMessage = payload?.message?.trim();
+    setGuestInviteStatus(
+      backendMessage || `Generated guest invite card for ${guestName}.`
+    );
   } catch (error) {
     const message = error?.message || "Unable to generate the guest invite card.";
     showErrorSnackbar?.({ message });
@@ -2844,14 +2852,16 @@ async function handleInviteCardGeneration() {
       inviteCardStatusLabel.textContent = "Invite card generated successfully.";
     }
     showDefaultToast("Invite card generated. Download it below if needed.");
+    return previewCanvas;
   } catch (error) {
     showErrorSnackbar({ message: error?.message || "Unable to generate the invite card." });
+    return null;
   } finally {
     refreshInviteCardActionState();
   }
 }
 
-async function uploadGuestInviteCardImage(inviteCode, imageData) {
+async function uploadGuestInviteCardImage(inviteCode, imageData, options = {}) {
   if (!inviteCode) {
     throw new Error("Invite code is required.");
   }
@@ -2862,6 +2872,7 @@ async function uploadGuestInviteCardImage(inviteCode, imageData) {
   formData.append("action", "save_generated_invite_card");
   formData.append("invite_code", inviteCode);
   formData.append("image_data", imageData);
+  formData.append("overwrite", options.overwrite ? "1" : "0");
   const response = await fetch("./api/guests.php", {
     method: "POST",
     body: formData
@@ -2924,7 +2935,7 @@ async function handleCreateAllInviteCards() {
       }
       const canvas = await renderInviteCardCanvas(fields);
       const imageData = canvas.toDataURL("image/jpeg", 0.95);
-      await uploadGuestInviteCardImage(guest.inviteCode, imageData);
+      await uploadGuestInviteCardImage(guest.inviteCode, imageData, { overwrite: true });
     }
     const message = `Generated ${eligibleGuests.length} invite cards.`;
     setInviteCardStatusText(message);
