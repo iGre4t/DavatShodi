@@ -22,24 +22,19 @@
         />
         </label>
       <p id="invite-status" class="hint" aria-live="polite"></p>
-      <div class="progress-for-cards hidden" data-invite-entry-progress>
-        <div class="progress-for-cards__header">
-          <span class="progress-for-cards__title">اطلاعات ورود</span>
-          <span class="muted small" data-invite-entry-progress-status></span>
+      <div
+        class="card-progress hidden"
+        data-invite-entry-progress
+        role="status"
+        aria-live="polite"
+      >
+        <div class="loader-ring" aria-hidden="true">
+          <span></span>
+          <span></span>
         </div>
-        <div class="progress-for-cards__stats">
-          <div>
-            <span class="progress-for-cards__count" data-invite-entry-progress-completed>0</span>
-            completed
-          </div>
-          <div>
-            <span class="progress-for-cards__count" data-invite-entry-progress-remaining>0</span>
-            remaining
-          </div>
-        </div>
-        <div class="progress-for-cards__bar">
-          <span class="progress-for-cards__fill" data-invite-entry-progress-fill style="width: 0%"></span>
-        </div>
+        <p class="card-progress__message" data-invite-entry-progress-message>
+          در حال بررسی مهمان...
+        </p>
       </div>
       </form>
 
@@ -390,10 +385,7 @@
       const statsGrid = document.getElementById("invite-stats-grid");
       const entryLineEl = document.getElementById("invite-print-entry-line");
       const inviteEntryProgressElement = document.querySelector("[data-invite-entry-progress]");
-      const inviteEntryProgressStatus = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-status]");
-      const inviteEntryProgressCompletedCount = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-completed]");
-      const inviteEntryProgressRemainingCount = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-remaining]");
-      const inviteEntryProgressFill = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-fill]");
+      const inviteEntryProgressMessage = inviteEntryProgressElement?.querySelector("[data-invite-entry-progress-message]");
       const persianTimeFormatter = new Intl.DateTimeFormat("fa-IR", {
         hour: "2-digit",
         minute: "2-digit",
@@ -477,34 +469,19 @@
         inviteEntryProgressElement.classList.toggle("hidden", !show);
       }
 
-      function setInviteEntryProgressStatus(message) {
-        if (!inviteEntryProgressStatus) {
+      function setInviteEntryProgressMessage(message) {
+        if (!inviteEntryProgressMessage) {
           return;
         }
-        inviteEntryProgressStatus.textContent = message || "";
+        inviteEntryProgressMessage.textContent = message || "";
       }
 
-      function updateInviteEntryProgressStats(completed, remaining) {
-        if (inviteEntryProgressCompletedCount) {
-          inviteEntryProgressCompletedCount.textContent = String(completed);
-        }
-        if (inviteEntryProgressRemainingCount) {
-          inviteEntryProgressRemainingCount.textContent = String(remaining);
-        }
-        if (inviteEntryProgressFill) {
-          const total = completed + remaining;
-          const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
-          inviteEntryProgressFill.style.width = `${percent}%`;
-        }
-      }
-
-      function startInviteEntryProgress() {
+      function startInviteEntryProgress(message = "در حال بررسی مهمان...") {
         if (!inviteEntryProgressElement) {
           return;
         }
         toggleInviteEntryProgress(true);
-        updateInviteEntryProgressStats(0, 1);
-        setInviteEntryProgressStatus("Searching guest...");
+        setInviteEntryProgressMessage(message);
       }
 
       function stopInviteEntryProgress() {
@@ -512,8 +489,7 @@
           return;
         }
         toggleInviteEntryProgress(false);
-        updateInviteEntryProgressStats(0, 0);
-        setInviteEntryProgressStatus("");
+        setInviteEntryProgressMessage("");
       }
 
       const logDateFormatter = new Intl.DateTimeFormat("fa-IR", {

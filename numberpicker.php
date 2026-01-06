@@ -382,6 +382,7 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       const MIN_NUMBER = 1;
       const MAX_NUMBER = 300;
       const DIGIT_COUNT = 3;
+      const TOTAL_NUMBERS = MAX_NUMBER - MIN_NUMBER + 1;
       const STORAGE_KEY = 'numberpicker-saved-numbers';
       const codeDisplay = document.getElementById('code-display');
       const statusText = document.getElementById('status-text');
@@ -409,7 +410,37 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       let currentNumber = null;
       let savedNumbers = loadSavedNumbers();
       const randomDigit = () => Math.floor(Math.random() * 10).toString();
-      const randomNumber = () => Math.floor(Math.random() * (MAX_NUMBER - MIN_NUMBER + 1)) + MIN_NUMBER;
+
+      const remainingNumbers = () => {
+        const used = new Set(savedNumbers.map((entry) => entry.number));
+        const pool = [];
+        for (let num = MIN_NUMBER; num <= MAX_NUMBER; num += 1) {
+          if (!used.has(num)) {
+            pool.push(num);
+          }
+        }
+        return pool;
+      };
+
+      const generateUniqueNumber = () => {
+        const pool = remainingNumbers();
+        if (!pool.length) {
+          return null;
+        }
+        return pool[Math.floor(Math.random() * pool.length)];
+      };
+
+      const isNumberSaved = (value) => savedNumbers.some((entry) => entry.number === value);
+
+      const updateDrawAvailability = () => {
+        if (remainingNumbers().length === 0) {
+          startBtn.disabled = true;
+          confirmBtn.disabled = true;
+          statusText.textContent = 'تمام شماره‌ها انتخاب شده‌اند';
+          statusText.classList.add('winner-message--active');
+          statusText.classList.remove('winner-message--idle');
+        }
+      };
 
       const padDigits = (value) => {
         const cleaned = (value ?? '').toString().replace(/\D+/g, '');
@@ -490,6 +521,14 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         if (currentNumber === null) {
           return;
         }
+        if (isNumberSaved(currentNumber)) {
+          statusText.textContent = 'این شماره قبلاً ذخیره شده';
+          statusText.classList.add('winner-message--active');
+          statusText.classList.remove('winner-message--idle');
+          confirmBtn.disabled = true;
+          startBtn.disabled = false;
+          return;
+        }
         const entry = { number: currentNumber };
         savedNumbers = [entry, ...savedNumbers];
         persistSavedNumbers(savedNumbers);
@@ -499,13 +538,18 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         statusText.classList.remove('winner-message--idle');
         confirmBtn.disabled = true;
         startBtn.disabled = false;
+        updateDrawAvailability();
       };
 
       startBtn.addEventListener('click', () => {
         cancelAnimation();
         startBtn.disabled = true;
         confirmBtn.disabled = true;
-        const targetNumber = randomNumber();
+        const targetNumber = generateUniqueNumber();
+        if (targetNumber === null) {
+          updateDrawAvailability();
+          return;
+        }
         currentNumber = targetNumber;
         const digits = formatNumberDigits(targetNumber).split('');
         const currentDigits = Array(DIGIT_COUNT).fill('0');
@@ -558,6 +602,7 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       showIdleText();
       renderDigits('0');
       renderNumberList(savedNumbers);
+      updateDrawAvailability();
     </script>
   </body>
 </html>
