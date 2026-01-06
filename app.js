@@ -169,6 +169,7 @@ let inviteCardDownloadLink = null;
 let inviteCardPreviewPhotoId = null;
 let inviteCardGenderSelect = null;
 let createAllInviteCardsButton = null;
+let createMissingInviteCardsButton = null;
 let guestInviteCodeInput = null;
 let guestInviteGenerateButton = null;
 let guestInviteStatusLabel = null;
@@ -2511,6 +2512,7 @@ function refreshInviteCardActionState() {
     inviteCardStatusLabel.textContent = message;
   }
   updateCreateAllInviteCardsActionState();
+  updateCreateMissingInviteCardsActionState();
 }
 
 function setInviteCardStatusText(message) {
@@ -2577,6 +2579,19 @@ function updateCreateAllInviteCardsActionState() {
     return inviteCode !== "";
   });
   createAllInviteCardsButton.disabled = !isInviteCardReady() || !hasGuestsWithCode;
+}
+
+function updateCreateMissingInviteCardsActionState() {
+  if (!createMissingInviteCardsButton) {
+    return;
+  }
+  const activeEvent = window.getActiveGuestEvent ? window.getActiveGuestEvent() : null;
+  const guests = Array.isArray(activeEvent?.guests) ? activeEvent.guests : [];
+  const hasGuestsWithCode = guests.some((guest) => {
+    const inviteCode = (guest?.invite_code || guest?.code || guest?.number || "").toString().trim();
+    return inviteCode !== "";
+  });
+  createMissingInviteCardsButton.disabled = !isInviteCardReady() || !hasGuestsWithCode;
 }
 
 function handleInviteCardFieldInteraction(event) {
@@ -2884,6 +2899,27 @@ async function uploadGuestInviteCardImage(inviteCode, imageData, options = {}) {
   return payload;
 }
 
+async function fetchGuestsMissingInviteCards(eventCode) {
+  if (!eventCode) {
+    throw new Error("Event code is required.");
+  }
+  const formData = new FormData();
+  formData.append("action", "list_missing_invite_cards");
+  formData.append("event_code", eventCode);
+  const response = await fetch("./api/guests.php", {
+    method: "POST",
+    body: formData
+  });
+  const payload = await response.json();
+  if (!response.ok || payload?.status !== "ok") {
+    throw new Error(payload?.message || "Unable to list guests missing invite cards.");
+  }
+  if (!Array.isArray(payload.missing)) {
+    return [];
+  }
+  return payload.missing;
+}
+
 async function handleCreateAllInviteCards() {
   if (!createAllInviteCardsButton) {
     return;
@@ -2947,6 +2983,81 @@ async function handleCreateAllInviteCards() {
   } finally {
     stopProgressForCards();
     createAllInviteCardsButton.removeAttribute("disabled");
+    refreshInviteCardActionState();
+  }
+}
+
+async function handleCreateMissingInviteCards() {
+  if (!createMissingInviteCardsButton) {
+    return;
+  }
+  const activeEvent = window.getActiveGuestEvent ? window.getActiveGuestEvent() : null;
+  if (!activeEvent) {
+    const message = "Select an event before creating invite cards.";
+    showErrorSnackbar?.({ message });
+    setInviteCardStatusText(message);
+    return;
+  }
+  const eventCode = (activeEvent?.code || activeEvent?.slug || "").toString().trim();
+  if (eventCode === "") {
+    const message = "Event code is required to generate invite cards.";
+    showErrorSnackbar?.({ message });
+    setInviteCardStatusText(message);
+    return;
+  }
+  createMissingInviteCardsButton.setAttribute("disabled", "disabled");
+  try {
+    const missingGuests = await fetchGuestsMissingInviteCards(eventCode);
+    if (!missingGuests.length) {
+      const message = "All guests already have invite cards.";
+      setInviteCardStatusText(message);
+      showDefaultToast?.(message);
+      return;
+    }
+    if (!inviteCardSelectedPhoto) {
+      const message = "Pick a photo before generating invite cards.";
+      showErrorSnackbar?.({ message });
+      setInviteCardStatusText(message);
+      return;
+    }
+    const totalGuests = missingGuests.length;
+    startProgressForCards(totalGuests);
+    for (let index = 0; index < totalGuests; index += 1) {
+      const guest = missingGuests[index];
+      const guestLabel =
+        guest.inviteCode ||
+        guest.firstname ||
+        guest.lastname ||
+        guest.code ||
+        guest.number ||
+        guest.smsLink ||
+        guest.sms_link ||
+        "guest";
+      const progressText = `Generating card ${index + 1}/${totalGuests} for ${guestLabel}`;
+      setInviteCardStatusText(progressText);
+      const completed = index + 1;
+      const remaining = Math.max(0, totalGuests - completed);
+      updateProgressForCardsStats(completed, remaining);
+      setProgressForCardsStatus(progressText);
+      applyGuestToInviteCardFields(guest);
+      const fields = collectInviteCardFieldData();
+      if (!fields.every((field) => field.value)) {
+        throw new Error("Incomplete invite card fields when preparing guest data.");
+      }
+      const canvas = await renderInviteCardCanvas(fields);
+      const imageData = canvas.toDataURL("image/jpeg", 0.95);
+      await uploadGuestInviteCardImage(guest.inviteCode, imageData, { overwrite: true });
+    }
+    const message = `Generated ${totalGuests} invite cards for guests without existing cards.`;
+    setInviteCardStatusText(message);
+    showDefaultToast?.(message);
+  } catch (error) {
+    const message = error?.message || "Unable to create invite cards.";
+    showErrorSnackbar?.({ message });
+    setInviteCardStatusText(message);
+  } finally {
+    stopProgressForCards();
+    createMissingInviteCardsButton.removeAttribute("disabled");
     refreshInviteCardActionState();
   }
 }
@@ -4975,6 +5086,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   inviteCardDownloadLink = qs('[data-invite-card-download]');
   inviteCardGenderSelect = qs('[data-invite-card-gender]');
   createAllInviteCardsButton = qs('[data-invite-card-create-all]');
+  createMissingInviteCardsButton = qs('[data-invite-card-create-missing]');
   positionPickerModal = qs('[data-position-picker-modal]');
   positionPickerOverlay = qs('[data-position-picker-overlay]');
   positionPickerImage = qs('[data-position-picker-image]');
@@ -5001,6 +5113,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   createAllInviteCardsButton?.addEventListener('click', () => {
     void handleCreateAllInviteCards();
+  });
+  createMissingInviteCardsButton?.addEventListener('click', () => {
+    void handleCreateMissingInviteCards();
   });
   qsa('[data-position-picker-button]').forEach((button) =>
     button.addEventListener('click', handlePositionPickerButtonClick)

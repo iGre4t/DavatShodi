@@ -786,6 +786,51 @@ if ($method === 'POST') {
                 $store['events'][$eventIndex] ?? []
             );
             exit;
+        } elseif ($action === 'list_missing_invite_cards') {
+            $eventCode = trim((string)($_POST['event_code'] ?? ''));
+            if ($eventCode === '') {
+                http_response_code(422);
+                echo json_encode(['status' => 'error', 'message' => 'Event code is required.']);
+                exit;
+            }
+            $store = loadGuestStore($storePath, $eventsRoot);
+            $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+            if ($eventIndex < 0) {
+                http_response_code(404);
+                echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+                exit;
+            }
+            $event = $store['events'][$eventIndex];
+            $guests = is_array($event['guests'] ?? null) ? $event['guests'] : [];
+            $missing = [];
+            $invRoot = __DIR__ . '/../inv';
+            foreach ($guests as $guest) {
+                $inviteCode = normalizeInviteCodeDigits((string)($guest['invite_code'] ?? $guest['code'] ?? ''));
+                if ($inviteCode === '') {
+                    continue;
+                }
+                $cardPath = $invRoot . '/' . $inviteCode . '/InviteCard.jpg';
+                if (is_file($cardPath)) {
+                    continue;
+                }
+                $normalizedNationalId = normalizeNationalId((string)($guest['national_id'] ?? ''));
+                $missing[] = [
+                    'inviteCode' => $inviteCode,
+                    'invite_code' => $inviteCode,
+                    'code' => $inviteCode,
+                    'number' => (int)($guest['number'] ?? 0),
+                    'firstname' => (string)($guest['firstname'] ?? ''),
+                    'lastname' => (string)($guest['lastname'] ?? ''),
+                    'gender' => (string)($guest['gender'] ?? ''),
+                    'national_id' => $normalizedNationalId,
+                    'nationalId' => $normalizedNationalId,
+                    'phone_number' => (string)($guest['phone_number'] ?? ''),
+                    'sms_link' => (string)($guest['sms_link'] ?? ''),
+                    'smsLink' => (string)($guest['sms_link'] ?? '')
+                ];
+            }
+            echo json_encode(['status' => 'ok', 'missing' => $missing]);
+            exit;
         } elseif ($action === 'save_generated_invite_card') {
             $inviteCode = normalizeInviteCodeDigits((string)($_POST['invite_code'] ?? ''));
             $imageData = (string)($_POST['image_data'] ?? '');

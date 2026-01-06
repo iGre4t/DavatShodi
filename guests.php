@@ -247,6 +247,7 @@
               >
                 <div style="display:flex; align-items:center; gap:8px;">
                   <button type="button" class="btn" id="export-sms-link">Export SMS Link</button>
+                  <button type="button" class="btn ghost" id="new-sms-link-exporter">New SMS Link Exporter</button>
                   <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
                 </div>
                 <button type="button" class="btn primary" id="open-manual-modal-event">Add guest manually</button>
@@ -713,6 +714,7 @@
     const manualPhoneInput = document.getElementById("manual-phone");
     const manualEventPaneAddButton = document.getElementById("open-manual-modal-event");
     const exportSmsButton = document.getElementById("export-sms-link");
+    const newSmsExporterButton = document.getElementById("new-sms-link-exporter");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
     const eventListBody = document.getElementById("guest-event-list-body");
     const eventTabsContainer = document.getElementById("guest-event-tabs");
@@ -758,6 +760,7 @@
     let eventSettingActiveEventCode = "";
     let eventSettingPrintUpdating = false;
     let eventSettingRefreshInProgress = false;
+    let newSmsExporterInProgress = false;
     let eventInfoCountdownTimer = null;
     let eventPrizeFetchId = 0;
 
@@ -929,6 +932,7 @@
       renderManualEventOptions();
       renderEventTabs();
       renderGuestTable();
+      updateNewSmsExporterState();
     }
 
     function renderManualEventOptions(forceEventCode = "") {
@@ -1158,6 +1162,13 @@
       const selectedEvent = state.events.find(ev => (ev.code || "") === activeEventCode) || null;
       const hasEvent = Boolean(selectedEvent && selectedEvent.code);
       eventSettingRefreshButton.disabled = !hasEvent || eventSettingRefreshInProgress;
+    }
+
+    function updateNewSmsExporterState() {
+      if (!newSmsExporterButton) return;
+      const activeEvent = getActiveGuestEvent();
+      const hasEvent = Boolean(activeEvent && (activeEvent.code || "").trim());
+      newSmsExporterButton.disabled = !hasEvent || newSmsExporterInProgress;
     }
 
     function updateEventSettingControls() {
@@ -1653,6 +1664,7 @@
         guestListBody.appendChild(tr);
       });
       renderEventList();
+      updateNewSmsExporterState();
     }
 
     function renderEventList() {
@@ -2093,6 +2105,20 @@
           showErrorSnackbar?.({ message: error?.message || "Failed to export SMS links." });
         } finally {
           exportSmsButton.removeAttribute("disabled");
+        }
+      });
+
+      newSmsExporterButton?.addEventListener("click", async () => {
+        newSmsExporterInProgress = true;
+        updateNewSmsExporterState();
+        try {
+          await exportNewSmsLinks();
+          showDefaultToast?.("New SMS links download started.");
+        } catch (error) {
+          showErrorSnackbar?.({ message: error?.message || "Failed to export SMS links." });
+        } finally {
+          newSmsExporterInProgress = false;
+          updateNewSmsExporterState();
         }
       });
 
@@ -2806,6 +2832,60 @@
         return workbook;
       }
 
+      function buildNewSmsExportFilename(event) {
+        const label = sanitizeFilenameSegment(getEventLabelForExport(event));
+        const segments = ["new-sms-link-list"];
+        if (label) {
+          segments.push(label);
+        }
+        return `${segments.join("-")}.xlsx`;
+      }
+
+      function buildNewSmsWorkbook(rows) {
+        const normalized = rows
+          .map(row => {
+            const firstname = String(row.firstname || row.first_name || "").trim();
+            const lastname = String(row.lastname || row.last_name || "").trim();
+            const fullname = [firstname, lastname].filter(Boolean).join(" ").trim();
+            const phone = String(row.phone_number || row.phone || "").trim();
+            const nationalId = String(row.national_id || row.nationalid || "").trim();
+            const gender = String(row.gender || row.sex || "").trim();
+            const lotteryCode = String(row.number || row.lottery_code || row.unique_code || row.invite_code || "").trim();
+            const providedLink = String(row.sms_link || row.link || "").trim();
+            const link = providedLink || buildInviteLink(lotteryCode);
+            return {
+              "کد قرعه کشی": lotteryCode,
+              "نام کامل": fullname,
+              "جنسیت": gender,
+              "کدملی": nationalId,
+              "شماره تلفن": phone,
+              "لینک کارت دعوت": link
+            };
+          })
+          .filter(entry =>
+            entry["کد قرعه کشی"] ||
+            entry["نام کامل"] ||
+            entry["جنسیت"] ||
+            entry["کدملی"] ||
+            entry["شماره تلفن"] ||
+            entry["لینک کارت دعوت"]
+          );
+        if (!normalized.length) {
+          throw new Error("No guests contain enough data to export SMS links.");
+        }
+        const worksheet = XLSX.utils.json_to_sheet(normalized, {
+          header: ["کد قرعه کشی", "نام کامل", "جنسیت", "کدملی", "شماره تلفن", "لینک کارت دعوت"]
+        });
+        worksheet["!cols"] = [{ wch: 15 }, { wch: 35 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 45 }];
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "SMS Links");
+        const hasViews = workbook.Workbook && Array.isArray(workbook.Workbook.Views);
+        const existingView = hasViews ? workbook.Workbook.Views[0] : {};
+        workbook.Workbook = workbook.Workbook || {};
+        workbook.Workbook.Views = [{ ...existingView, RTL: true }];
+        return workbook;
+      }
+
       function getEventLabelForExport(event) {
         if (!event) return "";
         return (
@@ -2870,6 +2950,28 @@
       const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = buildSmsExportFilename(activeEvent);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    async function exportNewSmsLinks() {
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        throw new Error("Select an event before exporting SMS links.");
+      }
+      const guests = Array.isArray(activeEvent.guests) ? activeEvent.guests : [];
+      if (!guests.length) {
+        throw new Error("No guests have been added to this event yet.");
+      }
+      const workbook = buildNewSmsWorkbook(guests);
+      const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = buildNewSmsExportFilename(activeEvent);
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
