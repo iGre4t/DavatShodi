@@ -117,53 +117,6 @@ function getEventDirName(array $event): string
     return $fallback !== '' ? $fallback : 'event';
 }
 
-function getEventGuestStorePath(string $eventsRoot, string $eventCode): string
-{
-    $cleanCode = trim($eventCode);
-    if ($cleanCode === '') {
-        $cleanCode = 'event';
-    }
-    return rtrim($eventsRoot, '/\\') . DIRECTORY_SEPARATOR . $cleanCode . DIRECTORY_SEPARATOR . 'eventguests.json';
-}
-
-function getEventGuestStorePathForEvent(array $event, string $eventsRoot): string
-{
-    return getEventGuestStorePath($eventsRoot, getEventDirName($event));
-}
-
-function loadEventGuestStoreFromFile(array $event, string $eventsRoot): ?array
-{
-    $path = getEventGuestStorePathForEvent($event, $eventsRoot);
-    if (!is_file($path)) {
-        return null;
-    }
-    $content = file_get_contents($path);
-    if ($content === false) {
-        return null;
-    }
-    $decoded = json_decode($content, true);
-    if (!is_array($decoded)) {
-        return null;
-    }
-    $merged = array_replace($event, $decoded);
-    $normalizedStore = normalizeStore(['events' => [$merged]]);
-    return $normalizedStore['events'][0] ?? $merged;
-}
-
-function saveEventGuestStoreToFile(array $event, string $eventsRoot): bool
-{
-    $eventDir = getEventDir($event, $eventsRoot);
-    if (!is_dir($eventDir) && !mkdir($eventDir, 0755, true) && !is_dir($eventDir)) {
-        return false;
-    }
-    $path = getEventGuestStorePathForEvent($event, $eventsRoot);
-    $encoded = json_encode($event, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    if ($encoded === false) {
-        return false;
-    }
-    return file_put_contents($path, $encoded) !== false;
-}
-
 function ensureEventHasCode(array &$event, int &$nextEventCode): void
 {
     $code = trim((string)($event['code'] ?? ''));
@@ -184,80 +137,6 @@ function getEventDir(array $event, string $eventsRoot): string
     return $eventsRoot . '/' . getEventDirName($event);
 }
 
-<<<<<<< ours
-function buildEventGuestsSnapshot(array $event): array
-{
-    return [
-        'code' => (string)($event['code'] ?? ''),
-        'name' => (string)($event['name'] ?? ''),
-        'date' => (string)($event['date'] ?? ''),
-        'join_start_time' => (string)($event['join_start_time'] ?? ''),
-        'join_limit_time' => (string)($event['join_limit_time'] ?? ''),
-        'join_left_time' => (string)($event['join_left_time'] ?? ''),
-        'join_end_time' => (string)($event['join_end_time'] ?? ''),
-        'print_entry_modal' => isset($event['print_entry_modal']) ? (bool)$event['print_entry_modal'] : true,
-        'guest_count' => (int)($event['guest_count'] ?? 0),
-        'mapping' => is_array($event['mapping'] ?? null) ? $event['mapping'] : [],
-        'purelist' => (string)($event['purelist'] ?? ''),
-        'source' => is_array($event['source'] ?? null) ? $event['source'] : null,
-        'guests' => [],
-        'created_at' => (string)($event['created_at'] ?? ''),
-        'invite_card_template' => is_array($event['invite_card_template'] ?? null) ? $event['invite_card_template'] : [],
-        'updated_at' => (string)($event['updated_at'] ?? '')
-    ];
-}
-
-function isEventGuestsSnapshotValid(array $payload): bool
-{
-    $code = trim((string)($payload['code'] ?? ''));
-    if ($code === '') {
-        return false;
-    }
-    if (!is_string($payload['name'] ?? null) || !is_string($payload['date'] ?? null)) {
-        return false;
-    }
-    if (!isset($payload['guests']) || !is_array($payload['guests'])) {
-        return false;
-    }
-    if (isset($payload['guest_count']) && !is_int($payload['guest_count'])) {
-        return false;
-    }
-    if (isset($payload['print_entry_modal']) && !is_bool($payload['print_entry_modal'])) {
-        return false;
-    }
-    if (isset($payload['mapping']) && !is_array($payload['mapping'])) {
-        return false;
-    }
-    if (isset($payload['source']) && !is_array($payload['source']) && $payload['source'] !== null) {
-        return false;
-    }
-    if (isset($payload['invite_card_template']) && !is_array($payload['invite_card_template'])) {
-        return false;
-    }
-    return true;
-}
-
-function saveEventGuestsSnapshot(array $event, string $eventsRoot): bool
-{
-    $eventCode = trim((string)($event['code'] ?? ''));
-    if ($eventCode === '') {
-        return false;
-    }
-    $eventDir = getEventDir($event, $eventsRoot);
-    if (!ensureEventEntryPoints($eventDir, $eventCode)) {
-        return false;
-    }
-    $payload = buildEventGuestsSnapshot($event);
-    if (!isEventGuestsSnapshotValid($payload)) {
-        return false;
-    }
-    $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    if ($encoded === false) {
-        return false;
-    }
-    $path = $eventDir . '/eventguests.json';
-    return file_put_contents($path, $encoded, LOCK_EX) !== false;
-=======
 function getEventGuestsPath(array $event, string $eventsRoot): string
 {
     $eventDir = getEventDir($event, $eventsRoot);
@@ -301,7 +180,6 @@ function loadEventGuestsForStore(array $event, string $eventsRoot, bool $persist
         saveEventGuestsToFile($path, $legacyGuests);
     }
     return $legacyGuests;
->>>>>>> theirs
 }
 
 function buildInviteLink(string $code): string
@@ -1289,7 +1167,8 @@ if ($method === 'POST') {
         $eventRecord['source'] = $uploadedFileInfo;
     }
     $eventRecord['created_at'] = $eventRecord['updated_at'];
-    if (!saveEventGuestsSnapshot($eventRecord, $eventsRoot)) {
+    $eventGuestsPath = getEventGuestsPath($eventRecord, $eventsRoot);
+    if (!saveEventGuestsToFile($eventGuestsPath, $guests)) {
         http_response_code(500);
         echo json_encode(['status' => 'error', 'message' => 'Failed to create event guests file.']);
         exit;
@@ -1368,26 +1247,11 @@ function loadGuestStore(string $path, string $eventsRoot = ''): array
     $decoded = json_decode($content, true);
     $store = normalizeStore(is_array($decoded) ? $decoded : [], $eventsRoot);
     if ($eventsRoot !== '') {
-        foreach ($store['events'] as $index => $event) {
-            if (!is_array($event)) {
-                continue;
-            }
-            $eventData = loadEventGuestStoreFromFile($event, $eventsRoot);
-            if (is_array($eventData)) {
-                $store['events'][$index] = $eventData;
-            }
-        }
         ensureEventPurelistFiles($store['events'], $eventsRoot);
     }
     return $store;
 }
 
-<<<<<<< ours
-function saveGuestStore(string $path, array $data, string $eventsRoot = '', bool $persistEventFiles = true): bool
-{
-    $data = normalizeStore($data);
-    if ($eventsRoot !== '' && $persistEventFiles) {
-=======
 function saveGuestStore(string $path, array $data, string $eventsRoot = ''): bool
 {
     if ($eventsRoot === '' && defined('EVENTS_ROOT')) {
@@ -1395,21 +1259,15 @@ function saveGuestStore(string $path, array $data, string $eventsRoot = ''): boo
     }
     $data = normalizeStore($data, $eventsRoot, false);
     if ($eventsRoot !== '') {
->>>>>>> theirs
         foreach ($data['events'] as $event) {
             if (!is_array($event)) {
                 continue;
             }
-<<<<<<< ours
-            if (!saveEventGuestStoreToFile($event, $eventsRoot)) {
-                return false;
-            }
-        }
-    }
-=======
             $guests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
             $guestPath = getEventGuestsPath($event, $eventsRoot);
-            saveEventGuestsToFile($guestPath, $guests);
+            if (!saveEventGuestsToFile($guestPath, $guests)) {
+                return false;
+            }
         }
     }
     $metadata = $data;
@@ -1421,7 +1279,6 @@ function saveGuestStore(string $path, array $data, string $eventsRoot = ''): boo
         unset($event['guests']);
         return $event;
     }, $metadata['events'] ?? []));
->>>>>>> theirs
     $dir = dirname($path);
     if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
         return false;
