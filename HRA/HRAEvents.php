@@ -134,6 +134,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
             }
             $totalScoreColumn = trim((string)($eventData['event_total_score_column'] ?? ''));
             $departmentColumn = trim((string)($eventData['event_department_column'] ?? ''));
+            $eventFile = trim((string)($eventData['event_file'] ?? ''));
+            $eventFilePath = '';
+            if ($eventCode !== '' && $eventFile !== '') {
+                $eventFilePath = 'HRA/events/' . rawurlencode($eventCode) . '/' . rawurlencode($eventFile);
+            }
           ?>
           <div class="sub-pane<?= $isActive ? ' active' : '' ?>" data-pane="<?= htmlspecialchars($paneId, ENT_QUOTES, 'UTF-8') ?>">
             <div class="card">
@@ -143,19 +148,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
             <div class="card" style="margin-top:16px;">
               <div class="table-header" style="flex-direction:column; align-items:flex-start; gap:8px;">
                 <h3>Scores Translation</h3>
-                <p class="muted">Upload a file to generate translation fields from available data.</p>
+                <p class="muted">Load the uploaded file to generate translation fields from available data.</p>
               </div>
-              <div class="form grid one-column" data-score-translation-form data-event-code="<?= htmlspecialchars($eventCode, ENT_QUOTES, 'UTF-8') ?>" data-total-score-column="<?= htmlspecialchars($totalScoreColumn, ENT_QUOTES, 'UTF-8') ?>" data-department-column="<?= htmlspecialchars($departmentColumn, ENT_QUOTES, 'UTF-8') ?>" style="margin-top:12px;">
-                <label class="field standard-width">
-                  <span>Excel / CSV file</span>
-                  <input
-                    type="file"
-                    data-score-file
-                    accept=".csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  />
-                </label>
+              <div class="form grid one-column" data-score-translation-form data-event-code="<?= htmlspecialchars($eventCode, ENT_QUOTES, 'UTF-8') ?>" data-total-score-column="<?= htmlspecialchars($totalScoreColumn, ENT_QUOTES, 'UTF-8') ?>" data-department-column="<?= htmlspecialchars($departmentColumn, ENT_QUOTES, 'UTF-8') ?>" data-event-file="<?= htmlspecialchars($eventFilePath, ENT_QUOTES, 'UTF-8') ?>" style="margin-top:12px;">
                 <div>
-                  <button type="button" class="btn primary" data-score-upload>Upload</button>
+                  <button type="button" class="btn primary" data-score-load>Load Uploaded File</button>
                 </div>
                 <div class="grid one-column" style="gap:12px;" data-score-fields></div>
                 <div>
@@ -187,11 +184,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
       alert(message);
     }
 
-    async function readRowsFromFile(file) {
+    async function readRowsFromBuffer(buffer) {
       if (typeof XLSX === "undefined") {
         throw new Error("Excel parser not loaded yet. Please try again in a moment.");
       }
-      const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array" });
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) {
@@ -221,26 +217,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
     }
 
     forms.forEach((form) => {
-      const fileInput = form.querySelector("[data-score-file]");
-      const uploadButton = form.querySelector("[data-score-upload]");
+      const loadButton = form.querySelector("[data-score-load]");
       const fieldsContainer = form.querySelector("[data-score-fields]");
       const submitButton = form.querySelector("[data-score-submit]");
       const eventCode = form.getAttribute("data-event-code") || "";
       const totalScoreColumn = form.getAttribute("data-total-score-column") || "";
       const departmentColumn = form.getAttribute("data-department-column") || "";
+      const eventFilePath = form.getAttribute("data-event-file") || "";
 
-      if (!fileInput || !uploadButton || !fieldsContainer || !submitButton || !eventCode) {
+      if (!loadButton || !fieldsContainer || !submitButton || !eventCode) {
         return;
       }
 
-      uploadButton.addEventListener("click", async () => {
-        const file = fileInput.files?.[0];
-        if (!file) {
-          notify("Please choose an Excel or CSV file.", true);
+      loadButton.addEventListener("click", async () => {
+        if (!eventFilePath) {
+          notify("No uploaded file found for this event.", true);
           return;
         }
         try {
-          const rows = await readRowsFromFile(file);
+          const response = await fetch(eventFilePath);
+          if (!response.ok) {
+            throw new Error("Unable to load the uploaded file.");
+          }
+          const buffer = await response.arrayBuffer();
+          const rows = await readRowsFromBuffer(buffer);
           if (!rows.length) {
             notify("No data found in the uploaded file.", true);
             return;
@@ -294,7 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
       submitButton.addEventListener("click", async () => {
         const selects = fieldsContainer.querySelectorAll("[data-score-select]");
         if (!selects.length) {
-          notify("Please upload a file to generate translation fields.", true);
+          notify("Please load the uploaded file to generate translation fields.", true);
           return;
         }
         const translations = Array.from(selects).map((select) => {

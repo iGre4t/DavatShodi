@@ -43,12 +43,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
     $eventName = trim((string)($_POST['event_name'] ?? ''));
     $totalScoreColumn = trim((string)($_POST['total_score_column'] ?? ''));
     $departmentColumn = trim((string)($_POST['department_column'] ?? ''));
+    $uploadedFile = $_FILES['event_file'] ?? null;
 
-    if ($eventName === '' || $totalScoreColumn === '' || $departmentColumn === '') {
+    if ($eventName === '' || $totalScoreColumn === '' || $departmentColumn === '' || !$uploadedFile) {
         http_response_code(400);
         echo json_encode([
             'success' => false,
-            'message' => 'Please provide an event name, total score column, and department column.'
+            'message' => 'Please provide an event name, total score column, department column, and file.'
         ]);
         exit;
     }
@@ -92,11 +93,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
         exit;
     }
 
+    $uploadError = $uploadedFile['error'] ?? UPLOAD_ERR_NO_FILE;
+    $tmpName = $uploadedFile['tmp_name'] ?? '';
+    $originalName = (string)($uploadedFile['name'] ?? '');
+    $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $allowedExtensions = ['csv', 'xls', 'xlsx'];
+
+    if ($uploadError !== UPLOAD_ERR_OK || !is_uploaded_file($tmpName)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Unable to read the uploaded file.'
+        ]);
+        exit;
+    }
+
+    if (!in_array($extension, $allowedExtensions, true)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Unsupported file type. Please upload a CSV or Excel file.'
+        ]);
+        exit;
+    }
+
+    $storedFileName = 'upload.' . $extension;
+    $storedFilePath = $eventDir . '/' . $storedFileName;
+
+    if (!move_uploaded_file($tmpName, $storedFilePath)) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Unable to save the uploaded file.'
+        ]);
+        exit;
+    }
+
     $eventData = [
         'event_code' => $eventCode,
         'event_name' => $eventName,
         'event_total_score_column' => $totalScoreColumn,
-        'event_department_column' => $departmentColumn
+        'event_department_column' => $departmentColumn,
+        'event_file' => $storedFileName
     ];
 
     if (file_put_contents(
@@ -356,6 +394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
       const eventName = eventNameInput.value.trim();
       const totalScoreColumn = totalScoreSelect.value.trim();
       const departmentColumn = departmentSelect.value.trim();
+      const file = fileInput.files?.[0];
 
       if (!eventName) {
         notify("Please enter an event name.", true);
@@ -369,12 +408,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
         notify("Please choose the Department column.", true);
         return;
       }
+      if (!file) {
+        notify("Please choose an Excel or CSV file.", true);
+        return;
+      }
 
       const formData = new FormData();
       formData.append("action", "hra_save_mapping");
       formData.append("event_name", eventName);
       formData.append("total_score_column", totalScoreColumn);
       formData.append("department_column", departmentColumn);
+      formData.append("event_file", file);
 
       try {
         const response = await fetch("HRA/HRAupload.php", {
