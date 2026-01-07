@@ -38,6 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
     $eventCode = trim((string)($_POST['event_code'] ?? ''));
     $translationsJson = (string)($_POST['translations'] ?? '');
     $translations = json_decode($translationsJson, true);
+    $eventFinalJson = (string)($_POST['event_final'] ?? '');
+    $eventFinal = $eventFinalJson !== '' ? json_decode($eventFinalJson, true) : null;
 
     if ($eventCode === '' || !is_array($translations)) {
         http_response_code(400);
@@ -74,6 +76,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
             'message' => 'Unable to save score translations.'
         ]);
         exit;
+    }
+
+    if ($eventFinal !== null) {
+        if (!is_array($eventFinal)) {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'message' => 'Event summary data is invalid.'
+            ]);
+            exit;
+        }
+        $eventFinalPayload = [
+            'event_code' => $eventCode,
+            'departments' => $eventFinal['departments'] ?? new stdClass()
+        ];
+        if (file_put_contents(
+            $eventDir . '/EventFinal.json',
+            json_encode($eventFinalPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+        ) === false) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'message' => 'Unable to save event summary.'
+            ]);
+            exit;
+        }
     }
 
     echo json_encode([
@@ -217,6 +245,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
       return values;
     }
 
+    function buildEventFinal(rows, headers, departmentColumn, ignoredIndexes) {
+      const departmentIndex = headers.indexOf(departmentColumn);
+      if (departmentIndex < 0) {
+        throw new Error("Department column not found in the uploaded file.");
+      }
+      const eventItemIndexes = headers
+        .map((title, index) => ({ title, index }))
+        .filter(({ index }) => index !== departmentIndex && !ignoredIndexes.has(index));
+      const departments = {};
+
+      rows.slice(1).forEach((row) => {
+        const departmentValue = String(row[departmentIndex] ?? "").trim();
+        if (!departmentValue) {
+          return;
+        }
+        if (!departments[departmentValue]) {
+          departments[departmentValue] = {
+            votes: 0,
+            items: {}
+          };
+        }
+        const departmentEntry = departments[departmentValue];
+        departmentEntry.votes += 1;
+        eventItemIndexes.forEach(({ title, index }) => {
+          const itemValue = String(row[index] ?? "").trim();
+          if (!itemValue) {
+            return;
+          }
+          if (!departmentEntry.items[title]) {
+            departmentEntry.items[title] = {};
+          }
+          departmentEntry.items[title][itemValue] =
+            (departmentEntry.items[title][itemValue] || 0) + 1;
+        });
+      });
+
+      return {
+        departments
+      };
+    }
+
     forms.forEach((form) => {
       const loadButton = form.querySelector("[data-score-load]");
       const fieldsContainer = form.querySelector("[data-score-fields]");
@@ -267,18 +336,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
           }
           fieldsContainer.innerHTML = "";
           const maxValue = values.length;
-            values.forEach((value, idx) => {
+          values.forEach((value, idx) => {
             const field = document.createElement("label");
             field.className = "field standard-width";
             const label = document.createElement("span");
             label.textContent = value;
             const select = document.createElement("select");
             select.setAttribute("data-score-select", value);
-            for (let i = 1; i <= maxValue; i += 1) {
+            for (let i = 0; i < maxValue; i += 1) {
               const option = document.createElement("option");
               option.value = String(i);
               option.textContent = String(i);
-              if (i === idx + 1) {
+              if (i === idx) {
                 option.selected = true;
               }
               select.appendChild(option);
@@ -298,6 +367,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
           notify("Please load the uploaded file to generate translation fields.", true);
           return;
         }
+        if (!eventFilePath) {
+          notify("No uploaded file found for this event.", true);
+          return;
+        }
+        if (!departmentColumn) {
+          notify("No department column configured for this event.", true);
+          return;
+        }
         const translations = Array.from(selects).map((select) => {
           const label = select.getAttribute("data-score-select") || "";
           return {
@@ -306,10 +383,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
             score: Number(select.value)
           };
         });
+        let eventFinal = null;
+        try {
+          const response = await fetch(eventFilePath);
+          if (!response.ok) {
+            throw new Error("Unable to load the uploaded file.");
+          }
+          const buffer = await response.arrayBuffer();
+          const rows = await readRowsFromBuffer(buffer);
+          if (!rows.length) {
+            throw new Error("No data found in the uploaded file.");
+          }
+          const headers = rows[0].map((header) => String(header).trim());
+          const ignoredIndexes = new Set();
+          if (totalScoreColumn) {
+            const index = headers.indexOf(totalScoreColumn);
+            if (index >= 0) {
+              ignoredIndexes.add(index);
+            }
+          }
+          eventFinal = buildEventFinal(rows, headers, departmentColumn, ignoredIndexes);
+        } catch (error) {
+          notify(error?.message || "Unable to generate event summary.", true);
+          return;
+        }
         const formData = new FormData();
         formData.append("action", "hra_save_score_translation");
         formData.append("event_code", eventCode);
         formData.append("translations", JSON.stringify(translations));
+        formData.append("event_final", JSON.stringify(eventFinal));
 
         try {
           const response = await fetch("HRA/HRAEvents.php", {
