@@ -170,6 +170,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-gallery-line" aria-hidden="true"></span>
             <span>گالری تصاویر</span>
           </button>
+          <button class="nav-item" data-tab="hra">
+            <span class="nav-icon ri ri-bar-chart-line" aria-hidden="true"></span>
+            <span>HR Analyze Panel</span>
+          </button>
           <!-- Features tab placeholder has no content yet but reserves a nav entry. -->
           <button class="nav-item" data-tab="features">
             <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
@@ -340,6 +344,7 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/guests.php'; ?>
         <?php include __DIR__ . '/winnerstab.php'; ?>
         <?php include __DIR__ . '/gallery-tab.php'; ?>
+        <?php include __DIR__ . '/HRA/HRAupload.php'; ?>
         <?php include __DIR__ . '/invitepanel.php'; ?>
         <?php include __DIR__ . '/typography.php'; ?>
         <?php include __DIR__ . '/features.php'; ?>
@@ -665,6 +670,10 @@ $accountEmail = $currentUser['email'] ?? '';
           <label class="field checkbox">
             <input type="checkbox" data-permissions-tab="gallery" />
             <span>گالری</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="hra" />
+            <span>HR Analyze Panel</span>
           </label>
           <label class="field checkbox">
             <input type="checkbox" data-permissions-tab="typography" />
