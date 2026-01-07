@@ -1,4 +1,129 @@
 <?php
+$hraBaseDir = __DIR__;
+
+function hraLoadJsonFile(string $path): array
+{
+    if (!is_file($path)) {
+        return [];
+    }
+    $decoded = json_decode((string)file_get_contents($path), true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function hraLoadEventFinal(string $baseDir): array
+{
+    $rootPath = $baseDir . '/EventFinal.json';
+    $rootData = hraLoadJsonFile($rootPath);
+    if (!empty($rootData)) {
+        return $rootData;
+    }
+
+    $eventsData = hraLoadJsonFile($baseDir . '/events.json');
+    $events = is_array($eventsData['events'] ?? null) ? $eventsData['events'] : [];
+    if (!empty($events)) {
+        for ($index = count($events) - 1; $index >= 0; $index -= 1) {
+            $event = $events[$index];
+            $eventCode = is_array($event) ? trim((string)($event['code'] ?? '')) : '';
+            if ($eventCode === '') {
+                continue;
+            }
+            $eventPath = $baseDir . '/events/' . $eventCode . '/EventFinal.json';
+            $eventData = hraLoadJsonFile($eventPath);
+            if (!empty($eventData)) {
+                return $eventData;
+            }
+        }
+    }
+
+    $candidates = glob($baseDir . '/events/*/EventFinal.json') ?: [];
+    if (!empty($candidates)) {
+        usort($candidates, static function (string $left, string $right): int {
+            return (filemtime($right) ?: 0) <=> (filemtime($left) ?: 0);
+        });
+        $latest = hraLoadJsonFile($candidates[0]);
+        if (!empty($latest)) {
+            return $latest;
+        }
+    }
+
+    return [];
+}
+
+function hraExtractList(array $data, array $keys): array
+{
+    foreach ($keys as $key) {
+        if (!array_key_exists($key, $data)) {
+            continue;
+        }
+        $value = $data[$key];
+        if (!is_array($value)) {
+            continue;
+        }
+        return array_values($value);
+    }
+    return [];
+}
+
+function hraNormalizeItems(array $items): array
+{
+    $normalized = [];
+    foreach ($items as $item) {
+        if (is_string($item)) {
+            $label = trim($item);
+        } elseif (is_array($item)) {
+            $label = trim((string)($item['name'] ?? $item['label'] ?? $item['title'] ?? ''));
+        } else {
+            $label = '';
+        }
+        if ($label !== '') {
+            $normalized[] = $label;
+        }
+    }
+    return $normalized;
+}
+
+function hraExtractDepartmentNames(array $eventFinalData): array
+{
+    if (isset($eventFinalData['departments']) && is_array($eventFinalData['departments'])) {
+        return hraNormalizeItems(array_keys($eventFinalData['departments']));
+    }
+    return hraNormalizeItems(hraExtractList($eventFinalData, [
+        'Departements',
+        'Departments',
+        'departements',
+        'departments'
+    ]));
+}
+
+function hraExtractEventItems(array $eventFinalData): array
+{
+    if (isset($eventFinalData['departments']) && is_array($eventFinalData['departments'])) {
+        $items = [];
+        foreach ($eventFinalData['departments'] as $department) {
+            if (!is_array($department)) {
+                continue;
+            }
+            $departmentItems = $department['items'] ?? [];
+            if (!is_array($departmentItems)) {
+                continue;
+            }
+            foreach (array_keys($departmentItems) as $title) {
+                $items[] = $title;
+            }
+        }
+        return hraNormalizeItems(array_unique($items));
+    }
+    return hraNormalizeItems(hraExtractList($eventFinalData, [
+        'Event Items',
+        'EventItems',
+        'event_items',
+        'eventItems'
+    ]));
+}
+
+$eventFinalData = hraLoadEventFinal($hraBaseDir);
+$departmentItems = hraExtractDepartmentNames($eventFinalData);
+$eventItems = hraExtractEventItems($eventFinalData);
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -13,13 +138,14 @@
     <style>
       .hra-monitor {
         display: grid;
-        grid-template-columns: 230px minmax(0, 1fr);
+        grid-template-columns: 200px 230px minmax(0, 1fr);
         min-height: 100vh;
         background: var(--bg);
+        direction: ltr;
       }
       .hra-sidebar {
         padding: 12px 10px;
-        width: 230px;
+        width: 100%;
       }
       .hra-sidebar .sidebar-header {
         padding: 4px 6px 10px;
@@ -55,51 +181,52 @@
   </head>
   <body>
     <div class="hra-monitor">
-      <aside class="sidebar hra-sidebar">
+      <aside class="sidebar hra-sidebar hra-sidebar-left" dir="rtl">
         <div class="sidebar-header">
-          <div class="title">HRA Monitor</div>
+          <div class="title">Event Items</div>
         </div>
         <div class="hra-filters">
           <label class="field">
-            <span>دپارتمان‌ها (نمونه)</span>
-            <select multiple size="6">
-              <option>منابع انسانی</option>
-              <option>فروش</option>
-              <option>مالی</option>
-              <option>عملیات</option>
-              <option>فنی</option>
-              <option>پشتیبانی</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>سطح عملکرد (نمونه)</span>
-            <select multiple size="5">
-              <option>عالی</option>
-              <option>خوب</option>
-              <option>متوسط</option>
-              <option>نیازمند بهبود</option>
-              <option>بحرانی</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>بازه زمانی (نمونه)</span>
-            <select multiple size="4">
-              <option>هفتگی</option>
-              <option>ماهانه</option>
-              <option>فصلی</option>
-              <option>سالانه</option>
+            <span>Event Items</span>
+            <select multiple size="8">
+              <?php if (empty($eventItems)): ?>
+                <option disabled>No event items yet.</option>
+              <?php else: ?>
+                <?php foreach ($eventItems as $item): ?>
+                  <option><?= htmlspecialchars($item, ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+              <?php endif; ?>
             </select>
           </label>
         </div>
       </aside>
-      <main class="hra-content">
+      <aside class="sidebar hra-sidebar hra-sidebar-right" dir="rtl">
+        <div class="sidebar-header">
+          <div class="title">Departments</div>
+        </div>
+        <div class="hra-filters">
+          <label class="field">
+            <span>Departments</span>
+            <select multiple size="6">
+              <?php if (empty($departmentItems)): ?>
+                <option disabled>No departments yet.</option>
+              <?php else: ?>
+                <?php foreach ($departmentItems as $department): ?>
+                  <option><?= htmlspecialchars($department, ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </select>
+          </label>
+        </div>
+      </aside>
+      <main class="hra-content" dir="rtl">
         <div class="card">
-          <h3>داشبورد HRA Monitor</h3>
-          <p class="muted">این صفحه برای نمایش وضعیت پایش طراحی شده است. داده‌ها و ویجت‌ها در نسخه‌های بعدی اضافه می‌شوند.</p>
+          <h3>HRA Monitor Dashboard</h3>
+          <p class="muted">Monitor event progress and department participation at a glance.</p>
         </div>
         <div class="card">
-          <h3>خلاصه نمونه</h3>
-          <p class="muted">اینجا می‌توانید گراف‌ها یا گزارش‌های نمونه قرار دهید.</p>
+          <h3>Department Summary</h3>
+          <p class="muted">Select one or more filters to view the summarized results.</p>
         </div>
       </main>
     </div>
