@@ -354,7 +354,19 @@
   <script>
     (() => {
       const scopedEventCode = (window.EVENT_SCOPED_EVENT_CODE || "").trim();
-      const inviteAssetBasePath = String(window.INVITE_ASSET_BASE_PATH || "").replace(/\/+$/, "");
+      const explicitInviteBasePath = String(window.INVITE_ASSET_BASE_PATH || "").trim();
+      const inferredInviteBasePath = (() => {
+        if (explicitInviteBasePath) {
+          return explicitInviteBasePath;
+        }
+        const path = window.location.pathname || "";
+        const lastSlashIndex = path.lastIndexOf("/");
+        if (lastSlashIndex <= 0) {
+          return "";
+        }
+        return path.slice(0, lastSlashIndex);
+      })();
+      const inviteAssetBasePath = inferredInviteBasePath.replace(/\/+$/, "");
       const resolveInviteAssetPath = (relativePath) => {
         const trimmedRel = (relativePath || "").replace(/^\/+/, "");
         if (!trimmedRel) {
