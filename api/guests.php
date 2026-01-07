@@ -13,6 +13,7 @@ date_default_timezone_set('Asia/Tehran');
 header('Content-Type: application/json; charset=UTF-8');
 
 const INVITE_BASE_URL = 'https://davatshodi.ir/l/inv';
+const INVITE_LOG_FILENAME = 'InviteLogs.json';
 const PURELIST_HEADERS = ['number', 'firstname', 'lastname', 'gender', 'national_id', 'phone_number', 'sms_link', 'join_date', 'join_time', 'left_date', 'left_time'];
 const EVENT_CODE_MIN = 10000;
 const EVENT_CODE_DIGITS = 5;
@@ -206,8 +207,16 @@ if ($method === 'POST') {
             }
         }
         if ($match === null) {
-            $activeEventName = (string)($store['events'][$activeEventIndex]['name'] ?? '');
-            $log = appendInviteLog($store, [
+            $activeEvent = $store['events'][$activeEventIndex];
+            $activeEventName = (string)($activeEvent['name'] ?? '');
+            $logPath = getInviteLogPathForEvent($activeEvent, $eventsRoot);
+            if (!ensureInviteLogFile($logPath)) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => 'Failed to initialize invite log file.']);
+                exit;
+            }
+            try {
+                $log = appendInviteLogToFile($logPath, [
                 'type' => 'not_found',
                 'national_id' => $nationalId,
                 'event_code' => $activeEventCode,
@@ -216,20 +225,26 @@ if ($method === 'POST') {
                 'invite_code' => '',
                 'timestamp' => $nowString,
                 'message' => 'National ID not found in the active event list.'
-            ]);
+                ]);
+            } catch (RuntimeException $exception) {
+                http_response_code(500);
+                echo json_encode(['status' => 'error', 'message' => $exception->getMessage()]);
+                exit;
+            }
             if (!saveGuestStore($storePath, $store)) {
                 http_response_code(500);
                 echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
                 exit;
             }
+            $logList = normalizeInviteLogs(loadInviteLogsFromFile($logPath));
             echo json_encode([
                 'status' => 'ok',
                 'event_name' => $activeEventName,
                 'outcome' => 'not_found',
                 'log' => $log,
-                'logs' => normalizeInviteLogs($store['logs']),
+                'logs' => $logList,
                 'stats' => computeGuestStats($store['events'][$activeEventIndex] ?? []),
-                'active_event' => normalizeEventForResponse($store['events'][$activeEventIndex])
+                'active_event' => normalizeEventForResponse($activeEvent)
             ]);
             exit;
         }
@@ -283,7 +298,14 @@ if ($method === 'POST') {
         $guestName = trim(
             (string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? '')
         );
-        $log = appendInviteLog($store, [
+        $logPath = getInviteLogPathForEvent($event, $eventsRoot);
+        if (!ensureInviteLogFile($logPath)) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Failed to initialize invite log file.']);
+            exit;
+        }
+        try {
+            $log = appendInviteLogToFile($logPath, [
             'type' => $outcome,
             'national_id' => $nationalId,
             'event_code' => $eventCode,
@@ -298,13 +320,19 @@ if ($method === 'POST') {
             'date_entered' => (string)($guest['date_entered'] ?? ''),
             'date_exited' => (string)($guest['date_exited'] ?? ''),
             'message' => $message
-        ]);
+            ]);
+        } catch (RuntimeException $exception) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => $exception->getMessage()]);
+            exit;
+        }
 
         if (!saveGuestStore($storePath, $store)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
             exit;
         }
+        $logList = normalizeInviteLogs(loadInviteLogsFromFile($logPath));
 
         echo json_encode([
             'status' => 'ok',
@@ -326,7 +354,7 @@ if ($method === 'POST') {
                 'event_name' => $eventName
             ],
             'log' => $log,
-            'logs' => normalizeInviteLogs($store['logs']),
+            'logs' => $logList,
             'stats' => computeGuestStats($store['events'][$activeEventIndex] ?? []),
             'active_event' => normalizeEventForResponse($event)
         ]);
@@ -407,7 +435,7 @@ if ($method === 'POST') {
             'status' => 'ok',
             'message' => 'Guest added successfully.',
             'events' => normalizeEventsForResponse($store['events']),
-            'logs' => normalizeInviteLogs($store['logs'])
+            'logs' => getInviteLogsForEventCode($store['events'], $eventsRoot, $eventCode)
         ]);
         exit;
     } elseif ($action === 'update_guest') {
@@ -468,7 +496,7 @@ if ($method === 'POST') {
             'status' => 'ok',
             'message' => 'Guest updated successfully.',
             'events' => normalizeEventsForResponse($store['events']),
-            'logs' => normalizeInviteLogs($store['logs'])
+            'logs' => getInviteLogsForEventCode($store['events'], $eventsRoot, $eventCode)
         ]);
         exit;
       } elseif ($action === 'delete_guest') {
@@ -509,7 +537,7 @@ if ($method === 'POST') {
               'status' => 'ok',
               'message' => 'Guest deleted successfully.',
               'events' => normalizeEventsForResponse($store['events']),
-              'logs' => normalizeInviteLogs($store['logs'])
+              'logs' => getInviteLogsForEventCode($store['events'], $eventsRoot, $eventCode)
           ]);
           exit;
       } elseif ($action === 'update_event') {
@@ -608,7 +636,7 @@ if ($method === 'POST') {
               'status' => 'ok',
               'message' => 'Event updated successfully.',
               'events' => normalizeEventsForResponse($store['events']),
-              'logs' => normalizeInviteLogs($store['logs'])
+              'logs' => getInviteLogsForEventCode($store['events'], $eventsRoot, $eventCode)
           ]);
           exit;
         } elseif ($action === 'update_event_setting') {
@@ -788,7 +816,7 @@ if ($method === 'POST') {
                 'status' => 'ok',
                 'message' => 'Invite card template saved.',
                 'events' => normalizeEventsForResponse($store['events']),
-                'logs' => normalizeInviteLogs($store['logs'])
+                'logs' => getInviteLogsForEventCode($store['events'], $eventsRoot, $eventCode)
             ]);
             createGuestInvitePages(
                 $store['events'][$eventIndex]['guests'] ?? [],
@@ -938,7 +966,7 @@ if ($method === 'POST') {
               'status' => 'ok',
               'message' => 'Event deleted successfully.',
               'events' => normalizeEventsForResponse($store['events']),
-              'logs' => normalizeInviteLogs($store['logs'])
+              'logs' => []
           ]);
           exit;
       } elseif ($action !== 'save_guest_purelist') {
@@ -1116,7 +1144,7 @@ if ($method === 'POST') {
         'status' => 'ok',
         'message' => 'Guest list saved successfully.',
         'events' => normalizeEventsForResponse($store['events']),
-        'logs' => normalizeInviteLogs($store['logs'])
+        'logs' => []
     ]);
     exit;
 }
@@ -1139,18 +1167,18 @@ if ($method === 'POST') {
         $activeEventCandidate = resolveActiveEventForInvite($store['events'] ?? [], $now);
     }
     $activeEvent = $activeEventCandidate['event'] ?? [];
-    $filteredLogs = $store['logs'];
+    $logs = [];
     if ($eventCodeParam !== '') {
-        $filteredLogs = array_filter($filteredLogs, static function ($log) use ($eventCodeParam) {
-            return trim((string)($log['event_code'] ?? '')) === $eventCodeParam;
-        });
+        $logs = getInviteLogsForEventCode($store['events'], $eventsRoot, $eventCodeParam);
+    } elseif (!empty($activeEvent)) {
+        $logs = getInviteLogsForEvent($activeEvent, $eventsRoot);
     }
     $normalizedActiveEvent = !empty($activeEvent) ? normalizeEventForResponse($activeEvent) : null;
     echo json_encode([
         'status' => 'ok',
         'event_name' => (string)($activeEvent['name'] ?? ''),
         'events' => normalizeEventsForResponse($store['events']),
-        'logs' => normalizeInviteLogs(array_values($filteredLogs)),
+        'logs' => $logs,
         'stats' => computeGuestStats($activeEvent),
         'active_event' => $normalizedActiveEvent
     ]);
@@ -1946,14 +1974,73 @@ function normalizeStore(array $store): array
     return $store;
 }
 
-function appendInviteLog(array &$store, array $log): array
+function appendInviteLogToFile(string $path, array $log): array
 {
     $log = normalizeInviteLog($log);
-    $store['logs'][] = $log;
-    if (count($store['logs']) > 200) {
-        $store['logs'] = array_slice($store['logs'], -200);
+    $logs = loadInviteLogsFromFile($path);
+    $logs[] = $log;
+    if (count($logs) > 200) {
+        $logs = array_slice($logs, -200);
+    }
+    if (!saveInviteLogsToFile($path, $logs)) {
+        throw new RuntimeException('Failed to persist invite logs.');
     }
     return $log;
+}
+
+function loadInviteLogsFromFile(string $path): array
+{
+    if (!is_file($path)) {
+        return [];
+    }
+    $content = file_get_contents($path);
+    if ($content === false) {
+        return [];
+    }
+    $decoded = json_decode($content, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function saveInviteLogsToFile(string $path, array $logs): bool
+{
+    $dir = dirname($path);
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+        return false;
+    }
+    $encoded = json_encode(array_values($logs), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    if ($encoded === false) {
+        return false;
+    }
+    return file_put_contents($path, $encoded) !== false;
+}
+
+function ensureInviteLogFile(string $path): bool
+{
+    if (is_file($path)) {
+        return true;
+    }
+    return saveInviteLogsToFile($path, []);
+}
+
+function getInviteLogPathForEvent(array $event, string $eventsRoot): string
+{
+    $eventDir = getEventDir($event, $eventsRoot);
+    return rtrim($eventDir, '/\\') . DIRECTORY_SEPARATOR . INVITE_LOG_FILENAME;
+}
+
+function getInviteLogsForEvent(array $event, string $eventsRoot): array
+{
+    $path = getInviteLogPathForEvent($event, $eventsRoot);
+    return normalizeInviteLogs(loadInviteLogsFromFile($path));
+}
+
+function getInviteLogsForEventCode(array $events, string $eventsRoot, string $eventCode): array
+{
+    $eventIndex = findEventIndexByCode($events, $eventCode);
+    if ($eventIndex < 0) {
+        return [];
+    }
+    return getInviteLogsForEvent($events[$eventIndex], $eventsRoot);
 }
 
 function normalizeInviteLog(array $log): array
@@ -2133,4 +2220,3 @@ function ensureGuestInviteIndexPage(string $code): void
 HTML;
     @file_put_contents($indexPath, $page);
 }
-
