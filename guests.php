@@ -634,7 +634,7 @@
     const resolveGuestApiEndpoint = (eventCode = "") => {
       const normalized = (eventCode || "").toString().trim();
       if (normalized) {
-        return `./events/${encodeURIComponent(normalized)}/event.api.php`;
+        return "./api/event.api.php";
       }
       return "./api/guests.php";
     };

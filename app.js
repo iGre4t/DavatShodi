@@ -2879,7 +2879,7 @@ async function handleInviteCardGeneration() {
 function resolveEventApiEndpoint(eventCode) {
   const normalized = (eventCode || "").toString().trim();
   if (normalized) {
-    return `./events/${encodeURIComponent(normalized)}/event.api.php`;
+    return "./api/event.api.php";
   }
   return "./api/guests.php";
 }
@@ -2896,6 +2896,9 @@ async function uploadGuestInviteCardImage(inviteCode, imageData, options = {}) {
   const endpoint = resolveEventApiEndpoint(eventCode);
   const formData = new FormData();
   formData.append("action", "save_generated_invite_card");
+  if (eventCode) {
+    formData.append("event_code", eventCode);
+  }
   formData.append("invite_code", inviteCode);
   formData.append("image_data", imageData);
   formData.append("overwrite", options.overwrite ? "1" : "0");
