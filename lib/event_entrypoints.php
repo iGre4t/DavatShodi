@@ -19,7 +19,21 @@ function ensureEventEntryPoints(string $eventDir, string $eventCode = ''): bool
     $drawWritten = writeEventEntryPoint($drawPath, $eventCode, 'draw.php');
     $prizeWritten = writeEventEntryPoint($prizePath, $eventCode, 'prizes.php');
     $inviteWritten = writeEventEntryPoint($invitePath, $eventCode, 'invite.php');
-    return $drawWritten && $prizeWritten && $inviteWritten;
+    $logsReady = ensureInviteLogFile($eventDir);
+    return $drawWritten && $prizeWritten && $inviteWritten && $logsReady;
+}
+
+function ensureInviteLogFile(string $eventDir): bool
+{
+    $logPath = rtrim($eventDir, '/\\') . DIRECTORY_SEPARATOR . 'InviteLogs.json';
+    if (is_file($logPath)) {
+        return true;
+    }
+    $encoded = json_encode([], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    if ($encoded === false) {
+        return false;
+    }
+    return file_put_contents($logPath, $encoded) !== false;
 }
 
 function writeEventEntryPoint(string $filePath, string $eventCode, string $targetScript): bool

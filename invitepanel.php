@@ -919,7 +919,8 @@
             throw new Error(data?.message || "عدم امکان اسکن مهمان.");
           }
           if (Array.isArray(data.logs)) {
-            mergeLogs(data.logs);
+            logs = data.logs;
+            renderLogs();
           } else if (data.log) {
             mergeLogs([data.log]);
           }
@@ -1037,11 +1038,6 @@
       renderStats();
       document.addEventListener("DOMContentLoaded", () => {
         loadInviteData();
-        setInterval(() => {
-          if (!loading) {
-            loadInviteData();
-          }
-        }, 5000);
       });
     })();
   </script>

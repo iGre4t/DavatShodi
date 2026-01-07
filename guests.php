@@ -1206,7 +1206,7 @@
       }
       const button = eventSettingCreateInviteButton;
       button.setAttribute("disabled", "disabled");
-      setEventSettingStatusMessage("Creating invite page, please wait...", "busy");
+      setEventSettingStatusMessage("Regenerating invite page, please wait...", "busy");
       try {
         const formData = new FormData();
         formData.append("action", "create_event_entrypoints");
@@ -1217,12 +1217,12 @@
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.status !== "ok") {
-          throw new Error(payload?.message || "Unable to create invite entry page.");
+          throw new Error(payload?.message || "Unable to regenerate invite entry page.");
         }
-        setEventSettingStatusMessage(payload.message || `Invite entry created for event ${activeEventCode}.`, "success");
+        setEventSettingStatusMessage(payload.message || `Invite entry regenerated for event ${activeEventCode}.`, "success");
         showDefaultToast?.(payload.message || "Invite entry points created.");
       } catch (error) {
-        const message = error?.message || "Failed to create invite entry page.";
+        const message = error?.message || "Failed to regenerate invite entry page.";
         setEventSettingStatusMessage(message, "error");
         showErrorSnackbar?.({ message });
       } finally {
