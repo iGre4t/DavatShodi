@@ -76,25 +76,58 @@ function eventstabNormalizeEventsForResponse(array $events): array
 {
   return array_values(array_map(static function ($event) {
     if (!is_array($event)) {
+      return [
+        'code' => '',
+        'name' => '',
+        'date' => '',
+        'guest_count' => 0,
+        'created_at' => '',
+        'updated_at' => ''
+      ];
+    }
+    $code = (string)($event['code'] ?? '');
+    $guests = [];
+    $guestCount = null;
+    $guestPath = eventstabGetEventGuestsPath($code);
+    if ($guestPath !== '' && is_file($guestPath)) {
+      $guests = eventstabLoadEventGuests($guestPath);
+      $guestCount = count($guests);
+    }
+    if ($guestCount === null) {
+      $legacyGuests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
+      $guestCount = (int)($event['guest_count'] ?? count($legacyGuests));
+    }
     return [
-      'code' => '',
-      'name' => '',
-      'date' => '',
-      'guest_count' => 0,
-      'created_at' => '',
-      'updated_at' => ''
-    ];
-  }
-  $guests = is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
-  return [
-    'code' => (string)($event['code'] ?? ''),
-    'name' => (string)($event['name'] ?? ''),
-    'date' => (string)($event['date'] ?? ''),
-      'guest_count' => (int)($event['guest_count'] ?? count($guests)),
+      'code' => (string)($event['code'] ?? ''),
+      'name' => (string)($event['name'] ?? ''),
+      'date' => (string)($event['date'] ?? ''),
+      'guest_count' => $guestCount,
       'created_at' => (string)($event['created_at'] ?? ''),
       'updated_at' => (string)($event['updated_at'] ?? '')
     ];
   }, $events));
+}
+
+function eventstabGetEventGuestsPath(string $code): string
+{
+  $trimmed = trim($code);
+  if ($trimmed === '') {
+    return '';
+  }
+  return rtrim(EVENTSTAB_EVENTS_ROOT, '/\\') . DIRECTORY_SEPARATOR . $trimmed . DIRECTORY_SEPARATOR . 'eventguests.json';
+}
+
+function eventstabLoadEventGuests(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? array_values($decoded) : [];
 }
 
 function eventstabGetEventsRootPath(): string

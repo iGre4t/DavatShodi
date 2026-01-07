@@ -631,6 +631,13 @@
 
     const showDefaultToast = (...args) => window.showDefaultToast?.(...args);
     const showErrorSnackbar = (...args) => window.showErrorSnackbar?.(...args);
+    const resolveGuestApiEndpoint = (eventCode = "") => {
+      const normalized = (eventCode || "").toString().trim();
+      if (normalized) {
+        return `./events/${encodeURIComponent(normalized)}/event.api.php`;
+      }
+      return "./api/guests.php";
+    };
 
     const state = {
       columns: [],
@@ -1211,7 +1218,7 @@
         const formData = new FormData();
         formData.append("action", "create_event_entrypoints");
         formData.append("event_code", activeEventCode);
-        const response = await fetch("./api/guests.php", {
+        const response = await fetch(resolveGuestApiEndpoint(activeEventCode), {
           method: "POST",
           body: formData
         });
@@ -1242,7 +1249,7 @@
         const formData = new FormData();
         formData.append("action", "refresh_event_purelist");
         formData.append("event_code", activeEventCode);
-        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const response = await fetch(resolveGuestApiEndpoint(activeEventCode), { method: "POST", body: formData });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.status !== "ok") {
           throw new Error(payload?.message || "Failed to refresh SMS export.");
@@ -1277,7 +1284,7 @@
         formData.append("action", "update_event_setting");
         formData.append("event_code", activeEventCode);
         formData.append("print_entry_modal", value ? "1" : "0");
-        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const response = await fetch(resolveGuestApiEndpoint(activeEventCode), { method: "POST", body: formData });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.status !== "ok") {
           throw new Error(payload?.message || "Failed to save print setting.");
@@ -1804,7 +1811,7 @@
 
     async function fetchGuestEvents() {
       try {
-        const response = await fetch("./api/guests.php");
+        const response = await fetch(resolveGuestApiEndpoint());
         if (!response.ok) throw new Error("Unable to load guest lists.");
         const payload = await response.json();
         if (payload.status !== "ok") throw new Error(payload.message || "Unable to load guest lists.");
@@ -1835,7 +1842,7 @@
       if (state.file) {
         formData.append("guest_file", state.file, state.file.name || "guest-list");
       }
-      const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+      const response = await fetch(resolveGuestApiEndpoint(), { method: "POST", body: formData });
       setMappingProgressText("در حال ساخت لیست مهمانان...");
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.status !== "ok") {
@@ -1960,7 +1967,7 @@
       try {
         const formData = new FormData();
         Object.entries(payload).forEach(([k, v]) => formData.append(k, v));
-        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const response = await fetch(resolveGuestApiEndpoint(selectedCode), { method: "POST", body: formData });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.status !== "ok") {
           throw new Error(data?.message || "Failed to add guest.");
@@ -2044,7 +2051,7 @@
         formData.append("join_limit_time", joinLimit);
         formData.append("join_left_time", joinLeft);
         formData.append("join_end_time", joinEnd);
-        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const response = await fetch(resolveGuestApiEndpoint(activeEventCode), { method: "POST", body: formData });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.status !== "ok") {
           throw new Error(data?.message || "Failed to save event.");
@@ -2081,7 +2088,7 @@
       try {
         const formData = new FormData();
         Object.entries(payload).forEach(([k, v]) => formData.append(k, v));
-        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const response = await fetch(resolveGuestApiEndpoint(editContext.code), { method: "POST", body: formData });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.status !== "ok") {
           throw new Error(data?.message || "Failed to update guest.");
@@ -2658,7 +2665,7 @@
       formData.append("event_code", code);
       formData.append("number", String(number));
       try {
-        const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+        const response = await fetch(resolveGuestApiEndpoint(code), { method: "POST", body: formData });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.status !== "ok") {
           throw new Error(data?.message || "Failed to delete guest.");
@@ -2678,7 +2685,7 @@
       const formData = new FormData();
       formData.append("action", "delete_event");
       formData.append("event_code", code);
-      const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+      const response = await fetch(resolveGuestApiEndpoint(code), { method: "POST", body: formData });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.status !== "ok") {
         throw new Error(data?.message || "Failed to delete event.");
@@ -3328,7 +3335,7 @@
       formData.append("event_code", activeEventCode);
       formData.append("template", JSON.stringify(payload));
       try {
-        const response = await fetch("./api/guests.php", {
+        const response = await fetch(resolveGuestApiEndpoint(activeEventCode), {
           method: "POST",
           body: formData
         });

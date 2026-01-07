@@ -16,11 +16,13 @@ function ensureEventEntryPoints(string $eventDir, string $eventCode = ''): bool
     $drawPath = $eventDir . '/draw.php';
     $prizePath = $eventDir . '/prizes.php';
     $invitePath = $eventDir . '/invite.php';
+    $apiPath = $eventDir . '/event.api.php';
     $drawWritten = writeEventEntryPoint($drawPath, $eventCode, 'draw.php');
     $prizeWritten = writeEventEntryPoint($prizePath, $eventCode, 'prizes.php');
     $inviteWritten = writeEventEntryPoint($invitePath, $eventCode, 'invite.php');
+    $apiWritten = writeEventEntryPoint($apiPath, $eventCode, 'api/event.api.php');
     $logsReady = ensureInviteLogFile($eventDir);
-    return $drawWritten && $prizeWritten && $inviteWritten && $logsReady;
+    return $drawWritten && $prizeWritten && $inviteWritten && $apiWritten && $logsReady;
 }
 
 function ensureInviteLogFile(string $eventDir): bool

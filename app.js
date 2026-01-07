@@ -2876,6 +2876,14 @@ async function handleInviteCardGeneration() {
   }
 }
 
+function resolveEventApiEndpoint(eventCode) {
+  const normalized = (eventCode || "").toString().trim();
+  if (normalized) {
+    return `./events/${encodeURIComponent(normalized)}/event.api.php`;
+  }
+  return "./api/guests.php";
+}
+
 async function uploadGuestInviteCardImage(inviteCode, imageData, options = {}) {
   if (!inviteCode) {
     throw new Error("Invite code is required.");
@@ -2883,12 +2891,15 @@ async function uploadGuestInviteCardImage(inviteCode, imageData, options = {}) {
   if (!imageData) {
     throw new Error("Invite card image data is missing.");
   }
+  const activeEvent = window.getActiveGuestEvent ? window.getActiveGuestEvent() : null;
+  const eventCode = (options.eventCode || activeEvent?.code || "").toString().trim();
+  const endpoint = resolveEventApiEndpoint(eventCode);
   const formData = new FormData();
   formData.append("action", "save_generated_invite_card");
   formData.append("invite_code", inviteCode);
   formData.append("image_data", imageData);
   formData.append("overwrite", options.overwrite ? "1" : "0");
-  const response = await fetch("./api/guests.php", {
+  const response = await fetch(endpoint, {
     method: "POST",
     body: formData
   });
@@ -2906,7 +2917,7 @@ async function fetchGuestsMissingInviteCards(eventCode) {
   const formData = new FormData();
   formData.append("action", "list_missing_invite_cards");
   formData.append("event_code", eventCode);
-  const response = await fetch("./api/guests.php", {
+  const response = await fetch(resolveEventApiEndpoint(eventCode), {
     method: "POST",
     body: formData
   });

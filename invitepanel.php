@@ -377,7 +377,9 @@
         }
         return `/${trimmedRel}`;
       };
-      const inviteApiBase = resolveInviteAssetPath("api/guests.php");
+      const inviteApiBase = scopedEventCode
+        ? resolveInviteAssetPath("event.api.php")
+        : resolveInviteAssetPath("api/guests.php");
       const inviteApiEndpoint = scopedEventCode ? `${inviteApiBase}?event_code=${encodeURIComponent(scopedEventCode)}` : inviteApiBase;
       const nationalInput = document.getElementById("invite-national-id");
       const inviteForm = document.getElementById("invite-form");

@@ -878,7 +878,8 @@ function buildGuestPool(string $storePath, string $targetEventCode = ''): array
       continue;
     }
     $eventName = trim((string)($event['name'] ?? 'event'));
-    $guests = $event['guests'] ?? [];
+    $eventDir = resolveEventDirName($event, $eventCode, $slug);
+    $guests = loadEventGuestsForDraw(EVENTS_ROOT, $eventDir, $event);
     foreach ($guests as $guest) {
       if (!is_array($guest)) {
         continue;
@@ -917,6 +918,47 @@ function buildGuestPool(string $storePath, string $targetEventCode = ''): array
     }
   }
   return $pool;
+}
+
+function resolveEventDirName(array $event, string $eventCode, string $eventSlug): string
+{
+  $code = trim((string)($event['code'] ?? ''));
+  if ($code !== '') {
+    return $code;
+  }
+  $slug = normalizeSlug((string)($event['slug'] ?? ''));
+  if ($slug === '') {
+    $slug = normalizeSlug((string)($event['name'] ?? ''));
+  }
+  if ($slug !== '') {
+    return $slug;
+  }
+  if ($eventCode !== '') {
+    return $eventCode;
+  }
+  if ($eventSlug !== '') {
+    return $eventSlug;
+  }
+  return 'event';
+}
+
+function loadEventGuestsForDraw(string $eventsRoot, string $eventDir, array $event): array
+{
+  $eventDir = trim($eventDir);
+  if ($eventDir === '') {
+    $eventDir = 'event';
+  }
+  $path = rtrim($eventsRoot, '/\\') . DIRECTORY_SEPARATOR . $eventDir . DIRECTORY_SEPARATOR . 'eventguests.json';
+  if (is_file($path)) {
+    $content = file_get_contents($path);
+    if ($content !== false) {
+      $decoded = json_decode($content, true);
+      if (is_array($decoded)) {
+        return array_values($decoded);
+      }
+    }
+  }
+  return is_array($event['guests'] ?? null) ? array_values($event['guests']) : [];
 }
 
 function normalizeSlug(string $value): string
