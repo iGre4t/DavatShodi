@@ -138,7 +138,8 @@ $eventItems = hraExtractEventItems($eventFinalData);
     <style>
       .hra-monitor {
         display: grid;
-        grid-template-columns: 200px 230px minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr) 200px 230px;
+        grid-template-areas: "content events departments";
         min-height: 100vh;
         background: var(--bg);
         direction: ltr;
@@ -146,6 +147,12 @@ $eventItems = hraExtractEventItems($eventFinalData);
       .hra-sidebar {
         padding: 12px 10px;
         width: 100%;
+      }
+      .hra-sidebar-left {
+        grid-area: events;
+      }
+      .hra-sidebar-right {
+        grid-area: departments;
       }
       .hra-sidebar .sidebar-header {
         padding: 4px 6px 10px;
@@ -163,6 +170,7 @@ $eventItems = hraExtractEventItems($eventFinalData);
       }
       .hra-content {
         padding: 24px;
+        grid-area: content;
       }
       .hra-content .card + .card {
         margin-top: 16px;
@@ -170,6 +178,10 @@ $eventItems = hraExtractEventItems($eventFinalData);
       @media (max-width: 900px) {
         .hra-monitor {
           grid-template-columns: 1fr;
+          grid-template-areas:
+            "departments"
+            "events"
+            "content";
         }
         .hra-sidebar {
           width: 100%;
