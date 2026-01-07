@@ -4506,6 +4506,7 @@ function setActiveTab(tab) {
     events: 'Events',
     gallery: 'Photo Gallery',
     hra: 'HR Analyze Panel',
+    hraevents: 'HRA Events',
     typography: 'Typography',
     invite: 'Invite',
     devsettings: 'Developer Settings'

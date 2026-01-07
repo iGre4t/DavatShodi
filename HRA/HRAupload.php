@@ -387,7 +387,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
         }
         hideModal();
         notify(`Event saved with code ${payload.event_code}.`);
-        window.location.reload();
+        if (eventsBody) {
+          const emptyRow = eventsBody.querySelector("[data-hra-empty]");
+          emptyRow?.remove();
+          const row = document.createElement("tr");
+          row.setAttribute("data-event-code", payload.event_code);
+          row.innerHTML = `
+            <td>${payload.event_code}</td>
+            <td>${eventName}</td>
+            <td>
+              <button type="button" class="btn ghost small" data-hra-delete-event data-event-code="${payload.event_code}">
+                Delete
+              </button>
+            </td>
+          `;
+          eventsBody.appendChild(row);
+        }
         eventNameInput.value = "";
         fileInput.value = "";
       } catch (error) {

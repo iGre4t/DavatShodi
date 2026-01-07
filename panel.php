@@ -174,6 +174,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-bar-chart-line" aria-hidden="true"></span>
             <span>HR Analyze Panel</span>
           </button>
+          <button class="nav-item" data-tab="hraevents">
+            <span class="nav-icon ri ri-calendar-event-line" aria-hidden="true"></span>
+            <span>HRA Events</span>
+          </button>
           <!-- Features tab placeholder has no content yet but reserves a nav entry. -->
           <button class="nav-item" data-tab="features">
             <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
@@ -345,6 +349,7 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/winnerstab.php'; ?>
         <?php include __DIR__ . '/gallery-tab.php'; ?>
         <?php include __DIR__ . '/HRA/HRAupload.php'; ?>
+        <?php include __DIR__ . '/HRA/HRAEvents.php'; ?>
         <?php include __DIR__ . '/invitepanel.php'; ?>
         <?php include __DIR__ . '/typography.php'; ?>
         <?php include __DIR__ . '/features.php'; ?>
