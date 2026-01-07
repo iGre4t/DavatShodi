@@ -192,6 +192,7 @@ $eventItems = hraExtractEventItems($eventFinalData);
     </style>
   </head>
   <body>
+    <header class="topbar">مانیتور منابع انسانی</header>
     <div class="hra-monitor">
       <aside class="sidebar hra-sidebar hra-sidebar-left" dir="rtl">
         <div class="sidebar-header">
