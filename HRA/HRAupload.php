@@ -1,9 +1,4 @@
 <?php
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
 $hraBaseDir = __DIR__;
 $eventsFile = $hraBaseDir . '/events.json';
 $eventsData = [
@@ -41,24 +36,12 @@ function hraDeleteDirectoryRecursive(string $directory): bool
     return rmdir($directory);
 }
 
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 $hraAction = $_POST['action'] ?? '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') {
     header('Content-Type: application/json; charset=utf-8');
 
     $eventName = trim((string)($_POST['event_name'] ?? ''));
     $totalScoreColumn = trim((string)($_POST['total_score_column'] ?? ''));
-<<<<<<< ours
-
-    if ($eventName === '' || $totalScoreColumn === '') {
-        http_response_code(400);
-        echo json_encode([
-            'success' => false,
-            'message' => 'Please provide an event name and total score column.'
-=======
     $departmentColumn = trim((string)($_POST['department_column'] ?? ''));
 
     if ($eventName === '' || $totalScoreColumn === '' || $departmentColumn === '') {
@@ -66,33 +49,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
         echo json_encode([
             'success' => false,
             'message' => 'Please provide an event name, total score column, and department column.'
->>>>>>> theirs
         ]);
         exit;
     }
 
-<<<<<<< ours
-<<<<<<< ours
-    $hraBaseDir = __DIR__;
-    $eventsFile = $hraBaseDir . '/events.json';
-    $eventsData = [
-        'events' => []
-    ];
-
-    if (is_file($eventsFile)) {
-        $decoded = json_decode((string)file_get_contents($eventsFile), true);
-        if (is_array($decoded)) {
-            $eventsData = $decoded;
-            if (!isset($eventsData['events']) || !is_array($eventsData['events'])) {
-                $eventsData['events'] = [];
-            }
-        }
-    }
-
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
     $maxCode = 0;
     foreach ($eventsData['events'] as $event) {
         $codeValue = is_array($event) ? ($event['code'] ?? '') : '';
@@ -135,12 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
     $eventData = [
         'event_code' => $eventCode,
         'event_name' => $eventName,
-<<<<<<< ours
-        'event_total_score_column' => $totalScoreColumn
-=======
         'event_total_score_column' => $totalScoreColumn,
         'event_department_column' => $departmentColumn
->>>>>>> theirs
     ];
 
     if (file_put_contents(
@@ -173,11 +129,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
     ]);
     exit;
 }
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') {
     header('Content-Type: application/json; charset=utf-8');
@@ -225,10 +176,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
     ]);
     exit;
 }
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 ?>
 
 <section id="tab-hra" class="tab">
@@ -255,11 +202,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
       </div>
     </div>
   </div>
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
   <div class="card" style="margin-top:16px;">
     <div class="table-header">
       <h3>Events</h3>
@@ -299,10 +241,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
       </table>
     </div>
   </div>
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 </section>
 
 <div id="hra-mapping-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="hra-mapping-title">
@@ -316,13 +254,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
         <span>Event Total Score</span>
         <select id="hra-total-score-column"></select>
       </label>
-<<<<<<< ours
-=======
       <label class="field standard-width">
         <span>Department</span>
         <select id="hra-department-column"></select>
       </label>
->>>>>>> theirs
     </div>
     <div class="modal-actions">
       <button type="button" class="btn" data-hra-modal-close>Cancel</button>
@@ -339,23 +274,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
     const modal = document.getElementById("hra-mapping-modal");
     const modalCloseButtons = document.querySelectorAll("[data-hra-modal-close]");
     const totalScoreSelect = document.getElementById("hra-total-score-column");
-<<<<<<< ours
-    const submitButton = document.getElementById("hra-submit-mapping");
-    const eventNameInput = document.getElementById("hra-event-name");
-<<<<<<< ours
-=======
-    const eventsBody = document.getElementById("hra-events-body");
->>>>>>> theirs
-
-    if (!uploadButton || !fileInput || !modal || !totalScoreSelect || !submitButton || !eventNameInput) {
-=======
     const departmentSelect = document.getElementById("hra-department-column");
     const submitButton = document.getElementById("hra-submit-mapping");
     const eventNameInput = document.getElementById("hra-event-name");
     const eventsBody = document.getElementById("hra-events-body");
 
     if (!uploadButton || !fileInput || !modal || !totalScoreSelect || !departmentSelect || !submitButton || !eventNameInput) {
->>>>>>> theirs
       return;
     }
 
@@ -411,22 +335,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
           return;
         }
         totalScoreSelect.innerHTML = "";
-<<<<<<< ours
-=======
         departmentSelect.innerHTML = "";
->>>>>>> theirs
         headers.forEach((header) => {
           const option = document.createElement("option");
           option.value = header;
           option.textContent = header;
           totalScoreSelect.appendChild(option);
-<<<<<<< ours
-=======
           const departmentOption = document.createElement("option");
           departmentOption.value = header;
           departmentOption.textContent = header;
           departmentSelect.appendChild(departmentOption);
->>>>>>> theirs
         });
         showModal();
       } catch (error) {
@@ -437,10 +355,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
     submitButton.addEventListener("click", async () => {
       const eventName = eventNameInput.value.trim();
       const totalScoreColumn = totalScoreSelect.value.trim();
-<<<<<<< ours
-=======
       const departmentColumn = departmentSelect.value.trim();
->>>>>>> theirs
 
       if (!eventName) {
         notify("Please enter an event name.", true);
@@ -450,22 +365,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
         notify("Please choose the Event Total Score column.", true);
         return;
       }
-<<<<<<< ours
-=======
       if (!departmentColumn) {
         notify("Please choose the Department column.", true);
         return;
       }
->>>>>>> theirs
 
       const formData = new FormData();
       formData.append("action", "hra_save_mapping");
       formData.append("event_name", eventName);
       formData.append("total_score_column", totalScoreColumn);
-<<<<<<< ours
-=======
       formData.append("department_column", departmentColumn);
->>>>>>> theirs
 
       try {
         const response = await fetch("HRA/HRAupload.php", {
@@ -478,25 +387,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
         }
         hideModal();
         notify(`Event saved with code ${payload.event_code}.`);
-<<<<<<< ours
-<<<<<<< ours
-=======
         window.location.reload();
->>>>>>> theirs
-=======
-        window.location.reload();
->>>>>>> theirs
         eventNameInput.value = "";
         fileInput.value = "";
       } catch (error) {
         notify(error?.message || "Unable to save the mapping.", true);
       }
     });
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
 
     eventsBody?.addEventListener("click", async (event) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
@@ -534,9 +431,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') 
         notify(error?.message || "Unable to delete the event.", true);
       }
     });
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
   });
 </script>
