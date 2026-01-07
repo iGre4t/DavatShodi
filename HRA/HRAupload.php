@@ -1,4 +1,44 @@
 <?php
+<<<<<<< ours
+=======
+$hraBaseDir = __DIR__;
+$eventsFile = $hraBaseDir . '/events.json';
+$eventsData = [
+    'events' => []
+];
+
+if (is_file($eventsFile)) {
+    $decoded = json_decode((string)file_get_contents($eventsFile), true);
+    if (is_array($decoded)) {
+        $eventsData = $decoded;
+        if (!isset($eventsData['events']) || !is_array($eventsData['events'])) {
+            $eventsData['events'] = [];
+        }
+    }
+}
+
+function hraDeleteDirectoryRecursive(string $directory): bool
+{
+    if (!is_dir($directory)) {
+        return true;
+    }
+    $items = array_diff(scandir($directory), ['.', '..']);
+    foreach ($items as $item) {
+        $path = $directory . DIRECTORY_SEPARATOR . $item;
+        if (is_dir($path)) {
+            if (!hraDeleteDirectoryRecursive($path)) {
+                return false;
+            }
+        } else {
+            if (!unlink($path)) {
+                return false;
+            }
+        }
+    }
+    return rmdir($directory);
+}
+
+>>>>>>> theirs
 $hraAction = $_POST['action'] ?? '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') {
     header('Content-Type: application/json; charset=utf-8');
@@ -15,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
         exit;
     }
 
+<<<<<<< ours
     $hraBaseDir = __DIR__;
     $eventsFile = $hraBaseDir . '/events.json';
     $eventsData = [
@@ -31,6 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
         }
     }
 
+=======
+>>>>>>> theirs
     $maxCode = 0;
     foreach ($eventsData['events'] as $event) {
         $codeValue = is_array($event) ? ($event['code'] ?? '') : '';
@@ -106,6 +149,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
     ]);
     exit;
 }
+<<<<<<< ours
+=======
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_delete_event') {
+    header('Content-Type: application/json; charset=utf-8');
+    $eventCode = trim((string)($_POST['event_code'] ?? ''));
+
+    if ($eventCode === '') {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Event code is required.'
+        ]);
+        exit;
+    }
+
+    $eventsRoot = $hraBaseDir . '/events';
+    $eventDir = $eventsRoot . '/' . $eventCode;
+    if (is_dir($eventDir) && !hraDeleteDirectoryRecursive($eventDir)) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Unable to delete the event directory.'
+        ]);
+        exit;
+    }
+
+    $eventsData['events'] = array_values(array_filter(
+        $eventsData['events'],
+        static fn($event) => is_array($event) && ($event['code'] ?? '') !== $eventCode
+    ));
+
+    if (file_put_contents(
+        $eventsFile,
+        json_encode($eventsData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    ) === false) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Unable to update the event list.'
+        ]);
+        exit;
+    }
+
+    echo json_encode([
+        'success' => true
+    ]);
+    exit;
+}
+>>>>>>> theirs
 ?>
 
 <section id="tab-hra" class="tab">
@@ -132,6 +225,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
       </div>
     </div>
   </div>
+<<<<<<< ours
+=======
+  <div class="card" style="margin-top:16px;">
+    <div class="table-header">
+      <h3>Events</h3>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Event Code</th>
+            <th>Event Name</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="hra-events-body">
+          <?php if (empty($eventsData['events'])): ?>
+            <tr data-hra-empty>
+              <td colspan="3" class="muted">No events have been created yet.</td>
+            </tr>
+          <?php else: ?>
+            <?php foreach ($eventsData['events'] as $event): ?>
+              <?php
+                $eventCode = htmlspecialchars((string)($event['code'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $eventName = htmlspecialchars((string)($event['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+              ?>
+              <tr data-event-code="<?= $eventCode ?>">
+                <td><?= $eventCode ?></td>
+                <td><?= $eventName ?></td>
+                <td>
+                  <button type="button" class="btn ghost small" data-hra-delete-event data-event-code="<?= $eventCode ?>">
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+>>>>>>> theirs
 </section>
 
 <div id="hra-mapping-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="hra-mapping-title">
@@ -163,6 +298,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
     const totalScoreSelect = document.getElementById("hra-total-score-column");
     const submitButton = document.getElementById("hra-submit-mapping");
     const eventNameInput = document.getElementById("hra-event-name");
+<<<<<<< ours
+=======
+    const eventsBody = document.getElementById("hra-events-body");
+>>>>>>> theirs
 
     if (!uploadButton || !fileInput || !modal || !totalScoreSelect || !submitButton || !eventNameInput) {
       return;
@@ -261,11 +400,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
         }
         hideModal();
         notify(`Event saved with code ${payload.event_code}.`);
+<<<<<<< ours
+=======
+        window.location.reload();
+>>>>>>> theirs
         eventNameInput.value = "";
         fileInput.value = "";
       } catch (error) {
         notify(error?.message || "Unable to save the mapping.", true);
       }
     });
+<<<<<<< ours
+=======
+
+    eventsBody?.addEventListener("click", async (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const deleteButton = target?.closest?.("[data-hra-delete-event]");
+      if (!deleteButton) {
+        return;
+      }
+      const eventCode = deleteButton.getAttribute("data-event-code") || "";
+      if (!eventCode) {
+        return;
+      }
+      if (!confirm("Are you sure you want to delete this event?")) {
+        return;
+      }
+      const formData = new FormData();
+      formData.append("action", "hra_delete_event");
+      formData.append("event_code", eventCode);
+      try {
+        const response = await fetch("HRA/HRAupload.php", {
+          method: "POST",
+          body: formData
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+          throw new Error(payload?.message || "Unable to delete the event.");
+        }
+        const row = deleteButton.closest("tr");
+        row?.remove();
+        const remainingRows = eventsBody?.querySelectorAll("tr[data-event-code]") ?? [];
+        if (remainingRows.length === 0 && eventsBody) {
+          eventsBody.innerHTML = '<tr data-hra-empty><td colspan="3" class="muted">No events have been created yet.</td></tr>';
+        }
+        notify("Event deleted.");
+      } catch (error) {
+        notify(error?.message || "Unable to delete the event.", true);
+      }
+    });
+>>>>>>> theirs
   });
 </script>
