@@ -137,7 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
             $eventFile = trim((string)($eventData['event_file'] ?? ''));
             $eventFilePath = '';
             if ($eventCode !== '' && $eventFile !== '') {
-                $eventFilePath = 'HRA/events/' . rawurlencode($eventCode) . '/' . rawurlencode($eventFile);
+                $fileParts = array_map('rawurlencode', array_filter(explode('/', $eventFile)));
+                $eventFilePath = 'HRA/events/' . rawurlencode($eventCode) . '/' . implode('/', $fileParts);
             }
           ?>
           <div class="sub-pane<?= $isActive ? ' active' : '' ?>" data-pane="<?= htmlspecialchars($paneId, ENT_QUOTES, 'UTF-8') ?>">
@@ -266,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_score_tran
           }
           fieldsContainer.innerHTML = "";
           const maxValue = values.length;
-          values.forEach((value, idx) => {
+            values.forEach((value, idx) => {
             const field = document.createElement("label");
             field.className = "field standard-width";
             const label = document.createElement("span");

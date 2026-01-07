@@ -117,8 +117,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
         exit;
     }
 
+    $originDir = $eventDir . '/origin';
+    if (!is_dir($originDir) && !mkdir($originDir, 0775, true) && !is_dir($originDir)) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Unable to create the origin upload directory.'
+        ]);
+        exit;
+    }
+
     $storedFileName = 'upload.' . $extension;
-    $storedFilePath = $eventDir . '/' . $storedFileName;
+    $storedFilePath = $originDir . '/' . $storedFileName;
 
     if (!move_uploaded_file($tmpName, $storedFilePath)) {
         http_response_code(500);
@@ -134,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $hraAction === 'hra_save_mapping') 
         'event_name' => $eventName,
         'event_total_score_column' => $totalScoreColumn,
         'event_department_column' => $departmentColumn,
-        'event_file' => $storedFileName
+        'event_file' => 'origin/' . $storedFileName
     ];
 
     if (file_put_contents(
