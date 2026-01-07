@@ -210,7 +210,7 @@ if ($method === 'POST') {
             $activeEvent = $store['events'][$activeEventIndex];
             $activeEventName = (string)($activeEvent['name'] ?? '');
             $logPath = getInviteLogPathForEvent($activeEvent, $eventsRoot);
-            if (!ensureInviteLogFile($logPath)) {
+            if (!ensureInviteLogFilePath($logPath)) {
                 http_response_code(500);
                 echo json_encode(['status' => 'error', 'message' => 'Failed to initialize invite log file.']);
                 exit;
@@ -299,7 +299,7 @@ if ($method === 'POST') {
             (string)($guest['firstname'] ?? '') . ' ' . (string)($guest['lastname'] ?? '')
         );
         $logPath = getInviteLogPathForEvent($event, $eventsRoot);
-        if (!ensureInviteLogFile($logPath)) {
+        if (!ensureInviteLogFilePath($logPath)) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Failed to initialize invite log file.']);
             exit;
@@ -2014,7 +2014,7 @@ function saveInviteLogsToFile(string $path, array $logs): bool
     return file_put_contents($path, $encoded) !== false;
 }
 
-function ensureInviteLogFile(string $path): bool
+function ensureInviteLogFilePath(string $path): bool
 {
     if (is_file($path)) {
         return true;
