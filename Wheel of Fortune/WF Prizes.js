@@ -55,24 +55,19 @@
           ? prize.quantity
           : 1;
         const last = Number.isFinite(prize.last) ? prize.last : quantity;
-        const ratio = quantity > 0 ? (last / quantity) : 0;
-        let statusClass = "wf-status-pill--critical";
-        if (ratio >= 0.75) {
-          statusClass = "wf-status-pill--high";
-        } else if (ratio >= 0.4) {
-          statusClass = "wf-status-pill--mid";
-        } else if (ratio >= 0.2) {
-          statusClass = "wf-status-pill--low";
-        }
         return `
-          <tr data-index="${index}">
+          <tr data-index="${index}" data-prize-name="${escapeHtml(prize.name)}">
             <td>
               <label class="field standard-width" style="margin:0;">
                 <input type="text" data-field="name" value="${escapeHtml(prize.name)}" />
               </label>
             </td>
             <td>
-              <span class="wf-status-pill ${statusClass}">${escapeHtml(last)}/${escapeHtml(quantity)}</span>
+              <span class="wf-status-pill">
+                <span class="wf-status-last">${escapeHtml(last)}</span>
+                <span class="wf-status-divider">/</span>
+                <span class="wf-status-qty">${escapeHtml(quantity)}</span>
+              </span>
             </td>
             <td>
               <label class="field wf-standard-third" style="margin:0;">
@@ -103,6 +98,42 @@
 
     const prizes = await loadPrizes();
     renderPrizes(prizes, listEl);
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch("Wheel%20of%20Fortune/WF%20Prizes.json", { cache: "no-store" });
+        const payload = await response.json();
+        if (!Array.isArray(payload)) {
+          return;
+        }
+        const byName = new Map();
+        payload.forEach(item => {
+          const name = String(item?.name ?? "").trim();
+          if (!name) return;
+          const quantity = Number.parseInt(item?.quantity ?? 0, 10);
+          const last = Number.parseInt(item?.last ?? quantity, 10);
+          byName.set(name, {
+            quantity: Number.isFinite(quantity) ? quantity : 0,
+            last: Number.isFinite(last) ? last : (Number.isFinite(quantity) ? quantity : 0)
+          });
+        });
+        listEl.querySelectorAll("tr[data-index]").forEach(row => {
+          const nameInput = row.querySelector('[data-field="name"]');
+          const name = String(nameInput?.value ?? "").trim();
+          if (!name || !byName.has(name)) {
+            return;
+          }
+          const status = byName.get(name);
+          const lastEl = row.querySelector(".wf-status-last");
+          const qtyEl = row.querySelector(".wf-status-qty");
+          if (lastEl) lastEl.textContent = String(status.last);
+          if (qtyEl) qtyEl.textContent = String(status.quantity);
+        });
+      } catch {}
+    }
+
+    refreshStatus();
+    setInterval(refreshStatus, 5000);
 
     listEl.addEventListener("click", async event => {
       const button = event.target.closest("button");

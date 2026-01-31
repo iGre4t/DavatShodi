@@ -131,20 +131,21 @@
     border-color: #b91c1c;
   }
   .wf-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
     font-weight: 600;
     font-size: 13px;
   }
-  .wf-status-pill--high {
+  .wf-status-last {
     color: var(--primary);
   }
-  .wf-status-pill--mid {
-    color: #f59e0b;
+  .wf-status-divider {
+    color: var(--muted);
   }
-  .wf-status-pill--low {
-    color: #f97316;
-  }
-  .wf-status-pill--critical {
-    color: #e11d2e;
+  .wf-status-qty {
+    color: var(--muted);
   }
   .wf-prize-disabled {
     opacity: 0.65;

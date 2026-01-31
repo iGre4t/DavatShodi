@@ -1,4 +1,75 @@
-﻿<!doctype html>
+﻿<?php
+$prizeStorePath = __DIR__ . '/WF Prizes.json';
+
+function readPrizeStore(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function writePrizeStore(string $path, array $payload): bool
+{
+  $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+  header('Content-Type: application/json; charset=UTF-8');
+  $rawInput = file_get_contents('php://input');
+  $payload = json_decode($rawInput ?: '', true);
+  $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
+
+  if ($action === 'decrement_prize') {
+    $name = trim((string)($payload['name'] ?? ''));
+    if ($name === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Missing prize name.']);
+      exit;
+    }
+    $prizes = readPrizeStore($prizeStorePath);
+    $updated = [];
+    foreach ($prizes as $item) {
+      if (!is_array($item)) {
+        continue;
+      }
+      $itemName = trim((string)($item['name'] ?? ''));
+      $quantity = (int)($item['quantity'] ?? 0);
+      $last = (int)($item['last'] ?? $quantity);
+      if ($itemName !== '' && $itemName === $name) {
+        $last = max(0, $last - 1);
+      }
+      if ($itemName !== '') {
+        $updated[] = [
+          'name' => $itemName,
+          'quantity' => $quantity > 0 ? $quantity : 0,
+          'last' => $last > 0 ? $last : 0
+        ];
+      }
+    }
+    if (!writePrizeStore($prizeStorePath, $updated)) {
+      echo json_encode(['status' => 'error', 'message' => 'Unable to save prizes.']);
+      exit;
+    }
+    echo json_encode(['status' => 'ok', 'data' => $updated]);
+    exit;
+  }
+
+  echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
+  exit;
+}
+
+$initialPrizes = readPrizeStore($prizeStorePath);
+?>
+<!doctype html>
 <html lang="en" dir="ltr">
   <head>
     <meta charset="utf-8" />
@@ -138,12 +209,6 @@
         box-shadow: 0 16px 40px rgba(3, 20, 60, 0.35);
       }
 
-      .wheel-result {
-        font-size: 0.95rem;
-        color: rgba(255, 255, 255, 0.85);
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
 
       .caption {
         font-size: 1.1rem;
@@ -302,7 +367,6 @@
       <p class="caption">Wheel of Fortune Draw</p>
       <div class="wheel-wrap" aria-live="polite">
         <canvas id="wf-wheel-canvas" class="wheel-canvas" width="420" height="420" aria-label="Prize wheel"></canvas>
-        <div id="wf-wheel-result" class="wheel-result">Result: --</div>
       </div>
       <p id="winner-name" class="winner-message winner-message--idle">Draw winner</p>
       <div class="cta-group">
@@ -322,7 +386,6 @@
       const startBtn = document.getElementById('start-draw');
       const canvas = document.getElementById('wf-wheel-canvas');
       const ctx = canvas?.getContext('2d');
-      const wheelResultEl = document.getElementById('wf-wheel-result');
 
       let currentWinner = null;
       const pressedShortcutKeys = new Set();
@@ -348,7 +411,7 @@
       });
 
       const showIdleWinnerText = () => {
-        winnerNameEl.textContent = 'Draw winner';
+        winnerNameEl.textContent = 'Result: --';
         winnerNameEl.classList.add('winner-message--idle');
         winnerNameEl.classList.remove('winner-message--active');
       };
@@ -359,20 +422,16 @@
         winnerNameEl.classList.remove('winner-message--idle');
       };
 
-      const renderWinner = (winner) => {
-        const name = winner?.full_name || '----';
-        setWinnerText(name);
-      };
-
-      const prizePool = [
-        { name: 'Gold Coin', quantity: 1 },
-        { name: 'T-Shirt', quantity: 5 }
-      ];
+      const prizePool = Array.isArray(<?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>)
+        ? <?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>
+        : [];
 
       const expandPrizes = (list) => {
         const expanded = [];
         list.forEach((item) => {
-          const qty = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 0;
+          const qty = Number.isFinite(item.last) && item.last > 0
+            ? item.last
+            : (Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 0);
           for (let i = 0; i < qty; i += 1) {
             expanded.push(item.name);
           }
@@ -431,8 +490,8 @@
         return names[index] ?? names[0] ?? 'No Prize';
       };
 
-      const initWheel = () => {
-        prizeNames = expandPrizes(prizePool);
+      const initWheel = (list = prizePool) => {
+        prizeNames = expandPrizes(list);
         drawWheel(prizeNames, currentAngle);
       };
 
@@ -441,9 +500,6 @@
         currentWinner = null;
         showIdleWinnerText();
         startBtn.disabled = getAvailableGuests().length === 0;
-        if (wheelResultEl) {
-          wheelResultEl.textContent = 'Result: --';
-        }
       };
 
       showIdleWinnerText();
@@ -480,9 +536,18 @@
           }
           spinning = false;
           const result = pickResult(prizeNames, currentAngle);
-          if (wheelResultEl) {
-            wheelResultEl.textContent = `Result: ${result}`;
-          }
+          setWinnerText(`Result: ${result}`);
+          try {
+            const response = await fetch('WFM.php', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'decrement_prize', name: result })
+            });
+            const payload = await response.json();
+            if (response.ok && payload?.status === 'ok' && Array.isArray(payload.data)) {
+              initWheel(payload.data);
+            }
+          } catch {}
           currentWinner = availableGuests[Math.floor(Math.random() * availableGuests.length)];
           const selectionKey = createGuestSelectionKey(currentWinner);
           if (selectionKey !== '') {
@@ -490,19 +555,9 @@
           }
           const hasRemaining = getAvailableGuests().length > 0;
           startBtn.disabled = !hasRemaining;
-          renderWinner(currentWinner);
         };
 
         requestAnimationFrame(animate);
-      });
-
-      confirmBtn.addEventListener('click', () => {
-        if (!currentWinner) {
-          return;
-        }
-        confirmBtn.disabled = true;
-        const updated = winnersList.concat(currentWinner);
-        renderWinnerList(updated);
       });
 
       document.addEventListener('keydown', (event) => {
@@ -548,3 +603,4 @@
     </script>
   </body>
 </html>
+
