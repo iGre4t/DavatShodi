@@ -358,7 +358,7 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/typography.php'; ?>
         <?php include __DIR__ . '/features.php'; ?>
         <section id="tab-wheel-of-fortune" class="tab">
-          <?php include __DIR__ . '/Wheel of Fortune/index.php'; ?>
+          <?php include __DIR__ . '/Wheel of Fortune/WF Panel.php'; ?>
         </section>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">

@@ -29,6 +29,9 @@
   }
   .wf-prize-grid {
     gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+    justify-items: end;
   }
   .wf-prize-grid .field.standard-width {
     width: 100%;
@@ -70,28 +73,38 @@
     color: var(--muted);
   }
   .wf-switch .switch-track {
-    background: #f1f5f9;
+    background: transparent;
     border: 1px solid var(--border);
-    inset: 2px;
+    height: 2px;
+    top: 50%;
+    left: 6px;
+    right: 6px;
+    transform: translateY(-50%);
+    border-radius: 999px;
   }
   .wf-switch .switch-thumb {
-    width: 24px;
-    height: 24px;
+    width: 18px;
+    height: 18px;
     left: 2px;
     top: 50%;
     transform: translate(0, -50%);
     background: #fff;
+    border: 2px solid var(--border);
+    box-shadow: none;
   }
   .wf-switch .switch-toggle input:checked + .switch-track {
-    background: var(--primary);
     border-color: var(--primary);
   }
   .wf-switch .switch-toggle input:checked + .switch-track .switch-thumb {
-    transform: translate(26px, -50%);
+    transform: translate(30px, -50%);
+    border-color: var(--primary);
   }
   .wf-switch .switch-toggle input:disabled + .switch-track {
-    background: #e2e8f0;
     border-color: #e2e8f0;
+  }
+  .wf-switch .switch-toggle input:disabled + .switch-track .switch-thumb {
+    border-color: #e2e8f0;
+    background: #f8fafc;
   }
   .wf-action-bar {
     display: flex;
@@ -124,6 +137,7 @@
     <h3>Active</h3>
   </div>
   <div class="form" style="gap:12px;">
+    <div id="wf-status-text" class="muted" style="font-weight:600;">Not Active</div>
     <div class="wf-switch-grid">
       <label class="switch wf-switch">
         <span class="switch-label">Active</span>
@@ -153,7 +167,7 @@
         />
       </label>
       <label class="field standard-width wf-datetime-start-time">
-        <span>Time</span>
+        <span>Start</span>
         <select id="wheel-duration-start-time">
           <option value="">Select time</option>
           <option value="00:00">00:00</option>
@@ -194,7 +208,7 @@
         />
       </label>
       <label class="field standard-width wf-datetime-end-time">
-        <span>Time</span>
+        <span>End</span>
         <select id="wheel-duration-end-time">
           <option value="">Select time</option>
           <option value="00:00">00:00</option>
@@ -252,7 +266,7 @@
         required
       />
     </label>
-    <div class="field full wf-form-action">
+    <div class="field standard-width">
       <button type="submit" class="btn primary standard-primary-button">Add</button>
     </div>
   </form>
