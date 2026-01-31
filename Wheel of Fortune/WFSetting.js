@@ -128,6 +128,18 @@
     const endTime = getEl("wheel-duration-end-time");
 
     if (!statusEl) return;
+    const setStatus = (label, tone) => {
+      statusEl.textContent = label;
+      statusEl.classList.remove(
+        "wf-status--active",
+        "wf-status--ended",
+        "wf-status--upcoming",
+        "wf-status--inactive"
+      );
+      if (tone) {
+        statusEl.classList.add(`wf-status--${tone}`);
+      }
+    };
 
     if (durationToggle?.checked) {
       const normalizedStartDate = (startDate?.value || "").trim();
@@ -137,41 +149,55 @@
       const endRelation = compareGregorianDates(normalizedEndDate, todayParts.date);
 
       if (!normalizedStartDate || !todayParts.date) {
-        statusEl.textContent = "Not Active";
+        setStatus("Not Active", "inactive");
         return;
       }
 
       if (startRelation === 1) {
-        statusEl.textContent = "Upcoming";
+        setStatus("Upcoming", "upcoming");
         return;
       }
 
       if (endRelation !== null && endRelation === -1) {
-        statusEl.textContent = "Ended";
+        setStatus("Ended", "ended");
         return;
       }
 
       if (startRelation === 0) {
-        statusEl.textContent = describeSameDayDurationState(
+        const state = describeSameDayDurationState(
           startTime?.value ?? "",
           endTime?.value ?? ""
         );
+        if (state === "Ended") {
+          setStatus(state, "ended");
+        } else if (state === "Active") {
+          setStatus(state, "active");
+        } else {
+          setStatus(state, "upcoming");
+        }
         return;
       }
 
       if (endRelation === 0) {
-        statusEl.textContent = describeSameDayDurationState(
+        const state = describeSameDayDurationState(
           startTime?.value ?? "",
           endTime?.value ?? ""
         );
+        if (state === "Ended") {
+          setStatus(state, "ended");
+        } else if (state === "Active") {
+          setStatus(state, "active");
+        } else {
+          setStatus(state, "upcoming");
+        }
         return;
       }
 
-      statusEl.textContent = "Active";
+      setStatus("Active", "active");
       return;
     }
 
-    statusEl.textContent = activeToggle?.checked ? "Active" : "Not Active";
+    setStatus(activeToggle?.checked ? "Active" : "Not Active", activeToggle?.checked ? "active" : "inactive");
   }
 
   function syncToggles({ activeToggle, durationToggle }) {

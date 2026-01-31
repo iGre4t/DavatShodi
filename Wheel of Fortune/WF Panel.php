@@ -29,9 +29,7 @@
   }
   .wf-prize-grid {
     gap: 8px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: end;
-    justify-items: end;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .wf-prize-grid .field.standard-width {
     width: 100%;
@@ -120,6 +118,36 @@
     background: #b91c1c;
     border-color: #b91c1c;
   }
+  .wf-status {
+    font-weight: 600;
+  }
+  .wf-status--active {
+    color: var(--primary);
+  }
+  .wf-status--ended {
+    color: #e11d2e;
+  }
+  .wf-status--upcoming {
+    color: #f59e0b;
+  }
+  .wf-status--inactive {
+    color: var(--muted);
+  }
+  .wf-datetime-grid input[type="date"] {
+    appearance: none;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    outline: none;
+    background: #fff;
+    color: #111;
+    width: 100%;
+  }
+  .wf-datetime-grid input[type="date"]:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-focus);
+  }
   @media (max-width: 900px) {
     .wf-switch-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -137,7 +165,7 @@
     <h3>Active</h3>
   </div>
   <div class="form" style="gap:12px;">
-    <div id="wf-status-text" class="muted" style="font-weight:600;">Not Active</div>
+    <div id="wf-status-text" class="wf-status wf-status--inactive">Not Active</div>
     <div class="wf-switch-grid">
       <label class="switch wf-switch">
         <span class="switch-label">Active</span>
@@ -260,7 +288,7 @@
         required
       />
     </label>
-    <div class="field standard-width">
+    <div class="field full wf-form-action">
       <button type="submit" class="btn primary standard-primary-button">Add</button>
     </div>
   </form>
