@@ -64,7 +64,7 @@
               </label>
             </td>
             <td>
-              <label class="field standard-width" style="margin:0;">
+              <label class="field wf-standard-third" style="margin:0;">
                 <input type="number" data-field="quantity" min="1" step="1" value="${escapeHtml(quantity)}" />
               </label>
             </td>

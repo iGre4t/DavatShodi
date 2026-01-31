@@ -4,6 +4,32 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
   }
+  .wf-datetime-grid {
+    gap: 8px;
+  }
+  .wf-datetime-grid .field.standard-width {
+    width: 100%;
+    margin-left: 0;
+  }
+  .wf-prize-grid {
+    gap: 8px;
+  }
+  .wf-prize-grid .field.standard-width {
+    width: 100%;
+    margin-left: 0;
+  }
+  .wf-form-action {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .wf-standard-third {
+    width: min(140px, 100%);
+    margin-left: auto;
+    margin-right: 0;
+  }
+  .wf-action-bar {
+    justify-content: center;
+  }
   .wf-switch {
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -17,18 +43,29 @@
     min-height: 52px;
   }
   .wf-switch .switch-label {
-    color: var(--primary);
+    color: var(--muted);
   }
   .wf-switch .switch-track {
-    background: var(--primary-focus);
-    border: 1px solid var(--primary-border-soft);
+    background: #f1f5f9;
+    border: 1px solid var(--border);
+    top: 50%;
+    transform: translateY(-50%);
   }
   .wf-switch .switch-thumb {
+    top: 50%;
+    transform: translate(0, -50%);
     background: #fff;
   }
   .wf-switch .switch-toggle input:checked + .switch-track {
     background: var(--primary);
     border-color: var(--primary);
+  }
+  .wf-switch .switch-toggle input:checked + .switch-track .switch-thumb {
+    transform: translate(24px, -50%);
+  }
+  .wf-switch .switch-toggle input:disabled + .switch-track {
+    background: #e2e8f0;
+    border-color: #e2e8f0;
   }
   .wf-action-bar {
     display: flex;
@@ -77,7 +114,7 @@
         </span>
       </label>
     </div>
-    <div class="form grid two-column-fields">
+    <div class="form grid two-column-fields wf-datetime-grid">
       <label class="field standard-width">
         <span>Start</span>
         <input
@@ -161,6 +198,9 @@
         </select>
       </label>
     </div>
+    <div class="field full">
+      <button type="button" class="btn primary standard-width" id="wheel-settings-save">Save</button>
+    </div>
   </div>
 </div>
 
@@ -168,7 +208,7 @@
   <div class="section-header">
     <h3>Add Prize</h3>
   </div>
-  <form id="wf-prize-form" class="form grid two-column-fields">
+  <form id="wf-prize-form" class="form grid two-column-fields wf-prize-grid">
     <label class="field standard-width">
       <span>Name</span>
       <input id="wf-prize-name" name="name" type="text" autocomplete="off" required />
@@ -185,8 +225,8 @@
         required
       />
     </label>
-    <div class="field full">
-      <button type="submit" class="btn primary standard-width">Add</button>
+    <div class="field full wf-form-action">
+      <button type="submit" class="btn primary">Add</button>
     </div>
   </form>
 </div>
@@ -210,6 +250,7 @@
 </div>
 
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
+<script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
 
 <script>
   window.addEventListener("DOMContentLoaded", () => {
