@@ -6,13 +6,13 @@
   }
   .wf-datetime-grid {
     gap: 8px;
-  }
-  .wf-datetime-grid .field.standard-width {
-    width: 100%;
-    margin-left: 0;
+    justify-items: end;
   }
   .wf-prize-grid {
     gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+    justify-items: end;
   }
   .wf-prize-grid .field.standard-width {
     width: 100%;
@@ -26,6 +26,14 @@
     width: min(140px, 100%);
     margin-left: auto;
     margin-right: 0;
+  }
+  .standard-primary-button {
+    width: min(420px, 100%);
+    margin-left: auto;
+    margin-right: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .wf-action-bar {
     justify-content: center;
@@ -48,10 +56,12 @@
   .wf-switch .switch-track {
     background: #f1f5f9;
     border: 1px solid var(--border);
-    top: 50%;
-    transform: translateY(-50%);
+    inset: 2px;
   }
   .wf-switch .switch-thumb {
+    width: 24px;
+    height: 24px;
+    left: 2px;
     top: 50%;
     transform: translate(0, -50%);
     background: #fff;
@@ -61,7 +71,7 @@
     border-color: var(--primary);
   }
   .wf-switch .switch-toggle input:checked + .switch-track .switch-thumb {
-    transform: translate(24px, -50%);
+    transform: translate(26px, -50%);
   }
   .wf-switch .switch-toggle input:disabled + .switch-track {
     background: #e2e8f0;
@@ -199,7 +209,7 @@
       </label>
     </div>
     <div class="field full">
-      <button type="button" class="btn primary standard-width" id="wheel-settings-save">Save</button>
+      <button type="button" class="btn primary standard-primary-button" id="wheel-settings-save">Save</button>
     </div>
   </div>
 </div>
@@ -208,12 +218,12 @@
   <div class="section-header">
     <h3>Add Prize</h3>
   </div>
-  <form id="wf-prize-form" class="form grid two-column-fields wf-prize-grid">
+  <form id="wf-prize-form" class="form grid wf-prize-grid">
     <label class="field standard-width">
       <span>Name</span>
       <input id="wf-prize-name" name="name" type="text" autocomplete="off" required />
     </label>
-    <label class="field standard-width">
+    <label class="field wf-standard-third">
       <span>Quantity</span>
       <input
         id="wf-prize-quantity"
@@ -225,8 +235,8 @@
         required
       />
     </label>
-    <div class="field full wf-form-action">
-      <button type="submit" class="btn primary">Add</button>
+    <div class="field standard-width">
+      <button type="submit" class="btn primary standard-primary-button">Add</button>
     </div>
   </form>
 </div>
