@@ -9,8 +9,22 @@
     justify-items: end;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
-      "start-time start empty"
-      "end-time end empty";
+      "start-title start-title empty"
+      "start start-time empty"
+      "end-title end-title empty"
+      "end end-time empty";
+  }
+  .wf-datetime-title {
+    grid-column: 1 / span 2;
+    justify-self: end;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .wf-datetime-title--start {
+    grid-area: start-title;
+  }
+  .wf-datetime-title--end {
+    grid-area: end-title;
   }
   .wf-datetime-start {
     grid-area: start;
@@ -162,7 +176,7 @@
 
 <div class="card">
   <div class="section-header">
-    <h3>Active</h3>
+    <h3>Control Panel</h3>
   </div>
   <div class="form" style="gap:12px;">
     <div id="wf-status-text" class="wf-status wf-status--inactive">Not Active</div>
@@ -183,8 +197,9 @@
       </label>
     </div>
     <div class="form grid two-column-fields wf-datetime-grid">
+      <div class="wf-datetime-title wf-datetime-title--start">Start</div>
       <label class="field standard-width wf-datetime-start">
-        <span>Start</span>
+        <span>Date</span>
         <input
           type="date"
           id="wheel-duration-start"
@@ -192,7 +207,7 @@
         />
       </label>
       <label class="field standard-width wf-datetime-start-time">
-        <span>Start</span>
+        <span>Time</span>
         <select id="wheel-duration-start-time">
           <option value="">Select time</option>
           <option value="00:00">00:00</option>
@@ -221,8 +236,9 @@
           <option value="23:00">23:00</option>
         </select>
       </label>
+      <div class="wf-datetime-title wf-datetime-title--end">End</div>
       <label class="field standard-width wf-datetime-end">
-        <span>End</span>
+        <span>Date</span>
         <input
           type="date"
           id="wheel-duration-end"
@@ -230,7 +246,7 @@
         />
       </label>
       <label class="field standard-width wf-datetime-end-time">
-        <span>End</span>
+        <span>Time</span>
         <select id="wheel-duration-end-time">
           <option value="">Select time</option>
           <option value="00:00">00:00</option>
