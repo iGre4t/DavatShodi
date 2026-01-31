@@ -208,9 +208,11 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const expandPrizes = (list) => {
         const expanded = [];
         list.forEach((item) => {
-          const qty = Number.isFinite(item.last) && item.last > 0
-            ? item.last
-            : (Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 0);
+          const lastValue = Number.parseInt(item.last ?? item.quantity ?? 0, 10);
+          const qtyValue = Number.parseInt(item.quantity ?? 0, 10);
+          const qty = Number.isFinite(lastValue) && lastValue > 0
+            ? lastValue
+            : (Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 0);
           for (let i = 0; i < qty; i += 1) {
             expanded.push(String(item.name ?? ''));
           }
