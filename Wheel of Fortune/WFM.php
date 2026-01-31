@@ -428,7 +428,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       const loadPrizeStore = async () => {
         try {
-          const response = await fetch('Wheel%20of%20Fortune/WF%20Prizes.json', { cache: 'no-store' });
+          const response = await fetch('WF%20Prizes.json', { cache: 'no-store' });
           const payload = await response.json();
           return Array.isArray(payload) ? payload : [];
         } catch {

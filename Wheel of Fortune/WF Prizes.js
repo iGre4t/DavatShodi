@@ -101,7 +101,7 @@
 
     async function refreshStatus() {
       try {
-        const response = await fetch("Wheel%20of%20Fortune/WF%20Prizes.json", { cache: "no-store" });
+        const response = await fetch("WF%20Prizes.json", { cache: "no-store" });
         const payload = await response.json();
         if (!Array.isArray(payload)) {
           return;
