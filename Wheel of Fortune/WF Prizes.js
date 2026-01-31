@@ -48,18 +48,32 @@
       return;
     }
     if (!prizes.length) {
-      listEl.innerHTML = '<tr><td colspan="2" class="muted">No prizes added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="3" class="muted">No prizes added yet.</td></tr>';
       return;
     }
     listEl.innerHTML = prizes
-      .map(prize => {
+      .map((prize, index) => {
         const quantity = Number.isFinite(prize.quantity) && prize.quantity > 0
           ? prize.quantity
           : 1;
         return `
-          <tr>
-            <td>${escapeHtml(prize.name)}</td>
-            <td>${escapeHtml(quantity)}</td>
+          <tr data-index="${index}">
+            <td>
+              <label class="field standard-width" style="margin:0;">
+                <input type="text" data-field="name" value="${escapeHtml(prize.name)}" />
+              </label>
+            </td>
+            <td>
+              <label class="field standard-width" style="margin:0;">
+                <input type="number" data-field="quantity" min="1" step="1" value="${escapeHtml(quantity)}" />
+              </label>
+            </td>
+            <td>
+              <div class="wf-action-bar">
+                <button type="button" class="btn wf-btn-danger" data-action="delete">Delete</button>
+                <button type="button" class="btn primary" data-action="save">Save</button>
+              </div>
+            </td>
           </tr>
         `;
       })
@@ -78,6 +92,39 @@
 
     const prizes = loadPrizes();
     renderPrizes(prizes, listEl);
+
+    listEl.addEventListener("click", event => {
+      const button = event.target.closest("button");
+      if (!button) {
+        return;
+      }
+      const row = button.closest("tr");
+      const index = Number.parseInt(row?.dataset?.index ?? "", 10);
+      if (!Number.isFinite(index) || index < 0 || index >= prizes.length) {
+        return;
+      }
+      const action = button.dataset.action;
+      if (action === "delete") {
+        prizes.splice(index, 1);
+        savePrizes(prizes);
+        renderPrizes(prizes, listEl);
+        return;
+      }
+      if (action === "save") {
+        const nameInput = row.querySelector('[data-field="name"]');
+        const quantityInput = row.querySelector('[data-field="quantity"]');
+        const name = String(nameInput?.value ?? "").trim();
+        if (!name) {
+          nameInput?.focus();
+          return;
+        }
+        const quantityValue = Number.parseInt(quantityInput?.value ?? "", 10);
+        const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
+        prizes[index] = { name, quantity };
+        savePrizes(prizes);
+        renderPrizes(prizes, listEl);
+      }
+    });
 
     form.addEventListener("submit", event => {
       event.preventDefault();
