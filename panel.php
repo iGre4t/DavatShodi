@@ -183,6 +183,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
             <span>Features</span>
           </button>
+          <button class="nav-item" data-tab="wheel-of-fortune">
+            <span class="nav-icon ri ri-game-line" aria-hidden="true"></span>
+            <span>Wheel of Fortune</span>
+          </button>
           <!-- Typography tab provides font uploads and previews. -->
           <button class="nav-item" data-tab="typography">
             <span class="nav-icon ri ri-font-color" aria-hidden="true"></span>
@@ -353,6 +357,9 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/invitepanel.php'; ?>
         <?php include __DIR__ . '/typography.php'; ?>
         <?php include __DIR__ . '/features.php'; ?>
+        <section id="tab-wheel-of-fortune" class="tab">
+          <?php include __DIR__ . '/Wheel of Fortune/index.php'; ?>
+        </section>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
             <div class="sub-layout" data-sub-layout>
@@ -683,6 +690,10 @@ $accountEmail = $currentUser['email'] ?? '';
           <label class="field checkbox">
             <input type="checkbox" data-permissions-tab="typography" />
             <span>تایپوگرافی</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" data-permissions-tab="wheel-of-fortune" />
+            <span>Wheel of Fortune</span>
           </label>
           <label class="field checkbox">
             <input type="checkbox" data-permissions-tab="devsettings" />
