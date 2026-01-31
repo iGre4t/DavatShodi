@@ -158,12 +158,9 @@
       <label class="field standard-width wf-datetime-start">
         <span>Start</span>
         <input
-          type="text"
+          type="date"
           id="wheel-duration-start"
-          data-jdp
-          data-jdp-only-date="true"
-          placeholder="YYYY/MM/DD"
-          readonly
+          placeholder="YYYY-MM-DD"
         />
       </label>
       <label class="field standard-width wf-datetime-start-time">
@@ -199,12 +196,9 @@
       <label class="field standard-width wf-datetime-end">
         <span>End</span>
         <input
-          type="text"
+          type="date"
           id="wheel-duration-end"
-          data-jdp
-          data-jdp-only-date="true"
-          placeholder="YYYY/MM/DD"
-          readonly
+          placeholder="YYYY-MM-DD"
         />
       </label>
       <label class="field standard-width wf-datetime-end-time">
@@ -292,18 +286,3 @@
 
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
 <script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
-
-<script>
-  window.addEventListener("DOMContentLoaded", () => {
-    if (!window.jalaliDatepicker) {
-      return;
-    }
-    window.jalaliDatepicker.startWatch({
-      selector: "#wheel-duration-start, #wheel-duration-end",
-      viewMode: "day",
-      autoClose: true,
-      format: "YYYY/MM/DD",
-      initViewGregorian: false
-    });
-  });
-</script>

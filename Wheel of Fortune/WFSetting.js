@@ -37,80 +37,39 @@
     });
   }
 
-  const digitTranslations = {
-    "۰": "0",
-    "۱": "1",
-    "۲": "2",
-    "۳": "3",
-    "۴": "4",
-    "۵": "5",
-    "۶": "6",
-    "۷": "7",
-    "۸": "8",
-    "۹": "9",
-    "٠": "0",
-    "١": "1",
-    "٢": "2",
-    "٣": "3",
-    "٤": "4",
-    "٥": "5",
-    "٦": "6",
-    "٧": "7",
-    "٨": "8",
-    "٩": "9"
-  };
-
-  function convertDigitsToEnglish(value) {
-    return (value || "").replace(/[۰-۹٠-٩]/g, (ch) => digitTranslations[ch] || ch);
-  }
-
-  function normalizeShamsiDate(value = "") {
-    let normalized = (value || "").trim();
-    normalized = convertDigitsToEnglish(normalized);
-    if (typeof toEnglishDigits === "function") {
-      normalized = toEnglishDigits(normalized);
-    }
-    normalized = normalized.replace(/-/g, "/");
-    normalized = normalized.replace(/[^\d/]/g, "");
-    return normalized;
-  }
-
-  function compareNormalizedShamsiDates(a = "", b = "") {
-    const left = (a || "").trim();
-    const right = (b || "").trim();
-    if (!left || !right) {
-      return null;
-    }
-    if (left === right) {
-      return 0;
-    }
-    return left > right ? 1 : -1;
-  }
-
-  function formatTodayShamsiWithIntl() {
-    if (typeof Intl === "undefined") return "";
+  function getTehranDateTimeParts(date = new Date()) {
     try {
-      const formatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+      const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Tehran",
         year: "numeric",
         month: "2-digit",
-        day: "2-digit"
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
       });
-      return formatter.format(new Date());
+      const parts = formatter.formatToParts(date);
+      const year = parts.find(p => p.type === "year")?.value ?? "";
+      const month = parts.find(p => p.type === "month")?.value ?? "";
+      const day = parts.find(p => p.type === "day")?.value ?? "";
+      const hour = parts.find(p => p.type === "hour")?.value ?? "00";
+      const minute = parts.find(p => p.type === "minute")?.value ?? "00";
+      return {
+        date: `${year}-${month}-${day}`,
+        time: `${hour}:${minute}`
+      };
     } catch {
-      return "";
+      const fallback = new Date();
+      const year = String(fallback.getFullYear());
+      const month = String(fallback.getMonth() + 1).padStart(2, "0");
+      const day = String(fallback.getDate()).padStart(2, "0");
+      const hour = String(fallback.getHours()).padStart(2, "0");
+      const minute = String(fallback.getMinutes()).padStart(2, "0");
+      return {
+        date: `${year}-${month}-${day}`,
+        time: `${hour}:${minute}`
+      };
     }
-  }
-
-  function resolveTodayShamsiDate() {
-    const fromHelper = typeof getNowJalaliDate === "function" ? getNowJalaliDate() : "";
-    if (fromHelper) {
-      return normalizeShamsiDate(fromHelper);
-    }
-    const fromIntl = formatTodayShamsiWithIntl();
-    if (fromIntl) {
-      return normalizeShamsiDate(fromIntl);
-    }
-    return "";
   }
 
   function parseTimeToSeconds(value) {
@@ -124,13 +83,21 @@
     return hours * 3600 + minutes * 60 + seconds;
   }
 
+  function compareGregorianDates(a = "", b = "") {
+    const left = (a || "").trim();
+    const right = (b || "").trim();
+    if (!left || !right) return null;
+    if (left === right) return 0;
+    return left > right ? 1 : -1;
+  }
+
   function getCurrentLocalSeconds() {
     const now = new Date();
     return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   }
 
   function describeSameDayDurationState(startTime, endTime) {
-    const nowSeconds = getCurrentLocalSeconds();
+    const nowSeconds = getCurrentTehranSeconds();
     const startSeconds = parseTimeToSeconds(startTime);
     const endSeconds = parseTimeToSeconds(endTime);
 
@@ -146,6 +113,11 @@
     return "Upcoming";
   }
 
+  function getCurrentTehranSeconds() {
+    const parts = getTehranDateTimeParts();
+    return parseTimeToSeconds(parts.time) ?? getCurrentLocalSeconds();
+  }
+
   function updateStatus() {
     const statusEl = getEl("wf-status-text");
     const activeToggle = getEl("wheel-active-toggle");
@@ -158,13 +130,13 @@
     if (!statusEl) return;
 
     if (durationToggle?.checked) {
-      const normalizedStartDate = normalizeShamsiDate(startDate?.value);
-      const normalizedEndDate = normalizeShamsiDate(endDate?.value);
-      const todayDate = resolveTodayShamsiDate();
-      const startRelation = compareNormalizedShamsiDates(normalizedStartDate, todayDate);
-      const endRelation = compareNormalizedShamsiDates(normalizedEndDate, todayDate);
+      const normalizedStartDate = (startDate?.value || "").trim();
+      const normalizedEndDate = (endDate?.value || "").trim();
+      const todayParts = getTehranDateTimeParts();
+      const startRelation = compareGregorianDates(normalizedStartDate, todayParts.date);
+      const endRelation = compareGregorianDates(normalizedEndDate, todayParts.date);
 
-      if (!normalizedStartDate || !todayDate) {
+      if (!normalizedStartDate || !todayParts.date) {
         statusEl.textContent = "Not Active";
         return;
       }
