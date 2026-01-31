@@ -7,12 +7,28 @@
   .wf-datetime-grid {
     gap: 8px;
     justify-items: end;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas:
+      "start-time start empty"
+      "end-time end empty";
+  }
+  .wf-datetime-start {
+    grid-area: start;
+  }
+  .wf-datetime-start-time {
+    grid-area: start-time;
+  }
+  .wf-datetime-end {
+    grid-area: end;
+  }
+  .wf-datetime-end-time {
+    grid-area: end-time;
+  }
+  .wf-datetime-empty {
+    grid-area: empty;
   }
   .wf-prize-grid {
     gap: 8px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: end;
-    justify-items: end;
   }
   .wf-prize-grid .field.standard-width {
     width: 100%;
@@ -125,7 +141,7 @@
       </label>
     </div>
     <div class="form grid two-column-fields wf-datetime-grid">
-      <label class="field standard-width">
+      <label class="field standard-width wf-datetime-start">
         <span>Start</span>
         <input
           type="text"
@@ -136,7 +152,7 @@
           readonly
         />
       </label>
-      <label class="field standard-width">
+      <label class="field standard-width wf-datetime-start-time">
         <span>Time</span>
         <select id="wheel-duration-start-time">
           <option value="">Select time</option>
@@ -166,7 +182,7 @@
           <option value="23:00">23:00</option>
         </select>
       </label>
-      <label class="field standard-width">
+      <label class="field standard-width wf-datetime-end">
         <span>End</span>
         <input
           type="text"
@@ -177,7 +193,7 @@
           readonly
         />
       </label>
-      <label class="field standard-width">
+      <label class="field standard-width wf-datetime-end-time">
         <span>Time</span>
         <select id="wheel-duration-end-time">
           <option value="">Select time</option>
@@ -207,6 +223,7 @@
           <option value="23:00">23:00</option>
         </select>
       </label>
+      <div class="wf-datetime-empty" aria-hidden="true"></div>
     </div>
     <div class="field full">
       <button type="button" class="btn primary standard-primary-button" id="wheel-settings-save">Save</button>
@@ -235,7 +252,7 @@
         required
       />
     </label>
-    <div class="field standard-width">
+    <div class="field full wf-form-action">
       <button type="submit" class="btn primary standard-primary-button">Add</button>
     </div>
   </form>
