@@ -145,6 +145,7 @@
     const setPrizeAccess = (enabled) => {
       const prizeForm = document.getElementById("wf-prize-form");
       const prizeList = document.getElementById("wf-prize-list");
+      const prizeSection = document.getElementById("wf-prize-section");
       const targets = [
         ...(prizeForm?.querySelectorAll("input, select, button") || []),
         ...(prizeList?.querySelectorAll("input, select, button") || [])
@@ -152,6 +153,9 @@
       targets.forEach(el => {
         el.disabled = !enabled;
       });
+      if (prizeSection) {
+        prizeSection.classList.toggle("wf-prize-disabled", !enabled);
+      }
     };
 
     if (durationToggle?.checked) {
@@ -163,19 +167,19 @@
 
       if (!normalizedStartDate || !todayParts.date) {
         setStatus("Not Active", "inactive");
-        setPrizeAccess(false);
+        setPrizeAccess(true);
         return;
       }
 
       if (startRelation === 1) {
         setStatus("Upcoming", "upcoming");
-        setPrizeAccess(false);
+        setPrizeAccess(true);
         return;
       }
 
       if (endRelation !== null && endRelation === -1) {
         setStatus("Ended", "ended");
-        setPrizeAccess(false);
+        setPrizeAccess(true);
         return;
       }
 
@@ -186,13 +190,13 @@
         );
         if (state === "Ended") {
           setStatus(state, "ended");
-          setPrizeAccess(false);
+          setPrizeAccess(true);
         } else if (state === "Active") {
           setStatus(state, "active");
-          setPrizeAccess(true);
+          setPrizeAccess(false);
         } else {
           setStatus(state, "upcoming");
-          setPrizeAccess(false);
+          setPrizeAccess(true);
         }
         return;
       }
@@ -204,25 +208,25 @@
         );
         if (state === "Ended") {
           setStatus(state, "ended");
-          setPrizeAccess(false);
+          setPrizeAccess(true);
         } else if (state === "Active") {
           setStatus(state, "active");
-          setPrizeAccess(true);
+          setPrizeAccess(false);
         } else {
           setStatus(state, "upcoming");
-          setPrizeAccess(false);
+          setPrizeAccess(true);
         }
         return;
       }
 
       setStatus("Active", "active");
-      setPrizeAccess(true);
+      setPrizeAccess(false);
       return;
     }
 
     const isActive = Boolean(activeToggle?.checked);
     setStatus(isActive ? "Active" : "Not Active", isActive ? "active" : "inactive");
-    setPrizeAccess(false);
+    setPrizeAccess(true);
   }
 
   function syncToggles({ activeToggle, durationToggle }) {

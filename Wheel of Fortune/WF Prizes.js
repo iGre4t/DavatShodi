@@ -16,10 +16,15 @@
       const payload = await response.json();
       if (payload?.status === "ok" && Array.isArray(payload.data)) {
         return payload.data
-          .map(item => ({
-            name: String(item?.name ?? "").trim(),
-            quantity: Number.parseInt(item?.quantity ?? 0, 10)
-          }))
+          .map(item => {
+            const quantity = Number.parseInt(item?.quantity ?? 0, 10);
+            const last = Number.parseInt(item?.last ?? quantity, 10);
+            return {
+              name: String(item?.name ?? "").trim(),
+              quantity,
+              last: Number.isFinite(last) ? last : quantity
+            };
+          })
           .filter(item => item.name !== "");
       }
     } catch {}
@@ -41,7 +46,7 @@
       return;
     }
     if (!prizes.length) {
-      listEl.innerHTML = '<tr><td colspan="3" class="muted">No prizes added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="4" class="muted">No prizes added yet.</td></tr>';
       return;
     }
     listEl.innerHTML = prizes
@@ -49,12 +54,25 @@
         const quantity = Number.isFinite(prize.quantity) && prize.quantity > 0
           ? prize.quantity
           : 1;
+        const last = Number.isFinite(prize.last) ? prize.last : quantity;
+        const ratio = quantity > 0 ? (last / quantity) : 0;
+        let statusClass = "wf-status-pill--critical";
+        if (ratio >= 0.75) {
+          statusClass = "wf-status-pill--high";
+        } else if (ratio >= 0.4) {
+          statusClass = "wf-status-pill--mid";
+        } else if (ratio >= 0.2) {
+          statusClass = "wf-status-pill--low";
+        }
         return `
           <tr data-index="${index}">
             <td>
               <label class="field standard-width" style="margin:0;">
                 <input type="text" data-field="name" value="${escapeHtml(prize.name)}" />
               </label>
+            </td>
+            <td>
+              <span class="wf-status-pill ${statusClass}">${escapeHtml(last)}/${escapeHtml(quantity)}</span>
             </td>
             <td>
               <label class="field wf-standard-third" style="margin:0;">
@@ -113,7 +131,7 @@
         }
         const quantityValue = Number.parseInt(quantityInput?.value ?? "", 10);
         const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
-        prizes[index] = { name, quantity };
+        prizes[index] = { name, quantity, last: quantity };
         await savePrizes(prizes);
         renderPrizes(prizes, listEl);
       }
@@ -128,7 +146,7 @@
       }
       const quantityValue = Number.parseInt(quantityInput.value ?? "", 10);
       const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
-      prizes.push({ name, quantity });
+      prizes.push({ name, quantity, last: quantity });
       await savePrizes(prizes);
       renderPrizes(prizes, listEl);
       nameInput.value = "";

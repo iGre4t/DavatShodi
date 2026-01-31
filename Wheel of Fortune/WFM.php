@@ -41,7 +41,7 @@
     function expandPrizes(list) {
       const expanded = [];
       list.forEach(item => {
-        const qty = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+        const qty = Number.isFinite(item.last) && item.last > 0 ? item.last : 0;
         for (let i = 0; i < qty; i++) {
           expanded.push(item.name);
         }
@@ -135,6 +135,31 @@
           spinning = false;
           const result = pickResult(names, currentAngle);
           if (resultEl) resultEl.textContent = `Result: ${result}`;
+          try {
+            const response = await fetch(`${API_URL}?action=get_prizes`, { credentials: "same-origin" });
+            const payload = await response.json();
+            if (payload?.status === "ok" && Array.isArray(payload.data)) {
+              const updated = payload.data
+                .map(item => ({
+                  name: String(item?.name ?? "").trim(),
+                  quantity: Number.parseInt(item?.quantity ?? 0, 10),
+                  last: Number.parseInt(item?.last ?? item?.quantity ?? 0, 10)
+                }))
+                .filter(item => item.name);
+              const match = updated.find(p => p.name === result);
+              if (match) {
+                match.last = Math.max(0, (Number.isFinite(match.last) ? match.last : 0) - 1);
+              }
+              const filtered = updated.filter(p => (Number.isFinite(p.last) ? p.last : 0) > 0);
+              await fetch(`${API_URL}?action=save_prizes`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prizes: filtered })
+              });
+              names = expandPrizes(filtered);
+              drawWheel(names, currentAngle);
+            }
+          } catch {}
         }
       }
       requestAnimationFrame(animate);

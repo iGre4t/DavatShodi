@@ -1,4 +1,4 @@
 [
-  { "name": "Gold Coin", "quantity": 1 },
-  { "name": "T-Shirt", "quantity": 5 }
+  { "name": "Gold Coin", "quantity": 1, "last": 1 },
+  { "name": "T-Shirt", "quantity": 5, "last": 5 }
 ]

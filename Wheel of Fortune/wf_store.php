@@ -40,7 +40,30 @@ if ($action === 'save_prizes') {
     echo json_encode(['status' => 'error', 'message' => 'Invalid prizes.']);
     exit;
   }
-  if (!writeJsonFile($prizesFile, $prizes)) {
+  $normalized = [];
+  foreach ($prizes as $prize) {
+    if (!is_array($prize)) {
+      continue;
+    }
+    $name = trim((string)($prize['name'] ?? ''));
+    if ($name === '') {
+      continue;
+    }
+    $quantity = (int)($prize['quantity'] ?? 0);
+    $last = (int)($prize['last'] ?? $quantity);
+    if ($quantity < 1) {
+      continue;
+    }
+    if ($last < 0) {
+      $last = 0;
+    }
+    $normalized[] = [
+      'name' => $name,
+      'quantity' => $quantity,
+      'last' => $last
+    ];
+  }
+  if (!writeJsonFile($prizesFile, $normalized)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save prizes.']);
     exit;
   }

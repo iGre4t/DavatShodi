@@ -130,6 +130,40 @@
     background: #b91c1c;
     border-color: #b91c1c;
   }
+  .wf-status-pill {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .wf-status-pill--high {
+    color: var(--primary);
+  }
+  .wf-status-pill--mid {
+    color: #f59e0b;
+  }
+  .wf-status-pill--low {
+    color: #f97316;
+  }
+  .wf-status-pill--critical {
+    color: #e11d2e;
+  }
+  .wf-prize-disabled {
+    opacity: 0.65;
+  }
+  .wf-prize-disabled input,
+  .wf-prize-disabled select,
+  .wf-prize-disabled button {
+    background: #f1f5f9 !important;
+    color: #94a3b8 !important;
+    border-color: #e2e8f0 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+  }
+  .wf-prize-disabled .table-wrapper tbody tr {
+    pointer-events: none;
+  }
+  .wf-prize-disabled .table-wrapper tbody tr:hover {
+    background: inherit;
+  }
   .wf-status {
     font-weight: 600;
   }
@@ -290,7 +324,8 @@
   </div>
 </div>
 
-<div class="card">
+<div id="wf-prize-section">
+  <div class="card">
   <div class="section-header">
     <h3>Add Prize</h3>
   </div>
@@ -320,7 +355,7 @@
   </form>
 </div>
 
-<div class="card">
+  <div class="card">
   <div class="section-header">
     <h3>Prizes</h3>
   </div>
@@ -329,6 +364,7 @@
       <thead>
         <tr>
           <th>Name</th>
+          <th>Status</th>
           <th>Quantity</th>
           <th>Action Bar</th>
         </tr>
@@ -336,6 +372,7 @@
       <tbody id="wf-prize-list"></tbody>
     </table>
   </div>
+</div>
 </div>
 
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
