@@ -140,6 +140,17 @@
         statusEl.classList.add(`wf-status--${tone}`);
       }
     };
+    const setPrizeAccess = (enabled) => {
+      const prizeForm = document.getElementById("wf-prize-form");
+      const prizeList = document.getElementById("wf-prize-list");
+      const targets = [
+        ...(prizeForm?.querySelectorAll("input, select, button") || []),
+        ...(prizeList?.querySelectorAll("input, select, button") || [])
+      ];
+      targets.forEach(el => {
+        el.disabled = !enabled;
+      });
+    };
 
     if (durationToggle?.checked) {
       const normalizedStartDate = (startDate?.value || "").trim();
@@ -150,16 +161,19 @@
 
       if (!normalizedStartDate || !todayParts.date) {
         setStatus("Not Active", "inactive");
+        setPrizeAccess(false);
         return;
       }
 
       if (startRelation === 1) {
         setStatus("Upcoming", "upcoming");
+        setPrizeAccess(false);
         return;
       }
 
       if (endRelation !== null && endRelation === -1) {
         setStatus("Ended", "ended");
+        setPrizeAccess(false);
         return;
       }
 
@@ -170,10 +184,13 @@
         );
         if (state === "Ended") {
           setStatus(state, "ended");
+          setPrizeAccess(false);
         } else if (state === "Active") {
           setStatus(state, "active");
+          setPrizeAccess(true);
         } else {
           setStatus(state, "upcoming");
+          setPrizeAccess(false);
         }
         return;
       }
@@ -185,19 +202,25 @@
         );
         if (state === "Ended") {
           setStatus(state, "ended");
+          setPrizeAccess(false);
         } else if (state === "Active") {
           setStatus(state, "active");
+          setPrizeAccess(true);
         } else {
           setStatus(state, "upcoming");
+          setPrizeAccess(false);
         }
         return;
       }
 
       setStatus("Active", "active");
+      setPrizeAccess(true);
       return;
     }
 
-    setStatus(activeToggle?.checked ? "Active" : "Not Active", activeToggle?.checked ? "active" : "inactive");
+    const isActive = Boolean(activeToggle?.checked);
+    setStatus(isActive ? "Active" : "Not Active", isActive ? "active" : "inactive");
+    setPrizeAccess(isActive);
   }
 
   function syncToggles({ activeToggle, durationToggle }) {

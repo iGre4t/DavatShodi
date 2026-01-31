@@ -19,6 +19,8 @@
     justify-self: end;
     font-weight: 600;
     color: var(--muted);
+    text-align: right;
+    width: 100%;
   }
   .wf-datetime-title--start {
     grid-area: start-title;
@@ -86,17 +88,13 @@
   }
   .wf-switch .switch-track {
     background: transparent;
-    border: 1px solid var(--border);
-    height: 2px;
-    top: 50%;
-    left: 6px;
-    right: 6px;
-    transform: translateY(-50%);
+    border: 2px solid var(--border);
+    inset: 2px;
     border-radius: 999px;
   }
   .wf-switch .switch-thumb {
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
     left: 2px;
     top: 50%;
     transform: translate(0, -50%);
@@ -108,7 +106,7 @@
     border-color: var(--primary);
   }
   .wf-switch .switch-toggle input:checked + .switch-track .switch-thumb {
-    transform: translate(30px, -50%);
+    transform: translate(26px, -50%);
     border-color: var(--primary);
   }
   .wf-switch .switch-toggle input:disabled + .switch-track {
@@ -173,6 +171,15 @@
     }
   }
 </style>
+
+<div class="card">
+  <div class="section-header">
+    <h3>Status</h3>
+  </div>
+  <div class="field">
+    <a class="btn primary" href="Wheel%20of%20Fortune/WFM.php" target="_blank" rel="noopener">Open Wheel</a>
+  </div>
+</div>
 
 <div class="card">
   <div class="section-header">
