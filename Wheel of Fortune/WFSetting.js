@@ -37,35 +37,113 @@
     });
   }
 
-  function getJalaliDateString(date = new Date()) {
+  const digitTranslations = {
+    "۰": "0",
+    "۱": "1",
+    "۲": "2",
+    "۳": "3",
+    "۴": "4",
+    "۵": "5",
+    "۶": "6",
+    "۷": "7",
+    "۸": "8",
+    "۹": "9",
+    "٠": "0",
+    "١": "1",
+    "٢": "2",
+    "٣": "3",
+    "٤": "4",
+    "٥": "5",
+    "٦": "6",
+    "٧": "7",
+    "٨": "8",
+    "٩": "9"
+  };
+
+  function convertDigitsToEnglish(value) {
+    return (value || "").replace(/[۰-۹٠-٩]/g, (ch) => digitTranslations[ch] || ch);
+  }
+
+  function normalizeShamsiDate(value = "") {
+    let normalized = (value || "").trim();
+    normalized = convertDigitsToEnglish(normalized);
+    if (typeof toEnglishDigits === "function") {
+      normalized = toEnglishDigits(normalized);
+    }
+    normalized = normalized.replace(/-/g, "/");
+    normalized = normalized.replace(/[^\d/]/g, "");
+    return normalized;
+  }
+
+  function compareNormalizedShamsiDates(a = "", b = "") {
+    const left = (a || "").trim();
+    const right = (b || "").trim();
+    if (!left || !right) {
+      return null;
+    }
+    if (left === right) {
+      return 0;
+    }
+    return left > right ? 1 : -1;
+  }
+
+  function formatTodayShamsiWithIntl() {
+    if (typeof Intl === "undefined") return "";
     try {
       const formatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit"
       });
-      const parts = formatter.formatToParts(date);
-      const year = parts.find(p => p.type === "year")?.value ?? "";
-      const month = parts.find(p => p.type === "month")?.value ?? "";
-      const day = parts.find(p => p.type === "day")?.value ?? "";
-      return `${year}/${month}/${day}`;
+      return formatter.format(new Date());
     } catch {
       return "";
     }
   }
 
-  function getTimeString(date = new Date()) {
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${hours}:${minutes}`;
+  function resolveTodayShamsiDate() {
+    const fromHelper = typeof getNowJalaliDate === "function" ? getNowJalaliDate() : "";
+    if (fromHelper) {
+      return normalizeShamsiDate(fromHelper);
+    }
+    const fromIntl = formatTodayShamsiWithIntl();
+    if (fromIntl) {
+      return normalizeShamsiDate(fromIntl);
+    }
+    return "";
   }
 
-  function compareDateTime(aDate, aTime, bDate, bTime) {
-    if (!aDate || !bDate) return null;
-    const left = `${aDate} ${aTime || "00:00"}`;
-    const right = `${bDate} ${bTime || "00:00"}`;
-    if (left === right) return 0;
-    return left < right ? -1 : 1;
+  function parseTimeToSeconds(value) {
+    if (!value) return null;
+    const normalized = String(value).trim();
+    const parts = normalized.split(":").map((part) => Number(part));
+    if (parts.length < 2 || parts.length > 3 || parts.some((n) => !Number.isFinite(n))) {
+      return null;
+    }
+    const [hours, minutes, seconds = 0] = parts;
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  function getCurrentLocalSeconds() {
+    const now = new Date();
+    return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  }
+
+  function describeSameDayDurationState(startTime, endTime) {
+    const nowSeconds = getCurrentLocalSeconds();
+    const startSeconds = parseTimeToSeconds(startTime);
+    const endSeconds = parseTimeToSeconds(endTime);
+
+    if (endSeconds !== null && nowSeconds >= endSeconds) {
+      return "Ended";
+    }
+    if (startSeconds !== null && nowSeconds >= startSeconds) {
+      return "Active";
+    }
+    if (startSeconds !== null && nowSeconds < startSeconds) {
+      return "Upcoming";
+    }
+    return "Upcoming";
   }
 
   function updateStatus() {
@@ -80,22 +158,44 @@
     if (!statusEl) return;
 
     if (durationToggle?.checked) {
-      const nowDate = getJalaliDateString();
-      const nowTime = getTimeString();
-      const startCmp = compareDateTime(nowDate, nowTime, startDate?.value ?? "", startTime?.value ?? "");
-      const endCmp = compareDateTime(nowDate, nowTime, endDate?.value ?? "", endTime?.value ?? "");
+      const normalizedStartDate = normalizeShamsiDate(startDate?.value);
+      const normalizedEndDate = normalizeShamsiDate(endDate?.value);
+      const todayDate = resolveTodayShamsiDate();
+      const startRelation = compareNormalizedShamsiDates(normalizedStartDate, todayDate);
+      const endRelation = compareNormalizedShamsiDates(normalizedEndDate, todayDate);
 
-      if (startCmp === null || endCmp === null) {
+      if (!normalizedStartDate || !todayDate) {
+        statusEl.textContent = "Not Active";
+        return;
+      }
+
+      if (startRelation === 1) {
         statusEl.textContent = "Upcoming";
         return;
       }
-      if (startCmp < 0) {
-        statusEl.textContent = "Upcoming";
-      } else if (endCmp > 0) {
+
+      if (endRelation !== null && endRelation === -1) {
         statusEl.textContent = "Ended";
-      } else {
-        statusEl.textContent = "Active";
+        return;
       }
+
+      if (startRelation === 0) {
+        statusEl.textContent = describeSameDayDurationState(
+          startTime?.value ?? "",
+          endTime?.value ?? ""
+        );
+        return;
+      }
+
+      if (endRelation === 0) {
+        statusEl.textContent = describeSameDayDurationState(
+          startTime?.value ?? "",
+          endTime?.value ?? ""
+        );
+        return;
+      }
+
+      statusEl.textContent = "Active";
       return;
     }
 
