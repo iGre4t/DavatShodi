@@ -13,11 +13,7 @@
 
 <script>
   (() => {
-    const STORAGE_KEY = "wf_prizes";
-    const defaultPrizes = [
-      { name: "Gold Coin", quantity: 1 },
-      { name: "T-Shirt", quantity: 5 }
-    ];
+    const API_URL = "Wheel%20of%20Fortune/wf_store.php";
 
     const canvas = document.getElementById("wf-wheel-canvas");
     const ctx = canvas?.getContext("2d");
@@ -25,22 +21,21 @@
     const resultEl = document.getElementById("wf-wheel-result");
     if (!canvas || !ctx || !spinButton) return;
 
-    function loadPrizes() {
+    async function loadPrizes() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return defaultPrizes.slice();
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const cleaned = parsed
+        const response = await fetch(`${API_URL}?action=get_prizes`, { credentials: "same-origin" });
+        const payload = await response.json();
+        if (payload?.status === "ok" && Array.isArray(payload.data)) {
+          const cleaned = payload.data
             .map(item => ({
               name: String(item?.name ?? "").trim(),
               quantity: Number.parseInt(item?.quantity ?? 0, 10)
             }))
             .filter(item => item.name);
-          return cleaned.length ? cleaned : defaultPrizes.slice();
+          return cleaned.length ? cleaned : ["No Prize"].map(name => ({ name, quantity: 1 }));
         }
       } catch {}
-      return defaultPrizes.slice();
+      return [{ name: "No Prize", quantity: 1 }];
     }
 
     function expandPrizes(list) {
@@ -105,12 +100,20 @@
 
     let spinning = false;
     let currentAngle = 0;
-    const names = expandPrizes(loadPrizes());
-    drawWheel(names, currentAngle);
+    let names = [];
+
+    async function initWheel() {
+      const prizeList = await loadPrizes();
+      names = expandPrizes(prizeList);
+      drawWheel(names, currentAngle);
+    }
+
+    initWheel();
 
     spinButton.addEventListener("click", () => {
       if (spinning) return;
       spinning = true;
+      if (!names.length) return;
       const spinTurns = 6 + Math.random() * 3;
       const targetAngle = currentAngle + spinTurns * Math.PI * 2 + Math.random() * Math.PI * 2;
       const start = performance.now();

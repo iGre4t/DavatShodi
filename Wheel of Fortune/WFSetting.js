@@ -1,27 +1,29 @@
 (() => {
-  const STORAGE_KEY = "wf_settings";
-
   function getEl(id) {
     return document.getElementById(id);
   }
 
-  function loadSettings() {
+  const API_URL = "Wheel%20of%20Fortune/wf_store.php";
+
+  async function loadSettings() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+      const response = await fetch(`${API_URL}?action=get_settings`, { credentials: "same-origin" });
+      const payload = await response.json();
+      if (payload?.status === "ok" && payload.data && typeof payload.data === "object") {
+        return payload.data;
+      }
+    } catch {}
+    return {};
   }
 
-  function saveSettings(settings) {
+  async function saveSettings(settings) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    } catch {
-      // Ignore storage errors.
-    }
+      await fetch(`${API_URL}?action=save_settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings })
+      });
+    } catch {}
   }
 
   function setDurationFieldsEnabled(enabled) {
@@ -220,7 +222,7 @@
 
     const isActive = Boolean(activeToggle?.checked);
     setStatus(isActive ? "Active" : "Not Active", isActive ? "active" : "inactive");
-    setPrizeAccess(isActive);
+    setPrizeAccess(false);
   }
 
   function syncToggles({ activeToggle, durationToggle }) {
@@ -269,7 +271,7 @@
     };
   }
 
-  function initSettings() {
+  async function initSettings() {
     const saveBtn = getEl("wheel-settings-save");
     const activeToggle = getEl("wheel-active-toggle");
     const durationToggle = getEl("wheel-duration-toggle");
@@ -277,7 +279,7 @@
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
-    applySettings(loadSettings());
+    applySettings(await loadSettings());
     activeToggle?.addEventListener("change", () => {
       syncToggles({ activeToggle, durationToggle });
     });
@@ -288,8 +290,8 @@
       field?.addEventListener("change", updateStatus);
       field?.addEventListener("input", updateStatus);
     });
-    saveBtn?.addEventListener("click", () => {
-      saveSettings(collectSettings());
+    saveBtn?.addEventListener("click", async () => {
+      await saveSettings(collectSettings());
     });
     updateStatus();
   }

@@ -45,7 +45,7 @@
   }
   .wf-prize-grid {
     gap: 8px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .wf-prize-grid .field.standard-width {
     width: 100%;
@@ -177,7 +177,7 @@
     <h3>Status</h3>
   </div>
   <div class="field">
-    <a class="btn primary" href="Wheel%20of%20Fortune/WFM.php" target="_blank" rel="noopener">Open Wheel</a>
+    <a class="btn primary standard-primary-button" href="Wheel%20of%20Fortune/WFM.php" target="_blank" rel="noopener">Open Wheel</a>
   </div>
 </div>
 
@@ -294,23 +294,26 @@
   <div class="section-header">
     <h3>Add Prize</h3>
   </div>
-  <form id="wf-prize-form" class="form grid wf-prize-grid">
-    <label class="field standard-width">
-      <span>Name</span>
-      <input id="wf-prize-name" name="name" type="text" autocomplete="off" required />
-    </label>
-    <label class="field wf-standard-third">
-      <span>Quantity</span>
-      <input
-        id="wf-prize-quantity"
-        name="quantity"
-        type="number"
-        min="1"
-        step="1"
-        value="1"
-        required
-      />
-    </label>
+  <form id="wf-prize-form" class="form">
+    <div class="form grid wf-prize-grid">
+      <label class="field standard-width">
+        <span>Name</span>
+        <input id="wf-prize-name" name="name" type="text" autocomplete="off" required />
+      </label>
+      <label class="field wf-standard-third">
+        <span>Quantity</span>
+        <input
+          id="wf-prize-quantity"
+          name="quantity"
+          type="number"
+          min="1"
+          step="1"
+          value="1"
+          required
+        />
+      </label>
+      <div></div>
+    </div>
     <div class="field full wf-form-action">
       <button type="submit" class="btn primary standard-primary-button">Add</button>
     </div>

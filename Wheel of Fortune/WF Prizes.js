@@ -1,9 +1,5 @@
 (() => {
-  const STORAGE_KEY = "wf_prizes";
-  const defaultPrizes = [
-    { name: "Gold Coin", quantity: 1 },
-    { name: "T-Shirt", quantity: 5 }
-  ];
+  const API_URL = "Wheel%20of%20Fortune/wf_store.php";
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -14,33 +10,30 @@
       .replace(/'/g, "&#039;");
   }
 
-  function loadPrizes() {
+  async function loadPrizes() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        return defaultPrizes.slice();
-      }
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed
+      const response = await fetch(`${API_URL}?action=get_prizes`, { credentials: "same-origin" });
+      const payload = await response.json();
+      if (payload?.status === "ok" && Array.isArray(payload.data)) {
+        return payload.data
           .map(item => ({
             name: String(item?.name ?? "").trim(),
             quantity: Number.parseInt(item?.quantity ?? 0, 10)
           }))
           .filter(item => item.name !== "");
       }
-    } catch {
-      // Ignore storage errors and fall back to defaults.
-    }
-    return defaultPrizes.slice();
+    } catch {}
+    return [];
   }
 
-  function savePrizes(prizes) {
+  async function savePrizes(prizes) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(prizes));
-    } catch {
-      // Ignore storage errors (private mode, quota, etc).
-    }
+      await fetch(`${API_URL}?action=save_prizes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prizes })
+      });
+    } catch {}
   }
 
   function renderPrizes(prizes, listEl) {
@@ -80,7 +73,7 @@
       .join("");
   }
 
-  function initPrizeForm() {
+  async function initPrizeForm() {
     const form = document.getElementById("wf-prize-form");
     const nameInput = document.getElementById("wf-prize-name");
     const quantityInput = document.getElementById("wf-prize-quantity");
@@ -90,10 +83,10 @@
       return;
     }
 
-    const prizes = loadPrizes();
+    const prizes = await loadPrizes();
     renderPrizes(prizes, listEl);
 
-    listEl.addEventListener("click", event => {
+    listEl.addEventListener("click", async event => {
       const button = event.target.closest("button");
       if (!button) {
         return;
@@ -106,7 +99,7 @@
       const action = button.dataset.action;
       if (action === "delete") {
         prizes.splice(index, 1);
-        savePrizes(prizes);
+        await savePrizes(prizes);
         renderPrizes(prizes, listEl);
         return;
       }
@@ -121,12 +114,12 @@
         const quantityValue = Number.parseInt(quantityInput?.value ?? "", 10);
         const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
         prizes[index] = { name, quantity };
-        savePrizes(prizes);
+        await savePrizes(prizes);
         renderPrizes(prizes, listEl);
       }
     });
 
-    form.addEventListener("submit", event => {
+    form.addEventListener("submit", async event => {
       event.preventDefault();
       const name = String(nameInput.value ?? "").trim();
       if (!name) {
@@ -136,7 +129,7 @@
       const quantityValue = Number.parseInt(quantityInput.value ?? "", 10);
       const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
       prizes.push({ name, quantity });
-      savePrizes(prizes);
+      await savePrizes(prizes);
       renderPrizes(prizes, listEl);
       nameInput.value = "";
       quantityInput.value = "1";
