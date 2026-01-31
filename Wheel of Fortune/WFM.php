@@ -302,7 +302,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
         const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
-        const animate = (now) => {
+        const animate = async (now) => {
           const elapsed = now - start;
           const progress = Math.min(1, elapsed / duration);
           const eased = easeOutCubic(progress);
