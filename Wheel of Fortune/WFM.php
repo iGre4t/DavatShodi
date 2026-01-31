@@ -426,6 +426,16 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         ? <?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>
         : [];
 
+      const loadPrizeStore = async () => {
+        try {
+          const response = await fetch('Wheel%20of%20Fortune/WF%20Prizes.json', { cache: 'no-store' });
+          const payload = await response.json();
+          return Array.isArray(payload) ? payload : [];
+        } catch {
+          return [];
+        }
+      };
+
       const expandPrizes = (list) => {
         const expanded = [];
         list.forEach((item) => {
@@ -491,7 +501,8 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       };
 
       const initWheel = (list = prizePool) => {
-        prizeNames = expandPrizes(list);
+        const safeList = Array.isArray(list) && list.length ? list : [{ name: 'No Prize', quantity: 1, last: 1 }];
+        prizeNames = expandPrizes(safeList);
         drawWheel(prizeNames, currentAngle);
       };
 
@@ -504,6 +515,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       showIdleWinnerText();
       initWheel();
+      if (!prizePool.length) {
+        loadPrizeStore().then((loaded) => {
+          if (loaded.length) {
+            initWheel(loaded);
+          }
+        });
+      }
 
       startBtn.addEventListener('click', () => {
         if (spinning) {
