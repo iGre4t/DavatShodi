@@ -75,6 +75,7 @@
         align-items: center;
         position: relative;
         z-index: 2;
+        display: none;
       }
 
       .page-menu {
@@ -295,7 +296,6 @@
     <nav class="page-header">
       <div class="page-menu">
         <a class="menu-item active" href="WFM.php">Wheel Draw</a>
-        <a class="menu-item" href="prizes.php">Prizes</a>
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
@@ -307,12 +307,7 @@
       <p id="winner-name" class="winner-message winner-message--idle">Draw winner</p>
       <div class="cta-group">
         <button id="start-draw" class="start-btn" type="button">Spin & Draw</button>
-        <button id="confirm-guest" class="confirm-btn" type="button" disabled>Confirm Winner</button>
       </div>
-    </div>
-    <div class="winners-panel" aria-live="polite">
-      <h3>Winners</h3>
-      <div id="winner-items" class="winner-items"></div>
     </div>
 
     <script>
@@ -323,11 +318,8 @@
         { code: '4378', firstname: 'Mariam', lastname: 'Neshat', full_name: 'Mariam Neshat' }
       ];
 
-      let winnersList = [];
       const winnerNameEl = document.getElementById('winner-name');
       const startBtn = document.getElementById('start-draw');
-      const confirmBtn = document.getElementById('confirm-guest');
-      const winnersContainer = document.getElementById('winner-items');
       const canvas = document.getElementById('wf-wheel-canvas');
       const ctx = canvas?.getContext('2d');
       const wheelResultEl = document.getElementById('wf-wheel-result');
@@ -372,38 +364,9 @@
         setWinnerText(name);
       };
 
-      const formatWinnerItem = (entry) => {
-        const container = document.createElement('div');
-        container.className = 'winner-item';
-        const codeEl = document.createElement('div');
-        codeEl.className = 'winner-code';
-        codeEl.textContent = (entry.code || entry.invite_code || '0000').toString();
-        const infoEl = document.createElement('div');
-        infoEl.className = 'winner-info';
-        const displayName = entry.full_name || `${entry.firstname || ''} ${entry.lastname || ''}`.trim() || 'Guest';
-        infoEl.textContent = displayName;
-        container.append(codeEl, infoEl);
-        return container;
-      };
-
-      const renderWinnerList = (items) => {
-        winnersList = Array.isArray(items) ? items.slice() : [];
-        winnersContainer.innerHTML = '';
-        if (!winnersList.length) {
-          const placeholder = document.createElement('p');
-          placeholder.className = 'status';
-          placeholder.textContent = 'No winners confirmed yet.';
-          winnersContainer.appendChild(placeholder);
-          return;
-        }
-        winnersList.forEach((row) => winnersContainer.appendChild(formatWinnerItem(row)));
-      };
-
       const prizePool = [
-        { name: 'Gift Card', quantity: 2 },
-        { name: 'Headphones', quantity: 1 },
-        { name: 'Voucher', quantity: 3 },
-        { name: 'Mystery Box', quantity: 1 }
+        { name: 'Gold Coin', quantity: 1 },
+        { name: 'T-Shirt', quantity: 5 }
       ];
 
       const expandPrizes = (list) => {
@@ -474,13 +437,10 @@
       };
 
       const resetWinnersList = () => {
-        confirmBtn.disabled = true;
         chosenGuestKeys.clear();
         currentWinner = null;
         showIdleWinnerText();
-        renderWinnerList([]);
         startBtn.disabled = getAvailableGuests().length === 0;
-        confirmBtn.disabled = true;
         if (wheelResultEl) {
           wheelResultEl.textContent = 'Result: --';
         }
@@ -499,7 +459,6 @@
           return;
         }
         startBtn.disabled = true;
-        confirmBtn.disabled = true;
         showIdleWinnerText();
         spinning = true;
         const spinTurns = 6 + Math.random() * 3;
@@ -529,7 +488,6 @@
           if (selectionKey !== '') {
             chosenGuestKeys.add(selectionKey);
           }
-          confirmBtn.disabled = false;
           const hasRemaining = getAvailableGuests().length > 0;
           startBtn.disabled = !hasRemaining;
           renderWinner(currentWinner);
@@ -569,9 +527,6 @@
           }
         } else if (event.code === 'Space') {
           event.preventDefault();
-          if (!confirmBtn.disabled) {
-            confirmBtn.click();
-          }
         }
         if (!resetShortcutLocked && pressedShortcutKeys.has('Numpad8') && pressedShortcutKeys.has('Numpad9')) {
           resetShortcutLocked = true;
@@ -590,7 +545,6 @@
       if (!getAvailableGuests().length) {
         startBtn.disabled = true;
       }
-      renderWinnerList(winnersList);
     </script>
   </body>
 </html>
