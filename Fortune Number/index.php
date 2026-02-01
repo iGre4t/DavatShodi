@@ -13,7 +13,7 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
-$fnumPath = dirname(__DIR__) . '/data/fortune_number.json';
+$fnumPath = __DIR__ . '/FNum.json';
 
 function loadPanelSettings(): array
 {
@@ -622,12 +622,6 @@ $fnumState = [
         <path class="icon-outline" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
       </svg>
     </div>
-    <nav class="page-header">
-      <div class="page-menu">
-        <a class="menu-item active" href="draw.php">قرعه کشی</a>
-        <a class="menu-item" href="prizes.php">جوایز مسابقات</a>
-      </div>
-    </nav>
     <div class="draw-shell" aria-live="polite">
       <p class="caption">قرعه کشی جشن 22 بهمن‌ماه</p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="کد قرعه‌کشی فعلی">
@@ -654,6 +648,7 @@ $fnumState = [
       const winnerNameEl = document.getElementById('winner-name');
       const startBtn = document.getElementById('start-draw');
       const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
+      const captionEl = document.querySelector('.caption');
       const persianDigits = ['\u06F0', '\u06F1', '\u06F2', '\u06F3', '\u06F4', '\u06F5', '\u06F6', '\u06F7', '\u06F8', '\u06F9'];
 
       let animationInterval = null;
@@ -663,6 +658,7 @@ $fnumState = [
       let pendingWinnerText = null;
       const pressedShortcutKeys = new Set();
       let resetShortcutLocked = false;
+      let logoutShortcutLocked = false;
       let winnersList = Array.isArray(FNUM_STATE && FNUM_STATE.winners ? FNUM_STATE.winners : null)
         ? FNUM_STATE.winners.slice()
         : [];
@@ -672,6 +668,10 @@ $fnumState = [
         : value.toString().replace(/\d/g, (digit) => persianDigits[digit] || digit);
 
       const randomDigit = () => Math.floor(Math.random() * 10).toString();
+
+      if (captionEl) {
+        captionEl.textContent = toPersianDigits(captionEl.textContent);
+      }
 
       const normalizeCode = (value) => {
         const text = (value === null || value === undefined) ? '' : value.toString().trim();
@@ -882,12 +882,20 @@ $fnumState = [
           event.preventDefault();
           resetWinnersList();
         }
+        if (!logoutShortcutLocked && pressedShortcutKeys.has('Numpad2') && pressedShortcutKeys.has('Numpad3')) {
+          logoutShortcutLocked = true;
+          event.preventDefault();
+          window.location.href = 'logout.php';
+        }
       });
 
       document.addEventListener('keyup', (event) => {
         pressedShortcutKeys.delete(event.code);
         if (event.code === 'Numpad8' || event.code === 'Numpad9') {
           resetShortcutLocked = false;
+        }
+        if (event.code === 'Numpad2' || event.code === 'Numpad3') {
+          logoutShortcutLocked = false;
         }
       });
 

@@ -19,9 +19,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $password = trim($_POST['password'] ?? '');
 
   if ($username === '' || $password === '') {
-    $errors[] = 'Username and password are required.';
+    $errors[] = 'نام کاربری و رمز عبور الزامی است.';
   } elseif (!$credentials) {
-    $errors[] = 'Login configuration is missing.';
+    $errors[] = 'پیکربندی ورود یافت نشد.';
   } else {
     $validUser = (string)$credentials['username'];
     $validPass = (string)$credentials['password'];
@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       header('Location: index.php');
       exit;
     }
-    $errors[] = 'Invalid username or password.';
+    $errors[] = 'نام کاربری یا رمز عبور نادرست است.';
   }
 }
 
@@ -69,7 +69,7 @@ function escape(string $value): string
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fortune Number Login</title>
+    <title>ورود قرعه‌کشی</title>
     <link rel="icon" href="data:," />
     <script src="../General%20Setting/general-settings.js"></script>
     <script src="../style/appearance.js"></script>
@@ -159,8 +159,8 @@ function escape(string $value): string
       }
 
       .login-form input:focus {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px var(--primary-focus);
+        border-color: #1d4ed8;
+        box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.25);
         outline: none;
       }
 
@@ -170,14 +170,14 @@ function escape(string $value): string
         border-radius: 14px;
         padding: 14px 16px;
         font-size: 1rem;
-        background: var(--primary);
+        background: #2563eb;
         color: #fff;
         cursor: pointer;
         transition: background 0.2s ease;
       }
 
       .login-form button:hover {
-        background: var(--primary-600);
+        background: #1d4ed8;
       }
 
     </style>
@@ -186,8 +186,8 @@ function escape(string $value): string
     <main>
       <section class="login-card">
         <div class="brand-logo">FN</div>
-        <h1 class="brand-title">Fortune Number</h1>
-        <p class="brand-subtitle">Sign in to continue managing</p>
+        <h1 class="brand-title">قرعه‌کشی</h1>
+        <p class="brand-subtitle">برای ادامه وارد شوید</p>
         <?php if ($errors): ?>
           <div class="alert" role="alert" aria-live="assertive">
             <ul>
@@ -199,14 +199,14 @@ function escape(string $value): string
         <?php endif; ?>
         <form method="post" class="login-form" novalidate>
           <label class="field">
-            <span>Username</span>
-            <input name="username" type="text" placeholder="e.g. admin" value="<?= escape($username) ?>" autofocus required />
+            <span>نام کاربری</span>
+            <input name="username" type="text" placeholder="مثلاً admin" value="<?= escape($username) ?>" autofocus required />
           </label>
           <label class="field">
-            <span>Password</span>
+            <span>رمز عبور</span>
             <input name="password" type="password" placeholder="********" required />
           </label>
-          <button type="submit">Sign In</button>
+          <button type="submit">ورود</button>
         </form>
       </section>
     </main>
