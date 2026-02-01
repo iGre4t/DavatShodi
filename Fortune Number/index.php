@@ -1,6 +1,11 @@
 <?php
 session_start();
 
+if (empty($_SESSION['fortune_number_authenticated'])) {
+  header('Location: login.php');
+  exit;
+}
+
 date_default_timezone_set('Asia/Tehran');
 
 const STORE_PATH = __DIR__ . '/data/store.json';
@@ -344,7 +349,8 @@ $fnumState = [
         justify-content: center;
         pointer-events: none;
         z-index: 0;
-        opacity: 0.25;
+        opacity: 0;
+        visibility: hidden;
         padding: 0 17.5vw;
       }
 
@@ -623,7 +629,7 @@ $fnumState = [
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
-      <p class="caption">قرعه‌کشی مشهد مقدس</p>
+      <p class="caption">قرعه کشی جشن 22 بهمن‌ماه</p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="کد قرعه‌کشی فعلی">
         <?php for ($idx = 0; $idx < 4; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
