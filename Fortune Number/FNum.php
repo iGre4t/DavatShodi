@@ -6,6 +6,23 @@ $existingWinners = [];
 $saveMessage = '';
 $saveError = '';
 
+function toPersianDigits(string $value): string
+{
+  $map = [
+    '0' => '۰',
+    '1' => '۱',
+    '2' => '۲',
+    '3' => '۳',
+    '4' => '۴',
+    '5' => '۵',
+    '6' => '۶',
+    '7' => '۷',
+    '8' => '۸',
+    '9' => '۹'
+  ];
+  return strtr($value, $map);
+}
+
 if (is_file($dataPath)) {
   $raw = file_get_contents($dataPath);
   if ($raw !== false) {
@@ -137,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if (!empty($existingWinners)): ?>
           <?php foreach ($existingWinners as $idx => $winner): ?>
             <tr data-winner-index="<?= (int)$idx ?>">
-              <td><?= htmlspecialchars((string)$winner, ENT_QUOTES, 'UTF-8') ?></td>
+              <td><?= htmlspecialchars(toPersianDigits((string)$winner), ENT_QUOTES, 'UTF-8') ?></td>
               <td>
                 <button type="button" class="btn danger fnum-delete-winner" data-winner-index="<?= (int)$idx ?>">Delete</button>
               </td>
@@ -217,6 +234,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     });
     const winnersBody = document.getElementById('fnum-winners-body');
     const clearBtn = document.getElementById('fnum-clear-winners');
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+
+    const toPersianDigits = (value) => (value === null || value === undefined)
+      ? ''
+      : value.toString().replace(/\d/g, (digit) => persianDigits[digit] || digit);
 
     const renderWinners = (items) => {
       if (!winnersBody) {
@@ -237,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const tr = document.createElement('tr');
         tr.dataset.winnerIndex = index.toString();
         const tdNumber = document.createElement('td');
-        tdNumber.textContent = winner.toString();
+        tdNumber.textContent = toPersianDigits(winner);
         const tdAction = document.createElement('td');
         const btn = document.createElement('button');
         btn.type = 'button';

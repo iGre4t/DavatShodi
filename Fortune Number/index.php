@@ -182,6 +182,23 @@ function sanitizeWinners(array $winners, ?array $range): array
   return $clean;
 }
 
+function toPersianDigits(string $value): string
+{
+  $map = [
+    '0' => '۰',
+    '1' => '۱',
+    '2' => '۲',
+    '3' => '۳',
+    '4' => '۴',
+    '5' => '۵',
+    '6' => '۶',
+    '7' => '۷',
+    '8' => '۸',
+    '9' => '۹'
+  ];
+  return strtr($value, $map);
+}
+
 function saveFnumData(string $path, string $start, string $end, array $winners): bool
 {
   $payload = [

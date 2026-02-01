@@ -4,6 +4,20 @@ session_start();
 require_once __DIR__ . '/api/lib/common.php';
 require_once __DIR__ . '/api/lib/users.php';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $isAjaxRequest = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+    && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+  if ($isAjaxRequest) {
+    $action = isset($_POST['action']) ? (string)$_POST['action'] : '';
+    $isFnumAction = in_array($action, ['clear_winners', 'delete_winner'], true);
+    $hasFnumRange = isset($_POST['start_number']) || isset($_POST['end_number']);
+    if ($isFnumAction || $hasFnumRange) {
+      require __DIR__ . '/Fortune Number/FNum.php';
+      exit;
+    }
+  }
+}
+
 const DEFAULT_PANEL_SETTINGS = [
   'title' => 'Great Panel',
   'timezone' => 'Asia/Tehran',
