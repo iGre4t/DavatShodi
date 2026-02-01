@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $saveMessage = $saved ? 'Saved.' : 'Save failed.';
 
   $redirectTo = $_SERVER['REQUEST_URI'] ?? 'panel.php';
-  $separator = str_contains($redirectTo, '?') ? '&' : '?';
+  $separator = (strpos($redirectTo, '?') !== false) ? '&' : '?';
   header('Location: ' . $redirectTo . $separator . 'fnum_saved=' . ($saved ? '1' : '0'));
   exit;
 }
