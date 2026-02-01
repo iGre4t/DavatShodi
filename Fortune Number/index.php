@@ -659,6 +659,11 @@ $fnumState = [
       const pressedShortcutKeys = new Set();
       let resetShortcutLocked = false;
       let logoutShortcutLocked = false;
+      let digitTapCount = 0;
+      let digitTapTimer = null;
+      let logoutArmed = false;
+      let longPressTimer = null;
+      let suppressNextClick = false;
       let winnersList = Array.isArray(FNUM_STATE && FNUM_STATE.winners ? FNUM_STATE.winners : null)
         ? FNUM_STATE.winners.slice()
         : [];
@@ -823,9 +828,69 @@ $fnumState = [
         }
       };
 
+      const registerDigitTap = () => {
+        if (suppressNextClick) {
+          suppressNextClick = false;
+          return;
+        }
+        if (digitTapTimer === null) {
+          digitTapCount = 0;
+          digitTapTimer = setTimeout(() => {
+            digitTapCount = 0;
+            logoutArmed = false;
+            digitTapTimer = null;
+          }, 4000);
+        }
+        digitTapCount += 1;
+        if (digitTapCount >= 3) {
+          logoutArmed = true;
+        }
+        if (digitTapCount >= 6) {
+          digitTapCount = 0;
+          logoutArmed = false;
+          if (digitTapTimer !== null) {
+            clearTimeout(digitTapTimer);
+            digitTapTimer = null;
+          }
+          resetWinnersList();
+        }
+      };
+
       setCode('0000');
       showIdleWinnerText();
       renderWinnerList(winnersList);
+      digitElements.forEach((element) => {
+        element.addEventListener('click', registerDigitTap);
+        const startLongPress = (event) => {
+          if (!logoutArmed || longPressTimer !== null) {
+            return;
+          }
+          event.preventDefault();
+          longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            digitTapCount = 0;
+            logoutArmed = false;
+            suppressNextClick = true;
+            if (digitTapTimer !== null) {
+              clearTimeout(digitTapTimer);
+              digitTapTimer = null;
+            }
+            window.location.href = 'logout.php';
+          }, 3000);
+        };
+        const cancelLongPress = () => {
+          if (longPressTimer !== null) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+        };
+        element.addEventListener('mousedown', startLongPress);
+        element.addEventListener('touchstart', startLongPress, { passive: false });
+        element.addEventListener('mouseup', cancelLongPress);
+        element.addEventListener('mouseleave', cancelLongPress);
+        element.addEventListener('touchend', cancelLongPress);
+        element.addEventListener('touchcancel', cancelLongPress);
+      });
 
       startBtn.addEventListener('click', async () => {
         if (!hasRange()) {
