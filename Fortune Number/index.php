@@ -629,25 +629,33 @@ $fnumState = [
 
     <script>
       const FNUM_STATE = <?= json_encode($fnumState, JSON_UNESCAPED_UNICODE); ?>;
-      const range = FNUM_STATE?.range ?? null;
+      const range = (FNUM_STATE && typeof FNUM_STATE === 'object' && FNUM_STATE.range) ? FNUM_STATE.range : null;
       const DRAW_API_PATH = window.location.href;
       const winnersContainer = document.getElementById('winner-items');
       const codeDisplay = document.getElementById('code-display');
       const winnerNameEl = document.getElementById('winner-name');
       const startBtn = document.getElementById('start-draw');
       const digitElements = Array.from(codeDisplay.querySelectorAll('.code-digit'));
+      const persianDigits = ['\u06F0', '\u06F1', '\u06F2', '\u06F3', '\u06F4', '\u06F5', '\u06F6', '\u06F7', '\u06F8', '\u06F9'];
 
       let animationInterval = null;
       let stopTimeouts = [];
       let currentNumber = null;
+      let pendingWinners = null;
       const pressedShortcutKeys = new Set();
       let resetShortcutLocked = false;
-      let winnersList = Array.isArray(FNUM_STATE?.winners) ? FNUM_STATE.winners.slice() : [];
+      let winnersList = Array.isArray(FNUM_STATE && FNUM_STATE.winners ? FNUM_STATE.winners : null)
+        ? FNUM_STATE.winners.slice()
+        : [];
+
+      const toPersianDigits = (value) => (value === null || value === undefined)
+        ? ''
+        : value.toString().replace(/\d/g, (digit) => persianDigits[digit] || digit);
 
       const randomDigit = () => Math.floor(Math.random() * 10).toString();
 
       const normalizeCode = (value) => {
-        const text = (value ?? '').toString().trim();
+        const text = (value === null || value === undefined) ? '' : value.toString().trim();
         const digits = text.replace(/\D+/g, '');
         if (digits.length === 0) {
           return '0000';
@@ -661,8 +669,8 @@ $fnumState = [
         const normalized = normalizeCode(digits);
         digitElements.forEach((element) => {
           const index = Number(element.dataset.index);
-          const char = normalized[index] ?? '0';
-          element.textContent = char;
+          const char = (normalized[index] === undefined) ? '0' : normalized[index];
+          element.textContent = toPersianDigits(char);
           const locked = Boolean(locks[index]);
           element.classList.toggle('code-digit--locked', locked);
           element.classList.toggle('code-digit--animating', !locked);
@@ -691,10 +699,10 @@ $fnumState = [
         container.className = 'winner-item';
         const codeEl = document.createElement('div');
         codeEl.className = 'winner-code';
-        codeEl.textContent = normalizeCode(entry);
+        codeEl.textContent = toPersianDigits(normalizeCode(entry));
         const infoEl = document.createElement('div');
         infoEl.className = 'winner-info';
-        infoEl.textContent = `برنده ${index + 1}`;
+        infoEl.textContent = `برنده ${toPersianDigits(index + 1)}`;
         container.append(codeEl, infoEl);
         return container;
       };
@@ -757,6 +765,10 @@ $fnumState = [
             if (index === 3) {
               cancelAnimation();
               startBtn.disabled = getRemainingCount() <= 0;
+              if (pendingWinners) {
+                renderWinnerList(pendingWinners);
+                pendingWinners = null;
+              }
             }
           }, delay);
           stopTimeouts.push(timeout);
@@ -774,7 +786,7 @@ $fnumState = [
           });
           const payload = await response.json();
           if (!response.ok || payload.status !== 'ok') {
-            throw new Error(payload?.message || 'Unable to reset winners list.');
+            throw new Error((payload && payload.message) ? payload.message : 'Unable to reset winners list.');
           }
           winnersList = [];
           currentNumber = null;
@@ -816,24 +828,24 @@ $fnumState = [
           });
           const data = await response.json();
           if (!response.ok || data.status !== 'ok') {
-            throw new Error(data?.message || 'Draw failed.');
+            throw new Error((data && data.message) ? data.message : 'Draw failed.');
           }
           currentNumber = data.number;
           winnersList = Array.isArray(data.winners) ? data.winners : winnersList;
           cancelAnimation();
           startRollingAnimation(currentNumber);
-          setWinnerText(`برنده: ${normalizeCode(currentNumber)}`);
-          renderWinnerList(winnersList);
+          setWinnerText(`برنده: ${toPersianDigits(normalizeCode(currentNumber))}`);
+          pendingWinners = winnersList.slice();
         } catch (error) {
           cancelAnimation();
-          flashError(error?.message || 'Draw failed.');
+          flashError((error && error.message) ? error.message : 'Draw failed.');
           startBtn.disabled = getRemainingCount() <= 0;
         }
       });
 
       document.addEventListener('keydown', (event) => {
         pressedShortcutKeys.add(event.code);
-        const targetTag = event.target?.tagName ?? '';
+        const targetTag = event.target && event.target.tagName ? event.target.tagName : '';
         if (['INPUT', 'TEXTAREA'].includes(targetTag)) {
           return;
         }

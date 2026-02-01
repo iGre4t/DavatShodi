@@ -4,6 +4,7 @@ $startNumber = '';
 $endNumber = '';
 $existingWinners = [];
 $saveMessage = '';
+$saveError = '';
 
 if (is_file($dataPath)) {
   $raw = file_get_contents($dataPath);
@@ -26,8 +27,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     'winners' => $existingWinners
   ];
   $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-  $saved = $encoded !== false && file_put_contents($dataPath, $encoded) !== false;
-  $saveMessage = $saved ? 'Saved.' : 'Save failed.';
+  $saved = false;
+  if ($encoded === false) {
+    $saveError = 'Save failed: invalid JSON payload.';
+  } else {
+    $result = @file_put_contents($dataPath, $encoded, LOCK_EX);
+    if ($result === false) {
+      $errorInfo = error_get_last();
+      $saveError = $errorInfo['message'] ?? 'Save failed: unable to write file.';
+    } else {
+      $saved = true;
+    }
+  }
+  $saveMessage = $saved ? 'Saved.' : ($saveError ?: 'Save failed.');
   $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
     strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
   if ($isAjax) {
@@ -87,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           payload = null;
         }
         const ok = response.ok && payload && payload.ok;
-        const message = payload?.message || (ok ? 'Saved.' : 'Save failed.');
+        const message = (payload && payload.message) ? payload.message : (ok ? 'Saved.' : 'Save failed.');
         if (ok) {
           if (typeof window.showActionSnackbar === 'function') {
             window.showActionSnackbar({
@@ -110,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           alert(message);
         }
       } catch (error) {
-        const message = error?.message || 'Save failed.';
+        const message = (error && error.message) ? error.message : 'Save failed.';
         if (typeof window.showErrorSnackbar === 'function') {
           window.showErrorSnackbar({ message });
         } else if (typeof window.showActionSnackbar === 'function') {
