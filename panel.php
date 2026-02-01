@@ -187,6 +187,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-game-line" aria-hidden="true"></span>
             <span>Wheel of Fortune</span>
           </button>
+          <button class="nav-item" data-tab="fortune-number">
+            <span class="nav-icon ri ri-hashtag" aria-hidden="true"></span>
+            <span>Fortune Number</span>
+          </button>
           <!-- Typography tab provides font uploads and previews. -->
           <button class="nav-item" data-tab="typography">
             <span class="nav-icon ri ri-font-color" aria-hidden="true"></span>
@@ -359,6 +363,9 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/features.php'; ?>
         <section id="tab-wheel-of-fortune" class="tab">
           <?php include __DIR__ . '/Wheel of Fortune/WF Panel.php'; ?>
+        </section>
+        <section id="tab-fortune-number" class="tab">
+          <?php include __DIR__ . '/Fortune Number/FNum.php'; ?>
         </section>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
