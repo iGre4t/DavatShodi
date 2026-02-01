@@ -2,6 +2,7 @@
 $dataPath = __DIR__ . '/FNum.json';
 $startNumber = '';
 $endNumber = '';
+$existingWinners = [];
 $saveMessage = '';
 
 if (is_file($dataPath)) {
@@ -11,6 +12,7 @@ if (is_file($dataPath)) {
     if (is_array($decoded)) {
       $startNumber = isset($decoded['start']) ? (string)$decoded['start'] : '';
       $endNumber = isset($decoded['end']) ? (string)$decoded['end'] : '';
+      $existingWinners = is_array($decoded['winners'] ?? null) ? array_values($decoded['winners']) : [];
     }
   }
 }
@@ -20,13 +22,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $endNumber = isset($_POST['end_number']) ? trim((string)$_POST['end_number']) : '';
   $payload = [
     'start' => $startNumber,
-    'end' => $endNumber
+    'end' => $endNumber,
+    'winners' => $existingWinners
   ];
   $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-  if ($encoded !== false && file_put_contents($dataPath, $encoded) !== false) {
-    $saveMessage = 'Saved.';
-  } else {
-    $saveMessage = 'Save failed.';
+  $saved = $encoded !== false && file_put_contents($dataPath, $encoded) !== false;
+  $saveMessage = $saved ? 'Saved.' : 'Save failed.';
+  $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+    strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+  if ($isAjax) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+      'ok' => $saved,
+      'message' => $saveMessage
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
   }
 }
 ?>
@@ -35,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="section-header">
     <h3>Control Panel</h3>
   </div>
-  <form method="post" class="form">
+  <form method="post" class="form" id="fnum-control-form">
     <div class="grid full">
       <label class="field">
         <span>Start number</span>
@@ -49,8 +59,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="section-footer">
       <button type="submit" class="btn primary">Save</button>
     </div>
-    <?php if ($saveMessage !== ''): ?>
-      <p class="hint"><?= htmlspecialchars($saveMessage, ENT_QUOTES, 'UTF-8') ?></p>
-    <?php endif; ?>
   </form>
 </div>
+
+<script>
+  (() => {
+    const form = document.getElementById('fnum-control-form');
+    if (!form) {
+      return;
+    }
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      try {
+        const response = await fetch(form.action || window.location.href, {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+          }
+        });
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch (error) {
+          payload = null;
+        }
+        const ok = response.ok && payload && payload.ok;
+        const message = payload?.message || (ok ? 'Saved.' : 'Save failed.');
+        if (ok) {
+          if (typeof window.showActionSnackbar === 'function') {
+            window.showActionSnackbar({
+              message,
+              instructionLabel: '',
+              shortcut: null
+            });
+          } else {
+            alert(message);
+          }
+        } else if (typeof window.showErrorSnackbar === 'function') {
+          window.showErrorSnackbar({ message });
+        } else if (typeof window.showActionSnackbar === 'function') {
+          window.showActionSnackbar({
+            message,
+            instructionLabel: '',
+            shortcut: null
+          });
+        } else {
+          alert(message);
+        }
+      } catch (error) {
+        const message = error?.message || 'Save failed.';
+        if (typeof window.showErrorSnackbar === 'function') {
+          window.showErrorSnackbar({ message });
+        } else if (typeof window.showActionSnackbar === 'function') {
+          window.showActionSnackbar({
+            message,
+            instructionLabel: '',
+            shortcut: null
+          });
+        } else {
+          alert(message);
+        }
+      }
+    });
+  })();
+</script>
