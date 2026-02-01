@@ -3,11 +3,6 @@ session_start();
 
 date_default_timezone_set('Asia/Tehran');
 
-if (empty($_SESSION['authenticated'])) {
-  header('Location: ' . buildLoginRedirectUrl());
-  exit;
-}
-
 const STORE_PATH = __DIR__ . '/data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
