@@ -131,6 +131,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       ]);
     }
   }
+
+  if (!isAjaxRequest()) {
+    $redirectTo = $_SERVER['REQUEST_URI'] ?? 'panel.php';
+    header('Location: ' . $redirectTo);
+    exit;
+  }
 }
 
 $startNumber = $state['start'];
