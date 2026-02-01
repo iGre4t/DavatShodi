@@ -4,20 +4,6 @@ session_start();
 require_once __DIR__ . '/api/lib/common.php';
 require_once __DIR__ . '/api/lib/users.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $isAjaxRequest = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
-    && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
-  if ($isAjaxRequest) {
-    $action = isset($_POST['action']) ? (string)$_POST['action'] : '';
-    $isFnumAction = in_array($action, ['clear_winners', 'delete_winner'], true);
-    $hasFnumRange = isset($_POST['start_number']) || isset($_POST['end_number']);
-    if ($isFnumAction || $hasFnumRange) {
-      require __DIR__ . '/Fortune Number/FNum.php';
-      exit;
-    }
-  }
-}
-
 const DEFAULT_PANEL_SETTINGS = [
   'title' => 'Great Panel',
   'timezone' => 'Asia/Tehran',
@@ -201,10 +187,6 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-game-line" aria-hidden="true"></span>
             <span>Wheel of Fortune</span>
           </button>
-          <button class="nav-item" data-tab="fortune-number">
-            <span class="nav-icon ri ri-hashtag" aria-hidden="true"></span>
-            <span>Fortune Number</span>
-          </button>
           <!-- Typography tab provides font uploads and previews. -->
           <button class="nav-item" data-tab="typography">
             <span class="nav-icon ri ri-font-color" aria-hidden="true"></span>
@@ -377,9 +359,6 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php include __DIR__ . '/features.php'; ?>
         <section id="tab-wheel-of-fortune" class="tab">
           <?php include __DIR__ . '/Wheel of Fortune/WF Panel.php'; ?>
-        </section>
-        <section id="tab-fortune-number" class="tab">
-          <?php include __DIR__ . '/Fortune Number/FNum.php'; ?>
         </section>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
