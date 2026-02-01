@@ -13,7 +13,7 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
-const FNUM_PATH = __DIR__ . '/FNum.json';
+$fnumPath = dirname(__DIR__) . '/data/fortune_number.json';
 
 function loadPanelSettings(): array
 {
@@ -229,7 +229,7 @@ $panelSettings = loadPanelSettings();
 $pageTitle = (string)($panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName']);
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
 
-$fnumData = loadFnumData(FNUM_PATH);
+$fnumData = loadFnumData($fnumPath);
 $range = normalizeRange($fnumData);
 $winners = sanitizeWinners($fnumData['winners'] ?? [], $range);
 
@@ -241,7 +241,7 @@ if ($method === 'POST') {
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
 
   if ($action === 'reset_winners') {
-    $saved = saveFnumData(FNUM_PATH, $fnumData['start'], $fnumData['end'], []);
+    $saved = saveFnumData($fnumPath, $fnumData['start'], $fnumData['end'], []);
     if (!$saved) {
       echo json_encode(['status' => 'error', 'message' => 'Unable to reset winners list.']);
       exit;
@@ -272,7 +272,7 @@ if ($method === 'POST') {
 
   $chosen = $available[array_rand($available)];
   $winners[] = $chosen;
-  if (!saveFnumData(FNUM_PATH, $fnumData['start'], $fnumData['end'], $winners)) {
+  if (!saveFnumData($fnumPath, $fnumData['start'], $fnumData['end'], $winners)) {
     echo json_encode(['status' => 'error', 'message' => 'Unable to save draw result.']);
     exit;
   }
@@ -659,6 +659,7 @@ $fnumState = [
       let stopTimeouts = [];
       let currentNumber = null;
       let pendingWinners = null;
+      let pendingWinnerText = null;
       const pressedShortcutKeys = new Set();
       let resetShortcutLocked = false;
       let winnersList = Array.isArray(FNUM_STATE && FNUM_STATE.winners ? FNUM_STATE.winners : null)
@@ -786,6 +787,10 @@ $fnumState = [
                 renderWinnerList(pendingWinners);
                 pendingWinners = null;
               }
+              if (pendingWinnerText) {
+                setWinnerText(pendingWinnerText);
+                pendingWinnerText = null;
+              }
             }
           }, delay);
           stopTimeouts.push(timeout);
@@ -851,7 +856,7 @@ $fnumState = [
           winnersList = Array.isArray(data.winners) ? data.winners : winnersList;
           cancelAnimation();
           startRollingAnimation(currentNumber);
-          setWinnerText(`برنده: ${toPersianDigits(normalizeCode(currentNumber))}`);
+          pendingWinnerText = `برنده: ${toPersianDigits(normalizeCode(currentNumber))}`;
           pendingWinners = winnersList.slice();
         } catch (error) {
           cancelAnimation();

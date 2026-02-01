@@ -1,5 +1,5 @@
 <?php
-$dataPath = __DIR__ . '/FNum.json';
+$dataPath = dirname(__DIR__) . '/data/fortune_number.json';
 $startNumber = '';
 $endNumber = '';
 $existingWinners = [];
