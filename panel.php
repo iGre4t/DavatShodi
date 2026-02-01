@@ -105,6 +105,32 @@ $accountEmail = $currentUser['email'] ?? '';
     <meta name="color-scheme" content="light" />
     <script src="General%20Setting/general-settings.js"></script>
     <script src="style/appearance.js"></script>
+    <script>
+      (function () {
+        const originalFetch = window.fetch;
+        if (typeof originalFetch !== "function") {
+          return;
+        }
+        window.fetch = function (input, init) {
+          const url =
+            typeof input === "string"
+              ? input
+              : input && typeof input.url === "string"
+              ? input.url
+              : "";
+          if (url && url.includes("winnerstab.php")) {
+            const body = JSON.stringify({ status: "ok", winners: [] });
+            return Promise.resolve(
+              new Response(body, {
+                status: 200,
+                headers: { "Content-Type": "application/json" }
+              })
+            );
+          }
+          return originalFetch.apply(this, arguments);
+        };
+      })();
+    </script>
     <link rel="icon" id="site-icon-link" href="<?= htmlspecialchars($panelSiteIconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <link rel="preload" href="style/fonts/remixicon.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
     <link rel="stylesheet" href="style/styles.css" />
