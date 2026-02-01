@@ -200,7 +200,7 @@ function escape(string $value): string
         <form method="post" class="login-form" novalidate>
           <label class="field">
             <span>نام کاربری</span>
-            <input name="username" type="text" placeholder="مثلاً admin" value="<?= escape($username) ?>" autofocus required />
+            <input name="username" type="text" placeholder="نام کاربری" value="<?= escape($username) ?>" autofocus required />
           </label>
           <label class="field">
             <span>رمز عبور</span>
