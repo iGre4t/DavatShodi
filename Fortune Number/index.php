@@ -353,6 +353,10 @@ $fnumState = [
         padding: 0 17.5vw;
       }
 
+      .background-icon {
+        display: none;
+      }
+
       .background-icon svg {
         width: 100%;
         max-width: 65vw;

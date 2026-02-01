@@ -354,7 +354,6 @@ $accountEmail = $currentUser['email'] ?? '';
         </section>
 
         <?php include __DIR__ . '/guests.php'; ?>
-        <?php include __DIR__ . '/winnerstab.php'; ?>
         <?php include __DIR__ . '/gallery-tab.php'; ?>
         <?php include __DIR__ . '/HRA/HRAupload.php'; ?>
         <?php include __DIR__ . '/HRA/HRAEvents.php'; ?>
