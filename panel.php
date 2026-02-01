@@ -119,13 +119,11 @@ $accountEmail = $currentUser['email'] ?? '';
               ? input.url
               : "";
           if (url && url.includes("winnerstab.php")) {
-            const body = JSON.stringify({ status: "ok", winners: [] });
-            return Promise.resolve(
-              new Response(body, {
-                status: 200,
-                headers: { "Content-Type": "application/json" }
-              })
-            );
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ status: "ok", winners: [] })
+            });
           }
           return originalFetch.apply(this, arguments);
         };

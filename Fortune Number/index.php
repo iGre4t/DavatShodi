@@ -632,7 +632,7 @@ $fnumState = [
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
-      <p class="caption">قرعه‌کشی مشهد مقدس</p>
+      <p class="caption">قرعه کشی اعداد</p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="کد قرعه‌کشی فعلی">
         <?php for ($idx = 0; $idx < 4; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
