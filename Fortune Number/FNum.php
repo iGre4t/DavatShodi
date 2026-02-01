@@ -1,12 +1,11 @@
 <?php
-declare(strict_types=1);
 
 $dataPath = __DIR__ . '/FNum.json';
 $startNumber = '';
 $endNumber = '';
 $saveMessage = '';
 
-function readFnumRange(string $path): array
+function readFnumRange($path)
 {
   if (!is_file($path)) {
     return ['start' => '', 'end' => ''];
@@ -25,7 +24,7 @@ function readFnumRange(string $path): array
   ];
 }
 
-function writeFnumData(string $path, string $start, string $end, array $winners): bool
+function writeFnumData($path, $start, $end, $winners)
 {
   $payload = [
     'start' => $start,
