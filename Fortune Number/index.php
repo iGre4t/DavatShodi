@@ -13,7 +13,7 @@ const DEFAULT_PANEL_SETTINGS = [
   'panelName' => 'Great Panel',
   'siteIcon' => ''
 ];
-$fnumPath = dirname(__DIR__) . '/data/fortune_number.json';
+$fnumPath = __DIR__ . '/FNum.json';
 
 function loadPanelSettings(): array
 {
