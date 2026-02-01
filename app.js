@@ -4508,6 +4508,8 @@ function setActiveTab(tab) {
     hra: 'HR Analyze Panel',
     hraevents: 'HRA Events',
     typography: 'Typography',
+    'wheel-of-fortune': 'Wheel of Fortune',
+    'fortune-number': 'Fortune Number',
     invite: 'Invite',
     devsettings: 'Developer Settings'
   };
