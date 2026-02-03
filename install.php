@@ -5,7 +5,7 @@ session_start();
 
 require_once __DIR__ . '/api/lib/common.php';
 
-$tableDefault = 'great_panel_store';
+$tableDefault = 'mci_store';
 $configPath = __DIR__ . '/api/config.php';
 if (is_file($configPath)) {
     $loadedConfig = include $configPath;
