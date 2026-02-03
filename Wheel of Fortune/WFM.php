@@ -78,16 +78,12 @@ $initialPrizes = readPrizeStore($prizeStorePath);
     <link rel="icon" href="data:," />
     <style>
       :root {
-        --bg-1: #020b21;
-        --bg-2: #0b2a5e;
-        --bg-3: #0f4f9e;
-        --shell-1: rgba(8, 26, 58, 0.9);
-        --shell-2: rgba(4, 17, 41, 0.94);
+        --bg: #0a1f47;
+        --shell: #0f2d62;
         --line: rgba(191, 224, 255, 0.24);
         --txt-main: #e8f4ff;
         --txt-soft: #9ab9de;
-        --btn-1: #85dbff;
-        --btn-2: #2c9cf4;
+        --btn: #2f9bf0;
         --btn-txt: #032146;
         font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         color-scheme: dark;
@@ -123,26 +119,23 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         display: flex;
         align-items: center;
         justify-content: center;
-        background:
-          radial-gradient(900px 560px at 6% -8%, rgba(139, 201, 255, 0.24), transparent 58%),
-          radial-gradient(820px 520px at 96% 110%, rgba(100, 160, 255, 0.2), transparent 62%),
-          linear-gradient(140deg, var(--bg-1) 0%, var(--bg-2) 54%, var(--bg-3) 100%);
+        background: var(--bg);
         color: var(--txt-main);
-        padding: 24px;
+        padding: 0;
       }
 
       .shell {
         width: min(560px, 100%);
-        padding: 32px 28px;
+        padding: 20px 18px 22px;
         border-radius: 18px;
-        background: linear-gradient(180deg, var(--shell-1), var(--shell-2));
+        background: var(--shell);
         border: 1px solid var(--line);
         box-shadow:
-          0 24px 46px rgba(2, 10, 30, 0.5),
+          0 18px 34px rgba(2, 10, 30, 0.38),
           inset 0 1px 0 rgba(245, 251, 255, 0.2);
         display: flex;
         flex-direction: column;
-        gap: 24px;
+        gap: 14px;
         align-items: center;
         text-align: center;
       }
@@ -156,20 +149,20 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       }
 
       .wheel-wrap {
-        width: min(460px, 100%);
+        width: min(420px, 96vw);
         display: grid;
         place-items: center;
       }
 
       canvas {
-        width: min(420px, 86vw);
+        width: 100%;
         height: auto;
-        background: radial-gradient(circle, #f4f9ff 0%, #d8e9ff 100%);
+        background: #dcecff;
         border-radius: 50%;
-        border: 7px solid #f7fcff;
+        border: 3px solid #f7fcff;
         box-shadow:
-          0 14px 28px rgba(2, 14, 40, 0.45),
-          inset 0 0 0 2px rgba(132, 178, 236, 0.35);
+          0 10px 20px rgba(2, 14, 40, 0.34),
+          inset 0 0 0 1px rgba(132, 178, 236, 0.35);
       }
 
       .result {
@@ -193,10 +186,10 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         font-weight: 700;
         font-family: inherit;
         cursor: pointer;
-        background: linear-gradient(135deg, var(--btn-1), var(--btn-2));
+        background: var(--btn);
         color: var(--btn-txt);
         box-shadow:
-          0 12px 24px rgba(12, 90, 191, 0.4),
+          0 10px 18px rgba(12, 90, 191, 0.32),
           inset 0 1px 0 rgba(255, 255, 255, 0.44);
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
       }
@@ -248,13 +241,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       const TWO_PI = Math.PI * 2;
       const DEFAULT_SIZE = 420;
-      const SEGMENT_GRADIENTS = [
-        ['#f7fcff', '#a5d2ff'],
-        ['#e9f6ff', '#82bfff'],
-        ['#d9ecff', '#63a7ff'],
-        ['#cde4ff', '#4c95f2'],
-        ['#c0dcff', '#3a83e4'],
-        ['#b3d5ff', '#2d76d8']
+      const SEGMENT_COLORS = [
+        '#f2f8ff',
+        '#dfeeff',
+        '#cbe3ff',
+        '#b6d7ff',
+        '#a0cbff',
+        '#8abeff'
       ];
       let wheelSegments = [];
       let currentAngle = 0;
@@ -328,17 +321,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          const mid = start + (slice / 2);
-          const colors = SEGMENT_GRADIENTS[i % SEGMENT_GRADIENTS.length];
-          const segmentGradient = ctx.createLinearGradient(
-            0,
-            0,
-            Math.cos(mid) * radius,
-            Math.sin(mid) * radius
-          );
-          segmentGradient.addColorStop(0, colors[0]);
-          segmentGradient.addColorStop(1, colors[1]);
-          ctx.fillStyle = segmentGradient;
+          ctx.fillStyle = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
           ctx.fill();
           ctx.lineWidth = 1.5;
           ctx.strokeStyle = 'rgba(7, 44, 99, 0.4)';
@@ -358,16 +341,6 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.restore();
         }
         ctx.restore();
-
-        // subtle gloss to create a light 3D effect without heavy rendering cost
-        const gloss = ctx.createRadialGradient(center - 55, center - 75, 20, center, center, radius);
-        gloss.addColorStop(0, 'rgba(255, 255, 255, 0.32)');
-        gloss.addColorStop(0.45, 'rgba(255, 255, 255, 0.08)');
-        gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.beginPath();
-        ctx.arc(center, center, radius - 2, 0, TWO_PI);
-        ctx.fillStyle = gloss;
-        ctx.fill();
 
         ctx.beginPath();
         ctx.arc(center, center, radius, 0, TWO_PI);
