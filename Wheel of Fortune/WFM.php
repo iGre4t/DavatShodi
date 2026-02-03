@@ -223,10 +223,10 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         overflow: hidden;
       }
 
-      .question img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+      .hero-icon {
+        width: 82px;
+        height: 82px;
+        object-fit: contain;
         display: block;
       }
 
@@ -403,13 +403,13 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         </div>
 
         <div class="hero">
-          <div class="question">
-            <?php if ($faviconUrl !== ''): ?>
-              <img src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
-            <?php else: ?>
+          <?php if ($faviconUrl !== ''): ?>
+            <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
+          <?php else: ?>
+            <div class="question">
               <span>؟</span>
-            <?php endif; ?>
-          </div>
+            </div>
+          <?php endif; ?>
           <p class="hint">شانس خودت رو امتحان کن و جایزه ببر</p>
         </div>
 
