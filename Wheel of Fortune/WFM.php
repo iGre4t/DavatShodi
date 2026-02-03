@@ -78,8 +78,38 @@ $initialPrizes = readPrizeStore($prizeStorePath);
     <link rel="icon" href="data:," />
     <style>
       :root {
-        font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+        --bg-1: #07163b;
+        --bg-2: #0f3474;
+        --shell-1: rgba(13, 37, 82, 0.84);
+        --shell-2: rgba(5, 22, 53, 0.94);
+        --line: rgba(184, 219, 255, 0.2);
+        --txt-main: #e8f4ff;
+        --txt-soft: #a9c6e8;
+        --btn-1: #62c2ff;
+        --btn-2: #1a7dd8;
+        --btn-txt: #032146;
+        font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         color-scheme: dark;
+      }
+
+      @font-face {
+        font-family: 'Peyda Fa Num';
+        src:
+          url('../style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2'),
+          url('/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: 'Peyda Fa Num';
+        src:
+          url('../style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2'),
+          url('/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
       }
 
       * {
@@ -92,8 +122,11 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         display: flex;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(circle at top, #7cb7ff, #1a3edb 55%, #07103b 100%);
-        color: #f0f8ff;
+        background:
+          radial-gradient(circle at 15% 10%, rgba(126, 185, 255, 0.25), transparent 38%),
+          radial-gradient(circle at 85% 85%, rgba(84, 141, 232, 0.2), transparent 44%),
+          linear-gradient(135deg, var(--bg-1), var(--bg-2));
+        color: var(--txt-main);
         padding: 24px;
       }
 
@@ -101,9 +134,12 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         width: min(560px, 100%);
         padding: 32px 28px;
         border-radius: 32px;
-        background: linear-gradient(180deg, rgba(20, 35, 67, 0.92), rgba(6, 21, 57, 0.98));
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        box-shadow: 0 16px 40px rgba(3, 20, 60, 0.55);
+        background: linear-gradient(180deg, var(--shell-1), var(--shell-2));
+        border: 1px solid var(--line);
+        box-shadow:
+          0 20px 46px rgba(2, 12, 36, 0.55),
+          inset 0 1px 0 rgba(229, 242, 255, 0.14);
+        backdrop-filter: blur(4px);
         display: flex;
         flex-direction: column;
         gap: 24px;
@@ -112,10 +148,11 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       }
 
       .title {
-        font-size: 1.1rem;
-        letter-spacing: 0.32em;
-        color: rgba(255, 255, 255, 0.75);
+        font-size: 1rem;
+        letter-spacing: 0.4em;
+        color: var(--txt-soft);
         margin: 0;
+        text-transform: uppercase;
       }
 
       .wheel-wrap {
@@ -127,16 +164,20 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       canvas {
         width: min(420px, 86vw);
         height: auto;
-        background: rgba(255, 255, 255, 0.92);
+        background: radial-gradient(circle, #edf5ff 0%, #d6e8ff 100%);
         border-radius: 50%;
-        box-shadow: 0 16px 40px rgba(3, 20, 60, 0.35);
+        border: 9px solid #f8fcff;
+        box-shadow:
+          0 16px 34px rgba(4, 16, 45, 0.5),
+          inset 0 0 0 3px rgba(110, 161, 226, 0.34);
       }
 
       .result {
         font-size: 1.4rem;
         letter-spacing: 0.04em;
-        color: #cde6ff;
+        color: #dcedff;
         margin: 0;
+        min-height: 1.4em;
       }
 
       .cta {
@@ -150,10 +191,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         padding: 14px 32px;
         font-size: 1rem;
         font-weight: 700;
+        font-family: inherit;
         cursor: pointer;
-        background: linear-gradient(135deg, #32c5ff, #0b74ff);
-        color: #00112a;
-        box-shadow: 0 12px 24px rgba(11, 116, 255, 0.45);
+        background: linear-gradient(135deg, var(--btn-1), var(--btn-2));
+        color: var(--btn-txt);
+        box-shadow:
+          0 12px 24px rgba(12, 90, 191, 0.4),
+          inset 0 1px 0 rgba(255, 255, 255, 0.44);
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
       }
 
@@ -166,6 +210,17 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       button:hover:not(:disabled) {
         transform: translateY(-2px);
+      }
+
+      @media (max-width: 560px) {
+        .shell {
+          padding: 24px 18px;
+          border-radius: 24px;
+        }
+        .title {
+          letter-spacing: 0.28em;
+          font-size: 0.9rem;
+        }
       }
     </style>
   </head>
@@ -191,7 +246,9 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
 
-      let prizeNames = [];
+      const TWO_PI = Math.PI * 2;
+      const BASE_PALETTE = ['#eff6ff', '#dbeafe', '#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6'];
+      let wheelSegments = [];
       let currentAngle = 0;
       let spinning = false;
 
@@ -205,27 +262,42 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         }
       };
 
-      const expandPrizes = (list) => {
-        const expanded = [];
-        list.forEach((item) => {
-          const lastValue = Number.parseInt(item.last ?? item.quantity ?? 0, 10);
-          const qtyValue = Number.parseInt(item.quantity ?? 0, 10);
-          const qty = Number.isFinite(lastValue) && lastValue > 0
-            ? lastValue
-            : (Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 0);
-          for (let i = 0; i < qty; i += 1) {
-            expanded.push(String(item.name ?? ''));
-          }
-        });
-        return expanded.filter(Boolean).length ? expanded.filter(Boolean) : ['No Prize'];
+      const normalizePrizeStore = (list) => {
+        if (!Array.isArray(list)) {
+          return [{ name: 'No Prize', weight: 1, canDecrement: false }];
+        }
+        const segments = list
+          .map((item) => {
+            const name = String(item?.name ?? '').trim();
+            const quantityValue = Number.parseInt(item?.quantity ?? 0, 10);
+            const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 0;
+            const hasLast = item && Object.prototype.hasOwnProperty.call(item, 'last');
+            const lastValue = Number.parseInt(item?.last ?? quantity, 10);
+            const available = hasLast
+              ? (Number.isFinite(lastValue) ? Math.max(0, lastValue) : 0)
+              : quantity;
+            return {
+              name,
+              weight: available,
+              canDecrement: name !== '' && available > 0
+            };
+          })
+          .filter((segment) => segment.name !== '' && segment.weight > 0);
+
+        if (segments.length) {
+          return segments;
+        }
+        return [{ name: 'No Prize', weight: 1, canDecrement: false }];
       };
 
-      const drawWheel = (names, angle = 0) => {
+      const drawWheel = (segments, angle = 0) => {
         const size = canvas.width;
         const center = size / 2;
-        const radius = center - 10;
-        const count = names.length || 1;
-        const slice = (Math.PI * 2) / count;
+        const radius = center - 12;
+        const count = segments.length || 1;
+        const slice = TWO_PI / count;
+        const fontSize = Math.max(11, Math.min(16, 260 / count));
+
         ctx.clearRect(0, 0, size, size);
         ctx.save();
         ctx.translate(center, center);
@@ -237,43 +309,63 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          ctx.fillStyle = i % 2 === 0 ? '#f1f5f9' : '#e2e8f0';
+          ctx.fillStyle = BASE_PALETTE[i % BASE_PALETTE.length];
           ctx.fill();
-          ctx.strokeStyle = '#cbd5f5';
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(7, 44, 99, 0.4)';
           ctx.stroke();
+
           ctx.save();
           ctx.rotate(start + slice / 2);
           ctx.textAlign = 'right';
-          ctx.fillStyle = '#111';
-          ctx.font = '14px sans-serif';
-          ctx.fillText(names[i], radius - 12, 5);
+          ctx.fillStyle = '#032a5c';
+          ctx.font = `700 ${fontSize}px "Peyda Fa Num", "Segoe UI", sans-serif`;
+          ctx.fillText(segments[i].name.slice(0, 20), radius - 14, 5);
           ctx.restore();
         }
         ctx.restore();
 
-        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(center, center, radius, 0, TWO_PI);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(232, 243, 255, 0.75)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#0b2f64';
         ctx.beginPath();
         ctx.moveTo(center, 10);
         ctx.lineTo(center - 10, 30);
         ctx.lineTo(center + 10, 30);
         ctx.closePath();
         ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(center, center, 20, 0, TWO_PI);
+        ctx.fillStyle = '#0f3f80';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#dbeeff';
+        ctx.stroke();
       };
 
-      const pickResult = (names, angle) => {
-        const count = names.length || 1;
-        const slice = (Math.PI * 2) / count;
-        const normalized = (Math.PI * 2 - (angle % (Math.PI * 2)) + slice / 2) % (Math.PI * 2);
-        const index = Math.floor(normalized / slice);
-        return names[index] ?? names[0] ?? 'No Prize';
+      const chooseWeightedIndex = (segments) => {
+        const totalWeight = segments.reduce((sum, segment) => sum + segment.weight, 0);
+        if (totalWeight <= 0) {
+          return 0;
+        }
+        let roll = Math.random() * totalWeight;
+        for (let i = 0; i < segments.length; i += 1) {
+          roll -= segments[i].weight;
+          if (roll <= 0) {
+            return i;
+          }
+        }
+        return segments.length - 1;
       };
 
       const initWheel = (list) => {
-        const safeList = Array.isArray(list) && list.length
-          ? list
-          : [{ name: 'No Prize', quantity: 1, last: 1 }];
-        prizeNames = expandPrizes(safeList);
-        drawWheel(prizeNames, currentAngle);
+        wheelSegments = normalizePrizeStore(list);
+        drawWheel(wheelSegments, currentAngle);
       };
 
       const bootstrap = async () => {
@@ -288,34 +380,48 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       bootstrap();
 
       spinBtn.addEventListener('click', async () => {
-        if (spinning || !prizeNames.length) {
+        if (spinning || !wheelSegments.length) {
           return;
         }
         spinning = true;
         spinBtn.disabled = true;
         resultEl.textContent = 'Result: --';
 
-        const spinTurns = 6 + Math.random() * 3;
-        const targetAngle = currentAngle + spinTurns * Math.PI * 2 + Math.random() * Math.PI * 2;
-        const start = performance.now();
-        const duration = 2400;
+        const winnerIndex = chooseWeightedIndex(wheelSegments);
+        const winner = wheelSegments[winnerIndex] ?? wheelSegments[0];
+        const slice = TWO_PI / wheelSegments.length;
+        const winnerCenter = (winnerIndex * slice) + (slice / 2);
+        const desiredAngle = (-Math.PI / 2) - winnerCenter;
+        const normalizedCurrent = ((currentAngle % TWO_PI) + TWO_PI) % TWO_PI;
+        const delta = ((desiredAngle - normalizedCurrent) % TWO_PI + TWO_PI) % TWO_PI;
+        const spinTurns = 7 + Math.floor(Math.random() * 3);
+        const startAngle = currentAngle;
+        const targetAngle = currentAngle + (spinTurns * TWO_PI) + delta;
 
+        const startTime = performance.now();
+        const duration = 2400;
         const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
         const animate = async (now) => {
-          const elapsed = now - start;
+          const elapsed = now - startTime;
           const progress = Math.min(1, elapsed / duration);
           const eased = easeOutCubic(progress);
-          currentAngle = currentAngle + (targetAngle - currentAngle) * eased;
-          drawWheel(prizeNames, currentAngle);
+          currentAngle = startAngle + ((targetAngle - startAngle) * eased);
+          drawWheel(wheelSegments, currentAngle);
           if (progress < 1) {
             requestAnimationFrame(animate);
             return;
           }
-          const result = pickResult(prizeNames, currentAngle);
+          currentAngle = ((targetAngle % TWO_PI) + TWO_PI) % TWO_PI;
+          drawWheel(wheelSegments, currentAngle);
+          const result = winner?.name ?? 'No Prize';
           resultEl.textContent = `Result: ${result}`;
           spinning = false;
           spinBtn.disabled = false;
+
+          if (!winner?.canDecrement) {
+            return;
+          }
 
           try {
             const response = await fetch('WFM.php', {
