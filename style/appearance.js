@@ -58,7 +58,8 @@
 
   const palette = Object.keys(defaults).reduce((acc, key) => {
     const serverColor = normalizeHex(sharedAppearance?.[key] ?? "");
-    acc[key] = serverColor || storedPalette[key] || defaults[key];
+    // Prefer explicit browser-saved choices to avoid reverting to stale server cache on reload.
+    acc[key] = storedPalette[key] || serverColor || defaults[key];
     return acc;
   }, {});
 

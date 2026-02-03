@@ -1623,16 +1623,15 @@ function closeColorPickerModal() {
 
 function initAppearanceControls() {
   const stored = loadAppearanceState();
-  const hasLocalStored = APPEARANCE_KEYS.some(key => Boolean(stored[key]));
-  const hasSharedAppearance = Object.keys(SHARED_APPEARANCE).length > 0;
-  if (hasLocalStored && !hasSharedAppearance) {
-    currentAppearanceState = {
-      ...DEFAULT_APPEARANCE,
-      ...stored
-    };
-  } else {
-    currentAppearanceState = { ...DEFAULT_APPEARANCE };
-  }
+  currentAppearanceState = {
+    ...DEFAULT_APPEARANCE,
+    ...APPEARANCE_KEYS.reduce((acc, key) => {
+      if (stored[key]) {
+        acc[key] = stored[key];
+      }
+      return acc;
+    }, {})
+  };
   applyAppearancePalette(currentAppearanceState, { persist: false });
   updateAppearanceInputs(currentAppearanceState);
   savedAppearanceState = { ...currentAppearanceState };
@@ -3390,6 +3389,16 @@ async function syncSettings(payload) {
     });
     if (!response.ok) {
       console.warn("Failed to sync settings to backend:", response.statusText);
+      return false;
+    }
+    let result = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+    if (result && result.status === "error") {
+      console.warn("Failed to sync settings to backend:", result.message || "Unknown server error.");
       return false;
     }
     return true;
