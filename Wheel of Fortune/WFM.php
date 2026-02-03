@@ -1,4 +1,9 @@
 ﻿<?php
+const SETTINGS_STORE_PATH = __DIR__ . '/../data/store.json';
+const DEFAULT_PANEL_SETTINGS = [
+  'siteIcon' => ''
+];
+
 $prizeStorePath = __DIR__ . '/WF Prizes.json';
 
 function readPrizeStore(string $path): array
@@ -21,6 +26,41 @@ function writePrizeStore(string $path, array $payload): bool
     return false;
   }
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function loadJsonPayload(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function loadPanelSettings(): array
+{
+  $payload = loadJsonPayload(SETTINGS_STORE_PATH);
+  $settings = is_array($payload['settings'] ?? null) ? $payload['settings'] : [];
+  return array_merge(DEFAULT_PANEL_SETTINGS, $settings);
+}
+
+function formatSiteIconUrlForHtml(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  if (preg_match('/^(?:data:|https?:\/\/|\/\/)/i', $trimmed)) {
+    return $trimmed;
+  }
+  if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
+    return $trimmed;
+  }
+  return "../{$trimmed}";
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
@@ -68,6 +108,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 }
 
 $initialPrizes = readPrizeStore($prizeStorePath);
+$panelSettings = loadPanelSettings();
+$faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -75,7 +117,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>چرخ شانس</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <style>
       :root {
         --bg: #f4f7fb;
@@ -176,11 +218,22 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         border-radius: 50%;
         display: grid;
         place-items: center;
+        background: #f3f7ff;
+        border: 1px solid #e4ebf7;
+        overflow: hidden;
+      }
+
+      .question img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .question span {
         font-size: 2rem;
         font-weight: 700;
         color: #8da0c4;
-        background: linear-gradient(180deg, #f9fbff, #eff4fb);
-        border: 1px solid #e4ebf7;
       }
 
       .hint {
@@ -350,7 +403,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         </div>
 
         <div class="hero">
-          <div class="question">؟</div>
+          <div class="question">
+            <?php if ($faviconUrl !== ''): ?>
+              <img src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
+            <?php else: ?>
+              <span>؟</span>
+            <?php endif; ?>
+          </div>
           <p class="hint">شانس خودت رو امتحان کن و جایزه ببر</p>
         </div>
 
