@@ -165,6 +165,23 @@
   .wf-prize-disabled .table-wrapper tbody tr:hover {
     background: inherit;
   }
+  .wf-prize-row-locked {
+    opacity: 0.56;
+  }
+  .wf-prize-row-locked td {
+    background: #f8fafc;
+  }
+  .wf-action-disabled {
+    opacity: 0.55;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+  }
+  .wf-save-active {
+    box-shadow: 0 0 0 3px var(--primary-focus);
+  }
+  .wf-prize-form-locked {
+    opacity: 0.65;
+  }
   .wf-status {
     font-weight: 600;
   }

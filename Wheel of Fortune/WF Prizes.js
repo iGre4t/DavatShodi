@@ -98,6 +98,70 @@
 
     const prizes = await loadPrizes();
     renderPrizes(prizes, listEl);
+    const editState = { index: null };
+
+    function parseQuantity(rawValue, fallback = 1) {
+      const parsed = Number.parseInt(rawValue ?? "", 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    }
+
+    function getRowDraft(row) {
+      const rowNameInput = row?.querySelector('[data-field="name"]');
+      const rowQuantityInput = row?.querySelector('[data-field="quantity"]');
+      return {
+        name: String(rowNameInput?.value ?? "").trim(),
+        quantity: parseQuantity(rowQuantityInput?.value, 1)
+      };
+    }
+
+    function isDirtyRow(index, row) {
+      if (!row || !Number.isInteger(index) || index < 0 || index >= prizes.length) {
+        return false;
+      }
+      const original = prizes[index];
+      const draft = getRowDraft(row);
+      const originalName = String(original?.name ?? "").trim();
+      const originalQuantity = parseQuantity(original?.quantity, 1);
+      return draft.name !== originalName || draft.quantity !== originalQuantity;
+    }
+
+    function syncEditStateUI() {
+      const lockActive = Number.isInteger(editState.index);
+
+      listEl.querySelectorAll("tr[data-index]").forEach(row => {
+        const index = Number.parseInt(row.dataset.index ?? "", 10);
+        const isActiveRow = lockActive && index === editState.index;
+        const isLockedRow = lockActive && !isActiveRow;
+        const dirty = isDirtyRow(index, row);
+
+        const rowNameInput = row.querySelector('[data-field="name"]');
+        const rowQuantityInput = row.querySelector('[data-field="quantity"]');
+        const saveBtn = row.querySelector('button[data-action="save"]');
+        const deleteBtn = row.querySelector('button[data-action="delete"]');
+
+        row.classList.toggle("wf-prize-row-locked", isLockedRow);
+
+        if (rowNameInput) rowNameInput.disabled = isLockedRow;
+        if (rowQuantityInput) rowQuantityInput.disabled = isLockedRow;
+
+        if (deleteBtn) {
+          deleteBtn.disabled = isLockedRow || (isActiveRow && dirty);
+          deleteBtn.classList.toggle("wf-action-disabled", deleteBtn.disabled);
+        }
+
+        if (saveBtn) {
+          const canSave = isActiveRow && dirty;
+          saveBtn.disabled = !canSave;
+          saveBtn.classList.toggle("wf-save-active", canSave);
+          saveBtn.classList.toggle("wf-action-disabled", saveBtn.disabled);
+        }
+      });
+
+      form.querySelectorAll("input, button").forEach(control => {
+        control.disabled = lockActive;
+      });
+      form.classList.toggle("wf-prize-form-locked", lockActive);
+    }
 
     async function refreshStatus() {
       try {
@@ -135,6 +199,27 @@
     refreshStatus();
     setInterval(refreshStatus, 5000);
 
+    listEl.addEventListener("input", event => {
+      const field = event.target.closest('[data-field="name"], [data-field="quantity"]');
+      if (!field) {
+        return;
+      }
+      const row = field.closest("tr[data-index]");
+      const index = Number.parseInt(row?.dataset?.index ?? "", 10);
+      if (!Number.isInteger(index) || index < 0 || index >= prizes.length) {
+        return;
+      }
+
+      const dirty = isDirtyRow(index, row);
+      if (!Number.isInteger(editState.index) && dirty) {
+        editState.index = index;
+      } else if (editState.index === index && !dirty) {
+        editState.index = null;
+      }
+
+      syncEditStateUI();
+    });
+
     listEl.addEventListener("click", async event => {
       const button = event.target.closest("button");
       if (!button) {
@@ -147,12 +232,23 @@
       }
       const action = button.dataset.action;
       if (action === "delete") {
+        if (Number.isInteger(editState.index) && editState.index !== index) {
+          return;
+        }
+        if (editState.index === index && isDirtyRow(index, row)) {
+          return;
+        }
         prizes.splice(index, 1);
+        editState.index = null;
         await savePrizes(prizes);
         renderPrizes(prizes, listEl);
+        syncEditStateUI();
         return;
       }
       if (action === "save") {
+        if (Number.isInteger(editState.index) && editState.index !== index) {
+          return;
+        }
         const nameInput = row.querySelector('[data-field="name"]');
         const quantityInput = row.querySelector('[data-field="quantity"]');
         const name = String(nameInput?.value ?? "").trim();
@@ -160,30 +256,36 @@
           nameInput?.focus();
           return;
         }
-        const quantityValue = Number.parseInt(quantityInput?.value ?? "", 10);
-        const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
+        const quantity = parseQuantity(quantityInput?.value, 1);
         prizes[index] = { name, quantity, last: quantity };
+        editState.index = null;
         await savePrizes(prizes);
         renderPrizes(prizes, listEl);
+        syncEditStateUI();
       }
     });
 
     form.addEventListener("submit", async event => {
       event.preventDefault();
+      if (Number.isInteger(editState.index)) {
+        return;
+      }
       const name = String(nameInput.value ?? "").trim();
       if (!name) {
         nameInput.focus();
         return;
       }
-      const quantityValue = Number.parseInt(quantityInput.value ?? "", 10);
-      const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
+      const quantity = parseQuantity(quantityInput.value, 1);
       prizes.push({ name, quantity, last: quantity });
       await savePrizes(prizes);
       renderPrizes(prizes, listEl);
       nameInput.value = "";
       quantityInput.value = "1";
       nameInput.focus();
+      syncEditStateUI();
     });
+
+    syncEditStateUI();
   }
 
   if (document.readyState === "loading") {
