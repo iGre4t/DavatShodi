@@ -32,7 +32,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'decrement_prize') {
     $name = trim((string)($payload['name'] ?? ''));
     if ($name === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Missing prize name.']);
+      echo json_encode(['status' => 'error', 'message' => 'نام جایزه ارسال نشده است.']);
       exit;
     }
     $prizes = readPrizeStore($prizeStorePath);
@@ -56,25 +56,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     if (!writePrizeStore($prizeStorePath, $updated)) {
-      echo json_encode(['status' => 'error', 'message' => 'Unable to save prizes.']);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه‌ها انجام نشد.']);
       exit;
     }
     echo json_encode(['status' => 'ok', 'data' => $updated]);
     exit;
   }
 
-  echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
+  echo json_encode(['status' => 'error', 'message' => 'درخواست پشتیبانی نمی‌شود.']);
   exit;
 }
 
 $initialPrizes = readPrizeStore($prizeStorePath);
 ?>
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="fa" dir="rtl">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Wheel of Fortune</title>
+    <title>چرخ شانس</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -83,9 +83,9 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         --ink: #1f2a44;
         --muted: #7f8baa;
         --line: #e8edf6;
-        --accent: #ec4ca5;
+        --accent: #2f8fff;
         --accent-ink: #ffffff;
-        --soft-pink: #fdf1f8;
+        --soft-pink: #eef5ff;
         --soft-blue: #eef5ff;
         font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         color-scheme: light;
@@ -122,11 +122,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         align-items: center;
         justify-content: center;
         background:
-          linear-gradient(160deg, rgba(255, 216, 242, 0.45), rgba(244, 247, 251, 0) 40%),
+          linear-gradient(160deg, rgba(206, 227, 255, 0.5), rgba(244, 247, 251, 0) 40%),
           linear-gradient(330deg, rgba(215, 230, 255, 0.5), rgba(244, 247, 251, 0) 42%),
           var(--bg);
         color: var(--ink);
         padding: 18px;
+        direction: rtl;
+        text-align: right;
       }
 
       .app {
@@ -151,37 +153,15 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       .topbar {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-start;
         padding: 14px 16px 10px;
-      }
-
-      .nav-icon {
-        width: 34px;
-        height: 34px;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        display: grid;
-        place-items: center;
-        font-weight: 700;
-        color: #516083;
-        background: #fff;
       }
 
       .brand {
         margin: 0;
-        font-size: 0.92rem;
+        font-size: 0.96rem;
         color: #506081;
         letter-spacing: 0.12em;
-      }
-
-      .badge {
-        font-size: 0.68rem;
-        font-weight: 700;
-        padding: 4px 8px;
-        border-radius: 999px;
-        color: #be2f79;
-        background: #ffe8f4;
-        border: 1px solid #ffd3e9;
       }
 
       .hero {
@@ -217,7 +197,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         background: #f9fbff;
         display: grid;
         gap: 2px;
-        place-items: center;
+        justify-items: end;
         padding: 8px 10px;
       }
 
@@ -232,6 +212,8 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         font-weight: 700;
         color: #29365b;
         min-height: 1.3em;
+        direction: rtl;
+        unicode-bidi: plaintext;
       }
 
       .wheel-shell {
@@ -284,9 +266,9 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         transform: translateX(-50%);
         border-left: 12px solid transparent;
         border-right: 12px solid transparent;
-        border-top: 22px solid #ec4ca5;
+        border-top: 22px solid #2f8fff;
         z-index: 3;
-        filter: drop-shadow(0 4px 8px rgba(211, 56, 142, 0.35));
+        filter: drop-shadow(0 4px 8px rgba(41, 115, 214, 0.35));
       }
 
       .center-spin {
@@ -332,6 +314,8 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         border: 1px solid #e5ecf7;
         border-radius: 999px;
         padding: 4px 8px;
+        direction: rtl;
+        unicode-bidi: plaintext;
       }
 
       @media (max-width: 440px) {
@@ -360,26 +344,24 @@ $initialPrizes = readPrizeStore($prizeStorePath);
     <main class="app">
       <section class="phone">
         <div class="topbar">
-          <div class="nav-icon" aria-hidden="true">&#8592;</div>
-          <p class="brand">Wheel of Fortune</p>
-          <div class="badge">SPIN</div>
+          <p class="brand">چرخ شانس</p>
         </div>
 
         <div class="hero">
-          <div class="question">?</div>
-          <p class="hint">Try your luck and win a prize</p>
+          <div class="question">؟</div>
+          <p class="hint">شانس خودت رو امتحان کن و جایزه ببر</p>
         </div>
 
         <div class="result">
-          <span class="result-label">Result</span>
-          <p id="wf-result" class="result-value">--</p>
+          <span class="result-label">نتیجه</span>
+          <p id="wf-result" class="result-value">—</p>
         </div>
 
         <div class="wheel-shell">
           <div class="pointer" aria-hidden="true"></div>
-          <div id="wf-count" class="wheel-count">Items: --</div>
-          <canvas id="wf-wheel" width="420" height="420" aria-label="Prize wheel"></canvas>
-          <button id="wf-spin" class="center-spin" type="button">SPIN</button>
+          <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
+          <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
+          <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
         </div>
       </section>
     </main>
@@ -394,6 +376,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
       const countEl = document.getElementById('wf-count');
+      const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -421,7 +404,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       const normalizeSourcePrizes = (list) => {
         if (!Array.isArray(list)) {
-          return [{ name: 'No Prize', weight: 1, canDecrement: false }];
+          return [{ name: 'بدون جایزه', weight: 1, canDecrement: false }];
         }
 
         const normalized = list
@@ -444,14 +427,14 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
         return normalized.length
           ? normalized
-          : [{ name: 'No Prize', weight: 1, canDecrement: false }];
+          : [{ name: 'بدون جایزه', weight: 1, canDecrement: false }];
       };
 
       const buildDisplaySegments = (prizes) => {
         if (!prizes.length) {
           return Array.from({ length: MIN_VISIBLE_SEGMENTS }, () => ({
-            label: 'No Prize',
-            source: 'No Prize',
+            label: 'بدون جایزه',
+            source: 'بدون جایزه',
             canDecrement: false
           }));
         }
@@ -550,7 +533,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
         ctx.beginPath();
         ctx.arc(center, center, 24, 0, TWO_PI);
-        ctx.fillStyle = '#ec4ca5';
+        ctx.fillStyle = '#2f8fff';
         ctx.fill();
         ctx.lineWidth = 3;
         ctx.strokeStyle = '#ffffff';
@@ -560,7 +543,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const weightedPrizePick = (prizes) => {
         const total = prizes.reduce((sum, prize) => sum + prize.weight, 0);
         if (total <= 0) {
-          return prizes[0] ?? { name: 'No Prize', canDecrement: false };
+          return prizes[0] ?? { name: 'بدون جایزه', canDecrement: false };
         }
         let roll = Math.random() * total;
         for (let i = 0; i < prizes.length; i += 1) {
@@ -588,7 +571,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const initWheel = (list) => {
         sourcePrizes = normalizeSourcePrizes(list);
         wheelSegments = buildDisplaySegments(sourcePrizes);
-        countEl.textContent = `Items: ${wheelSegments.length}`;
+        countEl.textContent = `تعداد آیتم‌ها: ${toFaDigits(wheelSegments.length)}`;
         drawWheel(wheelSegments, currentAngle);
       };
 
@@ -615,7 +598,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         }
         spinning = true;
         spinBtn.disabled = true;
-        resultEl.textContent = '--';
+        resultEl.textContent = '—';
 
         const winnerPrize = weightedPrizePick(sourcePrizes);
         const winnerIndex = pickDisplayIndexForPrize(wheelSegments, winnerPrize.name);
@@ -644,7 +627,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
           currentAngle = ((targetAngle % TWO_PI) + TWO_PI) % TWO_PI;
           drawWheel(wheelSegments, currentAngle);
-          resultEl.textContent = winnerPrize?.name ?? 'No Prize';
+          resultEl.textContent = winnerPrize?.name ?? 'بدون جایزه';
           spinning = false;
           spinBtn.disabled = false;
 
