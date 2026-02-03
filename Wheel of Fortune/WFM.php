@@ -78,15 +78,17 @@ $initialPrizes = readPrizeStore($prizeStorePath);
     <link rel="icon" href="data:," />
     <style>
       :root {
-        --bg: #0a1f47;
-        --shell: #0f2d62;
-        --line: rgba(191, 224, 255, 0.24);
-        --txt-main: #e8f4ff;
-        --txt-soft: #9ab9de;
-        --btn: #2f9bf0;
-        --btn-txt: #032146;
+        --bg: #f4f7fb;
+        --phone: #ffffff;
+        --ink: #1f2a44;
+        --muted: #7f8baa;
+        --line: #e8edf6;
+        --accent: #ec4ca5;
+        --accent-ink: #ffffff;
+        --soft-pink: #fdf1f8;
+        --soft-blue: #eef5ff;
         font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
-        color-scheme: dark;
+        color-scheme: light;
       }
 
       @font-face {
@@ -119,115 +121,268 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--bg);
-        color: var(--txt-main);
-        padding: 0;
+        background:
+          linear-gradient(160deg, rgba(255, 216, 242, 0.45), rgba(244, 247, 251, 0) 40%),
+          linear-gradient(330deg, rgba(215, 230, 255, 0.5), rgba(244, 247, 251, 0) 42%),
+          var(--bg);
+        color: var(--ink);
+        padding: 18px;
       }
 
-      .shell {
-        width: min(560px, 100%);
-        padding: 20px 18px 22px;
-        border-radius: 18px;
-        background: var(--shell);
+      .app {
+        width: min(460px, 100%);
+      }
+
+      .phone {
+        width: 100%;
+        min-height: min(860px, calc(100vh - 36px));
+        background: var(--phone);
         border: 1px solid var(--line);
+        border-radius: 28px;
         box-shadow:
-          0 18px 34px rgba(2, 10, 30, 0.38),
-          inset 0 1px 0 rgba(245, 251, 255, 0.2);
+          0 26px 50px rgba(29, 55, 96, 0.14),
+          inset 0 1px 0 #fff;
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .topbar {
+        display: flex;
         align-items: center;
-        text-align: center;
+        justify-content: space-between;
+        padding: 14px 16px 10px;
       }
 
-      .title {
-        font-size: 1rem;
-        letter-spacing: 0.4em;
-        color: var(--txt-soft);
-        margin: 0;
-        text-transform: uppercase;
-      }
-
-      .wheel-wrap {
-        width: min(420px, 96vw);
+      .nav-icon {
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
         display: grid;
         place-items: center;
+        font-weight: 700;
+        color: #516083;
+        background: #fff;
       }
 
-      canvas {
-        width: 100%;
-        height: auto;
-        background: #dcecff;
+      .brand {
+        margin: 0;
+        font-size: 0.92rem;
+        color: #506081;
+        letter-spacing: 0.12em;
+      }
+
+      .badge {
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 4px 8px;
+        border-radius: 999px;
+        color: #be2f79;
+        background: #ffe8f4;
+        border: 1px solid #ffd3e9;
+      }
+
+      .hero {
+        display: grid;
+        place-items: center;
+        padding: 10px 18px 4px;
+      }
+
+      .question {
+        width: 82px;
+        height: 82px;
         border-radius: 50%;
-        border: 3px solid #f7fcff;
-        box-shadow:
-          0 10px 20px rgba(2, 14, 40, 0.34),
-          inset 0 0 0 1px rgba(132, 178, 236, 0.35);
+        display: grid;
+        place-items: center;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #8da0c4;
+        background: linear-gradient(180deg, #f9fbff, #eff4fb);
+        border: 1px solid #e4ebf7;
+      }
+
+      .hint {
+        margin: 10px 0 0;
+        font-size: 0.85rem;
+        color: var(--muted);
       }
 
       .result {
-        font-size: 1.4rem;
-        letter-spacing: 0.04em;
-        color: #dcedff;
+        margin: 10px auto 0;
+        width: min(300px, calc(100% - 32px));
+        border: 1px solid #e8edf6;
+        border-radius: 14px;
+        background: #f9fbff;
+        display: grid;
+        gap: 2px;
+        place-items: center;
+        padding: 8px 10px;
+      }
+
+      .result-label {
+        font-size: 0.78rem;
+        color: #8a97b2;
+      }
+
+      .result-value {
         margin: 0;
-        min-height: 1.4em;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #29365b;
+        min-height: 1.3em;
       }
 
-      .cta {
-        display: flex;
-        justify-content: center;
+      .wheel-shell {
+        margin-top: auto;
+        position: relative;
+        height: min(360px, 47vh);
+        background:
+          linear-gradient(180deg, var(--soft-pink), #fff 44%, var(--soft-blue));
+        border-top: 1px solid #edf1f8;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
       }
 
-      button {
+      .wheel-shell::before {
+        content: '';
+        position: absolute;
+        width: 640px;
+        height: 640px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.46);
+        border: 1px solid #ecf0f7;
+        left: 50%;
+        top: 58%;
+        transform: translate(-50%, -50%);
+      }
+
+      canvas {
+        width: min(520px, 122vw);
+        height: auto;
+        background: #fff;
+        border-radius: 50%;
+        border: 2px solid #edf2fa;
+        box-shadow:
+          0 18px 34px rgba(30, 62, 108, 0.12),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.84);
+        position: absolute;
+        left: 50%;
+        top: 14px;
+        transform: translateX(-50%);
+        z-index: 1;
+      }
+
+      .pointer {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        width: 0;
+        height: 0;
+        transform: translateX(-50%);
+        border-left: 12px solid transparent;
+        border-right: 12px solid transparent;
+        border-top: 22px solid #ec4ca5;
+        z-index: 3;
+        filter: drop-shadow(0 4px 8px rgba(211, 56, 142, 0.35));
+      }
+
+      .center-spin {
+        position: absolute;
+        left: 50%;
+        top: calc(14px + min(520px, 122vw) / 2 - 30px);
+        transform: translateX(-50%);
         border: none;
-        border-radius: 12px;
-        padding: 14px 32px;
-        font-size: 1rem;
+        border-radius: 999px;
+        width: 90px;
+        height: 90px;
+        font-size: 0.95rem;
         font-weight: 700;
         font-family: inherit;
-        cursor: pointer;
-        background: var(--btn);
-        color: var(--btn-txt);
+        color: var(--accent-ink);
+        background: var(--accent);
         box-shadow:
-          0 10px 18px rgba(12, 90, 191, 0.32),
-          inset 0 1px 0 rgba(255, 255, 255, 0.44);
-        transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+          0 14px 24px rgba(231, 58, 155, 0.3),
+          inset 0 1px 0 rgba(255, 255, 255, 0.46);
+        cursor: pointer;
+        z-index: 4;
+        transition: transform 0.2s ease, opacity 0.2s ease;
       }
 
-      button:disabled {
+      .center-spin:hover:not(:disabled) {
+        transform: translateX(-50%) translateY(-2px);
+      }
+
+      .center-spin:disabled {
         opacity: 0.45;
         cursor: not-allowed;
-        transform: none;
-        box-shadow: none;
       }
 
-      button:hover:not(:disabled) {
-        transform: translateY(-2px);
+      .wheel-count {
+        position: absolute;
+        right: 12px;
+        top: 12px;
+        z-index: 4;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #6f7c98;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid #e5ecf7;
+        border-radius: 999px;
+        padding: 4px 8px;
       }
 
-      @media (max-width: 560px) {
-        .shell {
-          padding: 24px 18px;
-          border-radius: 14px;
+      @media (max-width: 440px) {
+        body {
+          padding: 10px;
         }
-        .title {
-          letter-spacing: 0.28em;
-          font-size: 0.9rem;
+
+        .phone {
+          border-radius: 22px;
+          min-height: calc(100vh - 20px);
+        }
+
+        .wheel-shell {
+          height: min(340px, 48vh);
+        }
+
+        .center-spin {
+          width: 82px;
+          height: 82px;
+          font-size: 0.88rem;
         }
       }
     </style>
   </head>
   <body>
-    <div class="shell">
-      <p class="title">Wheel of Fortune</p>
-      <div class="wheel-wrap">
-        <canvas id="wf-wheel" width="420" height="420" aria-label="Prize wheel"></canvas>
-      </div>
-      <p id="wf-result" class="result">Result: --</p>
-      <div class="cta">
-        <button id="wf-spin" type="button">Spin</button>
-      </div>
-    </div>
+    <main class="app">
+      <section class="phone">
+        <div class="topbar">
+          <div class="nav-icon" aria-hidden="true">&#8592;</div>
+          <p class="brand">Wheel of Fortune</p>
+          <div class="badge">SPIN</div>
+        </div>
+
+        <div class="hero">
+          <div class="question">?</div>
+          <p class="hint">Try your luck and win a prize</p>
+        </div>
+
+        <div class="result">
+          <span class="result-label">Result</span>
+          <p id="wf-result" class="result-value">--</p>
+        </div>
+
+        <div class="wheel-shell">
+          <div class="pointer" aria-hidden="true"></div>
+          <div id="wf-count" class="wheel-count">Items: --</div>
+          <canvas id="wf-wheel" width="420" height="420" aria-label="Prize wheel"></canvas>
+          <button id="wf-spin" class="center-spin" type="button">SPIN</button>
+        </div>
+      </section>
+    </main>
 
     <script>
       const initialPrizes = Array.isArray(<?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>)
@@ -238,31 +393,21 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const ctx = canvas.getContext('2d');
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
+      const countEl = document.getElementById('wf-count');
 
       const TWO_PI = Math.PI * 2;
-      const DEFAULT_SIZE = 420;
+      const MIN_VISIBLE_SEGMENTS = 10;
+      const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
-        '#f2f8ff',
-        '#dfeeff',
-        '#cbe3ff',
-        '#b6d7ff',
-        '#a0cbff',
-        '#8abeff'
+        '#ffffff', '#f8fbff', '#f3f8ff', '#edf4ff', '#e8f1ff',
+        '#fdf7fb', '#fcf2f9', '#faf6ff', '#f6f4ff', '#f2f7ff'
       ];
+
+      let sourcePrizes = [];
       let wheelSegments = [];
       let currentAngle = 0;
       let spinning = false;
-      let wheelSize = DEFAULT_SIZE;
-
-      const configureCanvas = () => {
-        const rect = canvas.getBoundingClientRect();
-        const cssSize = Math.max(280, Math.round(rect.width || DEFAULT_SIZE));
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = Math.round(cssSize * dpr);
-        canvas.height = Math.round(cssSize * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        wheelSize = cssSize;
-      };
+      let wheelSize = 420;
 
       const loadPrizeStore = async () => {
         try {
@@ -274,46 +419,104 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         }
       };
 
-      const normalizePrizeStore = (list) => {
+      const normalizeSourcePrizes = (list) => {
         if (!Array.isArray(list)) {
           return [{ name: 'No Prize', weight: 1, canDecrement: false }];
         }
-        const segments = list
+
+        const normalized = list
           .map((item) => {
             const name = String(item?.name ?? '').trim();
             const quantityValue = Number.parseInt(item?.quantity ?? 0, 10);
             const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 0;
             const hasLast = item && Object.prototype.hasOwnProperty.call(item, 'last');
             const lastValue = Number.parseInt(item?.last ?? quantity, 10);
-            const available = hasLast
+            const remaining = hasLast
               ? (Number.isFinite(lastValue) ? Math.max(0, lastValue) : 0)
               : quantity;
             return {
               name,
-              weight: available,
-              canDecrement: name !== '' && available > 0
+              weight: remaining,
+              canDecrement: name !== '' && remaining > 0
             };
           })
-          .filter((segment) => segment.name !== '' && segment.weight > 0);
+          .filter((prize) => prize.name !== '' && prize.weight > 0);
 
-        if (segments.length) {
-          return segments;
+        return normalized.length
+          ? normalized
+          : [{ name: 'No Prize', weight: 1, canDecrement: false }];
+      };
+
+      const buildDisplaySegments = (prizes) => {
+        if (!prizes.length) {
+          return Array.from({ length: MIN_VISIBLE_SEGMENTS }, () => ({
+            label: 'No Prize',
+            source: 'No Prize',
+            canDecrement: false
+          }));
         }
-        return [{ name: 'No Prize', weight: 1, canDecrement: false }];
+
+        const maxWeight = Math.max(...prizes.map((prize) => prize.weight), 1);
+        const segments = [];
+
+        prizes.forEach((prize) => {
+          const relative = prize.weight / maxWeight;
+          const repeats = Math.max(2, Math.min(5, Math.round(relative * 4) + 1));
+          for (let i = 0; i < repeats; i += 1) {
+            segments.push({
+              label: prize.name,
+              source: prize.name,
+              canDecrement: prize.canDecrement
+            });
+          }
+        });
+
+        let index = 0;
+        while (segments.length < MIN_VISIBLE_SEGMENTS) {
+          const seed = prizes[index % prizes.length];
+          segments.push({
+            label: seed.name,
+            source: seed.name,
+            canDecrement: seed.canDecrement
+          });
+          index += 1;
+        }
+
+        if (segments.length > MAX_VISIBLE_SEGMENTS) {
+          const trimmed = [];
+          const step = segments.length / MAX_VISIBLE_SEGMENTS;
+          for (let i = 0; i < MAX_VISIBLE_SEGMENTS; i += 1) {
+            trimmed.push(segments[Math.floor(i * step)]);
+          }
+          return trimmed;
+        }
+
+        return segments;
+      };
+
+      const configureCanvas = () => {
+        const rect = canvas.getBoundingClientRect();
+        const cssSize = Math.max(320, Math.round(rect.width || 420));
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(cssSize * dpr);
+        canvas.height = Math.round(cssSize * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        wheelSize = cssSize;
       };
 
       const drawWheel = (segments, angle = 0) => {
         const size = wheelSize;
         const center = size / 2;
         const radius = center - 12;
-        const count = segments.length || 1;
+        const count = Math.max(segments.length, 1);
         const slice = TWO_PI / count;
-        const fontSize = Math.max(12, Math.min(17, 268 / count));
+        const fontSize = Math.max(10, Math.min(14, 220 / count));
 
         ctx.clearRect(0, 0, size, size);
         ctx.save();
         ctx.translate(center, center);
         ctx.rotate(angle);
+
         for (let i = 0; i < count; i += 1) {
           const start = i * slice;
           const end = start + slice;
@@ -323,65 +526,69 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.closePath();
           ctx.fillStyle = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
           ctx.fill();
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = 'rgba(7, 44, 99, 0.4)';
+          ctx.lineWidth = 1.15;
+          ctx.strokeStyle = '#e5ecf8';
           ctx.stroke();
 
           ctx.save();
-          ctx.rotate(start + slice / 2);
+          ctx.rotate(start + (slice / 2));
           ctx.textAlign = 'right';
           ctx.textBaseline = 'middle';
-          ctx.fillStyle = '#032a5c';
           ctx.font = `700 ${fontSize}px "Peyda Fa Num", "Segoe UI", sans-serif`;
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = 'rgba(244, 250, 255, 0.8)';
-          const label = String(segments[i]?.name ?? '').slice(0, 24);
-          ctx.strokeText(label, radius - 14, 0);
+          ctx.fillStyle = '#33456e';
+          const label = String(segments[i]?.label ?? '').slice(0, 16);
           ctx.fillText(label, radius - 14, 0);
           ctx.restore();
         }
-        ctx.restore();
 
+        ctx.restore();
         ctx.beginPath();
         ctx.arc(center, center, radius, 0, TWO_PI);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = 'rgba(232, 243, 255, 0.75)';
+        ctx.lineWidth = 2.6;
+        ctx.strokeStyle = '#eef3fb';
         ctx.stroke();
 
-        ctx.fillStyle = '#0b2f64';
         ctx.beginPath();
-        ctx.moveTo(center, 10);
-        ctx.lineTo(center - 10, 30);
-        ctx.lineTo(center + 10, 30);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(center, center, 20, 0, TWO_PI);
-        ctx.fillStyle = '#0f3f80';
+        ctx.arc(center, center, 24, 0, TWO_PI);
+        ctx.fillStyle = '#ec4ca5';
         ctx.fill();
         ctx.lineWidth = 3;
-        ctx.strokeStyle = '#dbeeff';
+        ctx.strokeStyle = '#ffffff';
         ctx.stroke();
       };
 
-      const chooseWeightedIndex = (segments) => {
-        const totalWeight = segments.reduce((sum, segment) => sum + segment.weight, 0);
-        if (totalWeight <= 0) {
-          return 0;
+      const weightedPrizePick = (prizes) => {
+        const total = prizes.reduce((sum, prize) => sum + prize.weight, 0);
+        if (total <= 0) {
+          return prizes[0] ?? { name: 'No Prize', canDecrement: false };
         }
-        let roll = Math.random() * totalWeight;
-        for (let i = 0; i < segments.length; i += 1) {
-          roll -= segments[i].weight;
+        let roll = Math.random() * total;
+        for (let i = 0; i < prizes.length; i += 1) {
+          roll -= prizes[i].weight;
           if (roll <= 0) {
-            return i;
+            return prizes[i];
           }
         }
-        return segments.length - 1;
+        return prizes[prizes.length - 1];
+      };
+
+      const pickDisplayIndexForPrize = (segments, prizeName) => {
+        const matches = [];
+        segments.forEach((segment, index) => {
+          if (segment.source === prizeName) {
+            matches.push(index);
+          }
+        });
+        if (!matches.length) {
+          return 0;
+        }
+        return matches[Math.floor(Math.random() * matches.length)];
       };
 
       const initWheel = (list) => {
-        wheelSegments = normalizePrizeStore(list);
+        sourcePrizes = normalizeSourcePrizes(list);
+        wheelSegments = buildDisplaySegments(sourcePrizes);
+        countEl.textContent = `Items: ${wheelSegments.length}`;
         drawWheel(wheelSegments, currentAngle);
       };
 
@@ -403,15 +610,15 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       });
 
       spinBtn.addEventListener('click', async () => {
-        if (spinning || !wheelSegments.length) {
+        if (spinning || !wheelSegments.length || !sourcePrizes.length) {
           return;
         }
         spinning = true;
         spinBtn.disabled = true;
-        resultEl.textContent = 'Result: --';
+        resultEl.textContent = '--';
 
-        const winnerIndex = chooseWeightedIndex(wheelSegments);
-        const winner = wheelSegments[winnerIndex] ?? wheelSegments[0];
+        const winnerPrize = weightedPrizePick(sourcePrizes);
+        const winnerIndex = pickDisplayIndexForPrize(wheelSegments, winnerPrize.name);
         const slice = TWO_PI / wheelSegments.length;
         const winnerCenter = (winnerIndex * slice) + (slice / 2);
         const desiredAngle = (-Math.PI / 2) - winnerCenter;
@@ -420,9 +627,8 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         const spinTurns = 7 + Math.floor(Math.random() * 3);
         const startAngle = currentAngle;
         const targetAngle = currentAngle + (spinTurns * TWO_PI) + delta;
-
         const startTime = performance.now();
-        const duration = 2400;
+        const duration = 2500;
         const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
         const animate = async (now) => {
@@ -435,14 +641,14 @@ $initialPrizes = readPrizeStore($prizeStorePath);
             requestAnimationFrame(animate);
             return;
           }
+
           currentAngle = ((targetAngle % TWO_PI) + TWO_PI) % TWO_PI;
           drawWheel(wheelSegments, currentAngle);
-          const result = winner?.name ?? 'No Prize';
-          resultEl.textContent = `Result: ${result}`;
+          resultEl.textContent = winnerPrize?.name ?? 'No Prize';
           spinning = false;
           spinBtn.disabled = false;
 
-          if (!winner?.canDecrement) {
+          if (!winnerPrize?.canDecrement) {
             return;
           }
 
@@ -450,7 +656,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
             const response = await fetch('WFM.php', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'decrement_prize', name: result })
+              body: JSON.stringify({ action: 'decrement_prize', name: winnerPrize.name })
             });
             const payload = await response.json();
             if (response.ok && payload?.status === 'ok' && Array.isArray(payload.data)) {
