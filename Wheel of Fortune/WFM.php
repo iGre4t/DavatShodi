@@ -78,15 +78,16 @@ $initialPrizes = readPrizeStore($prizeStorePath);
     <link rel="icon" href="data:," />
     <style>
       :root {
-        --bg-1: #07163b;
-        --bg-2: #0f3474;
-        --shell-1: rgba(13, 37, 82, 0.84);
-        --shell-2: rgba(5, 22, 53, 0.94);
-        --line: rgba(184, 219, 255, 0.2);
+        --bg-1: #020b21;
+        --bg-2: #0b2a5e;
+        --bg-3: #0f4f9e;
+        --shell-1: rgba(8, 26, 58, 0.9);
+        --shell-2: rgba(4, 17, 41, 0.94);
+        --line: rgba(191, 224, 255, 0.24);
         --txt-main: #e8f4ff;
-        --txt-soft: #a9c6e8;
-        --btn-1: #62c2ff;
-        --btn-2: #1a7dd8;
+        --txt-soft: #9ab9de;
+        --btn-1: #85dbff;
+        --btn-2: #2c9cf4;
         --btn-txt: #032146;
         font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         color-scheme: dark;
@@ -123,9 +124,9 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         align-items: center;
         justify-content: center;
         background:
-          radial-gradient(circle at 15% 10%, rgba(126, 185, 255, 0.25), transparent 38%),
-          radial-gradient(circle at 85% 85%, rgba(84, 141, 232, 0.2), transparent 44%),
-          linear-gradient(135deg, var(--bg-1), var(--bg-2));
+          radial-gradient(900px 560px at 6% -8%, rgba(139, 201, 255, 0.24), transparent 58%),
+          radial-gradient(820px 520px at 96% 110%, rgba(100, 160, 255, 0.2), transparent 62%),
+          linear-gradient(140deg, var(--bg-1) 0%, var(--bg-2) 54%, var(--bg-3) 100%);
         color: var(--txt-main);
         padding: 24px;
       }
@@ -133,13 +134,12 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       .shell {
         width: min(560px, 100%);
         padding: 32px 28px;
-        border-radius: 32px;
+        border-radius: 18px;
         background: linear-gradient(180deg, var(--shell-1), var(--shell-2));
         border: 1px solid var(--line);
         box-shadow:
-          0 20px 46px rgba(2, 12, 36, 0.55),
-          inset 0 1px 0 rgba(229, 242, 255, 0.14);
-        backdrop-filter: blur(4px);
+          0 24px 46px rgba(2, 10, 30, 0.5),
+          inset 0 1px 0 rgba(245, 251, 255, 0.2);
         display: flex;
         flex-direction: column;
         gap: 24px;
@@ -164,12 +164,12 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       canvas {
         width: min(420px, 86vw);
         height: auto;
-        background: radial-gradient(circle, #edf5ff 0%, #d6e8ff 100%);
+        background: radial-gradient(circle, #f4f9ff 0%, #d8e9ff 100%);
         border-radius: 50%;
-        border: 9px solid #f8fcff;
+        border: 7px solid #f7fcff;
         box-shadow:
-          0 16px 34px rgba(4, 16, 45, 0.5),
-          inset 0 0 0 3px rgba(110, 161, 226, 0.34);
+          0 14px 28px rgba(2, 14, 40, 0.45),
+          inset 0 0 0 2px rgba(132, 178, 236, 0.35);
       }
 
       .result {
@@ -187,7 +187,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       button {
         border: none;
-        border-radius: 999px;
+        border-radius: 12px;
         padding: 14px 32px;
         font-size: 1rem;
         font-weight: 700;
@@ -215,7 +215,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       @media (max-width: 560px) {
         .shell {
           padding: 24px 18px;
-          border-radius: 24px;
+          border-radius: 14px;
         }
         .title {
           letter-spacing: 0.28em;
@@ -247,17 +247,29 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const resultEl = document.getElementById('wf-result');
 
       const TWO_PI = Math.PI * 2;
+      const DEFAULT_SIZE = 420;
       const SEGMENT_GRADIENTS = [
-        ['#f5fbff', '#9bc8ff'],
-        ['#e8f5ff', '#7bb5ff'],
-        ['#d9ecff', '#5f9eff'],
-        ['#cfe4ff', '#4b8ef2'],
-        ['#bfdcff', '#3b7fe5'],
-        ['#b0d5ff', '#2f72d8']
+        ['#f7fcff', '#a5d2ff'],
+        ['#e9f6ff', '#82bfff'],
+        ['#d9ecff', '#63a7ff'],
+        ['#cde4ff', '#4c95f2'],
+        ['#c0dcff', '#3a83e4'],
+        ['#b3d5ff', '#2d76d8']
       ];
       let wheelSegments = [];
       let currentAngle = 0;
       let spinning = false;
+      let wheelSize = DEFAULT_SIZE;
+
+      const configureCanvas = () => {
+        const rect = canvas.getBoundingClientRect();
+        const cssSize = Math.max(280, Math.round(rect.width || DEFAULT_SIZE));
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(cssSize * dpr);
+        canvas.height = Math.round(cssSize * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        wheelSize = cssSize;
+      };
 
       const loadPrizeStore = async () => {
         try {
@@ -298,12 +310,12 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       };
 
       const drawWheel = (segments, angle = 0) => {
-        const size = canvas.width;
+        const size = wheelSize;
         const center = size / 2;
         const radius = center - 12;
         const count = segments.length || 1;
         const slice = TWO_PI / count;
-        const fontSize = Math.max(11, Math.min(16, 260 / count));
+        const fontSize = Math.max(12, Math.min(17, 268 / count));
 
         ctx.clearRect(0, 0, size, size);
         ctx.save();
@@ -335,9 +347,14 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.save();
           ctx.rotate(start + slice / 2);
           ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
           ctx.fillStyle = '#032a5c';
           ctx.font = `700 ${fontSize}px "Peyda Fa Num", "Segoe UI", sans-serif`;
-          ctx.fillText(segments[i].name.slice(0, 20), radius - 14, 5);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(244, 250, 255, 0.8)';
+          const label = String(segments[i]?.name ?? '').slice(0, 24);
+          ctx.strokeText(label, radius - 14, 0);
+          ctx.fillText(label, radius - 14, 0);
           ctx.restore();
         }
         ctx.restore();
@@ -404,7 +421,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         initWheel(loaded);
       };
 
+      configureCanvas();
       bootstrap();
+
+      window.addEventListener('resize', () => {
+        configureCanvas();
+        drawWheel(wheelSegments, currentAngle);
+      });
 
       spinBtn.addEventListener('click', async () => {
         if (spinning || !wheelSegments.length) {
