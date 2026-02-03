@@ -4,11 +4,11 @@ This project now stores its data in a local MySQL table so you can switch to cPa
 
 1. **Create a database/user**  
    * Open your XAMPP control panel and make sure MySQL is running.  
-   * Use phpMyAdmin or the MySQL CLI to create a database (`great_panel` by default) and a user with privileges on that database.
+   * Use phpMyAdmin or the MySQL CLI to create a database (`MCI` by default) and a user with privileges on that database.
 
 2. **Apply the schema**  
    * Run `api/schema.sql` once (e.g., via phpMyAdmin's Import or `mysql < api/schema.sql`).  
-   * The script creates the `great_panel_store` table that holds the JSON payload that the API reads and writes.
+   * The script creates the `mci_store` table that holds the JSON payload that the API reads and writes.
 
 3. **Review `api/config.php`**  
    * The file ships with sane defaults for a local XAMPP install (`root` / no password).  
@@ -20,6 +20,6 @@ This project now stores its data in a local MySQL table so you can switch to cPa
    * When you deploy to cPanel, the backend will read/write from the MySQL table by default, but you can keep the JSON file for debugging/local inspection.
 
 5. **Migrating to cPanel**
-   1. Export the `great_panel_store` table data (e.g., via phpMyAdmin).  
+   1. Export the `mci_store` table data (e.g., via phpMyAdmin).  
    2. Import the SQL on the hosted database and update `api/config.php` (or relevant environment variables) to use your hosted credentials.  
    3. Ensure the schema matches `api/schema.sql` on the target server so the API can write the JSON payload correctly.

@@ -1,5 +1,5 @@
 -- Schema for the gallery feature.
--- Run this against the `great_panel` database after the main schema,
+-- Run this against the `MCI` database after the main schema,
 -- e.g. `mysql < api/schema.sql && mysql < api/gallery.sql`.
 
 CREATE TABLE IF NOT EXISTS `gallery_category` (

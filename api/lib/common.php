@@ -57,11 +57,11 @@ function sanitizeDatabaseConfigPayload(array $payload): array
         $value = $payload[$key] ?? '';
         $trimmed = trim((string)$value);
         if ($key === 'dbname') {
-            $result['dbname'] = sanitizeDatabaseIdentifier($trimmed, 'great_panel');
+            $result['dbname'] = sanitizeDatabaseIdentifier($trimmed, 'MCI');
             continue;
         }
         if ($key === 'table') {
-            $result['table'] = sanitizeDatabaseIdentifier($trimmed, 'great_panel_store');
+            $result['table'] = sanitizeDatabaseIdentifier($trimmed, 'mci_store');
             continue;
         }
         if ($key === 'record') {
