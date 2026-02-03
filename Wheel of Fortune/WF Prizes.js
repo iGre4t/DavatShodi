@@ -19,8 +19,11 @@
           .map(item => {
             const quantity = Number.parseInt(item?.quantity ?? 0, 10);
             const last = Number.parseInt(item?.last ?? quantity, 10);
+            const name = String(item?.name ?? "").trim();
+            const onWheelName = String(item?.onWheelName ?? name).trim();
             return {
-              name: String(item?.name ?? "").trim(),
+              name,
+              onWheelName,
               quantity,
               last: Number.isFinite(last) ? last : quantity
             };
@@ -46,7 +49,7 @@
       return;
     }
     if (!prizes.length) {
-      listEl.innerHTML = '<tr><td colspan="5" class="muted">No prizes added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="6" class="muted">No prizes added yet.</td></tr>';
       return;
     }
     listEl.innerHTML = prizes
@@ -60,6 +63,11 @@
             <td>
               <label class="field standard-width" style="margin:0;">
                 <input type="text" data-field="name" value="${escapeHtml(prize.name)}" />
+              </label>
+            </td>
+            <td>
+              <label class="field standard-width" style="margin:0;">
+                <input type="text" data-field="onWheelName" value="${escapeHtml(prize.onWheelName ?? prize.name)}" />
               </label>
             </td>
             <td>
@@ -113,10 +121,12 @@
 
     function getRowDraft(row) {
       const rowNameInput = row?.querySelector('[data-field="name"]');
+      const rowOnWheelNameInput = row?.querySelector('[data-field="onWheelName"]');
       const rowQuantityInput = row?.querySelector('[data-field="quantity"]');
       return {
         name: String(rowNameInput?.value ?? "").trim(),
-        quantity: parseQuantity(rowQuantityInput?.value, 1)
+        onWheelName: String(rowOnWheelNameInput?.value ?? "").trim(),
+        quantity: parseQuantity(rowQuantityInput?.value, 0)
       };
     }
 
@@ -127,8 +137,13 @@
       const original = prizes[index];
       const draft = getRowDraft(row);
       const originalName = String(original?.name ?? "").trim();
+      const originalOnWheelName = String(original?.onWheelName ?? originalName).trim();
       const originalQuantity = parseQuantity(original?.quantity, 0);
-      return draft.name !== originalName || draft.quantity !== originalQuantity;
+      return (
+        draft.name !== originalName ||
+        draft.onWheelName !== originalOnWheelName ||
+        draft.quantity !== originalQuantity
+      );
     }
 
     function syncEditStateUI() {
@@ -141,6 +156,7 @@
         const dirty = isDirtyRow(index, row);
 
         const rowNameInput = row.querySelector('[data-field="name"]');
+        const rowOnWheelNameInput = row.querySelector('[data-field="onWheelName"]');
         const rowQuantityInput = row.querySelector('[data-field="quantity"]');
         const saveBtn = row.querySelector('button[data-action="save"]');
         const deleteBtn = row.querySelector('button[data-action="delete"]');
@@ -149,6 +165,7 @@
         row.classList.toggle("wf-prize-row-locked", isLockedRow);
 
         if (rowNameInput) rowNameInput.disabled = isLockedRow;
+        if (rowOnWheelNameInput) rowOnWheelNameInput.disabled = isLockedRow;
         if (rowQuantityInput) rowQuantityInput.disabled = isLockedRow;
 
         if (deleteBtn) {
@@ -212,7 +229,7 @@
     setInterval(refreshStatus, 5000);
 
     listEl.addEventListener("input", event => {
-      const field = event.target.closest('[data-field="name"], [data-field="quantity"]');
+      const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"]');
       if (!field) {
         return;
       }
@@ -285,14 +302,26 @@
           return;
         }
         const nameInput = row.querySelector('[data-field="name"]');
+        const onWheelNameInput = row.querySelector('[data-field="onWheelName"]');
         const quantityInput = row.querySelector('[data-field="quantity"]');
         const name = String(nameInput?.value ?? "").trim();
+        const onWheelName = String(onWheelNameInput?.value ?? "").trim();
         if (!name) {
           nameInput?.focus();
           return;
         }
         const quantity = parseQuantity(quantityInput?.value, 0);
-        prizes[index] = { name, quantity, last: quantity };
+        const previousQuantity = parseQuantity(prizes[index]?.quantity, 0);
+        const previousLast = parseQuantity(prizes[index]?.last, previousQuantity);
+        const nextLast = quantity === previousQuantity
+          ? Math.min(previousLast, quantity)
+          : quantity;
+        prizes[index] = {
+          name,
+          onWheelName: onWheelName || name,
+          quantity,
+          last: nextLast
+        };
         editState.index = null;
         await savePrizes(prizes);
         renderPrizes(prizes, listEl);
@@ -311,7 +340,7 @@
         return;
       }
       const quantity = parseQuantity(quantityInput.value, 1);
-      prizes.push({ name, quantity, last: quantity });
+      prizes.push({ name, onWheelName: name, quantity, last: quantity });
       await savePrizes(prizes);
       renderPrizes(prizes, listEl);
       nameInput.value = "";

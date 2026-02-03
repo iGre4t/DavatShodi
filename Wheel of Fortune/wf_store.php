@@ -49,6 +49,10 @@ if ($action === 'save_prizes') {
     if ($name === '') {
       continue;
     }
+    $onWheelName = trim((string)($prize['onWheelName'] ?? $name));
+    if ($onWheelName === '') {
+      $onWheelName = $name;
+    }
     $quantity = (int)($prize['quantity'] ?? 0);
     $last = (int)($prize['last'] ?? $quantity);
     if ($quantity < 0) {
@@ -62,6 +66,7 @@ if ($action === 'save_prizes') {
     }
     $normalized[] = [
       'name' => $name,
+      'onWheelName' => $onWheelName,
       'quantity' => $quantity,
       'last' => $last
     ];

@@ -408,6 +408,7 @@
       <thead>
         <tr>
           <th>Name</th>
+          <th>On Wheel Name</th>
           <th>Status</th>
           <th>Quantity</th>
           <th>Count Control</th>

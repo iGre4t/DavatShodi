@@ -288,7 +288,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         color: var(--accent-ink);
         background: var(--accent);
         box-shadow:
-          0 14px 24px rgba(231, 58, 155, 0.3),
+          0 14px 24px rgba(47, 143, 255, 0.34),
           inset 0 1px 0 rgba(255, 255, 255, 0.46);
         cursor: pointer;
         z-index: 4;
@@ -385,7 +385,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
         '#ffffff', '#f8fbff', '#f3f8ff', '#edf4ff', '#e8f1ff',
-        '#fdf7fb', '#fcf2f9', '#faf6ff', '#f6f4ff', '#f2f7ff'
+        '#e4efff', '#deebff', '#d9e7ff', '#d4e3ff', '#cfe0ff'
       ];
 
       let sourcePrizes = [];
@@ -406,12 +406,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       const normalizeSourcePrizes = (list) => {
         if (!Array.isArray(list)) {
-          return [{ name: 'بدون جایزه', weight: 1, canDecrement: false }];
+          return [{ name: 'بدون جایزه', wheelLabel: 'بدون جایزه', weight: 1, canDecrement: false }];
         }
 
         const normalized = list
           .map((item) => {
             const name = String(item?.name ?? '').trim();
+            const onWheelName = String(item?.onWheelName ?? name).trim();
             const quantityValue = Number.parseInt(item?.quantity ?? 0, 10);
             const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 0;
             const hasLast = item && Object.prototype.hasOwnProperty.call(item, 'last');
@@ -421,6 +422,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
               : quantity;
             return {
               name,
+              wheelLabel: onWheelName || name,
               weight: remaining,
               canDecrement: name !== '' && remaining > 0
             };
@@ -429,7 +431,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
         return normalized.length
           ? normalized
-          : [{ name: 'بدون جایزه', weight: 1, canDecrement: false }];
+          : [{ name: 'بدون جایزه', wheelLabel: 'بدون جایزه', weight: 1, canDecrement: false }];
       };
 
       const buildDisplaySegments = (prizes) => {
@@ -446,6 +448,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           const relative = prize.weight / maxWeight;
           return {
             name: prize.name,
+            wheelLabel: prize.wheelLabel || prize.name,
             weight: prize.weight,
             canDecrement: prize.canDecrement,
             repeats: Math.max(2, Math.min(6, Math.round(relative * 4) + 1))
@@ -475,6 +478,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         const sequence = [];
         const queue = counters.map((item) => ({
           name: item.name,
+          wheelLabel: item.wheelLabel,
           canDecrement: item.canDecrement,
           remaining: item.repeats
         }));
@@ -490,7 +494,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           const picked = candidates.find((item) => item.name !== lastName) || candidates[0];
           picked.remaining -= 1;
           sequence.push({
-            label: picked.name,
+            label: picked.wheelLabel,
             source: picked.name,
             canDecrement: picked.canDecrement
           });
