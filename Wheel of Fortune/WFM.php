@@ -78,8 +78,36 @@ $initialPrizes = readPrizeStore($prizeStorePath);
     <link rel="icon" href="data:," />
     <style>
       :root {
-        font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+        --ink: #e8f2ff;
+        --muted: #a7bdd8;
+        --panel-top: rgba(20, 43, 84, 0.8);
+        --panel-bottom: rgba(8, 22, 53, 0.92);
+        --ring: rgba(175, 213, 255, 0.26);
+        --btn-top: #87ceff;
+        --btn-bottom: #2f7dcf;
+        --btn-text: #042342;
+        font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         color-scheme: dark;
+      }
+
+      @font-face {
+        font-family: 'Peyda Fa Num';
+        src:
+          url('../style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2'),
+          url('/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: 'Peyda Fa Num';
+        src:
+          url('../style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2'),
+          url('/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
       }
 
       * {
@@ -92,30 +120,76 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         display: flex;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(circle at top, #7cb7ff, #1a3edb 55%, #07103b 100%);
-        color: #f0f8ff;
+        background:
+          radial-gradient(circle at 12% 15%, rgba(141, 199, 255, 0.32), transparent 42%),
+          radial-gradient(circle at 85% 20%, rgba(98, 150, 232, 0.28), transparent 46%),
+          linear-gradient(135deg, #020d24 0%, #06204b 45%, #0d3f7e 100%);
+        color: var(--ink);
         padding: 24px;
+        overflow: hidden;
+      }
+
+      body::before,
+      body::after {
+        content: '';
+        position: fixed;
+        width: 360px;
+        height: 360px;
+        border-radius: 50%;
+        filter: blur(6px);
+        border: 1px solid rgba(161, 209, 255, 0.22);
+        pointer-events: none;
+      }
+
+      body::before {
+        top: -130px;
+        left: -110px;
+        background: radial-gradient(circle, rgba(118, 176, 255, 0.22) 0%, transparent 70%);
+      }
+
+      body::after {
+        right: -120px;
+        bottom: -150px;
+        background: radial-gradient(circle, rgba(96, 164, 250, 0.18) 0%, transparent 70%);
       }
 
       .shell {
         width: min(560px, 100%);
         padding: 32px 28px;
         border-radius: 32px;
-        background: linear-gradient(180deg, rgba(20, 35, 67, 0.92), rgba(6, 21, 57, 0.98));
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        box-shadow: 0 16px 40px rgba(3, 20, 60, 0.55);
+        background:
+          linear-gradient(180deg, var(--panel-top), var(--panel-bottom)),
+          radial-gradient(circle at 25% 15%, rgba(148, 209, 255, 0.15), transparent 50%);
+        border: 1px solid var(--ring);
+        box-shadow:
+          0 20px 42px rgba(1, 11, 33, 0.62),
+          inset 0 1px 0 rgba(222, 239, 255, 0.18);
+        backdrop-filter: blur(8px);
         display: flex;
         flex-direction: column;
         gap: 24px;
         align-items: center;
         text-align: center;
+        animation: shellIn 500ms ease-out;
+      }
+
+      @keyframes shellIn {
+        from {
+          opacity: 0;
+          transform: translateY(14px) scale(0.985);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
       }
 
       .title {
-        font-size: 1.1rem;
-        letter-spacing: 0.32em;
-        color: rgba(255, 255, 255, 0.75);
+        font-size: 1rem;
+        letter-spacing: 0.44em;
+        color: var(--muted);
         margin: 0;
+        text-transform: uppercase;
       }
 
       .wheel-wrap {
@@ -127,16 +201,21 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       canvas {
         width: min(420px, 86vw);
         height: auto;
-        background: rgba(255, 255, 255, 0.92);
+        background: radial-gradient(circle, #eff7ff 0%, #d7e9ff 100%);
         border-radius: 50%;
-        box-shadow: 0 16px 40px rgba(3, 20, 60, 0.35);
+        border: 9px solid #f6fbff;
+        box-shadow:
+          0 16px 36px rgba(5, 15, 40, 0.52),
+          inset 0 0 0 3px rgba(95, 146, 219, 0.38);
       }
 
       .result {
         font-size: 1.4rem;
-        letter-spacing: 0.04em;
-        color: #cde6ff;
+        letter-spacing: 0.03em;
+        color: #d8ebff;
         margin: 0;
+        font-weight: 700;
+        min-height: 1.4em;
       }
 
       .cta {
@@ -150,10 +229,13 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         padding: 14px 32px;
         font-size: 1rem;
         font-weight: 700;
+        font-family: inherit;
         cursor: pointer;
-        background: linear-gradient(135deg, #32c5ff, #0b74ff);
-        color: #00112a;
-        box-shadow: 0 12px 24px rgba(11, 116, 255, 0.45);
+        background: linear-gradient(135deg, var(--btn-top), var(--btn-bottom));
+        color: var(--btn-text);
+        box-shadow:
+          0 12px 24px rgba(20, 86, 170, 0.42),
+          inset 0 1px 0 rgba(255, 255, 255, 0.48);
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
       }
 
@@ -166,6 +248,22 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 
       button:hover:not(:disabled) {
         transform: translateY(-2px);
+      }
+
+      @media (max-width: 560px) {
+        .shell {
+          padding: 24px 18px;
+          border-radius: 24px;
+        }
+
+        .title {
+          letter-spacing: 0.27em;
+          font-size: 0.92rem;
+        }
+
+        .result {
+          font-size: 1.2rem;
+        }
       }
     </style>
   </head>
@@ -226,6 +324,7 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         const radius = center - 10;
         const count = names.length || 1;
         const slice = (Math.PI * 2) / count;
+        const palette = ['#eff6ff', '#dbeafe', '#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6'];
         ctx.clearRect(0, 0, size, size);
         ctx.save();
         ctx.translate(center, center);
@@ -237,27 +336,36 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          ctx.fillStyle = i % 2 === 0 ? '#f1f5f9' : '#e2e8f0';
+          ctx.fillStyle = palette[i % palette.length];
           ctx.fill();
-          ctx.strokeStyle = '#cbd5f5';
+          ctx.strokeStyle = 'rgba(11, 53, 116, 0.4)';
+          ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.save();
           ctx.rotate(start + slice / 2);
           ctx.textAlign = 'right';
-          ctx.fillStyle = '#111';
-          ctx.font = '14px sans-serif';
+          ctx.fillStyle = '#042955';
+          ctx.font = '700 14px "Peyda Fa Num", "Segoe UI", sans-serif';
           ctx.fillText(names[i], radius - 12, 5);
           ctx.restore();
         }
         ctx.restore();
 
-        ctx.fillStyle = '#111';
+        ctx.fillStyle = '#0a3266';
         ctx.beginPath();
         ctx.moveTo(center, 10);
         ctx.lineTo(center - 10, 30);
         ctx.lineTo(center + 10, 30);
         ctx.closePath();
         ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(center, center, 18, 0, Math.PI * 2);
+        ctx.fillStyle = '#0f3e7d';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#d9ecff';
+        ctx.stroke();
       };
 
       const pickResult = (names, angle) => {
