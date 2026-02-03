@@ -247,7 +247,14 @@ $initialPrizes = readPrizeStore($prizeStorePath);
       const resultEl = document.getElementById('wf-result');
 
       const TWO_PI = Math.PI * 2;
-      const BASE_PALETTE = ['#eff6ff', '#dbeafe', '#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6'];
+      const SEGMENT_GRADIENTS = [
+        ['#f5fbff', '#9bc8ff'],
+        ['#e8f5ff', '#7bb5ff'],
+        ['#d9ecff', '#5f9eff'],
+        ['#cfe4ff', '#4b8ef2'],
+        ['#bfdcff', '#3b7fe5'],
+        ['#b0d5ff', '#2f72d8']
+      ];
       let wheelSegments = [];
       let currentAngle = 0;
       let spinning = false;
@@ -309,7 +316,17 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          ctx.fillStyle = BASE_PALETTE[i % BASE_PALETTE.length];
+          const mid = start + (slice / 2);
+          const colors = SEGMENT_GRADIENTS[i % SEGMENT_GRADIENTS.length];
+          const segmentGradient = ctx.createLinearGradient(
+            0,
+            0,
+            Math.cos(mid) * radius,
+            Math.sin(mid) * radius
+          );
+          segmentGradient.addColorStop(0, colors[0]);
+          segmentGradient.addColorStop(1, colors[1]);
+          ctx.fillStyle = segmentGradient;
           ctx.fill();
           ctx.lineWidth = 1.5;
           ctx.strokeStyle = 'rgba(7, 44, 99, 0.4)';
@@ -324,6 +341,16 @@ $initialPrizes = readPrizeStore($prizeStorePath);
           ctx.restore();
         }
         ctx.restore();
+
+        // subtle gloss to create a light 3D effect without heavy rendering cost
+        const gloss = ctx.createRadialGradient(center - 55, center - 75, 20, center, center, radius);
+        gloss.addColorStop(0, 'rgba(255, 255, 255, 0.32)');
+        gloss.addColorStop(0.45, 'rgba(255, 255, 255, 0.08)');
+        gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.beginPath();
+        ctx.arc(center, center, radius - 2, 0, TWO_PI);
+        ctx.fillStyle = gloss;
+        ctx.fill();
 
         ctx.beginPath();
         ctx.arc(center, center, radius, 0, TWO_PI);
