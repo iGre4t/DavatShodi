@@ -214,6 +214,8 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         min-height: 1.3em;
         direction: rtl;
         unicode-bidi: plaintext;
+        text-align: center;
+        justify-self: stretch;
       }
 
       .wheel-shell {
@@ -440,41 +442,79 @@ $initialPrizes = readPrizeStore($prizeStorePath);
         }
 
         const maxWeight = Math.max(...prizes.map((prize) => prize.weight), 1);
-        const segments = [];
-
-        prizes.forEach((prize) => {
+        const counters = prizes.map((prize) => {
           const relative = prize.weight / maxWeight;
-          const repeats = Math.max(2, Math.min(5, Math.round(relative * 4) + 1));
-          for (let i = 0; i < repeats; i += 1) {
-            segments.push({
-              label: prize.name,
-              source: prize.name,
-              canDecrement: prize.canDecrement
-            });
-          }
+          return {
+            name: prize.name,
+            weight: prize.weight,
+            canDecrement: prize.canDecrement,
+            repeats: Math.max(2, Math.min(6, Math.round(relative * 4) + 1))
+          };
         });
 
-        let index = 0;
-        while (segments.length < MIN_VISIBLE_SEGMENTS) {
-          const seed = prizes[index % prizes.length];
-          segments.push({
-            label: seed.name,
-            source: seed.name,
-            canDecrement: seed.canDecrement
-          });
-          index += 1;
+        let totalRepeats = counters.reduce((sum, item) => sum + item.repeats, 0);
+        let fillIndex = 0;
+        while (totalRepeats < MIN_VISIBLE_SEGMENTS) {
+          counters[fillIndex % counters.length].repeats += 1;
+          totalRepeats += 1;
+          fillIndex += 1;
         }
 
-        if (segments.length > MAX_VISIBLE_SEGMENTS) {
-          const trimmed = [];
-          const step = segments.length / MAX_VISIBLE_SEGMENTS;
-          for (let i = 0; i < MAX_VISIBLE_SEGMENTS; i += 1) {
-            trimmed.push(segments[Math.floor(i * step)]);
+        const minPerItem = (counters.length * 2 <= MAX_VISIBLE_SEGMENTS) ? 2 : 1;
+        while (totalRepeats > MAX_VISIBLE_SEGMENTS) {
+          const target = counters
+            .filter((item) => item.repeats > minPerItem)
+            .sort((a, b) => b.repeats - a.repeats)[0];
+          if (!target) {
+            break;
           }
-          return trimmed;
+          target.repeats -= 1;
+          totalRepeats -= 1;
         }
 
-        return segments;
+        const sequence = [];
+        const queue = counters.map((item) => ({
+          name: item.name,
+          canDecrement: item.canDecrement,
+          remaining: item.repeats
+        }));
+
+        let lastName = '';
+        while (true) {
+          const candidates = queue
+            .filter((item) => item.remaining > 0)
+            .sort((a, b) => b.remaining - a.remaining);
+          if (!candidates.length) {
+            break;
+          }
+          const picked = candidates.find((item) => item.name !== lastName) || candidates[0];
+          picked.remaining -= 1;
+          sequence.push({
+            label: picked.name,
+            source: picked.name,
+            canDecrement: picked.canDecrement
+          });
+          lastName = picked.name;
+        }
+
+        if (sequence.length > 2 && sequence[0].source === sequence[sequence.length - 1].source) {
+          const edgeName = sequence[0].source;
+          let swapIndex = -1;
+          for (let i = 1; i < sequence.length - 1; i += 1) {
+            if (sequence[i].source !== edgeName) {
+              swapIndex = i;
+              break;
+            }
+          }
+          if (swapIndex !== -1) {
+            const last = sequence.length - 1;
+            const temp = sequence[last];
+            sequence[last] = sequence[swapIndex];
+            sequence[swapIndex] = temp;
+          }
+        }
+
+        return sequence;
       };
 
       const configureCanvas = () => {

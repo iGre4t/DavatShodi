@@ -46,15 +46,15 @@
       return;
     }
     if (!prizes.length) {
-      listEl.innerHTML = '<tr><td colspan="4" class="muted">No prizes added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="5" class="muted">No prizes added yet.</td></tr>';
       return;
     }
     listEl.innerHTML = prizes
       .map((prize, index) => {
-        const quantity = Number.isFinite(prize.quantity) && prize.quantity > 0
+        const quantity = Number.isFinite(prize.quantity) && prize.quantity >= 0
           ? prize.quantity
-          : 1;
-        const last = Number.isFinite(prize.last) ? prize.last : quantity;
+          : 0;
+        const last = Number.isFinite(prize.last) && prize.last >= 0 ? prize.last : quantity;
         return `
           <tr data-index="${index}" data-prize-name="${escapeHtml(prize.name)}">
             <td>
@@ -71,8 +71,14 @@
             </td>
             <td>
               <label class="field wf-standard-third" style="margin:0;">
-                <input type="number" data-field="quantity" min="1" step="1" value="${escapeHtml(quantity)}" />
+                <input type="number" data-field="quantity" min="0" step="1" value="${escapeHtml(quantity)}" />
               </label>
+            </td>
+            <td>
+              <div class="wf-count-control">
+                <button type="button" class="btn wf-btn-count-add" data-action="add-count">Add</button>
+                <button type="button" class="btn wf-btn-count-sub" data-action="sub-count">Sub</button>
+              </div>
             </td>
             <td>
               <div class="wf-action-bar">
@@ -100,9 +106,9 @@
     renderPrizes(prizes, listEl);
     const editState = { index: null };
 
-    function parseQuantity(rawValue, fallback = 1) {
+    function parseQuantity(rawValue, fallback = 0) {
       const parsed = Number.parseInt(rawValue ?? "", 10);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
     }
 
     function getRowDraft(row) {
@@ -121,7 +127,7 @@
       const original = prizes[index];
       const draft = getRowDraft(row);
       const originalName = String(original?.name ?? "").trim();
-      const originalQuantity = parseQuantity(original?.quantity, 1);
+      const originalQuantity = parseQuantity(original?.quantity, 0);
       return draft.name !== originalName || draft.quantity !== originalQuantity;
     }
 
@@ -138,6 +144,7 @@
         const rowQuantityInput = row.querySelector('[data-field="quantity"]');
         const saveBtn = row.querySelector('button[data-action="save"]');
         const deleteBtn = row.querySelector('button[data-action="delete"]');
+        const countButtons = row.querySelectorAll('button[data-action="add-count"], button[data-action="sub-count"]');
 
         row.classList.toggle("wf-prize-row-locked", isLockedRow);
 
@@ -155,6 +162,11 @@
           saveBtn.classList.toggle("wf-save-active", canSave);
           saveBtn.classList.toggle("wf-action-disabled", saveBtn.disabled);
         }
+
+        countButtons.forEach(btn => {
+          btn.disabled = isLockedRow || (isActiveRow && dirty);
+          btn.classList.toggle("wf-action-disabled", btn.disabled);
+        });
       });
 
       form.querySelectorAll("input, button").forEach(control => {
@@ -231,6 +243,29 @@
         return;
       }
       const action = button.dataset.action;
+      if (action === "add-count" || action === "sub-count") {
+        if (Number.isInteger(editState.index) && editState.index !== index) {
+          return;
+        }
+        if (editState.index === index && isDirtyRow(index, row)) {
+          return;
+        }
+        const delta = action === "add-count" ? 1 : -1;
+        const currentQuantity = parseQuantity(prizes[index]?.quantity, 0);
+        const currentLast = parseQuantity(prizes[index]?.last, currentQuantity);
+        const nextQuantity = Math.max(0, currentQuantity + delta);
+        const nextLast = Math.max(0, currentLast + delta);
+        prizes[index] = {
+          ...prizes[index],
+          quantity: nextQuantity,
+          last: nextLast
+        };
+        editState.index = null;
+        await savePrizes(prizes);
+        renderPrizes(prizes, listEl);
+        syncEditStateUI();
+        return;
+      }
       if (action === "delete") {
         if (Number.isInteger(editState.index) && editState.index !== index) {
           return;
@@ -256,7 +291,7 @@
           nameInput?.focus();
           return;
         }
-        const quantity = parseQuantity(quantityInput?.value, 1);
+        const quantity = parseQuantity(quantityInput?.value, 0);
         prizes[index] = { name, quantity, last: quantity };
         editState.index = null;
         await savePrizes(prizes);

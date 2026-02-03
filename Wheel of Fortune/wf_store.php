@@ -51,11 +51,14 @@ if ($action === 'save_prizes') {
     }
     $quantity = (int)($prize['quantity'] ?? 0);
     $last = (int)($prize['last'] ?? $quantity);
-    if ($quantity < 1) {
-      continue;
+    if ($quantity < 0) {
+      $quantity = 0;
     }
     if ($last < 0) {
       $last = 0;
+    }
+    if ($last > $quantity) {
+      $last = $quantity;
     }
     $normalized[] = [
       'name' => $name,

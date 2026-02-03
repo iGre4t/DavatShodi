@@ -130,6 +130,32 @@
     background: #b91c1c;
     border-color: #b91c1c;
   }
+  .wf-count-control {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+  .wf-count-control .btn {
+    min-width: 56px;
+  }
+  .wf-btn-count-add {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+  }
+  .wf-btn-count-add:hover {
+    background: #15803d;
+    border-color: #15803d;
+  }
+  .wf-btn-count-sub {
+    background: #0ea5e9;
+    border-color: #0ea5e9;
+    color: #fff;
+  }
+  .wf-btn-count-sub:hover {
+    background: #0284c7;
+    border-color: #0284c7;
+  }
   .wf-status-pill {
     display: inline-flex;
     align-items: center;
@@ -384,6 +410,7 @@
           <th>Name</th>
           <th>Status</th>
           <th>Quantity</th>
+          <th>Count Control</th>
           <th>Action Bar</th>
         </tr>
       </thead>
