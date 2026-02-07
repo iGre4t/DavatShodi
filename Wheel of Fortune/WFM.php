@@ -197,60 +197,43 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
 
       .loader-card {
         width: min(280px, 80vw);
-        background: #ffffff;
-        border-radius: 20px;
-        padding: 24px 22px;
+        padding: 10px 8px;
         text-align: center;
-        box-shadow: 0 20px 40px rgba(30, 62, 108, 0.18);
-        border: 1px solid #ecf1fb;
         display: grid;
         gap: 12px;
+        background: transparent;
+        border: none;
+        box-shadow: none;
       }
 
       .loader-icon-wrap {
-        width: 84px;
-        height: 84px;
+        width: 96px;
+        height: 96px;
         margin: 0 auto;
         position: relative;
         display: grid;
         place-items: center;
       }
 
-      .loader-icon {
-        width: 52px;
-        height: 52px;
-        border-radius: 14px;
-        object-fit: contain;
+      .loader-icon-svg {
+        width: 72px;
+        height: 48px;
         display: block;
       }
 
-      .loader-icon-fallback {
-        width: 52px;
-        height: 52px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        font-size: 1.6rem;
-        font-weight: 700;
-        color: #8da0c4;
-        background: #f3f7ff;
-        border: 1px solid #e4ebf7;
+      .loader-icon-fill {
+        fill: rgba(47, 143, 255, 0.16);
       }
 
-      .loader-outline {
-        position: absolute;
-        inset: 0;
-        width: 84px;
-        height: 84px;
-      }
-
-      .loader-outline circle {
+      .loader-icon-path {
         fill: none;
         stroke: #2f8fff;
-        stroke-width: 3.5;
+        stroke-width: 22;
         stroke-linecap: round;
-        stroke-dasharray: 140 260;
-        animation: wf-outline 1.4s ease-in-out infinite;
+        stroke-linejoin: round;
+        stroke-dasharray: 2200;
+        stroke-dashoffset: 2200;
+        animation: wf-icon-stroke 1.6s ease-in-out infinite;
       }
 
       .loader-text {
@@ -271,21 +254,18 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         pointer-events: none;
       }
 
-      @keyframes wf-outline {
+      @keyframes wf-icon-stroke {
         0% {
-          stroke-dasharray: 80 260;
-          stroke-dashoffset: 0;
-          transform: rotate(0deg);
+          stroke-dashoffset: 2200;
+          opacity: 0.6;
         }
         50% {
-          stroke-dasharray: 160 260;
-          stroke-dashoffset: -30;
-          transform: rotate(180deg);
+          stroke-dashoffset: 900;
+          opacity: 1;
         }
         100% {
-          stroke-dasharray: 80 260;
-          stroke-dashoffset: -200;
-          transform: rotate(360deg);
+          stroke-dashoffset: 0;
+          opacity: 0.75;
         }
       }
 
@@ -527,13 +507,9 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
     <div id="wf-loader" class="loader-overlay" role="status" aria-live="polite">
       <div class="loader-card">
         <div class="loader-icon-wrap" aria-hidden="true">
-          <?php if ($faviconUrl !== ''): ?>
-            <img class="loader-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="" />
-          <?php else: ?>
-            <div class="loader-icon-fallback">؟</div>
-          <?php endif; ?>
-          <svg class="loader-outline" viewBox="0 0 84 84" aria-hidden="true">
-            <circle cx="42" cy="42" r="33" />
+          <svg class="loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">
+            <path class="loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
+            <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
           </svg>
         </div>
         <p class="loader-text">در حال آماده‌سازی چرخ شانس</p>
@@ -576,6 +552,8 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
     <script>
       const loaderEl = document.getElementById('wf-loader');
       const bodyEl = document.body;
+      const loaderStart = performance.now();
+      const minLoaderDuration = 1300;
 
       const waitForFonts = async () => {
         if (!document.fonts) {
@@ -605,6 +583,10 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
             new Promise(resolve => window.addEventListener('load', resolve, { once: true }))
           ]);
         } catch {}
+        const elapsed = performance.now() - loaderStart;
+        if (elapsed < minLoaderDuration) {
+          await new Promise(resolve => setTimeout(resolve, minLoaderDuration - elapsed));
+        }
         revealPage();
       };
 
