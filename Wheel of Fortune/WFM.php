@@ -1032,36 +1032,33 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         return {};
       };
 
+      const TEHRAN_OFFSET_MINUTES = 210;
+
       const getTehranDateTimeParts = (date = new Date()) => {
-        try {
-          const formatter = new Intl.DateTimeFormat('en-CA', {
-            timeZone: 'Asia/Tehran',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-          });
-          const parts = formatter.formatToParts(date);
-          const year = parts.find((p) => p.type === 'year')?.value ?? '';
-          const month = parts.find((p) => p.type === 'month')?.value ?? '';
-          const day = parts.find((p) => p.type === 'day')?.value ?? '';
-          const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
-          const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
-          const second = parts.find((p) => p.type === 'second')?.value ?? '00';
-          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}:${second}` };
-        } catch {
-          const fallback = new Date();
-          const year = String(fallback.getFullYear());
-          const month = String(fallback.getMonth() + 1).padStart(2, '0');
-          const day = String(fallback.getDate()).padStart(2, '0');
-          const hour = String(fallback.getHours()).padStart(2, '0');
-          const minute = String(fallback.getMinutes()).padStart(2, '0');
-          const second = String(fallback.getSeconds()).padStart(2, '0');
-          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}:${second}` };
+        const utcMs = date.getTime() + date.getTimezoneOffset() * 60000;
+        const tehran = new Date(utcMs + TEHRAN_OFFSET_MINUTES * 60000);
+        const year = String(tehran.getFullYear());
+        const month = String(tehran.getMonth() + 1).padStart(2, '0');
+        const day = String(tehran.getDate()).padStart(2, '0');
+        const hour = String(tehran.getHours()).padStart(2, '0');
+        const minute = String(tehran.getMinutes()).padStart(2, '0');
+        const second = String(tehran.getSeconds()).padStart(2, '0');
+        return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}:${second}` };
+      };
+
+      const getTehranTargetDate = (dateStr, timeStr) => {
+        const dateParts = String(dateStr || '').split('-').map((n) => Number(n));
+        const timeParts = String(timeStr || '').split(':').map((n) => Number(n));
+        if (dateParts.length !== 3 || timeParts.length < 2) {
+          return null;
         }
+        const [year, month, day] = dateParts;
+        const [hour, minute, second = 0] = timeParts;
+        if (![year, month, day, hour, minute, second].every((n) => Number.isFinite(n))) {
+          return null;
+        }
+        const utcMs = Date.UTC(year, month - 1, day, hour, minute, second) - TEHRAN_OFFSET_MINUTES * 60000;
+        return new Date(utcMs);
       };
 
       const parseTimeToSeconds = (value) => {
@@ -1145,14 +1142,16 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         const targetDate = status === 'upcoming' ? startDate : endDate;
         const targetTime = status === 'upcoming' ? startTime : endTime;
         const updateCountdown = () => {
-          const nowParts = getTehranDateTimeParts();
           if (!targetDate || !targetTime) {
             statusEl.textContent = targetLabel;
             return;
           }
-          const target = new Date(`${targetDate}T${targetTime}:00+03:30`);
-          const now = new Date(`${nowParts.date}T${nowParts.time}:00+03:30`);
-          let diff = Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
+          const target = getTehranTargetDate(targetDate, targetTime);
+          if (!target) {
+            statusEl.textContent = targetLabel;
+            return;
+          }
+          let diff = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
           const hours = Math.floor(diff / 3600);
           diff -= hours * 3600;
           const minutes = Math.floor(diff / 60);
