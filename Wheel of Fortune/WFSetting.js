@@ -321,6 +321,10 @@
     if (!wheelTab) {
       return;
     }
+    const textCard = getEl("wf-texts-card");
+    if (textCard?.hasAttribute("hidden")) {
+      return;
+    }
     wheelTab.querySelectorAll("input, textarea, select, button").forEach(control => {
       if (control.closest('[data-wf-text-control="true"]')) {
         return;
@@ -383,6 +387,7 @@
     const hintDisabled = textCard?.hasAttribute("hidden");
     if (hintText && hintDisabled) {
       hintText.setAttribute("contenteditable", "false");
+      hintDirty = false;
     } else if (hintText && window.Quill) {
       hintEditor = new Quill(hintText, {
         theme: "snow",
@@ -450,7 +455,11 @@
     }
     applySettings(await loadSettings());
     hintDirty = false;
-    syncHintLockState();
+    if (!hintDisabled) {
+      syncHintLockState();
+    } else {
+      setOtherControlsDisabled(false);
+    }
     setTimeout(() => {
       if (!hintDirty) {
         syncHintLockState();
