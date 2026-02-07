@@ -397,7 +397,7 @@
     hintText?.addEventListener("keyup", saveSelection);
     hintText?.addEventListener("mouseup", saveSelection);
     hintText?.addEventListener("focus", saveSelection);
-    if (hintText && !hintText.dataset.placeholder) {
+    if (hintText) {
       hintText.dataset.placeholder = "متن راهنما";
     }
     const textCard = getEl("wf-texts-card");
@@ -407,16 +407,25 @@
         event.preventDefault();
       }
     });
+    document.addEventListener("selectionchange", saveSelection);
     textCard?.addEventListener("click", event => {
       const button = event.target.closest("button");
       if (!button || !hintText) {
         return;
       }
-      hintText.focus();
+      hintText.focus({ preventScroll: true });
       restoreSelection();
       const align = button.dataset.align;
       const action = button.dataset.action;
       if (align) {
+        document.execCommand("styleWithCSS", false, true);
+        if (align === "right") {
+          document.execCommand("justifyRight");
+        } else if (align === "center") {
+          document.execCommand("justifyCenter");
+        } else if (align === "left") {
+          document.execCommand("justifyLeft");
+        }
         hintText.dataset.align = align;
         hintText.style.textAlign = align;
         textCard.querySelectorAll("[data-align]").forEach(btn => {
@@ -426,6 +435,7 @@
         return;
       }
       if (action === "bold") {
+        document.execCommand("styleWithCSS", false, true);
         document.execCommand("bold");
         syncHintLockState();
         return;
@@ -433,6 +443,7 @@
       if (action === "link") {
         const url = window.prompt("لینک را وارد کنید");
         if (url) {
+          document.execCommand("styleWithCSS", false, true);
           document.execCommand("createLink", false, url);
         }
         syncHintLockState();

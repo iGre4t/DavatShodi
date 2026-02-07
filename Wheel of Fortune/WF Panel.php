@@ -432,7 +432,7 @@
         role="textbox"
         aria-multiline="true"
         data-align="right"
-        data-placeholder="??? ??????"
+        data-placeholder=""
         tabindex="0" data-wf-text-control="true"></div>
     </div>
     <div class="field full">
@@ -496,6 +496,7 @@
 
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
 <script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
+
 
 
 
