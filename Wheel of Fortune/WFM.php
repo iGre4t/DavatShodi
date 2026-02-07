@@ -461,6 +461,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         height: 3.2em;
         position: relative;
         overflow: hidden;
+        transition: background 2s ease, border-color 2s ease, color 2s ease;
       }
 
       .result::after {
@@ -478,7 +479,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .result.result-shake {
-        animation: result-shake 0.4s ease-in-out 2;
+        animation: result-shake 0.8s ease-in-out 2;
       }
 
       @keyframes result-shake {
@@ -488,6 +489,15 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         60% { transform: translateX(-3px); }
         80% { transform: translateX(3px); }
         100% { transform: translateX(0); }
+      }
+
+      .result.result-fake {
+        background: #ffe7ea;
+        border-color: #f2a0aa;
+      }
+
+      .result.result-fake .result-value {
+        color: #c0262d;
       }
 
       .confetti-layer {
@@ -789,6 +799,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const resultEl = document.getElementById('wf-result');
       const resultBox = document.querySelector('.result');
       const confettiLayer = document.getElementById('wf-confetti');
+      let fakeLoopTimer = null;
       const countEl = document.getElementById('wf-count');
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
@@ -1089,6 +1100,12 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         resultEl.textContent = '—';
         if (resultBox) {
           resultBox.classList.remove('result-shine');
+          resultBox.classList.remove('result-shake');
+          resultBox.classList.remove('result-fake');
+        }
+        if (fakeLoopTimer) {
+          clearInterval(fakeLoopTimer);
+          fakeLoopTimer = null;
         }
 
         const fakeItems = sourcePrizes.filter((item) => item.isFake);
@@ -1139,17 +1156,14 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           if (resultBox && isFake) {
             void resultBox.offsetWidth;
             resultBox.classList.add('result-shake');
-            const finalText = 'دوباره امتحان کن';
-            let flips = 0;
-            const flipMax = 5;
-            const flipTimer = setInterval(() => {
-              resultEl.textContent = (flips % 2 === 0) ? finalText : (winnerPrize?.name ?? finalText);
-              flips += 1;
-              if (flips >= flipMax) {
-                clearInterval(flipTimer);
-                resultEl.textContent = finalText;
-              }
-            }, 140);
+            resultBox.classList.add('result-fake');
+            const fakeText = winnerPrize?.name ?? 'بدون جایزه';
+            const retryText = 'دوباره امتحان کن!';
+            let toggle = false;
+            fakeLoopTimer = setInterval(() => {
+              toggle = !toggle;
+              resultEl.textContent = toggle ? retryText : fakeText;
+            }, 1000);
           }
           if (resultBox && !isFake) {
             resultBox.classList.add('result-shine');
