@@ -242,6 +242,7 @@
   }
 
   const settingsCache = {};
+  let hintDirty = false;
 
   function applySettings(settings) {
     const activeToggle = getEl("wheel-active-toggle");
@@ -254,6 +255,7 @@
     const textCard = getEl("wf-texts-card");
 
     Object.assign(settingsCache, settings);
+    hintDirty = false;
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
     if (startDate && typeof settings.startDate === "string") startDate.value = settings.startDate;
@@ -319,6 +321,9 @@
   }
 
   function isHintDirty() {
+    if (hintDirty) {
+      return true;
+    }
     const hintText = getEl("wheel-hint-text");
     if (!hintText) {
       return false;
@@ -366,19 +371,49 @@
       field?.addEventListener("input", updateStatus);
     });
     const hintText = getEl("wheel-hint-text");
-    hintText?.addEventListener("input", syncHintLockState);
+    let savedRange = null;
+    const saveSelection = () => {
+      if (!hintText) return;
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      const range = selection.getRangeAt(0);
+      if (hintText.contains(range.startContainer)) {
+        savedRange = range;
+      }
+    };
+    const restoreSelection = () => {
+      if (!savedRange) return;
+      const selection = window.getSelection();
+      if (!selection) return;
+      selection.removeAllRanges();
+      selection.addRange(savedRange);
+    };
+    hintText?.addEventListener("input", () => {
+      hintDirty = true;
+      saveSelection();
+      syncHintLockState();
+    });
     hintText?.addEventListener("change", syncHintLockState);
+    hintText?.addEventListener("keyup", saveSelection);
+    hintText?.addEventListener("mouseup", saveSelection);
+    hintText?.addEventListener("focus", saveSelection);
     if (hintText && !hintText.dataset.placeholder) {
       hintText.dataset.placeholder = "متن راهنما";
     }
     const textCard = getEl("wf-texts-card");
+    textCard?.addEventListener("mousedown", event => {
+      const button = event.target.closest("button");
+      if (button) {
+        event.preventDefault();
+      }
+    });
     textCard?.addEventListener("click", event => {
       const button = event.target.closest("button");
       if (!button || !hintText) {
         return;
       }
-      event.preventDefault();
       hintText.focus();
+      restoreSelection();
       const align = button.dataset.align;
       const action = button.dataset.action;
       if (align) {
@@ -421,6 +456,7 @@
       settingsCache.hint = String(settings.hint ?? "");
       settingsCache.hintHtml = String(settings.hintHtml ?? "");
       settingsCache.hintAlign = String(settings.hintAlign ?? "right");
+      hintDirty = false;
       syncHintLockState();
     });
     updateStatus();
