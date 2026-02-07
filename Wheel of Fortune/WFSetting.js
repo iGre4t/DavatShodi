@@ -243,6 +243,8 @@
 
   const settingsCache = {};
   let hintDirty = false;
+  let hintEditor = null;
+  let applyingHint = false;
 
   function applySettings(settings) {
     const activeToggle = getEl("wheel-active-toggle");
@@ -262,10 +264,15 @@
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
     if (endTime && typeof settings.endTime === "string") endTime.value = settings.endTime;
-    if (hintText && typeof settings.hintHtml === "string" && settings.hintHtml.trim() !== "") {
-      hintText.innerHTML = settings.hintHtml;
-    } else if (hintText && typeof settings.hint === "string" && settings.hint.trim() !== "") {
-      hintText.textContent = settings.hint;
+    if (hintEditor) {
+      applyingHint = true;
+      const html = typeof settings.hintHtml === "string" && settings.hintHtml.trim() !== ""
+        ? settings.hintHtml
+        : (typeof settings.hint === "string" && settings.hint.trim() !== "")
+          ? settings.hint
+          : "شانس خودت رو امتحان کن و جایزه ببر";
+      hintEditor.clipboard.dangerouslyPasteHTML(html);
+      applyingHint = false;
     } else if (hintText) {
       hintText.textContent = "شانس خودت رو امتحان کن و جایزه ببر";
     }
@@ -273,9 +280,6 @@
       const align = String(settings.hintAlign ?? "").trim() || "right";
       hintText.dataset.align = align;
       hintText.style.textAlign = align;
-      textCard.querySelectorAll("[data-align]").forEach(btn => {
-        btn.classList.toggle("active", btn.dataset.align === align);
-      });
     }
     syncToggles({ activeToggle, durationToggle });
   }
@@ -288,6 +292,9 @@
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
     const hintText = getEl("wheel-hint-text");
+    const hintHtml = hintEditor?.root?.innerHTML ?? hintText?.innerHTML ?? "";
+    const hintPlain = hintEditor?.getText?.() ?? hintText?.textContent ?? "";
+    const format = hintEditor?.getFormat?.() ?? {};
 
     return {
       active: Boolean(activeToggle?.checked),
@@ -296,9 +303,9 @@
       startTime: startTime?.value ?? "",
       endDate: endDate?.value ?? "",
       endTime: endTime?.value ?? "",
-      hint: hintText?.textContent ?? "",
-      hintHtml: hintText?.innerHTML ?? "",
-      hintAlign: hintText?.dataset?.align ?? "right"
+      hint: hintPlain ?? "",
+      hintHtml: hintHtml ?? "",
+      hintAlign: format.align ?? hintText?.dataset?.align ?? "right"
     };
   }
 
@@ -307,12 +314,8 @@
     if (!wheelTab) {
       return;
     }
-    const textCard = getEl("wf-texts-card");
-    const allowed = new Set(
-      textCard ? Array.from(textCard.querySelectorAll("input, textarea, select, button")) : []
-    );
     wheelTab.querySelectorAll("input, textarea, select, button").forEach(control => {
-      if (allowed.has(control) || control.dataset.wfTextControl === "true") {
+      if (control.closest('[data-wf-text-control="true"]')) {
         return;
       }
       control.disabled = disabled;
@@ -339,9 +342,9 @@
         .replace(/&nbsp;/gi, " "));
     };
     const originalHtml = normalizeHtml(settingsCache.hintHtml ?? settingsCache.hint ?? "", settingsCache.hint ?? "");
-    const currentHtml = normalizeHtml(hintText.innerHTML ?? "", hintText.textContent ?? "");
+    const currentHtml = normalizeHtml(hintEditor?.root?.innerHTML ?? hintText.innerHTML ?? "", hintEditor?.getText?.() ?? hintText.textContent ?? "");
     const originalAlign = String(settingsCache.hintAlign ?? "right");
-    const currentAlign = String(hintText.dataset.align ?? "right");
+    const currentAlign = String(hintEditor?.getFormat?.().align ?? hintText.dataset.align ?? "right");
     return originalHtml !== currentHtml || originalAlign !== currentAlign;
   }
 
@@ -358,6 +361,24 @@
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
+    const hintText = getEl("wheel-hint-text");
+    if (hintText && window.Quill) {
+      hintEditor = new Quill(hintText, {
+        theme: "snow",
+        modules: {
+          toolbar: "#wheel-hint-toolbar"
+        },
+        formats: ["bold", "link", "align"],
+        placeholder: "متن راهنما"
+      });
+      hintEditor.on("text-change", () => {
+        if (applyingHint) {
+          return;
+        }
+        hintDirty = true;
+        syncHintLockState();
+      });
+    }
     applySettings(await loadSettings());
     syncHintLockState();
     activeToggle?.addEventListener("change", () => {
@@ -369,85 +390,6 @@
     [startDate, startTime, endDate, endTime].forEach(field => {
       field?.addEventListener("change", updateStatus);
       field?.addEventListener("input", updateStatus);
-    });
-    const hintText = getEl("wheel-hint-text");
-    let savedRange = null;
-    const saveSelection = () => {
-      if (!hintText) return;
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      if (hintText.contains(range.startContainer)) {
-        savedRange = range;
-      }
-    };
-    const restoreSelection = () => {
-      if (!savedRange) return;
-      const selection = window.getSelection();
-      if (!selection) return;
-      selection.removeAllRanges();
-      selection.addRange(savedRange);
-    };
-    hintText?.addEventListener("input", () => {
-      hintDirty = true;
-      saveSelection();
-      syncHintLockState();
-    });
-    hintText?.addEventListener("change", syncHintLockState);
-    hintText?.addEventListener("keyup", saveSelection);
-    hintText?.addEventListener("mouseup", saveSelection);
-    hintText?.addEventListener("focus", saveSelection);
-    if (hintText) {
-      hintText.dataset.placeholder = "متن راهنما";
-    }
-    const textCard = getEl("wf-texts-card");
-    textCard?.addEventListener("mousedown", event => {
-      const button = event.target.closest("button");
-      if (button) {
-        event.preventDefault();
-      }
-    });
-    document.addEventListener("selectionchange", saveSelection);
-    textCard?.addEventListener("click", event => {
-      const button = event.target.closest("button");
-      if (!button || !hintText) {
-        return;
-      }
-      hintText.focus({ preventScroll: true });
-      restoreSelection();
-      const align = button.dataset.align;
-      const action = button.dataset.action;
-      if (align) {
-        document.execCommand("styleWithCSS", false, true);
-        if (align === "right") {
-          document.execCommand("justifyRight");
-        } else if (align === "center") {
-          document.execCommand("justifyCenter");
-        } else if (align === "left") {
-          document.execCommand("justifyLeft");
-        }
-        hintText.dataset.align = align;
-        hintText.style.textAlign = align;
-        textCard.querySelectorAll("[data-align]").forEach(btn => {
-          btn.classList.toggle("active", btn.dataset.align === align);
-        });
-        syncHintLockState();
-        return;
-      }
-      if (action === "bold") {
-        document.execCommand("styleWithCSS", false, true);
-        document.execCommand("bold");
-        syncHintLockState();
-        return;
-      }
-      if (action === "link") {
-        const url = window.prompt("لینک را وارد کنید");
-        if (url) {
-          document.execCommand("styleWithCSS", false, true);
-          document.execCommand("createLink", false, url);
-        }
-        syncHintLockState();
-      }
     });
     const wheelTab = getEl("tab-wheel-of-fortune");
     if (wheelTab && window.MutationObserver) {

@@ -1,3 +1,4 @@
+<link rel="stylesheet" href="style/vendor/quill/quill.snow.css" />
 <style>
   .wf-switch-grid {
     display: grid;
@@ -244,17 +245,32 @@
     gap: 8px;
     align-items: center;
   }
-  .wf-text-toolbar .btn {
-    min-width: 44px;
-    padding: 6px 10px;
+  .wf-text-toolbar .ql-formats {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-right: 0;
   }
-  .wf-text-toolbar .btn.active {
+  .wf-text-toolbar .ql-toolbar.ql-snow {
+    border: none;
+    padding: 0;
+    background: transparent;
+  }
+  .wf-text-toolbar .ql-toolbar.ql-snow button {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    min-width: 44px;
+    background: #fff;
+  }
+  .wf-text-toolbar .ql-toolbar.ql-snow button:hover,
+  .wf-text-toolbar .ql-toolbar.ql-snow button.ql-active {
+    border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-focus);
   }
   .wf-text-editor {
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 12px 14px;
     font-size: 15px;
     outline: none;
     background: #fff;
@@ -263,13 +279,13 @@
     width: 100%;
     line-height: 1.6;
   }
-  .wf-text-editor:empty::before {
-    content: attr(data-placeholder);
-    color: var(--muted);
-  }
-  .wf-text-editor:focus {
+  .wf-text-editor:focus-within {
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-focus);
+  }
+  .wf-text-editor .ql-editor {
+    padding: 12px 14px;
+    min-height: 96px;
   }
   @media (max-width: 900px) {
     .wf-switch-grid {
@@ -408,32 +424,18 @@
   <div class="form">
     <div class="field standard-width">
       <span>Hint</span>
-      <div class="wf-text-toolbar" role="toolbar" aria-label="Hint tools">
-        <button type="button" class="btn ghost small" data-wf-text-control="true" data-align="right" aria-label="Align right" title="Align right">
-          <span class="ri ri-align-right" aria-hidden="true"></span>
-        </button>
-        <button type="button" class="btn ghost small" data-wf-text-control="true" data-align="center" aria-label="Align center" title="Align center">
-          <span class="ri ri-align-center" aria-hidden="true"></span>
-        </button>
-        <button type="button" class="btn ghost small" data-wf-text-control="true" data-align="left" aria-label="Align left" title="Align left">
-          <span class="ri ri-align-left" aria-hidden="true"></span>
-        </button>
-        <button type="button" class="btn ghost small" data-wf-text-control="true" data-action="bold" aria-label="Bold" title="Bold">
-          <span class="ri ri-bold" aria-hidden="true"></span>
-        </button>
-        <button type="button" class="btn ghost small" data-wf-text-control="true" data-action="link" aria-label="Insert link" title="Insert link">
-          <span class="ri ri-link" aria-hidden="true"></span>
-        </button>
+      <div id="wheel-hint-toolbar" data-wf-text-control="true" class="wf-text-toolbar ql-toolbar ql-snow" role="toolbar" aria-label="Hint tools">
+        <span class="ql-formats">
+          <button type="button" class="ql-align" value="right" aria-label="Align right"></button>
+          <button type="button" class="ql-align" value="center" aria-label="Align center"></button>
+          <button type="button" class="ql-align" value="left" aria-label="Align left"></button>
+        </span>
+        <span class="ql-formats">
+          <button type="button" class="ql-bold" aria-label="Bold"></button>
+          <button type="button" class="ql-link" aria-label="Insert link"></button>
+        </span>
       </div>
-      <div
-        id="wheel-hint-text"
-        class="wf-text-editor"
-        contenteditable="true"
-        role="textbox"
-        aria-multiline="true"
-        data-align="right"
-        data-placeholder=""
-        tabindex="0" data-wf-text-control="true"></div>
+      <div id="wheel-hint-text" class="wf-text-editor" data-wf-text-control="true"></div>
     </div>
     <div class="field full">
       <button type="button" class="btn primary standard-primary-button" id="wheel-texts-save" data-wf-text-control="true">Save</button>
@@ -494,8 +496,12 @@
 </div>
 </div>
 
+<script src="style/vendor/quill/quill.min.js"></script>
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
 <script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
+
+
+
 
 
 

@@ -115,10 +115,20 @@ $panelSettings = loadPanelSettings();
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
 function sanitizeHintHtml(string $html): string
 {
-  $allowed = '<br><b><strong><a><div><span>';
+  $allowed = '<br><b><strong><em><a><div><span><p>';
   $clean = strip_tags($html, $allowed);
   $clean = preg_replace('/\s+on\w+="[^"]*"/i', '', $clean);
   $clean = preg_replace("/\s+on\w+='[^']*'/i", '', $clean);
+  $clean = preg_replace_callback('/\sclass="([^"]*)"/i', function ($matches) {
+    $classes = preg_split('/\s+/', trim($matches[1]));
+    $allowedClasses = array_filter($classes, function ($class) {
+      return preg_match('/^ql-align-(right|center|left|justify)$/', $class);
+    });
+    if (!$allowedClasses) {
+      return '';
+    }
+    return ' class="' . implode(' ', $allowedClasses) . '"';
+  }, $clean);
   $clean = preg_replace_callback('/<a\s+[^>]*href=(["\'])(.*?)\1[^>]*>/i', function ($matches) {
     $href = trim($matches[2]);
     if (!preg_match('#^(https?:|mailto:|tel:|/|#)#i', $href)) {
@@ -399,6 +409,22 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
       .hint-align-left {
         text-align: left;
+      }
+
+      .ql-align-center {
+        text-align: center;
+      }
+
+      .ql-align-right {
+        text-align: right;
+      }
+
+      .ql-align-left {
+        text-align: left;
+      }
+
+      .ql-align-justify {
+        text-align: justify;
       }
 
       .result {
