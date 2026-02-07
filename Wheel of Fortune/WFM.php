@@ -1135,6 +1135,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           statusEl.classList.remove('top-left');
           if (hintEl) {
             hintEl.textContent = 'شگفتانه به پایان رسید. ممنون که همراه ما بودی؛ برای دوره بعدی حتماً دوباره سر بزن.';
+            hintEl.style.textAlign = 'center';
           }
           return;
         }
@@ -1143,6 +1144,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           statusEl.classList.remove('top-left');
           if (hintEl && defaultHintText) {
             hintEl.textContent = defaultHintText;
+            hintEl.style.textAlign = '';
           }
           return;
         }
@@ -1152,6 +1154,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           statusEl.classList.remove('top-left');
           if (hintEl) {
             hintEl.textContent = activeHintText;
+            hintEl.style.textAlign = 'center';
           }
           return;
         }
@@ -1197,12 +1200,14 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           statusEl.classList.remove('top-left');
           if (hintEl) {
             hintEl.textContent = 'چرخ شانس هنوز فعال نشده است';
+            hintEl.style.textAlign = '';
           }
         } else {
           statusEl.classList.remove('hidden');
           statusEl.classList.add('top-left');
           if (hintEl) {
             hintEl.textContent = activeHintText;
+            hintEl.style.textAlign = 'center';
           }
         }
         updateCountdown();
