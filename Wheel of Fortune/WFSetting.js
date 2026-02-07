@@ -301,6 +301,9 @@
     });
     saveBtn?.addEventListener("click", async () => {
       await saveSettings(collectSettings());
+      try {
+        localStorage.setItem("wfSettingsUpdated", String(Date.now()));
+      } catch {}
     });
     updateStatus();
   }

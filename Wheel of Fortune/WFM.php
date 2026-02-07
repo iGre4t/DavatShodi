@@ -193,10 +193,6 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         color-scheme: light;
       }
 
-      body.fake-state {
-        --accent: #e11d2e;
-        --accent-ink: #ffffff;
-      }
 
       @font-face {
         font-family: 'Peyda Fa Num';
@@ -597,6 +593,25 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         overflow: hidden;
       }
 
+      .wheel-status {
+        position: absolute;
+        top: -28px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #ffffff;
+        border: 1px solid #e5ecf7;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 0.78rem;
+        color: #5b6a88;
+        box-shadow: 0 10px 24px rgba(30, 62, 108, 0.08);
+        white-space: nowrap;
+      }
+
+      .wheel-status.hidden {
+        display: none;
+      }
+
       .wheel-shell::before {
         content: '';
         position: absolute;
@@ -763,6 +778,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         </div>
 
         <div class="wheel-shell">
+          <div id="wf-status" class="wheel-status hidden"></div>
           <div class="pointer" aria-hidden="true"></div>
           <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
           <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
@@ -825,7 +841,12 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const resultBox = document.querySelector('.result');
       const confettiLayer = document.getElementById('wf-confetti');
       let fakeLoopTimer = null;
+      let wheelActive = true;
       const countEl = document.getElementById('wf-count');
+      const statusEl = document.getElementById('wf-status');
+      let wheelStatus = 'active';
+      let statusTickTimer = null;
+      let latestSettings = {};
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
       const TWO_PI = Math.PI * 2;
@@ -835,58 +856,17 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         '#ffffff', '#f8fbff', '#f3f8ff', '#edf4ff', '#e8f1ff',
         '#e4efff', '#deebff', '#d9e7ff', '#d4e3ff', '#cfe0ff'
       ];
+      const DISABLED_SEGMENT_COLORS = [
+        '#f4f6f9', '#eef1f5', '#e8ecf2', '#e2e7ee', '#dce2eb',
+        '#d7dde7', '#d1d8e3', '#cbd2df', '#c6cde0', '#c1c8dc'
+      ];
 
       let sourcePrizes = [];
       let wheelSegments = [];
       let currentAngle = 0;
       let spinning = false;
       let wheelSize = 420;
-      let currentAccent = '#2f8fff';
-      let accentAnimId = 0;
-
-      const getCssAccent = () => {
-        const value = getComputedStyle(document.body).getPropertyValue('--accent').trim();
-        return value || '#2f8fff';
-      };
-
-      const parseHex = (hex) => {
-        const normalized = hex.replace('#', '').trim();
-        if (normalized.length === 3) {
-          return normalized.split('').map((c) => parseInt(c + c, 16));
-        }
-        if (normalized.length === 6) {
-          return [
-            parseInt(normalized.slice(0, 2), 16),
-            parseInt(normalized.slice(2, 4), 16),
-            parseInt(normalized.slice(4, 6), 16)
-          ];
-        }
-        return [47, 143, 255];
-      };
-
-      const toHex = (rgb) => {
-        return `#${rgb.map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('')}`;
-      };
-
-      const animateAccentTo = (targetColor, duration = 2000) => {
-        if (accentAnimId) {
-          cancelAnimationFrame(accentAnimId);
-        }
-        const start = performance.now();
-        const from = parseHex(currentAccent);
-        const to = parseHex(targetColor);
-        const tick = (now) => {
-          const progress = Math.min(1, (now - start) / duration);
-          const eased = 1 - Math.pow(1 - progress, 3);
-          const next = from.map((c, i) => c + (to[i] - c) * eased);
-          currentAccent = toHex(next);
-          drawWheel(wheelSegments, currentAngle);
-          if (progress < 1) {
-            accentAnimId = requestAnimationFrame(tick);
-          }
-        };
-        accentAnimId = requestAnimationFrame(tick);
-      };
+      const currentAccent = '#2f8fff';
 
       const loadPrizeStore = async () => {
         try {
@@ -1042,6 +1022,176 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         return sequence;
       };
 
+      const loadWheelSettings = async () => {
+        try {
+          const response = await fetch('wf_store.php?action=get_settings', { cache: 'no-store' });
+          const payload = await response.json();
+          if (payload?.status === 'ok' && payload.data && typeof payload.data === 'object') {
+            return payload.data;
+          }
+        } catch {}
+        return {};
+      };
+
+      const getTehranDateTimeParts = (date = new Date()) => {
+        try {
+          const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Tehran',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+          const parts = formatter.formatToParts(date);
+          const year = parts.find((p) => p.type === 'year')?.value ?? '';
+          const month = parts.find((p) => p.type === 'month')?.value ?? '';
+          const day = parts.find((p) => p.type === 'day')?.value ?? '';
+          const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
+          const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
+          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+        } catch {
+          const fallback = new Date();
+          const year = String(fallback.getFullYear());
+          const month = String(fallback.getMonth() + 1).padStart(2, '0');
+          const day = String(fallback.getDate()).padStart(2, '0');
+          const hour = String(fallback.getHours()).padStart(2, '0');
+          const minute = String(fallback.getMinutes()).padStart(2, '0');
+          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+        }
+      };
+
+      const parseTimeToSeconds = (value) => {
+        if (!value) return null;
+        const normalized = String(value).trim();
+        const parts = normalized.split(':').map((part) => Number(part));
+        if (parts.length < 2 || parts.length > 3 || parts.some((n) => !Number.isFinite(n))) {
+          return null;
+        }
+        const [hours, minutes, seconds = 0] = parts;
+        return hours * 3600 + minutes * 60 + seconds;
+      };
+
+      const compareDates = (a = '', b = '') => {
+        const left = (a || '').trim();
+        const right = (b || '').trim();
+        if (!left || !right) return null;
+        if (left === right) return 0;
+        return left > right ? 1 : -1;
+      };
+
+      const getCurrentTehranSeconds = () => {
+        const parts = getTehranDateTimeParts();
+        return parseTimeToSeconds(parts.time) ?? 0;
+      };
+
+      const describeStatus = (settings) => {
+        const active = Boolean(settings?.active);
+        const duration = Boolean(settings?.duration);
+        if (!duration) {
+          return active ? 'active' : 'inactive';
+        }
+        const startDate = String(settings?.startDate ?? '').trim();
+        const endDate = String(settings?.endDate ?? '').trim();
+        const startTime = String(settings?.startTime ?? '').trim();
+        const endTime = String(settings?.endTime ?? '').trim();
+        const today = getTehranDateTimeParts();
+        const startRelation = compareDates(startDate, today.date);
+        const endRelation = compareDates(endDate, today.date);
+        if (!startDate || !today.date) return 'inactive';
+        if (startRelation === 1) return 'upcoming';
+        if (endRelation !== null && endRelation === -1) return 'ended';
+        const nowSeconds = getCurrentTehranSeconds();
+        if (startRelation === 0 || endRelation === 0) {
+          const startSeconds = parseTimeToSeconds(startTime);
+          const endSeconds = parseTimeToSeconds(endTime);
+          if (endSeconds !== null && nowSeconds >= endSeconds) return 'ended';
+          if (startSeconds !== null && nowSeconds >= startSeconds) return 'active';
+          if (startSeconds !== null && nowSeconds < startSeconds) return 'upcoming';
+        }
+        return 'active';
+      };
+
+      const updateStatusBanner = () => {
+        if (!statusEl) return;
+        if (statusTickTimer) {
+          clearInterval(statusTickTimer);
+          statusTickTimer = null;
+        }
+        const status = wheelStatus;
+        if (status === 'ended') {
+          statusEl.textContent = 'زمان شگفتانه به اتمام رسیده';
+          statusEl.classList.remove('hidden');
+          return;
+        }
+        if (status === 'inactive') {
+          statusEl.textContent = 'شگفتانه‌ای در کار نیست :(';
+          statusEl.classList.remove('hidden');
+          return;
+        }
+        const durationOn = Boolean(latestSettings?.duration);
+        if (!durationOn && status === 'active') {
+          statusEl.classList.add('hidden');
+          return;
+        }
+        const startDate = String(latestSettings?.startDate ?? '').trim();
+        const endDate = String(latestSettings?.endDate ?? '').trim();
+        const startTime = String(latestSettings?.startTime ?? '').trim();
+        const endTime = String(latestSettings?.endTime ?? '').trim();
+        const targetLabel = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا پایان شگفتانه';
+        const targetDate = status === 'upcoming' ? startDate : endDate;
+        const targetTime = status === 'upcoming' ? startTime : endTime;
+        const updateCountdown = () => {
+          const nowParts = getTehranDateTimeParts();
+          if (!targetDate || !targetTime) {
+            statusEl.textContent = targetLabel;
+            return;
+          }
+          const target = new Date(`${targetDate}T${targetTime}:00+03:30`);
+          const now = new Date(`${nowParts.date}T${nowParts.time}:00+03:30`);
+          let diff = Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
+          const hours = Math.floor(diff / 3600);
+          diff -= hours * 3600;
+          const minutes = Math.floor(diff / 60);
+          const seconds = diff - minutes * 60;
+          const timer = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+          statusEl.textContent = `${targetLabel}: ${timer}`;
+        };
+        statusEl.classList.remove('hidden');
+        updateCountdown();
+        statusTickTimer = setInterval(updateCountdown, 1000);
+      };
+
+      const applyWheelStatus = (status) => {
+        wheelActive = status === 'active';
+        wheelStatus = status;
+        spinBtn.disabled = !wheelActive;
+        if (!wheelActive) {
+          const message = status === 'upcoming'
+            ? 'چرخ شانس هنوز فعال نشده است'
+            : status === 'ended'
+              ? 'زمان شگفتانه به اتمام رسیده'
+              : 'شگفتانه‌ای در کار نیست :(';
+          resultEl.textContent = message;
+        }
+        drawWheel(wheelSegments, currentAngle);
+      };
+
+      const refreshWheelStatus = async () => {
+        const settings = await loadWheelSettings();
+        latestSettings = settings;
+        const status = describeStatus(settings);
+        applyWheelStatus(status);
+        updateStatusBanner();
+      };
+
+      window.addEventListener('storage', (event) => {
+        if (event.key === 'wfSettingsUpdated') {
+          refreshWheelStatus();
+        }
+      });
+
       const configureCanvas = () => {
         const rect = canvas.getBoundingClientRect();
         const cssSize = Math.max(320, Math.round(rect.width || 420));
@@ -1059,12 +1209,14 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         const count = Math.max(segments.length, 1);
         const slice = TWO_PI / count;
         const fontSize = Math.max(10, Math.min(14, 220 / count));
+        const labelColor = (wheelStatus === 'inactive') ? '#94a3b8' : '#33456e';
 
         ctx.clearRect(0, 0, size, size);
         ctx.save();
         ctx.translate(center, center);
         ctx.rotate(angle);
 
+        const palette = (wheelStatus === 'inactive') ? DISABLED_SEGMENT_COLORS : SEGMENT_COLORS;
         for (let i = 0; i < count; i += 1) {
           const start = i * slice;
           const end = start + slice;
@@ -1072,7 +1224,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          ctx.fillStyle = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+          ctx.fillStyle = palette[i % palette.length];
           ctx.fill();
           ctx.lineWidth = 1.15;
           ctx.strokeStyle = '#e5ecf8';
@@ -1083,7 +1235,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           ctx.textAlign = 'right';
           ctx.textBaseline = 'middle';
           ctx.font = `700 ${fontSize}px "Peyda Fa Num", "Segoe UI", sans-serif`;
-          ctx.fillStyle = '#33456e';
+          ctx.fillStyle = labelColor;
           const label = String(segments[i]?.label ?? '').slice(0, 16);
           ctx.fillText(label, radius - 14, 0);
           ctx.restore();
@@ -1152,8 +1304,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const initApp = async () => {
         await waitForFonts();
         configureCanvas();
-        currentAccent = getCssAccent();
         await bootstrap();
+        await refreshWheelStatus();
 
         window.addEventListener('resize', () => {
           configureCanvas();
@@ -1164,6 +1316,9 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       initApp();
 
       spinBtn.addEventListener('click', async () => {
+        if (!wheelActive) {
+          return;
+        }
         if (spinning || !wheelSegments.length || !sourcePrizes.length) {
           return;
         }
@@ -1175,8 +1330,6 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           resultBox.classList.remove('result-shake');
           resultBox.classList.remove('result-fake');
         }
-        document.body.classList.remove('fake-state');
-        animateAccentTo('#2f8fff', 2000);
         if (fakeLoopTimer) {
           clearInterval(fakeLoopTimer);
           fakeLoopTimer = null;
@@ -1233,8 +1386,6 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             void resultBox.offsetWidth;
             resultBox.classList.add('result-shake');
             resultBox.classList.add('result-fake');
-            document.body.classList.add('fake-state');
-            animateAccentTo('#e11d2e', 400);
             const fakeText = winnerPrize?.name ?? 'بدون جایزه';
             const retryText = 'دوباره امتحان کن!';
             let toggle = false;
@@ -1293,6 +1444,20 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
         requestAnimationFrame(animate);
       });
+
+      const scheduleHourlyStatusCheck = () => {
+        const now = new Date();
+        const nextHour = new Date(now);
+        nextHour.setMinutes(0, 0, 0);
+        nextHour.setHours(now.getHours() + 1);
+        const delay = nextHour.getTime() - now.getTime();
+        setTimeout(() => {
+          refreshWheelStatus();
+          setInterval(refreshWheelStatus, 60 * 60 * 1000);
+        }, delay);
+      };
+
+      scheduleHourlyStatusCheck();
     </script>
   </body>
 </html>
