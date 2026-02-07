@@ -594,10 +594,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .wheel-status {
-        position: absolute;
-        top: -28px;
-        left: 50%;
-        transform: translateX(-50%);
+        position: relative;
+        align-self: center;
         background: #ffffff;
         border: 1px solid #e5ecf7;
         border-radius: 999px;
@@ -606,6 +604,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         color: #5b6a88;
         box-shadow: 0 10px 24px rgba(30, 62, 108, 0.08);
         white-space: nowrap;
+        margin: 6px 0 0;
       }
 
       .wheel-status.hidden {
@@ -777,8 +776,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           </div>
         </div>
 
+        <div id="wf-status" class="wheel-status hidden"></div>
         <div class="wheel-shell">
-          <div id="wf-status" class="wheel-status hidden"></div>
           <div class="pointer" aria-hidden="true"></div>
           <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
           <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
