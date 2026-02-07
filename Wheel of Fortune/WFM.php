@@ -207,14 +207,50 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         gap: 12px;
       }
 
-      .loader-spin {
-        width: 56px;
-        height: 56px;
-        border-radius: 50%;
-        border: 6px solid #e3edff;
-        border-top-color: #2f8fff;
+      .loader-icon-wrap {
+        width: 84px;
+        height: 84px;
         margin: 0 auto;
-        animation: wf-spin 1s linear infinite;
+        position: relative;
+        display: grid;
+        place-items: center;
+      }
+
+      .loader-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
+        object-fit: contain;
+        display: block;
+      }
+
+      .loader-icon-fallback {
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #8da0c4;
+        background: #f3f7ff;
+        border: 1px solid #e4ebf7;
+      }
+
+      .loader-outline {
+        position: absolute;
+        inset: 0;
+        width: 84px;
+        height: 84px;
+      }
+
+      .loader-outline circle {
+        fill: none;
+        stroke: #2f8fff;
+        stroke-width: 3.5;
+        stroke-linecap: round;
+        stroke-dasharray: 140 260;
+        animation: wf-outline 1.4s ease-in-out infinite;
       }
 
       .loader-text {
@@ -235,11 +271,20 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         pointer-events: none;
       }
 
-      @keyframes wf-spin {
-        from {
+      @keyframes wf-outline {
+        0% {
+          stroke-dasharray: 80 260;
+          stroke-dashoffset: 0;
           transform: rotate(0deg);
         }
-        to {
+        50% {
+          stroke-dasharray: 160 260;
+          stroke-dashoffset: -30;
+          transform: rotate(180deg);
+        }
+        100% {
+          stroke-dasharray: 80 260;
+          stroke-dashoffset: -200;
           transform: rotate(360deg);
         }
       }
@@ -481,7 +526,16 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
   <body class="page-loading">
     <div id="wf-loader" class="loader-overlay" role="status" aria-live="polite">
       <div class="loader-card">
-        <div class="loader-spin" aria-hidden="true"></div>
+        <div class="loader-icon-wrap" aria-hidden="true">
+          <?php if ($faviconUrl !== ''): ?>
+            <img class="loader-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="" />
+          <?php else: ?>
+            <div class="loader-icon-fallback">؟</div>
+          <?php endif; ?>
+          <svg class="loader-outline" viewBox="0 0 84 84" aria-hidden="true">
+            <circle cx="42" cy="42" r="33" />
+          </svg>
+        </div>
         <p class="loader-text">در حال آماده‌سازی چرخ شانس</p>
         <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
       </div>
