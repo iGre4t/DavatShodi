@@ -523,11 +523,17 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       const loaderEl = document.getElementById('wf-loader');
       const bodyEl = document.body;
 
-      const waitForFonts = () => {
-        if (document.fonts && document.fonts.ready) {
-          return document.fonts.ready;
+      const waitForFonts = async () => {
+        if (!document.fonts) {
+          return;
         }
-        return Promise.resolve();
+        try {
+          await Promise.all([
+            document.fonts.load('400 16px "Peyda Fa Num"'),
+            document.fonts.load('700 16px "Peyda Fa Num"'),
+            document.fonts.ready
+          ]);
+        } catch {}
       };
 
       const revealPage = () => {
@@ -809,13 +815,18 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         initWheel(loaded);
       };
 
-      configureCanvas();
-      bootstrap();
-
-      window.addEventListener('resize', () => {
+      const initApp = async () => {
+        await waitForFonts();
         configureCanvas();
-        drawWheel(wheelSegments, currentAngle);
-      });
+        await bootstrap();
+
+        window.addEventListener('resize', () => {
+          configureCanvas();
+          drawWheel(wheelSegments, currentAngle);
+        });
+      };
+
+      initApp();
 
       spinBtn.addEventListener('click', async () => {
         if (spinning || !wheelSegments.length || !sourcePrizes.length) {
