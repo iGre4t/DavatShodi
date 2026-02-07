@@ -144,6 +144,16 @@ function sanitizeHintHtml(string $html): string
     }
     return $tag;
   }, $clean);
+  $clean = trim($clean);
+  if ($clean === '') {
+    return '';
+  }
+  // Normalize Quill paragraphs into a single paragraph with <br> separators.
+  $clean = preg_replace('/<p>\s*<\/p>/i', '', $clean);
+  $clean = preg_replace('/<\/p>\s*<p[^>]*>/i', '<br>', $clean);
+  $clean = preg_replace('/<p[^>]*>/i', '', $clean);
+  $clean = str_replace('</p>', '', $clean);
+  $clean = preg_replace('/(<br>\s*){2,}/i', '<br>', $clean);
   return trim($clean);
 }
 
@@ -419,6 +429,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
       .ql-align-center {
         text-align: center;
+        padding: 0 12px;
       }
 
       .ql-align-right {
@@ -439,15 +450,19 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         border: 1px solid #e8edf6;
         border-radius: 14px;
         background: #f9fbff;
-        display: grid;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
         gap: 2px;
-        justify-items: end;
         padding: 8px 10px;
       }
 
       .result-label {
         font-size: 0.78rem;
         color: #8a97b2;
+        align-self: stretch;
+        text-align: center;
       }
 
       .result-value {
@@ -459,10 +474,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         direction: rtl;
         unicode-bidi: plaintext;
         text-align: center;
-        justify-self: stretch;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        align-self: stretch;
       }
 
       .wheel-shell {
