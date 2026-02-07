@@ -821,10 +821,12 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
               name,
               wheelLabel: onWheelName || name,
               weight: remaining,
-              canDecrement: name !== '' && remaining > 0 && !isFake
+              canDecrement: name !== '' && remaining > 0 && !isFake,
+              isFake,
+              displayWeight: remaining > 0 ? remaining : 1
             };
           })
-          .filter((prize) => prize.name !== '' && prize.weight > 0);
+          .filter((prize) => prize.name !== '');
 
         return normalized.length
           ? normalized
@@ -840,14 +842,15 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           }));
         }
 
-        const maxWeight = Math.max(...prizes.map((prize) => prize.weight), 1);
+        const maxWeight = Math.max(...prizes.map((prize) => prize.displayWeight), 1);
         const counters = prizes.map((prize) => {
-          const relative = prize.weight / maxWeight;
+          const relative = prize.displayWeight / maxWeight;
           return {
             name: prize.name,
             wheelLabel: prize.wheelLabel || prize.name,
             weight: prize.weight,
             canDecrement: prize.canDecrement,
+            isFake: prize.isFake,
             repeats: Math.max(2, Math.min(6, Math.round(relative * 4) + 1))
           };
         });
@@ -877,10 +880,12 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           name: item.name,
           wheelLabel: item.wheelLabel,
           canDecrement: item.canDecrement,
+          isFake: item.isFake,
           remaining: item.repeats
         }));
 
         let lastName = '';
+        let lastWasFake = false;
         while (true) {
           const candidates = queue
             .filter((item) => item.remaining > 0)
@@ -888,14 +893,19 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           if (!candidates.length) {
             break;
           }
-          const picked = candidates.find((item) => item.name !== lastName) || candidates[0];
+          let picked = candidates.find((item) => item.name !== lastName && (!lastWasFake || !item.isFake));
+          if (!picked) {
+            picked = candidates.find((item) => item.name !== lastName) || candidates[0];
+          }
           picked.remaining -= 1;
           sequence.push({
             label: picked.wheelLabel,
             source: picked.name,
-            canDecrement: picked.canDecrement
+            canDecrement: picked.canDecrement,
+            isFake: picked.isFake
           });
           lastName = picked.name;
+          lastWasFake = picked.isFake;
         }
 
         if (sequence.length > 2 && sequence[0].source === sequence[sequence.length - 1].source) {
@@ -903,6 +913,22 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           let swapIndex = -1;
           for (let i = 1; i < sequence.length - 1; i += 1) {
             if (sequence[i].source !== edgeName) {
+              swapIndex = i;
+              break;
+            }
+          }
+          if (swapIndex !== -1) {
+            const last = sequence.length - 1;
+            const temp = sequence[last];
+            sequence[last] = sequence[swapIndex];
+            sequence[swapIndex] = temp;
+          }
+        }
+
+        if (sequence.length > 2 && sequence[0].isFake && sequence[sequence.length - 1].isFake) {
+          let swapIndex = -1;
+          for (let i = 1; i < sequence.length - 1; i += 1) {
+            if (!sequence[i].isFake) {
               swapIndex = i;
               break;
             }
@@ -1049,7 +1075,19 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           resultBox.classList.remove('result-shine');
         }
 
-        const winnerPrize = weightedPrizePick(sourcePrizes);
+        const fakeItems = sourcePrizes.filter((item) => item.isFake);
+        const realItems = sourcePrizes.filter((item) => !item.isFake && item.weight > 0);
+        let winnerPrize;
+        if (fakeItems.length && realItems.length) {
+          const pickFake = Math.random() < 0.5;
+          winnerPrize = pickFake
+            ? fakeItems[Math.floor(Math.random() * fakeItems.length)]
+            : weightedPrizePick(realItems);
+        } else if (fakeItems.length) {
+          winnerPrize = fakeItems[Math.floor(Math.random() * fakeItems.length)];
+        } else {
+          winnerPrize = weightedPrizePick(realItems.length ? realItems : sourcePrizes);
+        }
         const winnerIndex = pickDisplayIndexForPrize(wheelSegments, winnerPrize.name);
         const slice = TWO_PI / wheelSegments.length;
         const winnerCenter = (winnerIndex * slice) + (slice / 2);
