@@ -242,9 +242,6 @@
   }
 
   const settingsCache = {};
-  let hintDirty = false;
-  let hintEditor = null;
-  let applyingHint = false;
 
   function applySettings(settings) {
     const activeToggle = getEl("wheel-active-toggle");
@@ -253,34 +250,14 @@
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
-    const hintText = getEl("wheel-hint-text");
-    const textCard = getEl("wf-texts-card");
 
     Object.assign(settingsCache, settings);
-    hintDirty = false;
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
     if (startDate && typeof settings.startDate === "string") startDate.value = settings.startDate;
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
     if (endTime && typeof settings.endTime === "string") endTime.value = settings.endTime;
-    if (hintEditor) {
-      applyingHint = true;
-      const html = typeof settings.hintHtml === "string" && settings.hintHtml.trim() !== ""
-        ? settings.hintHtml
-        : (typeof settings.hint === "string" && settings.hint.trim() !== "")
-          ? settings.hint
-          : "شانس خودت رو امتحان کن و جایزه ببر";
-      hintEditor.clipboard.dangerouslyPasteHTML(html);
-      applyingHint = false;
-    } else if (hintText) {
-      hintText.textContent = "شانس خودت رو امتحان کن و جایزه ببر";
-    }
-    if (hintText && textCard) {
-      const align = String(settings.hintAlign ?? "").trim() || "right";
-      hintText.dataset.align = align;
-      hintText.style.textAlign = align;
-    }
     syncToggles({ activeToggle, durationToggle });
   }
 
@@ -291,10 +268,6 @@
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
-    const hintText = getEl("wheel-hint-text");
-    const hintHtml = hintEditor?.root?.innerHTML ?? hintText?.innerHTML ?? "";
-    const hintPlain = hintEditor?.getText?.() ?? hintText?.textContent ?? "";
-    const format = hintEditor?.getFormat?.() ?? {};
 
     return {
       active: Boolean(activeToggle?.checked),
@@ -302,100 +275,20 @@
       startDate: startDate?.value ?? "",
       startTime: startTime?.value ?? "",
       endDate: endDate?.value ?? "",
-      endTime: endTime?.value ?? "",
-      hint: hintPlain ?? "",
-      hintHtml: hintHtml ?? "",
-      hintAlign: format.align ?? hintText?.dataset?.align ?? "right"
+      endTime: endTime?.value ?? ""
     };
-  }
-
-  function setOtherControlsDisabled(disabled) {
-    const wheelTab = getEl("tab-wheel-of-fortune");
-    if (!wheelTab) {
-      return;
-    }
-    wheelTab.querySelectorAll("input, textarea, select, button").forEach(control => {
-      if (control.closest('[data-wf-text-control="true"]')) {
-        return;
-      }
-      control.disabled = disabled;
-      control.classList.toggle("wf-action-disabled", disabled);
-    });
-  }
-
-  function isHintDirty() {
-    if (hintDirty) {
-      return true;
-    }
-    const hintText = getEl("wheel-hint-text");
-    if (!hintText) {
-      return false;
-    }
-    const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
-    const normalizeHtml = (value, textValue) => {
-      const text = String(textValue ?? "").trim();
-      if (!text) {
-        return "";
-      }
-      return normalize(String(value ?? "")
-        .replace(/<br\s*\/?>/gi, "")
-        .replace(/&nbsp;/gi, " "));
-    };
-    const originalHtml = normalizeHtml(settingsCache.hintHtml ?? settingsCache.hint ?? "", settingsCache.hint ?? "");
-    const currentHtml = normalizeHtml(hintEditor?.root?.innerHTML ?? hintText.innerHTML ?? "", hintEditor?.getText?.() ?? hintText.textContent ?? "");
-    const originalAlign = String(settingsCache.hintAlign ?? "right");
-    const currentAlign = String(hintEditor?.getFormat?.().align ?? hintText.dataset.align ?? "right");
-    return originalHtml !== currentHtml || originalAlign !== currentAlign;
-  }
-
-  function insertLineBreak() {
-    if (!hintEditor) {
-      return;
-    }
-    const range = hintEditor.getSelection(true);
-    const index = range ? range.index : hintEditor.getLength();
-    hintEditor.insertText(index, "\n", "user");
-    hintEditor.setSelection(index + 1, 0, "silent");
-  }
-
-  function syncHintLockState() {
-    setOtherControlsDisabled(isHintDirty());
   }
 
   async function initSettings() {
     const saveBtn = getEl("wheel-settings-save");
-    const saveTextsBtn = getEl("wheel-texts-save");
     const activeToggle = getEl("wheel-active-toggle");
     const durationToggle = getEl("wheel-duration-toggle");
     const startDate = getEl("wheel-duration-start");
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
-    const hintText = getEl("wheel-hint-text");
-    if (hintText && window.Quill) {
-      hintEditor = new Quill(hintText, {
-        theme: "snow",
-        modules: {
-          toolbar: {
-            container: "#wheel-hint-toolbar",
-            handlers: {
-              br: insertLineBreak
-            }
-          }
-        },
-        formats: ["bold", "link", "align"],
-        placeholder: "متن راهنما"
-      });
-      hintEditor.on("text-change", () => {
-        if (applyingHint) {
-          return;
-        }
-        hintDirty = true;
-        syncHintLockState();
-      });
-    }
+
     applySettings(await loadSettings());
-    syncHintLockState();
     activeToggle?.addEventListener("change", () => {
       syncToggles({ activeToggle, durationToggle });
     });
@@ -406,26 +299,8 @@
       field?.addEventListener("change", updateStatus);
       field?.addEventListener("input", updateStatus);
     });
-    const wheelTab = getEl("tab-wheel-of-fortune");
-    if (wheelTab && window.MutationObserver) {
-      const observer = new MutationObserver(() => {
-        if (isHintDirty()) {
-          setOtherControlsDisabled(true);
-        }
-      });
-      observer.observe(wheelTab, { subtree: true, childList: true });
-    }
     saveBtn?.addEventListener("click", async () => {
       await saveSettings(collectSettings());
-    });
-    saveTextsBtn?.addEventListener("click", async () => {
-      const settings = collectSettings();
-      await saveSettings(settings);
-      settingsCache.hint = String(settings.hint ?? "");
-      settingsCache.hintHtml = String(settings.hintHtml ?? "");
-      settingsCache.hintAlign = String(settings.hintAlign ?? "right");
-      hintDirty = false;
-      syncHintLockState();
     });
     updateStatus();
   }

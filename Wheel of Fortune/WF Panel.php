@@ -1,4 +1,3 @@
-<link rel="stylesheet" href="style/vendor/quill/quill.snow.css" />
 <style>
   .wf-switch-grid {
     display: grid;
@@ -239,61 +238,6 @@
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-focus);
   }
-  .wf-text-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-  }
-  .wf-text-toolbar .ql-formats {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-right: 0;
-  }
-  .wf-text-toolbar .ql-toolbar.ql-snow {
-    border: none;
-    padding: 0;
-    background: transparent;
-  }
-  .wf-text-toolbar .ql-toolbar.ql-snow button {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 6px 8px;
-    min-width: 44px;
-    background: #fff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .wf-text-toolbar .ql-toolbar.ql-snow button .ri {
-    font-size: 16px;
-    color: #111;
-  }
-  .wf-text-toolbar .ql-toolbar.ql-snow button:hover,
-  .wf-text-toolbar .ql-toolbar.ql-snow button.ql-active {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-focus);
-  }
-  .wf-text-editor {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 15px;
-    outline: none;
-    background: #fff;
-    color: #111;
-    min-height: 96px;
-    width: 100%;
-    line-height: 1.6;
-  }
-  .wf-text-editor:focus-within {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-focus);
-  }
-  .wf-text-editor .ql-editor {
-    padding: 12px 14px;
-    min-height: 96px;
-  }
   .wf-fake-table {
     margin-top: 16px;
   }
@@ -429,33 +373,6 @@
 
 <div class="card">
   <div class="section-header">
-    <h3>Texts</h3>
-  </div>
-  <div class="form">
-    <div class="field standard-width">
-      <span>Hint</span>
-      <div id="wheel-hint-toolbar" data-wf-text-control="true" class="wf-text-toolbar ql-toolbar ql-snow" role="toolbar" aria-label="Hint tools">
-        <span class="ql-formats">
-          <button type="button" class="ql-align" value="right" aria-label="Align right"><span class="ri ri-align-right" aria-hidden="true"></span></button>
-          <button type="button" class="ql-align" value="center" aria-label="Align center"><span class="ri ri-align-center" aria-hidden="true"></span></button>
-          <button type="button" class="ql-align" value="left" aria-label="Align left"><span class="ri ri-align-left" aria-hidden="true"></span></button>
-        </span>
-        <span class="ql-formats">
-          <button type="button" class="ql-bold" aria-label="Bold"><span class="ri ri-bold" aria-hidden="true"></span></button>
-          <button type="button" class="ql-br" aria-label="Line break"><span class="ri ri-space" aria-hidden="true"></span></button>
-          <button type="button" class="ql-link" aria-label="Insert link"><span class="ri ri-link" aria-hidden="true"></span></button>
-        </span>
-      </div>
-      <div id="wheel-hint-text" class="wf-text-editor" data-wf-text-control="true"></div>
-    </div>
-    <div class="field full">
-      <button type="button" class="btn primary standard-primary-button" id="wheel-texts-save" data-wf-text-control="true">Save</button>
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="section-header">
     <h3>Fake Items</h3>
   </div>
   <form id="wf-fake-form" class="form">
@@ -533,7 +450,6 @@
 </div>
 </div>
 
-<script src="style/vendor/quill/quill.min.js"></script>
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
 <script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
 
