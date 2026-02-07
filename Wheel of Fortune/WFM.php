@@ -804,6 +804,14 @@ $sessionPayload = [
         text-align: center;
       }
 
+      .no-auth .wheel-shell {
+        display: none;
+      }
+
+      .no-auth .main-area {
+        display: none;
+      }
+
 
       .hero {
         display: grid;
@@ -1173,7 +1181,7 @@ $sessionPayload = [
       }
     </style>
   </head>
-  <body class="page-loading">
+  <body class="page-loading <?= $sessionPayload['authed'] ? 'authed' : 'no-auth' ?>">
     <div id="wf-loader" class="loader-overlay" role="status" aria-live="polite">
       <div class="loader-card">
         <div class="loader-icon-wrap" aria-hidden="true">
