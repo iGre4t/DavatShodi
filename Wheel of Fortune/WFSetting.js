@@ -378,8 +378,12 @@
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
+    const textCard = getEl("wf-texts-card");
     const hintText = getEl("wheel-hint-text");
-    if (hintText && window.Quill) {
+    const hintDisabled = textCard?.hasAttribute("hidden");
+    if (hintText && hintDisabled) {
+      hintText.setAttribute("contenteditable", "false");
+    } else if (hintText && window.Quill) {
       hintEditor = new Quill(hintText, {
         theme: "snow",
         modules: {

@@ -427,7 +427,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="wf-texts-card" hidden>
   <div class="section-header">
     <h3>Texts</h3>
   </div>
