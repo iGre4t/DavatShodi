@@ -260,10 +260,12 @@
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
     if (endTime && typeof settings.endTime === "string") endTime.value = settings.endTime;
-    if (hintText && typeof settings.hintHtml === "string") {
+    if (hintText && typeof settings.hintHtml === "string" && settings.hintHtml.trim() !== "") {
       hintText.innerHTML = settings.hintHtml;
-    } else if (hintText && typeof settings.hint === "string") {
+    } else if (hintText && typeof settings.hint === "string" && settings.hint.trim() !== "") {
       hintText.textContent = settings.hint;
+    } else if (hintText) {
+      hintText.textContent = "شانس خودت رو امتحان کن و جایزه ببر";
     }
     if (hintText && textCard) {
       const align = String(settings.hintAlign ?? "").trim() || "right";
@@ -308,7 +310,7 @@
       textCard ? Array.from(textCard.querySelectorAll("input, textarea, select, button")) : []
     );
     wheelTab.querySelectorAll("input, textarea, select, button").forEach(control => {
-      if (allowed.has(control)) {
+      if (allowed.has(control) || control.dataset.wfTextControl === "true") {
         return;
       }
       control.disabled = disabled;
@@ -366,6 +368,9 @@
     const hintText = getEl("wheel-hint-text");
     hintText?.addEventListener("input", syncHintLockState);
     hintText?.addEventListener("change", syncHintLockState);
+    if (hintText && !hintText.dataset.placeholder) {
+      hintText.dataset.placeholder = "متن راهنما";
+    }
     const textCard = getEl("wf-texts-card");
     textCard?.addEventListener("click", event => {
       const button = event.target.closest("button");

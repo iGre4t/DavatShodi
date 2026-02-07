@@ -409,19 +409,19 @@
     <div class="field standard-width">
       <span>Hint</span>
       <div class="wf-text-toolbar" role="toolbar" aria-label="Hint tools">
-        <button type="button" class="btn ghost small" data-align="right" aria-label="Align right" title="Align right">
+        <button type="button" class="btn ghost small" data-wf-text-control="true" data-align="right" aria-label="Align right" title="Align right">
           <span class="ri ri-align-right" aria-hidden="true"></span>
         </button>
-        <button type="button" class="btn ghost small" data-align="center" aria-label="Align center" title="Align center">
+        <button type="button" class="btn ghost small" data-wf-text-control="true" data-align="center" aria-label="Align center" title="Align center">
           <span class="ri ri-align-center" aria-hidden="true"></span>
         </button>
-        <button type="button" class="btn ghost small" data-align="left" aria-label="Align left" title="Align left">
+        <button type="button" class="btn ghost small" data-wf-text-control="true" data-align="left" aria-label="Align left" title="Align left">
           <span class="ri ri-align-left" aria-hidden="true"></span>
         </button>
-        <button type="button" class="btn ghost small" data-action="bold" aria-label="Bold" title="Bold">
+        <button type="button" class="btn ghost small" data-wf-text-control="true" data-action="bold" aria-label="Bold" title="Bold">
           <span class="ri ri-bold" aria-hidden="true"></span>
         </button>
-        <button type="button" class="btn ghost small" data-action="link" aria-label="Insert link" title="Insert link">
+        <button type="button" class="btn ghost small" data-wf-text-control="true" data-action="link" aria-label="Insert link" title="Insert link">
           <span class="ri ri-link" aria-hidden="true"></span>
         </button>
       </div>
@@ -432,12 +432,11 @@
         role="textbox"
         aria-multiline="true"
         data-align="right"
-        data-placeholder="متن راهنما"
-        tabindex="0"
-      ></div>
+        data-placeholder="??? ??????"
+        tabindex="0" data-wf-text-control="true"></div>
     </div>
     <div class="field full">
-      <button type="button" class="btn primary standard-primary-button" id="wheel-texts-save">Save</button>
+      <button type="button" class="btn primary standard-primary-button" id="wheel-texts-save" data-wf-text-control="true">Save</button>
     </div>
   </div>
 </div>
@@ -497,3 +496,6 @@
 
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
 <script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
+
+
+
