@@ -193,6 +193,11 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         color-scheme: light;
       }
 
+      body.fake-state {
+        --accent: #e11d2e;
+        --accent-ink: #ffffff;
+      }
+
       @font-face {
         font-family: 'Peyda Fa Num';
         src:
@@ -811,10 +816,6 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         '#ffffff', '#f8fbff', '#f3f8ff', '#edf4ff', '#e8f1ff',
         '#e4efff', '#deebff', '#d9e7ff', '#d4e3ff', '#cfe0ff'
       ];
-      const FAKE_SEGMENT_COLORS = [
-        '#ffffff', '#fff5f5', '#ffe9ec', '#ffe1e5', '#ffd7dd',
-        '#ffccd4', '#ffc2cb', '#ffb8c2', '#ffadb8', '#ffa3af'
-      ];
 
       let sourcePrizes = [];
       let wheelSegments = [];
@@ -1045,7 +1046,6 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         ctx.translate(center, center);
         ctx.rotate(angle);
 
-        const palette = document.body.classList.contains('fake-state') ? FAKE_SEGMENT_COLORS : SEGMENT_COLORS;
         for (let i = 0; i < count; i += 1) {
           const start = i * slice;
           const end = start + slice;
@@ -1053,7 +1053,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          ctx.fillStyle = palette[i % palette.length];
+          ctx.fillStyle = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
           ctx.fill();
           ctx.lineWidth = 1.15;
           ctx.strokeStyle = '#e5ecf8';
@@ -1274,7 +1274,3 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
     </script>
   </body>
 </html>
-      body.fake-state {
-        --accent: #e11d2e;
-        --accent-ink: #ffffff;
-      }
