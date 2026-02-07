@@ -383,7 +383,24 @@
       if (!Number.isFinite(index) || index < 0 || index >= fakeItems.length) {
         return;
       }
-      if (button.dataset.action === "delete") {
+      const action = button.dataset.action;
+      if (action === "save") {
+        const nameInput = row.querySelector('[data-field="fake-name"]');
+        const name = String(nameInput?.value ?? "").trim();
+        if (!name) {
+          nameInput?.focus();
+          return;
+        }
+        fakeItems[index] = {
+          ...fakeItems[index],
+          name,
+          onWheelName: name
+        };
+        await savePrizes([...prizes, ...fakeItems]);
+        renderFakeItems(fakeItems, fakeListEl);
+        return;
+      }
+      if (action === "delete") {
         fakeItems.splice(index, 1);
         await savePrizes([...prizes, ...fakeItems]);
         renderFakeItems(fakeItems, fakeListEl);
@@ -404,9 +421,16 @@
     listEl.innerHTML = fakeItems
       .map((item, index) => `
         <tr data-index="${index}">
-          <td>${escapeHtml(item.name)}</td>
           <td>
-            <button type="button" class="btn wf-btn-danger" data-action="delete">Delete</button>
+            <label class="field standard-width" style="margin:0;">
+              <input type="text" data-field="fake-name" value="${escapeHtml(item.name)}" />
+            </label>
+          </td>
+          <td>
+            <div class="wf-action-bar">
+              <button type="button" class="btn primary" data-action="save">Save</button>
+              <button type="button" class="btn wf-btn-danger" data-action="delete">Delete</button>
+            </div>
           </td>
         </tr>
       `)

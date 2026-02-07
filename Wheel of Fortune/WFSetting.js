@@ -396,6 +396,19 @@
     }
     applySettings(await loadSettings());
     syncHintLockState();
+    if (hintEditor) {
+      // Prevent auto-focus on load; focus only when user clicks the editor.
+      hintEditor.blur();
+      const toolbarEl = getEl("wheel-hint-toolbar");
+      document.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!target || !hintText) return;
+        if (hintText.contains(target) || toolbarEl?.contains(target)) {
+          return;
+        }
+        hintEditor?.blur();
+      });
+    }
     activeToggle?.addEventListener("change", () => {
       syncToggles({ activeToggle, durationToggle });
     });
