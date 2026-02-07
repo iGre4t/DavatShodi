@@ -838,6 +838,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
       const resultBox = document.querySelector('.result');
+      const hintEl = document.querySelector('.hint');
       const confettiLayer = document.getElementById('wf-confetti');
       let fakeLoopTimer = null;
       let wheelActive = true;
@@ -846,6 +847,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       let wheelStatus = 'active';
       let statusTickTimer = null;
       let latestSettings = {};
+      const defaultHintText = hintEl ? hintEl.textContent : '';
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
       const TWO_PI = Math.PI * 2;
@@ -1122,16 +1124,25 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         if (status === 'ended') {
           statusEl.textContent = 'زمان شگفتانه به اتمام رسیده';
           statusEl.classList.remove('hidden');
+          if (hintEl && defaultHintText) {
+            hintEl.textContent = defaultHintText;
+          }
           return;
         }
         if (status === 'inactive') {
           statusEl.textContent = 'شگفتانه‌ای در کار نیست :(';
           statusEl.classList.remove('hidden');
+          if (hintEl && defaultHintText) {
+            hintEl.textContent = defaultHintText;
+          }
           return;
         }
         const durationOn = Boolean(latestSettings?.duration);
         if (!durationOn && status === 'active') {
           statusEl.classList.add('hidden');
+          if (hintEl && defaultHintText) {
+            hintEl.textContent = defaultHintText;
+          }
           return;
         }
         const startDate = String(latestSettings?.startDate ?? '').trim();
@@ -1143,12 +1154,20 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         const targetTime = status === 'upcoming' ? startTime : endTime;
         const updateCountdown = () => {
           if (!targetDate || !targetTime) {
-            statusEl.textContent = targetLabel;
+            if (status === 'upcoming') {
+              resultEl.textContent = targetLabel;
+            } else {
+              statusEl.textContent = targetLabel;
+            }
             return;
           }
           const target = getTehranTargetDate(targetDate, targetTime);
           if (!target) {
-            statusEl.textContent = targetLabel;
+            if (status === 'upcoming') {
+              resultEl.textContent = targetLabel;
+            } else {
+              statusEl.textContent = targetLabel;
+            }
             return;
           }
           let diff = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
@@ -1157,9 +1176,23 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           const minutes = Math.floor(diff / 60);
           const seconds = diff - minutes * 60;
           const timer = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-          statusEl.textContent = `${targetLabel}: ${timer}`;
+          if (status === 'upcoming') {
+            resultEl.textContent = timer;
+          } else {
+            statusEl.textContent = `${targetLabel}: ${timer}`;
+          }
         };
-        statusEl.classList.remove('hidden');
+        if (status === 'upcoming') {
+          statusEl.classList.add('hidden');
+          if (hintEl) {
+            hintEl.textContent = 'چرخ شانس هنوز فعال نشده است';
+          }
+        } else {
+          statusEl.classList.remove('hidden');
+          if (hintEl && defaultHintText) {
+            hintEl.textContent = defaultHintText;
+          }
+        }
         updateCountdown();
         statusTickTimer = setInterval(updateCountdown, 1000);
       };
