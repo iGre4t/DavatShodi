@@ -257,6 +257,7 @@
     const textCard = getEl("wf-texts-card");
 
     Object.assign(settingsCache, settings);
+    settingsCache.hintAlign = String(settingsCache.hintAlign ?? "right") || "right";
     hintDirty = false;
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
@@ -349,7 +350,7 @@
     };
     const originalHtml = normalizeHtml(settingsCache.hintHtml ?? settingsCache.hint ?? "", settingsCache.hint ?? "");
     const currentHtml = normalizeHtml(hintEditor?.root?.innerHTML ?? hintText.innerHTML ?? "", hintEditor?.getText?.() ?? hintText.textContent ?? "");
-    const originalAlign = String(settingsCache.hintAlign ?? "right");
+    const originalAlign = String(settingsCache.hintAlign ?? "right") || "right";
     const currentAlign = String(hintEditor?.getFormat?.().align ?? hintText.dataset.align ?? "right") || "right";
     return originalHtml !== currentHtml || originalAlign !== currentAlign;
   }
@@ -402,6 +403,10 @@
       // Prevent autofocus on load; only focus when user clicks the editor.
       const editorRoot = hintEditor.root;
       const toolbarEl = getEl("wheel-hint-toolbar");
+      const toolbarButtons = toolbarEl ? Array.from(toolbarEl.querySelectorAll("button")) : [];
+      toolbarButtons.forEach((btn) => {
+        btn.setAttribute("tabindex", "-1");
+      });
       let pointerFocusAllowed = false;
       const allowPointerFocus = () => {
         pointerFocusAllowed = true;
@@ -419,6 +424,15 @@
           return;
         }
         editorRoot.setAttribute("tabindex", "0");
+        toolbarButtons.forEach((btn) => {
+          btn.setAttribute("tabindex", "0");
+        });
+      });
+      editorRoot.addEventListener("blur", () => {
+        editorRoot.setAttribute("tabindex", "-1");
+        toolbarButtons.forEach((btn) => {
+          btn.setAttribute("tabindex", "-1");
+        });
       });
       document.addEventListener("keydown", (event) => {
         const target = event.target;
