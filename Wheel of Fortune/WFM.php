@@ -206,10 +206,18 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         letter-spacing: 0.12em;
       }
 
+      .main-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 12px;
+        padding: 10px 18px 4px;
+      }
+
       .hero {
         display: grid;
         place-items: center;
-        padding: 10px 18px 4px;
       }
 
       .question {
@@ -243,7 +251,7 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       }
 
       .result {
-        margin: 10px auto 0;
+        margin: 0 auto;
         width: min(300px, calc(100% - 32px));
         border: 1px solid #e8edf6;
         border-radius: 14px;
@@ -387,6 +395,10 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
           height: min(340px, 48vh);
         }
 
+        .main-area {
+          padding: 6px 16px 2px;
+        }
+
         .center-spin {
           width: 82px;
           height: 82px;
@@ -402,20 +414,22 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
           <p class="brand">چرخ شانس</p>
         </div>
 
-        <div class="hero">
-          <?php if ($faviconUrl !== ''): ?>
-            <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
-          <?php else: ?>
-            <div class="question">
-              <span>؟</span>
-            </div>
-          <?php endif; ?>
-          <p class="hint">شانس خودت رو امتحان کن و جایزه ببر</p>
-        </div>
+        <div class="main-area">
+          <div class="hero">
+            <?php if ($faviconUrl !== ''): ?>
+              <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
+            <?php else: ?>
+              <div class="question">
+                <span>؟</span>
+              </div>
+            <?php endif; ?>
+            <p class="hint">شانس خودت رو امتحان کن و جایزه ببر</p>
+          </div>
 
-        <div class="result">
-          <span class="result-label">نتیجه</span>
-          <p id="wf-result" class="result-value">—</p>
+          <div class="result">
+            <span class="result-label">نتیجه</span>
+            <p id="wf-result" class="result-value">—</p>
+          </div>
         </div>
 
         <div class="wheel-shell">
