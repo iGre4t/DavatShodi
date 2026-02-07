@@ -1041,6 +1041,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
+            second: '2-digit',
             hour12: false
           });
           const parts = formatter.formatToParts(date);
@@ -1049,7 +1050,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           const day = parts.find((p) => p.type === 'day')?.value ?? '';
           const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
           const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
-          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+          const second = parts.find((p) => p.type === 'second')?.value ?? '00';
+          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}:${second}` };
         } catch {
           const fallback = new Date();
           const year = String(fallback.getFullYear());
@@ -1057,7 +1059,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           const day = String(fallback.getDate()).padStart(2, '0');
           const hour = String(fallback.getHours()).padStart(2, '0');
           const minute = String(fallback.getMinutes()).padStart(2, '0');
-          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+          const second = String(fallback.getSeconds()).padStart(2, '0');
+          return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}:${second}` };
         }
       };
 
