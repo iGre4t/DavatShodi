@@ -335,6 +335,10 @@
   }
 
   function isHintDirty() {
+    const textCard = getEl("wf-texts-card");
+    if (textCard?.hasAttribute("hidden")) {
+      return false;
+    }
     if (hintDirty) {
       return true;
     }
@@ -489,7 +493,7 @@
       field?.addEventListener("input", updateStatus);
     });
     const wheelTab = getEl("tab-wheel-of-fortune");
-    if (wheelTab && window.MutationObserver) {
+    if (wheelTab && window.MutationObserver && !hintDisabled) {
       const observer = new MutationObserver(() => {
         if (isHintDirty()) {
           setOtherControlsDisabled(true);
