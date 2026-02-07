@@ -175,6 +175,75 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         text-align: right;
       }
 
+      .page-loading body {
+        overflow: hidden;
+      }
+
+      .page-loading .app {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .loader-overlay {
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(circle at top, rgba(223, 236, 255, 0.9), rgba(244, 247, 251, 0.92) 50%, rgba(255, 255, 255, 0.95));
+        display: grid;
+        place-items: center;
+        z-index: 9999;
+        transition: opacity 0.35s ease;
+      }
+
+      .loader-card {
+        width: min(280px, 80vw);
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 24px 22px;
+        text-align: center;
+        box-shadow: 0 20px 40px rgba(30, 62, 108, 0.18);
+        border: 1px solid #ecf1fb;
+        display: grid;
+        gap: 12px;
+      }
+
+      .loader-spin {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: 6px solid #e3edff;
+        border-top-color: #2f8fff;
+        margin: 0 auto;
+        animation: wf-spin 1s linear infinite;
+      }
+
+      .loader-text {
+        margin: 0;
+        font-size: 0.9rem;
+        color: #516089;
+        font-weight: 600;
+      }
+
+      .loader-subtext {
+        margin: 0;
+        font-size: 0.78rem;
+        color: #8a97b2;
+      }
+
+      .loader-hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      @keyframes wf-spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       .app {
         width: min(460px, 100%);
       }
@@ -409,7 +478,14 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       }
     </style>
   </head>
-  <body>
+  <body class="page-loading">
+    <div id="wf-loader" class="loader-overlay" role="status" aria-live="polite">
+      <div class="loader-card">
+        <div class="loader-spin" aria-hidden="true"></div>
+        <p class="loader-text">در حال آماده‌سازی چرخ شانس</p>
+        <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
+      </div>
+    </div>
     <main class="app">
       <section class="phone">
         <div class="topbar">
@@ -444,6 +520,36 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
     </main>
 
     <script>
+      const loaderEl = document.getElementById('wf-loader');
+      const bodyEl = document.body;
+
+      const waitForFonts = () => {
+        if (document.fonts && document.fonts.ready) {
+          return document.fonts.ready;
+        }
+        return Promise.resolve();
+      };
+
+      const revealPage = () => {
+        bodyEl.classList.remove('page-loading');
+        if (loaderEl) {
+          loaderEl.classList.add('loader-hidden');
+          setTimeout(() => loaderEl.remove(), 450);
+        }
+      };
+
+      const bootReady = async () => {
+        try {
+          await Promise.all([
+            waitForFonts(),
+            new Promise(resolve => window.addEventListener('load', resolve, { once: true }))
+          ]);
+        } catch {}
+        revealPage();
+      };
+
+      bootReady();
+
       const initialPrizes = Array.isArray(<?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>)
         ? <?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>
         : [];
