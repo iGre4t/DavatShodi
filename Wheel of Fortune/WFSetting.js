@@ -348,6 +348,16 @@
     return originalHtml !== currentHtml || originalAlign !== currentAlign;
   }
 
+  function insertLineBreak() {
+    if (!hintEditor) {
+      return;
+    }
+    const range = hintEditor.getSelection(true);
+    const index = range ? range.index : hintEditor.getLength();
+    hintEditor.insertText(index, "\n", "user");
+    hintEditor.setSelection(index + 1, 0, "silent");
+  }
+
   function syncHintLockState() {
     setOtherControlsDisabled(isHintDirty());
   }
@@ -366,7 +376,12 @@
       hintEditor = new Quill(hintText, {
         theme: "snow",
         modules: {
-          toolbar: "#wheel-hint-toolbar"
+          toolbar: {
+            container: "#wheel-hint-toolbar",
+            handlers: {
+              br: insertLineBreak
+            }
+          }
         },
         formats: ["bold", "link", "align"],
         placeholder: "متن راهنما"

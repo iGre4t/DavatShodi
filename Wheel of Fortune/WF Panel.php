@@ -439,6 +439,7 @@
         </span>
         <span class="ql-formats">
           <button type="button" class="ql-bold" aria-label="Bold"><span class="ri ri-bold" aria-hidden="true"></span></button>
+          <button type="button" class="ql-br" aria-label="Line break"><span class="ri ri-space" aria-hidden="true"></span></button>
           <button type="button" class="ql-link" aria-label="Insert link"><span class="ri ri-link" aria-hidden="true"></span></button>
         </span>
       </div>
