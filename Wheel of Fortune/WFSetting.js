@@ -274,7 +274,11 @@
       hintEditor.clipboard.dangerouslyPasteHTML(html);
       const align = String(settings.hintAlign ?? "").trim() || "right";
       hintEditor.formatLine(0, hintEditor.getLength(), { align }, "silent");
-      applyingHint = false;
+      setTimeout(() => {
+        applyingHint = false;
+        hintDirty = false;
+        syncHintLockState();
+      }, 0);
     } else if (hintText) {
       hintText.textContent = "شانس خودت رو امتحان کن و جایزه ببر";
     }
@@ -396,20 +400,44 @@
         syncHintLockState();
       });
       // Prevent autofocus on load; only focus when user clicks the editor.
-      hintEditor.root.setAttribute("tabindex", "-1");
-      hintEditor.on("selection-change", (range) => {
-        if (!range) {
-          hintEditor.root.setAttribute("tabindex", "-1");
+      const editorRoot = hintEditor.root;
+      const toolbarEl = getEl("wheel-hint-toolbar");
+      let pointerFocusAllowed = false;
+      const allowPointerFocus = () => {
+        pointerFocusAllowed = true;
+        setTimeout(() => {
+          pointerFocusAllowed = false;
+        }, 300);
+      };
+      editorRoot.setAttribute("tabindex", "-1");
+      editorRoot.addEventListener("pointerdown", allowPointerFocus);
+      toolbarEl?.addEventListener("pointerdown", allowPointerFocus);
+      editorRoot.addEventListener("focusin", (event) => {
+        if (!pointerFocusAllowed) {
+          editorRoot.blur();
+          event.preventDefault();
+          return;
         }
+        editorRoot.setAttribute("tabindex", "0");
       });
-      hintEditor.root.addEventListener("mousedown", () => {
-        hintEditor.root.setAttribute("tabindex", "0");
-        hintEditor.focus();
+      document.addEventListener("keydown", (event) => {
+        const target = event.target;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) {
+          return;
+        }
+        if (document.activeElement === editorRoot && !pointerFocusAllowed) {
+          editorRoot.blur();
+        }
       });
     }
     applySettings(await loadSettings());
     hintDirty = false;
     syncHintLockState();
+    setTimeout(() => {
+      if (!hintDirty) {
+        syncHintLockState();
+      }
+    }, 0);
     if (hintEditor) {
       // Prevent auto-focus on load; focus only when user clicks the editor.
       hintEditor.blur();
