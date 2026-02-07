@@ -357,8 +357,9 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       .topbar {
         display: flex;
         align-items: center;
-        justify-content: flex-start;
+        justify-content: space-between;
         padding: 14px 16px 10px;
+        gap: 12px;
       }
 
       .brand {
@@ -612,11 +613,10 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .wheel-status.top-left {
-        position: fixed;
-        top: 14px;
-        left: 14px;
+        position: static;
         margin: 0;
-        z-index: 10;
+        align-self: center;
+        margin-inline-start: auto;
       }
 
       .wheel-shell::before {
@@ -764,6 +764,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       <section class="phone">
         <div class="topbar">
           <p class="brand">چرخ جایزه شگفتانه همراه‌اول</p>
+          <div id="wf-status" class="wheel-status hidden"></div>
         </div>
 
         <div class="main-area">
@@ -784,7 +785,6 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           </div>
         </div>
 
-        <div id="wf-status" class="wheel-status hidden"></div>
         <div class="wheel-shell">
           <div class="pointer" aria-hidden="true"></div>
           <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
@@ -856,6 +856,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       let statusTickTimer = null;
       let latestSettings = {};
       const defaultHintText = hintEl ? hintEl.textContent : '';
+      const activeHintText = 'شانس خودت رو امتحان کن و جایزه ببر\n\nتو این شگفتانه فقط یکبار می‌تونی برنده باشی، پس حواستو جمع کن و گردونه رو بچرخون. تا وقتی یدونه جایزه نبری می‌تونی گردونه رو بچرخونی!';
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
       const TWO_PI = Math.PI * 2;
@@ -1132,8 +1133,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         if (status === 'ended') {
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
-          if (hintEl && defaultHintText) {
-            hintEl.textContent = defaultHintText;
+          if (hintEl) {
+            hintEl.textContent = 'شگفتانه به پایان رسید. ممنون که همراه ما بودی؛ برای دوره بعدی حتماً دوباره سر بزن.';
           }
           return;
         }
@@ -1149,8 +1150,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         if (!durationOn && status === 'active') {
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
-          if (hintEl && defaultHintText) {
-            hintEl.textContent = defaultHintText;
+          if (hintEl) {
+            hintEl.textContent = activeHintText;
           }
           return;
         }
@@ -1200,8 +1201,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         } else {
           statusEl.classList.remove('hidden');
           statusEl.classList.add('top-left');
-          if (hintEl && defaultHintText) {
-            hintEl.textContent = defaultHintText;
+          if (hintEl) {
+            hintEl.textContent = activeHintText;
           }
         }
         updateCountdown();
