@@ -272,6 +272,8 @@
           ? settings.hint
           : "شانس خودت رو امتحان کن و جایزه ببر";
       hintEditor.clipboard.dangerouslyPasteHTML(html);
+      const align = String(settings.hintAlign ?? "").trim() || "right";
+      hintEditor.formatLine(0, hintEditor.getLength(), { align }, "silent");
       applyingHint = false;
     } else if (hintText) {
       hintText.textContent = "شانس خودت رو امتحان کن و جایزه ببر";
@@ -305,7 +307,7 @@
       endTime: endTime?.value ?? "",
       hint: hintPlain ?? "",
       hintHtml: hintHtml ?? "",
-      hintAlign: format.align ?? hintText?.dataset?.align ?? "right"
+      hintAlign: (format.align ?? hintText?.dataset?.align ?? "right") || "right"
     };
   }
 
@@ -344,7 +346,7 @@
     const originalHtml = normalizeHtml(settingsCache.hintHtml ?? settingsCache.hint ?? "", settingsCache.hint ?? "");
     const currentHtml = normalizeHtml(hintEditor?.root?.innerHTML ?? hintText.innerHTML ?? "", hintEditor?.getText?.() ?? hintText.textContent ?? "");
     const originalAlign = String(settingsCache.hintAlign ?? "right");
-    const currentAlign = String(hintEditor?.getFormat?.().align ?? hintText.dataset.align ?? "right");
+    const currentAlign = String(hintEditor?.getFormat?.().align ?? hintText.dataset.align ?? "right") || "right";
     return originalHtml !== currentHtml || originalAlign !== currentAlign;
   }
 
@@ -393,8 +395,20 @@
         hintDirty = true;
         syncHintLockState();
       });
+      // Prevent autofocus on load; only focus when user clicks the editor.
+      hintEditor.root.setAttribute("tabindex", "-1");
+      hintEditor.on("selection-change", (range) => {
+        if (!range) {
+          hintEditor.root.setAttribute("tabindex", "-1");
+        }
+      });
+      hintEditor.root.addEventListener("mousedown", () => {
+        hintEditor.root.setAttribute("tabindex", "0");
+        hintEditor.focus();
+      });
     }
     applySettings(await loadSettings());
+    hintDirty = false;
     syncHintLockState();
     if (hintEditor) {
       // Prevent auto-focus on load; focus only when user clicks the editor.
