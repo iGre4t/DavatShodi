@@ -263,6 +263,12 @@
   .wf-fake-table {
     margin-top: 16px;
   }
+  .wf-prize-table th:nth-child(1),
+  .wf-prize-table td:nth-child(1),
+  .wf-prize-table th:nth-child(2),
+  .wf-prize-table td:nth-child(2) {
+    width: 32%;
+  }
   @media (max-width: 900px) {
     .wf-switch-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -417,7 +423,7 @@
     </div>
   </form>
   <div class="table-wrapper wf-fake-table">
-    <table>
+    <table class="wf-prize-table">
       <thead>
         <tr>
           <th>Name</th>
