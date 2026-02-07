@@ -83,9 +83,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
       $itemName = trim((string)($item['name'] ?? ''));
       $onWheelName = trim((string)($item['onWheelName'] ?? $itemName));
+      $isFake = (bool)($item['isFake'] ?? false);
       $quantity = (int)($item['quantity'] ?? 0);
       $last = (int)($item['last'] ?? $quantity);
-      if ($itemName !== '' && $itemName === $name) {
+      if ($itemName !== '' && $itemName === $name && !$isFake) {
         $last = max(0, $last - 1);
       }
       if ($itemName !== '') {
@@ -93,7 +94,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           'name' => $itemName,
           'onWheelName' => $onWheelName !== '' ? $onWheelName : $itemName,
           'quantity' => $quantity > 0 ? $quantity : 0,
-          'last' => $last > 0 ? $last : 0
+          'last' => $last > 0 ? $last : 0,
+          'isFake' => $isFake
         ];
       }
     }
@@ -809,6 +811,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             const onWheelName = String(item?.onWheelName ?? name).trim();
             const quantityValue = Number.parseInt(item?.quantity ?? 0, 10);
             const quantity = Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 0;
+            const isFake = Boolean(item?.isFake);
             const hasLast = item && Object.prototype.hasOwnProperty.call(item, 'last');
             const lastValue = Number.parseInt(item?.last ?? quantity, 10);
             const remaining = hasLast
@@ -818,7 +821,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
               name,
               wheelLabel: onWheelName || name,
               weight: remaining,
-              canDecrement: name !== '' && remaining > 0
+              canDecrement: name !== '' && remaining > 0 && !isFake
             };
           })
           .filter((prize) => prize.name !== '' && prize.weight > 0);

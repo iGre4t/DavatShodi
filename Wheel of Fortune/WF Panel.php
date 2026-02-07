@@ -451,6 +451,32 @@
   </div>
 </div>
 
+<div class="card">
+  <div class="section-header">
+    <h3>Fake Items</h3>
+  </div>
+  <form id="wf-fake-form" class="form">
+    <label class="field standard-width">
+      <span>Fake Item Name</span>
+      <input id="wf-fake-name" name="fake-name" type="text" autocomplete="off" required />
+    </label>
+    <div class="field full">
+      <button type="submit" class="btn primary standard-primary-button">Add</button>
+    </div>
+  </form>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="wf-fake-list"></tbody>
+    </table>
+  </div>
+</div>
+
 <div id="wf-prize-section">
   <div class="card">
   <div class="section-header">

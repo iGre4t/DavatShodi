@@ -55,6 +55,7 @@ if ($action === 'save_prizes') {
     }
     $quantity = (int)($prize['quantity'] ?? 0);
     $last = (int)($prize['last'] ?? $quantity);
+    $isFake = (bool)($prize['isFake'] ?? false);
     if ($quantity < 0) {
       $quantity = 0;
     }
@@ -68,7 +69,8 @@ if ($action === 'save_prizes') {
       'name' => $name,
       'onWheelName' => $onWheelName,
       'quantity' => $quantity,
-      'last' => $last
+      'last' => $last,
+      'isFake' => $isFake
     ];
   }
   if (!writeJsonFile($prizesFile, $normalized)) {

@@ -25,7 +25,8 @@
               name,
               onWheelName,
               quantity,
-              last: Number.isFinite(last) ? last : quantity
+              last: Number.isFinite(last) ? last : quantity,
+              isFake: Boolean(item?.isFake)
             };
           })
           .filter(item => item.name !== "");
@@ -105,13 +106,19 @@
     const nameInput = document.getElementById("wf-prize-name");
     const quantityInput = document.getElementById("wf-prize-quantity");
     const listEl = document.getElementById("wf-prize-list");
+    const fakeForm = document.getElementById("wf-fake-form");
+    const fakeNameInput = document.getElementById("wf-fake-name");
+    const fakeListEl = document.getElementById("wf-fake-list");
 
     if (!form || !nameInput || !quantityInput || !listEl) {
       return;
     }
 
-    const prizes = await loadPrizes();
+    const allItems = await loadPrizes();
+    let prizes = allItems.filter(item => !item.isFake);
+    let fakeItems = allItems.filter(item => item.isFake);
     renderPrizes(prizes, listEl);
+    renderFakeItems(fakeItems, fakeListEl);
     const editState = { index: null };
 
     function parseQuantity(rawValue, fallback = 0) {
@@ -278,7 +285,7 @@
           last: nextLast
         };
         editState.index = null;
-        await savePrizes(prizes);
+        await savePrizes([...prizes, ...fakeItems]);
         renderPrizes(prizes, listEl);
         syncEditStateUI();
         return;
@@ -292,7 +299,7 @@
         }
         prizes.splice(index, 1);
         editState.index = null;
-        await savePrizes(prizes);
+        await savePrizes([...prizes, ...fakeItems]);
         renderPrizes(prizes, listEl);
         syncEditStateUI();
         return;
@@ -322,10 +329,11 @@
           name,
           onWheelName: nextOnWheelName,
           quantity,
-          last: nextLast
+          last: nextLast,
+          isFake: false
         };
         editState.index = null;
-        await savePrizes(prizes);
+        await savePrizes([...prizes, ...fakeItems]);
         renderPrizes(prizes, listEl);
         syncEditStateUI();
       }
@@ -342,8 +350,8 @@
         return;
       }
       const quantity = parseQuantity(quantityInput.value, 1);
-      prizes.push({ name, onWheelName: name, quantity, last: quantity });
-      await savePrizes(prizes);
+      prizes.push({ name, onWheelName: name, quantity, last: quantity, isFake: false });
+      await savePrizes([...prizes, ...fakeItems]);
       renderPrizes(prizes, listEl);
       nameInput.value = "";
       quantityInput.value = "1";
@@ -351,7 +359,56 @@
       syncEditStateUI();
     });
 
+    fakeForm?.addEventListener("submit", async event => {
+      event.preventDefault();
+      const name = String(fakeNameInput?.value ?? "").trim();
+      if (!name) {
+        fakeNameInput?.focus();
+        return;
+      }
+      fakeItems.push({ name, onWheelName: name, quantity: 1, last: 1, isFake: true });
+      await savePrizes([...prizes, ...fakeItems]);
+      renderFakeItems(fakeItems, fakeListEl);
+      fakeNameInput.value = "";
+      fakeNameInput.focus();
+    });
+
+    fakeListEl?.addEventListener("click", async event => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const row = button.closest("tr");
+      const index = Number.parseInt(row?.dataset?.index ?? "", 10);
+      if (!Number.isFinite(index) || index < 0 || index >= fakeItems.length) {
+        return;
+      }
+      if (button.dataset.action === "delete") {
+        fakeItems.splice(index, 1);
+        await savePrizes([...prizes, ...fakeItems]);
+        renderFakeItems(fakeItems, fakeListEl);
+      }
+    });
+
     syncEditStateUI();
+  }
+
+  function renderFakeItems(fakeItems, listEl) {
+    if (!listEl) {
+      return;
+    }
+    if (!fakeItems.length) {
+      listEl.innerHTML = '<tr><td colspan="2" class="muted">No fake items yet.</td></tr>';
+      return;
+    }
+    listEl.innerHTML = fakeItems
+      .map((item, index) => `
+        <tr data-index="${index}">
+          <td>${escapeHtml(item.name)}</td>
+          <td>
+            <button type="button" class="btn wf-btn-danger" data-action="delete">Delete</button>
+          </td>
+        </tr>
+      `)
+      .join("");
   }
 
   if (document.readyState === "loading") {
