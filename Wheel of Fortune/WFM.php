@@ -174,7 +174,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>چرخ شانس</title>
+    <title>چرخ جایزه شگفتانه همراه‌اول</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <style>
       :root {
@@ -465,14 +465,14 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.7) 45%, rgba(255, 255, 255, 0) 75%);
+        background: linear-gradient(120deg, rgba(47, 143, 255, 0) 0%, rgba(47, 143, 255, 0.65) 45%, rgba(47, 143, 255, 0) 75%);
         transform: translateX(-130%);
         opacity: 0;
         pointer-events: none;
       }
 
       .result.result-shine::after {
-        animation: result-shine 1.1s ease;
+        animation: result-shine 1.5s ease-in-out infinite;
       }
 
       .confetti-layer {
@@ -489,6 +489,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         height: 16px;
         opacity: 0;
         animation: confetti-fall 1.6s ease-out forwards;
+        --drift: 0px;
       }
 
       @keyframes confetti-fall {
@@ -500,7 +501,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           opacity: 1;
         }
         100% {
-          transform: translate3d(0, 280px, 0) rotate(240deg);
+          transform: translate3d(var(--drift), 280px, 0) rotate(240deg);
           opacity: 0;
         }
       }
@@ -679,7 +680,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
           </svg>
         </div>
-        <p class="loader-text">در حال آماده‌سازی چرخ شانس</p>
+        <p class="loader-text">در حال آماده‌سازی شگفتانه شما</p>
         <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
       </div>
     </div>
@@ -687,7 +688,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
     <main class="app">
       <section class="phone">
         <div class="topbar">
-          <p class="brand">چرخ شانس</p>
+          <p class="brand">چرخ جایزه شگفتانه همراه‌اول</p>
         </div>
 
         <div class="main-area">
@@ -1041,6 +1042,9 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         spinning = true;
         spinBtn.disabled = true;
         resultEl.textContent = '—';
+        if (resultBox) {
+          resultBox.classList.remove('result-shine');
+        }
 
         const winnerPrize = weightedPrizePick(sourcePrizes);
         const winnerIndex = pickDisplayIndexForPrize(wheelSegments, winnerPrize.name);
@@ -1071,30 +1075,31 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           drawWheel(wheelSegments, currentAngle);
           resultEl.textContent = winnerPrize?.name ?? 'بدون جایزه';
           if (resultBox) {
-            resultBox.classList.remove('result-shine');
-            void resultBox.offsetWidth;
             resultBox.classList.add('result-shine');
           }
           if (confettiLayer) {
-            const colors = ['#ff6b6b', '#ffd93d', '#6bcB77', '#4d96ff', '#b983ff', '#ff9f1c'];
+            const colors = ['#1f7bdc', '#2f8fff', '#4da3ff', '#6bb6ff', '#8ac8ff', '#b3dcff'];
             const width = window.innerWidth;
-            const count = Math.max(18, Math.min(36, Math.round(width / 35)));
+            const height = window.innerHeight;
+            const count = Math.max(28, Math.min(52, Math.round(width / 22)));
             confettiLayer.innerHTML = '';
             for (let i = 0; i < count; i += 1) {
               const piece = document.createElement('span');
               piece.className = 'confetti-piece';
-              const side = i % 2 === 0 ? 'left' : 'right';
-              const offset = Math.random() * 18 + 2;
-              piece.style[side] = `${offset}px`;
-              piece.style.top = `${Math.random() * 16}px`;
+              const fromLeft = Math.random() < 0.5;
+              const sideOffset = Math.random() * 26 + 2;
+              piece.style[fromLeft ? 'left' : 'right'] = `${sideOffset}px`;
+              piece.style.top = `${Math.random() * (height * 0.45)}px`;
               piece.style.background = colors[i % colors.length];
-              piece.style.animationDelay = `${Math.random() * 0.2}s`;
+              piece.style.animationDelay = `${Math.random() * 0.25}s`;
+              const drift = fromLeft ? (Math.random() * 120 + 40) : -(Math.random() * 120 + 40);
+              piece.style.setProperty('--drift', `${drift}px`);
               piece.style.transform = `translate3d(0, 0, 0) rotate(${Math.random() * 180}deg)`;
               confettiLayer.appendChild(piece);
             }
             setTimeout(() => {
               confettiLayer.innerHTML = '';
-            }, 1800);
+            }, 2000);
           }
           spinning = false;
           spinBtn.disabled = false;
