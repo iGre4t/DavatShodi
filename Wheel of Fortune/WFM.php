@@ -110,8 +110,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 }
 
 $initialPrizes = readPrizeStore($prizeStorePath);
+$wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
+$hintText = trim((string)($wheelSettings['hint'] ?? ''));
+if ($hintText === '') {
+  $hintText = 'شانس خودت رو امتحان کن و جایزه ببر';
+}
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -545,7 +550,7 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
                 <span>؟</span>
               </div>
             <?php endif; ?>
-            <p class="hint">شانس خودت رو امتحان کن و جایزه ببر</p>
+            <p class="hint"><?= htmlspecialchars($hintText, ENT_QUOTES, 'UTF-8') ?></p>
           </div>
 
           <div class="result">

@@ -247,6 +247,7 @@
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
+    const hintText = getEl("wheel-hint-text");
 
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
@@ -254,6 +255,7 @@
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
     if (endTime && typeof settings.endTime === "string") endTime.value = settings.endTime;
+    if (hintText && typeof settings.hint === "string") hintText.value = settings.hint;
     syncToggles({ activeToggle, durationToggle });
   }
 
@@ -264,6 +266,7 @@
     const startTime = getEl("wheel-duration-start-time");
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
+    const hintText = getEl("wheel-hint-text");
 
     return {
       active: Boolean(activeToggle?.checked),
@@ -271,12 +274,14 @@
       startDate: startDate?.value ?? "",
       startTime: startTime?.value ?? "",
       endDate: endDate?.value ?? "",
-      endTime: endTime?.value ?? ""
+      endTime: endTime?.value ?? "",
+      hint: hintText?.value ?? ""
     };
   }
 
   async function initSettings() {
     const saveBtn = getEl("wheel-settings-save");
+    const saveTextsBtn = getEl("wheel-texts-save");
     const activeToggle = getEl("wheel-active-toggle");
     const durationToggle = getEl("wheel-duration-toggle");
     const startDate = getEl("wheel-duration-start");
@@ -295,6 +300,9 @@
       field?.addEventListener("input", updateStatus);
     });
     saveBtn?.addEventListener("click", async () => {
+      await saveSettings(collectSettings());
+    });
+    saveTextsBtn?.addEventListener("click", async () => {
       await saveSettings(collectSettings());
     });
     updateStatus();

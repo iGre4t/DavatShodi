@@ -86,7 +86,8 @@ if ($action === 'get_settings') {
     'startDate' => '',
     'startTime' => '',
     'endDate' => '',
-    'endTime' => ''
+    'endTime' => '',
+    'hint' => 'شانس خودت رو امتحان کن و جایزه ببر'
   ]);
   echo json_encode(['status' => 'ok', 'data' => $settings], JSON_UNESCAPED_UNICODE);
   exit;
@@ -99,6 +100,7 @@ if ($action === 'save_settings') {
     echo json_encode(['status' => 'error', 'message' => 'Invalid settings.']);
     exit;
   }
+  $settings['hint'] = is_string($settings['hint'] ?? null) ? trim($settings['hint']) : '';
   if (!writeJsonFile($settingsFile, $settings)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save settings.']);
     exit;

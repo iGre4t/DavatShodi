@@ -368,6 +368,21 @@
   </div>
 </div>
 
+<div class="card">
+  <div class="section-header">
+    <h3>Texts</h3>
+  </div>
+  <div class="form">
+    <label class="field standard-width">
+      <span>Hint</span>
+      <textarea id="wheel-hint-text" rows="3" placeholder="متن راهنما"></textarea>
+    </label>
+    <div class="field full">
+      <button type="button" class="btn primary standard-primary-button" id="wheel-texts-save">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="wf-prize-section">
   <div class="card">
   <div class="section-header">
