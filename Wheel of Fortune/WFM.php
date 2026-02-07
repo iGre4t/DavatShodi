@@ -479,7 +479,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .result.result-shake {
-        animation: result-shake 0.8s ease-in-out 2;
+        animation: result-shake 1.2s ease-in-out infinite;
       }
 
       @keyframes result-shake {
@@ -611,9 +611,10 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         transform: translateX(-50%);
         border-left: 12px solid transparent;
         border-right: 12px solid transparent;
-        border-top: 22px solid #2f8fff;
+        border-top: 22px solid var(--accent);
         z-index: 3;
         filter: drop-shadow(0 4px 8px rgba(41, 115, 214, 0.35));
+        transition: border-top-color 2s ease;
       }
 
       .center-spin {
@@ -635,7 +636,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           inset 0 1px 0 rgba(255, 255, 255, 0.46);
         cursor: pointer;
         z-index: 4;
-        transition: transform 0.2s ease, opacity 0.2s ease;
+        transition: transform 0.2s ease, opacity 0.2s ease, background 2s ease, color 2s ease;
       }
 
       .center-spin:hover:not(:disabled) {
@@ -810,12 +811,62 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         '#ffffff', '#f8fbff', '#f3f8ff', '#edf4ff', '#e8f1ff',
         '#e4efff', '#deebff', '#d9e7ff', '#d4e3ff', '#cfe0ff'
       ];
+      const FAKE_SEGMENT_COLORS = [
+        '#ffffff', '#fff5f5', '#ffe9ec', '#ffe1e5', '#ffd7dd',
+        '#ffccd4', '#ffc2cb', '#ffb8c2', '#ffadb8', '#ffa3af'
+      ];
 
       let sourcePrizes = [];
       let wheelSegments = [];
       let currentAngle = 0;
       let spinning = false;
       let wheelSize = 420;
+      let currentAccent = '#2f8fff';
+      let accentAnimId = 0;
+
+      const getCssAccent = () => {
+        const value = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+        return value || '#2f8fff';
+      };
+
+      const parseHex = (hex) => {
+        const normalized = hex.replace('#', '').trim();
+        if (normalized.length === 3) {
+          return normalized.split('').map((c) => parseInt(c + c, 16));
+        }
+        if (normalized.length === 6) {
+          return [
+            parseInt(normalized.slice(0, 2), 16),
+            parseInt(normalized.slice(2, 4), 16),
+            parseInt(normalized.slice(4, 6), 16)
+          ];
+        }
+        return [47, 143, 255];
+      };
+
+      const toHex = (rgb) => {
+        return `#${rgb.map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('')}`;
+      };
+
+      const animateAccentTo = (targetColor, duration = 2000) => {
+        if (accentAnimId) {
+          cancelAnimationFrame(accentAnimId);
+        }
+        const start = performance.now();
+        const from = parseHex(currentAccent);
+        const to = parseHex(targetColor);
+        const tick = (now) => {
+          const progress = Math.min(1, (now - start) / duration);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          const next = from.map((c, i) => c + (to[i] - c) * eased);
+          currentAccent = toHex(next);
+          drawWheel(wheelSegments, currentAngle);
+          if (progress < 1) {
+            accentAnimId = requestAnimationFrame(tick);
+          }
+        };
+        accentAnimId = requestAnimationFrame(tick);
+      };
 
       const loadPrizeStore = async () => {
         try {
@@ -994,6 +1045,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         ctx.translate(center, center);
         ctx.rotate(angle);
 
+        const palette = document.body.classList.contains('fake-state') ? FAKE_SEGMENT_COLORS : SEGMENT_COLORS;
         for (let i = 0; i < count; i += 1) {
           const start = i * slice;
           const end = start + slice;
@@ -1001,7 +1053,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          ctx.fillStyle = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+          ctx.fillStyle = palette[i % palette.length];
           ctx.fill();
           ctx.lineWidth = 1.15;
           ctx.strokeStyle = '#e5ecf8';
@@ -1027,7 +1079,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
         ctx.beginPath();
         ctx.arc(center, center, 24, 0, TWO_PI);
-        ctx.fillStyle = '#2f8fff';
+        ctx.fillStyle = currentAccent;
         ctx.fill();
         ctx.lineWidth = 3;
         ctx.strokeStyle = '#ffffff';
@@ -1081,6 +1133,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const initApp = async () => {
         await waitForFonts();
         configureCanvas();
+        currentAccent = getCssAccent();
         await bootstrap();
 
         window.addEventListener('resize', () => {
@@ -1103,6 +1156,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           resultBox.classList.remove('result-shake');
           resultBox.classList.remove('result-fake');
         }
+        document.body.classList.remove('fake-state');
+        animateAccentTo('#2f8fff', 2000);
         if (fakeLoopTimer) {
           clearInterval(fakeLoopTimer);
           fakeLoopTimer = null;
@@ -1157,6 +1212,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             void resultBox.offsetWidth;
             resultBox.classList.add('result-shake');
             resultBox.classList.add('result-fake');
+            document.body.classList.add('fake-state');
+            animateAccentTo('#e11d2e', 400);
             const fakeText = winnerPrize?.name ?? 'بدون جایزه';
             const retryText = 'دوباره امتحان کن!';
             let toggle = false;
@@ -1217,3 +1274,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
     </script>
   </body>
 </html>
+      body.fake-state {
+        --accent: #e11d2e;
+        --accent-ink: #ffffff;
+      }
