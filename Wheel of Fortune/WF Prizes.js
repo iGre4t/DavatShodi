@@ -40,6 +40,7 @@
       await fetch(`${API_URL}?action=save_prizes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ prizes })
       });
     } catch {}
@@ -361,6 +362,7 @@
 
     fakeForm?.addEventListener("submit", async event => {
       event.preventDefault();
+      event.stopPropagation();
       const name = String(fakeNameInput?.value ?? "").trim();
       if (!name) {
         fakeNameInput?.focus();

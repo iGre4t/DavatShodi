@@ -294,6 +294,9 @@
     padding: 12px 14px;
     min-height: 96px;
   }
+  .wf-fake-table {
+    margin-top: 16px;
+  }
   @media (max-width: 900px) {
     .wf-switch-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -464,7 +467,7 @@
       <button type="submit" class="btn primary standard-primary-button">Add</button>
     </div>
   </form>
-  <div class="table-wrapper">
+  <div class="table-wrapper wf-fake-table">
     <table>
       <thead>
         <tr>
