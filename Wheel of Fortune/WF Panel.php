@@ -406,7 +406,7 @@
     <h3>Texts</h3>
   </div>
   <div class="form">
-    <label class="field standard-width">
+    <div class="field standard-width">
       <span>Hint</span>
       <div class="wf-text-toolbar" role="toolbar" aria-label="Hint tools">
         <button type="button" class="btn ghost small" data-align="right" aria-label="Align right" title="Align right">
@@ -435,7 +435,7 @@
         data-placeholder="متن راهنما"
         tabindex="0"
       ></div>
-    </label>
+    </div>
     <div class="field full">
       <button type="button" class="btn primary standard-primary-button" id="wheel-texts-save">Save</button>
     </div>

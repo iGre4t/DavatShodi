@@ -372,6 +372,8 @@
       if (!button || !hintText) {
         return;
       }
+      event.preventDefault();
+      hintText.focus();
       const align = button.dataset.align;
       const action = button.dataset.action;
       if (align) {
