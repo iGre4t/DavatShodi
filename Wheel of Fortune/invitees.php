@@ -362,9 +362,23 @@ if ($rows) {
       setMsg('فایل خالی است.', true);
       return;
     }
-    rows[0] = [...rows[0], 'password'];
+    rows[0] = [
+      ...rows[0],
+      'password',
+      'logins counts',
+      'logins',
+      'count of rolls',
+      'prize won'
+    ];
     for (let i = 1; i < rows.length; i += 1) {
-      rows[i] = [...rows[i], generatePassword()];
+      rows[i] = [
+        ...rows[i],
+        generatePassword(),
+        '',
+        '',
+        '',
+        ''
+      ];
     }
 
     const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n');

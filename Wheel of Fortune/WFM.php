@@ -1,10 +1,13 @@
-﻿<?php
+<?php
+session_start();
 const SETTINGS_STORE_PATH = __DIR__ . '/../data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'siteIcon' => ''
 ];
 
 $prizeStorePath = __DIR__ . '/WF Prizes.json';
+$inviteesFilePath = __DIR__ . '/WF Event/Invitees mapped.csv';
+$inviteesMapPath = __DIR__ . '/WF Event/WF Mapped.json';
 
 function readPrizeStore(string $path): array
 {
@@ -63,16 +66,307 @@ function formatSiteIconUrlForHtml(string $value): string
   return "../{$trimmed}";
 }
 
+function readInviteesCsv(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $rows = [];
+  if (($handle = fopen($path, 'r')) !== false) {
+    while (($data = fgetcsv($handle)) !== false) {
+      $rows[] = $data;
+    }
+    fclose($handle);
+  }
+  return $rows;
+}
+
+function writeInviteesCsv(string $path, array $rows): bool
+{
+  $dir = dirname($path);
+  if (!is_dir($dir)) {
+    mkdir($dir, 0777, true);
+  }
+  $handle = fopen($path, 'c+');
+  if ($handle == false) {
+    return false;
+  }
+  if (!flock($handle, LOCK_EX)) {
+    fclose($handle);
+    return false;
+  }
+  ftruncate($handle, 0);
+  rewind($handle);
+  foreach ($rows as $row) {
+    fputcsv($handle, $row);
+  }
+  fflush($handle);
+  flock($handle, LOCK_UN);
+  fclose($handle);
+  return true;
+}
+
+function readInviteesMapping(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $data = json_decode(file_get_contents($path), true);
+  return is_array($data) ? $data : [];
+}
+
+function normalizeHeaderName(string $value): string
+{
+  $value = trim(mb_strtolower($value, 'UTF-8'));
+  $value = preg_replace('/\s+/', ' ', $value);
+  return $value ?? '';
+}
+
+function findHeaderIndex(array $header, string $needle): int
+{
+  $needle = normalizeHeaderName($needle);
+  foreach ($header as $index => $value) {
+    if (normalizeHeaderName((string)$value) === $needle) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function ensureInviteeColumns(array &$rows, array $columns): array
+{
+  if (!$rows) {
+    return ['index' => [], 'added' => false];
+  }
+  $header = $rows[0];
+  $added = false;
+  $index = [];
+  foreach ($columns as $column) {
+    $colIndex = findHeaderIndex($header, $column);
+    if ($colIndex < 0) {
+      $header[] = $column;
+      $colIndex = count($header) - 1;
+      $added = true;
+      for ($i = 1; $i < count($rows); $i += 1) {
+        if (!is_array($rows[$i])) {
+          $rows[$i] = [];
+        }
+        $rows[$i][$colIndex] = '';
+      }
+    }
+    $index[$column] = $colIndex;
+  }
+  $rows[0] = $header;
+  return ['index' => $index, 'added' => $added];
+}
+
+function loadInviteesTable(string $filePath, string $mapPath): array
+{
+  $rows = readInviteesCsv($filePath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return [
+      'rows' => [],
+      'mapping' => [],
+      'columns' => [],
+      'header' => [],
+      'workIdIndex' => -1
+    ];
+  }
+  $mapping = readInviteesMapping($mapPath);
+  $columns = ensureInviteeColumns($rows, [
+    'password',
+    'logins counts',
+    'logins',
+    'count of rolls',
+    'prize won',
+    'wheel angle'
+  ]);
+  $header = $rows[0];
+  $workIdIndex = (int)($mapping['workId'] ?? -1);
+  if ($workIdIndex < 0 || $workIdIndex >= count($header)) {
+    $workIdIndex = findHeaderIndex($header, 'work id');
+  }
+  return [
+    'rows' => $rows,
+    'mapping' => $mapping,
+    'columns' => $columns,
+    'header' => $header,
+    'workIdIndex' => $workIdIndex
+  ];
+}
+
+function findInviteeRowIndex(array $rows, int $workIdIndex, string $workId): int
+{
+  if ($workIdIndex < 0) {
+    return -1;
+  }
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = $rows[$i] ?? [];
+    $value = trim((string)($row[$workIdIndex] ?? ''));
+    if ($value !== '' && $value === $workId) {
+      return $i;
+    }
+  }
+  return -1;
+}
+
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   header('Content-Type: application/json; charset=UTF-8');
   $rawInput = file_get_contents('php://input');
   $payload = json_decode($rawInput ?: '', true);
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
 
+
+  if ($action === 'login') {
+    $username = trim((string)($payload['username'] ?? ''));
+    $password = trim((string)($payload['password'] ?? ''));
+    if ($username === '' || $password === '') {
+      echo json_encode(['status' => 'error', 'message' => '??????? ???? ???? ????.']);
+      exit;
+    }
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+    $rows = $table['rows'];
+    if (!$rows) {
+      echo json_encode(['status' => 'error', 'message' => '???? ??????? ????? ????.']);
+      exit;
+    }
+    $workIdIndex = $table['workIdIndex'];
+    if ($workIdIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => '???? ??? ?????? ???? ???? ???.']);
+      exit;
+    }
+    $columns = $table['columns']['index'] ?? [];
+    $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
+    if ($passwordIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => '???? ??????? ????? ????.']);
+      exit;
+    }
+    $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $username);
+    if ($rowIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => '??? ?????? ?? ??????? ?????? ???.']);
+      exit;
+    }
+    $rowPassword = trim((string)($rows[$rowIndex][$passwordIndex] ?? ''));
+    if ($rowPassword === '' || $rowPassword !== $password) {
+      echo json_encode(['status' => 'error', 'message' => '??? ?????? ?? ??????? ?????? ???.']);
+      exit;
+    }
+    $loginCountIndex = $columns['logins counts'] ?? -1;
+    $loginListIndex = $columns['logins'] ?? -1;
+    if ($loginCountIndex >= 0) {
+      $count = (int)($rows[$rowIndex][$loginCountIndex] ?? 0);
+      $rows[$rowIndex][$loginCountIndex] = (string)($count + 1);
+    }
+    if ($loginListIndex >= 0) {
+      $stamp = date('Y-m-d H:i:s');
+      $existing = trim((string)($rows[$rowIndex][$loginListIndex] ?? ''));
+      $rows[$rowIndex][$loginListIndex] = $existing !== '' ? ($existing . ', ' . $stamp) : $stamp;
+    }
+    if (($table['columns']['added'] ?? false) && $rows) {
+      writeInviteesCsv($inviteesFilePath, $rows);
+    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+      echo json_encode(['status' => 'error', 'message' => '????? ??????? ???? ????? ???.']);
+      exit;
+    }
+    $_SESSION['wf_authed'] = true;
+    $_SESSION['wf_work_id'] = $username;
+    $_SESSION['wf_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
+    $prizeIndex = $columns['prize won'] ?? -1;
+    $angleIndex = $columns['wheel angle'] ?? -1;
+    $prizeWon = $prizeIndex >= 0 ? trim((string)($rows[$rowIndex][$prizeIndex] ?? '')) : '';
+    $wheelAngle = null;
+    if ($angleIndex >= 0) {
+      $angleValue = trim((string)($rows[$rowIndex][$angleIndex] ?? ''));
+      if ($angleValue !== '' && is_numeric($angleValue)) {
+        $wheelAngle = (float)$angleValue;
+      }
+    }
+    echo json_encode(['status' => 'ok', 'prizeWon' => $prizeWon, 'wheelAngle' => $wheelAngle]);
+    exit;
+  }
+
+  if ($action === 'log_roll') {
+    $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
+    if (!(($_SESSION['wf_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => '???? ????? ???? ???.']);
+      exit;
+    }
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+    $rows = $table['rows'];
+    $workIdIndex = $table['workIdIndex'];
+    $columns = $table['columns']['index'] ?? [];
+    $rollIndex = $columns['count of rolls'] ?? -1;
+    $prizeIndex = $columns['prize won'] ?? -1;
+    $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    if ($rowIndex < 0 || $rollIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => '???? ????? ???? ???.']);
+      exit;
+    }
+    if ($prizeIndex >= 0) {
+      $already = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
+      if ($already !== '') {
+        echo json_encode(['status' => 'error', 'message' => '????? ????? ??? ??? ???.']);
+        exit;
+      }
+    }
+    $rolls = (int)($rows[$rowIndex][$rollIndex] ?? 0);
+    $rows[$rowIndex][$rollIndex] = (string)($rolls + 1);
+    if (($table['columns']['added'] ?? false) && $rows) {
+      writeInviteesCsv($inviteesFilePath, $rows);
+    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+      echo json_encode(['status' => 'error', 'message' => '????? ????? ???? ????? ???.']);
+      exit;
+    }
+    echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
+  if ($action === 'log_prize') {
+    $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
+    if (!(($_SESSION['wf_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => '???? ????? ???? ???.']);
+      exit;
+    }
+    $prizeName = trim((string)($payload['prize'] ?? ''));
+    if ($prizeName === '') {
+      echo json_encode(['status' => 'error', 'message' => '????? ???? ????.']);
+      exit;
+    }
+    $angleValue = $payload['wheelAngle'] ?? null;
+    $wheelAngle = is_numeric($angleValue) ? (float)$angleValue : null;
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+    $rows = $table['rows'];
+    $workIdIndex = $table['workIdIndex'];
+    $columns = $table['columns']['index'] ?? [];
+    $prizeIndex = $columns['prize won'] ?? -1;
+    $angleIndex = $columns['wheel angle'] ?? -1;
+    $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    if ($rowIndex < 0 || $prizeIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => '???? ????? ???? ???.']);
+      exit;
+    }
+    $current = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
+    if ($current === '') {
+      $rows[$rowIndex][$prizeIndex] = $prizeName;
+      if ($angleIndex >= 0 && $wheelAngle !== null) {
+        $rows[$rowIndex][$angleIndex] = (string)$wheelAngle;
+      }
+      if (($table['columns']['added'] ?? false) && $rows) {
+        writeInviteesCsv($inviteesFilePath, $rows);
+      } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+        echo json_encode(['status' => 'error', 'message' => '????? ????? ????? ???.']);
+        exit;
+      }
+    }
+    echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
   if ($action === 'decrement_prize') {
     $name = trim((string)($payload['name'] ?? ''));
     if ($name === '') {
-      echo json_encode(['status' => 'error', 'message' => 'نام جایزه ارسال نشده است.']);
+      echo json_encode(['status' => 'error', 'message' => '??? ????? ????? ???? ???.']);
       exit;
     }
     $prizes = readPrizeStore($prizeStorePath);
@@ -100,14 +394,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     if (!writePrizeStore($prizeStorePath, $updated)) {
-      echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه‌ها انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => '????? ???????? ????? ???.']);
       exit;
     }
     echo json_encode(['status' => 'ok', 'data' => $updated]);
     exit;
   }
 
-  echo json_encode(['status' => 'error', 'message' => 'درخواست پشتیبانی نمی‌شود.']);
+  echo json_encode(['status' => 'error', 'message' => '??????? ???????? ???????.']);
   exit;
 }
 
@@ -165,18 +459,61 @@ if ($rawHintHtml === '' && $hintTextFallback !== '') {
   $rawHintHtml = htmlspecialchars($hintTextFallback, ENT_QUOTES, 'UTF-8');
 }
 if ($rawHintHtml === '') {
-  $rawHintHtml = htmlspecialchars('شانس خودت رو امتحان کن و جایزه ببر', ENT_QUOTES, 'UTF-8');
+  $rawHintHtml = htmlspecialchars('???? ???? ?? ?????? ?? ? ????? ???', ENT_QUOTES, 'UTF-8');
 }
 $hintHtml = sanitizeHintHtml($rawHintHtml);
 $hintAlign = trim((string)($wheelSettings['hintAlign'] ?? 'right'));
 $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlign : 'right';
+
+$inviteesMtime = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
+$sessionAuthed = isset($_SESSION['wf_authed']) && $_SESSION['wf_authed'] === true;
+if ($sessionAuthed && ($inviteesMtime === null || ($inviteesMtime !== ($_SESSION['wf_invitees_mtime'] ?? null)))) {
+  session_unset();
+  $sessionAuthed = false;
+}
+$sessionWorkId = $sessionAuthed ? trim((string)($_SESSION['wf_work_id'] ?? '')) : '';
+$sessionPrizeWon = '';
+$sessionWheelAngle = null;
+if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
+  $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+  $rows = $table['rows'];
+  $workIdIndex = $table['workIdIndex'];
+  $columns = $table['columns']['index'] ?? [];
+  $prizeIndex = $columns['prize won'] ?? -1;
+  $angleIndex = $columns['wheel angle'] ?? -1;
+  if (($table['columns']['added'] ?? false) && $rows) {
+    writeInviteesCsv($inviteesFilePath, $rows);
+  }
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+  if ($rowIndex < 0) {
+    session_unset();
+    $sessionAuthed = false;
+    $sessionWorkId = '';
+  } else {
+    if ($prizeIndex >= 0) {
+      $sessionPrizeWon = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
+    }
+    if ($angleIndex >= 0) {
+      $angleValue = trim((string)($rows[$rowIndex][$angleIndex] ?? ''));
+      if ($angleValue !== '' && is_numeric($angleValue)) {
+        $sessionWheelAngle = (float)$angleValue;
+      }
+    }
+  }
+}
+$sessionPayload = [
+  'authed' => $sessionAuthed,
+  'workId' => $sessionWorkId,
+  'prizeWon' => $sessionPrizeWon,
+  'wheelAngle' => $sessionWheelAngle
+];
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>چرخ جایزه شگفتانه همراه‌اول</title>
+    <title>??? ????? ??????? ?????????</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <style>
       :root {
@@ -377,6 +714,96 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         gap: 12px;
         padding: 10px 18px 4px;
       }
+
+      .login-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 20px;
+        padding: 26px 22px;
+      }
+
+      .login-hero {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        text-align: center;
+      }
+
+      .login-icon {
+        width: 92px;
+        height: 92px;
+        object-fit: contain;
+        display: block;
+      }
+
+      .login-title {
+        margin: 0;
+        font-size: 1.08rem;
+        color: #33466f;
+      }
+
+      .login-form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .login-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.82rem;
+        color: #516089;
+      }
+
+      .login-input {
+        border: 1px solid #e1e8f4;
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        background: #f8fbff;
+        color: var(--ink);
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      .login-input:focus {
+        border-color: #9bbcff;
+        box-shadow: 0 0 0 3px rgba(47, 143, 255, 0.12);
+        background: #ffffff;
+      }
+
+      .login-btn {
+        margin-top: 4px;
+        border: none;
+        border-radius: 14px;
+        padding: 12px;
+        font-weight: 700;
+        font-size: 0.95rem;
+        background: var(--accent);
+        color: var(--accent-ink);
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+
+      .login-btn:disabled {
+        background: #c7d2e5;
+        color: #6b7a99;
+        cursor: not-allowed;
+      }
+
+      .login-hint {
+        margin: 4px 0 0;
+        min-height: 1.2em;
+        font-size: 0.78rem;
+        color: #d1434a;
+        text-align: center;
+      }
+
 
       .hero {
         display: grid;
@@ -755,41 +1182,72 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
           </svg>
         </div>
-        <p class="loader-text">در حال آماده‌سازی شگفتانه شما</p>
-        <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
+        <p class="loader-text">?? ??? ?????????? ??????? ???</p>
+        <p class="loader-subtext">????? ??? ???? ??? ????</p>
       </div>
     </div>
     <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
     <main class="app">
       <section class="phone">
         <div class="topbar">
-          <p class="brand">چرخ جایزه شگفتانه همراه‌اول</p>
+          <p class="brand">??? ????? ??????? ?????????</p>
           <div id="wf-status" class="wheel-status hidden"></div>
         </div>
 
+        <?php if (!$sessionPayload['authed']): ?>
+        <div class="login-area">
+          <div class="login-hero">
+            <?php if ($faviconUrl !== ''): ?>
+              <img class="login-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="????? ????" />
+            <?php else: ?>
+              <div class="question">
+                <span>?</span>
+              </div>
+            <?php endif; ?>
+            <h2 class="login-title">?????? ???????</h2>
+          </div>
+          <form id="wf-login-form" class="login-form" autocomplete="on">
+            <label class="login-field">
+              <span>??? ??????</span>
+              <input id="wf-login-user" class="login-input" type="text" autocomplete="username" required />
+            </label>
+            <label class="login-field">
+              <span>???????</span>
+              <input id="wf-login-pass" class="login-input" type="password" autocomplete="current-password" required />
+            </label>
+            <button type="submit" class="login-btn">????</button>
+            <p id="wf-login-msg" class="login-hint" aria-live="polite"></p>
+          </form>
+        </div>
+      <?php else: ?>
         <div class="main-area">
           <div class="hero">
             <?php if ($faviconUrl !== ''): ?>
-              <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
+              <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="????? ????" />
             <?php else: ?>
               <div class="question">
-                <span>؟</span>
+                <span>?</span>
               </div>
             <?php endif; ?>
             <p class="hint hint-align-<?= htmlspecialchars($hintAlign, ENT_QUOTES, 'UTF-8') ?>"><?= $hintHtml ?></p>
           </div>
 
           <div class="result">
-            <span class="result-label">نتیجه</span>
-            <p id="wf-result" class="result-value">—</p>
+            <span class="result-label">?????</span>
+            <p id="wf-result" class="result-value">?</p>
           </div>
         </div>
 
         <div class="wheel-shell">
           <div class="pointer" aria-hidden="true"></div>
-          <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
-          <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
-          <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
+          <div id="wf-count" class="wheel-count">????? ???????: ?</div>
+          <canvas id="wf-wheel" width="420" height="420" aria-label="??? ?????"></canvas>
+          <button id="wf-spin" class="center-spin" type="button">??????</button>
+        </div>
+      <?php endif; ?>
+          <div id="wf-count" class="wheel-count">????? ???????: �</div>
+          <canvas id="wf-wheel" width="420" height="420" aria-label="??? ?????"></canvas>
+          <button id="wf-spin" class="center-spin" type="button">??????</button>
         </div>
       </section>
     </main>
@@ -837,6 +1295,46 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
       bootReady();
 
+      const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE); ?>;
+      const loginForm = document.getElementById('wf-login-form');
+      if (!sessionInfo?.authed) {
+        const loginBtn = document.querySelector('.login-btn');
+        const loginMsg = document.getElementById('wf-login-msg');
+        const userInput = document.getElementById('wf-login-user');
+        const passInput = document.getElementById('wf-login-pass');
+        if (loginForm) {
+          loginForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (loginBtn) loginBtn.disabled = true;
+            if (loginMsg) loginMsg.textContent = '';
+            try {
+              const username = String(userInput?.value ?? '').trim();
+              const password = String(passInput?.value ?? '').trim();
+              const response = await fetch(window.location.href, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'login', username, password })
+              });
+              const payload = await response.json();
+              if (response.ok && payload?.status === 'ok') {
+                window.location.reload();
+                return;
+              }
+              if (loginMsg) {
+                loginMsg.textContent = payload?.message || '??? ?? ????.';
+              }
+            } catch {
+              if (loginMsg) {
+                loginMsg.textContent = '??? ?? ????.';
+              }
+            } finally {
+              if (loginBtn) loginBtn.disabled = false;
+            }
+          });
+        }
+      }
+
+      if (sessionInfo?.authed) {
       const initialPrizes = Array.isArray(<?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>)
         ? <?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>
         : [];
@@ -856,8 +1354,11 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       let statusTickTimer = null;
       let latestSettings = {};
       const defaultHintText = hintEl ? hintEl.textContent : '';
-      const activeHintText = 'تو این شگفتانه فقط می‌تونی یدونه جایزه ببری و تا وقتی که جایزه رو نبردی می‌تونی گردونه رو بچرخونی!';
-      const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+      const activeHintText = '?? ??? ??????? ??? ??????? ????? ????? ???? ? ?? ???? ?? ????? ?? ????? ??????? ?????? ?? ???????!';
+      let userPrizeName = String(sessionInfo?.prizeWon ?? '').trim();
+      let userHasPrize = userPrizeName !== '';
+      const savedWheelAngle = Number.isFinite(Number(sessionInfo?.wheelAngle)) ? Number(sessionInfo.wheelAngle) : null;
+      const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '??????????'[Number(d)]);
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -873,7 +1374,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
       let sourcePrizes = [];
       let wheelSegments = [];
-      let currentAngle = 0;
+      let currentAngle = savedWheelAngle ?? 0;
       let spinning = false;
       let wheelSize = 420;
       const currentAccent = '#2f8fff';
@@ -890,7 +1391,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
       const normalizeSourcePrizes = (list) => {
         if (!Array.isArray(list)) {
-          return [{ name: 'بدون جایزه', wheelLabel: 'بدون جایزه', weight: 1, canDecrement: false }];
+          return [{ name: '???? ?????', wheelLabel: '???? ?????', weight: 1, canDecrement: false }];
         }
 
         const normalized = list
@@ -918,14 +1419,14 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
         return normalized.length
           ? normalized
-          : [{ name: 'بدون جایزه', wheelLabel: 'بدون جایزه', weight: 1, canDecrement: false }];
+          : [{ name: '???? ?????', wheelLabel: '???? ?????', weight: 1, canDecrement: false }];
       };
 
       const buildDisplaySegments = (prizes) => {
         if (!prizes.length) {
           return Array.from({ length: MIN_VISIBLE_SEGMENTS }, () => ({
-            label: 'بدون جایزه',
-            source: 'بدون جایزه',
+            label: '???? ?????',
+            source: '???? ?????',
             canDecrement: false
           }));
         }
@@ -1125,6 +1626,10 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
       const updateStatusBanner = () => {
         if (!statusEl) return;
+        if (userHasPrize) {
+          statusEl.classList.add('hidden');
+          return;
+        }
         if (statusTickTimer) {
           clearInterval(statusTickTimer);
           statusTickTimer = null;
@@ -1134,7 +1639,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
           if (hintEl) {
-            hintEl.textContent = 'شگفتانه به پایان رسید. ممنون که همراه ما بودی؛ برای دوره بعدی حتماً دوباره سر بزن.';
+            hintEl.textContent = '??????? ?? ????? ????. ????? ?? ????? ?? ????? ???? ???? ???? ????? ?????? ?? ???.';
             hintEl.style.textAlign = 'center';
           }
           return;
@@ -1143,7 +1648,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
           if (hintEl) {
-            hintEl.textContent = 'فعلاً شگفتانه‌ای فعال نیست. برای اطلاع از زمان بعدی، دوباره سر بزن.';
+            hintEl.textContent = '????? ?????????? ???? ????. ???? ????? ?? ???? ????? ?????? ?? ???.';
             hintEl.style.textAlign = 'center';
           }
           return;
@@ -1162,7 +1667,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         const endDate = String(latestSettings?.endDate ?? '').trim();
         const startTime = String(latestSettings?.startTime ?? '').trim();
         const endTime = String(latestSettings?.endTime ?? '').trim();
-        const targetLabel = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا پایان شگفتانه';
+        const targetLabel = status === 'upcoming' ? '?? ???? ???????' : '?? ????? ???????';
         const targetDate = status === 'upcoming' ? startDate : endDate;
         const targetTime = status === 'upcoming' ? startTime : endTime;
         const updateCountdown = () => {
@@ -1199,7 +1704,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
           if (hintEl) {
-            hintEl.textContent = 'چرخ شانس هنوز فعال نشده است';
+            hintEl.textContent = '??? ???? ???? ???? ???? ???';
             hintEl.style.textAlign = '';
           }
         } else {
@@ -1215,16 +1720,24 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       };
 
       const applyWheelStatus = (status) => {
-        wheelActive = status === 'active';
         wheelStatus = status;
-        spinBtn.disabled = !wheelActive;
-        if (!wheelActive) {
+        const canSpin = status === 'active' && !userHasPrize;
+        wheelActive = canSpin;
+        if (spinBtn) {
+          spinBtn.disabled = !canSpin;
+        }
+        if (!userHasPrize && !canSpin) {
           const message = status === 'upcoming'
-            ? 'چرخ شانس هنوز فعال نشده است'
+            ? '??? ???? ???? ???? ???? ???'
             : status === 'ended'
-              ? 'زمان شگفتانه به اتمام رسیده'
-              : 'شگفتانه‌ای در کار نیست :(';
-          resultEl.textContent = message;
+            ? '???? ??????? ?? ????? ?????'
+            : '?????????? ?? ??? ???? :(';
+          if (resultEl) {
+            resultEl.textContent = message;
+          }
+        }
+        if (userHasPrize && resultEl) {
+          resultEl.textContent = userPrizeName || '?';
         }
         drawWheel(wheelSegments, currentAngle);
       };
@@ -1311,7 +1824,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const weightedPrizePick = (prizes) => {
         const total = prizes.reduce((sum, prize) => sum + prize.weight, 0);
         if (total <= 0) {
-          return prizes[0] ?? { name: 'بدون جایزه', canDecrement: false };
+          return prizes[0] ?? { name: '???? ?????', canDecrement: false };
         }
         let roll = Math.random() * total;
         for (let i = 0; i < prizes.length; i += 1) {
@@ -1339,7 +1852,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const initWheel = (list) => {
         sourcePrizes = normalizeSourcePrizes(list);
         wheelSegments = buildDisplaySegments(sourcePrizes);
-        countEl.textContent = `تعداد آیتم‌ها: ${toFaDigits(wheelSegments.length)}`;
+        countEl.textContent = `????? ???????: ${toFaDigits(wheelSegments.length)}`;
         drawWheel(wheelSegments, currentAngle);
       };
 
@@ -1357,6 +1870,19 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         configureCanvas();
         await bootstrap();
         await refreshWheelStatus();
+        if (userHasPrize) {
+          if (resultEl) {
+            resultEl.textContent = userPrizeName || '?';
+          }
+          if (spinBtn) {
+            spinBtn.disabled = true;
+          }
+        }
+        if (savedWheelAngle !== null) {
+          currentAngle = savedWheelAngle;
+          drawWheel(wheelSegments, currentAngle);
+        }
+
 
         window.addEventListener('resize', () => {
           configureCanvas();
@@ -1373,9 +1899,34 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         if (spinning || !wheelSegments.length || !sourcePrizes.length) {
           return;
         }
+        if (userHasPrize) {
+          if (resultEl) {
+            resultEl.textContent = userPrizeName || '?';
+          }
+          return;
+        }
+        try {
+          const rollResponse = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'log_roll' })
+          });
+          const rollPayload = await rollResponse.json();
+          if (!rollResponse.ok || rollPayload?.status !== 'ok') {
+            if (resultEl) {
+              resultEl.textContent = userPrizeName || rollPayload?.message || '????? ???? ???? ?????.';
+            }
+            return;
+          }
+        } catch {
+          if (resultEl) {
+            resultEl.textContent = '??? ?? ??? ????.';
+          }
+          return;
+        }
         spinning = true;
         spinBtn.disabled = true;
-        resultEl.textContent = '—';
+        resultEl.textContent = '�';
         if (resultBox) {
           resultBox.classList.remove('result-shine');
           resultBox.classList.remove('result-shake');
@@ -1425,7 +1976,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
           currentAngle = ((targetAngle % TWO_PI) + TWO_PI) % TWO_PI;
           drawWheel(wheelSegments, currentAngle);
-          resultEl.textContent = winnerPrize?.name ?? 'بدون جایزه';
+          resultEl.textContent = winnerPrize?.name ?? '???? ?????';
           resultEl.classList.remove('drop-in');
           void resultEl.offsetWidth;
           if (resultBox) {
@@ -1433,12 +1984,26 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             resultBox.classList.remove('result-shake');
           }
           const isFake = Boolean(winnerPrize?.isFake);
+          if (!isFake && winnerPrize?.name) {
+            userHasPrize = true;
+            userPrizeName = winnerPrize.name;
+            if (spinBtn) {
+              spinBtn.disabled = true;
+            }
+            try {
+              await fetch(window.location.href, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'log_prize', prize: winnerPrize.name, wheelAngle: currentAngle })
+              });
+            } catch {}
+          }
           if (resultBox && isFake) {
             void resultBox.offsetWidth;
             resultBox.classList.add('result-shake');
             resultBox.classList.add('result-fake');
-            const fakeText = winnerPrize?.name ?? 'بدون جایزه';
-            const retryText = 'دوباره امتحان کن!';
+            const fakeText = winnerPrize?.name ?? '???? ?????';
+            const retryText = '?????? ?????? ??!';
             let toggle = false;
             fakeLoopTimer = setInterval(() => {
               toggle = !toggle;
@@ -1474,7 +2039,9 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
             }, 2000);
           }
           spinning = false;
-          spinBtn.disabled = false;
+          if (spinBtn) {
+            spinBtn.disabled = !wheelActive || userHasPrize;
+          }
 
           if (!winnerPrize?.canDecrement) {
             return;
@@ -1509,6 +2076,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       };
 
       scheduleHourlyStatusCheck();
+      }
     </script>
   </body>
 </html>
