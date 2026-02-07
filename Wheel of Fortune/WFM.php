@@ -401,6 +401,10 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         line-height: 1.35;
       }
 
+      .hint p {
+        margin: 0;
+      }
+
       .hint-align-right {
         text-align: right;
       }
@@ -442,7 +446,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .result-label {
-        display: none;
+        font-size: 0.78rem;
+        color: #8a97b2;
       }
 
       .result-value {
@@ -455,6 +460,9 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         unicode-bidi: plaintext;
         text-align: center;
         justify-self: stretch;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .wheel-shell {
