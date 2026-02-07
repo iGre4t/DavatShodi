@@ -313,12 +313,14 @@
         const quantity = parseQuantity(quantityInput?.value, 0);
         const previousQuantity = parseQuantity(prizes[index]?.quantity, 0);
         const previousLast = parseQuantity(prizes[index]?.last, previousQuantity);
+        const previousOnWheelName = String(prizes[index]?.onWheelName ?? "").trim();
+        const nextOnWheelName = onWheelName || previousOnWheelName || name;
         const nextLast = quantity === previousQuantity
           ? Math.min(previousLast, quantity)
           : quantity;
         prizes[index] = {
           name,
-          onWheelName: onWheelName || name,
+          onWheelName: nextOnWheelName,
           quantity,
           last: nextLast
         };
