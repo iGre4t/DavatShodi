@@ -477,6 +477,19 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         animation: result-shine 1.5s ease-in-out infinite;
       }
 
+      .result.result-shake {
+        animation: result-shake 0.4s ease-in-out 2;
+      }
+
+      @keyframes result-shake {
+        0% { transform: translateX(0); }
+        20% { transform: translateX(-4px); }
+        40% { transform: translateX(4px); }
+        60% { transform: translateX(-3px); }
+        80% { transform: translateX(3px); }
+        100% { transform: translateX(0); }
+      }
+
       .confetti-layer {
         position: fixed;
         inset: 0;
@@ -620,8 +633,11 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .center-spin:disabled {
-        opacity: 0.45;
+        opacity: 1;
         cursor: not-allowed;
+        background: #c7d2e5;
+        color: #6b7a99;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
       }
 
       .wheel-count {
@@ -1116,9 +1132,29 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           drawWheel(wheelSegments, currentAngle);
           resultEl.textContent = winnerPrize?.name ?? 'بدون جایزه';
           if (resultBox) {
+            resultBox.classList.remove('result-shine');
+            resultBox.classList.remove('result-shake');
+          }
+          const isFake = Boolean(winnerPrize?.isFake);
+          if (resultBox && isFake) {
+            void resultBox.offsetWidth;
+            resultBox.classList.add('result-shake');
+            const finalText = 'دوباره امتحان کن';
+            let flips = 0;
+            const flipMax = 5;
+            const flipTimer = setInterval(() => {
+              resultEl.textContent = (flips % 2 === 0) ? finalText : (winnerPrize?.name ?? finalText);
+              flips += 1;
+              if (flips >= flipMax) {
+                clearInterval(flipTimer);
+                resultEl.textContent = finalText;
+              }
+            }, 140);
+          }
+          if (resultBox && !isFake) {
             resultBox.classList.add('result-shine');
           }
-          if (confettiLayer) {
+          if (confettiLayer && !isFake) {
             const colors = ['#1f7bdc', '#2f8fff', '#4da3ff', '#6bb6ff', '#8ac8ff', '#b3dcff'];
             const width = window.innerWidth;
             const height = window.innerHeight;
