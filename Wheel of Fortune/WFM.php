@@ -457,6 +457,66 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         gap: 2px;
         padding: 8px 10px;
         height: 3.2em;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .result::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.7) 45%, rgba(255, 255, 255, 0) 75%);
+        transform: translateX(-130%);
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .result.result-shine::after {
+        animation: result-shine 1.1s ease;
+      }
+
+      .confetti-layer {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 9998;
+      }
+
+      .confetti-piece {
+        position: absolute;
+        width: 8px;
+        height: 16px;
+        opacity: 0;
+        animation: confetti-fall 1.6s ease-out forwards;
+      }
+
+      @keyframes confetti-fall {
+        0% {
+          transform: translate3d(0, -20px, 0) rotate(0deg);
+          opacity: 0;
+        }
+        10% {
+          opacity: 1;
+        }
+        100% {
+          transform: translate3d(0, 280px, 0) rotate(240deg);
+          opacity: 0;
+        }
+      }
+
+      @keyframes result-shine {
+        0% {
+          transform: translateX(-150%);
+          opacity: 0;
+        }
+        40% {
+          opacity: 0.75;
+        }
+        100% {
+          transform: translateX(150%);
+          opacity: 0;
+        }
       }
 
       .result-label {
@@ -623,6 +683,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
       </div>
     </div>
+    <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
     <main class="app">
       <section class="phone">
         <div class="topbar">
@@ -707,6 +768,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       const ctx = canvas.getContext('2d');
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
+      const resultBox = document.querySelector('.result');
+      const confettiLayer = document.getElementById('wf-confetti');
       const countEl = document.getElementById('wf-count');
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
@@ -990,7 +1053,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         const startAngle = currentAngle;
         const targetAngle = currentAngle + (spinTurns * TWO_PI) + delta;
         const startTime = performance.now();
-        const duration = 2500;
+        const duration = 7000;
         const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
         const animate = async (now) => {
@@ -1007,6 +1070,32 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           currentAngle = ((targetAngle % TWO_PI) + TWO_PI) % TWO_PI;
           drawWheel(wheelSegments, currentAngle);
           resultEl.textContent = winnerPrize?.name ?? 'بدون جایزه';
+          if (resultBox) {
+            resultBox.classList.remove('result-shine');
+            void resultBox.offsetWidth;
+            resultBox.classList.add('result-shine');
+          }
+          if (confettiLayer) {
+            const colors = ['#ff6b6b', '#ffd93d', '#6bcB77', '#4d96ff', '#b983ff', '#ff9f1c'];
+            const width = window.innerWidth;
+            const count = Math.max(18, Math.min(36, Math.round(width / 35)));
+            confettiLayer.innerHTML = '';
+            for (let i = 0; i < count; i += 1) {
+              const piece = document.createElement('span');
+              piece.className = 'confetti-piece';
+              const side = i % 2 === 0 ? 'left' : 'right';
+              const offset = Math.random() * 18 + 2;
+              piece.style[side] = `${offset}px`;
+              piece.style.top = `${Math.random() * 16}px`;
+              piece.style.background = colors[i % colors.length];
+              piece.style.animationDelay = `${Math.random() * 0.2}s`;
+              piece.style.transform = `translate3d(0, 0, 0) rotate(${Math.random() * 180}deg)`;
+              confettiLayer.appendChild(piece);
+            }
+            setTimeout(() => {
+              confettiLayer.innerHTML = '';
+            }, 1800);
+          }
           spinning = false;
           spinBtn.disabled = false;
 
