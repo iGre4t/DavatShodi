@@ -262,6 +262,13 @@
     padding: 6px 8px;
     min-width: 44px;
     background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .wf-text-toolbar .ql-toolbar.ql-snow button .ri {
+    font-size: 16px;
+    color: #111;
   }
   .wf-text-toolbar .ql-toolbar.ql-snow button:hover,
   .wf-text-toolbar .ql-toolbar.ql-snow button.ql-active {
@@ -426,13 +433,13 @@
       <span>Hint</span>
       <div id="wheel-hint-toolbar" data-wf-text-control="true" class="wf-text-toolbar ql-toolbar ql-snow" role="toolbar" aria-label="Hint tools">
         <span class="ql-formats">
-          <button type="button" class="ql-align" value="right" aria-label="Align right"></button>
-          <button type="button" class="ql-align" value="center" aria-label="Align center"></button>
-          <button type="button" class="ql-align" value="left" aria-label="Align left"></button>
+          <button type="button" class="ql-align" value="right" aria-label="Align right"><span class="ri ri-align-right" aria-hidden="true"></span></button>
+          <button type="button" class="ql-align" value="center" aria-label="Align center"><span class="ri ri-align-center" aria-hidden="true"></span></button>
+          <button type="button" class="ql-align" value="left" aria-label="Align left"><span class="ri ri-align-left" aria-hidden="true"></span></button>
         </span>
         <span class="ql-formats">
-          <button type="button" class="ql-bold" aria-label="Bold"></button>
-          <button type="button" class="ql-link" aria-label="Insert link"></button>
+          <button type="button" class="ql-bold" aria-label="Bold"><span class="ri ri-bold" aria-hidden="true"></span></button>
+          <button type="button" class="ql-link" aria-label="Insert link"><span class="ri ri-link" aria-hidden="true"></span></button>
         </span>
       </div>
       <div id="wheel-hint-text" class="wf-text-editor" data-wf-text-control="true"></div>
@@ -499,6 +506,7 @@
 <script src="style/vendor/quill/quill.min.js"></script>
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
 <script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
+
 
 
 

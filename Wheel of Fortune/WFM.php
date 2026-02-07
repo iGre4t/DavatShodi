@@ -397,6 +397,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         margin: 10px 0 0;
         font-size: 0.85rem;
         color: var(--muted);
+        padding: 0 16px;
+        line-height: 1.35;
       }
 
       .hint-align-right {
@@ -440,8 +442,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .result-label {
-        font-size: 0.78rem;
-        color: #8a97b2;
+        display: none;
       }
 
       .result-value {
