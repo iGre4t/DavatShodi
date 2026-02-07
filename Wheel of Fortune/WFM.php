@@ -611,6 +611,14 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         display: none;
       }
 
+      .wheel-status.top-left {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        margin: 0;
+        z-index: 10;
+      }
+
       .wheel-shell::before {
         content: '';
         position: absolute;
@@ -1122,16 +1130,16 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         }
         const status = wheelStatus;
         if (status === 'ended') {
-          statusEl.textContent = 'زمان شگفتانه به اتمام رسیده';
-          statusEl.classList.remove('hidden');
+          statusEl.classList.add('hidden');
+          statusEl.classList.remove('top-left');
           if (hintEl && defaultHintText) {
             hintEl.textContent = defaultHintText;
           }
           return;
         }
         if (status === 'inactive') {
-          statusEl.textContent = 'شگفتانه‌ای در کار نیست :(';
-          statusEl.classList.remove('hidden');
+          statusEl.classList.add('hidden');
+          statusEl.classList.remove('top-left');
           if (hintEl && defaultHintText) {
             hintEl.textContent = defaultHintText;
           }
@@ -1140,6 +1148,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         const durationOn = Boolean(latestSettings?.duration);
         if (!durationOn && status === 'active') {
           statusEl.classList.add('hidden');
+          statusEl.classList.remove('top-left');
           if (hintEl && defaultHintText) {
             hintEl.textContent = defaultHintText;
           }
@@ -1184,11 +1193,13 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         };
         if (status === 'upcoming') {
           statusEl.classList.add('hidden');
+          statusEl.classList.remove('top-left');
           if (hintEl) {
             hintEl.textContent = 'چرخ شانس هنوز فعال نشده است';
           }
         } else {
           statusEl.classList.remove('hidden');
+          statusEl.classList.add('top-left');
           if (hintEl && defaultHintText) {
             hintEl.textContent = defaultHintText;
           }
