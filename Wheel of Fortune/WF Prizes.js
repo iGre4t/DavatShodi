@@ -80,15 +80,21 @@
               </span>
             </td>
             <td>
-              <label class="field wf-standard-third" style="margin:0;">
+              <label class="field wf-standard-third wf-prize-qty" style="margin:0;">
                 <input type="number" data-field="quantity" min="0" step="1" value="${escapeHtml(quantity)}" />
               </label>
             </td>
             <td>
               <div class="wf-count-control">
-                <button type="button" class="btn wf-btn-count-add" data-action="add-count">Add</button>
-                <button type="button" class="btn wf-btn-count-sub" data-action="sub-count">Sub</button>
-                <button type="button" class="btn wf-btn-count-reset" data-action="reset-count">Rest</button>
+                <button type="button" class="btn wf-btn-count-add" data-action="add-count" title="Add" aria-label="Add">
+                  <span class="ri ri-add-line" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="btn wf-btn-count-sub" data-action="sub-count" title="Sub" aria-label="Sub">
+                  <span class="ri ri-subtract-line" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="btn wf-btn-count-reset" data-action="reset-count" title="Reset" aria-label="Reset">
+                  <span class="ri ri-refresh-line" aria-hidden="true"></span>
+                </button>
               </div>
             </td>
             <td>

@@ -136,6 +136,19 @@
     justify-content: center;
   }
   .wf-count-control .btn {
+    min-width: 40px;
+    padding: 6px 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .wf-count-control .btn .ri {
+    font-size: 16px;
+  }
+  .wf-prize-qty {
+    width: 40%;
+  }
+  .wf-count-control .btn {
     min-width: 56px;
   }
   .wf-btn-count-add {
