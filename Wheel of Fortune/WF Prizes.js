@@ -88,6 +88,7 @@
               <div class="wf-count-control">
                 <button type="button" class="btn wf-btn-count-add" data-action="add-count">Add</button>
                 <button type="button" class="btn wf-btn-count-sub" data-action="sub-count">Sub</button>
+                <button type="button" class="btn wf-btn-count-reset" data-action="reset-count">Rest</button>
               </div>
             </td>
             <td>
@@ -268,18 +269,21 @@
         return;
       }
       const action = button.dataset.action;
-      if (action === "add-count" || action === "sub-count") {
+      if (action === "add-count" || action === "sub-count" || action === "reset-count") {
         if (Number.isInteger(editState.index) && editState.index !== index) {
           return;
         }
         if (editState.index === index && isDirtyRow(index, row)) {
           return;
         }
-        const delta = action === "add-count" ? 1 : -1;
         const currentQuantity = parseQuantity(prizes[index]?.quantity, 0);
         const currentLast = parseQuantity(prizes[index]?.last, currentQuantity);
-        const nextQuantity = Math.max(0, currentQuantity + delta);
-        const nextLast = Math.max(0, currentLast + delta);
+        const nextQuantity = action === "reset-count"
+          ? currentQuantity
+          : Math.max(0, currentQuantity + (action === "add-count" ? 1 : -1));
+        const nextLast = action === "reset-count"
+          ? nextQuantity
+          : Math.max(0, currentLast + (action === "add-count" ? 1 : -1));
         prizes[index] = {
           ...prizes[index],
           quantity: nextQuantity,

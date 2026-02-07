@@ -156,6 +156,15 @@
     background: #0284c7;
     border-color: #0284c7;
   }
+  .wf-btn-count-reset {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    color: #fff;
+  }
+  .wf-btn-count-reset:hover {
+    background: #d97706;
+    border-color: #d97706;
+  }
   .wf-status-pill {
     display: inline-flex;
     align-items: center;
@@ -253,7 +262,17 @@
   }
 </style>
 
-<div class="card">
+<div class="sub-layout" data-sub-layout>
+  <aside class="sub-sidebar">
+    <div class="sub-header">Wheel of Fortune</div>
+    <div class="sub-nav">
+      <button type="button" class="sub-item active" data-pane="wf-main">Main Panel</button>
+      <button type="button" class="sub-item" data-pane="wf-invitees">Invitees</button>
+    </div>
+  </aside>
+  <div class="sub-content">
+    <div class="sub-pane active" data-pane="wf-main">
+      <div class="card">
   <div class="section-header">
     <h3>Status</h3>
   </div>
@@ -446,8 +465,14 @@
       </thead>
       <tbody id="wf-prize-list"></tbody>
     </table>
-  </div>
 </div>
+</div>
+</div>
+    </div>
+    <div class="sub-pane" data-pane="wf-invitees">
+      <?php include __DIR__ . '/invitees.php'; ?>
+    </div>
+  </div>
 </div>
 
 <script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>

@@ -856,7 +856,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       let statusTickTimer = null;
       let latestSettings = {};
       const defaultHintText = hintEl ? hintEl.textContent : '';
-      const activeHintText = 'شانس خودت رو امتحان کن و جایزه ببر\n\nتو این شگفتانه فقط یکبار می‌تونی برنده باشی، پس حواستو جمع کن و گردونه رو بچرخون. تا وقتی یدونه جایزه نبری می‌تونی گردونه رو بچرخونی!';
+      const activeHintText = 'تو این شگفتانه فقط می‌تونی یدونه جایزه ببری و تا وقتی که جایزه رو نبردی می‌تونی گردونه رو بچرخونی!';
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
       const TWO_PI = Math.PI * 2;
@@ -1142,9 +1142,9 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         if (status === 'inactive') {
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
-          if (hintEl && defaultHintText) {
-            hintEl.textContent = defaultHintText;
-            hintEl.style.textAlign = '';
+          if (hintEl) {
+            hintEl.textContent = 'فعلاً شگفتانه‌ای فعال نیست. برای اطلاع از زمان بعدی، دوباره سر بزن.';
+            hintEl.style.textAlign = 'center';
           }
           return;
         }
