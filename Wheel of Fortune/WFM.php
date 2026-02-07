@@ -429,7 +429,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 
       .ql-align-center {
         text-align: center;
-        padding: 0 12px;
+        padding: 0 30px;
       }
 
       .ql-align-right {
@@ -456,6 +456,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         justify-content: center;
         gap: 2px;
         padding: 8px 10px;
+        height: 3.2em;
       }
 
       .result-label {
