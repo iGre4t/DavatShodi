@@ -1,4 +1,90 @@
-﻿<div class="card">
+﻿<?php
+$baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'WF Event';
+$mappedFile = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
+$mapFile = $baseDir . DIRECTORY_SEPARATOR . 'WF Mapped.json';
+$stats = [
+  'total' => 0,
+  'columns' => [],
+  'conflicts' => [
+    'workId' => [],
+    'nationalId' => [],
+    'phoneNumber' => []
+  ]
+];
+
+function readMappedConfig(string $path): array {
+  if (!is_file($path)) {
+    return [];
+  }
+  $data = json_decode(file_get_contents($path), true);
+  return is_array($data) ? $data : [];
+}
+
+function readCsvRows(string $path): array {
+  if (!is_file($path)) {
+    return [];
+  }
+  $rows = [];
+  if (($handle = fopen($path, 'r')) !== false) {
+    while (($data = fgetcsv($handle)) !== false) {
+      $rows[] = $data;
+    }
+    fclose($handle);
+  }
+  return $rows;
+}
+
+$mapping = readMappedConfig($mapFile);
+$rows = readCsvRows($mappedFile);
+if ($rows) {
+  $header = $rows[0] ?? [];
+  $stats['total'] = max(0, count($rows) - 1);
+  $stats['columns'] = [
+    'workId' => $header[$mapping['workId'] ?? -1] ?? '',
+    'firstName' => $header[$mapping['firstName'] ?? -1] ?? '',
+    'lastName' => $header[$mapping['lastName'] ?? -1] ?? '',
+    'nationalId' => $header[$mapping['nationalId'] ?? -1] ?? '',
+    'phoneNumber' => $header[$mapping['phoneNumber'] ?? -1] ?? ''
+  ];
+
+  $seen = [
+    'workId' => [],
+    'nationalId' => [],
+    'phoneNumber' => []
+  ];
+
+  for ($i = 1; $i < count($rows); $i++) {
+    $row = $rows[$i];
+    $first = trim((string)($row[$mapping['firstName'] ?? -1] ?? ''));
+    $last = trim((string)($row[$mapping['lastName'] ?? -1] ?? ''));
+    $full = trim($first . ' ' . $last);
+    $rowNumber = $i + 1;
+
+    $fields = [
+      'workId' => trim((string)($row[$mapping['workId'] ?? -1] ?? '')),
+      'nationalId' => trim((string)($row[$mapping['nationalId'] ?? -1] ?? '')),
+      'phoneNumber' => trim((string)($row[$mapping['phoneNumber'] ?? -1] ?? ''))
+    ];
+
+    foreach ($fields as $key => $value) {
+      if ($value === '') {
+        continue;
+      }
+      if (isset($seen[$key][$value])) {
+        $stats['conflicts'][$key][] = [
+          'row' => $rowNumber,
+          'name' => $full !== '' ? $full : 'نامشخص',
+          'value' => $value
+        ];
+      } else {
+        $seen[$key][$value] = $rowNumber;
+      }
+    }
+  }
+}
+?>
+
+<div class="card">
   <div class="section-header">
     <h3>Insert Invite List</h3>
   </div>
@@ -15,6 +101,70 @@
     </div>
     <div class="field full">
       <button type="button" class="btn primary standard-primary-button" id="wf-invite-map">Map and Upload</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-header">
+    <h3>Stats</h3>
+  </div>
+  <div class="form" style="gap:12px;">
+    <div class="field">
+      <span>Total Invitees</span>
+      <strong><?= htmlspecialchars((string)$stats['total'], ENT_QUOTES, 'UTF-8') ?></strong>
+    </div>
+    <div class="field">
+      <span>Mapped Columns</span>
+      <div class="field-block">
+        <div class="muted">Work ID: <?= htmlspecialchars($stats['columns']['workId'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">First Name: <?= htmlspecialchars($stats['columns']['firstName'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">Last Name: <?= htmlspecialchars($stats['columns']['lastName'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">National ID: <?= htmlspecialchars($stats['columns']['nationalId'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">Phone Number: <?= htmlspecialchars($stats['columns']['phoneNumber'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+      </div>
+    </div>
+    <div class="field">
+      <span>Conflicts</span>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Row</th>
+              <th>Full Name</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php
+            $conflictRows = [];
+            foreach (['workId' => 'Work ID', 'nationalId' => 'National ID', 'phoneNumber' => 'Phone Number'] as $key => $label) {
+              foreach ($stats['conflicts'][$key] as $item) {
+                $conflictRows[] = [
+                  'type' => $label,
+                  'row' => $item['row'],
+                  'name' => $item['name'],
+                  'value' => $item['value']
+                ];
+              }
+            }
+            if (!$conflictRows): ?>
+              <tr>
+                <td colspan="4" class="muted">No conflicts found.</td>
+              </tr>
+            <?php else:
+              foreach ($conflictRows as $row): ?>
+                <tr>
+                  <td><?= htmlspecialchars($row['type'], ENT_QUOTES, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars((string)$row['row'], ENT_QUOTES, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars($row['name'], ENT_QUOTES, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8') ?></td>
+                </tr>
+            <?php endforeach; endif; ?>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
