@@ -175,6 +175,12 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
         text-align: right;
       }
 
+      @supports (height: 100dvh) {
+        body {
+          min-height: 100dvh;
+        }
+      }
+
       .page-loading body {
         overflow: hidden;
       }
@@ -500,6 +506,13 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
           width: 82px;
           height: 82px;
           font-size: 0.88rem;
+        }
+      }
+
+      @supports (height: 100dvh) {
+        .phone {
+          min-height: min(860px, calc(100dvh - 36px));
+          height: calc(100dvh - 36px);
         }
       }
     </style>
