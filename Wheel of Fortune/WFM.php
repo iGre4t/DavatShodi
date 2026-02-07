@@ -459,10 +459,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
       }
 
       .result-label {
-        font-size: 0.78rem;
-        color: #8a97b2;
-        align-self: stretch;
-        text-align: center;
+        display: none;
       }
 
       .result-value {
