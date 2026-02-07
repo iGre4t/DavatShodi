@@ -245,7 +245,8 @@
     align-items: center;
   }
   .wf-text-toolbar .btn {
-    min-width: 70px;
+    min-width: 44px;
+    padding: 6px 10px;
   }
   .wf-text-toolbar .btn.active {
     box-shadow: 0 0 0 3px var(--primary-focus);
@@ -261,6 +262,10 @@
     min-height: 96px;
     width: 100%;
     line-height: 1.6;
+  }
+  .wf-text-editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted);
   }
   .wf-text-editor:focus {
     border-color: var(--primary);
@@ -404,11 +409,21 @@
     <label class="field standard-width">
       <span>Hint</span>
       <div class="wf-text-toolbar" role="toolbar" aria-label="Hint tools">
-        <button type="button" class="btn ghost small" data-align="right">Right</button>
-        <button type="button" class="btn ghost small" data-align="center">Center</button>
-        <button type="button" class="btn ghost small" data-align="left">Left</button>
-        <button type="button" class="btn ghost small" data-action="bold">Bold</button>
-        <button type="button" class="btn ghost small" data-action="link">Link</button>
+        <button type="button" class="btn ghost small" data-align="right" aria-label="Align right" title="Align right">
+          <span class="ri ri-align-right" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn ghost small" data-align="center" aria-label="Align center" title="Align center">
+          <span class="ri ri-align-center" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn ghost small" data-align="left" aria-label="Align left" title="Align left">
+          <span class="ri ri-align-left" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn ghost small" data-action="bold" aria-label="Bold" title="Bold">
+          <span class="ri ri-bold" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn ghost small" data-action="link" aria-label="Insert link" title="Insert link">
+          <span class="ri ri-link" aria-hidden="true"></span>
+        </button>
       </div>
       <div
         id="wheel-hint-text"
@@ -417,6 +432,8 @@
         role="textbox"
         aria-multiline="true"
         data-align="right"
+        data-placeholder="متن راهنما"
+        tabindex="0"
       ></div>
     </label>
     <div class="field full">

@@ -322,8 +322,17 @@
       return false;
     }
     const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
-    const originalHtml = normalize(settingsCache.hintHtml ?? settingsCache.hint ?? "");
-    const currentHtml = normalize(hintText.innerHTML ?? "");
+    const normalizeHtml = (value, textValue) => {
+      const text = String(textValue ?? "").trim();
+      if (!text) {
+        return "";
+      }
+      return normalize(String(value ?? "")
+        .replace(/<br\s*\/?>/gi, "")
+        .replace(/&nbsp;/gi, " "));
+    };
+    const originalHtml = normalizeHtml(settingsCache.hintHtml ?? settingsCache.hint ?? "", settingsCache.hint ?? "");
+    const currentHtml = normalizeHtml(hintText.innerHTML ?? "", hintText.textContent ?? "");
     const originalAlign = String(settingsCache.hintAlign ?? "right");
     const currentAlign = String(hintText.dataset.align ?? "right");
     return originalHtml !== currentHtml || originalAlign !== currentAlign;

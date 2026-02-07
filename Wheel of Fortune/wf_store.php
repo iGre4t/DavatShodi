@@ -80,7 +80,7 @@ if ($action === 'save_prizes') {
 }
 
 if ($action === 'get_settings') {
-  $settings = readJsonFile($settingsFile, [
+  $defaults = [
     'active' => false,
     'duration' => false,
     'startDate' => '',
@@ -90,7 +90,9 @@ if ($action === 'get_settings') {
     'hint' => 'شانس خودت رو امتحان کن و جایزه ببر',
     'hintHtml' => '',
     'hintAlign' => 'right'
-  ]);
+  ];
+  $stored = readJsonFile($settingsFile, []);
+  $settings = array_merge($defaults, is_array($stored) ? $stored : []);
   echo json_encode(['status' => 'ok', 'data' => $settings], JSON_UNESCAPED_UNICODE);
   exit;
 }
