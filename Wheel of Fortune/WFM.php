@@ -82,6 +82,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         continue;
       }
       $itemName = trim((string)($item['name'] ?? ''));
+      $onWheelName = trim((string)($item['onWheelName'] ?? $itemName));
       $quantity = (int)($item['quantity'] ?? 0);
       $last = (int)($item['last'] ?? $quantity);
       if ($itemName !== '' && $itemName === $name) {
@@ -90,6 +91,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       if ($itemName !== '') {
         $updated[] = [
           'name' => $itemName,
+          'onWheelName' => $onWheelName !== '' ? $onWheelName : $itemName,
           'quantity' => $quantity > 0 ? $quantity : 0,
           'last' => $last > 0 ? $last : 0
         ];
