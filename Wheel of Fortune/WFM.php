@@ -1253,10 +1253,6 @@ $sessionPayload = [
           <button id="wf-spin" class="center-spin" type="button">??????</button>
         </div>
       <?php endif; ?>
-          <div id="wf-count" class="wheel-count">????? ???????: —</div>
-          <canvas id="wf-wheel" width="420" height="420" aria-label="??? ?????"></canvas>
-          <button id="wf-spin" class="center-spin" type="button">??????</button>
-        </div>
       </section>
     </main>
 
@@ -1934,7 +1930,7 @@ $sessionPayload = [
         }
         spinning = true;
         spinBtn.disabled = true;
-        resultEl.textContent = '—';
+        resultEl.textContent = '?';
         if (resultBox) {
           resultBox.classList.remove('result-shine');
           resultBox.classList.remove('result-shake');
