@@ -251,6 +251,7 @@
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
     const hintText = getEl("wheel-hint-text");
+    const textCard = getEl("wf-texts-card");
 
     Object.assign(settingsCache, settings);
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
@@ -259,7 +260,19 @@
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
     if (endTime && typeof settings.endTime === "string") endTime.value = settings.endTime;
-    if (hintText && typeof settings.hint === "string") hintText.value = settings.hint;
+    if (hintText && typeof settings.hintHtml === "string") {
+      hintText.innerHTML = settings.hintHtml;
+    } else if (hintText && typeof settings.hint === "string") {
+      hintText.textContent = settings.hint;
+    }
+    if (hintText && textCard) {
+      const align = String(settings.hintAlign ?? "").trim() || "right";
+      hintText.dataset.align = align;
+      hintText.style.textAlign = align;
+      textCard.querySelectorAll("[data-align]").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.align === align);
+      });
+    }
     syncToggles({ activeToggle, durationToggle });
   }
 
@@ -279,16 +292,22 @@
       startTime: startTime?.value ?? "",
       endDate: endDate?.value ?? "",
       endTime: endTime?.value ?? "",
-      hint: hintText?.value ?? ""
+      hint: hintText?.textContent ?? "",
+      hintHtml: hintText?.innerHTML ?? "",
+      hintAlign: hintText?.dataset?.align ?? "right"
     };
   }
 
   function setOtherControlsDisabled(disabled) {
+    const wheelTab = getEl("tab-wheel-of-fortune");
+    if (!wheelTab) {
+      return;
+    }
     const textCard = getEl("wf-texts-card");
     const allowed = new Set(
       textCard ? Array.from(textCard.querySelectorAll("input, textarea, select, button")) : []
     );
-    document.querySelectorAll("input, textarea, select, button").forEach(control => {
+    wheelTab.querySelectorAll("input, textarea, select, button").forEach(control => {
       if (allowed.has(control)) {
         return;
       }
@@ -297,20 +316,21 @@
     });
   }
 
-  function syncHintLockState() {
+  function isHintDirty() {
     const hintText = getEl("wheel-hint-text");
     if (!hintText) {
-      return;
+      return false;
     }
-    const original = String(settingsCache.hint ?? "").trim();
-    const current = String(hintText.value ?? "").trim();
-    const isDirty = current !== original;
-    setOtherControlsDisabled(isDirty);
-    const saveTextsBtn = getEl("wheel-texts-save");
-    if (saveTextsBtn) {
-      saveTextsBtn.disabled = !isDirty;
-      saveTextsBtn.classList.toggle("wf-action-disabled", !isDirty);
-    }
+    const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+    const originalHtml = normalize(settingsCache.hintHtml ?? settingsCache.hint ?? "");
+    const currentHtml = normalize(hintText.innerHTML ?? "");
+    const originalAlign = String(settingsCache.hintAlign ?? "right");
+    const currentAlign = String(hintText.dataset.align ?? "right");
+    return originalHtml !== currentHtml || originalAlign !== currentAlign;
+  }
+
+  function syncHintLockState() {
+    setOtherControlsDisabled(isHintDirty());
   }
 
   async function initSettings() {
@@ -337,6 +357,45 @@
     const hintText = getEl("wheel-hint-text");
     hintText?.addEventListener("input", syncHintLockState);
     hintText?.addEventListener("change", syncHintLockState);
+    const textCard = getEl("wf-texts-card");
+    textCard?.addEventListener("click", event => {
+      const button = event.target.closest("button");
+      if (!button || !hintText) {
+        return;
+      }
+      const align = button.dataset.align;
+      const action = button.dataset.action;
+      if (align) {
+        hintText.dataset.align = align;
+        hintText.style.textAlign = align;
+        textCard.querySelectorAll("[data-align]").forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.align === align);
+        });
+        syncHintLockState();
+        return;
+      }
+      if (action === "bold") {
+        document.execCommand("bold");
+        syncHintLockState();
+        return;
+      }
+      if (action === "link") {
+        const url = window.prompt("لینک را وارد کنید");
+        if (url) {
+          document.execCommand("createLink", false, url);
+        }
+        syncHintLockState();
+      }
+    });
+    const wheelTab = getEl("tab-wheel-of-fortune");
+    if (wheelTab && window.MutationObserver) {
+      const observer = new MutationObserver(() => {
+        if (isHintDirty()) {
+          setOtherControlsDisabled(true);
+        }
+      });
+      observer.observe(wheelTab, { subtree: true, childList: true });
+    }
     saveBtn?.addEventListener("click", async () => {
       await saveSettings(collectSettings());
     });
@@ -344,6 +403,8 @@
       const settings = collectSettings();
       await saveSettings(settings);
       settingsCache.hint = String(settings.hint ?? "");
+      settingsCache.hintHtml = String(settings.hintHtml ?? "");
+      settingsCache.hintAlign = String(settings.hintAlign ?? "right");
       syncHintLockState();
     });
     updateStatus();

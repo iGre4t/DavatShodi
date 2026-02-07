@@ -113,10 +113,41 @@ $initialPrizes = readPrizeStore($prizeStorePath);
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
-$hintText = trim((string)($wheelSettings['hint'] ?? ''));
-if ($hintText === '') {
-  $hintText = 'شانس خودت رو امتحان کن و جایزه ببر';
+function sanitizeHintHtml(string $html): string
+{
+  $allowed = '<br><b><strong><a><div><span>';
+  $clean = strip_tags($html, $allowed);
+  $clean = preg_replace('/\s+on\w+="[^"]*"/i', '', $clean);
+  $clean = preg_replace("/\s+on\w+='[^']*'/i", '', $clean);
+  $clean = preg_replace_callback('/<a\s+[^>]*href=(["\'])(.*?)\1[^>]*>/i', function ($matches) {
+    $href = trim($matches[2]);
+    if (!preg_match('#^(https?:|mailto:|tel:|/|#)#i', $href)) {
+      $href = '#';
+    }
+    $tag = $matches[0];
+    $tag = preg_replace('/\s+href=(["\']).*?\1/i', ' href="' . htmlspecialchars($href, ENT_QUOTES, 'UTF-8') . '"', $tag);
+    if (!preg_match('/\s+rel=/i', $tag)) {
+      $tag = rtrim($tag, '>') . ' rel="noopener">';
+    }
+    if (!preg_match('/\s+target=/i', $tag)) {
+      $tag = rtrim($tag, '>') . ' target="_blank">';
+    }
+    return $tag;
+  }, $clean);
+  return trim($clean);
 }
+
+$rawHintHtml = (string)($wheelSettings['hintHtml'] ?? '');
+$hintTextFallback = trim((string)($wheelSettings['hint'] ?? ''));
+if ($rawHintHtml === '' && $hintTextFallback !== '') {
+  $rawHintHtml = htmlspecialchars($hintTextFallback, ENT_QUOTES, 'UTF-8');
+}
+if ($rawHintHtml === '') {
+  $rawHintHtml = htmlspecialchars('شانس خودت رو امتحان کن و جایزه ببر', ENT_QUOTES, 'UTF-8');
+}
+$hintHtml = sanitizeHintHtml($rawHintHtml);
+$hintAlign = trim((string)($wheelSettings['hintAlign'] ?? 'right'));
+$hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlign : 'right';
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -358,6 +389,18 @@ if ($hintText === '') {
         color: var(--muted);
       }
 
+      .hint-align-right {
+        text-align: right;
+      }
+
+      .hint-align-center {
+        text-align: center;
+      }
+
+      .hint-align-left {
+        text-align: left;
+      }
+
       .result {
         margin: 0 auto;
         width: min(300px, calc(100% - 32px));
@@ -550,7 +593,7 @@ if ($hintText === '') {
                 <span>؟</span>
               </div>
             <?php endif; ?>
-            <p class="hint"><?= htmlspecialchars($hintText, ENT_QUOTES, 'UTF-8') ?></p>
+            <p class="hint hint-align-<?= htmlspecialchars($hintAlign, ENT_QUOTES, 'UTF-8') ?>"><?= $hintHtml ?></p>
           </div>
 
           <div class="result">

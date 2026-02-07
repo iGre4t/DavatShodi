@@ -238,6 +238,34 @@
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--primary-focus);
   }
+  .wf-text-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .wf-text-toolbar .btn {
+    min-width: 70px;
+  }
+  .wf-text-toolbar .btn.active {
+    box-shadow: 0 0 0 3px var(--primary-focus);
+  }
+  .wf-text-editor {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    outline: none;
+    background: #fff;
+    color: #111;
+    min-height: 96px;
+    width: 100%;
+    line-height: 1.6;
+  }
+  .wf-text-editor:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-focus);
+  }
   @media (max-width: 900px) {
     .wf-switch-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -375,7 +403,21 @@
   <div class="form">
     <label class="field standard-width">
       <span>Hint</span>
-      <textarea id="wheel-hint-text" rows="3" placeholder="متن راهنما"></textarea>
+      <div class="wf-text-toolbar" role="toolbar" aria-label="Hint tools">
+        <button type="button" class="btn ghost small" data-align="right">Right</button>
+        <button type="button" class="btn ghost small" data-align="center">Center</button>
+        <button type="button" class="btn ghost small" data-align="left">Left</button>
+        <button type="button" class="btn ghost small" data-action="bold">Bold</button>
+        <button type="button" class="btn ghost small" data-action="link">Link</button>
+      </div>
+      <div
+        id="wheel-hint-text"
+        class="wf-text-editor"
+        contenteditable="true"
+        role="textbox"
+        aria-multiline="true"
+        data-align="right"
+      ></div>
     </label>
     <div class="field full">
       <button type="button" class="btn primary standard-primary-button" id="wheel-texts-save">Save</button>
