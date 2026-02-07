@@ -263,11 +263,33 @@
   .wf-fake-table {
     margin-top: 16px;
   }
+  .wf-prize-table {
+    table-layout: fixed;
+    width: 100%;
+  }
   .wf-prize-table th:nth-child(1),
-  .wf-prize-table td:nth-child(1),
+  .wf-prize-table td:nth-child(1) {
+    width: 26%;
+  }
   .wf-prize-table th:nth-child(2),
   .wf-prize-table td:nth-child(2) {
-    width: 32%;
+    width: 26%;
+  }
+  .wf-prize-table th:nth-child(3),
+  .wf-prize-table td:nth-child(3) {
+    width: 10%;
+  }
+  .wf-prize-table th:nth-child(4),
+  .wf-prize-table td:nth-child(4) {
+    width: 10%;
+  }
+  .wf-prize-table th:nth-child(5),
+  .wf-prize-table td:nth-child(5) {
+    width: 12%;
+  }
+  .wf-prize-table th:nth-child(6),
+  .wf-prize-table td:nth-child(6) {
+    width: 16%;
   }
   @media (max-width: 900px) {
     .wf-switch-grid {
