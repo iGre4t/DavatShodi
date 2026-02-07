@@ -259,7 +259,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="wf-texts-card">
   <div class="section-header">
     <h3>Control Panel</h3>
   </div>

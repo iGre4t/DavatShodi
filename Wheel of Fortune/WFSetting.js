@@ -21,6 +21,7 @@
       await fetch(`${API_URL}?action=save_settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ settings })
       });
     } catch {}
@@ -240,6 +241,8 @@
     updateStatus();
   }
 
+  const settingsCache = {};
+
   function applySettings(settings) {
     const activeToggle = getEl("wheel-active-toggle");
     const durationToggle = getEl("wheel-duration-toggle");
@@ -249,6 +252,7 @@
     const endTime = getEl("wheel-duration-end-time");
     const hintText = getEl("wheel-hint-text");
 
+    Object.assign(settingsCache, settings);
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
     if (startDate && typeof settings.startDate === "string") startDate.value = settings.startDate;
@@ -279,6 +283,36 @@
     };
   }
 
+  function setOtherControlsDisabled(disabled) {
+    const textCard = getEl("wf-texts-card");
+    const allowed = new Set(
+      textCard ? Array.from(textCard.querySelectorAll("input, textarea, select, button")) : []
+    );
+    document.querySelectorAll("input, textarea, select, button").forEach(control => {
+      if (allowed.has(control)) {
+        return;
+      }
+      control.disabled = disabled;
+      control.classList.toggle("wf-action-disabled", disabled);
+    });
+  }
+
+  function syncHintLockState() {
+    const hintText = getEl("wheel-hint-text");
+    if (!hintText) {
+      return;
+    }
+    const original = String(settingsCache.hint ?? "").trim();
+    const current = String(hintText.value ?? "").trim();
+    const isDirty = current !== original;
+    setOtherControlsDisabled(isDirty);
+    const saveTextsBtn = getEl("wheel-texts-save");
+    if (saveTextsBtn) {
+      saveTextsBtn.disabled = !isDirty;
+      saveTextsBtn.classList.toggle("wf-action-disabled", !isDirty);
+    }
+  }
+
   async function initSettings() {
     const saveBtn = getEl("wheel-settings-save");
     const saveTextsBtn = getEl("wheel-texts-save");
@@ -289,6 +323,7 @@
     const endDate = getEl("wheel-duration-end");
     const endTime = getEl("wheel-duration-end-time");
     applySettings(await loadSettings());
+    syncHintLockState();
     activeToggle?.addEventListener("change", () => {
       syncToggles({ activeToggle, durationToggle });
     });
@@ -299,11 +334,17 @@
       field?.addEventListener("change", updateStatus);
       field?.addEventListener("input", updateStatus);
     });
+    const hintText = getEl("wheel-hint-text");
+    hintText?.addEventListener("input", syncHintLockState);
+    hintText?.addEventListener("change", syncHintLockState);
     saveBtn?.addEventListener("click", async () => {
       await saveSettings(collectSettings());
     });
     saveTextsBtn?.addEventListener("click", async () => {
-      await saveSettings(collectSettings());
+      const settings = collectSettings();
+      await saveSettings(settings);
+      settingsCache.hint = String(settings.hint ?? "");
+      syncHintLockState();
     });
     updateStatus();
   }
