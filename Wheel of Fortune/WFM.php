@@ -276,6 +276,7 @@ $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''
       .phone {
         width: 100%;
         min-height: min(860px, calc(100vh - 36px));
+        height: calc(100vh - 36px);
         background: var(--phone);
         border: 1px solid var(--line);
         border-radius: 28px;
