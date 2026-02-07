@@ -566,6 +566,25 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
         align-self: stretch;
       }
 
+      .result-value.drop-in {
+        animation: result-drop 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      @keyframes result-drop {
+        0% {
+          transform: translateY(-16px) scale(0.96);
+          opacity: 0;
+        }
+        70% {
+          transform: translateY(2px) scale(1.02);
+          opacity: 1;
+        }
+        100% {
+          transform: translateY(0) scale(1);
+          opacity: 1;
+        }
+      }
+
       .wheel-shell {
         margin-top: auto;
         position: relative;
@@ -1203,6 +1222,8 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           currentAngle = ((targetAngle % TWO_PI) + TWO_PI) % TWO_PI;
           drawWheel(wheelSegments, currentAngle);
           resultEl.textContent = winnerPrize?.name ?? 'بدون جایزه';
+          resultEl.classList.remove('drop-in');
+          void resultEl.offsetWidth;
           if (resultBox) {
             resultBox.classList.remove('result-shine');
             resultBox.classList.remove('result-shake');
@@ -1224,6 +1245,7 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
           }
           if (resultBox && !isFake) {
             resultBox.classList.add('result-shine');
+            resultEl.classList.add('drop-in');
           }
           if (confettiLayer && !isFake) {
             const colors = ['#1f7bdc', '#2f8fff', '#4da3ff', '#6bb6ff', '#8ac8ff', '#b3dcff'];
