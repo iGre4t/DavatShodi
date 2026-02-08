@@ -248,7 +248,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
   $csrfToken = is_array($payload) ? (string)($payload['csrf'] ?? '') : '';
   if ($csrfToken === '' || !hash_equals((string)($_SESSION['wf_csrf'] ?? ''), $csrfToken)) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid request.']);
+    echo json_encode(['status' => 'error', 'message' => 'درخواست نامعتبر است.']);
     exit;
   }
 
@@ -267,7 +267,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       return is_numeric($ts) && ($now - (int)$ts) <= $windowSeconds;
     }));
     if (count($fails) >= $maxAttempts) {
-      echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts. Please try again later.']);
+      echo json_encode(['status' => 'error', 'message' => 'تعداد تلاش ناموفق زیاد است. کمی بعد دوباره امتحان کنید.']);
       exit;
     }
     $recordFail = function () use (&$attempts, $attemptKey, $now, &$fails, $loginAttemptsPath) {
@@ -277,39 +277,39 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     };
     if ($username === '' || $password === '') {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Login details are incomplete.']);
+      echo json_encode(['status' => 'error', 'message' => 'اطلاعات ورود کامل نیست.']);
       exit;
     }
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
     $rows = $table['rows'];
     if (!$rows) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Invitee list is unavailable.']);
+      echo json_encode(['status' => 'error', 'message' => 'لیست کاربران موجود نیست.']);
       exit;
     }
     $workIdIndex = $table['workIdIndex'];
     if ($workIdIndex < 0) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Username column is missing.']);
+      echo json_encode(['status' => 'error', 'message' => 'ستون نام کاربری مشخص نشده است.']);
       exit;
     }
     $columns = $table['columns']['index'] ?? [];
     $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
     if ($passwordIndex < 0) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Invitee list is unavailable.']);
+      echo json_encode(['status' => 'error', 'message' => 'ستون گذرواژه موجود نیست.']);
       exit;
     }
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $username);
     if ($rowIndex < 0) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
+      echo json_encode(['status' => 'error', 'message' => 'نام کاربری یا گذرواژه اشتباه است.']);
       exit;
     }
     $rowPassword = trim((string)($rows[$rowIndex][$passwordIndex] ?? ''));
     if ($rowPassword === '' || $rowPassword !== $password) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
+      echo json_encode(['status' => 'error', 'message' => 'نام کاربری یا گذرواژه اشتباه است.']);
       exit;
     }
     $loginCountIndex = $columns['logins counts'] ?? -1;
@@ -327,7 +327,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save login info.']);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره اطلاعات ورود انجام نشد.']);
       exit;
     }
     if (isset($attempts[$attemptKey])) {
@@ -355,7 +355,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'log_roll') {
     $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
     if (!(($_SESSION['wf_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'You are not logged in.']);
+      echo json_encode(['status' => 'error', 'message' => 'ورود انجام نشده است.']);
       exit;
     }
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
@@ -366,13 +366,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $prizeIndex = $columns['prize won'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $rollIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'You are not logged in.']);
+      echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
       exit;
     }
     if ($prizeIndex >= 0) {
       $already = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
       if ($already !== '') {
-        echo json_encode(['status' => 'error', 'message' => 'Prize already recorded.']);
+        echo json_encode(['status' => 'error', 'message' => 'جایزه قبلاً ثبت شده است.']);
         exit;
       }
     }
@@ -381,7 +381,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (($table['columns']['added'] ?? false) && $rows) {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save spin count.']);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره تعداد چرخش انجام نشد.']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -391,12 +391,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'log_prize') {
     $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
     if (!(($_SESSION['wf_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'You are not logged in.']);
+      echo json_encode(['status' => 'error', 'message' => 'ورود انجام نشده است.']);
       exit;
     }
     $prizeName = trim((string)($payload['prize'] ?? ''));
     if ($prizeName === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Prize is not specified.']);
+      echo json_encode(['status' => 'error', 'message' => 'جایزه مشخص نیست.']);
       exit;
     }
     $angleValue = $payload['wheelAngle'] ?? null;
@@ -409,7 +409,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $angleIndex = $columns['wheel angle'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $prizeIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'You are not logged in.']);
+      echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
       exit;
     }
     $current = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
@@ -421,7 +421,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       if (($table['columns']['added'] ?? false) && $rows) {
         writeInviteesCsv($inviteesFilePath, $rows);
       } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
-        echo json_encode(['status' => 'error', 'message' => 'Failed to save prizes.']);
+        echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه انجام نشد.']);
         exit;
       }
     }
@@ -432,7 +432,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'decrement_prize') {
     $name = trim((string)($payload['name'] ?? ''));
     if ($name === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Prize name was not provided.']);
+      echo json_encode(['status' => 'error', 'message' => 'نام جایزه ارسال نشده است.']);
       exit;
     }
     $prizes = readPrizeStore($prizeStorePath);
@@ -460,14 +460,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     if (!writePrizeStore($prizeStorePath, $updated)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save prizes.']);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه‌ها انجام نشد.']);
       exit;
     }
     echo json_encode(['status' => 'ok', 'data' => $updated]);
     exit;
   }
 
-  echo json_encode(['status' => 'error', 'message' => 'Unsupported request.']);
+  echo json_encode(['status' => 'error', 'message' => 'درخواست پشتیبانی نمی‌شود.']);
   exit;
 }
 
@@ -525,7 +525,7 @@ if ($rawHintHtml === '' && $hintTextFallback !== '') {
   $rawHintHtml = htmlspecialchars($hintTextFallback, ENT_QUOTES, 'UTF-8');
 }
 if ($rawHintHtml === '') {
-  $rawHintHtml = htmlspecialchars('Try your luck and win a prize', ENT_QUOTES, 'UTF-8');
+  $rawHintHtml = htmlspecialchars('شانس خودت رو امتحان کن و جایزه ببر', ENT_QUOTES, 'UTF-8');
 }
 $hintHtml = sanitizeHintHtml($rawHintHtml);
 $hintAlign = trim((string)($wheelSettings['hintAlign'] ?? 'right'));
@@ -579,7 +579,7 @@ $sessionPayload = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Wheel of Fortune</title>
+    <title>چرخ شانس شگفتانه</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       :root {
@@ -1256,15 +1256,15 @@ $sessionPayload = [
             <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
           </svg>
         </div>
-        <p class="loader-text">Preparing your surprise</p>
-        <p class="loader-subtext">Please wait a moment</p>
+        <p class="loader-text">در حال آماده‌سازی شگفتانه شما</p>
+        <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
       </div>
     </div>
     <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
     <main class="app">
       <section class="phone">
         <div class="topbar">
-          <p class="brand">Amazing Surprise Wheel</p>
+          <p class="brand">چرخ شانس شگفتانه</p>
           <div id="wf-status" class="wheel-status hidden"></div>
         </div>
 
@@ -1272,24 +1272,24 @@ $sessionPayload = [
         <div class="login-area">
           <div class="login-hero">
             <?php if ($faviconUrl !== ''): ?>
-              <img class="login-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Site icon" />
+              <img class="login-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
             <?php else: ?>
               <div class="question">
                 <span>?</span>
               </div>
             <?php endif; ?>
-            <h2 class="login-title">Amazing Wheel</h2>
+            <h2 class="login-title">چرخونه شگفتانه</h2>
           </div>
           <form id="wf-login-form" class="login-form" autocomplete="on">
             <label class="login-field">
-              <span>Username</span>
+              <span>نام کاربری</span>
               <input id="wf-login-user" class="login-input" type="text" autocomplete="username" required />
             </label>
             <label class="login-field">
-              <span>Password</span>
+              <span>گذرواژه</span>
               <input id="wf-login-pass" class="login-input" type="password" autocomplete="current-password" required />
             </label>
-            <button type="submit" class="login-btn">Login</button>
+            <button type="submit" class="login-btn">ورود</button>
             <p id="wf-login-msg" class="login-hint" aria-live="polite"></p>
           </form>
         </div>
@@ -1297,7 +1297,7 @@ $sessionPayload = [
         <div class="main-area">
           <div class="hero">
             <?php if ($faviconUrl !== ''): ?>
-              <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Site icon" />
+              <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
             <?php else: ?>
               <div class="question">
                 <span>?</span>
@@ -1307,16 +1307,16 @@ $sessionPayload = [
           </div>
 
           <div class="result">
-            <span class="result-label">Result</span>
-            <p id="wf-result" class="result-value">?</p>
+            <span class="result-label">نتیجه</span>
+            <p id="wf-result" class="result-value">—</p>
           </div>
         </div>
 
         <div class="wheel-shell">
           <div class="pointer" aria-hidden="true"></div>
-          <div id="wf-count" class="wheel-count">Items: ?</div>
-          <canvas id="wf-wheel" width="420" height="420" aria-label="Prize wheel"></canvas>
-          <button id="wf-spin" class="center-spin" type="button">Spin</button>
+          <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
+          <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
+          <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
         </div>
       <?php endif; ?>
       </section>
@@ -1392,11 +1392,11 @@ $sessionPayload = [
                 return;
               }
               if (loginMsg) {
-                loginMsg.textContent = payload?.message || 'Login failed.';
+                loginMsg.textContent = payload?.message || 'خطا در ورود.';
               }
             } catch {
               if (loginMsg) {
-                loginMsg.textContent = 'Login failed.';
+                loginMsg.textContent = 'خطا در ورود.';
               }
             } finally {
               if (loginBtn) loginBtn.disabled = false;
@@ -1425,11 +1425,11 @@ $sessionPayload = [
       let statusTickTimer = null;
       let latestSettings = {};
       const defaultHintText = hintEl ? hintEl.textContent : '';
-      const activeHintText = 'You can win only one prize; keep spinning until you win!';
+      const activeHintText = 'تو این شگفتانه فقط می‌تونی یدونه جایزه ببری و تا وقتی که جایزه رو نبردی می‌تونی گردونه رو بچرخونی!';
       let userPrizeName = String(sessionInfo?.prizeWon ?? '').trim();
       let userHasPrize = userPrizeName !== '';
       const savedWheelAngle = Number.isFinite(Number(sessionInfo?.wheelAngle)) ? Number(sessionInfo.wheelAngle) : null;
-      const toFaDigits = (value) => String(value ?? '');
+      const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -1462,7 +1462,7 @@ $sessionPayload = [
 
       const normalizeSourcePrizes = (list) => {
         if (!Array.isArray(list)) {
-          return [{ name: 'No prize', wheelLabel: 'No prize', weight: 1, canDecrement: false }];
+          return [{ name: 'بدون جایزه', wheelLabel: 'بدون جایزه', weight: 1, canDecrement: false }];
         }
 
         const normalized = list
@@ -1490,14 +1490,14 @@ $sessionPayload = [
 
         return normalized.length
           ? normalized
-          : [{ name: 'No prize', wheelLabel: 'No prize', weight: 1, canDecrement: false }];
+          : [{ name: 'بدون جایزه', wheelLabel: 'بدون جایزه', weight: 1, canDecrement: false }];
       };
 
       const buildDisplaySegments = (prizes) => {
         if (!prizes.length) {
           return Array.from({ length: MIN_VISIBLE_SEGMENTS }, () => ({
-            label: 'No prize',
-            source: 'No prize',
+            label: 'بدون جایزه',
+            source: 'بدون جایزه',
             canDecrement: false
           }));
         }
@@ -1710,7 +1710,7 @@ $sessionPayload = [
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
           if (hintEl) {
-            hintEl.textContent = 'The surprise has ended. Thanks for joining?check back next time.';
+            hintEl.textContent = 'زمان شگفتانه به پایان رسیده و دیگر امکان شرکت وجود ندارد.';
             hintEl.style.textAlign = 'center';
           }
           return;
@@ -1719,7 +1719,7 @@ $sessionPayload = [
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
           if (hintEl) {
-            hintEl.textContent = 'No active surprise right now. Please check back later.';
+            hintEl.textContent = 'در حال حاضر شگفتانه‌ای فعال نیست. لطفاً بعداً دوباره سر بزنید.';
             hintEl.style.textAlign = 'center';
           }
           return;
@@ -1738,7 +1738,7 @@ $sessionPayload = [
         const endDate = String(latestSettings?.endDate ?? '').trim();
         const startTime = String(latestSettings?.startTime ?? '').trim();
         const endTime = String(latestSettings?.endTime ?? '').trim();
-        const targetLabel = status === 'upcoming' ? 'Until start' : 'Until end';
+        const targetLabel = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا پایان شگفتانه';
         const targetDate = status === 'upcoming' ? startDate : endDate;
         const targetTime = status === 'upcoming' ? startTime : endTime;
         const updateCountdown = () => {
@@ -1775,7 +1775,7 @@ $sessionPayload = [
           statusEl.classList.add('hidden');
           statusEl.classList.remove('top-left');
           if (hintEl) {
-            hintEl.textContent = 'The wheel is not active yet';
+            hintEl.textContent = 'چرخ شانس هنوز فعال نشده است';
             hintEl.style.textAlign = '';
           }
         } else {
@@ -1799,16 +1799,16 @@ $sessionPayload = [
         }
         if (!userHasPrize && !canSpin) {
           const message = status === 'upcoming'
-            ? 'The wheel is not active yet'
+            ? 'چرخ شانس هنوز فعال نشده است'
             : status === 'ended'
-            ? 'The surprise has ended'
-            : 'No surprise right now :(';
+            ? 'زمان شگفتانه به پایان رسیده'
+            : 'شگفتانه‌ای در کار نیست :(';
           if (resultEl) {
             resultEl.textContent = message;
           }
         }
         if (userHasPrize && resultEl) {
-          resultEl.textContent = userPrizeName || '?';
+          resultEl.textContent = userPrizeName || '—';
         }
         drawWheel(wheelSegments, currentAngle);
       };
@@ -1895,7 +1895,7 @@ $sessionPayload = [
       const weightedPrizePick = (prizes) => {
         const total = prizes.reduce((sum, prize) => sum + prize.weight, 0);
         if (total <= 0) {
-          return prizes[0] ?? { name: 'No prize', canDecrement: false };
+          return prizes[0] ?? { name: 'بدون جایزه', canDecrement: false };
         }
         let roll = Math.random() * total;
         for (let i = 0; i < prizes.length; i += 1) {
@@ -1923,7 +1923,7 @@ $sessionPayload = [
       const initWheel = (list) => {
         sourcePrizes = normalizeSourcePrizes(list);
         wheelSegments = buildDisplaySegments(sourcePrizes);
-        countEl.textContent = `Items: ${wheelSegments.length}`;
+        countEl.textContent = `تعداد آیتم‌ها: ${toFaDigits(wheelSegments.length)}`;
         drawWheel(wheelSegments, currentAngle);
       };
 
@@ -1943,7 +1943,7 @@ $sessionPayload = [
         await refreshWheelStatus();
         if (userHasPrize) {
           if (resultEl) {
-            resultEl.textContent = userPrizeName || '?';
+          resultEl.textContent = userPrizeName || '—';
           }
           if (spinBtn) {
             spinBtn.disabled = true;
@@ -1972,7 +1972,7 @@ $sessionPayload = [
         }
         if (userHasPrize) {
           if (resultEl) {
-            resultEl.textContent = userPrizeName || '?';
+          resultEl.textContent = userPrizeName || '—';
           }
           return;
         }
@@ -1985,19 +1985,19 @@ $sessionPayload = [
           const rollPayload = await rollResponse.json();
           if (!rollResponse.ok || rollPayload?.status !== 'ok') {
             if (resultEl) {
-              resultEl.textContent = userPrizeName || rollPayload?.message || 'Spin is not allowed.';
+              resultEl.textContent = userPrizeName || rollPayload?.message || 'خطا در ثبت چرخش.';
             }
             return;
           }
         } catch {
           if (resultEl) {
-            resultEl.textContent = 'Failed to record spin.';
+            resultEl.textContent = 'خطایی رخ داد.';
           }
           return;
         }
         spinning = true;
         spinBtn.disabled = true;
-        resultEl.textContent = '?';
+          resultEl.textContent = '—';
         if (resultBox) {
           resultBox.classList.remove('result-shine');
           resultBox.classList.remove('result-shake');
@@ -2047,7 +2047,7 @@ $sessionPayload = [
 
           currentAngle = ((targetAngle % TWO_PI) + TWO_PI) % TWO_PI;
           drawWheel(wheelSegments, currentAngle);
-          resultEl.textContent = winnerPrize?.name ?? 'No prize';
+          resultEl.textContent = winnerPrize?.name ?? 'بدون جایزه';
           resultEl.classList.remove('drop-in');
           void resultEl.offsetWidth;
           if (resultBox) {
@@ -2073,8 +2073,8 @@ $sessionPayload = [
             void resultBox.offsetWidth;
             resultBox.classList.add('result-shake');
             resultBox.classList.add('result-fake');
-            const fakeText = winnerPrize?.name ?? 'No prize';
-            const retryText = 'Try again!';
+            const fakeText = winnerPrize?.name ?? 'بدون جایزه';
+            const retryText = 'دوباره امتحان کن!';
             let toggle = false;
             fakeLoopTimer = setInterval(() => {
               toggle = !toggle;
