@@ -351,6 +351,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     exit;
   }
 
+  if ($action === 'logout') {
+    session_unset();
+    session_destroy();
+    echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
 
   if ($action === 'log_roll') {
     $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
@@ -763,6 +770,39 @@ $sessionPayload = [
         justify-content: space-between;
         padding: 14px 16px 10px;
         gap: 12px;
+      }
+
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .logout-btn {
+        border: none;
+        background: transparent;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: inherit;
+        font-size: 0.82rem;
+        color: #6b7a99;
+        cursor: pointer;
+        padding: 4px 6px;
+      }
+
+      .logout-btn span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #c7d2e5;
+      }
+
+      .logout-btn:hover {
+        color: #2f5aa6;
       }
 
       .brand {
@@ -1263,9 +1303,17 @@ $sessionPayload = [
     <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
     <main class="app">
       <section class="phone">
-        <div class="topbar">
+    <div class="topbar">
           <p class="brand">چرخ شانس شگفتانه</p>
-          <div id="wf-status" class="wheel-status hidden"></div>
+          <div class="topbar-actions">
+            <?php if ($sessionPayload['authed']): ?>
+              <button id="wf-logout" class="logout-btn" type="button">
+                <span aria-hidden="true"></span>
+                خروج
+              </button>
+            <?php endif; ?>
+            <div id="wf-status" class="wheel-status hidden"></div>
+          </div>
         </div>
 
         <?php if (!$sessionPayload['authed']): ?>
@@ -1368,6 +1416,7 @@ $sessionPayload = [
       const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE); ?>;
       const csrfToken = <?= json_encode($_SESSION['wf_csrf'], JSON_UNESCAPED_UNICODE); ?>;
       const loginForm = document.getElementById('wf-login-form');
+      const logoutBtn = document.getElementById('wf-logout');
       if (!sessionInfo?.authed) {
         const loginBtn = document.querySelector('.login-btn');
         const loginMsg = document.getElementById('wf-login-msg');
@@ -1406,6 +1455,18 @@ $sessionPayload = [
       }
 
       if (sessionInfo?.authed) {
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+          try {
+            await fetch(window.location.href, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'logout', csrf: csrfToken })
+            });
+          } catch {}
+          window.location.reload();
+        });
+      }
       const initialPrizes = Array.isArray(<?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>)
         ? <?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>
         : [];
