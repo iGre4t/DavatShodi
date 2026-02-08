@@ -1,5 +1,12 @@
 <?php
 session_start();
+$cspNonce = base64_encode(random_bytes(16));
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$cspNonce}'; style-src 'self' 'nonce-{$cspNonce}'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
+header("X-Content-Type-Options: nosniff");
+header("Referrer-Policy: same-origin");
+if (empty($_SESSION['wf_csrf'])) {
+  $_SESSION['wf_csrf'] = bin2hex(random_bytes(16));
+}
 const SETTINGS_STORE_PATH = __DIR__ . '/../data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'siteIcon' => ''
@@ -8,6 +15,7 @@ const DEFAULT_PANEL_SETTINGS = [
 $prizeStorePath = __DIR__ . '/WF Prizes.json';
 $inviteesFilePath = __DIR__ . '/WF Event/Invitees mapped.csv';
 $inviteesMapPath = __DIR__ . '/WF Event/WF Mapped.json';
+$loginAttemptsPath = __DIR__ . '/WF Event/login_attempts.json';
 
 function readPrizeStore(string $path): array
 {
@@ -115,6 +123,28 @@ function readInviteesMapping(string $path): array
   return is_array($data) ? $data : [];
 }
 
+function readLoginAttempts(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $data = json_decode(file_get_contents($path), true);
+  return is_array($data) ? $data : [];
+}
+
+function writeLoginAttempts(string $path, array $payload): bool
+{
+  $dir = dirname($path);
+  if (!is_dir($dir)) {
+    mkdir($dir, 0777, true);
+  }
+  $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
 function normalizeHeaderName(string $value): string
 {
   $value = trim(mb_strtolower($value, 'UTF-8'));
@@ -216,39 +246,69 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   $rawInput = file_get_contents('php://input');
   $payload = json_decode($rawInput ?: '', true);
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
+  $csrfToken = is_array($payload) ? (string)($payload['csrf'] ?? '') : '';
+  if ($csrfToken === '' || !hash_equals((string)($_SESSION['wf_csrf'] ?? ''), $csrfToken)) {
+    echo json_encode(['status' => 'error', 'message' => 'درخواست نامعتبر است.']);
+    exit;
+  }
 
 
   if ($action === 'login') {
+    $maxAttempts = 5;
+    $windowSeconds = 10 * 60;
+    $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
     $username = trim((string)($payload['username'] ?? ''));
     $password = trim((string)($payload['password'] ?? ''));
+    $attemptKey = $ip . '|' . $username;
+    $attempts = readLoginAttempts($loginAttemptsPath);
+    $now = time();
+    $entry = is_array($attempts[$attemptKey] ?? null) ? $attempts[$attemptKey] : ['fails' => []];
+    $fails = array_values(array_filter($entry['fails'] ?? [], function ($ts) use ($now, $windowSeconds) {
+      return is_numeric($ts) && ($now - (int)$ts) <= $windowSeconds;
+    }));
+    if (count($fails) >= $maxAttempts) {
+      echo json_encode(['status' => 'error', 'message' => '????? ???? ?????? ???? ???. ??? ??? ?????? ?????? ????.']);
+      exit;
+    }
+    $recordFail = function () use (&$attempts, $attemptKey, $now, &$fails, $loginAttemptsPath) {
+      $fails[] = $now;
+      $attempts[$attemptKey] = ['fails' => $fails];
+      writeLoginAttempts($loginAttemptsPath, $attempts);
+    };
     if ($username === '' || $password === '') {
+      $recordFail();
       echo json_encode(['status' => 'error', 'message' => '??????? ???? ???? ????.']);
       exit;
     }
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
     $rows = $table['rows'];
     if (!$rows) {
+      $recordFail();
       echo json_encode(['status' => 'error', 'message' => '???? ??????? ????? ????.']);
       exit;
     }
     $workIdIndex = $table['workIdIndex'];
     if ($workIdIndex < 0) {
+      $recordFail();
       echo json_encode(['status' => 'error', 'message' => '???? ??? ?????? ???? ???? ???.']);
       exit;
     }
     $columns = $table['columns']['index'] ?? [];
     $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
     if ($passwordIndex < 0) {
+      $recordFail();
       echo json_encode(['status' => 'error', 'message' => '???? ??????? ????? ????.']);
       exit;
     }
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $username);
     if ($rowIndex < 0) {
+      $recordFail();
       echo json_encode(['status' => 'error', 'message' => '??? ?????? ?? ??????? ?????? ???.']);
       exit;
     }
     $rowPassword = trim((string)($rows[$rowIndex][$passwordIndex] ?? ''));
     if ($rowPassword === '' || $rowPassword !== $password) {
+      $recordFail();
       echo json_encode(['status' => 'error', 'message' => '??? ?????? ?? ??????? ?????? ???.']);
       exit;
     }
@@ -266,8 +326,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (($table['columns']['added'] ?? false) && $rows) {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+      $recordFail();
       echo json_encode(['status' => 'error', 'message' => '????? ??????? ???? ????? ???.']);
       exit;
+    }
+    if (isset($attempts[$attemptKey])) {
+      unset($attempts[$attemptKey]);
+      writeLoginAttempts($loginAttemptsPath, $attempts);
     }
     $_SESSION['wf_authed'] = true;
     $_SESSION['wf_work_id'] = $username;
@@ -285,6 +350,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     echo json_encode(['status' => 'ok', 'prizeWon' => $prizeWon, 'wheelAngle' => $wheelAngle]);
     exit;
   }
+
 
   if ($action === 'log_roll') {
     $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
@@ -515,7 +581,7 @@ $sessionPayload = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>??? ????? ??????? ?????????</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
-    <style>
+    <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       :root {
         --bg: #f4f7fb;
         --phone: #ffffff;
@@ -1256,7 +1322,7 @@ $sessionPayload = [
       </section>
     </main>
 
-    <script>
+    <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       const loaderEl = document.getElementById('wf-loader');
       const bodyEl = document.body;
       const loaderStart = performance.now();
@@ -1300,6 +1366,7 @@ $sessionPayload = [
       bootReady();
 
       const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE); ?>;
+      const csrfToken = <?= json_encode($_SESSION['wf_csrf'], JSON_UNESCAPED_UNICODE); ?>;
       const loginForm = document.getElementById('wf-login-form');
       if (!sessionInfo?.authed) {
         const loginBtn = document.querySelector('.login-btn');
@@ -1317,7 +1384,7 @@ $sessionPayload = [
               const response = await fetch(window.location.href, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'login', username, password })
+                body: JSON.stringify({ action: 'login', username, password, csrf: csrfToken })
               });
               const payload = await response.json();
               if (response.ok && payload?.status === 'ok') {
@@ -1913,7 +1980,7 @@ $sessionPayload = [
           const rollResponse = await fetch(window.location.href, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'log_roll' })
+            body: JSON.stringify({ action: 'log_roll', csrf: csrfToken })
           });
           const rollPayload = await rollResponse.json();
           if (!rollResponse.ok || rollPayload?.status !== 'ok') {
@@ -1998,7 +2065,7 @@ $sessionPayload = [
               await fetch(window.location.href, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'log_prize', prize: winnerPrize.name, wheelAngle: currentAngle })
+                body: JSON.stringify({ action: 'log_prize', prize: winnerPrize.name, wheelAngle: currentAngle, csrf: csrfToken })
               });
             } catch {}
           }
@@ -2055,7 +2122,7 @@ $sessionPayload = [
             const response = await fetch('WFM.php', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'decrement_prize', name: winnerPrize.name })
+              body: JSON.stringify({ action: 'decrement_prize', name: winnerPrize.name, csrf: csrfToken })
             });
             const payload = await response.json();
             if (response.ok && payload?.status === 'ok' && Array.isArray(payload.data)) {
