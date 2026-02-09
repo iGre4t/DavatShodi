@@ -706,9 +706,9 @@ $sessionPayload = [
         stroke-width: 22;
         stroke-linecap: round;
         stroke-linejoin: round;
-        stroke-dasharray: 1 2200;
+        stroke-dasharray: 950 1250;
         stroke-dashoffset: 0;
-        animation: wf-icon-stroke 2s linear infinite;
+        animation: wf-icon-stroke 2.4s linear infinite;
       }
 
       .loader-text {
@@ -731,19 +731,15 @@ $sessionPayload = [
 
       @keyframes wf-icon-stroke {
         0% {
-          stroke-dasharray: 1 2200;
           stroke-dashoffset: 0;
-          opacity: 0.7;
+          opacity: 0.85;
         }
-        45% {
-          stroke-dasharray: 520 2200;
-          stroke-dashoffset: -700;
+        50% {
           opacity: 1;
         }
         100% {
-          stroke-dasharray: 1 2200;
           stroke-dashoffset: -2200;
-          opacity: 0.7;
+          opacity: 0.85;
         }
       }
 
