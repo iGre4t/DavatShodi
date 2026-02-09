@@ -3,6 +3,21 @@ declare(strict_types=1);
 
 $wfqStorePath = __DIR__ . '/WFQ list.json';
 
+function wfqNormalizeItem(array $item): array
+{
+  $answers = is_array($item['answers'] ?? null) ? array_values($item['answers']) : [];
+  while (count($answers) < 4) {
+    $answers[] = '';
+  }
+  $answers = array_slice($answers, 0, 4);
+  return [
+    'id' => trim((string)($item['id'] ?? '')) ?: ('q_' . bin2hex(random_bytes(6))),
+    'question' => trim((string)($item['question'] ?? '')),
+    'answers' => array_map(static fn($v) => trim((string)$v), $answers),
+    'createdAt' => trim((string)($item['createdAt'] ?? '')) ?: date('Y-m-d H:i:s')
+  ];
+}
+
 function wfqLoadStore(string $path): array
 {
   if (!is_file($path)) {
@@ -13,7 +28,16 @@ function wfqLoadStore(string $path): array
     return [];
   }
   $decoded = json_decode($content, true);
-  return is_array($decoded) ? array_values(array_filter($decoded, 'is_array')) : [];
+  if (!is_array($decoded)) {
+    return [];
+  }
+  $items = [];
+  foreach ($decoded as $row) {
+    if (is_array($row)) {
+      $items[] = wfqNormalizeItem($row);
+    }
+  }
+  return $items;
 }
 
 function wfqSaveStore(string $path, array $rows): bool
@@ -39,39 +63,42 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     exit;
   }
 
-  if ($action === 'add') {
-    $question = trim((string)($_POST['question'] ?? ''));
-    $answers = [
-      trim((string)($_POST['answer1'] ?? '')),
-      trim((string)($_POST['answer2'] ?? '')),
-      trim((string)($_POST['answer3'] ?? '')),
-      trim((string)($_POST['answer4'] ?? ''))
-    ];
-
-    if ($question === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Question is required.'], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
-    if (count(array_filter($answers, static fn($v) => $v !== '')) < 4) {
-      echo json_encode(['status' => 'error', 'message' => 'All 4 answers are required.'], JSON_UNESCAPED_UNICODE);
+  if ($action === 'save_all') {
+    $raw = (string)($_POST['items'] ?? '[]');
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid payload.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
-    $items = wfqLoadStore($wfqStorePath);
-    $items[] = [
-      'id' => 'q_' . bin2hex(random_bytes(6)),
-      'question' => $question,
-      // In RTL layout, the first answer appears on the right and is always the correct answer.
-      'answers' => $answers,
-      'createdAt' => date('Y-m-d H:i:s')
-    ];
+    $items = [];
+    foreach ($decoded as $index => $row) {
+      if (!is_array($row)) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid row data.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $item = wfqNormalizeItem($row);
+      if ($item['question'] === '') {
+        $num = $index + 1;
+        echo json_encode(['status' => 'error', 'message' => "Question in row {$num} is required."], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      foreach ($item['answers'] as $ans) {
+        if ($ans === '') {
+          $num = $index + 1;
+          echo json_encode(['status' => 'error', 'message' => "All 4 answers in row {$num} are required."], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
+      }
+      $items[] = $item;
+    }
 
     if (!wfqSaveStore($wfqStorePath, $items)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save question.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save questions.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
-    echo json_encode(['status' => 'ok', 'message' => 'Question added.', 'items' => $items], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'All changes saved.', 'items' => $items], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -102,9 +129,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     font: inherit;
     background: #fff;
   }
-  .wfq-field[readonly] {
-    background: #f8fafc;
-    color: #334155;
+  .wfq-list-actions {
+    display: flex;
+    justify-content: center;
+  }
+  .wfq-save-wrap {
+    margin-top: 12px;
   }
   @media (max-width: 900px) {
     .wfq-answer-grid {
@@ -156,12 +186,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
         <tr>
           <th>#</th>
           <th>Question & Answers</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody id="wfq-list-body">
-        <tr><td colspan="2" class="muted">Loading questions...</td></tr>
+        <tr><td colspan="3" class="muted">Loading questions...</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="wfq-save-wrap">
+    <button id="wfq-save-all" type="button" class="btn primary standard-primary-button">Save</button>
   </div>
 </div>
 
@@ -172,9 +207,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   const input = document.getElementById('wfq-question-input');
   const body = document.getElementById('wfq-list-body');
   const statusEl = document.getElementById('wfq-status');
-  if (!form || !input || !body || !statusEl) {
-    return;
-  }
+  const saveAllBtn = document.getElementById('wfq-save-all');
+  if (!form || !input || !body || !statusEl || !saveAllBtn) return;
+
+  let items = [];
 
   const esc = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -183,38 +219,57 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+  const makeId = () => `q_${Math.random().toString(36).slice(2, 10)}`;
+
+  const normalizeAnswers = (list) => {
+    const answers = Array.isArray(list) ? list.slice(0, 4) : [];
+    while (answers.length < 4) answers.push('');
+    return answers.map((v) => String(v ?? ''));
+  };
+
   const setStatus = (message, isError = false) => {
     statusEl.textContent = message || '';
     statusEl.style.color = isError ? '#d1434a' : '';
   };
 
-  const normalizeAnswers = (item) => {
-    const list = Array.isArray(item?.answers) ? item.answers.slice(0, 4) : [];
-    while (list.length < 4) {
-      list.push('');
+  const validateAll = () => {
+    for (let i = 0; i < items.length; i += 1) {
+      const row = items[i];
+      if (!String(row.question || '').trim()) {
+        return `Question in row ${i + 1} is required.`;
+      }
+      const answers = normalizeAnswers(row.answers);
+      if (answers.some((ans) => !String(ans).trim())) {
+        return `All 4 answers in row ${i + 1} are required.`;
+      }
     }
-    return list.map((value) => String(value ?? ''));
+    return '';
   };
 
-  const render = (items) => {
-    if (!Array.isArray(items) || !items.length) {
-      body.innerHTML = '<tr><td colspan="2" class="muted">No questions added yet.</td></tr>';
+  const render = () => {
+    if (!items.length) {
+      body.innerHTML = '<tr><td colspan="3" class="muted">No questions added yet.</td></tr>';
       return;
     }
 
     body.innerHTML = items.map((item, index) => {
-      const answers = normalizeAnswers(item);
-      return `<tr>
+      const answers = normalizeAnswers(item.answers);
+      return `<tr data-row-id="${esc(item.id)}">
         <td>${index + 1}</td>
         <td>
           <div class="wfq-row-grid">
-            <input class="wfq-field" type="text" value="${esc(item.question || '')}" readonly />
+            <input class="wfq-field" type="text" data-field="question" value="${esc(item.question)}" />
             <div class="wfq-answer-grid">
-              <input class="wfq-field" type="text" value="${esc(answers[0])}" readonly />
-              <input class="wfq-field" type="text" value="${esc(answers[1])}" readonly />
-              <input class="wfq-field" type="text" value="${esc(answers[2])}" readonly />
-              <input class="wfq-field" type="text" value="${esc(answers[3])}" readonly />
+              <input class="wfq-field" type="text" data-field="answer0" value="${esc(answers[0])}" />
+              <input class="wfq-field" type="text" data-field="answer1" value="${esc(answers[1])}" />
+              <input class="wfq-field" type="text" data-field="answer2" value="${esc(answers[2])}" />
+              <input class="wfq-field" type="text" data-field="answer3" value="${esc(answers[3])}" />
             </div>
+          </div>
+        </td>
+        <td>
+          <div class="wfq-list-actions">
+            <button type="button" class="btn ghost" data-delete-id="${esc(item.id)}">Delete</button>
           </div>
         </td>
       </tr>`;
@@ -235,52 +290,105 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     return data;
   };
 
-  const loadList = async () => {
-    try {
-      const data = await postAction('list');
-      render(data.items);
-      setStatus('');
-    } catch (error) {
-      render([]);
-      setStatus(error?.message || 'Failed to load questions.', true);
-    }
+  const syncFromServer = async () => {
+    const data = await postAction('list');
+    items = Array.isArray(data.items) ? data.items.map((item) => ({
+      id: String(item.id || makeId()),
+      question: String(item.question || ''),
+      answers: normalizeAnswers(item.answers),
+      createdAt: String(item.createdAt || '')
+    })) : [];
+    render();
   };
 
-  form.addEventListener('submit', async (event) => {
+  form.addEventListener('submit', (event) => {
     event.preventDefault();
-    const formData = new FormData(form);
-    const payload = {
-      question: String(formData.get('question') ?? '').trim(),
-      answer1: String(formData.get('answer1') ?? '').trim(),
-      answer2: String(formData.get('answer2') ?? '').trim(),
-      answer3: String(formData.get('answer3') ?? '').trim(),
-      answer4: String(formData.get('answer4') ?? '').trim()
+    const fd = new FormData(form);
+    const next = {
+      id: makeId(),
+      question: String(fd.get('question') ?? '').trim(),
+      answers: [
+        String(fd.get('answer1') ?? '').trim(),
+        String(fd.get('answer2') ?? '').trim(),
+        String(fd.get('answer3') ?? '').trim(),
+        String(fd.get('answer4') ?? '').trim()
+      ],
+      createdAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
     };
-
-    if (!payload.question) {
+    if (!next.question) {
       setStatus('Question is required.', true);
       return;
     }
-    if (!payload.answer1 || !payload.answer2 || !payload.answer3 || !payload.answer4) {
+    if (next.answers.some((ans) => !ans)) {
       setStatus('All 4 answers are required.', true);
       return;
     }
+    items.push(next);
+    render();
+    setStatus('Question added to list. Click Save to persist changes.');
+    form.reset();
+    input.focus();
+  });
 
-    const submitBtn = form.querySelector('button[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
-    try {
-      const data = await postAction('add', payload);
-      render(data.items);
-      setStatus(data.message || 'Question added.');
-      form.reset();
-      input.focus();
-    } catch (error) {
-      setStatus(error?.message || 'Failed to add question.', true);
-    } finally {
-      if (submitBtn) submitBtn.disabled = false;
+  body.addEventListener('input', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const row = target.closest('tr[data-row-id]');
+    if (!row) return;
+    const id = row.getAttribute('data-row-id') || '';
+    const idx = items.findIndex((item) => item.id === id);
+    if (idx < 0) return;
+    const field = target.dataset.field || '';
+    if (field === 'question') {
+      items[idx].question = target.value;
+      return;
+    }
+    if (field.startsWith('answer')) {
+      const pos = Number.parseInt(field.replace('answer', ''), 10);
+      if (Number.isInteger(pos) && pos >= 0 && pos < 4) {
+        const answers = normalizeAnswers(items[idx].answers);
+        answers[pos] = target.value;
+        items[idx].answers = answers;
+      }
     }
   });
 
-  loadList();
+  body.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const deleteBtn = target.closest('[data-delete-id]');
+    if (!deleteBtn) return;
+    const id = deleteBtn.getAttribute('data-delete-id') || '';
+    items = items.filter((item) => item.id !== id);
+    render();
+    setStatus('Row removed from list. Click Save to persist changes.');
+  });
+
+  saveAllBtn.addEventListener('click', async () => {
+    const validationError = validateAll();
+    if (validationError) {
+      setStatus(validationError, true);
+      return;
+    }
+    saveAllBtn.disabled = true;
+    try {
+      const data = await postAction('save_all', { items: JSON.stringify(items) });
+      items = Array.isArray(data.items) ? data.items : items;
+      render();
+      setStatus(data.message || 'All changes saved.');
+    } catch (error) {
+      setStatus(error?.message || 'Failed to save changes.', true);
+    } finally {
+      saveAllBtn.disabled = false;
+    }
+  });
+
+  syncFromServer()
+    .then(() => setStatus(''))
+    .catch((error) => {
+      items = [];
+      render();
+      setStatus(error?.message || 'Failed to load questions.', true);
+    });
 })();
 </script>

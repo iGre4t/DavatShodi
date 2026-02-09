@@ -13,6 +13,7 @@ const DEFAULT_PANEL_SETTINGS = [
 ];
 
 $prizeStorePath = __DIR__ . '/WF Prizes.json';
+$questionsStorePath = __DIR__ . '/WFQ list.json';
 $inviteesFilePath = __DIR__ . '/WF Event/Invitees mapped.csv';
 $inviteesMapPath = __DIR__ . '/WF Event/WF Mapped.json';
 $loginAttemptsPath = __DIR__ . '/WF Event/login_attempts.json';
@@ -37,6 +38,42 @@ function writePrizeStore(string $path, array $payload): bool
     return false;
   }
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function readQuestionStore(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+  $items = [];
+  foreach ($decoded as $row) {
+    if (!is_array($row)) {
+      continue;
+    }
+    $question = trim((string)($row['question'] ?? ''));
+    $answers = is_array($row['answers'] ?? null) ? array_values($row['answers']) : [];
+    if ($question === '' || count($answers) < 4) {
+      continue;
+    }
+    $answers = array_map(static fn($value) => trim((string)$value), array_slice($answers, 0, 4));
+    if (count(array_filter($answers, static fn($value) => $value !== '')) < 4) {
+      continue;
+    }
+    $items[] = [
+      'question' => $question,
+      // Answer at index 0 is the correct answer.
+      'answers' => $answers
+    ];
+  }
+  return $items;
 }
 
 function loadJsonPayload(string $path): array
@@ -469,6 +506,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 }
 
 $initialPrizes = readPrizeStore($prizeStorePath);
+$initialQuestions = readQuestionStore($questionsStorePath);
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
@@ -811,6 +849,109 @@ $sessionPayload = [
         justify-content: center;
         gap: 14px;
         padding: 12px 18px 10px;
+      }
+
+      .quiz-area {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 18px;
+        position: relative;
+      }
+
+      .quiz-hidden {
+        display: none !important;
+      }
+
+      .quiz-counter {
+        position: absolute;
+        top: 8px;
+        left: 14px;
+        font-size: 0.84rem;
+        color: #5b6a88;
+        background: #ffffff;
+        border: 1px solid #e5ecf7;
+        border-radius: 999px;
+        padding: 4px 10px;
+      }
+
+      .quiz-question-box {
+        width: min(360px, calc(100% - 8px));
+        min-height: 130px;
+        border: 1px solid #dce7f8;
+        border-radius: 16px;
+        background: #f8fbff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: #2d3f66;
+        font-size: 1rem;
+        font-weight: 700;
+        line-height: 1.5;
+        padding: 14px 16px;
+      }
+
+      .quiz-answers-grid {
+        width: min(360px, calc(100% - 8px));
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .quiz-answer-btn {
+        border: 1px solid #d8e4f7;
+        border-radius: 12px;
+        background: #ffffff;
+        color: #33466f;
+        font-family: inherit;
+        font-size: 0.9rem;
+        font-weight: 600;
+        min-height: 54px;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: transform 0.16s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+      }
+
+      .quiz-answer-btn:hover {
+        transform: translateY(-1px);
+      }
+
+      .quiz-answer-btn:disabled {
+        cursor: default;
+      }
+
+      .quiz-answer-btn.is-wrong {
+        background: #ffe4e7;
+        border-color: #fda4af;
+        color: #b4232f;
+        animation: quiz-wrong-shake 0.42s ease;
+      }
+
+      .quiz-answer-btn.is-correct {
+        background: #2f8fff;
+        border-color: #2f8fff;
+        color: #ffffff;
+        animation: quiz-correct-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      @keyframes quiz-wrong-shake {
+        0% { transform: translateX(0); }
+        20% { transform: translateX(-5px); }
+        40% { transform: translateX(5px); }
+        60% { transform: translateX(-4px); }
+        80% { transform: translateX(4px); }
+        100% { transform: translateX(0); }
+      }
+
+      @keyframes quiz-correct-pop {
+        0% { transform: scale(0.96); }
+        55% { transform: scale(1.06); }
+        100% { transform: scale(1); }
       }
 
       .login-area {
@@ -1442,7 +1583,12 @@ $sessionPayload = [
           </form>
         </div>
       <?php else: ?>
-        <div class="main-area">
+        <div id="wf-quiz-area" class="quiz-area">
+          <div id="wf-quiz-counter" class="quiz-counter">۱ از ۱</div>
+          <div id="wf-quiz-question" class="quiz-question-box">—</div>
+          <div id="wf-quiz-answers" class="quiz-answers-grid"></div>
+        </div>
+        <div id="wf-play-area" class="main-area quiz-hidden">
           <div class="hero">
             <?php if ($faviconUrl !== ''): ?>
               <img class="hero-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
@@ -1608,6 +1754,9 @@ $sessionPayload = [
       const initialPrizes = Array.isArray(<?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>)
         ? <?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>
         : [];
+      const initialQuestions = Array.isArray(<?= json_encode($initialQuestions, JSON_UNESCAPED_UNICODE); ?>)
+        ? <?= json_encode($initialQuestions, JSON_UNESCAPED_UNICODE); ?>
+        : [];
 
       const canvas = document.getElementById('wf-wheel');
       const ctx = canvas.getContext('2d');
@@ -1620,6 +1769,11 @@ $sessionPayload = [
       const resultDialogEl = document.getElementById('wf-result-dialog');
       const resultDialogConfirmBtn = document.getElementById('wf-result-confirm');
       const confettiLayer = document.getElementById('wf-confetti');
+      const quizAreaEl = document.getElementById('wf-quiz-area');
+      const playAreaEl = document.getElementById('wf-play-area');
+      const quizCounterEl = document.getElementById('wf-quiz-counter');
+      const quizQuestionEl = document.getElementById('wf-quiz-question');
+      const quizAnswersEl = document.getElementById('wf-quiz-answers');
       let fakeLoopTimer = null;
       let wheelActive = true;
       const countEl = document.getElementById('wf-count');
@@ -1634,6 +1788,17 @@ $sessionPayload = [
       let userHasPrize = !allowRepeatRolls && userPrizeName !== '';
       const savedWheelAngle = Number.isFinite(Number(sessionInfo?.wheelAngle)) ? Number(sessionInfo.wheelAngle) : null;
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+      const quizQuestions = Array.isArray(initialQuestions)
+        ? initialQuestions
+          .map((item) => ({
+            question: String(item?.question ?? '').trim(),
+            answers: Array.isArray(item?.answers) ? item.answers.slice(0, 4).map((ans) => String(ans ?? '').trim()) : []
+          }))
+          .filter((item) => item.question !== '' && item.answers.length === 4 && item.answers.every((ans) => ans !== ''))
+        : [];
+      let quizIndex = 0;
+      let quizLocked = false;
+      let quizCompleted = quizQuestions.length === 0;
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -1653,7 +1818,90 @@ $sessionPayload = [
       let currentAngle = savedWheelAngle ?? 0;
       let spinning = false;
       let wheelSize = 420;
+      let wheelInitialized = false;
       const currentAccent = '#2f8fff';
+      const showPlayArea = () => {
+        if (quizAreaEl) {
+          quizAreaEl.classList.add('quiz-hidden');
+        }
+        if (playAreaEl) {
+          playAreaEl.classList.remove('quiz-hidden');
+        }
+      };
+      const showQuizArea = () => {
+        if (playAreaEl) {
+          playAreaEl.classList.add('quiz-hidden');
+        }
+        if (quizAreaEl) {
+          quizAreaEl.classList.remove('quiz-hidden');
+        }
+      };
+      const markQuizButtonsDisabled = () => {
+        if (!quizAnswersEl) return;
+        Array.from(quizAnswersEl.querySelectorAll('button')).forEach((node) => {
+          node.disabled = true;
+        });
+      };
+      const continueQuiz = async () => {
+        quizIndex += 1;
+        quizLocked = false;
+        if (quizIndex >= quizQuestions.length) {
+          quizCompleted = true;
+          showPlayArea();
+          if (!wheelInitialized) {
+            await initWheelView();
+          } else {
+            configureCanvas();
+            drawWheel(wheelSegments, currentAngle);
+          }
+          return;
+        }
+        renderQuizQuestion();
+      };
+      const handleQuizAnswer = async (button, answerIndex) => {
+        if (quizLocked) return;
+        quizLocked = true;
+        markQuizButtonsDisabled();
+        if (answerIndex === 0) {
+          button.classList.add('is-correct');
+          setTimeout(() => {
+            void continueQuiz();
+          }, 700);
+          return;
+        }
+        button.classList.add('is-wrong');
+        setTimeout(() => {
+          void continueQuiz();
+        }, 760);
+      };
+      const renderQuizQuestion = () => {
+        if (!quizQuestionEl || !quizAnswersEl || !quizCounterEl) {
+          return;
+        }
+        const total = quizQuestions.length;
+        if (!total) {
+          quizCompleted = true;
+          return;
+        }
+        const item = quizQuestions[quizIndex];
+        if (!item) {
+          quizCompleted = true;
+          return;
+        }
+        quizCounterEl.textContent = `${toFaDigits(quizIndex + 1)} از ${toFaDigits(total)}`;
+        quizQuestionEl.textContent = item.question;
+        quizAnswersEl.innerHTML = '';
+        item.answers.forEach((answer, answerIndex) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'quiz-answer-btn';
+          button.textContent = answer;
+          button.addEventListener('click', () => {
+            void handleQuizAnswer(button, answerIndex);
+          });
+          quizAnswersEl.appendChild(button);
+        });
+      };
       const openResultDialog = () => {
         if (!resultDialogEl) return;
         resultDialogEl.classList.add('open');
@@ -2132,7 +2380,10 @@ $sessionPayload = [
         initWheel(loaded);
       };
 
-      const initApp = async () => {
+      const initWheelView = async () => {
+        if (wheelInitialized) {
+          return;
+        }
         await waitForFonts();
         configureCanvas();
         await bootstrap();
@@ -2158,6 +2409,17 @@ $sessionPayload = [
           configureCanvas();
           drawWheel(wheelSegments, currentAngle);
         });
+        wheelInitialized = true;
+      };
+
+      const initApp = async () => {
+        if (!quizCompleted && quizQuestions.length) {
+          showQuizArea();
+          renderQuizQuestion();
+          return;
+        }
+        showPlayArea();
+        await initWheelView();
       };
 
       initApp();
