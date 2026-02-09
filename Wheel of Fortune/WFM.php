@@ -880,6 +880,7 @@ $sessionPayload = [
         border: none;
         border-radius: 14px;
         padding: 12px;
+        font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         font-weight: 700;
         font-size: 0.95rem;
         background: var(--accent);
@@ -1022,6 +1023,16 @@ $sessionPayload = [
         color: #2a3c63;
         position: relative;
         z-index: 2;
+      }
+
+      .wf-result-dialog-content {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
       }
 
       .wf-result-dialog-confirm {
@@ -1385,7 +1396,7 @@ $sessionPayload = [
             <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
           </svg>
         </div>
-        <p class="loader-text">در حال آماده‌سازی شگفتانه شما</p>
+        <p class="loader-text">در حال آماده سازی</p>
         <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
       </div>
     </div>
@@ -1459,11 +1470,13 @@ $sessionPayload = [
     <div id="wf-result-dialog" class="wf-result-dialog-overlay" aria-hidden="true">
       <section class="wf-result-dialog" role="dialog" aria-modal="true" aria-labelledby="wf-result-dialog-title">
         <h3 id="wf-result-dialog-title" class="wf-result-dialog-title">نتیجه چرخ شما</h3>
-        <div class="result">
-          <span class="result-label">نتیجه</span>
-          <p id="wf-result" class="result-value">—</p>
+        <div class="wf-result-dialog-content">
+          <div class="result">
+            <span class="result-label">نتیجه</span>
+            <p id="wf-result" class="result-value">—</p>
+          </div>
+          <p class="hint hint-align-center">مبارک باشه! جایزه شما به زودی توسط سازمان به حساب شما واریز می‌شود.</p>
         </div>
-        <p class="hint hint-align-center">مبارک باشه! جایزه شما به زودی توسط سازمان به حساب شما واریز می‌شود.</p>
         <button id="wf-result-confirm" class="wf-result-dialog-confirm" type="button">تایید</button>
       </section>
     </div>
@@ -1669,7 +1682,7 @@ $sessionPayload = [
       if (resultDialogConfirmBtn) {
         resultDialogConfirmBtn.addEventListener('click', async () => {
           resultDialogConfirmBtn.disabled = true;
-          await performLogout({ loaderText: 'تشکر از همراهی شما' });
+          await performLogout();
         });
       }
 
