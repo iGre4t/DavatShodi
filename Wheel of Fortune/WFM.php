@@ -988,6 +988,66 @@ $sessionPayload = [
         text-align: justify;
       }
 
+      .wf-result-dialog-overlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(18, 31, 56, 0.48);
+        z-index: 9998;
+      }
+
+      .wf-result-dialog-overlay.open {
+        display: flex;
+      }
+
+      .wf-result-dialog {
+        width: min(460px, 100%);
+        min-height: min(520px, calc(100vh - 36px));
+        max-height: calc(100vh - 36px);
+        background: #ffffff;
+        border: 1px solid #e8edf6;
+        border-radius: 28px;
+        box-shadow: 0 26px 50px rgba(29, 55, 96, 0.24);
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 24px 18px;
+      }
+
+      .wf-result-dialog-title {
+        margin: 0;
+        font-size: 1.18rem;
+        color: #2a3c63;
+        position: relative;
+        z-index: 2;
+      }
+
+      .wf-result-dialog-close {
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        border: 1px solid #dbe5f6;
+        background: #f7faff;
+        color: #4f638d;
+        border-radius: 10px;
+        font-family: inherit;
+        font-size: 0.82rem;
+        padding: 6px 10px;
+        cursor: pointer;
+        z-index: 2;
+      }
+
+      .wf-result-dialog-close:hover {
+        background: #edf3ff;
+      }
+
       .result {
         margin: 0 auto;
         width: min(300px, calc(100% - 32px));
@@ -1004,6 +1064,7 @@ $sessionPayload = [
         position: relative;
         overflow: hidden;
         transition: background 2s ease, border-color 2s ease, color 2s ease;
+        z-index: 2;
       }
 
       .result::after {
@@ -1043,11 +1104,11 @@ $sessionPayload = [
       }
 
       .confetti-layer {
-        position: fixed;
+        position: absolute;
         inset: 0;
         pointer-events: none;
         overflow: hidden;
-        z-index: 9998;
+        z-index: 1;
       }
 
       .confetti-piece {
@@ -1299,7 +1360,6 @@ $sessionPayload = [
         <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
       </div>
     </div>
-    <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
     <main class="app">
       <section class="phone">
     <div class="topbar">
@@ -1353,10 +1413,6 @@ $sessionPayload = [
             <p class="hint hint-align-<?= htmlspecialchars($hintAlign, ENT_QUOTES, 'UTF-8') ?>"><?= $hintHtml ?></p>
           </div>
 
-          <div class="result">
-            <span class="result-label">نتیجه</span>
-            <p id="wf-result" class="result-value">—</p>
-          </div>
         </div>
 
         <div class="wheel-shell">
@@ -1368,6 +1424,17 @@ $sessionPayload = [
       <?php endif; ?>
       </section>
     </main>
+    <div id="wf-result-dialog" class="wf-result-dialog-overlay" aria-hidden="true">
+      <section class="wf-result-dialog" role="dialog" aria-modal="true" aria-labelledby="wf-result-dialog-title">
+        <button id="wf-result-dialog-close" class="wf-result-dialog-close" type="button">بستن</button>
+        <h3 id="wf-result-dialog-title" class="wf-result-dialog-title">نتیجه چرخ شما</h3>
+        <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
+        <div class="result">
+          <span class="result-label">نتیجه</span>
+          <p id="wf-result" class="result-value">—</p>
+        </div>
+      </section>
+    </div>
 
     <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       const loaderEl = document.getElementById('wf-loader');
@@ -1476,6 +1543,8 @@ $sessionPayload = [
       const resultEl = document.getElementById('wf-result');
       const resultBox = document.querySelector('.result');
       const hintEl = document.querySelector('.hint');
+      const resultDialogEl = document.getElementById('wf-result-dialog');
+      const resultDialogCloseBtn = document.getElementById('wf-result-dialog-close');
       const confettiLayer = document.getElementById('wf-confetti');
       let fakeLoopTimer = null;
       let wheelActive = true;
@@ -1509,6 +1578,26 @@ $sessionPayload = [
       let spinning = false;
       let wheelSize = 420;
       const currentAccent = '#2f8fff';
+      const openResultDialog = () => {
+        if (!resultDialogEl) return;
+        resultDialogEl.classList.add('open');
+        resultDialogEl.setAttribute('aria-hidden', 'false');
+      };
+      const closeResultDialog = () => {
+        if (!resultDialogEl) return;
+        resultDialogEl.classList.remove('open');
+        resultDialogEl.setAttribute('aria-hidden', 'true');
+      };
+      if (resultDialogCloseBtn) {
+        resultDialogCloseBtn.addEventListener('click', closeResultDialog);
+      }
+      if (resultDialogEl) {
+        resultDialogEl.addEventListener('click', (event) => {
+          if (event.target === resultDialogEl) {
+            closeResultDialog();
+          }
+        });
+      }
 
       const loadPrizeStore = async () => {
         try {
@@ -2005,6 +2094,7 @@ $sessionPayload = [
           if (resultEl) {
           resultEl.textContent = userPrizeName || '—';
           }
+          openResultDialog();
           if (spinBtn) {
             spinBtn.disabled = true;
           }
@@ -2144,11 +2234,13 @@ $sessionPayload = [
           if (resultBox && !isFake) {
             resultBox.classList.add('result-shine');
             resultEl.classList.add('drop-in');
+            openResultDialog();
           }
           if (confettiLayer && !isFake) {
             const colors = ['#1f7bdc', '#2f8fff', '#4da3ff', '#6bb6ff', '#8ac8ff', '#b3dcff'];
-            const width = window.innerWidth;
-            const height = window.innerHeight;
+            const dialogBounds = confettiLayer.getBoundingClientRect();
+            const width = Math.max(260, dialogBounds.width || 360);
+            const height = Math.max(220, dialogBounds.height || 420);
             const count = Math.max(28, Math.min(52, Math.round(width / 22)));
             confettiLayer.innerHTML = '';
             for (let i = 0; i < count; i += 1) {
