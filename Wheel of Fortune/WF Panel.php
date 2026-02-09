@@ -309,6 +309,7 @@
     <div class="sub-nav">
       <button type="button" class="sub-item active" data-pane="wf-main">Main Panel</button>
       <button type="button" class="sub-item" data-pane="wf-invitees">Invitees</button>
+      <button type="button" class="sub-item" data-pane="wf-question">Question</button>
     </div>
   </aside>
   <div class="sub-content">
@@ -512,6 +513,9 @@
     </div>
     <div class="sub-pane" data-pane="wf-invitees">
       <?php include __DIR__ . '/invitees.php'; ?>
+    </div>
+    <div class="sub-pane" data-pane="wf-question">
+      <?php include __DIR__ . '/WFQ.php'; ?>
     </div>
   </div>
 </div>
