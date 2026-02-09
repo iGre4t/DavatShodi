@@ -376,13 +376,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
       exit;
     }
-    if ($prizeIndex >= 0) {
-      $already = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
-      if ($already !== '') {
-        echo json_encode(['status' => 'error', 'message' => 'جایزه قبلاً ثبت شده است.']);
-        exit;
-      }
-    }
     $rolls = (int)($rows[$rowIndex][$rollIndex] ?? 0);
     $rows[$rowIndex][$rollIndex] = (string)($rolls + 1);
     if (($table['columns']['added'] ?? false) && $rows) {
@@ -419,18 +412,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
       exit;
     }
-    $current = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
-    if ($current === '') {
-      $rows[$rowIndex][$prizeIndex] = $prizeName;
-      if ($angleIndex >= 0 && $wheelAngle !== null) {
-        $rows[$rowIndex][$angleIndex] = (string)$wheelAngle;
-      }
-      if (($table['columns']['added'] ?? false) && $rows) {
-        writeInviteesCsv($inviteesFilePath, $rows);
-      } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
-        echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه انجام نشد.']);
-        exit;
-      }
+    $rows[$rowIndex][$prizeIndex] = $prizeName;
+    if ($angleIndex >= 0 && $wheelAngle !== null) {
+      $rows[$rowIndex][$angleIndex] = (string)$wheelAngle;
+    }
+    if (($table['columns']['added'] ?? false) && $rows) {
+      writeInviteesCsv($inviteesFilePath, $rows);
+    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه انجام نشد.']);
+      exit;
     }
     echo json_encode(['status' => 'ok']);
     exit;
@@ -925,6 +915,7 @@ $sessionPayload = [
         display: grid;
         place-items: center;
         width: 100%;
+        order: 1;
       }
 
       .question {
@@ -1052,6 +1043,33 @@ $sessionPayload = [
         background: #edf3ff;
       }
 
+      .wf-result-dialog-confirm {
+        width: 100%;
+        margin-top: auto;
+        border: none;
+        border-radius: 14px;
+        padding: 12px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--accent-ink);
+        background: var(--accent);
+        cursor: pointer;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        position: relative;
+        z-index: 2;
+      }
+
+      .wf-result-dialog-confirm:hover {
+        transform: translateY(-1px);
+      }
+
+      .wf-result-dialog-confirm:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+        transform: none;
+      }
+
       .result {
         margin: 0 auto;
         width: min(300px, calc(100% - 32px));
@@ -1156,6 +1174,20 @@ $sessionPayload = [
         display: none;
       }
 
+      .time-counter-result {
+        width: min(340px, calc(100vw - 84px));
+        min-height: 4.2em;
+        height: auto;
+        padding: 10px 12px;
+        order: 3;
+      }
+
+      .time-counter-result .result-label {
+        display: block;
+        font-size: 0.72rem;
+        color: #6b7a99;
+      }
+
       .result-value {
         margin: 0;
         font-size: 1.2rem;
@@ -1194,6 +1226,7 @@ $sessionPayload = [
         display: grid;
         place-items: center;
         overflow: visible;
+        order: 2;
       }
 
       .wheel-status {
@@ -1334,6 +1367,10 @@ $sessionPayload = [
           padding: 6px 16px 2px;
         }
 
+        .time-counter-result {
+          width: min(296px, calc(100vw - 52px));
+        }
+
         .center-spin {
           width: 74px;
           height: 74px;
@@ -1421,6 +1458,10 @@ $sessionPayload = [
             <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
             <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
           </div>
+          <div class="result time-counter-result">
+            <span class="result-label">time counter</span>
+            <p id="wf-time-counter" class="result-value">—</p>
+          </div>
         </div>
       <?php endif; ?>
       </section>
@@ -1433,6 +1474,8 @@ $sessionPayload = [
           <span class="result-label">نتیجه</span>
           <p id="wf-result" class="result-value">—</p>
         </div>
+        <p class="hint hint-align-center">مبارک باشه! جایزه شما به زودی توسط سازمان به حساب شما واریز می‌شود.</p>
+        <button id="wf-result-confirm" class="wf-result-dialog-confirm" type="button">تایید</button>
       </section>
     </div>
 
@@ -1483,6 +1526,40 @@ $sessionPayload = [
       const csrfToken = <?= json_encode($_SESSION['wf_csrf'], JSON_UNESCAPED_UNICODE); ?>;
       const loginForm = document.getElementById('wf-login-form');
       const logoutBtn = document.getElementById('wf-logout');
+      const createRuntimeLoader = (primaryText, secondaryText = '') => {
+        const overlay = document.createElement('div');
+        overlay.className = 'loader-overlay';
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        overlay.innerHTML = `
+          <div class="loader-card">
+            <div class="loader-icon-wrap" aria-hidden="true">
+              <svg class="loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">
+                <path class="loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>
+                <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>
+              </svg>
+            </div>
+            <p class="loader-text"></p>
+            <p class="loader-subtext"></p>
+          </div>
+        `;
+        overlay.querySelector('.loader-text').textContent = String(primaryText || '').trim() || 'در حال پردازش';
+        overlay.querySelector('.loader-subtext').textContent = String(secondaryText || '').trim();
+        document.body.appendChild(overlay);
+      };
+      const performLogout = async ({ loaderText = '', loaderSubtext = '' } = {}) => {
+        if (loaderText) {
+          createRuntimeLoader(loaderText, loaderSubtext);
+        }
+        try {
+          await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'logout', csrf: csrfToken })
+          });
+        } catch {}
+        window.location.reload();
+      };
       if (!sessionInfo?.authed) {
         const loginBtn = document.querySelector('.login-btn');
         const loginMsg = document.getElementById('wf-login-msg');
@@ -1523,14 +1600,7 @@ $sessionPayload = [
       if (sessionInfo?.authed) {
       if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
-          try {
-            await fetch(window.location.href, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'logout', csrf: csrfToken })
-            });
-          } catch {}
-          window.location.reload();
+          await performLogout();
         });
       }
       const initialPrizes = Array.isArray(<?= json_encode($initialPrizes, JSON_UNESCAPED_UNICODE); ?>)
@@ -1541,10 +1611,12 @@ $sessionPayload = [
       const ctx = canvas.getContext('2d');
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
-      const resultBox = document.querySelector('.result');
+      const resultBox = document.querySelector('.wf-result-dialog .result');
+      const timeCounterEl = document.getElementById('wf-time-counter');
       const hintEl = document.querySelector('.hint');
       const resultDialogEl = document.getElementById('wf-result-dialog');
       const resultDialogCloseBtn = document.getElementById('wf-result-dialog-close');
+      const resultDialogConfirmBtn = document.getElementById('wf-result-confirm');
       const confettiLayer = document.getElementById('wf-confetti');
       let fakeLoopTimer = null;
       let wheelActive = true;
@@ -1554,9 +1626,10 @@ $sessionPayload = [
       let statusTickTimer = null;
       let latestSettings = {};
       const defaultHintText = hintEl ? hintEl.textContent : '';
-      const activeHintText = 'تو این شگفتانه فقط می‌تونی یدونه جایزه ببری و تا وقتی که جایزه رو نبردی می‌تونی گردونه رو بچرخونی!';
+      const activeHintText = 'گردونه رو بچرخون و شانست رو امتحان کن!';
+      const allowRepeatRolls = true; // Temporary mode: allow repeated rolls and overwrite previous prize.
       let userPrizeName = String(sessionInfo?.prizeWon ?? '').trim();
-      let userHasPrize = userPrizeName !== '';
+      let userHasPrize = !allowRepeatRolls && userPrizeName !== '';
       const savedWheelAngle = Number.isFinite(Number(sessionInfo?.wheelAngle)) ? Number(sessionInfo.wheelAngle) : null;
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
@@ -1589,6 +1662,11 @@ $sessionPayload = [
         resultDialogEl.classList.remove('open');
         resultDialogEl.setAttribute('aria-hidden', 'true');
       };
+      const setTimeCounterText = (value) => {
+        if (timeCounterEl) {
+          timeCounterEl.textContent = value;
+        }
+      };
       if (resultDialogCloseBtn) {
         resultDialogCloseBtn.addEventListener('click', closeResultDialog);
       }
@@ -1597,6 +1675,12 @@ $sessionPayload = [
           if (event.target === resultDialogEl) {
             closeResultDialog();
           }
+        });
+      }
+      if (resultDialogConfirmBtn) {
+        resultDialogConfirmBtn.addEventListener('click', async () => {
+          resultDialogConfirmBtn.disabled = true;
+          await performLogout({ loaderText: 'تشکر از همراهی شما' });
         });
       }
 
@@ -1846,9 +1930,12 @@ $sessionPayload = [
       };
 
       const updateStatusBanner = () => {
-        if (!statusEl) return;
-        if (userHasPrize) {
+        if (statusEl) {
           statusEl.classList.add('hidden');
+          statusEl.classList.remove('top-left');
+        }
+        if (userPrizeName !== '') {
+          setTimeCounterText(userPrizeName);
           return;
         }
         if (statusTickTimer) {
@@ -1857,8 +1944,7 @@ $sessionPayload = [
         }
         const status = wheelStatus;
         if (status === 'ended') {
-          statusEl.classList.add('hidden');
-          statusEl.classList.remove('top-left');
+          setTimeCounterText('شگفتانه تمام شده');
           if (hintEl) {
             hintEl.textContent = 'زمان شگفتانه به پایان رسیده و دیگر امکان شرکت وجود ندارد.';
             hintEl.style.textAlign = 'center';
@@ -1866,8 +1952,7 @@ $sessionPayload = [
           return;
         }
         if (status === 'inactive') {
-          statusEl.classList.add('hidden');
-          statusEl.classList.remove('top-left');
+          setTimeCounterText('شگفتانه غیر فعال است');
           if (hintEl) {
             hintEl.textContent = 'در حال حاضر شگفتانه‌ای فعال نیست. لطفاً بعداً دوباره سر بزنید.';
             hintEl.style.textAlign = 'center';
@@ -1875,9 +1960,8 @@ $sessionPayload = [
           return;
         }
         const durationOn = Boolean(latestSettings?.duration);
-        if (!durationOn && status === 'active') {
-          statusEl.classList.add('hidden');
-          statusEl.classList.remove('top-left');
+        if (!durationOn) {
+          setTimeCounterText('—');
           if (hintEl) {
             hintEl.textContent = activeHintText;
             hintEl.style.textAlign = 'center';
@@ -1893,20 +1977,12 @@ $sessionPayload = [
         const targetTime = status === 'upcoming' ? startTime : endTime;
         const updateCountdown = () => {
           if (!targetDate || !targetTime) {
-            if (status === 'upcoming') {
-              resultEl.textContent = targetLabel;
-            } else {
-              statusEl.textContent = targetLabel;
-            }
+            setTimeCounterText(targetLabel);
             return;
           }
           const target = getTehranTargetDate(targetDate, targetTime);
           if (!target) {
-            if (status === 'upcoming') {
-              resultEl.textContent = targetLabel;
-            } else {
-              statusEl.textContent = targetLabel;
-            }
+            setTimeCounterText(targetLabel);
             return;
           }
           let diff = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
@@ -1915,22 +1991,14 @@ $sessionPayload = [
           const minutes = Math.floor(diff / 60);
           const seconds = diff - minutes * 60;
           const timer = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-          if (status === 'upcoming') {
-            resultEl.textContent = timer;
-          } else {
-            statusEl.textContent = `${targetLabel}: ${timer}`;
-          }
+          setTimeCounterText(timer);
         };
         if (status === 'upcoming') {
-          statusEl.classList.add('hidden');
-          statusEl.classList.remove('top-left');
           if (hintEl) {
             hintEl.textContent = 'چرخ شانس هنوز فعال نشده است';
             hintEl.style.textAlign = '';
           }
         } else {
-          statusEl.classList.remove('hidden');
-          statusEl.classList.add('top-left');
           if (hintEl) {
             hintEl.textContent = activeHintText;
             hintEl.style.textAlign = 'center';
@@ -1946,19 +2014,6 @@ $sessionPayload = [
         wheelActive = canSpin;
         if (spinBtn) {
           spinBtn.disabled = !canSpin;
-        }
-        if (!userHasPrize && !canSpin) {
-          const message = status === 'upcoming'
-            ? 'چرخ شانس هنوز فعال نشده است'
-            : status === 'ended'
-            ? 'زمان شگفتانه به پایان رسیده'
-            : 'شگفتانه‌ای در کار نیست :(';
-          if (resultEl) {
-            resultEl.textContent = message;
-          }
-        }
-        if (userHasPrize && resultEl) {
-          resultEl.textContent = userPrizeName || '—';
         }
         drawWheel(wheelSegments, currentAngle);
       };
@@ -2087,6 +2142,8 @@ $sessionPayload = [
           if (spinBtn) {
             spinBtn.disabled = true;
           }
+        } else if (resultEl && userPrizeName !== '') {
+          resultEl.textContent = userPrizeName;
         }
         if (savedWheelAngle !== null) {
           currentAngle = savedWheelAngle;
@@ -2195,9 +2252,10 @@ $sessionPayload = [
           }
           const isFake = Boolean(winnerPrize?.isFake);
           if (!isFake && winnerPrize?.name) {
-            userHasPrize = true;
             userPrizeName = winnerPrize.name;
-            if (spinBtn) {
+            userHasPrize = !allowRepeatRolls;
+            setTimeCounterText(userPrizeName);
+            if (!allowRepeatRolls && spinBtn) {
               spinBtn.disabled = true;
             }
             try {
