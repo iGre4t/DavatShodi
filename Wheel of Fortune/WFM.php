@@ -527,6 +527,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
       exit;
     }
+    if ($prizeIndex >= 0) {
+      $already = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
+      if ($already !== '') {
+        echo json_encode(['status' => 'error', 'message' => 'جایزه قبلاً ثبت شده است.']);
+        exit;
+      }
+    }
     $rolls = (int)($rows[$rowIndex][$rollIndex] ?? 0);
     $rows[$rowIndex][$rollIndex] = (string)($rolls + 1);
     if (($table['columns']['added'] ?? false) && $rows) {
@@ -1058,6 +1065,25 @@ $sessionPayload = [
         gap: 10px;
       }
 
+      .quiz-timer-track {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 10px;
+        height: 6px;
+        border-radius: 999px;
+        background: #dfe8f7;
+        overflow: hidden;
+      }
+
+      .quiz-timer-fill {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, #2f8fff, #7ab9ff);
+        border-radius: inherit;
+        transition: width 0.1s linear;
+      }
+
       .quiz-answer-btn {
         border: 1px solid #d8e4f7;
         border-radius: 12px;
@@ -1084,17 +1110,18 @@ $sessionPayload = [
         background: #ffe4e7;
         border-color: #fda4af;
         color: #b4232f;
-        animation: quiz-wrong-shake 0.42s ease;
       }
 
       .quiz-answer-btn.is-correct {
         background: #2f8fff;
         border-color: #2f8fff;
         color: #ffffff;
-        animation: quiz-correct-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+        animation:
+          quiz-correct-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+          quiz-correct-shake 0.55s ease;
       }
 
-      @keyframes quiz-wrong-shake {
+      @keyframes quiz-correct-shake {
         0% { transform: translateX(0); }
         20% { transform: translateX(-5px); }
         40% { transform: translateX(5px); }
@@ -1742,6 +1769,7 @@ $sessionPayload = [
           <div id="wf-quiz-counter" class="quiz-counter">۱ از ۱</div>
           <div id="wf-quiz-question" class="quiz-question-box">—</div>
           <div id="wf-quiz-answers" class="quiz-answers-grid"></div>
+          <div class="quiz-timer-track"><div id="wf-quiz-timer-fill" class="quiz-timer-fill"></div></div>
         </div>
         <div id="wf-play-area" class="main-area quiz-hidden">
           <div class="hero">
@@ -1929,6 +1957,7 @@ $sessionPayload = [
       const quizCounterEl = document.getElementById('wf-quiz-counter');
       const quizQuestionEl = document.getElementById('wf-quiz-question');
       const quizAnswersEl = document.getElementById('wf-quiz-answers');
+      const quizTimerFillEl = document.getElementById('wf-quiz-timer-fill');
       let fakeLoopTimer = null;
       let wheelActive = true;
       const countEl = document.getElementById('wf-count');
@@ -1938,7 +1967,7 @@ $sessionPayload = [
       let latestSettings = {};
       const defaultHintText = hintEl ? hintEl.textContent : '';
       const activeHintText = 'گردونه رو بچرخون و شانست رو امتحان کن!';
-      const allowRepeatRolls = true; // Temporary mode: allow repeated rolls and overwrite previous prize.
+      const allowRepeatRolls = false;
       let userPrizeName = String(sessionInfo?.prizeWon ?? '').trim();
       let userHasPrize = !allowRepeatRolls && userPrizeName !== '';
       const savedWheelAngle = Number.isFinite(Number(sessionInfo?.wheelAngle)) ? Number(sessionInfo.wheelAngle) : null;
@@ -1965,6 +1994,8 @@ $sessionPayload = [
       let quizIndex = Math.min(initialAnsweredCount, quizQuestions.length);
       let quizLocked = false;
       let quizCompleted = quizQuestions.length === 0 || quizIndex >= quizQuestions.length;
+      let quizTimerHandle = null;
+      const QUIZ_TIME_LIMIT_MS = 10000;
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -2008,6 +2039,18 @@ $sessionPayload = [
           node.disabled = true;
         });
       };
+      const clearQuizTimer = () => {
+        if (quizTimerHandle) {
+          clearInterval(quizTimerHandle);
+          quizTimerHandle = null;
+        }
+      };
+      const setQuizTimerProgress = (remainingMs) => {
+        if (!quizTimerFillEl) return;
+        const clamped = Math.max(0, Math.min(QUIZ_TIME_LIMIT_MS, remainingMs));
+        const ratio = clamped / QUIZ_TIME_LIMIT_MS;
+        quizTimerFillEl.style.width = `${Math.round(ratio * 1000) / 10}%`;
+      };
       const persistAnsweredProgress = async (answeredCount) => {
         try {
           await fetch(window.location.href, {
@@ -2017,7 +2060,38 @@ $sessionPayload = [
           });
         } catch {}
       };
+      const handleQuizTimeout = async () => {
+        if (quizLocked) return;
+        quizLocked = true;
+        markQuizButtonsDisabled();
+        const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
+        void persistAnsweredProgress(answeredCount);
+        const correctButton = quizAnswersEl
+          ? quizAnswersEl.querySelector('.quiz-answer-btn[data-correct="1"]')
+          : null;
+        if (correctButton instanceof HTMLButtonElement) {
+          correctButton.classList.add('is-correct');
+        }
+        setTimeout(() => {
+          void continueQuiz();
+        }, 900);
+      };
+      const startQuizTimer = () => {
+        clearQuizTimer();
+        setQuizTimerProgress(QUIZ_TIME_LIMIT_MS);
+        const startedAt = Date.now();
+        quizTimerHandle = setInterval(() => {
+          const elapsed = Date.now() - startedAt;
+          const remaining = QUIZ_TIME_LIMIT_MS - elapsed;
+          setQuizTimerProgress(remaining);
+          if (remaining <= 0) {
+            clearQuizTimer();
+            void handleQuizTimeout();
+          }
+        }, 100);
+      };
       const continueQuiz = async () => {
+        clearQuizTimer();
         quizIndex += 1;
         quizLocked = false;
         if (quizIndex >= quizQuestions.length) {
@@ -2036,6 +2110,7 @@ $sessionPayload = [
       const handleQuizAnswer = async (button, isCorrect) => {
         if (quizLocked) return;
         quizLocked = true;
+        clearQuizTimer();
         markQuizButtonsDisabled();
         const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
         void persistAnsweredProgress(answeredCount);
@@ -2047,9 +2122,15 @@ $sessionPayload = [
           return;
         }
         button.classList.add('is-wrong');
+        const correctButton = quizAnswersEl
+          ? quizAnswersEl.querySelector('.quiz-answer-btn[data-correct="1"]')
+          : null;
+        if (correctButton instanceof HTMLButtonElement) {
+          correctButton.classList.add('is-correct');
+        }
         setTimeout(() => {
           void continueQuiz();
-        }, 760);
+        }, 900);
       };
       const renderQuizQuestion = () => {
         if (!quizQuestionEl || !quizAnswersEl || !quizCounterEl) {
@@ -2081,11 +2162,13 @@ $sessionPayload = [
           button.type = 'button';
           button.className = 'quiz-answer-btn';
           button.textContent = answerItem.text;
+          button.dataset.correct = answerItem.isCorrect ? '1' : '0';
           button.addEventListener('click', () => {
             void handleQuizAnswer(button, answerItem.isCorrect);
           });
           quizAnswersEl.appendChild(button);
         });
+        startQuizTimer();
       };
       const openResultDialog = () => {
         if (!resultDialogEl) return;
