@@ -1082,6 +1082,17 @@ $sessionPayload = [
         background: linear-gradient(90deg, #2f8fff, #7ab9ff);
         border-radius: inherit;
         transition: width 0.1s linear;
+        margin-left: auto;
+      }
+
+      .quiz-timer-fill.is-danger {
+        background: linear-gradient(90deg, #ef4444, #f87171);
+        animation: quiz-timer-alert 0.22s ease-in-out infinite alternate;
+      }
+
+      @keyframes quiz-timer-alert {
+        0% { opacity: 1; }
+        100% { opacity: 0.45; }
       }
 
       .quiz-answer-btn {
@@ -1995,7 +2006,7 @@ $sessionPayload = [
       let quizLocked = false;
       let quizCompleted = quizQuestions.length === 0 || quizIndex >= quizQuestions.length;
       let quizTimerHandle = null;
-      const QUIZ_TIME_LIMIT_MS = 10000;
+      const QUIZ_TIME_LIMIT_MS = 14000;
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -2050,6 +2061,7 @@ $sessionPayload = [
         const clamped = Math.max(0, Math.min(QUIZ_TIME_LIMIT_MS, remainingMs));
         const ratio = clamped / QUIZ_TIME_LIMIT_MS;
         quizTimerFillEl.style.width = `${Math.round(ratio * 1000) / 10}%`;
+        quizTimerFillEl.classList.toggle('is-danger', clamped <= 5000);
       };
       const persistAnsweredProgress = async (answeredCount) => {
         try {
