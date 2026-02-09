@@ -745,6 +745,8 @@ $sessionPayload = [
 
       .app {
         width: min(460px, 100%);
+        position: relative;
+        overflow: hidden;
       }
 
       .phone {
@@ -815,9 +817,10 @@ $sessionPayload = [
         flex: 1;
         display: flex;
         flex-direction: column;
+        align-items: center;
         justify-content: center;
-        gap: 12px;
-        padding: 10px 18px 4px;
+        gap: 14px;
+        padding: 12px 18px 10px;
       }
 
       .login-area {
@@ -921,6 +924,7 @@ $sessionPayload = [
       .hero {
         display: grid;
         place-items: center;
+        width: 100%;
       }
 
       .question {
@@ -1108,7 +1112,7 @@ $sessionPayload = [
         inset: 0;
         pointer-events: none;
         overflow: hidden;
-        z-index: 1;
+        z-index: 50;
       }
 
       .confetti-piece {
@@ -1184,15 +1188,12 @@ $sessionPayload = [
       }
 
       .wheel-shell {
-        margin-top: auto;
         position: relative;
-        height: min(360px, 47vh);
-        background:
-          linear-gradient(180deg, var(--soft-pink), #fff 44%, var(--soft-blue));
-        border-top: 1px solid #edf1f8;
+        width: min(340px, calc(100vw - 84px));
+        height: min(340px, calc(100vw - 84px));
         display: grid;
         place-items: center;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .wheel-status {
@@ -1223,18 +1224,18 @@ $sessionPayload = [
       .wheel-shell::before {
         content: '';
         position: absolute;
-        width: 640px;
-        height: 640px;
+        width: calc(100% + 28px);
+        height: calc(100% + 28px);
         border-radius: 50%;
         background: rgba(255, 255, 255, 0.46);
         border: 1px solid #ecf0f7;
         left: 50%;
-        top: 58%;
+        top: 50%;
         transform: translate(-50%, -50%);
       }
 
       canvas {
-        width: min(520px, 122vw);
+        width: 100%;
         height: auto;
         background: #fff;
         border-radius: 50%;
@@ -1244,14 +1245,14 @@ $sessionPayload = [
           inset 0 0 0 1px rgba(255, 255, 255, 0.84);
         position: absolute;
         left: 50%;
-        top: 14px;
-        transform: translateX(-50%);
+        top: 50%;
+        transform: translate(-50%, -50%);
         z-index: 1;
       }
 
       .pointer {
         position: absolute;
-        top: 10px;
+        top: -8px;
         left: 50%;
         width: 0;
         height: 0;
@@ -1267,13 +1268,13 @@ $sessionPayload = [
       .center-spin {
         position: absolute;
         left: 50%;
-        top: calc(14px + min(520px, 122vw) / 2 - 30px);
-        transform: translateX(-50%);
+        top: 50%;
+        transform: translate(-50%, -50%);
         border: none;
         border-radius: 999px;
-        width: 90px;
-        height: 90px;
-        font-size: 0.95rem;
+        width: 84px;
+        height: 84px;
+        font-size: 0.9rem;
         font-weight: 700;
         font-family: inherit;
         color: var(--accent-ink);
@@ -1287,7 +1288,7 @@ $sessionPayload = [
       }
 
       .center-spin:hover:not(:disabled) {
-        transform: translateX(-50%) translateY(-2px);
+        transform: translate(-50%, -52%);
       }
 
       .center-spin:disabled {
@@ -1300,8 +1301,8 @@ $sessionPayload = [
 
       .wheel-count {
         position: absolute;
-        right: 12px;
-        top: 12px;
+        right: 0;
+        top: -36px;
         z-index: 4;
         font-size: 0.72rem;
         font-weight: 600;
@@ -1325,7 +1326,8 @@ $sessionPayload = [
         }
 
         .wheel-shell {
-          height: min(340px, 48vh);
+          width: min(296px, calc(100vw - 52px));
+          height: min(296px, calc(100vw - 52px));
         }
 
         .main-area {
@@ -1333,9 +1335,9 @@ $sessionPayload = [
         }
 
         .center-spin {
-          width: 82px;
-          height: 82px;
-          font-size: 0.88rem;
+          width: 74px;
+          height: 74px;
+          font-size: 0.82rem;
         }
       }
 
@@ -1361,6 +1363,7 @@ $sessionPayload = [
       </div>
     </div>
     <main class="app">
+      <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
       <section class="phone">
     <div class="topbar">
           <p class="brand">چرخ شانس شگفتانه</p>
@@ -1412,14 +1415,12 @@ $sessionPayload = [
             <?php endif; ?>
             <p class="hint hint-align-<?= htmlspecialchars($hintAlign, ENT_QUOTES, 'UTF-8') ?>"><?= $hintHtml ?></p>
           </div>
-
-        </div>
-
-        <div class="wheel-shell">
-          <div class="pointer" aria-hidden="true"></div>
-          <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
-          <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
-          <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
+          <div class="wheel-shell">
+            <div class="pointer" aria-hidden="true"></div>
+            <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
+            <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
+            <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
+          </div>
         </div>
       <?php endif; ?>
       </section>
@@ -1428,7 +1429,6 @@ $sessionPayload = [
       <section class="wf-result-dialog" role="dialog" aria-modal="true" aria-labelledby="wf-result-dialog-title">
         <button id="wf-result-dialog-close" class="wf-result-dialog-close" type="button">بستن</button>
         <h3 id="wf-result-dialog-title" class="wf-result-dialog-title">نتیجه چرخ شما</h3>
-        <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
         <div class="result">
           <span class="result-label">نتیجه</span>
           <p id="wf-result" class="result-value">—</p>
@@ -1564,12 +1564,13 @@ $sessionPayload = [
       const MIN_VISIBLE_SEGMENTS = 10;
       const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
-        '#ffffff', '#f8fbff', '#f3f8ff', '#edf4ff', '#e8f1ff',
-        '#e4efff', '#deebff', '#d9e7ff', '#d4e3ff', '#cfe0ff'
+        '#e11d48', '#f59e0b', '#16a34a', '#2563eb', '#7c3aed',
+        '#db2777', '#ea580c', '#0891b2', '#22c55e', '#d97706',
+        '#ef4444', '#0ea5e9'
       ];
       const DISABLED_SEGMENT_COLORS = [
-        '#f4f6f9', '#eef1f5', '#e8ecf2', '#e2e7ee', '#dce2eb',
-        '#d7dde7', '#d1d8e3', '#cbd2df', '#c6cde0', '#c1c8dc'
+        '#e5e7eb', '#d1d5db', '#cbd5e1', '#d6d3d1', '#d4d4d8',
+        '#dbe4ee', '#dfe5ec', '#d7dde5'
       ];
 
       let sourcePrizes = [];
@@ -1992,8 +1993,6 @@ $sessionPayload = [
         const radius = center - 12;
         const count = Math.max(segments.length, 1);
         const slice = TWO_PI / count;
-        const fontSize = Math.max(10, Math.min(14, 220 / count));
-        const labelColor = (wheelStatus === 'inactive') ? '#94a3b8' : '#33456e';
 
         ctx.clearRect(0, 0, size, size);
         ctx.save();
@@ -2011,18 +2010,8 @@ $sessionPayload = [
           ctx.fillStyle = palette[i % palette.length];
           ctx.fill();
           ctx.lineWidth = 1.15;
-          ctx.strokeStyle = '#e5ecf8';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
           ctx.stroke();
-
-          ctx.save();
-          ctx.rotate(start + (slice / 2));
-          ctx.textAlign = 'right';
-          ctx.textBaseline = 'middle';
-          ctx.font = `700 ${fontSize}px "Peyda Fa Num", "Segoe UI", sans-serif`;
-          ctx.fillStyle = labelColor;
-          const label = String(segments[i]?.label ?? '').slice(0, 16);
-          ctx.fillText(label, radius - 14, 0);
-          ctx.restore();
         }
 
         ctx.restore();
@@ -2237,19 +2226,19 @@ $sessionPayload = [
             openResultDialog();
           }
           if (confettiLayer && !isFake) {
-            const colors = ['#1f7bdc', '#2f8fff', '#4da3ff', '#6bb6ff', '#8ac8ff', '#b3dcff'];
+            const colors = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
             const dialogBounds = confettiLayer.getBoundingClientRect();
             const width = Math.max(260, dialogBounds.width || 360);
             const height = Math.max(220, dialogBounds.height || 420);
-            const count = Math.max(28, Math.min(52, Math.round(width / 22)));
+            const count = Math.max(88, Math.min(150, Math.round(width / 4.2)));
             confettiLayer.innerHTML = '';
             for (let i = 0; i < count; i += 1) {
               const piece = document.createElement('span');
               piece.className = 'confetti-piece';
               const fromLeft = Math.random() < 0.5;
-              const sideOffset = Math.random() * 26 + 2;
+              const sideOffset = Math.random() * 40 + 2;
               piece.style[fromLeft ? 'left' : 'right'] = `${sideOffset}px`;
-              piece.style.top = `${Math.random() * (height * 0.45)}px`;
+              piece.style.top = `${Math.random() * (height * 0.8)}px`;
               piece.style.background = colors[i % colors.length];
               piece.style.animationDelay = `${Math.random() * 0.25}s`;
               const drift = fromLeft ? (Math.random() * 120 + 40) : -(Math.random() * 120 + 40);
