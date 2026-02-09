@@ -1373,7 +1373,7 @@ $sessionPayload = [
       const loaderEl = document.getElementById('wf-loader');
       const bodyEl = document.body;
       const loaderStart = performance.now();
-      const minLoaderDuration = 10000;
+      const minLoaderDuration = 1300;
 
       const waitForFonts = async () => {
         if (!document.fonts) {
