@@ -706,9 +706,9 @@ $sessionPayload = [
         stroke-width: 22;
         stroke-linecap: round;
         stroke-linejoin: round;
-        stroke-dasharray: 2200;
-        stroke-dashoffset: 2200;
-        animation: wf-icon-stroke 1.6s ease-in-out infinite;
+        stroke-dasharray: 1 2200;
+        stroke-dashoffset: 0;
+        animation: wf-icon-stroke 2s linear infinite;
       }
 
       .loader-text {
@@ -731,16 +731,19 @@ $sessionPayload = [
 
       @keyframes wf-icon-stroke {
         0% {
-          stroke-dashoffset: 2200;
-          opacity: 0.6;
+          stroke-dasharray: 1 2200;
+          stroke-dashoffset: 0;
+          opacity: 0.7;
         }
-        50% {
-          stroke-dashoffset: 900;
+        45% {
+          stroke-dasharray: 520 2200;
+          stroke-dashoffset: -700;
           opacity: 1;
         }
         100% {
-          stroke-dashoffset: 0;
-          opacity: 0.75;
+          stroke-dasharray: 1 2200;
+          stroke-dashoffset: -2200;
+          opacity: 0.7;
         }
       }
 
@@ -1374,7 +1377,7 @@ $sessionPayload = [
       const loaderEl = document.getElementById('wf-loader');
       const bodyEl = document.body;
       const loaderStart = performance.now();
-      const minLoaderDuration = 1300;
+      const minLoaderDuration = 10000;
 
       const waitForFonts = async () => {
         if (!document.fonts) {
