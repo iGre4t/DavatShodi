@@ -1024,25 +1024,6 @@ $sessionPayload = [
         z-index: 2;
       }
 
-      .wf-result-dialog-close {
-        position: absolute;
-        top: 14px;
-        left: 14px;
-        border: 1px solid #dbe5f6;
-        background: #f7faff;
-        color: #4f638d;
-        border-radius: 10px;
-        font-family: inherit;
-        font-size: 0.82rem;
-        padding: 6px 10px;
-        cursor: pointer;
-        z-index: 2;
-      }
-
-      .wf-result-dialog-close:hover {
-        background: #edf3ff;
-      }
-
       .wf-result-dialog-confirm {
         width: 100%;
         margin-top: auto;
@@ -1179,7 +1160,7 @@ $sessionPayload = [
         min-height: 4.2em;
         height: auto;
         padding: 10px 12px;
-        order: 3;
+        order: 4;
       }
 
       .time-counter-result .result-label {
@@ -1198,6 +1179,12 @@ $sessionPayload = [
         unicode-bidi: plaintext;
         text-align: center;
         align-self: stretch;
+      }
+
+      #wf-result {
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       .result-value.drop-in {
@@ -1226,7 +1213,8 @@ $sessionPayload = [
         display: grid;
         place-items: center;
         overflow: visible;
-        order: 2;
+        order: 3;
+        margin: 16px 0 18px;
       }
 
       .wheel-status {
@@ -1333,10 +1321,11 @@ $sessionPayload = [
       }
 
       .wheel-count {
-        position: absolute;
-        right: 0;
-        top: -36px;
-        z-index: 4;
+        position: static;
+        z-index: 2;
+        order: 2;
+        margin: 2px auto 0;
+        text-align: center;
         font-size: 0.72rem;
         font-weight: 600;
         color: #6f7c98;
@@ -1361,6 +1350,7 @@ $sessionPayload = [
         .wheel-shell {
           width: min(296px, calc(100vw - 52px));
           height: min(296px, calc(100vw - 52px));
+          margin: 18px 0 20px;
         }
 
         .main-area {
@@ -1452,14 +1442,14 @@ $sessionPayload = [
             <?php endif; ?>
             <p class="hint hint-align-<?= htmlspecialchars($hintAlign, ENT_QUOTES, 'UTF-8') ?>"><?= $hintHtml ?></p>
           </div>
+          <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
           <div class="wheel-shell">
             <div class="pointer" aria-hidden="true"></div>
-            <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
             <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
             <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
           </div>
           <div class="result time-counter-result">
-            <span class="result-label">time counter</span>
+            <span id="wf-time-counter-label" class="result-label">تا اتمام شگفتانه</span>
             <p id="wf-time-counter" class="result-value">—</p>
           </div>
         </div>
@@ -1468,7 +1458,6 @@ $sessionPayload = [
     </main>
     <div id="wf-result-dialog" class="wf-result-dialog-overlay" aria-hidden="true">
       <section class="wf-result-dialog" role="dialog" aria-modal="true" aria-labelledby="wf-result-dialog-title">
-        <button id="wf-result-dialog-close" class="wf-result-dialog-close" type="button">بستن</button>
         <h3 id="wf-result-dialog-title" class="wf-result-dialog-title">نتیجه چرخ شما</h3>
         <div class="result">
           <span class="result-label">نتیجه</span>
@@ -1531,18 +1520,18 @@ $sessionPayload = [
         overlay.className = 'loader-overlay';
         overlay.setAttribute('role', 'status');
         overlay.setAttribute('aria-live', 'polite');
-        overlay.innerHTML = `
-          <div class="loader-card">
-            <div class="loader-icon-wrap" aria-hidden="true">
-              <svg class="loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">
-                <path class="loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>
-                <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>
-              </svg>
-            </div>
-            <p class="loader-text"></p>
-            <p class="loader-subtext"></p>
-          </div>
-        `;
+        overlay.innerHTML = [
+          '<div class="loader-card">',
+          '<div class="loader-icon-wrap" aria-hidden="true">',
+          '<svg class="loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">',
+          '<path class="loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>',
+          '<path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>',
+          '</svg>',
+          '</div>',
+          '<p class="loader-text"></p>',
+          '<p class="loader-subtext"></p>',
+          '</div>'
+        ].join('');
         overlay.querySelector('.loader-text').textContent = String(primaryText || '').trim() || 'در حال پردازش';
         overlay.querySelector('.loader-subtext').textContent = String(secondaryText || '').trim();
         document.body.appendChild(overlay);
@@ -1612,10 +1601,10 @@ $sessionPayload = [
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
       const resultBox = document.querySelector('.wf-result-dialog .result');
+      const timeCounterLabelEl = document.getElementById('wf-time-counter-label');
       const timeCounterEl = document.getElementById('wf-time-counter');
       const hintEl = document.querySelector('.hint');
       const resultDialogEl = document.getElementById('wf-result-dialog');
-      const resultDialogCloseBtn = document.getElementById('wf-result-dialog-close');
       const resultDialogConfirmBtn = document.getElementById('wf-result-confirm');
       const confettiLayer = document.getElementById('wf-confetti');
       let fakeLoopTimer = null;
@@ -1662,14 +1651,14 @@ $sessionPayload = [
         resultDialogEl.classList.remove('open');
         resultDialogEl.setAttribute('aria-hidden', 'true');
       };
-      const setTimeCounterText = (value) => {
+      const setTimeCounter = (label, value) => {
+        if (timeCounterLabelEl) {
+          timeCounterLabelEl.textContent = label;
+        }
         if (timeCounterEl) {
           timeCounterEl.textContent = value;
         }
       };
-      if (resultDialogCloseBtn) {
-        resultDialogCloseBtn.addEventListener('click', closeResultDialog);
-      }
       if (resultDialogEl) {
         resultDialogEl.addEventListener('click', (event) => {
           if (event.target === resultDialogEl) {
@@ -1935,7 +1924,7 @@ $sessionPayload = [
           statusEl.classList.remove('top-left');
         }
         if (userPrizeName !== '') {
-          setTimeCounterText(userPrizeName);
+          setTimeCounter('جایزه برنده شده', userPrizeName);
           return;
         }
         if (statusTickTimer) {
@@ -1944,7 +1933,7 @@ $sessionPayload = [
         }
         const status = wheelStatus;
         if (status === 'ended') {
-          setTimeCounterText('شگفتانه تمام شده');
+          setTimeCounter('متاسفیم', 'شگفتانه تمام شده');
           if (hintEl) {
             hintEl.textContent = 'زمان شگفتانه به پایان رسیده و دیگر امکان شرکت وجود ندارد.';
             hintEl.style.textAlign = 'center';
@@ -1952,7 +1941,7 @@ $sessionPayload = [
           return;
         }
         if (status === 'inactive') {
-          setTimeCounterText('شگفتانه غیر فعال است');
+          setTimeCounter('متاسفیم', 'شگفتانه غیر فعال است');
           if (hintEl) {
             hintEl.textContent = 'در حال حاضر شگفتانه‌ای فعال نیست. لطفاً بعداً دوباره سر بزنید.';
             hintEl.style.textAlign = 'center';
@@ -1961,7 +1950,7 @@ $sessionPayload = [
         }
         const durationOn = Boolean(latestSettings?.duration);
         if (!durationOn) {
-          setTimeCounterText('—');
+          setTimeCounter('تا اتمام شگفتانه', '—');
           if (hintEl) {
             hintEl.textContent = activeHintText;
             hintEl.style.textAlign = 'center';
@@ -1972,17 +1961,18 @@ $sessionPayload = [
         const endDate = String(latestSettings?.endDate ?? '').trim();
         const startTime = String(latestSettings?.startTime ?? '').trim();
         const endTime = String(latestSettings?.endTime ?? '').trim();
-        const targetLabel = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا پایان شگفتانه';
+        const targetLabel = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا اتمام شگفتانه';
         const targetDate = status === 'upcoming' ? startDate : endDate;
         const targetTime = status === 'upcoming' ? startTime : endTime;
+        const counterLabel = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا اتمام شگفتانه';
         const updateCountdown = () => {
           if (!targetDate || !targetTime) {
-            setTimeCounterText(targetLabel);
+            setTimeCounter(counterLabel, targetLabel);
             return;
           }
           const target = getTehranTargetDate(targetDate, targetTime);
           if (!target) {
-            setTimeCounterText(targetLabel);
+            setTimeCounter(counterLabel, targetLabel);
             return;
           }
           let diff = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
@@ -1991,7 +1981,7 @@ $sessionPayload = [
           const minutes = Math.floor(diff / 60);
           const seconds = diff - minutes * 60;
           const timer = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-          setTimeCounterText(timer);
+          setTimeCounter(counterLabel, timer);
         };
         if (status === 'upcoming') {
           if (hintEl) {
@@ -2254,7 +2244,7 @@ $sessionPayload = [
           if (!isFake && winnerPrize?.name) {
             userPrizeName = winnerPrize.name;
             userHasPrize = !allowRepeatRolls;
-            setTimeCounterText(userPrizeName);
+            setTimeCounter('جایزه برنده شده', userPrizeName);
             if (!allowRepeatRolls && spinBtn) {
               spinBtn.disabled = true;
             }
