@@ -2,6 +2,98 @@
 declare(strict_types=1);
 
 $wfqStorePath = __DIR__ . '/WFQ list.json';
+$wfqInviteesCsvPath = __DIR__ . '/WF Event/Invitees mapped.csv';
+
+function wfqReadCsv(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $rows = [];
+  $handle = fopen($path, 'r');
+  if ($handle === false) {
+    return [];
+  }
+  while (($row = fgetcsv($handle)) !== false) {
+    $rows[] = $row;
+  }
+  fclose($handle);
+  return $rows;
+}
+
+function wfqWriteCsv(string $path, array $rows): bool
+{
+  $dir = dirname($path);
+  if (!is_dir($dir)) {
+    mkdir($dir, 0777, true);
+  }
+  $handle = fopen($path, 'c+');
+  if ($handle === false) {
+    return false;
+  }
+  if (!flock($handle, LOCK_EX)) {
+    fclose($handle);
+    return false;
+  }
+  ftruncate($handle, 0);
+  rewind($handle);
+  foreach ($rows as $row) {
+    fputcsv($handle, $row);
+  }
+  fflush($handle);
+  flock($handle, LOCK_UN);
+  fclose($handle);
+  return true;
+}
+
+function wfqNormalizeHeader(string $value): string
+{
+  $value = trim(mb_strtolower($value, 'UTF-8'));
+  $value = preg_replace('/\s+/', ' ', $value);
+  return $value ?? '';
+}
+
+function wfqFindHeaderIndex(array $header, string $name): int
+{
+  $needle = wfqNormalizeHeader($name);
+  foreach ($header as $index => $value) {
+    if (wfqNormalizeHeader((string)$value) === $needle) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function wfqEnsureInviteesColumns(string $path): void
+{
+  $rows = wfqReadCsv($path);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return;
+  }
+  $header = $rows[0];
+  $required = ['invitees', 'Answered'];
+  $changed = false;
+  foreach ($required as $columnName) {
+    $idx = wfqFindHeaderIndex($header, $columnName);
+    if ($idx >= 0) {
+      continue;
+    }
+    $header[] = $columnName;
+    $newIndex = count($header) - 1;
+    for ($i = 1; $i < count($rows); $i += 1) {
+      if (!is_array($rows[$i])) {
+        $rows[$i] = [];
+      }
+      $rows[$i][$newIndex] = '';
+    }
+    $changed = true;
+  }
+  if (!$changed) {
+    return;
+  }
+  $rows[0] = $header;
+  wfqWriteCsv($path, $rows);
+}
 
 function wfqNormalizeItem(array $item): array
 {
@@ -58,12 +150,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   $action = trim((string)($_POST['wfq_action'] ?? ''));
 
   if ($action === 'list') {
+    wfqEnsureInviteesColumns($wfqInviteesCsvPath);
     $items = wfqLoadStore($wfqStorePath);
     echo json_encode(['status' => 'ok', 'items' => $items], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
   if ($action === 'save_all') {
+    wfqEnsureInviteesColumns($wfqInviteesCsvPath);
     $raw = (string)($_POST['items'] ?? '[]');
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {

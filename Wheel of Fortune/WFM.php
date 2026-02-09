@@ -246,7 +246,9 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'logins',
     'count of rolls',
     'prize won',
-    'wheel angle'
+    'wheel angle',
+    'invitees',
+    'Answered'
   ]);
   $header = $rows[0];
   $workIdIndex = (int)($mapping['workId'] ?? -1);
@@ -275,6 +277,109 @@ function findInviteeRowIndex(array $rows, int $workIdIndex, string $workId): int
     }
   }
   return -1;
+}
+
+function parseQuestionOrder(string $value, int $questionCount): array
+{
+  if ($questionCount <= 0) {
+    return [];
+  }
+  $pairs = preg_split('/\s*,\s*/', trim($value));
+  if (!is_array($pairs) || !$pairs) {
+    return [];
+  }
+  $sequence = [];
+  foreach ($pairs as $pair) {
+    if (!preg_match('/^\s*(\d+)\s*::\s*(\d+)\s*$/', (string)$pair, $m)) {
+      return [];
+    }
+    $order = (int)$m[1];
+    $source = (int)$m[2];
+    if ($order < 1 || $order > $questionCount || $source < 1 || $source > $questionCount) {
+      return [];
+    }
+    $sequence[$order] = $source;
+  }
+  if (count($sequence) !== $questionCount) {
+    return [];
+  }
+  ksort($sequence, SORT_NUMERIC);
+  $sourceValues = array_values($sequence);
+  if (count(array_unique($sourceValues)) !== $questionCount) {
+    return [];
+  }
+  return $sourceValues;
+}
+
+function serializeQuestionOrder(array $sourceOrder): string
+{
+  $parts = [];
+  foreach (array_values($sourceOrder) as $index => $source) {
+    $parts[] = ($index + 1) . '::' . (int)$source;
+  }
+  return implode(',', $parts);
+}
+
+function buildRandomQuestionOrder(int $questionCount): array
+{
+  if ($questionCount <= 0) {
+    return [];
+  }
+  $source = range(1, $questionCount);
+  shuffle($source);
+  return $source;
+}
+
+function clampAnsweredCount($raw, int $questionCount): int
+{
+  $value = is_numeric($raw) ? (int)$raw : 0;
+  if ($value < 0) {
+    return 0;
+  }
+  if ($value > $questionCount) {
+    return $questionCount;
+  }
+  return $value;
+}
+
+function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns, int $questionCount): array
+{
+  $inviteesIndex = $columns['invitees'] ?? -1;
+  $answeredIndex = $columns['Answered'] ?? -1;
+  if ($rowIndex < 1 || $inviteesIndex < 0 || $answeredIndex < 0) {
+    return ['order' => [], 'answered' => 0, 'changed' => false];
+  }
+  $changed = false;
+  if ($questionCount <= 0) {
+    $currentInvitees = trim((string)($rows[$rowIndex][$inviteesIndex] ?? ''));
+    $currentAnswered = trim((string)($rows[$rowIndex][$answeredIndex] ?? ''));
+    if ($currentInvitees !== '') {
+      $rows[$rowIndex][$inviteesIndex] = '';
+      $changed = true;
+    }
+    if ($currentAnswered !== '' && $currentAnswered !== '0') {
+      $rows[$rowIndex][$answeredIndex] = '0';
+      $changed = true;
+    }
+    return ['order' => [], 'answered' => 0, 'changed' => $changed];
+  }
+
+  $storedOrder = trim((string)($rows[$rowIndex][$inviteesIndex] ?? ''));
+  $order = parseQuestionOrder($storedOrder, $questionCount);
+  if (!$order) {
+    $order = buildRandomQuestionOrder($questionCount);
+    $rows[$rowIndex][$inviteesIndex] = serializeQuestionOrder($order);
+    $rows[$rowIndex][$answeredIndex] = '0';
+    $changed = true;
+    return ['order' => $order, 'answered' => 0, 'changed' => $changed];
+  }
+
+  $answered = clampAnsweredCount($rows[$rowIndex][$answeredIndex] ?? 0, $questionCount);
+  if ((string)($rows[$rowIndex][$answeredIndex] ?? '') !== (string)$answered) {
+    $rows[$rowIndex][$answeredIndex] = (string)$answered;
+    $changed = true;
+  }
+  return ['order' => $order, 'answered' => $answered, 'changed' => $changed];
 }
 
 
@@ -376,6 +481,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $_SESSION['wf_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
     $prizeIndex = $columns['prize won'] ?? -1;
     $angleIndex = $columns['wheel angle'] ?? -1;
+    $questions = readQuestionStore($questionsStorePath);
+    $questionCount = count($questions);
+    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCount);
     $prizeWon = $prizeIndex >= 0 ? trim((string)($rows[$rowIndex][$prizeIndex] ?? '')) : '';
     $wheelAngle = null;
     if ($angleIndex >= 0) {
@@ -384,7 +492,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $wheelAngle = (float)$angleValue;
       }
     }
-    echo json_encode(['status' => 'ok', 'prizeWon' => $prizeWon, 'wheelAngle' => $wheelAngle]);
+    echo json_encode([
+      'status' => 'ok',
+      'prizeWon' => $prizeWon,
+      'wheelAngle' => $wheelAngle,
+      'quizOrder' => $quizState['order'],
+      'answered' => $quizState['answered']
+    ]);
     exit;
   }
 
@@ -419,6 +533,36 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       echo json_encode(['status' => 'error', 'message' => 'ذخیره تعداد چرخش انجام نشد.']);
+      exit;
+    }
+    echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
+  if ($action === 'update_answered') {
+    $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
+    if (!(($_SESSION['wf_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ورود انجام نشده است.']);
+      exit;
+    }
+    $answeredRaw = $payload['answered'] ?? 0;
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+    $rows = $table['rows'];
+    $workIdIndex = $table['workIdIndex'];
+    $columns = $table['columns']['index'] ?? [];
+    $answeredIndex = $columns['Answered'] ?? -1;
+    $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    if ($rowIndex < 0 || $answeredIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
+      exit;
+    }
+    $questionCount = count(readQuestionStore($questionsStorePath));
+    $answered = clampAnsweredCount($answeredRaw, $questionCount);
+    $rows[$rowIndex][$answeredIndex] = (string)$answered;
+    if (($table['columns']['added'] ?? false) && $rows) {
+      writeInviteesCsv($inviteesFilePath, $rows);
+    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره وضعیت پاسخ انجام نشد.']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -575,6 +719,8 @@ if ($sessionAuthed && ($inviteesMtime === null || ($inviteesMtime !== ($_SESSION
 $sessionWorkId = $sessionAuthed ? trim((string)($_SESSION['wf_work_id'] ?? '')) : '';
 $sessionPrizeWon = '';
 $sessionWheelAngle = null;
+$sessionQuizOrder = [];
+$sessionAnswered = 0;
 if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
   $rows = $table['rows'];
@@ -582,6 +728,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   $columns = $table['columns']['index'] ?? [];
   $prizeIndex = $columns['prize won'] ?? -1;
   $angleIndex = $columns['wheel angle'] ?? -1;
+  $questionCount = count(readQuestionStore($questionsStorePath));
   if (($table['columns']['added'] ?? false) && $rows) {
     writeInviteesCsv($inviteesFilePath, $rows);
   }
@@ -591,6 +738,12 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     $sessionAuthed = false;
     $sessionWorkId = '';
   } else {
+    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCount);
+    $sessionQuizOrder = $quizState['order'];
+    $sessionAnswered = $quizState['answered'];
+    if ($quizState['changed']) {
+      writeInviteesCsv($inviteesFilePath, $rows);
+    }
     if ($prizeIndex >= 0) {
       $sessionPrizeWon = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
     }
@@ -606,7 +759,9 @@ $sessionPayload = [
   'authed' => $sessionAuthed,
   'workId' => $sessionWorkId,
   'prizeWon' => $sessionPrizeWon,
-  'wheelAngle' => $sessionWheelAngle
+  'wheelAngle' => $sessionWheelAngle,
+  'quizOrder' => $sessionQuizOrder,
+  'answered' => $sessionAnswered
 ];
 ?>
 <!doctype html>
@@ -1788,7 +1943,7 @@ $sessionPayload = [
       let userHasPrize = !allowRepeatRolls && userPrizeName !== '';
       const savedWheelAngle = Number.isFinite(Number(sessionInfo?.wheelAngle)) ? Number(sessionInfo.wheelAngle) : null;
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
-      const quizQuestions = Array.isArray(initialQuestions)
+      const questionPool = Array.isArray(initialQuestions)
         ? initialQuestions
           .map((item) => ({
             question: String(item?.question ?? '').trim(),
@@ -1796,9 +1951,20 @@ $sessionPayload = [
           }))
           .filter((item) => item.question !== '' && item.answers.length === 4 && item.answers.every((ans) => ans !== ''))
         : [];
-      let quizIndex = 0;
+      const quizOrderFromSession = Array.isArray(sessionInfo?.quizOrder)
+        ? sessionInfo.quizOrder.map((value) => Number.parseInt(value, 10)).filter((value) => Number.isInteger(value))
+        : [];
+      const orderedQuizQuestions = (quizOrderFromSession.length === questionPool.length && questionPool.length)
+        ? quizOrderFromSession
+          .map((sourceIndex) => questionPool[sourceIndex - 1] || null)
+          .filter((item) => item && item.question && Array.isArray(item.answers) && item.answers.length === 4)
+        : [];
+      const quizQuestions = orderedQuizQuestions.length === questionPool.length ? orderedQuizQuestions : questionPool;
+      const answeredFromSession = Number.parseInt(sessionInfo?.answered ?? 0, 10);
+      const initialAnsweredCount = Number.isFinite(answeredFromSession) ? Math.max(0, answeredFromSession) : 0;
+      let quizIndex = Math.min(initialAnsweredCount, quizQuestions.length);
       let quizLocked = false;
-      let quizCompleted = quizQuestions.length === 0;
+      let quizCompleted = quizQuestions.length === 0 || quizIndex >= quizQuestions.length;
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -1842,6 +2008,15 @@ $sessionPayload = [
           node.disabled = true;
         });
       };
+      const persistAnsweredProgress = async (answeredCount) => {
+        try {
+          await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update_answered', answered: answeredCount, csrf: csrfToken })
+          });
+        } catch {}
+      };
       const continueQuiz = async () => {
         quizIndex += 1;
         quizLocked = false;
@@ -1858,11 +2033,13 @@ $sessionPayload = [
         }
         renderQuizQuestion();
       };
-      const handleQuizAnswer = async (button, answerIndex) => {
+      const handleQuizAnswer = async (button, isCorrect) => {
         if (quizLocked) return;
         quizLocked = true;
         markQuizButtonsDisabled();
-        if (answerIndex === 0) {
+        const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
+        void persistAnsweredProgress(answeredCount);
+        if (isCorrect) {
           button.classList.add('is-correct');
           setTimeout(() => {
             void continueQuiz();
@@ -1891,13 +2068,21 @@ $sessionPayload = [
         quizCounterEl.textContent = `${toFaDigits(quizIndex + 1)} از ${toFaDigits(total)}`;
         quizQuestionEl.textContent = item.question;
         quizAnswersEl.innerHTML = '';
-        item.answers.forEach((answer, answerIndex) => {
+        const shuffledAnswers = item.answers
+          .map((answer, index) => ({ text: answer, isCorrect: index === 0 }));
+        for (let i = shuffledAnswers.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const temp = shuffledAnswers[i];
+          shuffledAnswers[i] = shuffledAnswers[j];
+          shuffledAnswers[j] = temp;
+        }
+        shuffledAnswers.forEach((answerItem) => {
           const button = document.createElement('button');
           button.type = 'button';
           button.className = 'quiz-answer-btn';
-          button.textContent = answer;
+          button.textContent = answerItem.text;
           button.addEventListener('click', () => {
-            void handleQuizAnswer(button, answerIndex);
+            void handleQuizAnswer(button, answerItem.isCorrect);
           });
           quizAnswersEl.appendChild(button);
         });
