@@ -3441,36 +3441,29 @@ $sessionPayload = [
         }
 
         if (wheelStatus !== 'inactive' && count > 1) {
-          const cycleMs = Math.max(1200, count * 220);
-          const activeIndex = Math.floor((Date.now() % cycleMs) / cycleMs * count);
-          const sweepPhase = (Date.now() % 900) / 900;
-          const haloOffsets = [-1, 0, 1];
-          const haloAlpha = [0.08, 0.2, 0.08];
+          const cycleMs = Math.max(1500, count * 240);
+          const progress = ((Date.now() % cycleMs) / cycleMs) * count;
+          const activeIndex = Math.floor(progress) % count;
+          const nextIndex = (activeIndex + 1) % count;
+          const blend = progress - Math.floor(progress);
 
-          for (let h = 0; h < haloOffsets.length; h += 1) {
-            const idx = (activeIndex + haloOffsets[h] + count) % count;
+          const paintSliceGlow = (idx, alpha) => {
             const start = idx * slice;
             const end = start + slice;
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.arc(0, 0, radius * 0.985, start, end);
             ctx.closePath();
-            const glow = ctx.createLinearGradient(0, -radius, 0, radius * 0.2);
-            glow.addColorStop(0, `rgba(255, 255, 255, ${haloAlpha[h]})`);
-            glow.addColorStop(0.55, 'rgba(255, 255, 255, 0.05)');
+            const glow = ctx.createLinearGradient(0, -radius, 0, radius * 0.28);
+            glow.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+            glow.addColorStop(0.55, `rgba(255, 255, 255, ${alpha * 0.35})`);
             glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = glow;
             ctx.fill();
-          }
+          };
 
-          const bandStart = (activeIndex * slice) + (slice * (0.18 + (0.6 * sweepPhase)));
-          const bandHalf = Math.max(slice * 0.08, 0.03);
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.arc(0, 0, radius * 0.985, bandStart - bandHalf, bandStart + bandHalf);
-          ctx.closePath();
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.33)';
-          ctx.fill();
+          paintSliceGlow(activeIndex, 0.28 * (1 - blend) + 0.06);
+          paintSliceGlow(nextIndex, 0.28 * blend + 0.06);
         }
 
         if (wheelStatus !== 'inactive') {
@@ -3482,6 +3475,41 @@ $sessionPayload = [
         }
 
         ctx.restore();
+
+        if (wheelStatus !== 'inactive') {
+          const pointerCenter = -Math.PI / 2;
+          const pointerHalf = Math.min(0.22, Math.max(0.08, slice * 0.46));
+          const pointerRadius = radius * 0.985;
+          const sweepPhase = (Date.now() % 1200) / 1200;
+          const sweepOffset = (sweepPhase - 0.5) * (pointerHalf * 1.45);
+
+          ctx.save();
+          ctx.translate(center, center);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, pointerRadius, pointerCenter - pointerHalf, pointerCenter + pointerHalf);
+          ctx.closePath();
+          const pointerGlow = ctx.createLinearGradient(0, -pointerRadius, 0, pointerRadius * 0.2);
+          pointerGlow.addColorStop(0, 'rgba(255, 255, 255, 0.36)');
+          pointerGlow.addColorStop(0.52, 'rgba(255, 255, 255, 0.14)');
+          pointerGlow.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
+          ctx.fillStyle = pointerGlow;
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(
+            0,
+            0,
+            pointerRadius,
+            (pointerCenter + sweepOffset) - (pointerHalf * 0.26),
+            (pointerCenter + sweepOffset) + (pointerHalf * 0.26)
+          );
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
+          ctx.fill();
+          ctx.restore();
+        }
         ctx.beginPath();
         ctx.arc(center, center, radius, 0, TWO_PI);
         ctx.lineWidth = 4.2;
