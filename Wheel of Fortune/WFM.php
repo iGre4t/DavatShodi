@@ -3440,36 +3440,38 @@ $sessionPayload = [
           ctx.fill();
         }
 
-        // Shine overlay for the currently selected slice (under the top pointer).
-        const selectedCenter = -Math.PI / 2;
-        const selectedHalf = Math.min(0.22, Math.max(0.08, slice * 0.42));
-        const selectedRadius = radius * 0.985;
-        const sweepPhase = (Date.now() % 1400) / 1400;
-        const sweepOffset = (sweepPhase - 0.5) * (selectedHalf * 1.2);
+        if (wheelStatus !== 'inactive' && count > 1) {
+          const cycleMs = Math.max(1200, count * 220);
+          const activeIndex = Math.floor((Date.now() % cycleMs) / cycleMs * count);
+          const sweepPhase = (Date.now() % 900) / 900;
+          const haloOffsets = [-1, 0, 1];
+          const haloAlpha = [0.08, 0.2, 0.08];
 
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.arc(0, 0, selectedRadius, selectedCenter - selectedHalf, selectedCenter + selectedHalf);
-        ctx.closePath();
-        const selectedGlow = ctx.createLinearGradient(0, -selectedRadius, 0, selectedRadius * 0.15);
-        selectedGlow.addColorStop(0, 'rgba(255, 255, 255, 0.34)');
-        selectedGlow.addColorStop(0.45, 'rgba(255, 255, 255, 0.14)');
-        selectedGlow.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
-        ctx.fillStyle = selectedGlow;
-        ctx.fill();
+          for (let h = 0; h < haloOffsets.length; h += 1) {
+            const idx = (activeIndex + haloOffsets[h] + count) % count;
+            const start = idx * slice;
+            const end = start + slice;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, radius * 0.985, start, end);
+            ctx.closePath();
+            const glow = ctx.createLinearGradient(0, -radius, 0, radius * 0.2);
+            glow.addColorStop(0, `rgba(255, 255, 255, ${haloAlpha[h]})`);
+            glow.addColorStop(0.55, 'rgba(255, 255, 255, 0.05)');
+            glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = glow;
+            ctx.fill();
+          }
 
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.arc(
-          0,
-          0,
-          selectedRadius,
-          (selectedCenter + sweepOffset) - (selectedHalf * 0.24),
-          (selectedCenter + sweepOffset) + (selectedHalf * 0.24)
-        );
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-        ctx.fill();
+          const bandStart = (activeIndex * slice) + (slice * (0.18 + (0.6 * sweepPhase)));
+          const bandHalf = Math.max(slice * 0.08, 0.03);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, radius * 0.985, bandStart - bandHalf, bandStart + bandHalf);
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.33)';
+          ctx.fill();
+        }
 
         if (wheelStatus !== 'inactive') {
           ctx.beginPath();
