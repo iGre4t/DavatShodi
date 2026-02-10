@@ -1926,7 +1926,7 @@ $sessionPayload = [
       }
 
       .wf-result-gift {
-        font-size: 2.25rem;
+        font-size: 3.2rem;
         color: #ff4f00;
         line-height: 1;
         text-shadow: 0 8px 18px rgba(255, 79, 0, 0.28);
@@ -2043,7 +2043,7 @@ $sessionPayload = [
         width: 8px;
         height: 16px;
         opacity: 0;
-        animation: confetti-fall 1.6s ease-out forwards;
+        animation: confetti-fall 2.8s ease-out forwards;
         --drift: 0px;
       }
 
@@ -2232,29 +2232,31 @@ $sessionPayload = [
 
       .wheel-slice-overlay {
         position: absolute;
-        top: 14px;
+        top: 36px;
         left: 50%;
-        width: 108px;
-        height: 122px;
+        width: 76px;
+        height: 86px;
         transform: translateX(-50%);
-        clip-path: polygon(50% 0%, 86% 100%, 14% 100%);
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0.17) 56%, rgba(255, 255, 255, 0.03) 100%);
+        clip-path: polygon(50% 0%, 70% 100%, 30% 100%);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.54) 0%, rgba(255, 255, 255, 0.2) 55%, rgba(255, 255, 255, 0.04) 100%);
         border: 1px solid rgba(255, 255, 255, 0.45);
+        border-radius: 0 0 60px 60px;
         box-shadow:
           inset 0 1px 1px rgba(255, 255, 255, 0.5),
-          inset 0 -8px 16px rgba(255, 255, 255, 0.06),
-          0 6px 12px rgba(14, 32, 63, 0.18);
+          inset 0 -6px 12px rgba(255, 255, 255, 0.05),
+          0 4px 10px rgba(14, 32, 63, 0.16);
         pointer-events: none;
         z-index: 2;
-        backdrop-filter: blur(1.5px) saturate(1.18);
+        backdrop-filter: blur(1.4px) saturate(1.12);
       }
 
       .wheel-slice-overlay::after {
         content: '';
         position: absolute;
-        inset: 0;
-        background: linear-gradient(108deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.78) 50%, rgba(255, 255, 255, 0) 70%);
-        transform: translateX(-140%);
+        inset: 6px 8px 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0) 22%, rgba(255, 255, 255, 0.78) 48%, rgba(255, 255, 255, 0) 76%);
+        transform: translateX(-130%);
         opacity: 0;
         animation: slice-overlay-shine 1.45s ease-in-out infinite;
       }
@@ -2335,6 +2337,14 @@ $sessionPayload = [
         background: #c7d2e5;
         color: #6b7a99;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      }
+
+      .center-spin.is-spinning:disabled {
+        background: #ff4f00;
+        color: #ffffff;
+        box-shadow:
+          0 14px 24px rgba(255, 79, 0, 0.34),
+          inset 0 1px 0 rgba(255, 255, 255, 0.46);
       }
 
       .wheel-count {
@@ -3649,6 +3659,9 @@ $sessionPayload = [
         if (wheelShellEl instanceof HTMLElement) {
           wheelShellEl.classList.add('is-spinning');
         }
+        if (spinBtn) {
+          spinBtn.classList.add('is-spinning');
+        }
         spinBtn.disabled = true;
           resultEl.textContent = '—';
         if (resultBox) {
@@ -3763,11 +3776,14 @@ $sessionPayload = [
             }
             setTimeout(() => {
               confettiLayer.innerHTML = '';
-            }, 2000);
+            }, 3400);
           }
           spinning = false;
           if (wheelShellEl instanceof HTMLElement) {
             wheelShellEl.classList.remove('is-spinning');
+          }
+          if (spinBtn) {
+            spinBtn.classList.remove('is-spinning');
           }
           if (spinBtn) {
             spinBtn.disabled = !wheelActive || userHasPrize;
