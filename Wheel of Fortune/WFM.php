@@ -1533,6 +1533,10 @@ $sessionPayload = [
         overflow: hidden;
       }
 
+      .quiz-area--percentage .quiz-timer-track {
+        bottom: 74px;
+      }
+
       .quiz-timer-fill {
         width: 100%;
         height: 100%;
@@ -2970,7 +2974,13 @@ $sessionPayload = [
         quizCounterEl.textContent = `${toFaDigits(quizIndex + 1)} از ${toFaDigits(total)}`;
         quizQuestionEl.textContent = item.question;
         quizAnswersEl.innerHTML = '';
+        if (quizAreaEl) {
+          Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
+        }
         quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
+        if (quizAreaEl) {
+          quizAreaEl.classList.toggle('quiz-area--percentage', item.type === 'percentage');
+        }
         if (item.type === 'percentage') {
           const wrap = document.createElement('div');
           wrap.className = 'quiz-percentage-wrap';
@@ -2993,14 +3003,17 @@ $sessionPayload = [
           const submit = document.createElement('button');
           submit.type = 'button';
           submit.className = 'quiz-answer-btn quiz-percentage-submit quiz-percentage-submit-bottom';
-          submit.textContent = 'بعدی';
+          submit.dataset.dynamic = '1';
+          submit.textContent = '\u0628\u0639\u062f\u06cc';
           submit.addEventListener('click', () => {
             void handlePercentageAnswer(submit, slider);
           });
           wrap.appendChild(valueLabel);
           wrap.appendChild(slider);
           quizAnswersEl.appendChild(wrap);
-          quizAnswersEl.appendChild(submit);
+          if (quizAreaEl) {
+            quizAreaEl.appendChild(submit);
+          }
           startQuizTimer();
           return;
         }
@@ -3492,14 +3505,6 @@ $sessionPayload = [
           pointerGlow.addColorStop(0.52, 'rgba(255, 255, 255, 0.14)');
           pointerGlow.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
           ctx.fillStyle = pointerGlow;
-          ctx.fill();
-
-          // Static bright core: no switching animation in pointer area.
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.arc(0, 0, pointerRadius, pointerCenter - (pointerHalf * 0.2), pointerCenter + (pointerHalf * 0.2));
-          ctx.closePath();
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
           ctx.fill();
 
           // Thick white outer cap connected to the bulb margin.
