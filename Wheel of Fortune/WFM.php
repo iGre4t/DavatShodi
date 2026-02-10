@@ -2759,9 +2759,34 @@ $sessionPayload = [
       const DISABLED_SEGMENT_COLORS = [
         '#cdd7e8', '#dce3ef'
       ];
+      const REMIX_SLICE_ICONS = [
+        '\uedba', // ri-gift-fill
+        '\uf22e', // ri-trophy-fill
+        '\uf186', // ri-star-fill
+        '\uea89', // ri-award-fill
+        '\uebb1', // ri-coin-fill
+        '\uef27'  // ri-medal-fill
+      ];
+      const buildSliceIconLayout = (sliceCount) => {
+        const total = Math.max(1, Number.parseInt(sliceCount ?? 0, 10));
+        const perSlice = 3;
+        const layout = [];
+        for (let i = 0; i < total; i += 1) {
+          const pool = REMIX_SLICE_ICONS.slice();
+          for (let j = pool.length - 1; j > 0; j -= 1) {
+            const k = Math.floor(Math.random() * (j + 1));
+            const tmp = pool[j];
+            pool[j] = pool[k];
+            pool[k] = tmp;
+          }
+          layout.push(pool.slice(0, perSlice));
+        }
+        return layout;
+      };
 
       let sourcePrizes = [];
       let wheelSegments = [];
+      let sliceIconLayout = [];
       let currentAngle = savedWheelAngle ?? 0;
       let spinning = false;
       let wheelSize = 420;
@@ -3464,6 +3489,30 @@ $sessionPayload = [
           ctx.fill();
         }
 
+        // Decorative remix icons per slice.
+        const iconSize = Math.max(15, Math.min(24, radius * 0.11));
+        const iconRadii = [radius * 0.42, radius * 0.58, radius * 0.73];
+        const iconOffsets = [-slice * 0.2, 0, slice * 0.2];
+        ctx.font = `${iconSize}px remixicon`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < count; i += 1) {
+          const icons = Array.isArray(sliceIconLayout[i]) ? sliceIconLayout[i] : [];
+          const mid = (i * slice) + (slice / 2);
+          for (let j = 0; j < Math.min(3, icons.length); j += 1) {
+            const glyph = String(icons[j] ?? '');
+            if (!glyph) continue;
+            const a = mid + iconOffsets[j];
+            const r = iconRadii[j];
+            const x = Math.cos(a) * r;
+            const y = Math.sin(a) * r;
+            ctx.fillStyle = wheelStatus === 'inactive'
+              ? 'rgba(233, 240, 250, 0.62)'
+              : 'rgba(255, 255, 255, 0.28)';
+            ctx.fillText(glyph, x, y);
+          }
+        }
+
         if (wheelStatus !== 'inactive' && count > 1) {
           const cycleMs = Math.max(1500, count * 240);
           const progress = ((Date.now() % cycleMs) / cycleMs) * count;
@@ -3662,6 +3711,7 @@ $sessionPayload = [
       const initWheel = (list) => {
         sourcePrizes = normalizeSourcePrizes(list);
         wheelSegments = buildDisplaySegments(sourcePrizes);
+        sliceIconLayout = buildSliceIconLayout(wheelSegments.length);
         countEl.textContent = `تعداد آیتم‌ها: ${toFaDigits(wheelSegments.length)}`;
         drawWheel(wheelSegments, currentAngle);
       };
