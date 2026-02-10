@@ -1446,8 +1446,15 @@ $sessionPayload = [
         background: #2f8fff;
         border-color: #2f8fff;
         color: #ffffff;
+        animation: quiz-correct-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .quiz-answer-btn.is-correct-reveal {
+        background: #2f8fff;
+        border-color: #2f8fff;
+        color: #ffffff;
         animation:
-          quiz-correct-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+          quiz-correct-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1),
           quiz-correct-shake 0.55s ease;
       }
 
@@ -2535,7 +2542,7 @@ $sessionPayload = [
           ? quizAnswersEl.querySelector('.quiz-answer-btn[data-correct="1"]')
           : null;
         if (correctButton instanceof HTMLButtonElement) {
-          correctButton.classList.add('is-correct');
+          correctButton.classList.add('is-correct-reveal');
         }
         setTimeout(() => {
           void continueQuiz();
@@ -2599,7 +2606,7 @@ $sessionPayload = [
           ? quizAnswersEl.querySelector('.quiz-answer-btn[data-correct="1"]')
           : null;
         if (correctButton instanceof HTMLButtonElement) {
-          correctButton.classList.add('is-correct');
+          correctButton.classList.add('is-correct-reveal');
         }
         setTimeout(() => {
           void continueQuiz();
