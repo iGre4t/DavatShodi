@@ -1489,6 +1489,7 @@ $sessionPayload = [
         height: 26px;
         background: transparent;
         --range-progress: 50%;
+        direction: ltr;
       }
       .quiz-percentage-slider:focus {
         outline: none;
