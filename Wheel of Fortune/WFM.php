@@ -1926,7 +1926,7 @@ $sessionPayload = [
       }
 
       .wf-result-gift {
-        font-size: 3.2rem;
+        font-size: 7.2rem;
         color: #ff4f00;
         line-height: 1;
         text-shadow: 0 8px 18px rgba(255, 79, 0, 0.28);
@@ -2237,10 +2237,10 @@ $sessionPayload = [
         width: 76px;
         height: 86px;
         transform: translateX(-50%);
-        clip-path: polygon(50% 0%, 70% 100%, 30% 100%);
+        clip-path: polygon(30% 0%, 70% 0%, 50% 100%);
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.54) 0%, rgba(255, 255, 255, 0.2) 55%, rgba(255, 255, 255, 0.04) 100%);
         border: 1px solid rgba(255, 255, 255, 0.45);
-        border-radius: 0 0 60px 60px;
+        border-radius: 60px 60px 0 0;
         box-shadow:
           inset 0 1px 1px rgba(255, 255, 255, 0.5),
           inset 0 -6px 12px rgba(255, 255, 255, 0.05),
