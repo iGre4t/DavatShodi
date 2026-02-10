@@ -1378,6 +1378,10 @@ $sessionPayload = [
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
+      .quiz-answers-grid--single {
+        width: min(420px, calc(100% - 8px));
+        grid-template-columns: 1fr;
+      }
 
       .quiz-timer-track {
         position: absolute;
@@ -1462,28 +1466,63 @@ $sessionPayload = [
       }
 
       .quiz-percentage-wrap {
-        width: min(360px, calc(100% - 8px));
-        border: 1px solid #d8e4f7;
-        border-radius: 14px;
-        background: #fff;
-        padding: 14px 14px 12px;
+        width: 100%;
+        border: 1px solid #d6e3f7;
+        border-radius: 16px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        box-shadow: 0 8px 22px rgba(47, 143, 255, 0.12);
+        padding: 16px 16px 14px;
         display: grid;
-        gap: 10px;
+        gap: 12px;
       }
 
       .quiz-percentage-value {
-        font-size: 1rem;
+        font-size: 1.06rem;
         font-weight: 800;
-        color: #2f8fff;
+        color: #1f4f8f;
       }
 
       .quiz-percentage-slider {
         width: 100%;
-        accent-color: #2f8fff;
+        appearance: none;
+        height: 26px;
+        background: transparent;
+      }
+      .quiz-percentage-slider:focus {
+        outline: none;
+      }
+      .quiz-percentage-slider::-webkit-slider-runnable-track {
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #2f8fff 0%, #66b2ff 100%);
+      }
+      .quiz-percentage-slider::-webkit-slider-thumb {
+        appearance: none;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #fff;
+        border: 3px solid #2f8fff;
+        box-shadow: 0 3px 10px rgba(47, 143, 255, 0.35);
+        margin-top: -6px;
+      }
+      .quiz-percentage-slider::-moz-range-track {
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #2f8fff 0%, #66b2ff 100%);
+      }
+      .quiz-percentage-slider::-moz-range-thumb {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #fff;
+        border: 3px solid #2f8fff;
+        box-shadow: 0 3px 10px rgba(47, 143, 255, 0.35);
       }
 
       .quiz-percentage-submit {
         width: 100%;
+        min-height: 52px;
       }
 
       .login-area {
@@ -2572,6 +2611,7 @@ $sessionPayload = [
         quizCounterEl.textContent = `${toFaDigits(quizIndex + 1)} از ${toFaDigits(total)}`;
         quizQuestionEl.textContent = item.question;
         quizAnswersEl.innerHTML = '';
+        quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
         if (item.type === 'percentage') {
           const wrap = document.createElement('div');
           wrap.className = 'quiz-percentage-wrap';
@@ -2598,8 +2638,8 @@ $sessionPayload = [
           });
           wrap.appendChild(valueLabel);
           wrap.appendChild(slider);
-          wrap.appendChild(submit);
           quizAnswersEl.appendChild(wrap);
+          quizAnswersEl.appendChild(submit);
           startQuizTimer();
           return;
         }
