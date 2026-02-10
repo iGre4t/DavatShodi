@@ -2684,7 +2684,7 @@ $sessionPayload = [
       const MIN_VISIBLE_SEGMENTS = 10;
       const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
-        '#005f93', '#003e63'
+        '#1d8ce1', '#177fcf'
       ];
       const DISABLED_SEGMENT_COLORS = [
         '#cdd7e8', '#dce3ef'
