@@ -1701,8 +1701,19 @@ $sessionPayload = [
         box-shadow: 0 10px 22px rgba(47, 143, 255, 0.35);
       }
       .quiz-percentage-submit-bottom:hover {
+        transform: translateX(-50%);
         background: #1f76e6;
         border-color: #1f76e6;
+      }
+
+      .quiz-percentage-submit-bottom.is-correct {
+        animation: quiz-correct-pop-fixed 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      @keyframes quiz-correct-pop-fixed {
+        0% { transform: translateX(-50%) scale(0.96); }
+        55% { transform: translateX(-50%) scale(1.06); }
+        100% { transform: translateX(-50%) scale(1); }
       }
 
       .login-area {
@@ -3506,6 +3517,26 @@ $sessionPayload = [
           pointerGlow.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
           ctx.fillStyle = pointerGlow;
           ctx.fill();
+
+          // Thick frame around the pointer-area highlight wedge.
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, pointerRadius, pointerCenter - pointerHalf, pointerCenter + pointerHalf);
+          ctx.closePath();
+          ctx.lineJoin = 'round';
+          ctx.lineCap = 'round';
+          ctx.lineWidth = 5.8;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+          ctx.stroke();
+
+          // Soft inner edge for a glass-like framed effect.
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, pointerRadius * 0.985, pointerCenter - (pointerHalf * 0.96), pointerCenter + (pointerHalf * 0.96));
+          ctx.closePath();
+          ctx.lineWidth = 2.2;
+          ctx.strokeStyle = 'rgba(207, 233, 255, 0.62)';
+          ctx.stroke();
 
           // Thick white outer cap connected to the bulb margin.
           const capRadius = radius + 7.2;
