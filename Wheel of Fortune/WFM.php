@@ -1345,14 +1345,17 @@ $sessionPayload = [
 
       .quiz-counter {
         position: absolute;
-        top: 8px;
+        top: 10px;
         left: 14px;
-        font-size: 0.84rem;
-        color: #5b6a88;
-        background: #ffffff;
-        border: 1px solid #e5ecf7;
+        font-size: 0.95rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+        color: #1f3f77;
+        background: linear-gradient(180deg, #ffffff 0%, #f3f8ff 100%);
+        border: 1px solid #cfe0f8;
         border-radius: 999px;
-        padding: 4px 10px;
+        padding: 6px 14px;
+        box-shadow: 0 8px 18px rgba(47, 143, 255, 0.16);
       }
 
       .quiz-question-box {
