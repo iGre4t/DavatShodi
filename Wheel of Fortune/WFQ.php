@@ -5,6 +5,11 @@ $wfqStorePath = __DIR__ . '/WFQ list.json';
 $wfqInviteesCsvPath = __DIR__ . '/WF Event/Invitees mapped.csv';
 $wfqAnswersCsvPath = __DIR__ . '/WF Event/Answers.csv';
 $wfqCodeStatePath = __DIR__ . '/WFQ code state.json';
+$wfqSettingsPath = __DIR__ . '/WFQ settings.json';
+const WFQ_DEFAULT_SETTINGS = [
+  'answerTimeLimit' => true,
+  'randomOrder' => true
+];
 
 function wfqReadCsv(string $path): array
 {
@@ -150,6 +155,42 @@ function wfqSaveStore(string $path, array $rows): bool
     mkdir($dir, 0777, true);
   }
   $json = json_encode(array_values($rows), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function wfqLoadSettings(string $path): array
+{
+  $settings = WFQ_DEFAULT_SETTINGS;
+  if (!is_file($path)) {
+    return $settings;
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return $settings;
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return $settings;
+  }
+  $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
+  $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
+  return $settings;
+}
+
+function wfqSaveSettings(string $path, array $settings): bool
+{
+  $dir = dirname($path);
+  if (!is_dir($dir)) {
+    mkdir($dir, 0777, true);
+  }
+  $payload = [
+    'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
+    'randomOrder' => (bool)($settings['randomOrder'] ?? true)
+  ];
+  $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
     return false;
   }
@@ -375,7 +416,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with questions.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'items' => $items], JSON_UNESCAPED_UNICODE);
+    $settings = wfqLoadSettings($wfqSettingsPath);
+    echo json_encode(['status' => 'ok', 'items' => $items, 'settings' => $settings], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_settings') {
+    $answerTimeLimitRaw = trim((string)($_POST['answer_time_limit'] ?? '1'));
+    $randomOrderRaw = trim((string)($_POST['random_order'] ?? '1'));
+    $settings = [
+      'answerTimeLimit' => in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
+      'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true)
+    ];
+    if (!wfqSaveSettings($wfqSettingsPath, $settings)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save general settings.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo json_encode(['status' => 'ok', 'message' => 'General settings saved.', 'settings' => wfqLoadSettings($wfqSettingsPath)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -469,6 +526,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   .wfq-save-wrap {
     margin-top: 12px;
   }
+  .wfq-settings-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .wfq-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+  }
+  .wfq-settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+  }
+  .wfq-settings-status {
+    margin-top: 8px;
+  }
   .wfq-drag-cell {
     width: 56px;
     text-align: center;
@@ -521,6 +601,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     }
   }
 </style>
+
+<div class="card">
+  <div class="section-header">
+    <h3>General Setting</h3>
+  </div>
+  <div class="wfq-settings-grid">
+    <label class="wfq-settings-row">
+      <span>Answer Time Limit</span>
+      <input id="wfq-setting-answer-time-limit" type="checkbox" checked />
+    </label>
+    <label class="wfq-settings-row">
+      <span>Random Order</span>
+      <input id="wfq-setting-random-order" type="checkbox" checked />
+    </label>
+  </div>
+  <div class="wfq-settings-actions">
+    <button id="wfq-save-settings" type="button" class="btn primary">Save General Settings</button>
+  </div>
+  <p id="wfq-settings-status" class="muted small wfq-settings-status" aria-live="polite"></p>
+</div>
 
 <div class="card">
   <div class="section-header">
@@ -602,6 +702,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   const body = document.getElementById('wfq-list-body');
   const statusEl = document.getElementById('wfq-status');
   const saveAllBtn = document.getElementById('wfq-save-all');
+  const answerTimeLimitToggle = document.getElementById('wfq-setting-answer-time-limit');
+  const randomOrderToggle = document.getElementById('wfq-setting-random-order');
+  const saveSettingsBtn = document.getElementById('wfq-save-settings');
+  const settingsStatusEl = document.getElementById('wfq-settings-status');
   const formAnswerGrid = document.getElementById('wfq-answer-grid');
   if (!form || !input || !body || !statusEl || !saveAllBtn || !formAnswerGrid) return;
   const formTypeInputs = form.querySelectorAll('input[name="questionType"]');
@@ -646,6 +750,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   const setStatus = (message, isError = false) => {
     statusEl.textContent = message || '';
     statusEl.style.color = isError ? '#d1434a' : '';
+  };
+
+  const setSettingsStatus = (message, isError = false) => {
+    if (!settingsStatusEl) return;
+    settingsStatusEl.textContent = message || '';
+    settingsStatusEl.style.color = isError ? '#d1434a' : '';
+  };
+
+  const applySettingsToForm = (settings) => {
+    if (!(answerTimeLimitToggle instanceof HTMLInputElement) || !(randomOrderToggle instanceof HTMLInputElement)) return;
+    answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
+    randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
   };
 
   const validateAll = () => {
@@ -760,6 +876,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
       answers: normalizeAnswers(item.answers),
       createdAt: String(item.createdAt || '')
     })) : [];
+    applySettingsToForm(data.settings || {});
     render();
   };
 
@@ -937,6 +1054,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     radio.addEventListener('change', syncAddFormTypeState);
   });
   syncAddFormTypeState();
+
+  if (saveSettingsBtn instanceof HTMLButtonElement) {
+    saveSettingsBtn.addEventListener('click', async () => {
+      if (!(answerTimeLimitToggle instanceof HTMLInputElement) || !(randomOrderToggle instanceof HTMLInputElement)) return;
+      saveSettingsBtn.disabled = true;
+      try {
+        const data = await postAction('save_settings', {
+          answer_time_limit: answerTimeLimitToggle.checked ? '1' : '0',
+          random_order: randomOrderToggle.checked ? '1' : '0'
+        });
+        applySettingsToForm(data.settings || {});
+        setSettingsStatus(data.message || 'General settings saved.');
+      } catch (error) {
+        setSettingsStatus(error?.message || 'Failed to save general settings.', true);
+      } finally {
+        saveSettingsBtn.disabled = false;
+      }
+    });
+  }
 
   syncFromServer()
     .then(() => setStatus(''))

@@ -14,10 +14,15 @@ const DEFAULT_PANEL_SETTINGS = [
 
 $prizeStorePath = __DIR__ . '/WF Prizes.json';
 $questionsStorePath = __DIR__ . '/WFQ list.json';
+$wfqSettingsPath = __DIR__ . '/WFQ settings.json';
 $inviteesFilePath = __DIR__ . '/WF Event/Invitees mapped.csv';
 $answersSheetPath = __DIR__ . '/WF Event/Answers.csv';
 $inviteesMapPath = __DIR__ . '/WF Event/WF Mapped.json';
 $loginAttemptsPath = __DIR__ . '/WF Event/login_attempts.json';
+const WFQ_DEFAULT_SETTINGS = [
+  'answerTimeLimit' => true,
+  'randomOrder' => true
+];
 
 function readPrizeStore(string $path): array
 {
@@ -117,6 +122,25 @@ function extractCodeFromAnswersHeader(string $headerCell): string
     return '';
   }
   return strtoupper(trim((string)$m[1]));
+}
+
+function loadWfqSettings(string $path): array
+{
+  $settings = WFQ_DEFAULT_SETTINGS;
+  if (!is_file($path)) {
+    return $settings;
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return $settings;
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return $settings;
+  }
+  $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
+  $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
+  return $settings;
 }
 
 function readQuestionColumnsFromStore(string $path): array
@@ -583,7 +607,7 @@ function clampAnsweredCount($raw, int $questionCount): int
   return $value;
 }
 
-function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns, array $questionCodes): array
+function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns, array $questionCodes, bool $randomOrderEnabled): array
 {
   $questionCount = count($questionCodes);
   $inviteesIndex = $columns['invitees'] ?? -1;
@@ -607,6 +631,21 @@ function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns,
   }
 
   $storedOrder = trim((string)($rows[$rowIndex][$inviteesIndex] ?? ''));
+  if (!$randomOrderEnabled) {
+    $order = array_values(array_map(static fn($v) => (string)$v, $questionCodes));
+    $serialized = serializeQuestionOrder($order);
+    if ($storedOrder !== $serialized) {
+      $rows[$rowIndex][$inviteesIndex] = $serialized;
+      $changed = true;
+    }
+    $answered = clampAnsweredCount($rows[$rowIndex][$answeredIndex] ?? 0, $questionCount);
+    if ((string)($rows[$rowIndex][$answeredIndex] ?? '') !== (string)$answered) {
+      $rows[$rowIndex][$answeredIndex] = (string)$answered;
+      $changed = true;
+    }
+    return ['order' => $order, 'answered' => $answered, 'changed' => $changed];
+  }
+
   $order = parseQuestionOrder($storedOrder, $questionCodes);
   if (!$order) {
     $order = buildRandomQuestionOrder($questionCodes);
@@ -643,6 +682,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 
   if ($action === 'login') {
+    $wfqSettings = loadWfqSettings($wfqSettingsPath);
     $maxAttempts = 5;
     $windowSeconds = 10 * 60;
     $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
@@ -730,7 +770,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $angleIndex = $columns['wheel angle'] ?? -1;
     $questions = readQuestionStore($questionsStorePath);
     $questionCodes = array_values(array_map(static fn($item) => (string)($item['code'] ?? ''), $questions));
-    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes);
+    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes, (bool)$wfqSettings['randomOrder']);
     $prizeWon = $prizeIndex >= 0 ? trim((string)($rows[$rowIndex][$prizeIndex] ?? '')) : '';
     $wheelAngle = null;
     if ($angleIndex >= 0) {
@@ -998,6 +1038,7 @@ $sessionWheelAngle = null;
 $sessionQuizOrder = [];
 $sessionAnswered = 0;
 if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
+  $wfqSettings = loadWfqSettings($wfqSettingsPath);
   $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
   $rows = $table['rows'];
   $workIdIndex = $table['workIdIndex'];
@@ -1015,7 +1056,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     $sessionAuthed = false;
     $sessionWorkId = '';
   } else {
-    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes);
+    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes, (bool)$wfqSettings['randomOrder']);
     $sessionQuizOrder = $quizState['order'];
     $sessionAnswered = $quizState['answered'];
     if ($quizState['changed']) {
@@ -1032,13 +1073,16 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     }
   }
 }
+$wfqSettingsForPayload = loadWfqSettings($wfqSettingsPath);
 $sessionPayload = [
   'authed' => $sessionAuthed,
   'workId' => $sessionWorkId,
   'prizeWon' => $sessionPrizeWon,
   'wheelAngle' => $sessionWheelAngle,
   'quizOrder' => $sessionQuizOrder,
-  'answered' => $sessionAnswered
+  'answered' => $sessionAnswered,
+  'answerTimeLimit' => (bool)($wfqSettingsForPayload['answerTimeLimit'] ?? true),
+  'randomOrder' => (bool)($wfqSettingsForPayload['randomOrder'] ?? true)
 ];
 ?>
 <!doctype html>
@@ -2264,6 +2308,7 @@ $sessionPayload = [
       const quizQuestionEl = document.getElementById('wf-quiz-question');
       const quizAnswersEl = document.getElementById('wf-quiz-answers');
       const quizTimerFillEl = document.getElementById('wf-quiz-timer-fill');
+      const quizTimerTrackEl = quizTimerFillEl ? quizTimerFillEl.closest('.quiz-timer-track') : null;
       let fakeLoopTimer = null;
       let wheelActive = true;
       const countEl = document.getElementById('wf-count');
@@ -2311,6 +2356,10 @@ $sessionPayload = [
       let quizCompleted = quizQuestions.length === 0 || quizIndex >= quizQuestions.length;
       let quizTimerHandle = null;
       const QUIZ_TIME_LIMIT_MS = 14000;
+      const answerTimeLimitEnabled = Boolean(sessionInfo?.answerTimeLimit ?? true);
+      if (!answerTimeLimitEnabled && quizTimerTrackEl instanceof HTMLElement) {
+        quizTimerTrackEl.classList.add('quiz-hidden');
+      }
 
       const TWO_PI = Math.PI * 2;
       const MIN_VISIBLE_SEGMENTS = 10;
@@ -2365,6 +2414,11 @@ $sessionPayload = [
       };
       const setQuizTimerProgress = (remainingMs) => {
         if (!quizTimerFillEl) return;
+        if (!answerTimeLimitEnabled) {
+          quizTimerFillEl.style.width = '100%';
+          quizTimerFillEl.classList.remove('is-danger');
+          return;
+        }
         const clamped = Math.max(0, Math.min(QUIZ_TIME_LIMIT_MS, remainingMs));
         const ratio = clamped / QUIZ_TIME_LIMIT_MS;
         quizTimerFillEl.style.width = `${Math.round(ratio * 1000) / 10}%`;
@@ -2419,6 +2473,10 @@ $sessionPayload = [
       };
       const startQuizTimer = () => {
         clearQuizTimer();
+        if (!answerTimeLimitEnabled) {
+          setQuizTimerProgress(QUIZ_TIME_LIMIT_MS);
+          return;
+        }
         setQuizTimerProgress(QUIZ_TIME_LIMIT_MS);
         const startedAt = Date.now();
         quizTimerHandle = setInterval(() => {
