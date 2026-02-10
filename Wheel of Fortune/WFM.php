@@ -2009,25 +2009,29 @@ $sessionPayload = [
       .wheel-shell::before {
         content: '';
         position: absolute;
-        width: calc(100% + 28px);
-        height: calc(100% + 28px);
+        width: calc(100% + 36px);
+        height: calc(100% + 36px);
         border-radius: 50%;
-        background: rgba(255, 255, 255, 0.46);
-        border: 1px solid #ecf0f7;
+        background:
+          radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.92), rgba(216, 232, 255, 0.4) 45%, rgba(180, 208, 245, 0.22) 100%);
+        border: 1px solid rgba(203, 224, 252, 0.9);
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
+        box-shadow:
+          0 22px 34px rgba(35, 84, 154, 0.2),
+          inset 0 2px 10px rgba(255, 255, 255, 0.65);
       }
 
       canvas {
         width: 100%;
         height: auto;
-        background: #fff;
+        background: radial-gradient(circle at 30% 20%, #f7fbff, #e7f1ff 62%, #dce9fb 100%);
         border-radius: 50%;
-        border: 2px solid #edf2fa;
+        border: 2px solid #dce8fa;
         box-shadow:
-          0 18px 34px rgba(30, 62, 108, 0.12),
-          inset 0 0 0 1px rgba(255, 255, 255, 0.84);
+          0 20px 40px rgba(21, 66, 129, 0.24),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.9);
         position: absolute;
         left: 50%;
         top: 50%;
@@ -2037,17 +2041,32 @@ $sessionPayload = [
 
       .pointer {
         position: absolute;
-        top: -8px;
+        top: -18px;
         left: 50%;
+        width: 24px;
+        height: 24px;
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 28%, #ffffff, #e5f0ff 65%, #c7dbf8 100%);
+        border: 2px solid #c4d9f8;
+        z-index: 3;
+        box-shadow:
+          0 0 0 8px rgba(47, 143, 255, 0.12),
+          0 0 24px rgba(47, 143, 255, 0.55),
+          0 8px 14px rgba(25, 83, 155, 0.28);
+      }
+      .pointer::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: calc(100% - 1px);
+        transform: translateX(-50%);
         width: 0;
         height: 0;
-        transform: translateX(-50%);
-        border-left: 12px solid transparent;
-        border-right: 12px solid transparent;
-        border-top: 22px solid var(--accent);
-        z-index: 3;
-        filter: drop-shadow(0 4px 8px rgba(41, 115, 214, 0.35));
-        transition: border-top-color 2s ease;
+        border-left: 11px solid transparent;
+        border-right: 11px solid transparent;
+        border-top: 22px solid #2f8fff;
+        filter: drop-shadow(0 4px 10px rgba(47, 143, 255, 0.45));
       }
 
       .center-spin {
@@ -2445,13 +2464,10 @@ $sessionPayload = [
       const MIN_VISIBLE_SEGMENTS = 10;
       const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
-        '#e11d48', '#f59e0b', '#16a34a', '#2563eb', '#7c3aed',
-        '#db2777', '#ea580c', '#0891b2', '#22c55e', '#d97706',
-        '#ef4444', '#0ea5e9'
+        '#2f8fff', '#4da3ff'
       ];
       const DISABLED_SEGMENT_COLORS = [
-        '#e5e7eb', '#d1d5db', '#cbd5e1', '#d6d3d1', '#d4d4d8',
-        '#dbe4ee', '#dfe5ec', '#d7dde5'
+        '#cdd7e8', '#dce3ef'
       ];
 
       let sourcePrizes = [];
@@ -2460,6 +2476,8 @@ $sessionPayload = [
       let spinning = false;
       let wheelSize = 420;
       let wheelInitialized = false;
+      let bulbPhase = 0;
+      let bulbTimer = null;
       const currentAccent = '#2f8fff';
       const showPlayArea = () => {
         if (quizAreaEl) {
@@ -3101,7 +3119,7 @@ $sessionPayload = [
       const drawWheel = (segments, angle = 0) => {
         const size = wheelSize;
         const center = size / 2;
-        const radius = center - 12;
+        const radius = center - 16;
         const count = Math.max(segments.length, 1);
         const slice = TWO_PI / count;
 
@@ -3114,11 +3132,27 @@ $sessionPayload = [
         for (let i = 0; i < count; i += 1) {
           const start = i * slice;
           const end = start + slice;
+          const mid = start + (slice / 2);
           ctx.beginPath();
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          ctx.fillStyle = palette[i % palette.length];
+          const base = palette[i % palette.length];
+          const grad = ctx.createLinearGradient(
+            Math.cos(mid) * (radius * 0.1),
+            Math.sin(mid) * (radius * 0.1),
+            Math.cos(mid) * radius,
+            Math.sin(mid) * radius
+          );
+          if (wheelStatus === 'inactive') {
+            grad.addColorStop(0, base);
+            grad.addColorStop(1, '#eef2f8');
+          } else {
+            grad.addColorStop(0, '#f3f9ff');
+            grad.addColorStop(0.42, base);
+            grad.addColorStop(1, '#1f6fcf');
+          }
+          ctx.fillStyle = grad;
           ctx.fill();
           ctx.lineWidth = 1.15;
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
@@ -3128,17 +3162,63 @@ $sessionPayload = [
         ctx.restore();
         ctx.beginPath();
         ctx.arc(center, center, radius, 0, TWO_PI);
-        ctx.lineWidth = 2.6;
-        ctx.strokeStyle = '#eef3fb';
+        ctx.lineWidth = 4.2;
+        ctx.strokeStyle = wheelStatus === 'inactive' ? '#d7dfeb' : '#eaf3ff';
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(center, center, 24, 0, TWO_PI);
-        ctx.fillStyle = currentAccent;
-        ctx.fill();
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#ffffff';
+        ctx.arc(center, center, radius + 10, 0, TWO_PI);
+        ctx.lineWidth = 7;
+        ctx.strokeStyle = wheelStatus === 'inactive'
+          ? 'rgba(198, 208, 222, 0.9)'
+          : 'rgba(232, 243, 255, 0.95)';
         ctx.stroke();
+
+        const bulbCount = Math.max(20, Math.round(count * 1.8));
+        const bulbRadius = Math.max(2.8, radius * 0.018);
+        const bulbOrbit = radius + 16;
+        for (let i = 0; i < bulbCount; i += 1) {
+          const a = (i / bulbCount) * TWO_PI;
+          const x = center + Math.cos(a) * bulbOrbit;
+          const y = center + Math.sin(a) * bulbOrbit;
+          const isOn = ((i + bulbPhase) % 2) === 0;
+          ctx.beginPath();
+          ctx.arc(x, y, bulbRadius, 0, TWO_PI);
+          if (wheelStatus === 'inactive') {
+            ctx.fillStyle = isOn ? '#d4dbe8' : '#edf1f7';
+          } else {
+            ctx.fillStyle = isOn ? '#8cc4ff' : '#e8f3ff';
+          }
+          ctx.fill();
+          if (wheelStatus !== 'inactive' && isOn) {
+            ctx.shadowColor = '#6eb8ff';
+            ctx.shadowBlur = 9;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        }
+
+        ctx.beginPath();
+        ctx.arc(center, center, 26, 0, TWO_PI);
+        const centerGrad = ctx.createRadialGradient(center - 7, center - 9, 1, center, center, 26);
+        centerGrad.addColorStop(0, '#ffffff');
+        centerGrad.addColorStop(0.55, '#58a8ff');
+        centerGrad.addColorStop(1, '#1e73d7');
+        ctx.fillStyle = centerGrad;
+        ctx.fill();
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = '#f5faff';
+        ctx.stroke();
+      };
+
+      const startBulbAnimation = () => {
+        if (bulbTimer) return;
+        bulbTimer = setInterval(() => {
+          bulbPhase = (bulbPhase + 1) % 1000;
+          if (!spinning) {
+            drawWheel(wheelSegments, currentAngle);
+          }
+        }, 280);
       };
 
       const weightedPrizePick = (prizes) => {
@@ -3214,6 +3294,7 @@ $sessionPayload = [
           configureCanvas();
           drawWheel(wheelSegments, currentAngle);
         });
+        startBulbAnimation();
         wheelInitialized = true;
       };
 
