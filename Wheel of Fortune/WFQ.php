@@ -265,7 +265,7 @@ function wfqBuildAnswersHeader(array $items): array
 
 function wfqExtractCodeFromAnswerHeader(string $headerCell): string
 {
-  if (!preg_match('/^\s*(Q\d+)\b/i', $headerCell, $m)) {
+  if (!preg_match('/^\s*([A-Za-z0-9_-]+)\s*(?:\||$)/', $headerCell, $m)) {
     return '';
   }
   return strtoupper(trim((string)$m[1]));
