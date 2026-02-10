@@ -15,6 +15,7 @@ const DEFAULT_PANEL_SETTINGS = [
 $prizeStorePath = __DIR__ . '/WF Prizes.json';
 $questionsStorePath = __DIR__ . '/WFQ list.json';
 $inviteesFilePath = __DIR__ . '/WF Event/Invitees mapped.csv';
+$answersSheetPath = __DIR__ . '/WF Event/Answers.csv';
 $inviteesMapPath = __DIR__ . '/WF Event/WF Mapped.json';
 $loginAttemptsPath = __DIR__ . '/WF Event/login_attempts.json';
 
@@ -74,6 +75,143 @@ function readQuestionStore(string $path): array
     ];
   }
   return $items;
+}
+
+function readQuestionTitlesFromStore(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+  $titles = [];
+  foreach ($decoded as $row) {
+    if (!is_array($row)) {
+      continue;
+    }
+    $question = trim((string)($row['question'] ?? ''));
+    if ($question === '') {
+      continue;
+    }
+    $titles[] = $question;
+  }
+  return $titles;
+}
+
+function syncAnswersSheet(string $path, array $questionTitles): bool
+{
+  $rows = readInviteesCsv($path);
+  $oldHeader = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : ['Work ID'];
+  $workIdIndex = findHeaderIndex($oldHeader, 'Work ID');
+  if ($workIdIndex < 0) {
+    $oldHeader = array_merge(['Work ID'], array_values($oldHeader));
+    $workIdIndex = 0;
+  }
+
+  $oldHeaderLookup = [];
+  foreach ($oldHeader as $idx => $name) {
+    $key = trim((string)$name);
+    if ($key !== '' && !array_key_exists($key, $oldHeaderLookup)) {
+      $oldHeaderLookup[$key] = (int)$idx;
+    }
+  }
+
+  $newHeader = ['Work ID'];
+  foreach ($questionTitles as $title) {
+    $title = trim((string)$title);
+    if ($title === '') {
+      continue;
+    }
+    $newHeader[] = $title;
+  }
+
+  $columnSources = [];
+  for ($i = 1; $i < count($newHeader); $i += 1) {
+    $question = $newHeader[$i];
+    $columnSources[] = array_key_exists($question, $oldHeaderLookup)
+      ? (int)$oldHeaderLookup[$question]
+      : -1;
+  }
+
+  $syncedRows = [$newHeader];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i]) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $nextRow = [$workId];
+    foreach ($columnSources as $sourceIndex) {
+      $nextRow[] = $sourceIndex >= 0 ? (string)($row[$sourceIndex] ?? '') : '';
+    }
+    $syncedRows[] = $nextRow;
+  }
+
+  return writeInviteesCsv($path, $syncedRows);
+}
+
+function logAnswerValue(string $answersPath, string $questionsPath, string $workId, string $question, string $answer): bool
+{
+  $workId = trim($workId);
+  $question = trim($question);
+  if ($workId === '' || $question === '') {
+    return false;
+  }
+
+  $questionTitles = readQuestionTitlesFromStore($questionsPath);
+  if (!in_array($question, $questionTitles, true)) {
+    $questionTitles[] = $question;
+  }
+  if (!syncAnswersSheet($answersPath, $questionTitles)) {
+    return false;
+  }
+
+  $rows = readInviteesCsv($answersPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return false;
+  }
+  $header = $rows[0];
+  $workIdIndex = findHeaderIndex($header, 'Work ID');
+  if ($workIdIndex < 0) {
+    return false;
+  }
+  $questionIndex = -1;
+  foreach ($header as $idx => $name) {
+    if (trim((string)$name) === $question) {
+      $questionIndex = (int)$idx;
+      break;
+    }
+  }
+  if ($questionIndex < 0) {
+    return false;
+  }
+
+  $rowIndex = -1;
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $value = trim((string)($rows[$i][$workIdIndex] ?? ''));
+    if ($value === $workId) {
+      $rowIndex = $i;
+      break;
+    }
+  }
+  if ($rowIndex < 0) {
+    $rows[] = array_fill(0, count($header), '');
+    $rowIndex = count($rows) - 1;
+    $rows[$rowIndex][$workIdIndex] = $workId;
+  }
+
+  $needed = max(count($header), $questionIndex + 1);
+  if (count($rows[$rowIndex]) < $needed) {
+    $rows[$rowIndex] = array_pad($rows[$rowIndex], $needed, '');
+  }
+  $rows[$rowIndex][$questionIndex] = trim($answer);
+  return writeInviteesCsv($answersPath, $rows);
 }
 
 function loadJsonPayload(string $path): array
@@ -546,6 +684,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     exit;
   }
 
+  if ($action === 'log_answer') {
+    $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
+    if (!(($_SESSION['wf_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ÙˆØ±ÙˆØ¯ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
+      exit;
+    }
+    $question = trim((string)($payload['question'] ?? ''));
+    $answer = trim((string)($payload['answer'] ?? ''));
+    if ($question === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Ø³ÙˆØ§Ù„ Ø§Ø±Ø³Ø§Ù„ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
+      exit;
+    }
+    if (!logAnswerValue($answersSheetPath, $questionsStorePath, $sessionWorkId, $question, $answer)) {
+      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ Ù¾Ø§Ø³Ø® Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
+      exit;
+    }
+    echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
   if ($action === 'update_answered') {
     $sessionWorkId = (string)($_SESSION['wf_work_id'] ?? '');
     if (!(($_SESSION['wf_authed'] ?? false) && $sessionWorkId !== '')) {
@@ -658,6 +816,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 $initialPrizes = readPrizeStore($prizeStorePath);
 $initialQuestions = readQuestionStore($questionsStorePath);
+syncAnswersSheet($answersSheetPath, readQuestionTitlesFromStore($questionsStorePath));
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
@@ -2072,10 +2231,30 @@ $sessionPayload = [
           });
         } catch {}
       };
+      const persistQuizAnswer = async (questionText, answerText) => {
+        const question = String(questionText ?? '').trim();
+        if (!question) return;
+        try {
+          await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'log_answer',
+              question,
+              answer: String(answerText ?? '').trim(),
+              csrf: csrfToken
+            })
+          });
+        } catch {}
+      };
       const handleQuizTimeout = async () => {
         if (quizLocked) return;
         quizLocked = true;
         markQuizButtonsDisabled();
+        const currentItem = quizQuestions[quizIndex] || null;
+        if (currentItem && currentItem.question) {
+          void persistQuizAnswer(currentItem.question, '');
+        }
         const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
         void persistAnsweredProgress(answeredCount);
         const correctButton = quizAnswersEl
@@ -2119,11 +2298,15 @@ $sessionPayload = [
         }
         renderQuizQuestion();
       };
-      const handleQuizAnswer = async (button, isCorrect) => {
+      const handleQuizAnswer = async (button, isCorrect, answerText) => {
         if (quizLocked) return;
         quizLocked = true;
         clearQuizTimer();
         markQuizButtonsDisabled();
+        const currentItem = quizQuestions[quizIndex] || null;
+        if (currentItem && currentItem.question) {
+          void persistQuizAnswer(currentItem.question, answerText);
+        }
         const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
         void persistAnsweredProgress(answeredCount);
         if (isCorrect) {
@@ -2176,7 +2359,7 @@ $sessionPayload = [
           button.textContent = answerItem.text;
           button.dataset.correct = answerItem.isCorrect ? '1' : '0';
           button.addEventListener('click', () => {
-            void handleQuizAnswer(button, answerItem.isCorrect);
+            void handleQuizAnswer(button, answerItem.isCorrect, answerItem.text);
           });
           quizAnswersEl.appendChild(button);
         });
