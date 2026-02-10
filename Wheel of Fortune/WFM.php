@@ -2230,6 +2230,49 @@ $sessionPayload = [
         z-index: 1;
       }
 
+      .wheel-slice-overlay {
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        width: 108px;
+        height: 122px;
+        transform: translateX(-50%);
+        clip-path: polygon(50% 0%, 86% 100%, 14% 100%);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0.17) 56%, rgba(255, 255, 255, 0.03) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        box-shadow:
+          inset 0 1px 1px rgba(255, 255, 255, 0.5),
+          inset 0 -8px 16px rgba(255, 255, 255, 0.06),
+          0 6px 12px rgba(14, 32, 63, 0.18);
+        pointer-events: none;
+        z-index: 2;
+        backdrop-filter: blur(1.5px) saturate(1.18);
+      }
+
+      .wheel-slice-overlay::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(108deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.78) 50%, rgba(255, 255, 255, 0) 70%);
+        transform: translateX(-140%);
+        opacity: 0;
+        animation: slice-overlay-shine 1.45s ease-in-out infinite;
+      }
+
+      @keyframes slice-overlay-shine {
+        0% {
+          transform: translateX(-140%);
+          opacity: 0;
+        }
+        38% {
+          opacity: 0.75;
+        }
+        100% {
+          transform: translateX(145%);
+          opacity: 0;
+        }
+      }
+
       .pointer {
         position: absolute;
         top: -18px;
@@ -2240,7 +2283,7 @@ $sessionPayload = [
         border-radius: 50%;
         background: radial-gradient(circle at 35% 28%, #f1f3f7, #6c7688 65%, #3b4250 100%);
         border: 2px solid #4a5362;
-        z-index: 3;
+        z-index: 4;
         box-shadow:
           0 0 0 8px rgba(61, 70, 84, 0.14),
           0 0 24px rgba(61, 70, 84, 0.42),
@@ -2431,6 +2474,7 @@ $sessionPayload = [
           <div id="wf-count" class="wheel-count">تعداد آیتم‌ها: —</div>
           <div class="wheel-shell">
             <div class="pointer" aria-hidden="true"></div>
+            <div class="wheel-slice-overlay" aria-hidden="true"></div>
             <canvas id="wf-wheel" width="420" height="420" aria-label="چرخ جایزه"></canvas>
             <button id="wf-spin" class="center-spin" type="button">بچرخون</button>
           </div>
@@ -3408,9 +3452,9 @@ $sessionPayload = [
           : 'rgba(232, 243, 255, 0.95)';
         ctx.stroke();
 
-        const bulbCount = Math.max(20, Math.round(count * 1.8));
-        const bulbRadius = Math.max(4.8, radius * 0.028);
-        const bulbOrbit = radius + 16.5;
+        const bulbCount = Math.max(12, Math.round(count * 1.2));
+        const bulbRadius = Math.max(6.8, radius * 0.04);
+        const bulbOrbit = center - bulbRadius - 2;
         for (let i = 0; i < bulbCount; i += 1) {
           const a = (i / bulbCount) * TWO_PI;
           const x = center + Math.cos(a) * bulbOrbit;
