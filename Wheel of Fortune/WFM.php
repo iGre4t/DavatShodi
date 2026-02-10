@@ -55,20 +55,44 @@ function readQuestionStore(string $path): array
     return [];
   }
   $items = [];
+  $usedCodes = [];
+  $legacyCounter = 1;
   foreach ($decoded as $row) {
     if (!is_array($row)) {
       continue;
     }
+    $code = trim((string)($row['code'] ?? ''));
+    if ($code === '') {
+      $code = 'LEGACY' . $legacyCounter;
+      $legacyCounter += 1;
+    }
+    if (isset($usedCodes[$code])) {
+      continue;
+    }
+    $type = trim(mb_strtolower((string)($row['type'] ?? 'mcq'), 'UTF-8'));
+    if ($type !== 'percentage') {
+      $type = 'mcq';
+    }
     $question = trim((string)($row['question'] ?? ''));
     $answers = is_array($row['answers'] ?? null) ? array_values($row['answers']) : [];
-    if ($question === '' || count($answers) < 4) {
+    if ($question === '') {
       continue;
     }
-    $answers = array_map(static fn($value) => trim((string)$value), array_slice($answers, 0, 4));
-    if (count(array_filter($answers, static fn($value) => $value !== '')) < 4) {
-      continue;
+    if ($type === 'mcq') {
+      if (count($answers) < 4) {
+        continue;
+      }
+      $answers = array_map(static fn($value) => trim((string)$value), array_slice($answers, 0, 4));
+      if (count(array_filter($answers, static fn($value) => $value !== '')) < 4) {
+        continue;
+      }
+    } else {
+      $answers = [];
     }
+    $usedCodes[$code] = true;
     $items[] = [
+      'code' => $code,
+      'type' => $type,
       'question' => $question,
       // Answer at index 0 is the correct answer.
       'answers' => $answers
@@ -77,7 +101,25 @@ function readQuestionStore(string $path): array
   return $items;
 }
 
-function readQuestionTitlesFromStore(string $path): array
+function formatAnswersQuestionHeader(string $code, string $question): string
+{
+  $code = strtoupper(trim($code));
+  $question = trim($question);
+  if ($code === '') {
+    return $question;
+  }
+  return $question !== '' ? "{$code} | {$question}" : $code;
+}
+
+function extractCodeFromAnswersHeader(string $headerCell): string
+{
+  if (!preg_match('/^\s*(Q\d+)\b/i', $headerCell, $m)) {
+    return '';
+  }
+  return strtoupper(trim((string)$m[1]));
+}
+
+function readQuestionColumnsFromStore(string $path): array
 {
   if (!is_file($path)) {
     return [];
@@ -90,21 +132,36 @@ function readQuestionTitlesFromStore(string $path): array
   if (!is_array($decoded)) {
     return [];
   }
-  $titles = [];
+  $columns = [];
+  $usedCodes = [];
+  $legacyCounter = 1;
   foreach ($decoded as $row) {
     if (!is_array($row)) {
       continue;
     }
-    $question = trim((string)($row['question'] ?? ''));
-    if ($question === '') {
+    $code = strtoupper(trim((string)($row['code'] ?? '')));
+    if ($code === '') {
+      $code = 'LEGACY' . $legacyCounter;
+      $legacyCounter += 1;
+    }
+    if (isset($usedCodes[$code])) {
       continue;
     }
-    $titles[] = $question;
+    $question = trim((string)($row['question'] ?? ''));
+    if ($code === '' || $question === '') {
+      continue;
+    }
+    $usedCodes[$code] = true;
+    $columns[] = [
+      'code' => $code,
+      'question' => $question,
+      'header' => formatAnswersQuestionHeader($code, $question)
+    ];
   }
-  return $titles;
+  return $columns;
 }
 
-function syncAnswersSheet(string $path, array $questionTitles): bool
+function syncAnswersSheet(string $path, array $questionColumns): bool
 {
   $rows = readInviteesCsv($path);
   $oldHeader = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : ['Work ID'];
@@ -115,27 +172,41 @@ function syncAnswersSheet(string $path, array $questionTitles): bool
   }
 
   $oldHeaderLookup = [];
+  $oldHeaderByCode = [];
   foreach ($oldHeader as $idx => $name) {
-    $key = trim((string)$name);
-    if ($key !== '' && !array_key_exists($key, $oldHeaderLookup)) {
-      $oldHeaderLookup[$key] = (int)$idx;
+    $cell = trim((string)$name);
+    if ($cell !== '' && !array_key_exists($cell, $oldHeaderLookup)) {
+      $oldHeaderLookup[$cell] = (int)$idx;
+    }
+    $code = extractCodeFromAnswersHeader($cell);
+    if ($code !== '' && !array_key_exists($code, $oldHeaderByCode)) {
+      $oldHeaderByCode[$code] = (int)$idx;
     }
   }
 
   $newHeader = ['Work ID'];
-  foreach ($questionTitles as $title) {
-    $title = trim((string)$title);
-    if ($title === '') {
+  foreach ($questionColumns as $column) {
+    if (!is_array($column)) {
       continue;
     }
-    $newHeader[] = $title;
+    $code = strtoupper(trim((string)($column['code'] ?? '')));
+    $question = trim((string)($column['question'] ?? ''));
+    if ($code === '' || $question === '') {
+      continue;
+    }
+    $newHeader[] = formatAnswersQuestionHeader($code, $question);
   }
 
   $columnSources = [];
   for ($i = 1; $i < count($newHeader); $i += 1) {
-    $question = $newHeader[$i];
-    $columnSources[] = array_key_exists($question, $oldHeaderLookup)
-      ? (int)$oldHeaderLookup[$question]
+    $headerCell = $newHeader[$i];
+    $code = extractCodeFromAnswersHeader($headerCell);
+    if ($code !== '' && array_key_exists($code, $oldHeaderByCode)) {
+      $columnSources[] = (int)$oldHeaderByCode[$code];
+      continue;
+    }
+    $columnSources[] = array_key_exists($headerCell, $oldHeaderLookup)
+      ? (int)$oldHeaderLookup[$headerCell]
       : -1;
   }
 
@@ -156,19 +227,31 @@ function syncAnswersSheet(string $path, array $questionTitles): bool
   return writeInviteesCsv($path, $syncedRows);
 }
 
-function logAnswerValue(string $answersPath, string $questionsPath, string $workId, string $question, string $answer): bool
+function logAnswerValue(string $answersPath, string $questionsPath, string $workId, string $questionCode, string $question, string $answer): bool
 {
   $workId = trim($workId);
+  $questionCode = strtoupper(trim($questionCode));
   $question = trim($question);
-  if ($workId === '' || $question === '') {
+  if ($workId === '' || $questionCode === '' || $question === '') {
     return false;
   }
 
-  $questionTitles = readQuestionTitlesFromStore($questionsPath);
-  if (!in_array($question, $questionTitles, true)) {
-    $questionTitles[] = $question;
+  $questionColumns = readQuestionColumnsFromStore($questionsPath);
+  $questionExists = false;
+  foreach ($questionColumns as $column) {
+    if (strtoupper(trim((string)($column['code'] ?? ''))) === $questionCode) {
+      $questionExists = true;
+      break;
+    }
   }
-  if (!syncAnswersSheet($answersPath, $questionTitles)) {
+  if (!$questionExists) {
+    $questionColumns[] = [
+      'code' => $questionCode,
+      'question' => $question,
+      'header' => formatAnswersQuestionHeader($questionCode, $question)
+    ];
+  }
+  if (!syncAnswersSheet($answersPath, $questionColumns)) {
     return false;
   }
 
@@ -183,7 +266,8 @@ function logAnswerValue(string $answersPath, string $questionsPath, string $work
   }
   $questionIndex = -1;
   foreach ($header as $idx => $name) {
-    if (trim((string)$name) === $question) {
+    $code = extractCodeFromAnswersHeader((string)$name);
+    if ($code !== '' && $code === $questionCode) {
       $questionIndex = (int)$idx;
       break;
     }
@@ -417,10 +501,15 @@ function findInviteeRowIndex(array $rows, int $workIdIndex, string $workId): int
   return -1;
 }
 
-function parseQuestionOrder(string $value, int $questionCount): array
+function parseQuestionOrder(string $value, array $questionCodes): array
 {
+  $questionCount = count($questionCodes);
   if ($questionCount <= 0) {
     return [];
+  }
+  $codeSet = [];
+  foreach ($questionCodes as $code) {
+    $codeSet[(string)$code] = true;
   }
   $pairs = preg_split('/\s*,\s*/', trim($value));
   if (!is_array($pairs) || !$pairs) {
@@ -428,42 +517,56 @@ function parseQuestionOrder(string $value, int $questionCount): array
   }
   $sequence = [];
   foreach ($pairs as $pair) {
-    if (!preg_match('/^\s*(\d+)\s*::\s*(\d+)\s*$/', (string)$pair, $m)) {
+    if (!preg_match('/^\s*(\d+)\s*::\s*([^\s,]+)\s*$/', (string)$pair, $m)) {
       return [];
     }
     $order = (int)$m[1];
-    $source = (int)$m[2];
-    if ($order < 1 || $order > $questionCount || $source < 1 || $source > $questionCount) {
+    $sourceToken = trim((string)$m[2]);
+    if ($order < 1 || $order > $questionCount) {
       return [];
     }
-    $sequence[$order] = $source;
+    $sourceCode = '';
+    if (ctype_digit($sourceToken)) {
+      // Backward compatibility with old "order::sourceIndex" format.
+      $sourceIndex = (int)$sourceToken;
+      if ($sourceIndex < 1 || $sourceIndex > $questionCount) {
+        return [];
+      }
+      $sourceCode = (string)$questionCodes[$sourceIndex - 1];
+    } else {
+      $sourceCode = $sourceToken;
+    }
+    if ($sourceCode === '' || !isset($codeSet[$sourceCode])) {
+      return [];
+    }
+    $sequence[$order] = $sourceCode;
   }
   if (count($sequence) !== $questionCount) {
     return [];
   }
   ksort($sequence, SORT_NUMERIC);
-  $sourceValues = array_values($sequence);
-  if (count(array_unique($sourceValues)) !== $questionCount) {
+  $sourceCodes = array_values($sequence);
+  if (count(array_unique($sourceCodes)) !== $questionCount) {
     return [];
   }
-  return $sourceValues;
+  return $sourceCodes;
 }
 
 function serializeQuestionOrder(array $sourceOrder): string
 {
   $parts = [];
   foreach (array_values($sourceOrder) as $index => $source) {
-    $parts[] = ($index + 1) . '::' . (int)$source;
+    $parts[] = ($index + 1) . '::' . trim((string)$source);
   }
   return implode(',', $parts);
 }
 
-function buildRandomQuestionOrder(int $questionCount): array
+function buildRandomQuestionOrder(array $questionCodes): array
 {
-  if ($questionCount <= 0) {
+  if (!$questionCodes) {
     return [];
   }
-  $source = range(1, $questionCount);
+  $source = array_values(array_map(static fn($v) => (string)$v, $questionCodes));
   shuffle($source);
   return $source;
 }
@@ -480,8 +583,9 @@ function clampAnsweredCount($raw, int $questionCount): int
   return $value;
 }
 
-function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns, int $questionCount): array
+function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns, array $questionCodes): array
 {
+  $questionCount = count($questionCodes);
   $inviteesIndex = $columns['invitees'] ?? -1;
   $answeredIndex = $columns['Answered'] ?? -1;
   if ($rowIndex < 1 || $inviteesIndex < 0 || $answeredIndex < 0) {
@@ -503,13 +607,18 @@ function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns,
   }
 
   $storedOrder = trim((string)($rows[$rowIndex][$inviteesIndex] ?? ''));
-  $order = parseQuestionOrder($storedOrder, $questionCount);
+  $order = parseQuestionOrder($storedOrder, $questionCodes);
   if (!$order) {
-    $order = buildRandomQuestionOrder($questionCount);
+    $order = buildRandomQuestionOrder($questionCodes);
     $rows[$rowIndex][$inviteesIndex] = serializeQuestionOrder($order);
     $rows[$rowIndex][$answeredIndex] = '0';
     $changed = true;
     return ['order' => $order, 'answered' => 0, 'changed' => $changed];
+  }
+  $normalizedStoredOrder = serializeQuestionOrder($order);
+  if ($storedOrder !== $normalizedStoredOrder) {
+    $rows[$rowIndex][$inviteesIndex] = $normalizedStoredOrder;
+    $changed = true;
   }
 
   $answered = clampAnsweredCount($rows[$rowIndex][$answeredIndex] ?? 0, $questionCount);
@@ -620,8 +729,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $prizeIndex = $columns['prize won'] ?? -1;
     $angleIndex = $columns['wheel angle'] ?? -1;
     $questions = readQuestionStore($questionsStorePath);
-    $questionCount = count($questions);
-    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCount);
+    $questionCodes = array_values(array_map(static fn($item) => (string)($item['code'] ?? ''), $questions));
+    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes);
     $prizeWon = $prizeIndex >= 0 ? trim((string)($rows[$rowIndex][$prizeIndex] ?? '')) : '';
     $wheelAngle = null;
     if ($angleIndex >= 0) {
@@ -690,13 +799,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ÙˆØ±ÙˆØ¯ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
+    $questionCode = strtoupper(trim((string)($payload['questionCode'] ?? '')));
     $question = trim((string)($payload['question'] ?? ''));
     $answer = trim((string)($payload['answer'] ?? ''));
-    if ($question === '') {
+    if ($questionCode === '' || $question === '') {
       echo json_encode(['status' => 'error', 'message' => 'Ø³ÙˆØ§Ù„ Ø§Ø±Ø³Ø§Ù„ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
-    if (!logAnswerValue($answersSheetPath, $questionsStorePath, $sessionWorkId, $question, $answer)) {
+    if (!logAnswerValue($answersSheetPath, $questionsStorePath, $sessionWorkId, $questionCode, $question, $answer)) {
       echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ Ù¾Ø§Ø³Ø® Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
@@ -816,7 +926,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 $initialPrizes = readPrizeStore($prizeStorePath);
 $initialQuestions = readQuestionStore($questionsStorePath);
-syncAnswersSheet($answersSheetPath, readQuestionTitlesFromStore($questionsStorePath));
+syncAnswersSheet($answersSheetPath, readQuestionColumnsFromStore($questionsStorePath));
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
@@ -894,7 +1004,8 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   $columns = $table['columns']['index'] ?? [];
   $prizeIndex = $columns['prize won'] ?? -1;
   $angleIndex = $columns['wheel angle'] ?? -1;
-  $questionCount = count(readQuestionStore($questionsStorePath));
+  $questions = readQuestionStore($questionsStorePath);
+  $questionCodes = array_values(array_map(static fn($item) => (string)($item['code'] ?? ''), $questions));
   if (($table['columns']['added'] ?? false) && $rows) {
     writeInviteesCsv($inviteesFilePath, $rows);
   }
@@ -904,7 +1015,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     $sessionAuthed = false;
     $sessionWorkId = '';
   } else {
-    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCount);
+    $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes);
     $sessionQuizOrder = $quizState['order'];
     $sessionAnswered = $quizState['answered'];
     if ($quizState['changed']) {
@@ -1304,6 +1415,31 @@ $sessionPayload = [
         0% { transform: scale(0.96); }
         55% { transform: scale(1.06); }
         100% { transform: scale(1); }
+      }
+
+      .quiz-percentage-wrap {
+        width: min(360px, calc(100% - 8px));
+        border: 1px solid #d8e4f7;
+        border-radius: 14px;
+        background: #fff;
+        padding: 14px 14px 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .quiz-percentage-value {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #2f8fff;
+      }
+
+      .quiz-percentage-slider {
+        width: 100%;
+        accent-color: #2f8fff;
+      }
+
+      .quiz-percentage-submit {
+        width: 100%;
       }
 
       .login-area {
@@ -2145,18 +2281,27 @@ $sessionPayload = [
       const questionPool = Array.isArray(initialQuestions)
         ? initialQuestions
           .map((item) => ({
+            code: String(item?.code ?? '').trim(),
+            type: String(item?.type ?? 'mcq').toLowerCase() === 'percentage' ? 'percentage' : 'mcq',
             question: String(item?.question ?? '').trim(),
             answers: Array.isArray(item?.answers) ? item.answers.slice(0, 4).map((ans) => String(ans ?? '').trim()) : []
           }))
-          .filter((item) => item.question !== '' && item.answers.length === 4 && item.answers.every((ans) => ans !== ''))
+          .filter((item) => item.code !== '' && item.question !== '' && (
+            (item.type === 'mcq' && item.answers.length === 4 && item.answers.every((ans) => ans !== '')) ||
+            item.type === 'percentage'
+          ))
         : [];
+      const questionByCode = new Map(questionPool.map((item) => [item.code, item]));
       const quizOrderFromSession = Array.isArray(sessionInfo?.quizOrder)
-        ? sessionInfo.quizOrder.map((value) => Number.parseInt(value, 10)).filter((value) => Number.isInteger(value))
+        ? sessionInfo.quizOrder.map((value) => String(value ?? '').trim()).filter((value) => value !== '')
         : [];
       const orderedQuizQuestions = (quizOrderFromSession.length === questionPool.length && questionPool.length)
         ? quizOrderFromSession
-          .map((sourceIndex) => questionPool[sourceIndex - 1] || null)
-          .filter((item) => item && item.question && Array.isArray(item.answers) && item.answers.length === 4)
+          .map((code) => questionByCode.get(code) || null)
+          .filter((item) => item && item.question && (
+            (item.type === 'mcq' && Array.isArray(item.answers) && item.answers.length === 4) ||
+            item.type === 'percentage'
+          ))
         : [];
       const quizQuestions = orderedQuizQuestions.length === questionPool.length ? orderedQuizQuestions : questionPool;
       const answeredFromSession = Number.parseInt(sessionInfo?.answered ?? 0, 10);
@@ -2208,6 +2353,9 @@ $sessionPayload = [
         Array.from(quizAnswersEl.querySelectorAll('button')).forEach((node) => {
           node.disabled = true;
         });
+        Array.from(quizAnswersEl.querySelectorAll('input')).forEach((node) => {
+          node.disabled = true;
+        });
       };
       const clearQuizTimer = () => {
         if (quizTimerHandle) {
@@ -2231,15 +2379,17 @@ $sessionPayload = [
           });
         } catch {}
       };
-      const persistQuizAnswer = async (questionText, answerText) => {
+      const persistQuizAnswer = async (questionCode, questionText, answerText) => {
+        const code = String(questionCode ?? '').trim();
         const question = String(questionText ?? '').trim();
-        if (!question) return;
+        if (!code || !question) return;
         try {
           await fetch(window.location.href, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               action: 'log_answer',
+              questionCode: code,
               question,
               answer: String(answerText ?? '').trim(),
               csrf: csrfToken
@@ -2253,7 +2403,7 @@ $sessionPayload = [
         markQuizButtonsDisabled();
         const currentItem = quizQuestions[quizIndex] || null;
         if (currentItem && currentItem.question) {
-          void persistQuizAnswer(currentItem.question, '');
+          void persistQuizAnswer(currentItem.code, currentItem.question, '');
         }
         const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
         void persistAnsweredProgress(answeredCount);
@@ -2305,7 +2455,7 @@ $sessionPayload = [
         markQuizButtonsDisabled();
         const currentItem = quizQuestions[quizIndex] || null;
         if (currentItem && currentItem.question) {
-          void persistQuizAnswer(currentItem.question, answerText);
+          void persistQuizAnswer(currentItem.code, currentItem.question, answerText);
         }
         const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
         void persistAnsweredProgress(answeredCount);
@@ -2327,6 +2477,26 @@ $sessionPayload = [
           void continueQuiz();
         }, 900);
       };
+      const handlePercentageAnswer = async (submitButton, rangeInput) => {
+        if (quizLocked) return;
+        if (!(rangeInput instanceof HTMLInputElement)) return;
+        quizLocked = true;
+        clearQuizTimer();
+        markQuizButtonsDisabled();
+        const currentItem = quizQuestions[quizIndex] || null;
+        const value = Math.max(0, Math.min(100, Number.parseInt(rangeInput.value || '0', 10)));
+        if (currentItem && currentItem.question) {
+          void persistQuizAnswer(currentItem.code, currentItem.question, String(value));
+        }
+        const answeredCount = Math.min(quizQuestions.length, quizIndex + 1);
+        void persistAnsweredProgress(answeredCount);
+        if (submitButton instanceof HTMLButtonElement) {
+          submitButton.classList.add('is-correct');
+        }
+        setTimeout(() => {
+          void continueQuiz();
+        }, 700);
+      };
       const renderQuizQuestion = () => {
         if (!quizQuestionEl || !quizAnswersEl || !quizCounterEl) {
           return;
@@ -2344,6 +2514,37 @@ $sessionPayload = [
         quizCounterEl.textContent = `${toFaDigits(quizIndex + 1)} از ${toFaDigits(total)}`;
         quizQuestionEl.textContent = item.question;
         quizAnswersEl.innerHTML = '';
+        if (item.type === 'percentage') {
+          const wrap = document.createElement('div');
+          wrap.className = 'quiz-percentage-wrap';
+          const valueLabel = document.createElement('div');
+          valueLabel.className = 'quiz-percentage-value';
+          valueLabel.textContent = `${toFaDigits(50)}%`;
+          const slider = document.createElement('input');
+          slider.type = 'range';
+          slider.min = '0';
+          slider.max = '100';
+          slider.step = '1';
+          slider.value = '50';
+          slider.className = 'quiz-percentage-slider';
+          slider.addEventListener('input', () => {
+            const val = Math.max(0, Math.min(100, Number.parseInt(slider.value || '0', 10)));
+            valueLabel.textContent = `${toFaDigits(val)}%`;
+          });
+          const submit = document.createElement('button');
+          submit.type = 'button';
+          submit.className = 'quiz-answer-btn quiz-percentage-submit';
+          submit.textContent = 'Submit Percentage';
+          submit.addEventListener('click', () => {
+            void handlePercentageAnswer(submit, slider);
+          });
+          wrap.appendChild(valueLabel);
+          wrap.appendChild(slider);
+          wrap.appendChild(submit);
+          quizAnswersEl.appendChild(wrap);
+          startQuizTimer();
+          return;
+        }
         const shuffledAnswers = item.answers
           .map((answer, index) => ({ text: answer, isCorrect: index === 0 }));
         for (let i = shuffledAnswers.length - 1; i > 0; i -= 1) {
@@ -3078,3 +3279,4 @@ $sessionPayload = [
     </script>
   </body>
 </html>
+

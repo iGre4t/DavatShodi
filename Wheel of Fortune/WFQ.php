@@ -4,6 +4,7 @@ declare(strict_types=1);
 $wfqStorePath = __DIR__ . '/WFQ list.json';
 $wfqInviteesCsvPath = __DIR__ . '/WF Event/Invitees mapped.csv';
 $wfqAnswersCsvPath = __DIR__ . '/WF Event/Answers.csv';
+$wfqCodeStatePath = __DIR__ . '/WFQ code state.json';
 
 function wfqReadCsv(string $path): array
 {
@@ -112,6 +113,7 @@ function wfqNormalizeItem(array $item): array
   }
   return [
     'id' => trim((string)($item['id'] ?? '')) ?: ('q_' . bin2hex(random_bytes(6))),
+    'code' => trim((string)($item['code'] ?? '')),
     'type' => $type,
     'question' => trim((string)($item['question'] ?? '')),
     'answers' => array_map(static fn($v) => trim((string)$v), $answers),
@@ -154,6 +156,80 @@ function wfqSaveStore(string $path, array $rows): bool
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
+function wfqLoadCodeState(string $path): array
+{
+  if (!is_file($path)) {
+    return ['nextNumber' => 1];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return ['nextNumber' => 1];
+  }
+  $decoded = json_decode($content, true);
+  $next = is_array($decoded) ? (int)($decoded['nextNumber'] ?? 1) : 1;
+  if ($next < 1) {
+    $next = 1;
+  }
+  return ['nextNumber' => $next];
+}
+
+function wfqSaveCodeState(string $path, array $state): bool
+{
+  $dir = dirname($path);
+  if (!is_dir($dir)) {
+    mkdir($dir, 0777, true);
+  }
+  $next = (int)($state['nextNumber'] ?? 1);
+  if ($next < 1) {
+    $next = 1;
+  }
+  $json = json_encode(['nextNumber' => $next], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function wfqExtractCodeNumber(string $code): int
+{
+  if (!preg_match('/^Q(\d+)$/', $code, $m)) {
+    return -1;
+  }
+  return (int)$m[1];
+}
+
+function wfqFormatCode(int $number): string
+{
+  return 'Q' . str_pad((string)$number, 5, '0', STR_PAD_LEFT);
+}
+
+function wfqReserveOrCreateCode(string $candidateCode, array &$usedCodes, array &$state): string
+{
+  $candidate = strtoupper(trim($candidateCode));
+  if ($candidate !== '' && !isset($usedCodes[$candidate])) {
+    $num = wfqExtractCodeNumber($candidate);
+    if ($num > 0) {
+      $usedCodes[$candidate] = true;
+      $next = (int)($state['nextNumber'] ?? 1);
+      if ($num >= $next) {
+        $state['nextNumber'] = $num + 1;
+      }
+      return $candidate;
+    }
+  }
+
+  $next = max(1, (int)($state['nextNumber'] ?? 1));
+  while (true) {
+    $code = wfqFormatCode($next);
+    if (!isset($usedCodes[$code])) {
+      $usedCodes[$code] = true;
+      $state['nextNumber'] = $next + 1;
+      return $code;
+    }
+    $next += 1;
+  }
+}
+
 function wfqBuildItemByIdMap(array $items): array
 {
   $map = [];
@@ -177,13 +253,22 @@ function wfqBuildAnswersHeader(array $items): array
     if (!is_array($item)) {
       continue;
     }
+    $code = strtoupper(trim((string)($item['code'] ?? '')));
     $question = trim((string)($item['question'] ?? ''));
-    if ($question === '') {
+    if ($code === '' || $question === '') {
       continue;
     }
-    $header[] = $question;
+    $header[] = "{$code} | {$question}";
   }
   return $header;
+}
+
+function wfqExtractCodeFromAnswerHeader(string $headerCell): string
+{
+  if (!preg_match('/^\s*(Q\d+)\b/i', $headerCell, $m)) {
+    return '';
+  }
+  return strtoupper(trim((string)$m[1]));
 }
 
 function wfqSyncAnswersSheet(string $answersPath, array $oldItems, array $newItems): bool
@@ -197,10 +282,16 @@ function wfqSyncAnswersSheet(string $answersPath, array $oldItems, array $newIte
   }
 
   $oldHeaderLookup = [];
+  $oldHeaderByCode = [];
   foreach ($header as $idx => $name) {
-    $key = trim((string)$name);
+    $cell = trim((string)$name);
+    $key = $cell;
     if ($key !== '' && !array_key_exists($key, $oldHeaderLookup)) {
       $oldHeaderLookup[$key] = (int)$idx;
+    }
+    $code = wfqExtractCodeFromAnswerHeader($cell);
+    if ($code !== '' && !array_key_exists($code, $oldHeaderByCode)) {
+      $oldHeaderByCode[$code] = (int)$idx;
     }
   }
 
@@ -208,20 +299,38 @@ function wfqSyncAnswersSheet(string $answersPath, array $oldItems, array $newIte
   $newHeader = wfqBuildAnswersHeader($newItems);
   $columnSources = [];
   for ($i = 1; $i < count($newHeader); $i += 1) {
-    $question = $newHeader[$i];
+    $newHeaderCell = $newHeader[$i];
     $sourceIndex = -1;
     $newItem = $newItems[$i - 1] ?? null;
     if (is_array($newItem)) {
       $id = trim((string)($newItem['id'] ?? ''));
+      $newCode = strtoupper(trim((string)($newItem['code'] ?? '')));
+      if ($newCode !== '' && array_key_exists($newCode, $oldHeaderByCode)) {
+        $sourceIndex = (int)$oldHeaderByCode[$newCode];
+      }
       if ($id !== '' && isset($oldById[$id])) {
-        $oldQuestion = trim((string)($oldById[$id]['question'] ?? ''));
-        if ($oldQuestion !== '' && array_key_exists($oldQuestion, $oldHeaderLookup)) {
-          $sourceIndex = (int)$oldHeaderLookup[$oldQuestion];
+        $oldCode = strtoupper(trim((string)($oldById[$id]['code'] ?? '')));
+        if ($sourceIndex < 0 && $oldCode !== '' && array_key_exists($oldCode, $oldHeaderByCode)) {
+          $sourceIndex = (int)$oldHeaderByCode[$oldCode];
+        }
+        $oldHeaderCell = '';
+        if ($oldCode !== '') {
+          $oldQuestion = trim((string)($oldById[$id]['question'] ?? ''));
+          if ($oldQuestion !== '') {
+            $oldHeaderCell = "{$oldCode} | {$oldQuestion}";
+          }
+        }
+        if ($sourceIndex < 0 && $oldHeaderCell !== '' && array_key_exists($oldHeaderCell, $oldHeaderLookup)) {
+          $sourceIndex = (int)$oldHeaderLookup[$oldHeaderCell];
+        }
+        $oldQuestionOnly = trim((string)($oldById[$id]['question'] ?? ''));
+        if ($sourceIndex < 0 && $oldQuestionOnly !== '' && array_key_exists($oldQuestionOnly, $oldHeaderLookup)) {
+          $sourceIndex = (int)$oldHeaderLookup[$oldQuestionOnly];
         }
       }
     }
-    if ($sourceIndex < 0 && array_key_exists($question, $oldHeaderLookup)) {
-      $sourceIndex = (int)$oldHeaderLookup[$question];
+    if ($sourceIndex < 0 && array_key_exists($newHeaderCell, $oldHeaderLookup)) {
+      $sourceIndex = (int)$oldHeaderLookup[$newHeaderCell];
     }
     $columnSources[] = $sourceIndex;
   }
@@ -250,6 +359,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   if ($action === 'list') {
     wfqEnsureInviteesColumns($wfqInviteesCsvPath);
     $items = wfqLoadStore($wfqStorePath);
+    $codeState = wfqLoadCodeState($wfqCodeStatePath);
+    $usedCodes = [];
+    $repaired = [];
+    foreach ($items as $item) {
+      $item['code'] = wfqReserveOrCreateCode((string)($item['code'] ?? ''), $usedCodes, $codeState);
+      $repaired[] = $item;
+    }
+    if (count($repaired) === count($items)) {
+      $items = $repaired;
+      wfqSaveStore($wfqStorePath, $items);
+      wfqSaveCodeState($wfqCodeStatePath, $codeState);
+    }
     if (!wfqSyncAnswersSheet($wfqAnswersCsvPath, $items, $items)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with questions.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -268,6 +389,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     }
 
     $oldItems = wfqLoadStore($wfqStorePath);
+    $codeState = wfqLoadCodeState($wfqCodeStatePath);
+    $usedCodes = [];
     $items = [];
     foreach ($decoded as $index => $row) {
       if (!is_array($row)) {
@@ -289,11 +412,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
           }
         }
       }
+      $item['code'] = wfqReserveOrCreateCode((string)($item['code'] ?? ''), $usedCodes, $codeState);
       $items[] = $item;
     }
 
     if (!wfqSaveStore($wfqStorePath, $items)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save questions.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!wfqSaveCodeState($wfqCodeStatePath, $codeState)) {
+      wfqSaveStore($wfqStorePath, $oldItems);
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save question code state.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     if (!wfqSyncAnswersSheet($wfqAnswersCsvPath, $oldItems, $items)) {
@@ -525,6 +654,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
         <td>${index + 1}</td>
         <td>
           <div class="wfq-row-grid">
+            <div class="muted small">Code: ${esc(item.code || 'Auto')}</div>
             <div class="wfq-type-group">
               <label class="wfq-type-option">
                 <input type="radio" name="row-type-${esc(item.id)}" data-field="type" value="mcq" ${isMcq ? 'checked' : ''} />
@@ -571,6 +701,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     const data = await postAction('list');
     items = Array.isArray(data.items) ? data.items.map((item) => ({
       id: String(item.id || makeId()),
+      code: String(item.code || ''),
       type: normalizeType(item.type),
       question: String(item.question || ''),
       answers: normalizeAnswers(item.answers),
@@ -585,6 +716,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     const type = normalizeType(fd.get('questionType'));
     const next = {
       id: makeId(),
+      code: '',
       type,
       question: String(fd.get('question') ?? '').trim(),
       answers: type === 'mcq' ? [
