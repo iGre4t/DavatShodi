@@ -1381,6 +1381,7 @@ $sessionPayload = [
       .quiz-answers-grid--single {
         width: min(420px, calc(100% - 8px));
         grid-template-columns: 1fr;
+        padding-bottom: 86px;
       }
 
       .quiz-timer-track {
@@ -1487,6 +1488,7 @@ $sessionPayload = [
         appearance: none;
         height: 26px;
         background: transparent;
+        --range-progress: 50%;
       }
       .quiz-percentage-slider:focus {
         outline: none;
@@ -1494,7 +1496,13 @@ $sessionPayload = [
       .quiz-percentage-slider::-webkit-slider-runnable-track {
         height: 10px;
         border-radius: 999px;
-        background: linear-gradient(90deg, #2f8fff 0%, #66b2ff 100%);
+        background: linear-gradient(
+          90deg,
+          #2f8fff 0%,
+          #66b2ff var(--range-progress),
+          #e5e7eb var(--range-progress),
+          #e5e7eb 100%
+        );
       }
       .quiz-percentage-slider::-webkit-slider-thumb {
         appearance: none;
@@ -1509,7 +1517,13 @@ $sessionPayload = [
       .quiz-percentage-slider::-moz-range-track {
         height: 10px;
         border-radius: 999px;
-        background: linear-gradient(90deg, #2f8fff 0%, #66b2ff 100%);
+        background: linear-gradient(
+          90deg,
+          #2f8fff 0%,
+          #66b2ff var(--range-progress),
+          #e5e7eb var(--range-progress),
+          #e5e7eb 100%
+        );
       }
       .quiz-percentage-slider::-moz-range-thumb {
         width: 22px;
@@ -1523,6 +1537,22 @@ $sessionPayload = [
       .quiz-percentage-submit {
         width: 100%;
         min-height: 52px;
+      }
+      .quiz-percentage-submit-bottom {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 22px;
+        width: auto;
+        background: #2f8fff;
+        border-color: #2f8fff;
+        color: #fff;
+        font-weight: 700;
+        box-shadow: 0 10px 22px rgba(47, 143, 255, 0.35);
+      }
+      .quiz-percentage-submit-bottom:hover {
+        background: #1f76e6;
+        border-color: #1f76e6;
       }
 
       .login-area {
@@ -2625,14 +2655,16 @@ $sessionPayload = [
           slider.step = '1';
           slider.value = '50';
           slider.className = 'quiz-percentage-slider';
+          slider.style.setProperty('--range-progress', '50%');
           slider.addEventListener('input', () => {
             const val = Math.max(0, Math.min(100, Number.parseInt(slider.value || '0', 10)));
             valueLabel.textContent = `${toFaDigits(val)}%`;
+            slider.style.setProperty('--range-progress', `${val}%`);
           });
           const submit = document.createElement('button');
           submit.type = 'button';
-          submit.className = 'quiz-answer-btn quiz-percentage-submit';
-          submit.textContent = 'Submit Percentage';
+          submit.className = 'quiz-answer-btn quiz-percentage-submit quiz-percentage-submit-bottom';
+          submit.textContent = 'بعدی';
           submit.addEventListener('click', () => {
             void handlePercentageAnswer(submit, slider);
           });
