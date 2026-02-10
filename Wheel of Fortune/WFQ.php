@@ -469,6 +469,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   .wfq-save-wrap {
     margin-top: 12px;
   }
+  .wfq-drag-cell {
+    width: 56px;
+    text-align: center;
+  }
+  .wfq-drag-handle {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: grab;
+    padding: 6px;
+  }
+  .wfq-drag-handle:active {
+    cursor: grabbing;
+  }
+  .wfq-row-dragging {
+    opacity: 0.55;
+  }
+  .wfq-row-drop-target {
+    outline: 2px dashed var(--primary);
+    outline-offset: -2px;
+  }
   .wfq-type-group {
     display: flex;
     flex-wrap: wrap;
@@ -557,10 +580,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
           <th>#</th>
           <th>Question & Answers</th>
           <th>Actions</th>
+          <th class="wfq-drag-cell">Sort</th>
         </tr>
       </thead>
       <tbody id="wfq-list-body">
-        <tr><td colspan="3" class="muted">Loading questions...</td></tr>
+        <tr><td colspan="4" class="muted">Loading questions...</td></tr>
       </tbody>
     </table>
   </div>
@@ -584,6 +608,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
   const formAnswerInputs = form.querySelectorAll('input[name="answer1"], input[name="answer2"], input[name="answer3"], input[name="answer4"]');
 
   let items = [];
+  let draggedRowId = '';
 
   const esc = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -642,7 +667,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
 
   const render = () => {
     if (!items.length) {
-      body.innerHTML = '<tr><td colspan="3" class="muted">No questions added yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" class="muted">No questions added yet.</td></tr>';
       return;
     }
 
@@ -650,7 +675,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
       const type = normalizeType(item.type);
       const isMcq = type === 'mcq';
       const answers = normalizeAnswers(item.answers);
-      return `<tr data-row-id="${esc(item.id)}">
+      return `<tr data-row-id="${esc(item.id)}" draggable="true">
         <td>${index + 1}</td>
         <td>
           <div class="wfq-row-grid">
@@ -679,8 +704,36 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
             <button type="button" class="btn ghost" data-delete-id="${esc(item.id)}">Delete</button>
           </div>
         </td>
+        <td class="wfq-drag-cell">
+          <button type="button" class="wfq-drag-handle" data-drag-handle="1" title="Drag to reorder" aria-label="Drag to reorder">&#9776;</button>
+        </td>
       </tr>`;
     }).join('');
+  };
+
+  const reorderById = (dragId, targetId, placeAfter) => {
+    const fromIndex = items.findIndex((item) => item.id === dragId);
+    const toIndex = items.findIndex((item) => item.id === targetId);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return false;
+    const [moved] = items.splice(fromIndex, 1);
+    let insertIndex = toIndex;
+    if (fromIndex < toIndex) {
+      insertIndex = placeAfter ? toIndex : toIndex - 1;
+    } else {
+      insertIndex = placeAfter ? toIndex + 1 : toIndex;
+    }
+    insertIndex = Math.max(0, Math.min(items.length, insertIndex));
+    items.splice(insertIndex, 0, moved);
+    return true;
+  };
+
+  const clearDragVisuals = () => {
+    Array.from(body.querySelectorAll('.wfq-row-drop-target')).forEach((node) => {
+      node.classList.remove('wfq-row-drop-target');
+    });
+    Array.from(body.querySelectorAll('.wfq-row-dragging')).forEach((node) => {
+      node.classList.remove('wfq-row-dragging');
+    });
   };
 
   const postAction = async (action, payload = {}) => {
@@ -797,6 +850,68 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     items = items.filter((item) => item.id !== id);
     render();
     setStatus('Row removed from list. Click Save to persist changes.');
+  });
+
+  body.addEventListener('dragstart', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const handle = target.closest('[data-drag-handle]');
+    if (!handle) {
+      event.preventDefault();
+      return;
+    }
+    const row = handle.closest('tr[data-row-id]');
+    if (!(row instanceof HTMLTableRowElement)) {
+      event.preventDefault();
+      return;
+    }
+    draggedRowId = row.getAttribute('data-row-id') || '';
+    if (!draggedRowId) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add('wfq-row-dragging');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', draggedRowId);
+    }
+  });
+
+  body.addEventListener('dragover', (event) => {
+    if (!draggedRowId) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const row = target.closest('tr[data-row-id]');
+    if (!(row instanceof HTMLTableRowElement)) return;
+    const targetId = row.getAttribute('data-row-id') || '';
+    if (!targetId || targetId === draggedRowId) return;
+    event.preventDefault();
+    clearDragVisuals();
+    row.classList.add('wfq-row-drop-target');
+  });
+
+  body.addEventListener('drop', (event) => {
+    if (!draggedRowId) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const row = target.closest('tr[data-row-id]');
+    if (!(row instanceof HTMLTableRowElement)) return;
+    const targetId = row.getAttribute('data-row-id') || '';
+    if (!targetId || targetId === draggedRowId) return;
+    event.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const placeAfter = event.clientY > (rect.top + rect.height / 2);
+    if (reorderById(draggedRowId, targetId, placeAfter)) {
+      render();
+      setStatus('Order changed. Click Save to persist changes.');
+    }
+    draggedRowId = '';
+    clearDragVisuals();
+  });
+
+  body.addEventListener('dragend', () => {
+    draggedRowId = '';
+    clearDragVisuals();
   });
 
   saveAllBtn.addEventListener('click', async () => {
