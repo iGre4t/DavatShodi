@@ -2231,6 +2231,7 @@ $sessionPayload = [
       }
 
       .wheel-slice-overlay {
+        display: none;
         position: absolute;
         top: 36px;
         left: 50%;
@@ -3438,6 +3439,37 @@ $sessionPayload = [
           ctx.fillStyle = palette[i % palette.length];
           ctx.fill();
         }
+
+        // Shine overlay for the currently selected slice (under the top pointer).
+        const selectedCenter = -Math.PI / 2;
+        const selectedHalf = Math.min(0.22, Math.max(0.08, slice * 0.42));
+        const selectedRadius = radius * 0.985;
+        const sweepPhase = (Date.now() % 1400) / 1400;
+        const sweepOffset = (sweepPhase - 0.5) * (selectedHalf * 1.2);
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, selectedRadius, selectedCenter - selectedHalf, selectedCenter + selectedHalf);
+        ctx.closePath();
+        const selectedGlow = ctx.createLinearGradient(0, -selectedRadius, 0, selectedRadius * 0.15);
+        selectedGlow.addColorStop(0, 'rgba(255, 255, 255, 0.34)');
+        selectedGlow.addColorStop(0.45, 'rgba(255, 255, 255, 0.14)');
+        selectedGlow.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
+        ctx.fillStyle = selectedGlow;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(
+          0,
+          0,
+          selectedRadius,
+          (selectedCenter + sweepOffset) - (selectedHalf * 0.24),
+          (selectedCenter + sweepOffset) + (selectedHalf * 0.24)
+        );
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.fill();
 
         if (wheelStatus !== 'inactive') {
           ctx.beginPath();
