@@ -1517,9 +1517,9 @@ $sessionPayload = [
         gap: 10px;
       }
       .quiz-answers-grid--single {
-        width: min(420px, calc(100% - 8px));
+        width: min(360px, calc(100% - 8px));
         grid-template-columns: 1fr;
-        padding-bottom: 86px;
+        padding-bottom: 98px;
       }
 
       .quiz-timer-track {
@@ -1686,10 +1686,10 @@ $sessionPayload = [
       }
       .quiz-percentage-submit-bottom {
         position: absolute;
-        left: 18px;
-        right: 18px;
-        bottom: 22px;
-        width: auto;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(360px, calc(100% - 36px));
+        bottom: 10px;
         background: #2f8fff;
         border-color: #2f8fff;
         color: #fff;
@@ -3478,10 +3478,8 @@ $sessionPayload = [
 
         if (wheelStatus !== 'inactive') {
           const pointerCenter = -Math.PI / 2;
-          const pointerHalf = Math.min(0.22, Math.max(0.08, slice * 0.46));
+          const pointerHalf = Math.min(0.42, Math.max(0.09, slice * 0.5));
           const pointerRadius = radius * 0.985;
-          const sweepPhase = (Date.now() % 1200) / 1200;
-          const sweepOffset = (sweepPhase - 0.5) * (pointerHalf * 1.45);
 
           ctx.save();
           ctx.translate(center, center);
@@ -3496,18 +3494,22 @@ $sessionPayload = [
           ctx.fillStyle = pointerGlow;
           ctx.fill();
 
+          // Static bright core: no switching animation in pointer area.
           ctx.beginPath();
           ctx.moveTo(0, 0);
-          ctx.arc(
-            0,
-            0,
-            pointerRadius,
-            (pointerCenter + sweepOffset) - (pointerHalf * 0.26),
-            (pointerCenter + sweepOffset) + (pointerHalf * 0.26)
-          );
+          ctx.arc(0, 0, pointerRadius, pointerCenter - (pointerHalf * 0.2), pointerCenter + (pointerHalf * 0.2));
           ctx.closePath();
           ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
           ctx.fill();
+
+          // Thick white outer cap connected to the bulb margin.
+          const capRadius = radius + 7.2;
+          ctx.beginPath();
+          ctx.arc(0, 0, capRadius, pointerCenter - (pointerHalf * 1.02), pointerCenter + (pointerHalf * 1.02));
+          ctx.lineWidth = 8.4;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.96)';
+          ctx.lineCap = 'round';
+          ctx.stroke();
           ctx.restore();
         }
         ctx.beginPath();
