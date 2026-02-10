@@ -2769,7 +2769,6 @@ $sessionPayload = [
       ];
       const buildSliceIconLayout = (sliceCount) => {
         const total = Math.max(1, Number.parseInt(sliceCount ?? 0, 10));
-        const perSlice = 3;
         const layout = [];
         for (let i = 0; i < total; i += 1) {
           const pool = REMIX_SLICE_ICONS.slice();
@@ -2779,7 +2778,7 @@ $sessionPayload = [
             pool[j] = pool[k];
             pool[k] = tmp;
           }
-          layout.push(pool.slice(0, perSlice));
+          layout.push([pool[0]]);
         }
         return layout;
       };
@@ -3490,27 +3489,22 @@ $sessionPayload = [
         }
 
         // Decorative remix icons per slice.
-        const iconSize = Math.max(15, Math.min(24, radius * 0.11));
-        const iconRadii = [radius * 0.42, radius * 0.58, radius * 0.73];
-        const iconOffsets = [-slice * 0.2, 0, slice * 0.2];
+        const iconSize = Math.max(17, Math.min(26, radius * 0.12));
         ctx.font = `${iconSize}px remixicon`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         for (let i = 0; i < count; i += 1) {
           const icons = Array.isArray(sliceIconLayout[i]) ? sliceIconLayout[i] : [];
           const mid = (i * slice) + (slice / 2);
-          for (let j = 0; j < Math.min(3, icons.length); j += 1) {
-            const glyph = String(icons[j] ?? '');
-            if (!glyph) continue;
-            const a = mid + iconOffsets[j];
-            const r = iconRadii[j];
-            const x = Math.cos(a) * r;
-            const y = Math.sin(a) * r;
-            ctx.fillStyle = wheelStatus === 'inactive'
-              ? 'rgba(233, 240, 250, 0.62)'
-              : 'rgba(255, 255, 255, 0.28)';
-            ctx.fillText(glyph, x, y);
-          }
+          const glyph = String(icons[0] ?? '');
+          if (!glyph) continue;
+          const r = radius * 0.62;
+          const x = Math.cos(mid) * r;
+          const y = Math.sin(mid) * r;
+          ctx.fillStyle = wheelStatus === 'inactive'
+            ? 'rgba(233, 240, 250, 0.62)'
+            : 'rgba(255, 255, 255, 0.3)';
+          ctx.fillText(glyph, x, y);
         }
 
         if (wheelStatus !== 'inactive' && count > 1) {
