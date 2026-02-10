@@ -446,6 +446,71 @@ function findHeaderIndex(array $header, string $needle): int
   return -1;
 }
 
+function findFirstHeaderIndex(array $header, array $needles): int
+{
+  foreach ($needles as $needle) {
+    $index = findHeaderIndex($header, (string)$needle);
+    if ($index >= 0) {
+      return $index;
+    }
+  }
+  return -1;
+}
+
+function resolveInviteeFullName(array $header, array $mapping, array $row, string $fallbackWorkId): string
+{
+  $mappingKeys = ['fullName', 'full_name', 'full name', 'name', 'displayName', 'display_name', 'display name'];
+  foreach ($mappingKeys as $key) {
+    $mappedIndex = $mapping[$key] ?? null;
+    if (is_numeric($mappedIndex) && (int)$mappedIndex >= 0) {
+      $index = (int)$mappedIndex;
+      $value = trim((string)($row[$index] ?? ''));
+      if ($value !== '') {
+        return $value;
+      }
+    }
+  }
+  $nameIndex = findFirstHeaderIndex($header, [
+    'full name',
+    'fullname',
+    'display name',
+    'name',
+    'first name',
+    'last name',
+    'first name last name',
+    'نام و نام خانوادگی',
+    'نام‌و‌نام خانوادگی',
+    'نام کامل',
+    'نام'
+  ]);
+  if ($nameIndex >= 0) {
+    $value = trim((string)($row[$nameIndex] ?? ''));
+    if ($value !== '') {
+      return $value;
+    }
+  }
+  return $fallbackWorkId;
+}
+
+function parseEpochValue($raw): ?int
+{
+  if (is_int($raw) || is_float($raw) || (is_string($raw) && preg_match('/^\d+$/', trim($raw)))) {
+    $ts = (int)$raw;
+    if ($ts > 0) {
+      return $ts;
+    }
+  }
+  $text = trim((string)$raw);
+  if ($text === '') {
+    return null;
+  }
+  $parsed = strtotime($text);
+  if ($parsed === false || $parsed <= 0) {
+    return null;
+  }
+  return $parsed;
+}
+
 function ensureInviteeColumns(array &$rows, array $columns): array
 {
   if (!$rows) {
@@ -492,6 +557,7 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'logins',
     'count of rolls',
     'prize won',
+    'prize won at',
     'wheel angle',
     'invitees',
     'Answered'
@@ -767,11 +833,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $_SESSION['wf_work_id'] = $username;
     $_SESSION['wf_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
     $prizeIndex = $columns['prize won'] ?? -1;
+    $prizeWonAtIndex = $columns['prize won at'] ?? -1;
     $angleIndex = $columns['wheel angle'] ?? -1;
     $questions = readQuestionStore($questionsStorePath);
     $questionCodes = array_values(array_map(static fn($item) => (string)($item['code'] ?? ''), $questions));
     $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes, (bool)$wfqSettings['randomOrder']);
     $prizeWon = $prizeIndex >= 0 ? trim((string)($rows[$rowIndex][$prizeIndex] ?? '')) : '';
+    $fullName = resolveInviteeFullName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $username);
+    $prizeWonAt = null;
+    if ($prizeWonAtIndex >= 0) {
+      $prizeWonAt = parseEpochValue($rows[$rowIndex][$prizeWonAtIndex] ?? null);
+    }
     $wheelAngle = null;
     if ($angleIndex >= 0) {
       $angleValue = trim((string)($rows[$rowIndex][$angleIndex] ?? ''));
@@ -781,7 +853,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
     echo json_encode([
       'status' => 'ok',
+      'fullName' => $fullName,
       'prizeWon' => $prizeWon,
+      'prizeWonAt' => $prizeWonAt,
       'wheelAngle' => $wheelAngle,
       'quizOrder' => $quizState['order'],
       'answered' => $quizState['answered']
@@ -902,6 +976,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $workIdIndex = $table['workIdIndex'];
     $columns = $table['columns']['index'] ?? [];
     $prizeIndex = $columns['prize won'] ?? -1;
+    $prizeWonAtIndex = $columns['prize won at'] ?? -1;
     $angleIndex = $columns['wheel angle'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $prizeIndex < 0) {
@@ -909,6 +984,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $rows[$rowIndex][$prizeIndex] = $prizeName;
+    if ($prizeWonAtIndex >= 0) {
+      $rows[$rowIndex][$prizeWonAtIndex] = (string)time();
+    }
     if ($angleIndex >= 0 && $wheelAngle !== null) {
       $rows[$rowIndex][$angleIndex] = (string)$wheelAngle;
     }
@@ -1033,7 +1111,9 @@ if ($sessionAuthed && ($inviteesMtime === null || ($inviteesMtime !== ($_SESSION
   $sessionAuthed = false;
 }
 $sessionWorkId = $sessionAuthed ? trim((string)($_SESSION['wf_work_id'] ?? '')) : '';
+$sessionFullName = $sessionWorkId;
 $sessionPrizeWon = '';
+$sessionPrizeWonAt = null;
 $sessionWheelAngle = null;
 $sessionQuizOrder = [];
 $sessionAnswered = 0;
@@ -1044,6 +1124,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   $workIdIndex = $table['workIdIndex'];
   $columns = $table['columns']['index'] ?? [];
   $prizeIndex = $columns['prize won'] ?? -1;
+  $prizeWonAtIndex = $columns['prize won at'] ?? -1;
   $angleIndex = $columns['wheel angle'] ?? -1;
   $questions = readQuestionStore($questionsStorePath);
   $questionCodes = array_values(array_map(static fn($item) => (string)($item['code'] ?? ''), $questions));
@@ -1056,6 +1137,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     $sessionAuthed = false;
     $sessionWorkId = '';
   } else {
+    $sessionFullName = resolveInviteeFullName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $sessionWorkId);
     $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes, (bool)$wfqSettings['randomOrder']);
     $sessionQuizOrder = $quizState['order'];
     $sessionAnswered = $quizState['answered'];
@@ -1064,6 +1146,9 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     }
     if ($prizeIndex >= 0) {
       $sessionPrizeWon = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
+    }
+    if ($prizeWonAtIndex >= 0) {
+      $sessionPrizeWonAt = parseEpochValue($rows[$rowIndex][$prizeWonAtIndex] ?? null);
     }
     if ($angleIndex >= 0) {
       $angleValue = trim((string)($rows[$rowIndex][$angleIndex] ?? ''));
@@ -1077,7 +1162,9 @@ $wfqSettingsForPayload = loadWfqSettings($wfqSettingsPath);
 $sessionPayload = [
   'authed' => $sessionAuthed,
   'workId' => $sessionWorkId,
+  'fullName' => $sessionFullName,
   'prizeWon' => $sessionPrizeWon,
+  'prizeWonAt' => $sessionPrizeWonAt,
   'wheelAngle' => $sessionWheelAngle,
   'quizOrder' => $sessionQuizOrder,
   'answered' => $sessionAnswered,
@@ -1327,6 +1414,35 @@ $sessionPayload = [
         padding: 12px 18px 10px;
       }
 
+      .repeat-area {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px 16px 28px;
+      }
+
+      .repeat-card {
+        width: min(360px, calc(100vw - 64px));
+        border-radius: 18px;
+        border: 1px solid #dbe7fb;
+        background: linear-gradient(155deg, #f7fbff, #edf4ff 55%, #f8fbff);
+        box-shadow: 0 18px 34px rgba(42, 93, 162, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+        padding: 18px 16px;
+        text-align: right;
+        color: #2a3f68;
+        line-height: 1.9;
+      }
+
+      .repeat-card p {
+        margin: 0;
+      }
+
+      .repeat-card p + p {
+        margin-top: 8px;
+      }
+
       .quiz-area {
         flex: 1;
         width: 100%;
@@ -1337,6 +1453,24 @@ $sessionPayload = [
         gap: 14px;
         padding: 16px 18px;
         position: relative;
+      }
+
+      .quiz-area::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M20 7h-2.2A3 3 0 0 0 18 6a3 3 0 0 0-5.2-2.1L12 4.8l-.8-.9A3 3 0 0 0 6 6c0 .35.06.69.18 1H4a1 1 0 0 0-1 1v3h1v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8h1V8a1 1 0 0 0-1-1ZM15 4.2A1.5 1.5 0 0 1 17.5 6c0 .55-.3 1.03-.74 1.29L13.6 9H12.5l1.8-3a1.5 1.5 0 0 1 .7-.8ZM6.5 6A1.5 1.5 0 0 1 9 4.2c.3.17.55.45.7.8l1.8 3H10.4L7.24 7.29A1.5 1.5 0 0 1 6.5 6ZM5 9h6v2H5V9Zm1 10v-8h5v8H6Zm7 0v-8h5v8h-5Zm6-8h-6V9h6v2Z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: center 28%;
+        background-size: min(180px, 48%);
+        opacity: 0.08;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .quiz-area > * {
+        position: relative;
+        z-index: 1;
       }
 
       .quiz-hidden {
@@ -1878,6 +2012,10 @@ $sessionPayload = [
         z-index: 50;
       }
 
+      .wf-result-dialog .confetti-layer {
+        z-index: 1;
+      }
+
       .confetti-piece {
         position: absolute;
         width: 8px;
@@ -2013,8 +2151,8 @@ $sessionPayload = [
         height: calc(100% + 36px);
         border-radius: 50%;
         background:
-          radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.92), rgba(216, 232, 255, 0.4) 45%, rgba(180, 208, 245, 0.22) 100%);
-        border: 1px solid rgba(203, 224, 252, 0.9);
+          radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.9), rgba(173, 219, 244, 0.42) 45%, rgba(0, 149, 218, 0.18) 100%);
+        border: 1px solid rgba(158, 208, 240, 0.86);
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
@@ -2025,10 +2163,12 @@ $sessionPayload = [
       .wheel-shell::after {
         content: '';
         position: absolute;
-        inset: 8px;
-        border-radius: 50%;
-        background: linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.58) 46%, rgba(255, 255, 255, 0) 76%);
-        transform: translateX(-145%);
+        width: 36%;
+        height: 150%;
+        top: -25%;
+        left: -18%;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.62) 46%, rgba(255, 255, 255, 0) 100%);
+        transform: translateX(-220%) rotate(18deg);
         opacity: 0;
         pointer-events: none;
         z-index: 2;
@@ -2040,14 +2180,14 @@ $sessionPayload = [
       }
       @keyframes wheel-shine {
         0% {
-          transform: translateX(-145%);
+          transform: translateX(-220%) rotate(18deg);
           opacity: 0;
         }
         35% {
           opacity: 0.82;
         }
         100% {
-          transform: translateX(145%);
+          transform: translateX(320%) rotate(18deg);
           opacity: 0;
         }
       }
@@ -2055,9 +2195,9 @@ $sessionPayload = [
       canvas {
         width: 100%;
         height: auto;
-        background: radial-gradient(circle at 30% 20%, #f7fbff, #e7f1ff 62%, #dce9fb 100%);
+        background: radial-gradient(circle at 30% 20%, #f5fbff, #d9edf9 62%, #b7def2 100%);
         border-radius: 50%;
-        border: 2px solid #dce8fa;
+        border: 2px solid #b8daed;
         box-shadow:
           0 20px 40px rgba(21, 66, 129, 0.24),
           inset 0 0 0 1px rgba(255, 255, 255, 0.9);
@@ -2076,13 +2216,13 @@ $sessionPayload = [
         height: 24px;
         transform: translateX(-50%);
         border-radius: 50%;
-        background: radial-gradient(circle at 35% 28%, #ffffff, #e5f0ff 65%, #c7dbf8 100%);
-        border: 2px solid #c4d9f8;
+        background: radial-gradient(circle at 35% 28%, #fff2eb, #ff9d6f 65%, #ff4f00 100%);
+        border: 2px solid #ff7a3d;
         z-index: 3;
         box-shadow:
-          0 0 0 8px rgba(47, 143, 255, 0.12),
-          0 0 24px rgba(47, 143, 255, 0.55),
-          0 8px 14px rgba(25, 83, 155, 0.28);
+          0 0 0 8px rgba(255, 79, 0, 0.14),
+          0 0 24px rgba(255, 79, 0, 0.55),
+          0 8px 14px rgba(157, 61, 14, 0.28);
       }
       .pointer::after {
         content: '';
@@ -2094,8 +2234,8 @@ $sessionPayload = [
         height: 0;
         border-left: 11px solid transparent;
         border-right: 11px solid transparent;
-        border-top: 22px solid #2f8fff;
-        filter: drop-shadow(0 4px 10px rgba(47, 143, 255, 0.45));
+        border-top: 22px solid #ff4f00;
+        filter: drop-shadow(0 4px 10px rgba(255, 79, 0, 0.45));
       }
 
       .center-spin {
@@ -2111,9 +2251,9 @@ $sessionPayload = [
         font-weight: 700;
         font-family: inherit;
         color: var(--accent-ink);
-        background: var(--accent);
+        background: #ff4f00;
         box-shadow:
-          0 14px 24px rgba(47, 143, 255, 0.34),
+          0 14px 24px rgba(255, 79, 0, 0.34),
           inset 0 1px 0 rgba(255, 255, 255, 0.46);
         cursor: pointer;
         z-index: 4;
@@ -2202,7 +2342,6 @@ $sessionPayload = [
       </div>
     </div>
     <main class="app">
-      <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
       <section class="phone">
     <div class="topbar">
           <p class="brand">چرخ شانس شگفتانه</p>
@@ -2249,6 +2388,13 @@ $sessionPayload = [
           <div id="wf-quiz-answers" class="quiz-answers-grid"></div>
           <div class="quiz-timer-track"><div id="wf-quiz-timer-fill" class="quiz-timer-fill"></div></div>
         </div>
+        <div id="wf-repeat-area" class="repeat-area quiz-hidden">
+          <div class="repeat-card">
+            <p id="wf-repeat-name">—</p>
+            <p id="wf-repeat-msg">—</p>
+            <p>با تشکر از همکاری و صبوری شما</p>
+          </div>
+        </div>
         <div id="wf-play-area" class="main-area quiz-hidden">
           <div class="hero">
             <?php if ($faviconUrl !== ''): ?>
@@ -2276,6 +2422,7 @@ $sessionPayload = [
     </main>
     <div id="wf-result-dialog" class="wf-result-dialog-overlay" aria-hidden="true">
       <section class="wf-result-dialog" role="dialog" aria-modal="true" aria-labelledby="wf-result-dialog-title">
+        <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
         <h3 id="wf-result-dialog-title" class="wf-result-dialog-title">نتیجه چرخ شما</h3>
         <div class="wf-result-dialog-content">
           <div class="result">
@@ -2432,6 +2579,9 @@ $sessionPayload = [
       const resultDialogConfirmBtn = document.getElementById('wf-result-confirm');
       const confettiLayer = document.getElementById('wf-confetti');
       const quizAreaEl = document.getElementById('wf-quiz-area');
+      const repeatAreaEl = document.getElementById('wf-repeat-area');
+      const repeatNameEl = document.getElementById('wf-repeat-name');
+      const repeatMsgEl = document.getElementById('wf-repeat-msg');
       const playAreaEl = document.getElementById('wf-play-area');
       const quizCounterEl = document.getElementById('wf-quiz-counter');
       const quizQuestionEl = document.getElementById('wf-quiz-question');
@@ -2448,10 +2598,27 @@ $sessionPayload = [
       const defaultHintText = hintEl ? hintEl.textContent : '';
       const activeHintText = 'گردونه رو بچرخون و شانست رو امتحان کن!';
       const allowRepeatRolls = false;
+      const userFullName = String(sessionInfo?.fullName ?? sessionInfo?.workId ?? '').trim();
+      const savedPrizeWonAt = Number.parseInt(sessionInfo?.prizeWonAt ?? 0, 10);
       let userPrizeName = String(sessionInfo?.prizeWon ?? '').trim();
       let userHasPrize = !allowRepeatRolls && userPrizeName !== '';
       const savedWheelAngle = Number.isFinite(Number(sessionInfo?.wheelAngle)) ? Number(sessionInfo.wheelAngle) : null;
       const toFaDigits = (value) => String(value ?? '').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+      const getElapsedLabel = (epochSeconds) => {
+        if (!Number.isFinite(epochSeconds) || epochSeconds <= 0) {
+          return 'خیلی وقت پیش';
+        }
+        const diffMinutes = Math.max(0, (Date.now() / 1000 - epochSeconds) / 60);
+        if (diffMinutes < 10) return 'لحظاتی پیش';
+        if (diffMinutes < 60) return 'دقایقی پیش';
+        if (diffMinutes < 180) return 'ساعاتی پیش';
+        if (diffMinutes < 1440) return 'چندساعت پیش';
+        if (diffMinutes < 2880) return 'یک روز پیش';
+        if (diffMinutes < 4320) return 'دو روز پیش';
+        if (diffMinutes < 10080) return 'کمتر از یک هفته پیش';
+        if (diffMinutes < 43200) return 'کمتر از یکماه پیش';
+        return 'خیلی وقت پیش';
+      };
       const questionPool = Array.isArray(initialQuestions)
         ? initialQuestions
           .map((item) => ({
@@ -2494,7 +2661,7 @@ $sessionPayload = [
       const MIN_VISIBLE_SEGMENTS = 10;
       const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
-        '#5fb0ff', '#2d86ef'
+        '#0095da', '#ff4f00'
       ];
       const DISABLED_SEGMENT_COLORS = [
         '#cdd7e8', '#dce3ef'
@@ -2513,16 +2680,41 @@ $sessionPayload = [
         if (quizAreaEl) {
           quizAreaEl.classList.add('quiz-hidden');
         }
+        if (repeatAreaEl) {
+          repeatAreaEl.classList.add('quiz-hidden');
+        }
         if (playAreaEl) {
           playAreaEl.classList.remove('quiz-hidden');
         }
       };
       const showQuizArea = () => {
+        if (repeatAreaEl) {
+          repeatAreaEl.classList.add('quiz-hidden');
+        }
         if (playAreaEl) {
           playAreaEl.classList.add('quiz-hidden');
         }
         if (quizAreaEl) {
           quizAreaEl.classList.remove('quiz-hidden');
+        }
+      };
+      const showRepeatArea = () => {
+        if (quizAreaEl) {
+          quizAreaEl.classList.add('quiz-hidden');
+        }
+        if (playAreaEl) {
+          playAreaEl.classList.add('quiz-hidden');
+        }
+        if (repeatAreaEl) {
+          repeatAreaEl.classList.remove('quiz-hidden');
+        }
+        if (repeatMsgEl) {
+          const elapsedText = getElapsedLabel(savedPrizeWonAt);
+          const fullName = userFullName || String(sessionInfo?.workId ?? '').trim();
+          if (repeatNameEl) {
+            repeatNameEl.textContent = `${fullName} عزیز`;
+          }
+          repeatMsgEl.textContent = `شما ${elapsedText} با موفقیت وارد این صفحه شدید و چالش را انجام دادید. جایزه شما توسط سیستم ثبت شده و به زودی از طرف سازمان به حساب شما واریز می‌شود.`;
         }
       };
       const markQuizButtonsDisabled = () => {
@@ -3315,7 +3507,6 @@ $sessionPayload = [
           if (resultEl) {
           resultEl.textContent = userPrizeName || '—';
           }
-          openResultDialog();
           if (spinBtn) {
             spinBtn.disabled = true;
           }
@@ -3337,6 +3528,10 @@ $sessionPayload = [
       };
 
       const initApp = async () => {
+        if (userHasPrize) {
+          showRepeatArea();
+          return;
+        }
         if (!quizCompleted && quizQuestions.length) {
           showQuizArea();
           renderQuizQuestion();
