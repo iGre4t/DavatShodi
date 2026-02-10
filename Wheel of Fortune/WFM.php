@@ -1179,6 +1179,7 @@ $sessionPayload = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>چرخ شانس شگفتانه</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
+    <link rel="stylesheet" href="../style/remixicon.css" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       :root {
         --bg: #f4f7fb;
@@ -1920,6 +1921,27 @@ $sessionPayload = [
         align-items: center;
         justify-content: center;
         gap: 12px;
+        position: relative;
+        z-index: 2;
+      }
+
+      .wf-result-gift {
+        font-size: 2.25rem;
+        color: #ff4f00;
+        line-height: 1;
+        text-shadow: 0 8px 18px rgba(255, 79, 0, 0.28);
+        animation: result-gift-shake 1.1s ease-in-out infinite;
+        transform-origin: 50% 72%;
+      }
+
+      @keyframes result-gift-shake {
+        0% { transform: rotate(0deg) translateX(0); }
+        15% { transform: rotate(-10deg) translateX(-1px); }
+        30% { transform: rotate(9deg) translateX(1px); }
+        45% { transform: rotate(-8deg) translateX(-1px); }
+        60% { transform: rotate(7deg) translateX(1px); }
+        75% { transform: rotate(-5deg) translateX(0); }
+        100% { transform: rotate(0deg) translateX(0); }
       }
 
       .wf-result-dialog-confirm {
@@ -2216,13 +2238,13 @@ $sessionPayload = [
         height: 24px;
         transform: translateX(-50%);
         border-radius: 50%;
-        background: radial-gradient(circle at 35% 28%, #fff2eb, #ff9d6f 65%, #ff4f00 100%);
-        border: 2px solid #ff7a3d;
+        background: radial-gradient(circle at 35% 28%, #f1f3f7, #6c7688 65%, #3b4250 100%);
+        border: 2px solid #4a5362;
         z-index: 3;
         box-shadow:
-          0 0 0 8px rgba(255, 79, 0, 0.14),
-          0 0 24px rgba(255, 79, 0, 0.55),
-          0 8px 14px rgba(157, 61, 14, 0.28);
+          0 0 0 8px rgba(61, 70, 84, 0.14),
+          0 0 24px rgba(61, 70, 84, 0.42),
+          0 8px 14px rgba(33, 39, 50, 0.34);
       }
       .pointer::after {
         content: '';
@@ -2234,8 +2256,8 @@ $sessionPayload = [
         height: 0;
         border-left: 11px solid transparent;
         border-right: 11px solid transparent;
-        border-top: 22px solid #ff4f00;
-        filter: drop-shadow(0 4px 10px rgba(255, 79, 0, 0.45));
+        border-top: 22px solid #3b4250;
+        filter: drop-shadow(0 4px 10px rgba(46, 53, 66, 0.46));
       }
 
       .center-spin {
@@ -2425,6 +2447,7 @@ $sessionPayload = [
         <div id="wf-confetti" class="confetti-layer" aria-hidden="true"></div>
         <h3 id="wf-result-dialog-title" class="wf-result-dialog-title">نتیجه چرخ شما</h3>
         <div class="wf-result-dialog-content">
+          <i class="ri-gift-fill wf-result-gift" aria-hidden="true"></i>
           <div class="result">
             <span class="result-label">نتیجه</span>
             <p id="wf-result" class="result-value">—</p>
@@ -2661,7 +2684,7 @@ $sessionPayload = [
       const MIN_VISIBLE_SEGMENTS = 10;
       const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
-        '#0095da', '#ff4f00'
+        '#005f93', '#003e63'
       ];
       const DISABLED_SEGMENT_COLORS = [
         '#cdd7e8', '#dce3ef'
@@ -3360,9 +3383,6 @@ $sessionPayload = [
           ctx.closePath();
           ctx.fillStyle = palette[i % palette.length];
           ctx.fill();
-          ctx.lineWidth = 1.15;
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
-          ctx.stroke();
         }
 
         if (wheelStatus !== 'inactive') {
@@ -3396,12 +3416,18 @@ $sessionPayload = [
           const x = center + Math.cos(a) * bulbOrbit;
           const y = center + Math.sin(a) * bulbOrbit;
           const isOn = ((i + bulbPhase) % 2) === 0;
+          const isBlueBulb = (i % 2) === 0;
           const outer = wheelStatus === 'inactive'
             ? (isOn ? '#d2dae7' : '#edf2f8')
-            : (isOn ? '#7fc0ff' : '#eef6ff');
+            : (isBlueBulb
+              ? (isOn ? '#4fb4ff' : '#dfeefd')
+              : (isOn ? '#ff8a4f' : '#ffe8dc'));
           const inner = wheelStatus === 'inactive'
             ? '#f4f7fb'
             : '#ffffff';
+          const edge = wheelStatus === 'inactive'
+            ? '#c9d2e2'
+            : (isBlueBulb ? '#198fe6' : '#ff4f00');
           const bulbGrad = ctx.createRadialGradient(
             x - bulbRadius * 0.35,
             y - bulbRadius * 0.4,
@@ -3412,16 +3438,16 @@ $sessionPayload = [
           );
           bulbGrad.addColorStop(0, inner);
           bulbGrad.addColorStop(0.62, outer);
-          bulbGrad.addColorStop(1, wheelStatus === 'inactive' ? '#c9d2e2' : '#4f9ef3');
+          bulbGrad.addColorStop(1, edge);
           ctx.beginPath();
           ctx.arc(x, y, bulbRadius, 0, TWO_PI);
           ctx.fillStyle = bulbGrad;
           ctx.fill();
           ctx.lineWidth = 1;
-          ctx.strokeStyle = wheelStatus === 'inactive' ? '#bec8d9' : '#cde3ff';
+          ctx.strokeStyle = wheelStatus === 'inactive' ? '#bec8d9' : (isBlueBulb ? '#acd9ff' : '#ffc8ad');
           ctx.stroke();
           if (wheelStatus !== 'inactive' && isOn) {
-            ctx.shadowColor = '#6eb8ff';
+            ctx.shadowColor = isBlueBulb ? '#6eb8ff' : '#ff8c53';
             ctx.shadowBlur = 12;
             ctx.fill();
             ctx.shadowBlur = 0;
@@ -3671,7 +3697,7 @@ $sessionPayload = [
             openResultDialog();
           }
           if (confettiLayer && !isFake) {
-            const colors = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
+            const colors = ['#0095da', '#ff4f00'];
             const dialogBounds = confettiLayer.getBoundingClientRect();
             const width = Math.max(260, dialogBounds.width || 360);
             const height = Math.max(220, dialogBounds.height || 420);
