@@ -2022,6 +2022,35 @@ $sessionPayload = [
           0 22px 34px rgba(35, 84, 154, 0.2),
           inset 0 2px 10px rgba(255, 255, 255, 0.65);
       }
+      .wheel-shell::after {
+        content: '';
+        position: absolute;
+        inset: 8px;
+        border-radius: 50%;
+        background: linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.58) 46%, rgba(255, 255, 255, 0) 76%);
+        transform: translateX(-145%);
+        opacity: 0;
+        pointer-events: none;
+        z-index: 2;
+        animation: wheel-shine 2.1s ease-in-out infinite;
+      }
+      .wheel-shell.is-spinning::after {
+        opacity: 0;
+        animation: none;
+      }
+      @keyframes wheel-shine {
+        0% {
+          transform: translateX(-145%);
+          opacity: 0;
+        }
+        35% {
+          opacity: 0.82;
+        }
+        100% {
+          transform: translateX(145%);
+          opacity: 0;
+        }
+      }
 
       canvas {
         width: 100%;
@@ -2392,6 +2421,7 @@ $sessionPayload = [
 
       const canvas = document.getElementById('wf-wheel');
       const ctx = canvas.getContext('2d');
+      const wheelShellEl = document.querySelector('.wheel-shell');
       const spinBtn = document.getElementById('wf-spin');
       const resultEl = document.getElementById('wf-result');
       const resultBox = document.querySelector('.wf-result-dialog .result');
@@ -2464,7 +2494,7 @@ $sessionPayload = [
       const MIN_VISIBLE_SEGMENTS = 10;
       const MAX_VISIBLE_SEGMENTS = 18;
       const SEGMENT_COLORS = [
-        '#2f8fff', '#4da3ff'
+        '#5fb0ff', '#2d86ef'
       ];
       const DISABLED_SEGMENT_COLORS = [
         '#cdd7e8', '#dce3ef'
@@ -3132,30 +3162,22 @@ $sessionPayload = [
         for (let i = 0; i < count; i += 1) {
           const start = i * slice;
           const end = start + slice;
-          const mid = start + (slice / 2);
           ctx.beginPath();
           ctx.moveTo(0, 0);
           ctx.arc(0, 0, radius, start, end);
           ctx.closePath();
-          const base = palette[i % palette.length];
-          const grad = ctx.createLinearGradient(
-            Math.cos(mid) * (radius * 0.1),
-            Math.sin(mid) * (radius * 0.1),
-            Math.cos(mid) * radius,
-            Math.sin(mid) * radius
-          );
-          if (wheelStatus === 'inactive') {
-            grad.addColorStop(0, base);
-            grad.addColorStop(1, '#eef2f8');
-          } else {
-            grad.addColorStop(0, '#f3f9ff');
-            grad.addColorStop(0.42, base);
-            grad.addColorStop(1, '#1f6fcf');
-          }
-          ctx.fillStyle = grad;
+          ctx.fillStyle = palette[i % palette.length];
           ctx.fill();
           ctx.lineWidth = 1.15;
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.stroke();
+        }
+
+        if (wheelStatus !== 'inactive') {
+          ctx.beginPath();
+          ctx.arc(0, 0, radius * 0.98, -Math.PI * 0.88, -Math.PI * 0.12);
+          ctx.lineWidth = Math.max(5, radius * 0.07);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.23)';
           ctx.stroke();
         }
 
@@ -3175,24 +3197,40 @@ $sessionPayload = [
         ctx.stroke();
 
         const bulbCount = Math.max(20, Math.round(count * 1.8));
-        const bulbRadius = Math.max(2.8, radius * 0.018);
-        const bulbOrbit = radius + 16;
+        const bulbRadius = Math.max(4.8, radius * 0.028);
+        const bulbOrbit = radius + 16.5;
         for (let i = 0; i < bulbCount; i += 1) {
           const a = (i / bulbCount) * TWO_PI;
           const x = center + Math.cos(a) * bulbOrbit;
           const y = center + Math.sin(a) * bulbOrbit;
           const isOn = ((i + bulbPhase) % 2) === 0;
+          const outer = wheelStatus === 'inactive'
+            ? (isOn ? '#d2dae7' : '#edf2f8')
+            : (isOn ? '#7fc0ff' : '#eef6ff');
+          const inner = wheelStatus === 'inactive'
+            ? '#f4f7fb'
+            : '#ffffff';
+          const bulbGrad = ctx.createRadialGradient(
+            x - bulbRadius * 0.35,
+            y - bulbRadius * 0.4,
+            0.2,
+            x,
+            y,
+            bulbRadius
+          );
+          bulbGrad.addColorStop(0, inner);
+          bulbGrad.addColorStop(0.62, outer);
+          bulbGrad.addColorStop(1, wheelStatus === 'inactive' ? '#c9d2e2' : '#4f9ef3');
           ctx.beginPath();
           ctx.arc(x, y, bulbRadius, 0, TWO_PI);
-          if (wheelStatus === 'inactive') {
-            ctx.fillStyle = isOn ? '#d4dbe8' : '#edf1f7';
-          } else {
-            ctx.fillStyle = isOn ? '#8cc4ff' : '#e8f3ff';
-          }
+          ctx.fillStyle = bulbGrad;
           ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = wheelStatus === 'inactive' ? '#bec8d9' : '#cde3ff';
+          ctx.stroke();
           if (wheelStatus !== 'inactive' && isOn) {
             ctx.shadowColor = '#6eb8ff';
-            ctx.shadowBlur = 9;
+            ctx.shadowBlur = 12;
             ctx.fill();
             ctx.shadowBlur = 0;
           }
@@ -3343,6 +3381,9 @@ $sessionPayload = [
           return;
         }
         spinning = true;
+        if (wheelShellEl instanceof HTMLElement) {
+          wheelShellEl.classList.add('is-spinning');
+        }
         spinBtn.disabled = true;
           resultEl.textContent = '—';
         if (resultBox) {
@@ -3460,6 +3501,9 @@ $sessionPayload = [
             }, 2000);
           }
           spinning = false;
+          if (wheelShellEl instanceof HTMLElement) {
+            wheelShellEl.classList.remove('is-spinning');
+          }
           if (spinBtn) {
             spinBtn.disabled = !wheelActive || userHasPrize;
           }
