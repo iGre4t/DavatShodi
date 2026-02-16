@@ -165,6 +165,10 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
             <span>Features</span>
           </button>
+          <button class="nav-item" data-tab="properties-manager">
+            <span class="nav-icon ri ri-building-2-line" aria-hidden="true"></span>
+            <span>Properties Manager</span>
+          </button>
           <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
           <button class="nav-item" data-tab="devsettings">
             <span class="nav-icon ri ri-terminal-box-line" aria-hidden="true"></span>
@@ -589,6 +593,19 @@ $accountEmail = $currentUser['email'] ?? '';
               </div>
             </div>
           </section>
+
+        <section id="tab-properties-manager" class="tab">
+          <div class="card">
+            <h3>Properties Manager</h3>
+            <p class="muted">Manage properties and storages in the embedded mini app.</p>
+            <iframe
+              src="mini%20apps/properties%20manager/index.php"
+              title="Properties Manager"
+              loading="lazy"
+              style="width: 100%; min-height: 75vh; border: 0; border-radius: 12px; background: #fff;"
+            ></iframe>
+          </div>
+        </section>
 
         <!-- Color picker modal is toggled by app.js whenever a hex field requests a swatch. -->
         <div

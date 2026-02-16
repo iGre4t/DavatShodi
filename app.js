@@ -4498,6 +4498,7 @@ function setActiveTab(tab) {
     users: 'Users',
     settings: 'Account Settings',
     features: 'Features',
+    'properties-manager': 'Properties Manager',
     devsettings: 'Developer Settings'
   };
   const el = qs('#page-title');
