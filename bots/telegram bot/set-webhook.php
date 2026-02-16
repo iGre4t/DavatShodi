@@ -28,9 +28,11 @@ if (!empty($config['webhook_secret_token'])) {
     $payload['secret_token'] = (string) $config['webhook_secret_token'];
 }
 
+$allowedUpdates = ['message', 'callback_query'];
 if (!empty($config['allowed_updates']) && is_array($config['allowed_updates'])) {
-    $payload['allowed_updates'] = json_encode(array_values($config['allowed_updates']));
+    $allowedUpdates = array_values($config['allowed_updates']);
 }
+$payload['allowed_updates'] = json_encode($allowedUpdates);
 
 $response = telegramPost($url, $payload);
 

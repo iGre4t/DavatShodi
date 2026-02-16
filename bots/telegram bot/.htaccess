@@ -1,14 +1,14 @@
 Options -Indexes
 
 <IfModule mod_authz_core.c>
-    <Files "bot.json">
+    <FilesMatch "\.json$">
         Require all denied
-    </Files>
+    </FilesMatch>
 </IfModule>
 
 <IfModule !mod_authz_core.c>
-    <Files "bot.json">
+    <FilesMatch "\.json$">
         Order Allow,Deny
         Deny from all
-    </Files>
+    </FilesMatch>
 </IfModule>
