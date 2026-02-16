@@ -10,6 +10,7 @@ if (empty($_SESSION['authenticated'])) {
 const DATA_DIR = __DIR__ . '/../preopreties manager';
 const PROPERTIES_FILE = DATA_DIR . '/properties.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
+const ANCESTOR_PROPERTIES_FILE = DATA_DIR . '/ancestor_properties.json';
 
 function ensureDataDir(): void
 {
@@ -21,6 +22,9 @@ function ensureDataDir(): void
     }
     if (!is_file(STORAGES_FILE)) {
         @file_put_contents(STORAGES_FILE, "[]\n", LOCK_EX);
+    }
+    if (!is_file(ANCESTOR_PROPERTIES_FILE)) {
+        @file_put_contents(ANCESTOR_PROPERTIES_FILE, "[]\n", LOCK_EX);
     }
 }
 
@@ -72,7 +76,29 @@ function loadStorages(): array
     return $items;
 }
 
-function loadProperties(): array
+function loadAncestors(): array
+{
+    $items = [];
+    foreach (readArray(ANCESTOR_PROPERTIES_FILE) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $id = trim((string)($row['id'] ?? ''));
+        $name = clean((string)($row['name'] ?? ''));
+        if ($id === '' || $name === '') {
+            continue;
+        }
+        $items[] = [
+            'id' => $id,
+            'name' => $name,
+            'created_at' => (string)($row['created_at'] ?? ''),
+            'updated_at' => (string)($row['updated_at'] ?? '')
+        ];
+    }
+    return $items;
+}
+
+function loadProperties(array $ancestors = []): array
 {
     $items = [];
     foreach (readArray(PROPERTIES_FILE) as $row) {
@@ -80,14 +106,19 @@ function loadProperties(): array
             continue;
         }
         $id = trim((string)($row['id'] ?? ''));
+        $ancestorId = trim((string)($row['ancestor_id'] ?? ''));
         $name = clean((string)($row['name'] ?? ''));
+        if ($ancestorId === '' && $name !== '') {
+            $ancestorId = ancestorIdByName($ancestors, $name);
+        }
         $code = clean((string)($row['code'] ?? ''));
         $storageId = trim((string)($row['storage_id'] ?? ''));
-        if ($id === '' || $name === '' || $code === '') {
+        if ($id === '' || $code === '') {
             continue;
         }
         $items[] = [
             'id' => $id,
+            'ancestor_id' => $ancestorId,
             'name' => $name,
             'code' => $code,
             'storage_id' => $storageId,
@@ -113,6 +144,11 @@ function storageExists(array $storages, string $storageId): bool
     return idxById($storages, $storageId) >= 0;
 }
 
+function ancestorExists(array $ancestors, string $ancestorId): bool
+{
+    return idxById($ancestors, $ancestorId) >= 0;
+}
+
 function storageNameExists(array $storages, string $name, string $except = ''): bool
 {
     $needle = strtolower(clean($name));
@@ -125,6 +161,24 @@ function storageNameExists(array $storages, string $name, string $except = ''): 
             continue;
         }
         if (strtolower(clean((string)($s['name'] ?? ''))) === $needle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function ancestorNameExists(array $ancestors, string $name, string $except = ''): bool
+{
+    $needle = strtolower(clean($name));
+    if ($needle === '') {
+        return false;
+    }
+    foreach ($ancestors as $a) {
+        $id = (string)($a['id'] ?? '');
+        if ($except !== '' && $id === $except) {
+            continue;
+        }
+        if (strtolower(clean((string)($a['name'] ?? ''))) === $needle) {
             return true;
         }
     }
@@ -149,10 +203,44 @@ function propertyCodeExists(array $properties, string $code, string $except = ''
     return false;
 }
 
+function ancestorNameById(array $ancestors, string $ancestorId): string
+{
+    foreach ($ancestors as $a) {
+        if ((string)($a['id'] ?? '') === $ancestorId) {
+            return clean((string)($a['name'] ?? ''));
+        }
+    }
+    return '';
+}
+
+function ancestorIdByName(array $ancestors, string $name): string
+{
+    $needle = strtolower(clean($name));
+    if ($needle === '') {
+        return '';
+    }
+    foreach ($ancestors as $a) {
+        if (strtolower(clean((string)($a['name'] ?? ''))) === $needle) {
+            return (string)($a['id'] ?? '');
+        }
+    }
+    return '';
+}
+
 function storageUsed(array $properties, string $storageId): bool
 {
     foreach ($properties as $p) {
         if ((string)($p['storage_id'] ?? '') === $storageId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function ancestorUsed(array $properties, string $ancestorId): bool
+{
+    foreach ($properties as $p) {
+        if ((string)($p['ancestor_id'] ?? '') === $ancestorId) {
             return true;
         }
     }
@@ -167,15 +255,21 @@ function out(array $payload, int $status = 200): void
     exit;
 }
 
-function okData(array $storages, array $properties): array
+function okData(array $storages, array $ancestors, array $properties): array
 {
-    return ['status' => 'ok', 'storages' => array_values($storages), 'properties' => array_values($properties)];
+    return [
+        'status' => 'ok',
+        'storages' => array_values($storages),
+        'ancestors' => array_values($ancestors),
+        'properties' => array_values($properties)
+    ];
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = clean((string)($_POST['action'] ?? ''));
     $storages = loadStorages();
-    $properties = loadProperties();
+    $ancestors = loadAncestors();
+    $properties = loadProperties($ancestors);
 
     if ($action === 'add_storage') {
         $name = clean((string)($_POST['name'] ?? ''));
@@ -190,7 +284,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage.'], 500);
         }
-        out(okData($storages, $properties));
+        out(okData($storages, $ancestors, $properties));
     }
 
     if ($action === 'update_storage') {
@@ -211,7 +305,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage changes.'], 500);
         }
-        out(okData($storages, $properties));
+        out(okData($storages, $ancestors, $properties));
     }
 
     if ($action === 'remove_storage') {
@@ -237,15 +331,81 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove storage.'], 500);
         }
-        out(okData($next, $properties));
+        out(okData($next, $ancestors, $properties));
+    }
+
+    if ($action === 'add_ancestor') {
+        $name = clean((string)($_POST['name'] ?? ''));
+        if ($name === '') {
+            out(['status' => 'error', 'message' => 'Ancestor property name is required.'], 422);
+        }
+        if (ancestorNameExists($ancestors, $name)) {
+            out(['status' => 'error', 'message' => 'Ancestor property name must be unique.'], 422);
+        }
+        $now = date('c');
+        $ancestors[] = ['id' => bin2hex(random_bytes(8)), 'name' => $name, 'created_at' => $now, 'updated_at' => $now];
+        if (!writeArray(ANCESTOR_PROPERTIES_FILE, $ancestors)) {
+            out(['status' => 'error', 'message' => 'Unable to save ancestor property.'], 500);
+        }
+        out(okData($storages, $ancestors, $properties));
+    }
+
+    if ($action === 'update_ancestor') {
+        $id = trim((string)($_POST['id'] ?? ''));
+        $name = clean((string)($_POST['value'] ?? ''));
+        if ($id === '' || $name === '') {
+            out(['status' => 'error', 'message' => 'Invalid ancestor property update.'], 422);
+        }
+        $idx = idxById($ancestors, $id);
+        if ($idx < 0) {
+            out(['status' => 'error', 'message' => 'Ancestor property not found.'], 404);
+        }
+        if (ancestorNameExists($ancestors, $name, $id)) {
+            out(['status' => 'error', 'message' => 'Ancestor property name must be unique.'], 422);
+        }
+        $ancestors[$idx]['name'] = $name;
+        $ancestors[$idx]['updated_at'] = date('c');
+        if (!writeArray(ANCESTOR_PROPERTIES_FILE, $ancestors)) {
+            out(['status' => 'error', 'message' => 'Unable to save ancestor property changes.'], 500);
+        }
+        out(okData($storages, $ancestors, $properties));
+    }
+
+    if ($action === 'remove_ancestor') {
+        $id = trim((string)($_POST['id'] ?? ''));
+        if ($id === '') {
+            out(['status' => 'error', 'message' => 'Ancestor property id is required.'], 422);
+        }
+        if (ancestorUsed($properties, $id)) {
+            out(['status' => 'error', 'message' => 'Ancestor property is used by properties and cannot be removed.'], 422);
+        }
+        $next = [];
+        $removed = false;
+        foreach ($ancestors as $a) {
+            if ((string)($a['id'] ?? '') === $id) {
+                $removed = true;
+                continue;
+            }
+            $next[] = $a;
+        }
+        if (!$removed) {
+            out(['status' => 'error', 'message' => 'Ancestor property not found.'], 404);
+        }
+        if (!writeArray(ANCESTOR_PROPERTIES_FILE, $next)) {
+            out(['status' => 'error', 'message' => 'Unable to remove ancestor property.'], 500);
+        }
+        out(okData($storages, $next, $properties));
     }
 
     if ($action === 'add_property') {
-        $name = clean((string)($_POST['name'] ?? ''));
+        $ancestorId = trim((string)($_POST['ancestor_id'] ?? ''));
         $code = clean((string)($_POST['code'] ?? ''));
         $storageId = trim((string)($_POST['storage_id'] ?? ''));
-        if ($name === '' || $code === '' || $storageId === '') {
+        if ($ancestorId === '' || $code === '' || $storageId === '') {
             out(['status' => 'error', 'message' => 'All property fields are required.'], 422);
+        }
+        if (!ancestorExists($ancestors, $ancestorId)) {
+            out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
         }
         if (!storageExists($storages, $storageId)) {
             out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
@@ -254,11 +414,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             out(['status' => 'error', 'message' => 'Property code must be unique.'], 422);
         }
         $now = date('c');
-        $properties[] = ['id' => bin2hex(random_bytes(8)), 'name' => $name, 'code' => $code, 'storage_id' => $storageId, 'created_at' => $now, 'updated_at' => $now];
+        $properties[] = [
+            'id' => bin2hex(random_bytes(8)),
+            'ancestor_id' => $ancestorId,
+            'name' => ancestorNameById($ancestors, $ancestorId),
+            'code' => $code,
+            'storage_id' => $storageId,
+            'created_at' => $now,
+            'updated_at' => $now
+        ];
         if (!writeArray(PROPERTIES_FILE, $properties)) {
             out(['status' => 'error', 'message' => 'Unable to save property.'], 500);
         }
-        out(okData($storages, $properties));
+        out(okData($storages, $ancestors, $properties));
     }
 
     if ($action === 'update_property') {
@@ -268,7 +436,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($id === '' || $value === '') {
             out(['status' => 'error', 'message' => 'Invalid property update.'], 422);
         }
-        if (!in_array($field, ['name', 'code', 'storage_id'], true)) {
+        if (!in_array($field, ['ancestor_id', 'code', 'storage_id'], true)) {
             out(['status' => 'error', 'message' => 'Invalid property field.'], 422);
         }
         $idx = idxById($properties, $id);
@@ -281,12 +449,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($field === 'storage_id' && !storageExists($storages, $value)) {
             out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
         }
+        if ($field === 'ancestor_id' && !ancestorExists($ancestors, $value)) {
+            out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
+        }
         $properties[$idx][$field] = $value;
+        if ($field === 'ancestor_id') {
+            $properties[$idx]['name'] = ancestorNameById($ancestors, $value);
+        }
         $properties[$idx]['updated_at'] = date('c');
         if (!writeArray(PROPERTIES_FILE, $properties)) {
             out(['status' => 'error', 'message' => 'Unable to save property changes.'], 500);
         }
-        out(okData($storages, $properties));
+        out(okData($storages, $ancestors, $properties));
     }
 
     if ($action === 'remove_property') {
@@ -309,14 +483,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(PROPERTIES_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove property.'], 500);
         }
-        out(okData($storages, $next));
+        out(okData($storages, $ancestors, $next));
     }
 
     out(['status' => 'error', 'message' => 'Unsupported action.'], 400);
 }
 
 $storages = loadStorages();
-$properties = loadProperties();
+$ancestors = loadAncestors();
+$properties = loadProperties($ancestors);
 ?>
 <!doctype html>
 <html lang="en">
@@ -369,6 +544,7 @@ $properties = loadProperties();
       <div class="nav">
         <button class="active" data-pane-target="properties-pane" type="button">add properties</button>
         <button data-pane-target="storages-pane" type="button">add storage</button>
+        <button data-pane-target="ancestors-pane" type="button">Add Ancestor Properties</button>
       </div>
     </aside>
 
@@ -378,7 +554,7 @@ $properties = loadProperties();
           <h2>Add Properties</h2>
           <form id="add-property-form">
             <div class="grid">
-              <div class="field"><label for="property-name">Property Name</label><input id="property-name" name="name" type="text" required /></div>
+              <div class="field"><label for="property-ancestor">Ancestor Property</label><select id="property-ancestor" name="ancestor_id" required></select></div>
               <div class="field"><label for="property-code">Property Code</label><input id="property-code" name="code" type="text" required /></div>
               <div class="field"><label for="property-storage">Storage</label><select id="property-storage" name="storage_id" required></select></div>
             </div>
@@ -392,7 +568,7 @@ $properties = loadProperties();
           <h2>Properties</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Property Name</th><th>Property Code</th><th>Storage</th><th>Action</th></tr></thead>
+              <thead><tr><th>Ancestor Property</th><th>Property Code</th><th>Storage</th><th>Action</th></tr></thead>
               <tbody id="properties-body"></tbody>
             </table>
           </div>
@@ -422,12 +598,37 @@ $properties = loadProperties();
           </div>
         </section>
       </section>
+
+      <section class="pane" data-pane="ancestors-pane">
+        <section class="card">
+          <h2>Add Ancestor Property</h2>
+          <form id="add-ancestor-form">
+            <div class="grid one">
+              <div class="field"><label for="ancestor-name">Ancestor Property Name</label><input id="ancestor-name" name="name" type="text" required /></div>
+            </div>
+            <div class="actions">
+              <button class="btn primary" type="submit">Add Ancestor Property</button>
+              <span id="ancestor-status" class="status" aria-live="polite"></span>
+            </div>
+          </form>
+        </section>
+        <section class="card">
+          <h2>Ancestor Properties</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Ancestor Property Name</th><th>Action</th></tr></thead>
+              <tbody id="ancestors-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
     </main>
   </div>
 
   <script>
     const state = {
       storages: <?= json_encode($storages, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+      ancestors: <?= json_encode($ancestors, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
       properties: <?= json_encode($properties, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
     };
 
@@ -435,11 +636,15 @@ $properties = loadProperties();
     const panes = [...document.querySelectorAll("[data-pane]")];
     const propertyForm = document.getElementById("add-property-form");
     const storageForm = document.getElementById("add-storage-form");
+    const ancestorForm = document.getElementById("add-ancestor-form");
     const propertyStatus = document.getElementById("property-status");
     const storageStatus = document.getElementById("storage-status");
+    const ancestorStatus = document.getElementById("ancestor-status");
+    const propertyAncestorSelect = document.getElementById("property-ancestor");
     const propertyStorageSelect = document.getElementById("property-storage");
     const propertiesBody = document.getElementById("properties-body");
     const storagesBody = document.getElementById("storages-body");
+    const ancestorsBody = document.getElementById("ancestors-body");
 
     function setStatus(el, msg, isError = false) {
       el.textContent = msg || "";
@@ -469,6 +674,24 @@ $properties = loadProperties();
       select.disabled = state.storages.length === 0;
     }
 
+    function fillAncestorOptions(select, selected = "") {
+      if (!select) return;
+      const value = String(selected || "");
+      select.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = state.ancestors.length ? "Select ancestor property" : "No ancestor property available";
+      select.appendChild(empty);
+      state.ancestors.forEach((a) => {
+        const o = document.createElement("option");
+        o.value = String(a.id || "");
+        o.textContent = String(a.name || "");
+        if (o.value === value) o.selected = true;
+        select.appendChild(o);
+      });
+      select.disabled = state.ancestors.length === 0;
+    }
+
     function renderProperties() {
       propertiesBody.innerHTML = "";
       if (!state.properties.length) {
@@ -480,12 +703,11 @@ $properties = loadProperties();
       state.properties.forEach((p) => {
         const tr = document.createElement("tr");
         tr.dataset.id = String(p.id || "");
-        const nameCell = document.createElement("td");
-        const nameInput = document.createElement("input");
-        nameInput.type = "text";
-        nameInput.dataset.field = "name";
-        nameInput.value = String(p.name || "");
-        nameCell.appendChild(nameInput);
+        const ancestorCell = document.createElement("td");
+        const ancestorSelect = document.createElement("select");
+        ancestorSelect.dataset.field = "ancestor_id";
+        fillAncestorOptions(ancestorSelect, String(p.ancestor_id || ""));
+        ancestorCell.appendChild(ancestorSelect);
 
         const codeCell = document.createElement("td");
         const codeInput = document.createElement("input");
@@ -508,7 +730,7 @@ $properties = loadProperties();
         remove.textContent = "Remove";
         actionCell.appendChild(remove);
 
-        tr.append(nameCell, codeCell, storageCell, actionCell);
+        tr.append(ancestorCell, codeCell, storageCell, actionCell);
         propertiesBody.appendChild(tr);
       });
     }
@@ -542,10 +764,41 @@ $properties = loadProperties();
       });
     }
 
+    function renderAncestors() {
+      ancestorsBody.innerHTML = "";
+      if (!state.ancestors.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td class="empty" colspan="2">No ancestor properties added yet.</td>';
+        ancestorsBody.appendChild(tr);
+        return;
+      }
+      state.ancestors.forEach((a) => {
+        const tr = document.createElement("tr");
+        tr.dataset.id = String(a.id || "");
+        const nameCell = document.createElement("td");
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.dataset.field = "name";
+        nameInput.value = String(a.name || "");
+        nameCell.appendChild(nameInput);
+        const actionCell = document.createElement("td");
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "btn danger";
+        remove.dataset.action = "remove-ancestor";
+        remove.textContent = "Remove";
+        actionCell.appendChild(remove);
+        tr.append(nameCell, actionCell);
+        ancestorsBody.appendChild(tr);
+      });
+    }
+
     function renderAll() {
+      fillAncestorOptions(propertyAncestorSelect, propertyAncestorSelect.value);
       fillStorageOptions(propertyStorageSelect, propertyStorageSelect.value);
       renderProperties();
       renderStorages();
+      renderAncestors();
     }
 
     async function action(name, payload = {}) {
@@ -556,6 +809,7 @@ $properties = loadProperties();
       const data = await res.json();
       if (!res.ok || data.status !== "ok") throw new Error(data.message || "Request failed.");
       state.storages = Array.isArray(data.storages) ? data.storages : [];
+      state.ancestors = Array.isArray(data.ancestors) ? data.ancestors : [];
       state.properties = Array.isArray(data.properties) ? data.properties : [];
       renderAll();
       return data;
@@ -577,16 +831,31 @@ $properties = loadProperties();
       }
     });
 
+    ancestorForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = ancestorForm.elements.name.value.trim();
+      if (!name) return setStatus(ancestorStatus, "Ancestor property name is required.", true);
+      setStatus(ancestorStatus, "Saving...");
+      try {
+        await action("add_ancestor", { name });
+        ancestorForm.reset();
+        setStatus(ancestorStatus, "Ancestor property added.");
+      } catch (err) {
+        setStatus(ancestorStatus, err.message || "Unable to add ancestor property.", true);
+      }
+    });
+
     propertyForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const name = propertyForm.elements.name.value.trim();
+      const ancestor_id = String(propertyForm.elements.ancestor_id.value || "").trim();
       const code = propertyForm.elements.code.value.trim();
       const storage_id = String(propertyForm.elements.storage_id.value || "").trim();
-      if (!name || !code || !storage_id) return setStatus(propertyStatus, "All fields are required.", true);
+      if (!ancestor_id || !code || !storage_id) return setStatus(propertyStatus, "All fields are required.", true);
       setStatus(propertyStatus, "Saving...");
       try {
-        await action("add_property", { name, code, storage_id });
+        await action("add_property", { ancestor_id, code, storage_id });
         propertyForm.reset();
+        fillAncestorOptions(propertyAncestorSelect, "");
         fillStorageOptions(propertyStorageSelect, "");
         setStatus(propertyStatus, "Property added.");
       } catch (err) {
@@ -632,6 +901,24 @@ $properties = loadProperties();
       }
     });
 
+    ancestorsBody.addEventListener("change", async (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement)) return;
+      const row = t.closest("tr");
+      const id = String(row?.dataset.id || "");
+      const value = String(t.value || "").trim();
+      if (!id || !value) return renderAncestors();
+      t.disabled = true;
+      try {
+        await action("update_ancestor", { id, value });
+      } catch (err) {
+        renderAncestors();
+        alert(err.message || "Unable to save ancestor property changes.");
+      } finally {
+        t.disabled = false;
+      }
+    });
+
     propertiesBody.addEventListener("click", async (e) => {
       const btn = e.target instanceof HTMLElement ? e.target.closest('[data-action="remove-property"]') : null;
       if (!(btn instanceof HTMLButtonElement)) return;
@@ -651,6 +938,17 @@ $properties = loadProperties();
       btn.disabled = true;
       try { await action("remove_storage", { id }); }
       catch (err) { alert(err.message || "Unable to remove storage."); }
+      finally { btn.disabled = false; }
+    });
+
+    ancestorsBody.addEventListener("click", async (e) => {
+      const btn = e.target instanceof HTMLElement ? e.target.closest('[data-action="remove-ancestor"]') : null;
+      if (!(btn instanceof HTMLButtonElement)) return;
+      const id = String(btn.closest("tr")?.dataset.id || "");
+      if (!id || !confirm("Remove this ancestor property?")) return;
+      btn.disabled = true;
+      try { await action("remove_ancestor", { id }); }
+      catch (err) { alert(err.message || "Unable to remove ancestor property."); }
       finally { btn.disabled = false; }
     });
 
