@@ -9,3 +9,5 @@
 api/config.php
 /Wheel of Fortune/*.json
 /mini apps/**/*.json
+/bots/telegram bot/bot.json
+/bots/telegram bot/*.log
