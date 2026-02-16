@@ -34,6 +34,15 @@ function clean(string $value): string
     return preg_replace('/\s+/', ' ', $trim) ?? $trim;
 }
 
+function parseBool($value): bool
+{
+    if (is_bool($value)) {
+        return $value;
+    }
+    $normalized = strtolower(trim((string)$value));
+    return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+}
+
 function readArray(string $path): array
 {
     ensureDataDir();
@@ -111,13 +120,24 @@ function loadProperties(array $ancestors = []): array
         if ($ancestorId === '' && $name !== '') {
             $ancestorId = ancestorIdByName($ancestors, $name);
         }
+        $hasExplicitSpecial = array_key_exists('special_property', $row);
+        $specialProperty = $hasExplicitSpecial
+            ? parseBool($row['special_property'] ?? false)
+            : ($ancestorId === '' && $name !== '');
+        if (!$specialProperty && $ancestorId !== '') {
+            $ancestorName = ancestorNameById($ancestors, $ancestorId);
+            if ($ancestorName !== '') {
+                $name = $ancestorName;
+            }
+        }
         $code = clean((string)($row['code'] ?? ''));
         $storageId = trim((string)($row['storage_id'] ?? ''));
-        if ($id === '' || $code === '') {
+        if ($id === '' || $code === '' || ($specialProperty && $name === '')) {
             continue;
         }
         $items[] = [
             'id' => $id,
+            'special_property' => $specialProperty,
             'ancestor_id' => $ancestorId,
             'name' => $name,
             'code' => $code,
@@ -398,14 +418,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     if ($action === 'add_property') {
+        $specialProperty = parseBool($_POST['special_property'] ?? false);
+        $name = clean((string)($_POST['name'] ?? ''));
         $ancestorId = trim((string)($_POST['ancestor_id'] ?? ''));
         $code = clean((string)($_POST['code'] ?? ''));
         $storageId = trim((string)($_POST['storage_id'] ?? ''));
-        if ($ancestorId === '' || $code === '' || $storageId === '') {
+        if ($code === '' || $storageId === '') {
             out(['status' => 'error', 'message' => 'All property fields are required.'], 422);
         }
-        if (!ancestorExists($ancestors, $ancestorId)) {
-            out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
+        if ($specialProperty) {
+            if ($name === '') {
+                out(['status' => 'error', 'message' => 'Special property name is required.'], 422);
+            }
+        } else {
+            if ($ancestorId === '') {
+                out(['status' => 'error', 'message' => 'All property fields are required.'], 422);
+            }
+            if (!ancestorExists($ancestors, $ancestorId)) {
+                out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
+            }
+            $name = ancestorNameById($ancestors, $ancestorId);
         }
         if (!storageExists($storages, $storageId)) {
             out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
@@ -416,8 +448,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $now = date('c');
         $properties[] = [
             'id' => bin2hex(random_bytes(8)),
-            'ancestor_id' => $ancestorId,
-            'name' => ancestorNameById($ancestors, $ancestorId),
+            'special_property' => $specialProperty,
+            'ancestor_id' => $specialProperty ? '' : $ancestorId,
+            'name' => $name,
             'code' => $code,
             'storage_id' => $storageId,
             'created_at' => $now,
@@ -436,21 +469,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($id === '' || $value === '') {
             out(['status' => 'error', 'message' => 'Invalid property update.'], 422);
         }
-        if (!in_array($field, ['ancestor_id', 'code', 'storage_id'], true)) {
+        if (!in_array($field, ['ancestor_id', 'name', 'code', 'storage_id'], true)) {
             out(['status' => 'error', 'message' => 'Invalid property field.'], 422);
         }
         $idx = idxById($properties, $id);
         if ($idx < 0) {
             out(['status' => 'error', 'message' => 'Property not found.'], 404);
         }
+        $isSpecialProperty = parseBool($properties[$idx]['special_property'] ?? false);
         if ($field === 'code' && propertyCodeExists($properties, $value, $id)) {
             out(['status' => 'error', 'message' => 'Property code must be unique.'], 422);
         }
         if ($field === 'storage_id' && !storageExists($storages, $value)) {
             out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
         }
-        if ($field === 'ancestor_id' && !ancestorExists($ancestors, $value)) {
-            out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
+        if ($field === 'ancestor_id') {
+            if ($isSpecialProperty) {
+                out(['status' => 'error', 'message' => 'Special property cannot use ancestor selection.'], 422);
+            }
+            if (!ancestorExists($ancestors, $value)) {
+                out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
+            }
+        }
+        if ($field === 'name' && !$isSpecialProperty) {
+            out(['status' => 'error', 'message' => 'Only special properties can use custom text names.'], 422);
         }
         $properties[$idx][$field] = $value;
         if ($field === 'ancestor_id') {
@@ -533,6 +575,9 @@ $properties = loadProperties($ancestors);
     th { color: #6b7280; font-size: .85rem; }
     td input, td select { min-width: 180px; }
     .empty { color: #6b7280; }
+    .hidden { display: none !important; }
+    .switch-row { display: flex; align-items: center; gap: 8px; min-height: 42px; }
+    .switch-row input[type="checkbox"] { width: 18px; height: 18px; margin: 0; border-radius: 4px; box-shadow: none; padding: 0; }
     @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
     @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
   </style>
@@ -554,7 +599,15 @@ $properties = loadProperties($ancestors);
           <h2>Add Properties</h2>
           <form id="add-property-form">
             <div class="grid">
-              <div class="field"><label for="property-ancestor">Ancestor Property</label><select id="property-ancestor" name="ancestor_id" required></select></div>
+              <div class="field">
+                <label for="property-special">Special Property</label>
+                <div class="switch-row">
+                  <input id="property-special" name="special_property" type="checkbox" />
+                  <span>Enable custom property text</span>
+                </div>
+              </div>
+              <div class="field" id="property-ancestor-field"><label for="property-ancestor">Ancestor Property</label><select id="property-ancestor" name="ancestor_id" required></select></div>
+              <div class="field hidden" id="property-special-name-field"><label for="property-special-name">Special Property Name</label><input id="property-special-name" name="name" type="text" disabled /></div>
               <div class="field"><label for="property-code">Property Code</label><input id="property-code" name="code" type="text" required /></div>
               <div class="field"><label for="property-storage">Storage</label><select id="property-storage" name="storage_id" required></select></div>
             </div>
@@ -568,7 +621,7 @@ $properties = loadProperties($ancestors);
           <h2>Properties</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Ancestor Property</th><th>Property Code</th><th>Storage</th><th>Action</th></tr></thead>
+              <thead><tr><th>Property / Ancestor</th><th>Property Code</th><th>Storage</th><th>Action</th></tr></thead>
               <tbody id="properties-body"></tbody>
             </table>
           </div>
@@ -640,7 +693,11 @@ $properties = loadProperties($ancestors);
     const propertyStatus = document.getElementById("property-status");
     const storageStatus = document.getElementById("storage-status");
     const ancestorStatus = document.getElementById("ancestor-status");
+    const propertySpecialToggle = document.getElementById("property-special");
+    const propertyAncestorField = document.getElementById("property-ancestor-field");
+    const propertySpecialNameField = document.getElementById("property-special-name-field");
     const propertyAncestorSelect = document.getElementById("property-ancestor");
+    const propertySpecialNameInput = document.getElementById("property-special-name");
     const propertyStorageSelect = document.getElementById("property-storage");
     const propertiesBody = document.getElementById("properties-body");
     const storagesBody = document.getElementById("storages-body");
@@ -654,6 +711,34 @@ $properties = loadProperties($ancestors);
     function setPane(paneId) {
       paneButtons.forEach((b) => b.classList.toggle("active", b.dataset.paneTarget === paneId));
       panes.forEach((p) => p.classList.toggle("active", p.dataset.pane === paneId));
+    }
+
+    function isSpecialProperty(item) {
+      return item?.special_property === true || String(item?.special_property || "") === "1";
+    }
+
+    function setPropertySpecialMode(isSpecial) {
+      propertyAncestorField?.classList.toggle("hidden", isSpecial);
+      propertySpecialNameField?.classList.toggle("hidden", !isSpecial);
+      if (propertyAncestorSelect) {
+        propertyAncestorSelect.required = !isSpecial;
+        if (isSpecial) {
+          propertyAncestorSelect.value = "";
+          propertyAncestorSelect.disabled = true;
+        } else {
+          propertyAncestorSelect.disabled = false;
+          if (!propertyAncestorSelect.value) {
+            fillAncestorOptions(propertyAncestorSelect, "");
+          }
+        }
+      }
+      if (propertySpecialNameInput) {
+        propertySpecialNameInput.disabled = !isSpecial;
+        propertySpecialNameInput.required = isSpecial;
+        if (!isSpecial) {
+          propertySpecialNameInput.value = "";
+        }
+      }
     }
 
     function fillStorageOptions(select, selected = "") {
@@ -704,10 +789,18 @@ $properties = loadProperties($ancestors);
         const tr = document.createElement("tr");
         tr.dataset.id = String(p.id || "");
         const ancestorCell = document.createElement("td");
-        const ancestorSelect = document.createElement("select");
-        ancestorSelect.dataset.field = "ancestor_id";
-        fillAncestorOptions(ancestorSelect, String(p.ancestor_id || ""));
-        ancestorCell.appendChild(ancestorSelect);
+        if (isSpecialProperty(p)) {
+          const specialNameInput = document.createElement("input");
+          specialNameInput.type = "text";
+          specialNameInput.dataset.field = "name";
+          specialNameInput.value = String(p.name || "");
+          ancestorCell.appendChild(specialNameInput);
+        } else {
+          const ancestorSelect = document.createElement("select");
+          ancestorSelect.dataset.field = "ancestor_id";
+          fillAncestorOptions(ancestorSelect, String(p.ancestor_id || ""));
+          ancestorCell.appendChild(ancestorSelect);
+        }
 
         const codeCell = document.createElement("td");
         const codeInput = document.createElement("input");
@@ -796,6 +889,7 @@ $properties = loadProperties($ancestors);
     function renderAll() {
       fillAncestorOptions(propertyAncestorSelect, propertyAncestorSelect.value);
       fillStorageOptions(propertyStorageSelect, propertyStorageSelect.value);
+      setPropertySpecialMode(!!propertySpecialToggle?.checked);
       renderProperties();
       renderStorages();
       renderAncestors();
@@ -816,6 +910,7 @@ $properties = loadProperties($ancestors);
     }
 
     paneButtons.forEach((btn) => btn.addEventListener("click", () => setPane(btn.dataset.paneTarget)));
+    propertySpecialToggle?.addEventListener("change", () => setPropertySpecialMode(!!propertySpecialToggle.checked));
 
     storageForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -847,14 +942,26 @@ $properties = loadProperties($ancestors);
 
     propertyForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const special_property = !!propertySpecialToggle?.checked;
       const ancestor_id = String(propertyForm.elements.ancestor_id.value || "").trim();
+      const name = String(propertyForm.elements.name?.value || "").trim();
       const code = propertyForm.elements.code.value.trim();
       const storage_id = String(propertyForm.elements.storage_id.value || "").trim();
-      if (!ancestor_id || !code || !storage_id) return setStatus(propertyStatus, "All fields are required.", true);
+      if (!code || !storage_id || (!special_property && !ancestor_id) || (special_property && !name)) {
+        return setStatus(propertyStatus, "All fields are required.", true);
+      }
       setStatus(propertyStatus, "Saving...");
       try {
-        await action("add_property", { ancestor_id, code, storage_id });
+        await action("add_property", {
+          special_property: special_property ? "1" : "0",
+          ancestor_id: special_property ? "" : ancestor_id,
+          name: special_property ? name : "",
+          code,
+          storage_id
+        });
         propertyForm.reset();
+        if (propertySpecialToggle) propertySpecialToggle.checked = false;
+        setPropertySpecialMode(false);
         fillAncestorOptions(propertyAncestorSelect, "");
         fillStorageOptions(propertyStorageSelect, "");
         setStatus(propertyStatus, "Property added.");
