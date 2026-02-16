@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 const CONFIG_FILE = __DIR__ . '/bot.json';
 const STATE_FILE = __DIR__ . '/state.json';
+const LOG_FILE = __DIR__ . '/bot.log';
 
 const DATA_DIR = __DIR__ . '/../../mini apps/Asset Manager/data';
 const ASSETS_FILE = DATA_DIR . '/assets.json';
@@ -29,11 +30,19 @@ if (!is_array($config) || empty($config['bot_token'])) {
     exit;
 }
 
+define('LOG_ENABLED', !array_key_exists('log_enabled', $config) || parseBool($config['log_enabled']));
+logEvent('request_received', [
+    'method' => $_SERVER['REQUEST_METHOD'] ?? '',
+    'remote_addr' => $_SERVER['REMOTE_ADDR'] ?? '',
+    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+]);
+
 ensureAssetDataFiles();
 
 if (!empty($config['webhook_secret_token'])) {
     $incomingSecret = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
     if (!hash_equals((string) $config['webhook_secret_token'], (string) $incomingSecret)) {
+        logEvent('forbidden_bad_secret');
         http_response_code(403);
         echo "Forbidden";
         exit;
@@ -44,6 +53,7 @@ $rawInput = (string) file_get_contents('php://input');
 $update = json_decode($rawInput, true);
 
 if (!is_array($update)) {
+    logEvent('ignored_invalid_update_json');
     http_response_code(200);
     echo "No update";
     exit;
@@ -52,6 +62,11 @@ if (!is_array($update)) {
 $token = (string) $config['bot_token'];
 
 if (isset($update['callback_query']) && is_array($update['callback_query'])) {
+    logEvent('incoming_callback_query', [
+        'chat_id' => (string)($update['callback_query']['message']['chat']['id'] ?? ''),
+        'from_id' => (string)($update['callback_query']['from']['id'] ?? ''),
+        'data' => (string)($update['callback_query']['data'] ?? '')
+    ]);
     handleCallbackQuery($token, $update['callback_query']);
     http_response_code(200);
     echo "OK";
@@ -59,12 +74,18 @@ if (isset($update['callback_query']) && is_array($update['callback_query'])) {
 }
 
 if (isset($update['message']) && is_array($update['message'])) {
+    logEvent('incoming_message', [
+        'chat_id' => (string)($update['message']['chat']['id'] ?? ''),
+        'from_id' => (string)($update['message']['from']['id'] ?? ''),
+        'text' => (string)($update['message']['text'] ?? '')
+    ]);
     handleMessage($token, $update['message']);
     http_response_code(200);
     echo "OK";
     exit;
 }
 
+logEvent('ignored_unsupported_update', ['keys' => array_keys($update)]);
 http_response_code(200);
 echo "Ignored";
 
@@ -72,17 +93,20 @@ function handleMessage(string $token, array $message): void
 {
     $chatId = trim((string) ($message['chat']['id'] ?? ''));
     if ($chatId === '') {
+        logEvent('message_missing_chat_id');
         return;
     }
 
     $text = clean((string) ($message['text'] ?? ''));
     if ($text === '/start') {
+        logEvent('command_start', ['chat_id' => $chatId]);
         clearChatState($chatId);
         sendStartMenu($token, $chatId);
         return;
     }
 
     if ($text === '/cancel') {
+        logEvent('command_cancel', ['chat_id' => $chatId]);
         clearChatState($chatId);
         sendMessage($token, $chatId, 'عملیات لغو شد.');
         sendStartMenu($token, $chatId);
@@ -94,6 +118,7 @@ function handleMessage(string $token, array $message): void
 
     if ($step === 'awaiting_special_name') {
         if ($text === '') {
+            logEvent('special_name_empty', ['chat_id' => $chatId]);
             sendMessage($token, $chatId, 'نام مال خاص را ارسال کنید.');
             return;
         }
@@ -104,11 +129,13 @@ function handleMessage(string $token, array $message): void
             'special_name' => $text
         ]);
 
+        logEvent('special_name_received', ['chat_id' => $chatId, 'name' => $text]);
         sendMessage($token, $chatId, 'نام ثبت شد: ' . $text);
         sendStorageMenu($token, $chatId);
         return;
     }
 
+    logEvent('message_default_to_start_menu', ['chat_id' => $chatId, 'step' => $step, 'text' => $text]);
     sendStartMenu($token, $chatId);
 }
 
@@ -122,18 +149,22 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         answerCallbackQuery($token, $callbackId);
     }
     if ($chatId === '') {
+        logEvent('callback_missing_chat_id', ['data' => $data]);
         return;
     }
 
     if ($data === 'menu_add_asset') {
+        logEvent('callback_menu_add_asset', ['chat_id' => $chatId]);
         setChatState($chatId, ['step' => 'choosing_type']);
         sendAssetTypeMenu($token, $chatId);
         return;
     }
 
     if ($data === 'asset_type_common') {
+        logEvent('callback_asset_type_common', ['chat_id' => $chatId]);
         $ancestors = loadAncestors();
         if (!$ancestors) {
+            logEvent('common_no_ancestors', ['chat_id' => $chatId]);
             sendMessage($token, $chatId, 'هیچ مال مرسومی ثبت نشده است.');
             sendStartMenu($token, $chatId);
             return;
@@ -148,6 +179,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
     }
 
     if ($data === 'asset_type_special') {
+        logEvent('callback_asset_type_special', ['chat_id' => $chatId]);
         setChatState($chatId, [
             'step' => 'awaiting_special_name',
             'asset_type' => 'special'
@@ -162,6 +194,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $ancestor = findById($ancestors, $ancestorId);
 
         if (!is_array($ancestor)) {
+            logEvent('ancestor_invalid', ['chat_id' => $chatId, 'ancestor_id' => $ancestorId]);
             sendMessage($token, $chatId, 'مال مرسوم انتخاب شده معتبر نیست.');
             sendStartMenu($token, $chatId);
             return;
@@ -174,6 +207,11 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             'ancestor_name' => (string) $ancestor['name']
         ]);
 
+        logEvent('ancestor_selected', [
+            'chat_id' => $chatId,
+            'ancestor_id' => (string) $ancestor['id'],
+            'ancestor_name' => (string) $ancestor['name']
+        ]);
         sendMessage($token, $chatId, 'نام مال: ' . (string) $ancestor['name']);
         sendStorageMenu($token, $chatId);
         return;
@@ -185,6 +223,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $step = (string) ($state['step'] ?? '');
 
         if ($step !== 'awaiting_storage') {
+            logEvent('storage_click_invalid_step', ['chat_id' => $chatId, 'step' => $step, 'storage_id' => $storageId]);
             sendMessage($token, $chatId, 'ابتدا از منوی شروع اقدام کنید.');
             sendStartMenu($token, $chatId);
             return;
@@ -192,17 +231,20 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
         $result = addAssetFromState($state, $storageId);
         if (!$result['ok']) {
+            logEvent('asset_save_failed', ['chat_id' => $chatId, 'storage_id' => $storageId, 'message' => (string) $result['message']]);
             sendMessage($token, $chatId, (string) $result['message']);
             sendStartMenu($token, $chatId);
             return;
         }
 
+        logEvent('asset_saved', ['chat_id' => $chatId, 'storage_id' => $storageId]);
         clearChatState($chatId);
         sendMessage($token, $chatId, (string) $result['message']);
         sendStartMenu($token, $chatId);
         return;
     }
 
+    logEvent('callback_unknown_data', ['chat_id' => $chatId, 'data' => $data]);
     sendMessage($token, $chatId, 'گزینه نامعتبر است.');
     sendStartMenu($token, $chatId);
 }
@@ -307,6 +349,11 @@ function sendMessage(string $token, string $chatId, string $text, ?array $replyM
         $payload['reply_markup'] = json_encode($replyMarkup, JSON_UNESCAPED_UNICODE);
     }
 
+    logEvent('telegram_send_message', [
+        'chat_id' => $chatId,
+        'text' => textSnippet($text, 180),
+        'has_reply_markup' => is_array($replyMarkup)
+    ]);
     telegramRequest($token, 'sendMessage', $payload);
 }
 
@@ -324,8 +371,16 @@ function telegramRequest(string $token, string $method, array $payload): void
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 15,
             ]);
-            curl_exec($ch);
+            $response = curl_exec($ch);
+            $error = curl_error($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
+            logEvent('telegram_request', [
+                'method' => $method,
+                'http_code' => $httpCode,
+                'curl_error' => $error,
+                'response' => is_string($response) ? textSnippet($response, 400) : ''
+            ]);
             return;
         }
     }
@@ -338,7 +393,11 @@ function telegramRequest(string $token, string $method, array $payload): void
             'timeout' => 15,
         ],
     ]);
-    @file_get_contents($url, false, $context);
+    $response = @file_get_contents($url, false, $context);
+    logEvent('telegram_request_fopen', [
+        'method' => $method,
+        'response' => is_string($response) ? textSnippet($response, 400) : ''
+    ]);
 }
 
 function addAssetFromState(array $state, string $storageId): array
@@ -405,7 +464,9 @@ function addAssetFromState(array $state, string $storageId): array
 function ensureAssetDataFiles(): void
 {
     if (!is_dir(DATA_DIR)) {
-        @mkdir(DATA_DIR, 0755, true);
+        if (!@mkdir(DATA_DIR, 0755, true) && !is_dir(DATA_DIR)) {
+            logEvent('mkdir_failed', ['path' => DATA_DIR]);
+        }
     }
 
     ensureFileInitialized(ASSETS_FILE, legacyPathCandidates('assets.json'));
@@ -437,11 +498,16 @@ function ensureFileInitialized(string $targetPath, array $legacyCandidates = [])
             continue;
         }
         if (@file_put_contents($targetPath, $raw, LOCK_EX) !== false) {
+            logEvent('file_initialized_from_legacy', ['target' => $targetPath, 'source' => $candidate]);
             return;
         }
     }
 
-    @file_put_contents($targetPath, "[]\n", LOCK_EX);
+    if (@file_put_contents($targetPath, "[]\n", LOCK_EX) === false) {
+        logEvent('file_init_failed', ['target' => $targetPath]);
+    } else {
+        logEvent('file_initialized_empty', ['target' => $targetPath]);
+    }
 }
 
 function clean(string $value): string
@@ -695,6 +761,7 @@ function setChatState(string $chatId, array $state): void
     $states = loadStates();
     $state['updated_at'] = date('c');
     $states[$chatId] = $state;
+    logEvent('state_set', ['chat_id' => $chatId, 'step' => (string)($state['step'] ?? '')]);
     saveStates($states);
 }
 
@@ -703,6 +770,34 @@ function clearChatState(string $chatId): void
     $states = loadStates();
     if (array_key_exists($chatId, $states)) {
         unset($states[$chatId]);
+        logEvent('state_cleared', ['chat_id' => $chatId]);
         saveStates($states);
     }
+}
+
+function textSnippet(string $value, int $length): string
+{
+    if (function_exists('mb_substr')) {
+        return (string) mb_substr($value, 0, $length);
+    }
+    return (string) substr($value, 0, $length);
+}
+
+function logEvent(string $event, array $context = []): void
+{
+    if (defined('LOG_ENABLED') && LOG_ENABLED === false) {
+        return;
+    }
+
+    $line = json_encode([
+        'time' => date('c'),
+        'event' => $event,
+        'context' => $context
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    if (!is_string($line)) {
+        return;
+    }
+
+    @file_put_contents(LOG_FILE, $line . PHP_EOL, FILE_APPEND | LOCK_EX);
 }
