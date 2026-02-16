@@ -165,9 +165,9 @@ $accountEmail = $currentUser['email'] ?? '';
             <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
             <span>Features</span>
           </button>
-          <button class="nav-item" data-tab="properties-manager">
+          <button class="nav-item" data-tab="asset-manager">
             <span class="nav-icon ri ri-building-2-line" aria-hidden="true"></span>
-            <span>مدیریت املاک</span>
+            <span>مدیریت اموال</span>
           </button>
           <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
           <button class="nav-item" data-tab="devsettings">
@@ -594,75 +594,75 @@ $accountEmail = $currentUser['email'] ?? '';
             </div>
           </section>
 
-        <section id="tab-properties-manager" class="tab">
+        <section id="tab-asset-manager" class="tab">
           <div class="sub-layout pm-layout" data-pm-root>
             <aside class="sub-sidebar">
-              <div class="sub-header">مدیریت املاک</div>
+              <div class="sub-header">مدیریت اموال</div>
               <div class="sub-nav">
-                <button type="button" class="sub-item active" data-pm-pane-target="properties">
-                  افزودن ملک
+                <button type="button" class="sub-item active" data-pm-pane-target="assets">
+                  افزودن مال
                 </button>
                 <button type="button" class="sub-item" data-pm-pane-target="storages">
                   افزودن انبار
                 </button>
                 <button type="button" class="sub-item" data-pm-pane-target="ancestors">
-                  افزودن ویژگی پایه
+                  افزودن مال مرسوم
                 </button>
               </div>
             </aside>
             <div class="sub-content">
-              <div class="sub-pane active" data-pm-pane="properties">
+              <div class="sub-pane active" data-pm-pane="assets">
                 <div class="card settings-section">
                   <div class="section-header">
-                    <h3>افزودن ملک</h3>
+                    <h3>افزودن مال</h3>
                   </div>
-                  <form id="pm-add-property-form" class="form">
+                  <form id="pm-add-asset-form" class="form">
                     <div class="grid">
                       <label class="field">
-                        <span>ملک ویژه</span>
+                        <span>مال ویژه</span>
                         <span class="pm-switch">
-                          <input id="pm-property-special" type="checkbox" />
+                          <input id="pm-asset-special" type="checkbox" />
                           <span>فعال</span>
                         </span>
                       </label>
-                      <label class="field" id="pm-property-ancestor-field">
-                        <span>ویژگی پایه</span>
-                        <select id="pm-property-ancestor" required></select>
+                      <label class="field" id="pm-asset-ancestor-field">
+                        <span>مال مرسوم</span>
+                        <select id="pm-asset-ancestor" required></select>
                       </label>
-                      <label class="field hidden" id="pm-property-name-field">
-                        <span>نام ملک ویژه</span>
-                        <input id="pm-property-name" type="text" disabled />
+                      <label class="field hidden" id="pm-asset-name-field">
+                        <span>نام مال ویژه</span>
+                        <input id="pm-asset-name" type="text" disabled />
                       </label>
                       <label class="field">
-                        <span>کد ملک</span>
-                        <input id="pm-property-code" type="text" required />
+                        <span>کد مال</span>
+                        <input id="pm-asset-code" type="text" required />
                       </label>
                       <label class="field">
                         <span>انبار</span>
-                        <select id="pm-property-storage" required></select>
+                        <select id="pm-asset-storage" required></select>
                       </label>
                     </div>
                     <div class="section-footer">
-                      <button type="submit" class="btn primary">افزودن ملک</button>
+                      <button type="submit" class="btn primary">افزودن مال</button>
                     </div>
-                    <p id="pm-property-status" class="hint pm-status" aria-live="polite"></p>
+                    <p id="pm-asset-status" class="hint pm-status" aria-live="polite"></p>
                   </form>
                 </div>
                 <div class="card settings-section">
                   <div class="section-header">
-                    <h3>املاک</h3>
+                    <h3>اموال</h3>
                   </div>
                   <div class="table-wrapper">
                     <table>
                       <thead>
                         <tr>
-                          <th>نام/ویژگی پایه</th>
-                          <th>کد ملک</th>
+                          <th>نام/مال مرسوم</th>
+                          <th>کد مال</th>
                           <th>انبار</th>
                           <th>عملیات</th>
                         </tr>
                       </thead>
-                      <tbody id="pm-properties-body"></tbody>
+                      <tbody id="pm-assets-body"></tbody>
                     </table>
                   </div>
                 </div>
@@ -707,30 +707,30 @@ $accountEmail = $currentUser['email'] ?? '';
               <div class="sub-pane" data-pm-pane="ancestors">
                 <div class="card settings-section">
                   <div class="section-header">
-                    <h3>افزودن ویژگی پایه</h3>
+                    <h3>افزودن مال مرسوم</h3>
                   </div>
                   <form id="pm-add-ancestor-form" class="form">
                     <div class="grid one-column">
                       <label class="field">
-                        <span>نام ویژگی پایه</span>
+                        <span>نام مال مرسوم</span>
                         <input id="pm-ancestor-name" type="text" required />
                       </label>
                     </div>
                     <div class="section-footer">
-                      <button type="submit" class="btn primary">افزودن ویژگی پایه</button>
+                      <button type="submit" class="btn primary">افزودن مال مرسوم</button>
                     </div>
                     <p id="pm-ancestor-status" class="hint pm-status" aria-live="polite"></p>
                   </form>
                 </div>
                 <div class="card settings-section">
                   <div class="section-header">
-                    <h3>ویژگی‌های پایه</h3>
+                    <h3>اموال مرسوم</h3>
                   </div>
                   <div class="table-wrapper">
                     <table>
                       <thead>
                         <tr>
-                          <th>نام ویژگی پایه</th>
+                          <th>نام مال مرسوم</th>
                           <th>عملیات</th>
                         </tr>
                       </thead>
@@ -1147,3 +1147,4 @@ $accountEmail = $currentUser['email'] ?? '';
     <script src="app.js"></script>
   </body>
 </html>
+

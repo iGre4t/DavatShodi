@@ -7,25 +7,65 @@ if (empty($_SESSION['authenticated'])) {
     exit;
 }
 
-const DATA_DIR = __DIR__ . '/../preopreties manager';
-const PROPERTIES_FILE = DATA_DIR . '/properties.json';
+const DATA_DIR = __DIR__ . '/data';
+const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
-const ANCESTOR_PROPERTIES_FILE = DATA_DIR . '/ancestor_properties.json';
+const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
+const LEGACY_DATA_DIRS = [
+    __DIR__ . '/../preopreties manager',
+    __DIR__ . '/../Asset Manager data'
+];
+
+function legacyPathCandidates(string $filename): array
+{
+    $paths = [];
+    foreach (LEGACY_DATA_DIRS as $legacyDir) {
+        $paths[] = $legacyDir . '/' . $filename;
+    }
+    return $paths;
+}
+
+function ensureFileInitialized(string $targetPath, array $legacyCandidates = []): void
+{
+    if (is_file($targetPath)) {
+        return;
+    }
+    foreach ($legacyCandidates as $candidate) {
+        if (!is_file($candidate)) {
+            continue;
+        }
+        $raw = @file_get_contents($candidate);
+        if ($raw === false) {
+            continue;
+        }
+        if (@file_put_contents($targetPath, $raw, LOCK_EX) !== false) {
+            return;
+        }
+    }
+    @file_put_contents($targetPath, "[]\n", LOCK_EX);
+}
 
 function ensureDataDir(): void
 {
     if (!is_dir(DATA_DIR)) {
         @mkdir(DATA_DIR, 0755, true);
     }
-    if (!is_file(PROPERTIES_FILE)) {
-        @file_put_contents(PROPERTIES_FILE, "[]\n", LOCK_EX);
-    }
-    if (!is_file(STORAGES_FILE)) {
-        @file_put_contents(STORAGES_FILE, "[]\n", LOCK_EX);
-    }
-    if (!is_file(ANCESTOR_PROPERTIES_FILE)) {
-        @file_put_contents(ANCESTOR_PROPERTIES_FILE, "[]\n", LOCK_EX);
-    }
+    ensureFileInitialized(
+        ASSETS_FILE,
+        array_merge(
+            legacyPathCandidates('assets.json')
+        )
+    );
+    ensureFileInitialized(
+        STORAGES_FILE,
+        legacyPathCandidates('storages.json')
+    );
+    ensureFileInitialized(
+        ANCESTOR_ASSETS_FILE,
+        array_merge(
+            legacyPathCandidates('ancestor_assets.json')
+        )
+    );
 }
 
 function clean(string $value): string
@@ -88,7 +128,7 @@ function loadStorages(): array
 function loadAncestors(): array
 {
     $items = [];
-    foreach (readArray(ANCESTOR_PROPERTIES_FILE) as $row) {
+    foreach (readArray(ANCESTOR_ASSETS_FILE) as $row) {
         if (!is_array($row)) {
             continue;
         }
@@ -107,10 +147,10 @@ function loadAncestors(): array
     return $items;
 }
 
-function loadProperties(array $ancestors = []): array
+function loadAssets(array $ancestors = []): array
 {
     $items = [];
-    foreach (readArray(PROPERTIES_FILE) as $row) {
+    foreach (readArray(ASSETS_FILE) as $row) {
         if (!is_array($row)) {
             continue;
         }
@@ -120,11 +160,11 @@ function loadProperties(array $ancestors = []): array
         if ($ancestorId === '' && $name !== '') {
             $ancestorId = ancestorIdByName($ancestors, $name);
         }
-        $hasExplicitSpecial = array_key_exists('special_property', $row);
-        $specialProperty = $hasExplicitSpecial
-            ? parseBool($row['special_property'] ?? false)
+        $hasExplicitSpecial = array_key_exists('special_asset', $row);
+        $specialAsset = $hasExplicitSpecial
+            ? parseBool($row['special_asset'] ?? false)
             : ($ancestorId === '' && $name !== '');
-        if (!$specialProperty && $ancestorId !== '') {
+        if (!$specialAsset && $ancestorId !== '') {
             $ancestorName = ancestorNameById($ancestors, $ancestorId);
             if ($ancestorName !== '') {
                 $name = $ancestorName;
@@ -132,12 +172,12 @@ function loadProperties(array $ancestors = []): array
         }
         $code = clean((string)($row['code'] ?? ''));
         $storageId = trim((string)($row['storage_id'] ?? ''));
-        if ($id === '' || $code === '' || ($specialProperty && $name === '')) {
+        if ($id === '' || $code === '' || ($specialAsset && $name === '')) {
             continue;
         }
         $items[] = [
             'id' => $id,
-            'special_property' => $specialProperty,
+            'special_asset' => $specialAsset,
             'ancestor_id' => $ancestorId,
             'name' => $name,
             'code' => $code,
@@ -205,13 +245,13 @@ function ancestorNameExists(array $ancestors, string $name, string $except = '')
     return false;
 }
 
-function propertyCodeExists(array $properties, string $code, string $except = ''): bool
+function assetCodeExists(array $assets, string $code, string $except = ''): bool
 {
     $needle = strtolower(clean($code));
     if ($needle === '') {
         return false;
     }
-    foreach ($properties as $p) {
+    foreach ($assets as $p) {
         $id = (string)($p['id'] ?? '');
         if ($except !== '' && $id === $except) {
             continue;
@@ -247,9 +287,9 @@ function ancestorIdByName(array $ancestors, string $name): string
     return '';
 }
 
-function storageUsed(array $properties, string $storageId): bool
+function storageUsed(array $assets, string $storageId): bool
 {
-    foreach ($properties as $p) {
+    foreach ($assets as $p) {
         if ((string)($p['storage_id'] ?? '') === $storageId) {
             return true;
         }
@@ -257,9 +297,9 @@ function storageUsed(array $properties, string $storageId): bool
     return false;
 }
 
-function ancestorUsed(array $properties, string $ancestorId): bool
+function ancestorUsed(array $assets, string $ancestorId): bool
 {
-    foreach ($properties as $p) {
+    foreach ($assets as $p) {
         if ((string)($p['ancestor_id'] ?? '') === $ancestorId) {
             return true;
         }
@@ -275,13 +315,13 @@ function out(array $payload, int $status = 200): void
     exit;
 }
 
-function okData(array $storages, array $ancestors, array $properties): array
+function okData(array $storages, array $ancestors, array $assets): array
 {
     return [
         'status' => 'ok',
         'storages' => array_values($storages),
         'ancestors' => array_values($ancestors),
-        'properties' => array_values($properties)
+        'assets' => array_values($assets)
     ];
 }
 
@@ -289,10 +329,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = clean((string)($_POST['action'] ?? ''));
     $storages = loadStorages();
     $ancestors = loadAncestors();
-    $properties = loadProperties($ancestors);
+    $assets = loadAssets($ancestors);
 
     if ($action === 'load_data') {
-        out(okData($storages, $ancestors, $properties));
+        out(okData($storages, $ancestors, $assets));
     }
 
     if ($action === 'add_storage') {
@@ -308,7 +348,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage.'], 500);
         }
-        out(okData($storages, $ancestors, $properties));
+        out(okData($storages, $ancestors, $assets));
     }
 
     if ($action === 'update_storage') {
@@ -329,7 +369,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage changes.'], 500);
         }
-        out(okData($storages, $ancestors, $properties));
+        out(okData($storages, $ancestors, $assets));
     }
 
     if ($action === 'remove_storage') {
@@ -337,8 +377,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($id === '') {
             out(['status' => 'error', 'message' => 'Storage id is required.'], 422);
         }
-        if (storageUsed($properties, $id)) {
-            out(['status' => 'error', 'message' => 'Storage is used by properties and cannot be removed.'], 422);
+        if (storageUsed($assets, $id)) {
+            out(['status' => 'error', 'message' => 'Storage is used by assets and cannot be removed.'], 422);
         }
         $next = [];
         $removed = false;
@@ -355,53 +395,53 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove storage.'], 500);
         }
-        out(okData($next, $ancestors, $properties));
+        out(okData($next, $ancestors, $assets));
     }
 
     if ($action === 'add_ancestor') {
         $name = clean((string)($_POST['name'] ?? ''));
         if ($name === '') {
-            out(['status' => 'error', 'message' => 'Ancestor property name is required.'], 422);
+            out(['status' => 'error', 'message' => 'Ancestor asset name is required.'], 422);
         }
         if (ancestorNameExists($ancestors, $name)) {
-            out(['status' => 'error', 'message' => 'Ancestor property name must be unique.'], 422);
+            out(['status' => 'error', 'message' => 'Ancestor asset name must be unique.'], 422);
         }
         $now = date('c');
         $ancestors[] = ['id' => bin2hex(random_bytes(8)), 'name' => $name, 'created_at' => $now, 'updated_at' => $now];
-        if (!writeArray(ANCESTOR_PROPERTIES_FILE, $ancestors)) {
-            out(['status' => 'error', 'message' => 'Unable to save ancestor property.'], 500);
+        if (!writeArray(ANCESTOR_ASSETS_FILE, $ancestors)) {
+            out(['status' => 'error', 'message' => 'Unable to save ancestor asset.'], 500);
         }
-        out(okData($storages, $ancestors, $properties));
+        out(okData($storages, $ancestors, $assets));
     }
 
     if ($action === 'update_ancestor') {
         $id = trim((string)($_POST['id'] ?? ''));
         $name = clean((string)($_POST['value'] ?? ''));
         if ($id === '' || $name === '') {
-            out(['status' => 'error', 'message' => 'Invalid ancestor property update.'], 422);
+            out(['status' => 'error', 'message' => 'Invalid ancestor asset update.'], 422);
         }
         $idx = idxById($ancestors, $id);
         if ($idx < 0) {
-            out(['status' => 'error', 'message' => 'Ancestor property not found.'], 404);
+            out(['status' => 'error', 'message' => 'Ancestor asset not found.'], 404);
         }
         if (ancestorNameExists($ancestors, $name, $id)) {
-            out(['status' => 'error', 'message' => 'Ancestor property name must be unique.'], 422);
+            out(['status' => 'error', 'message' => 'Ancestor asset name must be unique.'], 422);
         }
         $ancestors[$idx]['name'] = $name;
         $ancestors[$idx]['updated_at'] = date('c');
-        if (!writeArray(ANCESTOR_PROPERTIES_FILE, $ancestors)) {
-            out(['status' => 'error', 'message' => 'Unable to save ancestor property changes.'], 500);
+        if (!writeArray(ANCESTOR_ASSETS_FILE, $ancestors)) {
+            out(['status' => 'error', 'message' => 'Unable to save ancestor asset changes.'], 500);
         }
-        out(okData($storages, $ancestors, $properties));
+        out(okData($storages, $ancestors, $assets));
     }
 
     if ($action === 'remove_ancestor') {
         $id = trim((string)($_POST['id'] ?? ''));
         if ($id === '') {
-            out(['status' => 'error', 'message' => 'Ancestor property id is required.'], 422);
+            out(['status' => 'error', 'message' => 'Ancestor asset id is required.'], 422);
         }
-        if (ancestorUsed($properties, $id)) {
-            out(['status' => 'error', 'message' => 'Ancestor property is used by properties and cannot be removed.'], 422);
+        if (ancestorUsed($assets, $id)) {
+            out(['status' => 'error', 'message' => 'Ancestor asset is used by assets and cannot be removed.'], 422);
         }
         $next = [];
         $removed = false;
@@ -413,110 +453,110 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $next[] = $a;
         }
         if (!$removed) {
-            out(['status' => 'error', 'message' => 'Ancestor property not found.'], 404);
+            out(['status' => 'error', 'message' => 'Ancestor asset not found.'], 404);
         }
-        if (!writeArray(ANCESTOR_PROPERTIES_FILE, $next)) {
-            out(['status' => 'error', 'message' => 'Unable to remove ancestor property.'], 500);
+        if (!writeArray(ANCESTOR_ASSETS_FILE, $next)) {
+            out(['status' => 'error', 'message' => 'Unable to remove ancestor asset.'], 500);
         }
-        out(okData($storages, $next, $properties));
+        out(okData($storages, $next, $assets));
     }
 
-    if ($action === 'add_property') {
-        $specialProperty = parseBool($_POST['special_property'] ?? false);
+    if ($action === 'add_asset') {
+        $specialAsset = parseBool($_POST['special_asset'] ?? false);
         $name = clean((string)($_POST['name'] ?? ''));
         $ancestorId = trim((string)($_POST['ancestor_id'] ?? ''));
         $code = clean((string)($_POST['code'] ?? ''));
         $storageId = trim((string)($_POST['storage_id'] ?? ''));
         if ($code === '' || $storageId === '') {
-            out(['status' => 'error', 'message' => 'All property fields are required.'], 422);
+            out(['status' => 'error', 'message' => 'All asset fields are required.'], 422);
         }
-        if ($specialProperty) {
+        if ($specialAsset) {
             if ($name === '') {
-                out(['status' => 'error', 'message' => 'Special property name is required.'], 422);
+                out(['status' => 'error', 'message' => 'Special asset name is required.'], 422);
             }
         } else {
             if ($ancestorId === '') {
-                out(['status' => 'error', 'message' => 'All property fields are required.'], 422);
+                out(['status' => 'error', 'message' => 'All asset fields are required.'], 422);
             }
             if (!ancestorExists($ancestors, $ancestorId)) {
-                out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
+                out(['status' => 'error', 'message' => 'Selected ancestor asset is invalid.'], 422);
             }
             $name = ancestorNameById($ancestors, $ancestorId);
         }
         if (!storageExists($storages, $storageId)) {
             out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
         }
-        if (propertyCodeExists($properties, $code)) {
-            out(['status' => 'error', 'message' => 'Property code must be unique.'], 422);
+        if (assetCodeExists($assets, $code)) {
+            out(['status' => 'error', 'message' => 'Asset code must be unique.'], 422);
         }
         $now = date('c');
-        $properties[] = [
+        $assets[] = [
             'id' => bin2hex(random_bytes(8)),
-            'special_property' => $specialProperty,
-            'ancestor_id' => $specialProperty ? '' : $ancestorId,
+            'special_asset' => $specialAsset,
+            'ancestor_id' => $specialAsset ? '' : $ancestorId,
             'name' => $name,
             'code' => $code,
             'storage_id' => $storageId,
             'created_at' => $now,
             'updated_at' => $now
         ];
-        if (!writeArray(PROPERTIES_FILE, $properties)) {
-            out(['status' => 'error', 'message' => 'Unable to save property.'], 500);
+        if (!writeArray(ASSETS_FILE, $assets)) {
+            out(['status' => 'error', 'message' => 'Unable to save asset.'], 500);
         }
-        out(okData($storages, $ancestors, $properties));
+        out(okData($storages, $ancestors, $assets));
     }
 
-    if ($action === 'update_property') {
+    if ($action === 'update_asset') {
         $id = trim((string)($_POST['id'] ?? ''));
         $field = trim((string)($_POST['field'] ?? ''));
         $value = clean((string)($_POST['value'] ?? ''));
         if ($id === '' || $value === '') {
-            out(['status' => 'error', 'message' => 'Invalid property update.'], 422);
+            out(['status' => 'error', 'message' => 'Invalid asset update.'], 422);
         }
         if (!in_array($field, ['ancestor_id', 'name', 'code', 'storage_id'], true)) {
-            out(['status' => 'error', 'message' => 'Invalid property field.'], 422);
+            out(['status' => 'error', 'message' => 'Invalid asset field.'], 422);
         }
-        $idx = idxById($properties, $id);
+        $idx = idxById($assets, $id);
         if ($idx < 0) {
-            out(['status' => 'error', 'message' => 'Property not found.'], 404);
+            out(['status' => 'error', 'message' => 'Asset not found.'], 404);
         }
-        $isSpecialProperty = parseBool($properties[$idx]['special_property'] ?? false);
-        if ($field === 'code' && propertyCodeExists($properties, $value, $id)) {
-            out(['status' => 'error', 'message' => 'Property code must be unique.'], 422);
+        $isSpecialAsset = parseBool($assets[$idx]['special_asset'] ?? false);
+        if ($field === 'code' && assetCodeExists($assets, $value, $id)) {
+            out(['status' => 'error', 'message' => 'Asset code must be unique.'], 422);
         }
         if ($field === 'storage_id' && !storageExists($storages, $value)) {
             out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
         }
         if ($field === 'ancestor_id') {
-            if ($isSpecialProperty) {
-                out(['status' => 'error', 'message' => 'Special property cannot use ancestor selection.'], 422);
+            if ($isSpecialAsset) {
+                out(['status' => 'error', 'message' => 'Special asset cannot use ancestor selection.'], 422);
             }
             if (!ancestorExists($ancestors, $value)) {
-                out(['status' => 'error', 'message' => 'Selected ancestor property is invalid.'], 422);
+                out(['status' => 'error', 'message' => 'Selected ancestor asset is invalid.'], 422);
             }
         }
-        if ($field === 'name' && !$isSpecialProperty) {
-            out(['status' => 'error', 'message' => 'Only special properties can use custom text names.'], 422);
+        if ($field === 'name' && !$isSpecialAsset) {
+            out(['status' => 'error', 'message' => 'Only special assets can use custom text names.'], 422);
         }
-        $properties[$idx][$field] = $value;
+        $assets[$idx][$field] = $value;
         if ($field === 'ancestor_id') {
-            $properties[$idx]['name'] = ancestorNameById($ancestors, $value);
+            $assets[$idx]['name'] = ancestorNameById($ancestors, $value);
         }
-        $properties[$idx]['updated_at'] = date('c');
-        if (!writeArray(PROPERTIES_FILE, $properties)) {
-            out(['status' => 'error', 'message' => 'Unable to save property changes.'], 500);
+        $assets[$idx]['updated_at'] = date('c');
+        if (!writeArray(ASSETS_FILE, $assets)) {
+            out(['status' => 'error', 'message' => 'Unable to save asset changes.'], 500);
         }
-        out(okData($storages, $ancestors, $properties));
+        out(okData($storages, $ancestors, $assets));
     }
 
-    if ($action === 'remove_property') {
+    if ($action === 'remove_asset') {
         $id = trim((string)($_POST['id'] ?? ''));
         if ($id === '') {
-            out(['status' => 'error', 'message' => 'Property id is required.'], 422);
+            out(['status' => 'error', 'message' => 'Asset id is required.'], 422);
         }
         $next = [];
         $removed = false;
-        foreach ($properties as $p) {
+        foreach ($assets as $p) {
             if ((string)($p['id'] ?? '') === $id) {
                 $removed = true;
                 continue;
@@ -524,10 +564,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $next[] = $p;
         }
         if (!$removed) {
-            out(['status' => 'error', 'message' => 'Property not found.'], 404);
+            out(['status' => 'error', 'message' => 'Asset not found.'], 404);
         }
-        if (!writeArray(PROPERTIES_FILE, $next)) {
-            out(['status' => 'error', 'message' => 'Unable to remove property.'], 500);
+        if (!writeArray(ASSETS_FILE, $next)) {
+            out(['status' => 'error', 'message' => 'Unable to remove asset.'], 500);
         }
         out(okData($storages, $ancestors, $next));
     }
@@ -537,14 +577,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 $storages = loadStorages();
 $ancestors = loadAncestors();
-$properties = loadProperties($ancestors);
+$assets = loadAssets($ancestors);
 ?>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Properties Manager</title>
+  <title>Assets Manager</title>
   <style>
     :root { font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
     * { box-sizing: border-box; }
@@ -589,44 +629,44 @@ $properties = loadProperties($ancestors);
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <h1>properties manager</h1>
+      <h1>assets manager</h1>
       <div class="nav">
-        <button class="active" data-pane-target="properties-pane" type="button">add properties</button>
+        <button class="active" data-pane-target="assets-pane" type="button">add assets</button>
         <button data-pane-target="storages-pane" type="button">add storage</button>
-        <button data-pane-target="ancestors-pane" type="button">Add Ancestor Properties</button>
+        <button data-pane-target="ancestors-pane" type="button">Add Ancestor Assets</button>
       </div>
     </aside>
 
     <main class="content">
-      <section class="pane active" data-pane="properties-pane">
+      <section class="pane active" data-pane="assets-pane">
         <section class="card">
-          <h2>Add Properties</h2>
-          <form id="add-property-form">
+          <h2>Add Assets</h2>
+          <form id="add-asset-form">
             <div class="grid">
               <div class="field">
-                <label for="property-special">Special Property</label>
+                <label for="asset-special">Special Asset</label>
                 <div class="switch-row">
-                  <input id="property-special" name="special_property" type="checkbox" />
-                  <span>Enable custom property text</span>
+                  <input id="asset-special" name="special_asset" type="checkbox" />
+                  <span>Enable custom asset text</span>
                 </div>
               </div>
-              <div class="field" id="property-ancestor-field"><label for="property-ancestor">Ancestor Property</label><select id="property-ancestor" name="ancestor_id" required></select></div>
-              <div class="field hidden" id="property-special-name-field"><label for="property-special-name">Special Property Name</label><input id="property-special-name" name="name" type="text" disabled /></div>
-              <div class="field"><label for="property-code">Property Code</label><input id="property-code" name="code" type="text" required /></div>
-              <div class="field"><label for="property-storage">Storage</label><select id="property-storage" name="storage_id" required></select></div>
+              <div class="field" id="asset-ancestor-field"><label for="asset-ancestor">Ancestor Asset</label><select id="asset-ancestor" name="ancestor_id" required></select></div>
+              <div class="field hidden" id="asset-special-name-field"><label for="asset-special-name">Special Asset Name</label><input id="asset-special-name" name="name" type="text" disabled /></div>
+              <div class="field"><label for="asset-code">Asset Code</label><input id="asset-code" name="code" type="text" required /></div>
+              <div class="field"><label for="asset-storage">Storage</label><select id="asset-storage" name="storage_id" required></select></div>
             </div>
             <div class="actions">
-              <button class="btn primary" type="submit">Add Property</button>
-              <span id="property-status" class="status" aria-live="polite"></span>
+              <button class="btn primary" type="submit">Add Asset</button>
+              <span id="asset-status" class="status" aria-live="polite"></span>
             </div>
           </form>
         </section>
         <section class="card">
-          <h2>Properties</h2>
+          <h2>Assets</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Property / Ancestor</th><th>Property Code</th><th>Storage</th><th>Action</th></tr></thead>
-              <tbody id="properties-body"></tbody>
+              <thead><tr><th>Asset / Ancestor</th><th>Asset Code</th><th>Storage</th><th>Action</th></tr></thead>
+              <tbody id="assets-body"></tbody>
             </table>
           </div>
         </section>
@@ -658,22 +698,22 @@ $properties = loadProperties($ancestors);
 
       <section class="pane" data-pane="ancestors-pane">
         <section class="card">
-          <h2>Add Ancestor Property</h2>
+          <h2>Add Ancestor Asset</h2>
           <form id="add-ancestor-form">
             <div class="grid one">
-              <div class="field"><label for="ancestor-name">Ancestor Property Name</label><input id="ancestor-name" name="name" type="text" required /></div>
+              <div class="field"><label for="ancestor-name">Ancestor Asset Name</label><input id="ancestor-name" name="name" type="text" required /></div>
             </div>
             <div class="actions">
-              <button class="btn primary" type="submit">Add Ancestor Property</button>
+              <button class="btn primary" type="submit">Add Ancestor Asset</button>
               <span id="ancestor-status" class="status" aria-live="polite"></span>
             </div>
           </form>
         </section>
         <section class="card">
-          <h2>Ancestor Properties</h2>
+          <h2>Ancestor Assets</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Ancestor Property Name</th><th>Action</th></tr></thead>
+              <thead><tr><th>Ancestor Asset Name</th><th>Action</th></tr></thead>
               <tbody id="ancestors-body"></tbody>
             </table>
           </div>
@@ -686,24 +726,24 @@ $properties = loadProperties($ancestors);
     const state = {
       storages: <?= json_encode($storages, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
       ancestors: <?= json_encode($ancestors, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
-      properties: <?= json_encode($properties, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
+      assets: <?= json_encode($assets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
     };
 
     const paneButtons = [...document.querySelectorAll("[data-pane-target]")];
     const panes = [...document.querySelectorAll("[data-pane]")];
-    const propertyForm = document.getElementById("add-property-form");
+    const assetForm = document.getElementById("add-asset-form");
     const storageForm = document.getElementById("add-storage-form");
     const ancestorForm = document.getElementById("add-ancestor-form");
-    const propertyStatus = document.getElementById("property-status");
+    const assetStatus = document.getElementById("asset-status");
     const storageStatus = document.getElementById("storage-status");
     const ancestorStatus = document.getElementById("ancestor-status");
-    const propertySpecialToggle = document.getElementById("property-special");
-    const propertyAncestorField = document.getElementById("property-ancestor-field");
-    const propertySpecialNameField = document.getElementById("property-special-name-field");
-    const propertyAncestorSelect = document.getElementById("property-ancestor");
-    const propertySpecialNameInput = document.getElementById("property-special-name");
-    const propertyStorageSelect = document.getElementById("property-storage");
-    const propertiesBody = document.getElementById("properties-body");
+    const assetSpecialToggle = document.getElementById("asset-special");
+    const assetAncestorField = document.getElementById("asset-ancestor-field");
+    const assetSpecialNameField = document.getElementById("asset-special-name-field");
+    const assetAncestorSelect = document.getElementById("asset-ancestor");
+    const assetSpecialNameInput = document.getElementById("asset-special-name");
+    const assetStorageSelect = document.getElementById("asset-storage");
+    const assetsBody = document.getElementById("assets-body");
     const storagesBody = document.getElementById("storages-body");
     const ancestorsBody = document.getElementById("ancestors-body");
 
@@ -717,30 +757,30 @@ $properties = loadProperties($ancestors);
       panes.forEach((p) => p.classList.toggle("active", p.dataset.pane === paneId));
     }
 
-    function isSpecialProperty(item) {
-      return item?.special_property === true || String(item?.special_property || "") === "1";
+    function isSpecialAsset(item) {
+      return item?.special_asset === true || String(item?.special_asset || "") === "1";
     }
 
-    function setPropertySpecialMode(isSpecial) {
-      propertyAncestorField?.classList.toggle("hidden", isSpecial);
-      propertySpecialNameField?.classList.toggle("hidden", !isSpecial);
-      if (propertyAncestorSelect) {
-        propertyAncestorSelect.required = !isSpecial;
+    function setAssetSpecialMode(isSpecial) {
+      assetAncestorField?.classList.toggle("hidden", isSpecial);
+      assetSpecialNameField?.classList.toggle("hidden", !isSpecial);
+      if (assetAncestorSelect) {
+        assetAncestorSelect.required = !isSpecial;
         if (isSpecial) {
-          propertyAncestorSelect.value = "";
-          propertyAncestorSelect.disabled = true;
+          assetAncestorSelect.value = "";
+          assetAncestorSelect.disabled = true;
         } else {
-          propertyAncestorSelect.disabled = false;
-          if (!propertyAncestorSelect.value) {
-            fillAncestorOptions(propertyAncestorSelect, "");
+          assetAncestorSelect.disabled = false;
+          if (!assetAncestorSelect.value) {
+            fillAncestorOptions(assetAncestorSelect, "");
           }
         }
       }
-      if (propertySpecialNameInput) {
-        propertySpecialNameInput.disabled = !isSpecial;
-        propertySpecialNameInput.required = isSpecial;
+      if (assetSpecialNameInput) {
+        assetSpecialNameInput.disabled = !isSpecial;
+        assetSpecialNameInput.required = isSpecial;
         if (!isSpecial) {
-          propertySpecialNameInput.value = "";
+          assetSpecialNameInput.value = "";
         }
       }
     }
@@ -769,7 +809,7 @@ $properties = loadProperties($ancestors);
       select.innerHTML = "";
       const empty = document.createElement("option");
       empty.value = "";
-      empty.textContent = state.ancestors.length ? "Select ancestor property" : "No ancestor property available";
+      empty.textContent = state.ancestors.length ? "Select ancestor asset" : "No ancestor asset available";
       select.appendChild(empty);
       state.ancestors.forEach((a) => {
         const o = document.createElement("option");
@@ -781,19 +821,19 @@ $properties = loadProperties($ancestors);
       select.disabled = state.ancestors.length === 0;
     }
 
-    function renderProperties() {
-      propertiesBody.innerHTML = "";
-      if (!state.properties.length) {
+    function renderAssets() {
+      assetsBody.innerHTML = "";
+      if (!state.assets.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td class="empty" colspan="4">No properties added yet.</td>';
-        propertiesBody.appendChild(tr);
+        tr.innerHTML = '<td class="empty" colspan="4">No assets added yet.</td>';
+        assetsBody.appendChild(tr);
         return;
       }
-      state.properties.forEach((p) => {
+      state.assets.forEach((p) => {
         const tr = document.createElement("tr");
         tr.dataset.id = String(p.id || "");
         const ancestorCell = document.createElement("td");
-        if (isSpecialProperty(p)) {
+        if (isSpecialAsset(p)) {
           const specialNameInput = document.createElement("input");
           specialNameInput.type = "text";
           specialNameInput.dataset.field = "name";
@@ -823,12 +863,12 @@ $properties = loadProperties($ancestors);
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "btn danger";
-        remove.dataset.action = "remove-property";
+        remove.dataset.action = "remove-asset";
         remove.textContent = "Remove";
         actionCell.appendChild(remove);
 
         tr.append(ancestorCell, codeCell, storageCell, actionCell);
-        propertiesBody.appendChild(tr);
+        assetsBody.appendChild(tr);
       });
     }
 
@@ -865,7 +905,7 @@ $properties = loadProperties($ancestors);
       ancestorsBody.innerHTML = "";
       if (!state.ancestors.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td class="empty" colspan="2">No ancestor properties added yet.</td>';
+        tr.innerHTML = '<td class="empty" colspan="2">No ancestor assets added yet.</td>';
         ancestorsBody.appendChild(tr);
         return;
       }
@@ -891,10 +931,10 @@ $properties = loadProperties($ancestors);
     }
 
     function renderAll() {
-      fillAncestorOptions(propertyAncestorSelect, propertyAncestorSelect.value);
-      fillStorageOptions(propertyStorageSelect, propertyStorageSelect.value);
-      setPropertySpecialMode(!!propertySpecialToggle?.checked);
-      renderProperties();
+      fillAncestorOptions(assetAncestorSelect, assetAncestorSelect.value);
+      fillStorageOptions(assetStorageSelect, assetStorageSelect.value);
+      setAssetSpecialMode(!!assetSpecialToggle?.checked);
+      renderAssets();
       renderStorages();
       renderAncestors();
     }
@@ -908,13 +948,13 @@ $properties = loadProperties($ancestors);
       if (!res.ok || data.status !== "ok") throw new Error(data.message || "Request failed.");
       state.storages = Array.isArray(data.storages) ? data.storages : [];
       state.ancestors = Array.isArray(data.ancestors) ? data.ancestors : [];
-      state.properties = Array.isArray(data.properties) ? data.properties : [];
+      state.assets = Array.isArray(data.assets) ? data.assets : [];
       renderAll();
       return data;
     }
 
     paneButtons.forEach((btn) => btn.addEventListener("click", () => setPane(btn.dataset.paneTarget)));
-    propertySpecialToggle?.addEventListener("change", () => setPropertySpecialMode(!!propertySpecialToggle.checked));
+    assetSpecialToggle?.addEventListener("change", () => setAssetSpecialMode(!!assetSpecialToggle.checked));
 
     storageForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -933,48 +973,48 @@ $properties = loadProperties($ancestors);
     ancestorForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = ancestorForm.elements.name.value.trim();
-      if (!name) return setStatus(ancestorStatus, "Ancestor property name is required.", true);
+      if (!name) return setStatus(ancestorStatus, "Ancestor asset name is required.", true);
       setStatus(ancestorStatus, "Saving...");
       try {
         await action("add_ancestor", { name });
         ancestorForm.reset();
-        setStatus(ancestorStatus, "Ancestor property added.");
+        setStatus(ancestorStatus, "Ancestor asset added.");
       } catch (err) {
-        setStatus(ancestorStatus, err.message || "Unable to add ancestor property.", true);
+        setStatus(ancestorStatus, err.message || "Unable to add ancestor asset.", true);
       }
     });
 
-    propertyForm.addEventListener("submit", async (e) => {
+    assetForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const special_property = !!propertySpecialToggle?.checked;
-      const ancestor_id = String(propertyForm.elements.ancestor_id.value || "").trim();
-      const name = String(propertyForm.elements.name?.value || "").trim();
-      const code = propertyForm.elements.code.value.trim();
-      const storage_id = String(propertyForm.elements.storage_id.value || "").trim();
-      if (!code || !storage_id || (!special_property && !ancestor_id) || (special_property && !name)) {
-        return setStatus(propertyStatus, "All fields are required.", true);
+      const special_asset = !!assetSpecialToggle?.checked;
+      const ancestor_id = String(assetForm.elements.ancestor_id.value || "").trim();
+      const name = String(assetForm.elements.name?.value || "").trim();
+      const code = assetForm.elements.code.value.trim();
+      const storage_id = String(assetForm.elements.storage_id.value || "").trim();
+      if (!code || !storage_id || (!special_asset && !ancestor_id) || (special_asset && !name)) {
+        return setStatus(assetStatus, "All fields are required.", true);
       }
-      setStatus(propertyStatus, "Saving...");
+      setStatus(assetStatus, "Saving...");
       try {
-        await action("add_property", {
-          special_property: special_property ? "1" : "0",
-          ancestor_id: special_property ? "" : ancestor_id,
-          name: special_property ? name : "",
+        await action("add_asset", {
+          special_asset: special_asset ? "1" : "0",
+          ancestor_id: special_asset ? "" : ancestor_id,
+          name: special_asset ? name : "",
           code,
           storage_id
         });
-        propertyForm.reset();
-        if (propertySpecialToggle) propertySpecialToggle.checked = false;
-        setPropertySpecialMode(false);
-        fillAncestorOptions(propertyAncestorSelect, "");
-        fillStorageOptions(propertyStorageSelect, "");
-        setStatus(propertyStatus, "Property added.");
+        assetForm.reset();
+        if (assetSpecialToggle) assetSpecialToggle.checked = false;
+        setAssetSpecialMode(false);
+        fillAncestorOptions(assetAncestorSelect, "");
+        fillStorageOptions(assetStorageSelect, "");
+        setStatus(assetStatus, "Asset added.");
       } catch (err) {
-        setStatus(propertyStatus, err.message || "Unable to add property.", true);
+        setStatus(assetStatus, err.message || "Unable to add asset.", true);
       }
     });
 
-    propertiesBody.addEventListener("change", async (e) => {
+    assetsBody.addEventListener("change", async (e) => {
       const t = e.target;
       if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement)) return;
       const field = String(t.dataset.field || "");
@@ -982,13 +1022,13 @@ $properties = loadProperties($ancestors);
       const row = t.closest("tr");
       const id = String(row?.dataset.id || "");
       const value = String(t.value || "").trim();
-      if (!id || !value) return renderProperties();
+      if (!id || !value) return renderAssets();
       t.disabled = true;
       try {
-        await action("update_property", { id, field, value });
+        await action("update_asset", { id, field, value });
       } catch (err) {
-        renderProperties();
-        alert(err.message || "Unable to save property changes.");
+        renderAssets();
+        alert(err.message || "Unable to save asset changes.");
       } finally {
         t.disabled = false;
       }
@@ -1024,20 +1064,20 @@ $properties = loadProperties($ancestors);
         await action("update_ancestor", { id, value });
       } catch (err) {
         renderAncestors();
-        alert(err.message || "Unable to save ancestor property changes.");
+        alert(err.message || "Unable to save ancestor asset changes.");
       } finally {
         t.disabled = false;
       }
     });
 
-    propertiesBody.addEventListener("click", async (e) => {
-      const btn = e.target instanceof HTMLElement ? e.target.closest('[data-action="remove-property"]') : null;
+    assetsBody.addEventListener("click", async (e) => {
+      const btn = e.target instanceof HTMLElement ? e.target.closest('[data-action="remove-asset"]') : null;
       if (!(btn instanceof HTMLButtonElement)) return;
       const id = String(btn.closest("tr")?.dataset.id || "");
-      if (!id || !confirm("Remove this property?")) return;
+      if (!id || !confirm("Remove this asset?")) return;
       btn.disabled = true;
-      try { await action("remove_property", { id }); }
-      catch (err) { alert(err.message || "Unable to remove property."); }
+      try { await action("remove_asset", { id }); }
+      catch (err) { alert(err.message || "Unable to remove asset."); }
       finally { btn.disabled = false; }
     });
 
@@ -1056,15 +1096,16 @@ $properties = loadProperties($ancestors);
       const btn = e.target instanceof HTMLElement ? e.target.closest('[data-action="remove-ancestor"]') : null;
       if (!(btn instanceof HTMLButtonElement)) return;
       const id = String(btn.closest("tr")?.dataset.id || "");
-      if (!id || !confirm("Remove this ancestor property?")) return;
+      if (!id || !confirm("Remove this ancestor asset?")) return;
       btn.disabled = true;
       try { await action("remove_ancestor", { id }); }
-      catch (err) { alert(err.message || "Unable to remove ancestor property."); }
+      catch (err) { alert(err.message || "Unable to remove ancestor asset."); }
       finally { btn.disabled = false; }
     });
 
     renderAll();
-    setPane("properties-pane");
+    setPane("assets-pane");
   </script>
 </body>
 </html>
+

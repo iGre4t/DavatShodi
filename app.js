@@ -28,7 +28,7 @@ let deletingUserCode = "";
 const TITLE_KEY = "frontend_panel_title";
 const TIMEZONE_KEY = "frontend_panel_timezone";
 const API_ENDPOINT = "./api/data.php"; // Shared handler supplying data for both users and gallery tabs.
-const PROPERTIES_MANAGER_ENDPOINT = "mini%20apps/properties%20manager/index.php";
+const ASSETS_MANAGER_ENDPOINT = "mini%20apps/Asset%20Manager/index.php";
 const PANEL_TITLE_KEY = "frontend_panel_name";
 const PANEL_TITLE_DEFAULT = "Frontend panel";
 const DEFAULT_SETTINGS = {
@@ -4499,7 +4499,7 @@ function setActiveTab(tab) {
     users: 'Users',
     settings: 'Account Settings',
     features: 'Features',
-    'properties-manager': 'مدیریت املاک',
+    'asset-manager': 'مدیریت اموال',
     devsettings: 'Developer Settings'
   };
   const el = qs('#page-title');
@@ -4909,41 +4909,41 @@ function initSubSidebars(){
   });
 }
 
-let propertiesManagerInitialized = false;
-const PROPERTIES_MANAGER_STATE = {
+let assetsManagerInitialized = false;
+const ASSETS_MANAGER_STATE = {
   storages: [],
   ancestors: [],
-  properties: []
+  assets: []
 };
 
-function initPropertiesManagerTab() {
-  if (propertiesManagerInitialized) {
+function initAssetsManagerTab() {
+  if (assetsManagerInitialized) {
     return;
   }
   const root = qs("[data-pm-root]");
   if (!root) {
     return;
   }
-  propertiesManagerInitialized = true;
+  assetsManagerInitialized = true;
 
   const paneButtons = qsa("[data-pm-pane-target]", root);
   const panes = qsa("[data-pm-pane]", root);
-  const propertyForm = qs("#pm-add-property-form", root);
+  const assetForm = qs("#pm-add-asset-form", root);
   const storageForm = qs("#pm-add-storage-form", root);
   const ancestorForm = qs("#pm-add-ancestor-form", root);
-  const propertySpecialToggle = qs("#pm-property-special", root);
-  const propertyAncestorField = qs("#pm-property-ancestor-field", root);
-  const propertyNameField = qs("#pm-property-name-field", root);
-  const propertyAncestorSelect = qs("#pm-property-ancestor", root);
-  const propertyNameInput = qs("#pm-property-name", root);
-  const propertyCodeInput = qs("#pm-property-code", root);
-  const propertyStorageSelect = qs("#pm-property-storage", root);
+  const assetSpecialToggle = qs("#pm-asset-special", root);
+  const assetAncestorField = qs("#pm-asset-ancestor-field", root);
+  const assetNameField = qs("#pm-asset-name-field", root);
+  const assetAncestorSelect = qs("#pm-asset-ancestor", root);
+  const assetNameInput = qs("#pm-asset-name", root);
+  const assetCodeInput = qs("#pm-asset-code", root);
+  const assetStorageSelect = qs("#pm-asset-storage", root);
   const storageNameInput = qs("#pm-storage-name", root);
   const ancestorNameInput = qs("#pm-ancestor-name", root);
-  const propertyStatus = qs("#pm-property-status", root);
+  const assetStatus = qs("#pm-asset-status", root);
   const storageStatus = qs("#pm-storage-status", root);
   const ancestorStatus = qs("#pm-ancestor-status", root);
-  const propertiesBody = qs("#pm-properties-body", root);
+  const assetsBody = qs("#pm-assets-body", root);
   const storagesBody = qs("#pm-storages-body", root);
   const ancestorsBody = qs("#pm-ancestors-body", root);
 
@@ -4962,25 +4962,25 @@ function initPropertiesManagerTab() {
     });
   };
 
-  const isSpecialProperty = (item) => {
-    return item?.special_property === true || String(item?.special_property || "") === "1";
+  const isSpecialAsset = (item) => {
+    return item?.special_asset === true || String(item?.special_asset || "") === "1";
   };
 
   const setSpecialMode = (isSpecial) => {
-    propertyAncestorField?.classList.toggle("hidden", isSpecial);
-    propertyNameField?.classList.toggle("hidden", !isSpecial);
-    if (propertyAncestorSelect) {
-      propertyAncestorSelect.disabled = isSpecial || PROPERTIES_MANAGER_STATE.ancestors.length === 0;
-      propertyAncestorSelect.required = !isSpecial;
+    assetAncestorField?.classList.toggle("hidden", isSpecial);
+    assetNameField?.classList.toggle("hidden", !isSpecial);
+    if (assetAncestorSelect) {
+      assetAncestorSelect.disabled = isSpecial || ASSETS_MANAGER_STATE.ancestors.length === 0;
+      assetAncestorSelect.required = !isSpecial;
       if (isSpecial) {
-        propertyAncestorSelect.value = "";
+        assetAncestorSelect.value = "";
       }
     }
-    if (propertyNameInput) {
-      propertyNameInput.disabled = !isSpecial;
-      propertyNameInput.required = isSpecial;
+    if (assetNameInput) {
+      assetNameInput.disabled = !isSpecial;
+      assetNameInput.required = isSpecial;
       if (!isSpecial) {
-        propertyNameInput.value = "";
+        assetNameInput.value = "";
       }
     }
   };
@@ -4991,9 +4991,9 @@ function initPropertiesManagerTab() {
     select.innerHTML = "";
     const emptyOption = document.createElement("option");
     emptyOption.value = "";
-    emptyOption.textContent = PROPERTIES_MANAGER_STATE.storages.length ? "انتخاب انبار" : "انباری ثبت نشده";
+    emptyOption.textContent = ASSETS_MANAGER_STATE.storages.length ? "انتخاب انبار" : "انباری ثبت نشده";
     select.appendChild(emptyOption);
-    PROPERTIES_MANAGER_STATE.storages.forEach((storage) => {
+    ASSETS_MANAGER_STATE.storages.forEach((storage) => {
       const option = document.createElement("option");
       option.value = String(storage.id || "");
       option.textContent = String(storage.name || "");
@@ -5002,7 +5002,7 @@ function initPropertiesManagerTab() {
       }
       select.appendChild(option);
     });
-    select.disabled = PROPERTIES_MANAGER_STATE.storages.length === 0;
+    select.disabled = ASSETS_MANAGER_STATE.storages.length === 0;
   };
 
   const fillAncestorOptions = (select, selected = "") => {
@@ -5011,9 +5011,9 @@ function initPropertiesManagerTab() {
     select.innerHTML = "";
     const emptyOption = document.createElement("option");
     emptyOption.value = "";
-    emptyOption.textContent = PROPERTIES_MANAGER_STATE.ancestors.length ? "انتخاب ویژگی پایه" : "ویژگی پایه‌ای ثبت نشده";
+    emptyOption.textContent = ASSETS_MANAGER_STATE.ancestors.length ? "انتخاب مال مرسوم" : "مال مرسومی ثبت نشده";
     select.appendChild(emptyOption);
-    PROPERTIES_MANAGER_STATE.ancestors.forEach((ancestor) => {
+    ASSETS_MANAGER_STATE.ancestors.forEach((ancestor) => {
       const option = document.createElement("option");
       option.value = String(ancestor.id || "");
       option.textContent = String(ancestor.name || "");
@@ -5022,34 +5022,34 @@ function initPropertiesManagerTab() {
       }
       select.appendChild(option);
     });
-    select.disabled = PROPERTIES_MANAGER_STATE.ancestors.length === 0;
+    select.disabled = ASSETS_MANAGER_STATE.ancestors.length === 0;
   };
 
-  const renderProperties = () => {
-    if (!propertiesBody) return;
-    propertiesBody.innerHTML = "";
-    if (!PROPERTIES_MANAGER_STATE.properties.length) {
+  const renderAssets = () => {
+    if (!assetsBody) return;
+    assetsBody.innerHTML = "";
+    if (!ASSETS_MANAGER_STATE.assets.length) {
       const row = document.createElement("tr");
-      row.innerHTML = '<td class="empty" colspan="4">ملکی ثبت نشده است.</td>';
-      propertiesBody.appendChild(row);
+      row.innerHTML = '<td class="empty" colspan="4">مالی ثبت نشده است.</td>';
+      assetsBody.appendChild(row);
       return;
     }
 
-    PROPERTIES_MANAGER_STATE.properties.forEach((property) => {
+    ASSETS_MANAGER_STATE.assets.forEach((asset) => {
       const row = document.createElement("tr");
-      row.dataset.id = String(property.id || "");
+      row.dataset.id = String(asset.id || "");
 
       const titleCell = document.createElement("td");
-      if (isSpecialProperty(property)) {
+      if (isSpecialAsset(asset)) {
         const nameInput = document.createElement("input");
         nameInput.type = "text";
         nameInput.dataset.field = "name";
-        nameInput.value = String(property.name || "");
+        nameInput.value = String(asset.name || "");
         titleCell.appendChild(nameInput);
       } else {
         const ancestorSelect = document.createElement("select");
         ancestorSelect.dataset.field = "ancestor_id";
-        fillAncestorOptions(ancestorSelect, String(property.ancestor_id || ""));
+        fillAncestorOptions(ancestorSelect, String(asset.ancestor_id || ""));
         titleCell.appendChild(ancestorSelect);
       }
 
@@ -5057,13 +5057,13 @@ function initPropertiesManagerTab() {
       const codeInput = document.createElement("input");
       codeInput.type = "text";
       codeInput.dataset.field = "code";
-      codeInput.value = String(property.code || "");
+      codeInput.value = String(asset.code || "");
       codeCell.appendChild(codeInput);
 
       const storageCell = document.createElement("td");
       const storageSelect = document.createElement("select");
       storageSelect.dataset.field = "storage_id";
-      fillStorageOptions(storageSelect, String(property.storage_id || ""));
+      fillStorageOptions(storageSelect, String(asset.storage_id || ""));
       storageCell.appendChild(storageSelect);
 
       const actionCell = document.createElement("td");
@@ -5071,26 +5071,26 @@ function initPropertiesManagerTab() {
       const removeButton = document.createElement("button");
       removeButton.type = "button";
       removeButton.className = "btn ghost";
-      removeButton.dataset.action = "remove-property";
+      removeButton.dataset.action = "remove-asset";
       removeButton.textContent = "حذف";
       actionCell.appendChild(removeButton);
 
       row.append(titleCell, codeCell, storageCell, actionCell);
-      propertiesBody.appendChild(row);
+      assetsBody.appendChild(row);
     });
   };
 
   const renderStorages = () => {
     if (!storagesBody) return;
     storagesBody.innerHTML = "";
-    if (!PROPERTIES_MANAGER_STATE.storages.length) {
+    if (!ASSETS_MANAGER_STATE.storages.length) {
       const row = document.createElement("tr");
       row.innerHTML = '<td class="empty" colspan="2">انباری ثبت نشده است.</td>';
       storagesBody.appendChild(row);
       return;
     }
 
-    PROPERTIES_MANAGER_STATE.storages.forEach((storage) => {
+    ASSETS_MANAGER_STATE.storages.forEach((storage) => {
       const row = document.createElement("tr");
       row.dataset.id = String(storage.id || "");
 
@@ -5118,14 +5118,14 @@ function initPropertiesManagerTab() {
   const renderAncestors = () => {
     if (!ancestorsBody) return;
     ancestorsBody.innerHTML = "";
-    if (!PROPERTIES_MANAGER_STATE.ancestors.length) {
+    if (!ASSETS_MANAGER_STATE.ancestors.length) {
       const row = document.createElement("tr");
-      row.innerHTML = '<td class="empty" colspan="2">ویژگی پایه‌ای ثبت نشده است.</td>';
+      row.innerHTML = '<td class="empty" colspan="2">مال مرسومی ثبت نشده است.</td>';
       ancestorsBody.appendChild(row);
       return;
     }
 
-    PROPERTIES_MANAGER_STATE.ancestors.forEach((ancestor) => {
+    ASSETS_MANAGER_STATE.ancestors.forEach((ancestor) => {
       const row = document.createElement("tr");
       row.dataset.id = String(ancestor.id || "");
 
@@ -5151,22 +5151,22 @@ function initPropertiesManagerTab() {
   };
 
   const renderAll = () => {
-    fillAncestorOptions(propertyAncestorSelect, propertyAncestorSelect?.value || "");
-    fillStorageOptions(propertyStorageSelect, propertyStorageSelect?.value || "");
-    setSpecialMode(Boolean(propertySpecialToggle?.checked));
-    renderProperties();
+    fillAncestorOptions(assetAncestorSelect, assetAncestorSelect?.value || "");
+    fillStorageOptions(assetStorageSelect, assetStorageSelect?.value || "");
+    setSpecialMode(Boolean(assetSpecialToggle?.checked));
+    renderAssets();
     renderStorages();
     renderAncestors();
   };
 
-  const syncPropertiesManager = async (action, payload = {}) => {
+  const syncAssetsManager = async (action, payload = {}) => {
     const body = new FormData();
     body.append("action", action);
     Object.entries(payload).forEach(([key, value]) => {
       body.append(key, String(value ?? ""));
     });
 
-    const response = await fetch(PROPERTIES_MANAGER_ENDPOINT, {
+    const response = await fetch(ASSETS_MANAGER_ENDPOINT, {
       method: "POST",
       body,
       credentials: "same-origin"
@@ -5175,15 +5175,15 @@ function initPropertiesManagerTab() {
     try {
       data = await response.json();
     } catch (error) {
-      throw new Error("پاسخ نامعتبر از سرویس مدیریت املاک دریافت شد.");
+      throw new Error("پاسخ نامعتبر از سرویس مدیریت اموال دریافت شد.");
     }
     if (!response.ok || data?.status !== "ok") {
-      throw new Error(data?.message || "در ارتباط با سرویس مدیریت املاک خطا رخ داد.");
+      throw new Error(data?.message || "در ارتباط با سرویس مدیریت اموال خطا رخ داد.");
     }
 
-    PROPERTIES_MANAGER_STATE.storages = Array.isArray(data.storages) ? data.storages : [];
-    PROPERTIES_MANAGER_STATE.ancestors = Array.isArray(data.ancestors) ? data.ancestors : [];
-    PROPERTIES_MANAGER_STATE.properties = Array.isArray(data.properties) ? data.properties : [];
+    ASSETS_MANAGER_STATE.storages = Array.isArray(data.storages) ? data.storages : [];
+    ASSETS_MANAGER_STATE.ancestors = Array.isArray(data.ancestors) ? data.ancestors : [];
+    ASSETS_MANAGER_STATE.assets = Array.isArray(data.assets) ? data.assets : [];
     renderAll();
     return data;
   };
@@ -5196,8 +5196,8 @@ function initPropertiesManagerTab() {
     });
   });
 
-  propertySpecialToggle?.addEventListener("change", () => {
-    setSpecialMode(Boolean(propertySpecialToggle.checked));
+  assetSpecialToggle?.addEventListener("change", () => {
+    setSpecialMode(Boolean(assetSpecialToggle.checked));
   });
 
   storageForm?.addEventListener("submit", async (event) => {
@@ -5209,7 +5209,7 @@ function initPropertiesManagerTab() {
     }
     setStatus(storageStatus, "در حال ذخیره...");
     try {
-      await syncPropertiesManager("add_storage", { name });
+      await syncAssetsManager("add_storage", { name });
       storageForm.reset();
       setStatus(storageStatus, "انبار با موفقیت اضافه شد.");
     } catch (error) {
@@ -5221,52 +5221,52 @@ function initPropertiesManagerTab() {
     event.preventDefault();
     const name = String(ancestorNameInput?.value || "").trim();
     if (!name) {
-      setStatus(ancestorStatus, "نام ویژگی پایه الزامی است.", true);
+      setStatus(ancestorStatus, "نام مال مرسوم الزامی است.", true);
       return;
     }
     setStatus(ancestorStatus, "در حال ذخیره...");
     try {
-      await syncPropertiesManager("add_ancestor", { name });
+      await syncAssetsManager("add_ancestor", { name });
       ancestorForm.reset();
-      setStatus(ancestorStatus, "ویژگی پایه با موفقیت اضافه شد.");
+      setStatus(ancestorStatus, "مال مرسوم با موفقیت اضافه شد.");
     } catch (error) {
-      setStatus(ancestorStatus, error?.message || "افزودن ویژگی پایه انجام نشد.", true);
+      setStatus(ancestorStatus, error?.message || "افزودن مال مرسوم انجام نشد.", true);
     }
   });
 
-  propertyForm?.addEventListener("submit", async (event) => {
+  assetForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const specialProperty = Boolean(propertySpecialToggle?.checked);
-    const ancestorId = String(propertyAncestorSelect?.value || "").trim();
-    const name = String(propertyNameInput?.value || "").trim();
-    const code = String(propertyCodeInput?.value || "").trim();
-    const storageId = String(propertyStorageSelect?.value || "").trim();
-    if (!code || !storageId || (!specialProperty && !ancestorId) || (specialProperty && !name)) {
-      setStatus(propertyStatus, "همه فیلدهای الزامی را تکمیل کنید.", true);
+    const specialAsset = Boolean(assetSpecialToggle?.checked);
+    const ancestorId = String(assetAncestorSelect?.value || "").trim();
+    const name = String(assetNameInput?.value || "").trim();
+    const code = String(assetCodeInput?.value || "").trim();
+    const storageId = String(assetStorageSelect?.value || "").trim();
+    if (!code || !storageId || (!specialAsset && !ancestorId) || (specialAsset && !name)) {
+      setStatus(assetStatus, "همه فیلدهای الزامی را تکمیل کنید.", true);
       return;
     }
 
-    setStatus(propertyStatus, "در حال ذخیره...");
+    setStatus(assetStatus, "در حال ذخیره...");
     try {
-      await syncPropertiesManager("add_property", {
-        special_property: specialProperty ? "1" : "0",
-        ancestor_id: specialProperty ? "" : ancestorId,
-        name: specialProperty ? name : "",
+      await syncAssetsManager("add_asset", {
+        special_asset: specialAsset ? "1" : "0",
+        ancestor_id: specialAsset ? "" : ancestorId,
+        name: specialAsset ? name : "",
         code,
         storage_id: storageId
       });
-      propertyForm.reset();
-      if (propertySpecialToggle) {
-        propertySpecialToggle.checked = false;
+      assetForm.reset();
+      if (assetSpecialToggle) {
+        assetSpecialToggle.checked = false;
       }
       setSpecialMode(false);
-      setStatus(propertyStatus, "ملک با موفقیت اضافه شد.");
+      setStatus(assetStatus, "مال با موفقیت اضافه شد.");
     } catch (error) {
-      setStatus(propertyStatus, error?.message || "افزودن ملک انجام نشد.", true);
+      setStatus(assetStatus, error?.message || "افزودن مال انجام نشد.", true);
     }
   });
 
-  propertiesBody?.addEventListener("change", async (event) => {
+  assetsBody?.addEventListener("change", async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
     const row = target.closest("tr");
@@ -5274,15 +5274,15 @@ function initPropertiesManagerTab() {
     const field = String(target.dataset.field || "");
     const value = String(target.value || "").trim();
     if (!id || !field || !value) {
-      renderProperties();
+      renderAssets();
       return;
     }
     target.disabled = true;
     try {
-      await syncPropertiesManager("update_property", { id, field, value });
+      await syncAssetsManager("update_asset", { id, field, value });
     } catch (error) {
-      renderProperties();
-      setStatus(propertyStatus, error?.message || "ذخیره تغییرات ملک انجام نشد.", true);
+      renderAssets();
+      setStatus(assetStatus, error?.message || "ذخیره تغییرات مال انجام نشد.", true);
     } finally {
       target.disabled = false;
     }
@@ -5300,7 +5300,7 @@ function initPropertiesManagerTab() {
     }
     target.disabled = true;
     try {
-      await syncPropertiesManager("update_storage", { id, value });
+      await syncAssetsManager("update_storage", { id, value });
     } catch (error) {
       renderStorages();
       setStatus(storageStatus, error?.message || "ذخیره تغییرات انبار انجام نشد.", true);
@@ -5321,26 +5321,26 @@ function initPropertiesManagerTab() {
     }
     target.disabled = true;
     try {
-      await syncPropertiesManager("update_ancestor", { id, value });
+      await syncAssetsManager("update_ancestor", { id, value });
     } catch (error) {
       renderAncestors();
-      setStatus(ancestorStatus, error?.message || "ذخیره تغییرات ویژگی پایه انجام نشد.", true);
+      setStatus(ancestorStatus, error?.message || "ذخیره تغییرات مال مرسوم انجام نشد.", true);
     } finally {
       target.disabled = false;
     }
   });
 
-  propertiesBody?.addEventListener("click", async (event) => {
-    const button = event.target instanceof Element ? event.target.closest('[data-action="remove-property"]') : null;
+  assetsBody?.addEventListener("click", async (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-action="remove-asset"]') : null;
     if (!(button instanceof HTMLButtonElement)) return;
     const id = String(button.closest("tr")?.dataset.id || "");
-    if (!id || !confirm("این ملک حذف شود؟")) return;
+    if (!id || !confirm("این مال حذف شود؟")) return;
     button.disabled = true;
     try {
-      await syncPropertiesManager("remove_property", { id });
-      setStatus(propertyStatus, "ملک حذف شد.");
+      await syncAssetsManager("remove_asset", { id });
+      setStatus(assetStatus, "مال حذف شد.");
     } catch (error) {
-      setStatus(propertyStatus, error?.message || "حذف ملک انجام نشد.", true);
+      setStatus(assetStatus, error?.message || "حذف مال انجام نشد.", true);
     } finally {
       button.disabled = false;
     }
@@ -5353,7 +5353,7 @@ function initPropertiesManagerTab() {
     if (!id || !confirm("این انبار حذف شود؟")) return;
     button.disabled = true;
     try {
-      await syncPropertiesManager("remove_storage", { id });
+      await syncAssetsManager("remove_storage", { id });
       setStatus(storageStatus, "انبار حذف شد.");
     } catch (error) {
       setStatus(storageStatus, error?.message || "حذف انبار انجام نشد.", true);
@@ -5366,22 +5366,22 @@ function initPropertiesManagerTab() {
     const button = event.target instanceof Element ? event.target.closest('[data-action="remove-ancestor"]') : null;
     if (!(button instanceof HTMLButtonElement)) return;
     const id = String(button.closest("tr")?.dataset.id || "");
-    if (!id || !confirm("این ویژگی پایه حذف شود؟")) return;
+    if (!id || !confirm("این مال مرسوم حذف شود؟")) return;
     button.disabled = true;
     try {
-      await syncPropertiesManager("remove_ancestor", { id });
-      setStatus(ancestorStatus, "ویژگی پایه حذف شد.");
+      await syncAssetsManager("remove_ancestor", { id });
+      setStatus(ancestorStatus, "مال مرسوم حذف شد.");
     } catch (error) {
-      setStatus(ancestorStatus, error?.message || "حذف ویژگی پایه انجام نشد.", true);
+      setStatus(ancestorStatus, error?.message || "حذف مال مرسوم انجام نشد.", true);
     } finally {
       button.disabled = false;
     }
   });
 
-  setPane("properties");
+  setPane("assets");
   setSpecialMode(false);
-  void syncPropertiesManager("load_data").catch((error) => {
-    setStatus(propertyStatus, error?.message || "بارگذاری اطلاعات مدیریت املاک انجام نشد.", true);
+  void syncAssetsManager("load_data").catch((error) => {
+    setStatus(assetStatus, error?.message || "بارگذاری اطلاعات مدیریت اموال انجام نشد.", true);
   });
 }
 
@@ -6262,7 +6262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   resetGalleryCategoryForm();
   initSubSidebars();
-  initPropertiesManagerTab();
+  initAssetsManagerTab();
   initModalsPreviewModalControls();
   initCodeEditorControls();
 
@@ -6335,3 +6335,4 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   window.addEventListener('storage', updateKpis);
 });
+
