@@ -291,6 +291,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $ancestors = loadAncestors();
     $properties = loadProperties($ancestors);
 
+    if ($action === 'load_data') {
+        out(okData($storages, $ancestors, $properties));
+    }
+
     if ($action === 'add_storage') {
         $name = clean((string)($_POST['name'] ?? ''));
         if ($name === '') {

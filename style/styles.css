@@ -1985,6 +1985,47 @@ select[multiple] { min-height: 140px; padding: 8px; }
   .sub-content { display: grid; gap: 12px; }
   .sub-pane { display: none; }
   .sub-pane.active { display: block; }
+  .pm-layout .sub-sidebar {
+    top: 16px;
+  }
+  .pm-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .pm-switch input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--primary);
+  }
+  .pm-status {
+    text-align: right;
+    min-height: 18px;
+  }
+  .pm-status.error {
+    color: #b91c1c;
+  }
+  .pm-actions-cell {
+    direction: ltr;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .pm-actions-cell .btn {
+    min-width: 70px;
+    padding: 6px 12px;
+  }
+  @media (max-width: 900px) {
+    .pm-layout {
+      grid-template-columns: 1fr;
+    }
+    .pm-layout .sub-sidebar {
+      position: static;
+      top: auto;
+    }
+  }
   .sub-events-shell {
     margin-top: 16px;
     border-top: 1px solid var(--border);

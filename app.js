@@ -28,6 +28,7 @@ let deletingUserCode = "";
 const TITLE_KEY = "frontend_panel_title";
 const TIMEZONE_KEY = "frontend_panel_timezone";
 const API_ENDPOINT = "./api/data.php"; // Shared handler supplying data for both users and gallery tabs.
+const PROPERTIES_MANAGER_ENDPOINT = "mini%20apps/properties%20manager/index.php";
 const PANEL_TITLE_KEY = "frontend_panel_name";
 const PANEL_TITLE_DEFAULT = "Frontend panel";
 const DEFAULT_SETTINGS = {
@@ -4498,7 +4499,7 @@ function setActiveTab(tab) {
     users: 'Users',
     settings: 'Account Settings',
     features: 'Features',
-    'properties-manager': 'Properties Manager',
+    'properties-manager': 'مدیریت املاک',
     devsettings: 'Developer Settings'
   };
   const el = qs('#page-title');
@@ -4905,6 +4906,482 @@ function initSubSidebars(){
         pane.classList.toggle('active', pane.dataset.pane === targetPane);
       });
     });
+  });
+}
+
+let propertiesManagerInitialized = false;
+const PROPERTIES_MANAGER_STATE = {
+  storages: [],
+  ancestors: [],
+  properties: []
+};
+
+function initPropertiesManagerTab() {
+  if (propertiesManagerInitialized) {
+    return;
+  }
+  const root = qs("[data-pm-root]");
+  if (!root) {
+    return;
+  }
+  propertiesManagerInitialized = true;
+
+  const paneButtons = qsa("[data-pm-pane-target]", root);
+  const panes = qsa("[data-pm-pane]", root);
+  const propertyForm = qs("#pm-add-property-form", root);
+  const storageForm = qs("#pm-add-storage-form", root);
+  const ancestorForm = qs("#pm-add-ancestor-form", root);
+  const propertySpecialToggle = qs("#pm-property-special", root);
+  const propertyAncestorField = qs("#pm-property-ancestor-field", root);
+  const propertyNameField = qs("#pm-property-name-field", root);
+  const propertyAncestorSelect = qs("#pm-property-ancestor", root);
+  const propertyNameInput = qs("#pm-property-name", root);
+  const propertyCodeInput = qs("#pm-property-code", root);
+  const propertyStorageSelect = qs("#pm-property-storage", root);
+  const storageNameInput = qs("#pm-storage-name", root);
+  const ancestorNameInput = qs("#pm-ancestor-name", root);
+  const propertyStatus = qs("#pm-property-status", root);
+  const storageStatus = qs("#pm-storage-status", root);
+  const ancestorStatus = qs("#pm-ancestor-status", root);
+  const propertiesBody = qs("#pm-properties-body", root);
+  const storagesBody = qs("#pm-storages-body", root);
+  const ancestorsBody = qs("#pm-ancestors-body", root);
+
+  const setStatus = (element, message, isError = false) => {
+    if (!element) return;
+    element.textContent = message || "";
+    element.classList.toggle("error", Boolean(isError));
+  };
+
+  const setPane = (paneId) => {
+    paneButtons.forEach((button) => {
+      button.classList.toggle("active", button.dataset.pmPaneTarget === paneId);
+    });
+    panes.forEach((pane) => {
+      pane.classList.toggle("active", pane.dataset.pmPane === paneId);
+    });
+  };
+
+  const isSpecialProperty = (item) => {
+    return item?.special_property === true || String(item?.special_property || "") === "1";
+  };
+
+  const setSpecialMode = (isSpecial) => {
+    propertyAncestorField?.classList.toggle("hidden", isSpecial);
+    propertyNameField?.classList.toggle("hidden", !isSpecial);
+    if (propertyAncestorSelect) {
+      propertyAncestorSelect.disabled = isSpecial || PROPERTIES_MANAGER_STATE.ancestors.length === 0;
+      propertyAncestorSelect.required = !isSpecial;
+      if (isSpecial) {
+        propertyAncestorSelect.value = "";
+      }
+    }
+    if (propertyNameInput) {
+      propertyNameInput.disabled = !isSpecial;
+      propertyNameInput.required = isSpecial;
+      if (!isSpecial) {
+        propertyNameInput.value = "";
+      }
+    }
+  };
+
+  const fillStorageOptions = (select, selected = "") => {
+    if (!select) return;
+    const selectedId = String(selected || "");
+    select.innerHTML = "";
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = PROPERTIES_MANAGER_STATE.storages.length ? "انتخاب انبار" : "انباری ثبت نشده";
+    select.appendChild(emptyOption);
+    PROPERTIES_MANAGER_STATE.storages.forEach((storage) => {
+      const option = document.createElement("option");
+      option.value = String(storage.id || "");
+      option.textContent = String(storage.name || "");
+      if (option.value === selectedId) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+    select.disabled = PROPERTIES_MANAGER_STATE.storages.length === 0;
+  };
+
+  const fillAncestorOptions = (select, selected = "") => {
+    if (!select) return;
+    const selectedId = String(selected || "");
+    select.innerHTML = "";
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = PROPERTIES_MANAGER_STATE.ancestors.length ? "انتخاب ویژگی پایه" : "ویژگی پایه‌ای ثبت نشده";
+    select.appendChild(emptyOption);
+    PROPERTIES_MANAGER_STATE.ancestors.forEach((ancestor) => {
+      const option = document.createElement("option");
+      option.value = String(ancestor.id || "");
+      option.textContent = String(ancestor.name || "");
+      if (option.value === selectedId) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+    select.disabled = PROPERTIES_MANAGER_STATE.ancestors.length === 0;
+  };
+
+  const renderProperties = () => {
+    if (!propertiesBody) return;
+    propertiesBody.innerHTML = "";
+    if (!PROPERTIES_MANAGER_STATE.properties.length) {
+      const row = document.createElement("tr");
+      row.innerHTML = '<td class="empty" colspan="4">ملکی ثبت نشده است.</td>';
+      propertiesBody.appendChild(row);
+      return;
+    }
+
+    PROPERTIES_MANAGER_STATE.properties.forEach((property) => {
+      const row = document.createElement("tr");
+      row.dataset.id = String(property.id || "");
+
+      const titleCell = document.createElement("td");
+      if (isSpecialProperty(property)) {
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.dataset.field = "name";
+        nameInput.value = String(property.name || "");
+        titleCell.appendChild(nameInput);
+      } else {
+        const ancestorSelect = document.createElement("select");
+        ancestorSelect.dataset.field = "ancestor_id";
+        fillAncestorOptions(ancestorSelect, String(property.ancestor_id || ""));
+        titleCell.appendChild(ancestorSelect);
+      }
+
+      const codeCell = document.createElement("td");
+      const codeInput = document.createElement("input");
+      codeInput.type = "text";
+      codeInput.dataset.field = "code";
+      codeInput.value = String(property.code || "");
+      codeCell.appendChild(codeInput);
+
+      const storageCell = document.createElement("td");
+      const storageSelect = document.createElement("select");
+      storageSelect.dataset.field = "storage_id";
+      fillStorageOptions(storageSelect, String(property.storage_id || ""));
+      storageCell.appendChild(storageSelect);
+
+      const actionCell = document.createElement("td");
+      actionCell.className = "pm-actions-cell";
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "btn ghost";
+      removeButton.dataset.action = "remove-property";
+      removeButton.textContent = "حذف";
+      actionCell.appendChild(removeButton);
+
+      row.append(titleCell, codeCell, storageCell, actionCell);
+      propertiesBody.appendChild(row);
+    });
+  };
+
+  const renderStorages = () => {
+    if (!storagesBody) return;
+    storagesBody.innerHTML = "";
+    if (!PROPERTIES_MANAGER_STATE.storages.length) {
+      const row = document.createElement("tr");
+      row.innerHTML = '<td class="empty" colspan="2">انباری ثبت نشده است.</td>';
+      storagesBody.appendChild(row);
+      return;
+    }
+
+    PROPERTIES_MANAGER_STATE.storages.forEach((storage) => {
+      const row = document.createElement("tr");
+      row.dataset.id = String(storage.id || "");
+
+      const nameCell = document.createElement("td");
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.value = String(storage.name || "");
+      nameInput.dataset.field = "name";
+      nameCell.appendChild(nameInput);
+
+      const actionCell = document.createElement("td");
+      actionCell.className = "pm-actions-cell";
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "btn ghost";
+      removeButton.dataset.action = "remove-storage";
+      removeButton.textContent = "حذف";
+      actionCell.appendChild(removeButton);
+
+      row.append(nameCell, actionCell);
+      storagesBody.appendChild(row);
+    });
+  };
+
+  const renderAncestors = () => {
+    if (!ancestorsBody) return;
+    ancestorsBody.innerHTML = "";
+    if (!PROPERTIES_MANAGER_STATE.ancestors.length) {
+      const row = document.createElement("tr");
+      row.innerHTML = '<td class="empty" colspan="2">ویژگی پایه‌ای ثبت نشده است.</td>';
+      ancestorsBody.appendChild(row);
+      return;
+    }
+
+    PROPERTIES_MANAGER_STATE.ancestors.forEach((ancestor) => {
+      const row = document.createElement("tr");
+      row.dataset.id = String(ancestor.id || "");
+
+      const nameCell = document.createElement("td");
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.value = String(ancestor.name || "");
+      nameInput.dataset.field = "name";
+      nameCell.appendChild(nameInput);
+
+      const actionCell = document.createElement("td");
+      actionCell.className = "pm-actions-cell";
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "btn ghost";
+      removeButton.dataset.action = "remove-ancestor";
+      removeButton.textContent = "حذف";
+      actionCell.appendChild(removeButton);
+
+      row.append(nameCell, actionCell);
+      ancestorsBody.appendChild(row);
+    });
+  };
+
+  const renderAll = () => {
+    fillAncestorOptions(propertyAncestorSelect, propertyAncestorSelect?.value || "");
+    fillStorageOptions(propertyStorageSelect, propertyStorageSelect?.value || "");
+    setSpecialMode(Boolean(propertySpecialToggle?.checked));
+    renderProperties();
+    renderStorages();
+    renderAncestors();
+  };
+
+  const syncPropertiesManager = async (action, payload = {}) => {
+    const body = new FormData();
+    body.append("action", action);
+    Object.entries(payload).forEach(([key, value]) => {
+      body.append(key, String(value ?? ""));
+    });
+
+    const response = await fetch(PROPERTIES_MANAGER_ENDPOINT, {
+      method: "POST",
+      body,
+      credentials: "same-origin"
+    });
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (error) {
+      throw new Error("پاسخ نامعتبر از سرویس مدیریت املاک دریافت شد.");
+    }
+    if (!response.ok || data?.status !== "ok") {
+      throw new Error(data?.message || "در ارتباط با سرویس مدیریت املاک خطا رخ داد.");
+    }
+
+    PROPERTIES_MANAGER_STATE.storages = Array.isArray(data.storages) ? data.storages : [];
+    PROPERTIES_MANAGER_STATE.ancestors = Array.isArray(data.ancestors) ? data.ancestors : [];
+    PROPERTIES_MANAGER_STATE.properties = Array.isArray(data.properties) ? data.properties : [];
+    renderAll();
+    return data;
+  };
+
+  paneButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetPane = button.dataset.pmPaneTarget || "";
+      if (!targetPane) return;
+      setPane(targetPane);
+    });
+  });
+
+  propertySpecialToggle?.addEventListener("change", () => {
+    setSpecialMode(Boolean(propertySpecialToggle.checked));
+  });
+
+  storageForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = String(storageNameInput?.value || "").trim();
+    if (!name) {
+      setStatus(storageStatus, "نام انبار الزامی است.", true);
+      return;
+    }
+    setStatus(storageStatus, "در حال ذخیره...");
+    try {
+      await syncPropertiesManager("add_storage", { name });
+      storageForm.reset();
+      setStatus(storageStatus, "انبار با موفقیت اضافه شد.");
+    } catch (error) {
+      setStatus(storageStatus, error?.message || "افزودن انبار انجام نشد.", true);
+    }
+  });
+
+  ancestorForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = String(ancestorNameInput?.value || "").trim();
+    if (!name) {
+      setStatus(ancestorStatus, "نام ویژگی پایه الزامی است.", true);
+      return;
+    }
+    setStatus(ancestorStatus, "در حال ذخیره...");
+    try {
+      await syncPropertiesManager("add_ancestor", { name });
+      ancestorForm.reset();
+      setStatus(ancestorStatus, "ویژگی پایه با موفقیت اضافه شد.");
+    } catch (error) {
+      setStatus(ancestorStatus, error?.message || "افزودن ویژگی پایه انجام نشد.", true);
+    }
+  });
+
+  propertyForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const specialProperty = Boolean(propertySpecialToggle?.checked);
+    const ancestorId = String(propertyAncestorSelect?.value || "").trim();
+    const name = String(propertyNameInput?.value || "").trim();
+    const code = String(propertyCodeInput?.value || "").trim();
+    const storageId = String(propertyStorageSelect?.value || "").trim();
+    if (!code || !storageId || (!specialProperty && !ancestorId) || (specialProperty && !name)) {
+      setStatus(propertyStatus, "همه فیلدهای الزامی را تکمیل کنید.", true);
+      return;
+    }
+
+    setStatus(propertyStatus, "در حال ذخیره...");
+    try {
+      await syncPropertiesManager("add_property", {
+        special_property: specialProperty ? "1" : "0",
+        ancestor_id: specialProperty ? "" : ancestorId,
+        name: specialProperty ? name : "",
+        code,
+        storage_id: storageId
+      });
+      propertyForm.reset();
+      if (propertySpecialToggle) {
+        propertySpecialToggle.checked = false;
+      }
+      setSpecialMode(false);
+      setStatus(propertyStatus, "ملک با موفقیت اضافه شد.");
+    } catch (error) {
+      setStatus(propertyStatus, error?.message || "افزودن ملک انجام نشد.", true);
+    }
+  });
+
+  propertiesBody?.addEventListener("change", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+    const row = target.closest("tr");
+    const id = String(row?.dataset.id || "");
+    const field = String(target.dataset.field || "");
+    const value = String(target.value || "").trim();
+    if (!id || !field || !value) {
+      renderProperties();
+      return;
+    }
+    target.disabled = true;
+    try {
+      await syncPropertiesManager("update_property", { id, field, value });
+    } catch (error) {
+      renderProperties();
+      setStatus(propertyStatus, error?.message || "ذخیره تغییرات ملک انجام نشد.", true);
+    } finally {
+      target.disabled = false;
+    }
+  });
+
+  storagesBody?.addEventListener("change", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const row = target.closest("tr");
+    const id = String(row?.dataset.id || "");
+    const value = String(target.value || "").trim();
+    if (!id || !value) {
+      renderStorages();
+      return;
+    }
+    target.disabled = true;
+    try {
+      await syncPropertiesManager("update_storage", { id, value });
+    } catch (error) {
+      renderStorages();
+      setStatus(storageStatus, error?.message || "ذخیره تغییرات انبار انجام نشد.", true);
+    } finally {
+      target.disabled = false;
+    }
+  });
+
+  ancestorsBody?.addEventListener("change", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const row = target.closest("tr");
+    const id = String(row?.dataset.id || "");
+    const value = String(target.value || "").trim();
+    if (!id || !value) {
+      renderAncestors();
+      return;
+    }
+    target.disabled = true;
+    try {
+      await syncPropertiesManager("update_ancestor", { id, value });
+    } catch (error) {
+      renderAncestors();
+      setStatus(ancestorStatus, error?.message || "ذخیره تغییرات ویژگی پایه انجام نشد.", true);
+    } finally {
+      target.disabled = false;
+    }
+  });
+
+  propertiesBody?.addEventListener("click", async (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-action="remove-property"]') : null;
+    if (!(button instanceof HTMLButtonElement)) return;
+    const id = String(button.closest("tr")?.dataset.id || "");
+    if (!id || !confirm("این ملک حذف شود؟")) return;
+    button.disabled = true;
+    try {
+      await syncPropertiesManager("remove_property", { id });
+      setStatus(propertyStatus, "ملک حذف شد.");
+    } catch (error) {
+      setStatus(propertyStatus, error?.message || "حذف ملک انجام نشد.", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  storagesBody?.addEventListener("click", async (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-action="remove-storage"]') : null;
+    if (!(button instanceof HTMLButtonElement)) return;
+    const id = String(button.closest("tr")?.dataset.id || "");
+    if (!id || !confirm("این انبار حذف شود؟")) return;
+    button.disabled = true;
+    try {
+      await syncPropertiesManager("remove_storage", { id });
+      setStatus(storageStatus, "انبار حذف شد.");
+    } catch (error) {
+      setStatus(storageStatus, error?.message || "حذف انبار انجام نشد.", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  ancestorsBody?.addEventListener("click", async (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-action="remove-ancestor"]') : null;
+    if (!(button instanceof HTMLButtonElement)) return;
+    const id = String(button.closest("tr")?.dataset.id || "");
+    if (!id || !confirm("این ویژگی پایه حذف شود؟")) return;
+    button.disabled = true;
+    try {
+      await syncPropertiesManager("remove_ancestor", { id });
+      setStatus(ancestorStatus, "ویژگی پایه حذف شد.");
+    } catch (error) {
+      setStatus(ancestorStatus, error?.message || "حذف ویژگی پایه انجام نشد.", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  setPane("properties");
+  setSpecialMode(false);
+  void syncPropertiesManager("load_data").catch((error) => {
+    setStatus(propertyStatus, error?.message || "بارگذاری اطلاعات مدیریت املاک انجام نشد.", true);
   });
 }
 
@@ -5785,6 +6262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   resetGalleryCategoryForm();
   initSubSidebars();
+  initPropertiesManagerTab();
   initModalsPreviewModalControls();
   initCodeEditorControls();
 
