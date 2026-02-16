@@ -4497,10 +4497,7 @@ function setActiveTab(tab) {
     home: 'Home',
     users: 'Users',
     settings: 'Account Settings',
-    'invite-card': 'Invite Card Generator',
-    events: 'Events',
-    gallery: 'Photo Gallery',
-    invite: 'Invite',
+    features: 'Features',
     devsettings: 'Developer Settings'
   };
   const el = qs('#page-title');
