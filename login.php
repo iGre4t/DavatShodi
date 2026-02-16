@@ -5,17 +5,6 @@ session_start();
 require_once __DIR__ . '/api/lib/common.php';
 
 $configFile = __DIR__ . '/api/config.php';
-if (databaseConfigRequiresInstallation()) {
-  if (!is_file($configFile)) {
-    header('Location: install.php');
-    exit;
-  }
-}
-
-if (!empty($_SESSION['authenticated'])) {
-  header('Location: panel.php');
-  exit;
-}
 
 $dbConfig = loadConfig($configFile);
 $pdo = connectDatabase($dbConfig);
@@ -61,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           ];
           $sessionUser['display_name'] = buildUserDisplayName($sessionUser);
           $_SESSION['user'] = $sessionUser;
-          header('Location: panel.php');
+          header('Location: login.php');
           exit;
         }
       } catch (PDOException $exception) {

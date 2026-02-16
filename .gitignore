@@ -3,6 +3,8 @@
 /General Setting/
 /data/guests.json
 /inv/
+/uploads/galley/
+/uploads/gallery/
 
 api/config.php
 /Wheel of Fortune/*.json

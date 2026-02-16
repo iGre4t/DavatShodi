@@ -2877,11 +2877,7 @@ async function handleInviteCardGeneration() {
 }
 
 function resolveEventApiEndpoint(eventCode) {
-  const normalized = (eventCode || "").toString().trim();
-  if (normalized) {
-    return "./api/event.api.php";
-  }
-  return "./api/guests.php";
+  throw new Error("Event guest API endpoints have been removed.");
 }
 
 async function uploadGuestInviteCardImage(inviteCode, imageData, options = {}) {
@@ -4501,15 +4497,9 @@ function setActiveTab(tab) {
     home: 'Home',
     users: 'Users',
     settings: 'Account Settings',
-    guests: 'List of guests',
     'invite-card': 'Invite Card Generator',
     events: 'Events',
     gallery: 'Photo Gallery',
-    hra: 'HR Analyze Panel',
-    hraevents: 'HRA Events',
-    typography: 'Typography',
-    'wheel-of-fortune': 'Wheel of Fortune',
-    'fortune-number': 'Fortune Number',
     invite: 'Invite',
     devsettings: 'Developer Settings'
   };
