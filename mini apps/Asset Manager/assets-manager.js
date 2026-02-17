@@ -110,8 +110,15 @@
     const ancestorLabelsModalStatus = qs("#pm-ancestor-modal-status");
     const ancestorLabelsModalSave = qs("#pm-ancestor-modal-save");
     const ancestorLabelsModalCloseButtons = qsa("[data-pm-ancestor-modal-close]", ancestorLabelsModal || document);
+    const assetLabelsModal = qs("#pm-asset-labels-modal");
+    const assetLabelsModalTitle = qs("#pm-asset-labels-title");
+    const assetLabelsModalFields = qs("#pm-asset-modal-label-fields");
+    const assetLabelsModalStatus = qs("#pm-asset-modal-status");
+    const assetLabelsModalSave = qs("#pm-asset-modal-save");
+    const assetLabelsModalCloseButtons = qsa("[data-pm-asset-modal-close]", assetLabelsModal || document);
 
     let editingAncestorLabelsId = "";
+    let editingAssetLabelsId = "";
 
     const setStatus = (element, message, isError = false) => {
       if (!element) return;
@@ -462,12 +469,134 @@ const readLabelChainSelected = (container) => {
       ancestorLabelsModal.classList.remove("hidden");
     };
 
+    const getAncestorParentLabelIds = (ancestorId) => {
+      const ancestor = byId(ASSETS_MANAGER_STATE.ancestors, ancestorId);
+      if (!ancestor || !Array.isArray(ancestor.label_ids)) {
+        return [];
+      }
+      return ancestor.label_ids.map((id) => String(id || "").trim()).filter(Boolean);
+    };
+
+    const formatAssetLabelsSummary = (asset, parentLabelIds) => {
+      if (isSpecialAsset(asset) || !parentLabelIds.length) {
+        return "\u0646\u062F\u0627\u0631\u062F";
+      }
+
+      const values = asset && typeof asset.label_values === "object" && asset.label_values !== null
+        ? asset.label_values
+        : {};
+      const parts = [];
+
+      parentLabelIds.forEach((parentId) => {
+        const childId = String(values[parentId] || "").trim();
+        if (!childId) {
+          return;
+        }
+        const parentName = String(byId(ASSETS_MANAGER_STATE.labels, parentId)?.name || "");
+        const childName = labelPathName(childId) || String(byId(ASSETS_MANAGER_STATE.labels, childId)?.name || "");
+        if (!childName) {
+          return;
+        }
+        parts.push(parentName ? `${parentName}: ${childName}` : childName);
+      });
+
+      return parts.length ? parts.join(" | ") : "\u062A\u0639\u06CC\u06CC\u0646 \u0646\u0634\u062F\u0647";
+    };
+
+    const closeAssetLabelsModal = () => {
+      if (!assetLabelsModal) return;
+      assetLabelsModal.classList.add("hidden");
+      editingAssetLabelsId = "";
+      if (assetLabelsModalFields) {
+        assetLabelsModalFields.innerHTML = "";
+      }
+      setStatus(assetLabelsModalStatus, "");
+    };
+
+    const readAssetModalLabelValues = () => {
+      if (!assetLabelsModalFields) return {};
+      const payload = {};
+      qsa("select[data-asset-modal-label-key]", assetLabelsModalFields).forEach((select) => {
+        const key = String(select.dataset.assetModalLabelKey || "").trim();
+        if (!key) return;
+        payload[key] = String(select.value || "").trim();
+      });
+      return payload;
+    };
+
+    const openAssetLabelsModal = (assetId) => {
+      if (!assetLabelsModal || !assetLabelsModalFields) return;
+      const asset = byId(ASSETS_MANAGER_STATE.assets, assetId);
+      if (!asset || isSpecialAsset(asset)) return;
+
+      const parentLabelIds = getAncestorParentLabelIds(String(asset.ancestor_id || ""));
+      if (!parentLabelIds.length) return;
+
+      editingAssetLabelsId = String(asset.id || "");
+      const titleRef = String(asset.code || asset.name || "");
+      if (assetLabelsModalTitle) {
+        assetLabelsModalTitle.textContent = `\u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627\u06CC \u0645\u0627\u0644 ${titleRef}`;
+      }
+
+      const currentValues = asset && typeof asset.label_values === "object" && asset.label_values !== null
+        ? asset.label_values
+        : {};
+
+      assetLabelsModalFields.innerHTML = "";
+      parentLabelIds.forEach((parentId, index) => {
+        const options = getChildLabels(parentId);
+        if (!options.length) {
+          return;
+        }
+
+        const field = document.createElement("label");
+        field.className = "field";
+
+        const caption = document.createElement("span");
+        const parentName = String(byId(ASSETS_MANAGER_STATE.labels, parentId)?.name || `\u0628\u0631\u0686\u0633\u0628 ${index + 1}`);
+        caption.textContent = parentName;
+
+        const select = document.createElement("select");
+        select.dataset.assetModalLabelKey = parentId;
+
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = "\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC";
+        select.appendChild(emptyOption);
+
+        options.forEach((label) => {
+          const option = document.createElement("option");
+          option.value = String(label.id || "");
+          option.textContent = labelPathName(label.id) || String(label.name || "");
+          select.appendChild(option);
+        });
+
+        const selectedValue = String(currentValues[parentId] || "");
+        if (selectedValue) {
+          select.value = selectedValue;
+        }
+
+        field.append(caption, select);
+        assetLabelsModalFields.appendChild(field);
+      });
+
+      if (!assetLabelsModalFields.children.length) {
+        const hint = document.createElement("p");
+        hint.className = "hint";
+        hint.textContent = "\u0628\u0631\u0686\u0633\u0628 \u0642\u0627\u0628\u0644 \u0627\u0646\u062A\u062E\u0627\u0628\u06CC \u0648\u062C\u0648\u062F \u0646\u062F\u0627\u0631\u062F.";
+        assetLabelsModalFields.appendChild(hint);
+      }
+
+      setStatus(assetLabelsModalStatus, "");
+      assetLabelsModal.classList.remove("hidden");
+    };
+
     const renderAssets = () => {
       if (!assetsBody) return;
       assetsBody.innerHTML = "";
       if (!ASSETS_MANAGER_STATE.assets.length) {
         const row = document.createElement("tr");
-        row.innerHTML = '<td class="empty" colspan="4">مالی ثبت نشده است.</td>';
+        row.innerHTML = '<td class="empty" colspan="5">\u0645\u0627\u0644\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.</td>';
         assetsBody.appendChild(row);
         return;
       }
@@ -503,16 +632,38 @@ const readLabelChainSelected = (container) => {
         fillStorageOptions(storageSelect, String(asset.storage_id || ""));
         storageCell.appendChild(storageSelect);
 
+        const labelsCell = document.createElement("td");
+        const labelsSummary = document.createElement("p");
+        labelsSummary.className = "hint";
+        labelsSummary.style.margin = "0 0 8px 0";
+        labelsSummary.style.textAlign = "right";
+
+        const labelsButton = document.createElement("button");
+        labelsButton.type = "button";
+        labelsButton.className = "btn ghost";
+        labelsButton.dataset.action = "edit-asset-labels";
+        labelsButton.textContent = "\u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627";
+
+        const parentLabelIds = isSpecialAsset(asset)
+          ? []
+          : getAncestorParentLabelIds(String(asset.ancestor_id || ""));
+        labelsSummary.textContent = formatAssetLabelsSummary(asset, parentLabelIds);
+        if (isSpecialAsset(asset) || !parentLabelIds.length) {
+          labelsButton.disabled = true;
+        }
+
+        labelsCell.append(labelsSummary, labelsButton);
+
         const actionCell = document.createElement("td");
         actionCell.className = "pm-actions-cell";
         const removeButton = document.createElement("button");
         removeButton.type = "button";
         removeButton.className = "btn ghost";
         removeButton.dataset.action = "remove-asset";
-        removeButton.textContent = "حذف";
+        removeButton.textContent = "\u062D\u0630\u0641";
         actionCell.appendChild(removeButton);
 
-        row.append(titleCell, codeCell, storageCell, actionCell);
+        row.append(titleCell, codeCell, storageCell, labelsCell, actionCell);
         assetsBody.appendChild(row);
       });
     };
@@ -745,6 +896,43 @@ const readLabelChainSelected = (container) => {
       }
     });
 
+    assetLabelsModalCloseButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        closeAssetLabelsModal();
+      });
+    });
+
+    assetLabelsModal?.addEventListener("click", (event) => {
+      if (event.target === assetLabelsModal) {
+        closeAssetLabelsModal();
+      }
+    });
+
+    assetLabelsModalSave?.addEventListener("click", async () => {
+      const assetId = String(editingAssetLabelsId || "").trim();
+      if (!assetId) {
+        closeAssetLabelsModal();
+        return;
+      }
+
+      const labelValues = readAssetModalLabelValues();
+      assetLabelsModalSave.disabled = true;
+      setStatus(assetLabelsModalStatus, "\u062F\u0631 \u062D\u0627\u0644 \u0630\u062E\u06CC\u0631\u0647...");
+      try {
+        await syncAssetsManager("update_asset", {
+          id: assetId,
+          field: "label_values",
+          value: JSON.stringify(labelValues)
+        });
+        setStatus(assetStatus, "\u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627\u06CC \u0645\u0627\u0644 \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F.");
+        closeAssetLabelsModal();
+      } catch (error) {
+        setStatus(assetLabelsModalStatus, error?.message || "\u0630\u062E\u06CC\u0631\u0647 \u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627 \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.", true);
+      } finally {
+        assetLabelsModalSave.disabled = false;
+      }
+    });
+
     storageForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const name = String(storageNameInput?.value || "").trim();
@@ -938,6 +1126,14 @@ const readLabelChainSelected = (container) => {
     });
 
     assetsBody?.addEventListener("click", async (event) => {
+      const editButton = event.target instanceof Element ? event.target.closest('[data-action="edit-asset-labels"]') : null;
+      if (editButton instanceof HTMLButtonElement) {
+        const id = String(editButton.closest("tr")?.dataset.id || "");
+        if (!id) return;
+        openAssetLabelsModal(id);
+        return;
+      }
+
       const button = event.target instanceof Element ? event.target.closest('[data-action="remove-asset"]') : null;
       if (!(button instanceof HTMLButtonElement)) return;
       const id = String(button.closest("tr")?.dataset.id || "");

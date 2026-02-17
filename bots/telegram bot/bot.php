@@ -109,7 +109,11 @@ function handleMessage(string $token, array $message): void
     if ($text === '/cancel') {
         logEvent('command_cancel', ['chat_id' => $chatId]);
         clearChatState($chatId);
-        sendMessage($token, $chatId, 'عملیات لغو شد.');
+        sendMessage(
+            $token,
+            $chatId,
+            "🛑 <b>فرآیند ثبت دارایی متوقف شد.</b>\n\nاگر تمایل داشتید، از منوی زیر دوباره و خیلی سریع شروع کنید."
+        );
         sendStartMenu($token, $chatId);
         return;
     }
@@ -120,7 +124,11 @@ function handleMessage(string $token, array $message): void
     if ($step === 'awaiting_special_name') {
         if ($text === '') {
             logEvent('special_name_empty', ['chat_id' => $chatId]);
-            sendMessage($token, $chatId, 'نام مال خاص را ارسال کنید.');
+            sendMessage(
+                $token,
+                $chatId,
+                "✍️ <b>نام مال خاص دریافت نشد.</b>\n\nلطفا نام مال خاص را به‌صورت یک پیام متنی ارسال کنید تا وارد مرحله بعد شویم."
+            );
             return;
         }
 
@@ -131,8 +139,12 @@ function handleMessage(string $token, array $message): void
         ]);
 
         logEvent('special_name_received', ['chat_id' => $chatId, 'name' => $text]);
-        sendMessage($token, $chatId, 'نام ثبت شد: ' . $text);
-        sendMessage($token, $chatId, "Now send asset code.");
+        $safeName = htmlEscape($text);
+        sendMessage(
+            $token,
+            $chatId,
+            "✅ <b>نام مال خاص با موفقیت ثبت شد.</b>\n\n🧾 عنوان ثبت‌شده: <b>{$safeName}</b>\n\n🔐 لطفا در پیام بعدی، <b>کد مال</b> را ارسال کنید."
+        );
         return;
     }
 
@@ -140,14 +152,23 @@ function handleMessage(string $token, array $message): void
         $assetCode = normalizeAssetCode($text);
         if ($assetCode === '') {
             logEvent('asset_code_empty', ['chat_id' => $chatId]);
-            sendMessage($token, $chatId, 'Send a valid asset code.');
+            sendMessage(
+                $token,
+                $chatId,
+                "⚠️ <b>کد مال معتبر نیست.</b>\n\nلطفا یک کد معتبر و کوتاه برای مال ارسال کنید."
+            );
             return;
         }
 
-        $assets = loadAssets(loadAncestors());
+        $labels = loadLabels();
+        $assets = loadAssets(loadAncestors($labels), $labels);
         if (assetCodeExists($assets, $assetCode)) {
             logEvent('asset_code_duplicate', ['chat_id' => $chatId, 'code' => $assetCode]);
-            sendMessage($token, $chatId, 'This asset code already exists. Send another code.');
+            sendMessage(
+                $token,
+                $chatId,
+                "❌ <b>این کد قبلا ثبت شده است.</b>\n\nلطفا یک کد جدید و یکتا برای دارایی ارسال کنید."
+            );
             return;
         }
 
@@ -156,13 +177,22 @@ function handleMessage(string $token, array $message): void
         setChatState($chatId, $state);
 
         logEvent('asset_code_received', ['chat_id' => $chatId, 'code' => $assetCode]);
-        sendMessage($token, $chatId, "Code saved: {$assetCode}");
-        sendStorageMenu($token, $chatId);
+        $safeCode = htmlEscape($assetCode);
+        sendStorageMenu(
+            $token,
+            $chatId,
+            null,
+            "✅ <b>کد دارایی ثبت شد.</b>\n\n🔐 کد ثبت‌شده: <b>{$safeCode}</b>\n\n🏬 حالا انبار موردنظر را از لیست زیر انتخاب کنید."
+        );
         return;
     }
 
     if (in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
-        sendMessage($token, $chatId, 'Use label buttons, or press Skip / Done.');
+        sendMessage(
+            $token,
+            $chatId,
+            "🏷️ <b>در حال انتخاب برچسب هستید.</b>\n\nلطفا فقط از دکمه‌های زیر همان پیام استفاده کنید، یا گزینه «⏭️ رد کردن برچسب‌ها» را بزنید."
+        );
         return;
     }
 
@@ -174,6 +204,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 {
     $callbackId = trim((string) ($callbackQuery['id'] ?? ''));
     $chatId = trim((string) ($callbackQuery['message']['chat']['id'] ?? ''));
+    $messageId = trim((string) ($callbackQuery['message']['message_id'] ?? ''));
     $data = trim((string) ($callbackQuery['data'] ?? ''));
 
     if ($callbackId !== '') {
@@ -187,7 +218,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
     if ($data === 'menu_add_asset') {
         logEvent('callback_menu_add_asset', ['chat_id' => $chatId]);
         setChatState($chatId, ['step' => 'choosing_type']);
-        sendAssetTypeMenu($token, $chatId);
+        sendAssetTypeMenu($token, $chatId, $messageId);
         return;
     }
 
@@ -197,8 +228,13 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $ancestors = loadAncestors($labels);
         if (!$ancestors) {
             logEvent('common_no_ancestors', ['chat_id' => $chatId]);
-            sendMessage($token, $chatId, 'هیچ مال مرسومی ثبت نشده است.');
-            sendStartMenu($token, $chatId);
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "⚠️ <b>لیست اموال مرسوم خالی است</b>\n\nدر حال حاضر موردی برای انتخاب وجود ندارد.\nابتدا در پنل، اموال مرسوم را ثبت کنید.",
+                getStartMenuMarkup()
+            );
             return;
         }
 
@@ -206,7 +242,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             'step' => 'choosing_ancestor',
             'asset_type' => 'common'
         ]);
-        sendAncestorMenu($token, $chatId, $ancestors);
+        sendAncestorMenu($token, $chatId, $ancestors, $messageId);
         return;
     }
 
@@ -216,7 +252,13 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             'step' => 'awaiting_special_name',
             'asset_type' => 'special'
         ]);
-        sendMessage($token, $chatId, 'نام مال خاص را ارسال کنید.');
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⭐ <b>ثبت مال خاص</b>\n\nلطفا نام مال خاص را در یک پیام متنی ارسال کنید تا مرحله بعد فعال شود.",
+            null
+        );
         return;
     }
 
@@ -228,13 +270,17 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
         if (!is_array($ancestor)) {
             logEvent('ancestor_invalid', ['chat_id' => $chatId, 'ancestor_id' => $ancestorId]);
-            sendMessage($token, $chatId, 'مال مرسوم انتخاب شده معتبر نیست.');
-            sendStartMenu($token, $chatId);
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "⚠️ <b>انتخاب نامعتبر</b>\n\nمال مرسوم انتخاب‌شده معتبر نیست. دوباره از ابتدا اقدام کنید.",
+                getStartMenuMarkup()
+            );
             return;
         }
 
         $ancestorLabelParentIds = sanitizeParentLabelIds($labels, (array) ($ancestor['label_ids'] ?? []));
-
         setChatState($chatId, [
             'step' => $ancestorLabelParentIds ? 'choosing_label_parent' : 'awaiting_asset_code',
             'asset_type' => 'common',
@@ -249,11 +295,18 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             'ancestor_id' => (string) $ancestor['id'],
             'ancestor_name' => (string) $ancestor['name']
         ]);
-        sendMessage($token, $chatId, 'نام مال: ' . (string) $ancestor['name']);
+
+        $ancestorName = htmlEscape((string) $ancestor['name']);
         if ($ancestorLabelParentIds) {
-            sendParentLabelMenu($token, $chatId, getChatState($chatId), $labels);
+            sendParentLabelMenu($token, $chatId, getChatState($chatId), $labels, $messageId, $ancestorName);
         } else {
-            sendMessage($token, $chatId, 'Now send asset code.');
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "✅ <b>مال مرسوم انتخاب شد</b>\n\nنام انتخاب‌شده: <b>{$ancestorName}</b>\n\n✍️ لطفا حالا <b>کد مال</b> را در یک پیام متنی ارسال کنید.",
+                null
+            );
         }
         return;
     }
@@ -262,8 +315,13 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $state = getChatState($chatId);
         $step = (string) ($state['step'] ?? '');
         if (!in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
-            sendMessage($token, $chatId, 'Start the flow from beginning.');
-            sendStartMenu($token, $chatId);
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "⚠️ <b>وضعیت مرحله معتبر نیست</b>\n\nلطفا دوباره از ابتدا اقدام کنید.",
+                getStartMenuMarkup()
+            );
             return;
         }
 
@@ -272,7 +330,13 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         setChatState($chatId, $state);
         logEvent('labels_skipped', ['chat_id' => $chatId]);
 
-        sendMessage($token, $chatId, 'Labels skipped. Now send asset code.');
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⏭️ <b>مرحله برچسب رد شد</b>\n\nخیلی خوب، بدون برچسب ادامه می‌دهیم.\n✍️ لطفا الان <b>کد مال</b> را ارسال کنید.",
+            null
+        );
         return;
     }
 
@@ -280,7 +344,13 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $state = getChatState($chatId);
         $step = (string) ($state['step'] ?? '');
         if ($step !== 'choosing_label_child') {
-            sendMessage($token, $chatId, 'Select a parent label first.');
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "ℹ️ <b>ابتدا یک برچسب والد انتخاب کنید</b>\n\nبعد از ورود به لیست فرزندها، دکمه بازگشت قابل استفاده است.",
+                null
+            );
             return;
         }
 
@@ -288,7 +358,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $state['step'] = 'choosing_label_parent';
         unset($state['active_parent_label_id']);
         setChatState($chatId, $state);
-        sendParentLabelMenu($token, $chatId, $state, $labels);
+        sendParentLabelMenu($token, $chatId, $state, $labels, $messageId);
         return;
     }
 
@@ -297,23 +367,27 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $state = getChatState($chatId);
         $step = (string) ($state['step'] ?? '');
         if (!in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
-            sendMessage($token, $chatId, 'Start the flow from beginning.');
-            sendStartMenu($token, $chatId);
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "⚠️ <b>مسیر انتخاب برچسب معتبر نیست</b>\n\nلطفا دوباره از ابتدا شروع کنید.",
+                getStartMenuMarkup()
+            );
             return;
         }
 
         $labels = loadLabels();
         $parentIds = sanitizeParentLabelIds($labels, (array) ($state['ancestor_label_parent_ids'] ?? []));
         if (!in_array($parentId, $parentIds, true)) {
-            sendMessage($token, $chatId, 'Invalid parent label.');
-            sendParentLabelMenu($token, $chatId, $state, $labels);
+            sendParentLabelMenu($token, $chatId, $state, $labels, $messageId);
             return;
         }
 
         $state['step'] = 'choosing_label_child';
         $state['active_parent_label_id'] = $parentId;
         setChatState($chatId, $state);
-        sendChildLabelMenu($token, $chatId, $parentId, $labels);
+        sendChildLabelMenu($token, $chatId, $parentId, $labels, $messageId);
         return;
     }
 
@@ -326,16 +400,20 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         $state = getChatState($chatId);
         $step = (string) ($state['step'] ?? '');
         if (!in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
-            sendMessage($token, $chatId, 'Start the flow from beginning.');
-            sendStartMenu($token, $chatId);
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "⚠️ <b>مسیر انتخاب برچسب معتبر نیست</b>\n\nلطفا دوباره از ابتدا شروع کنید.",
+                getStartMenuMarkup()
+            );
             return;
         }
 
         $labels = loadLabels();
         $parentIds = sanitizeParentLabelIds($labels, (array) ($state['ancestor_label_parent_ids'] ?? []));
         if (!in_array($parentId, $parentIds, true) || !labelIsDirectChild($labels, $parentId, $childId)) {
-            sendMessage($token, $chatId, 'Invalid child label.');
-            sendParentLabelMenu($token, $chatId, $state, $labels);
+            sendParentLabelMenu($token, $chatId, $state, $labels, $messageId);
             return;
         }
 
@@ -351,7 +429,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             'parent_id' => $parentId,
             'child_id' => $childId,
         ]);
-        sendParentLabelMenu($token, $chatId, $state, $labels);
+        sendParentLabelMenu($token, $chatId, $state, $labels, $messageId);
         return;
     }
 
@@ -363,68 +441,117 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         if ($step !== 'awaiting_storage') {
             logEvent('storage_click_invalid_step', ['chat_id' => $chatId, 'step' => $step, 'storage_id' => $storageId]);
             if ($step === 'awaiting_asset_code') {
-                sendMessage($token, $chatId, 'Send asset code first.');
+                sendOrEditMessage(
+                    $token,
+                    $chatId,
+                    $messageId,
+                    "✍️ <b>ابتدا کد مال را ارسال کنید</b>\n\nبعد از ثبت کد، انتخاب انبار فعال می‌شود.",
+                    null
+                );
                 return;
             }
             if (in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
-                sendMessage($token, $chatId, 'Select labels or skip labels first.');
+                sendOrEditMessage(
+                    $token,
+                    $chatId,
+                    $messageId,
+                    "🏷️ <b>ابتدا مرحله برچسب‌ها را تکمیل کنید</b>\n\nیک برچسب انتخاب کنید یا گزینه رد کردن را بزنید.",
+                    null
+                );
                 return;
             }
-            sendMessage($token, $chatId, 'ابتدا از منوی شروع اقدام کنید.');
-            sendStartMenu($token, $chatId);
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "ℹ️ <b>این عملیات در وضعیت فعلی قابل انجام نیست</b>\n\nلطفا دوباره از منوی شروع اقدام کنید.",
+                getStartMenuMarkup()
+            );
             return;
         }
 
         $result = addAssetFromState($state, $storageId);
         if (!$result['ok']) {
             logEvent('asset_save_failed', ['chat_id' => $chatId, 'storage_id' => $storageId, 'message' => (string) $result['message']]);
-            sendMessage($token, $chatId, (string) $result['message']);
-            sendStartMenu($token, $chatId);
+            $errorText = htmlEscape((string) $result['message']);
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "❌ <b>ثبت مال انجام نشد</b>\n\n{$errorText}\n\nمی‌توانید دوباره از ابتدا اقدام کنید.",
+                getStartMenuMarkup()
+            );
             return;
         }
 
         logEvent('asset_saved', ['chat_id' => $chatId, 'storage_id' => $storageId]);
         clearChatState($chatId);
-        sendMessage($token, $chatId, (string) $result['message']);
-        sendStartMenu($token, $chatId);
+        $nameText = htmlEscape((string) ($result['name'] ?? ''));
+        $codeText = htmlEscape((string) ($result['code'] ?? ''));
+        $storageText = htmlEscape((string) ($result['storage_name'] ?? ''));
+        $successText = "✅ <b>مال با موفقیت ثبت شد</b>\n\n"
+            . "🧾 نام مال: <b>{$nameText}</b>\n"
+            . "🔐 کد مال: <b>{$codeText}</b>\n"
+            . "🏬 انبار: <b>{$storageText}</b>\n\n"
+            . "اگر می‌خواهید مورد بعدی را ثبت کنید، از دکمه زیر استفاده کنید.";
+        sendOrEditMessage($token, $chatId, $messageId, $successText, getStartMenuMarkup());
         return;
     }
 
     logEvent('callback_unknown_data', ['chat_id' => $chatId, 'data' => $data]);
-    sendMessage($token, $chatId, 'گزینه نامعتبر است.');
-    sendStartMenu($token, $chatId);
+    sendOrEditMessage(
+        $token,
+        $chatId,
+        $messageId,
+        "⚠️ <b>گزینه انتخابی معتبر نیست</b>\n\nلطفا دوباره از منوی شروع انتخاب کنید.",
+        getStartMenuMarkup()
+    );
+}
+
+function getStartMenuMarkup(): array
+{
+    return [
+        'inline_keyboard' => [
+            [
+                ['text' => '➕ اضافه کردن اموال', 'callback_data' => 'menu_add_asset']
+            ]
+        ]
+    ];
 }
 
 function sendStartMenu(string $token, string $chatId): void
 {
-    $markup = [
-        'inline_keyboard' => [
-            [
-                ['text' => 'اضافه کردن اموال', 'callback_data' => 'menu_add_asset']
-            ]
-        ]
-    ];
-
-    sendMessage($token, $chatId, 'شروع انبار گردانی', $markup);
+    sendMessage(
+        $token,
+        $chatId,
+        "📦 <b>شروع انبار گردانی</b>\n\nبه ربات مدیریت اموال خوش آمدید.\nبرای ثبت یک دارایی جدید، از دکمه زیر استفاده کنید.",
+        getStartMenuMarkup()
+    );
 }
 
-function sendAssetTypeMenu(string $token, string $chatId): void
+function sendAssetTypeMenu(string $token, string $chatId, ?string $messageId = null): void
 {
     $markup = [
         'inline_keyboard' => [
             [
-                ['text' => 'اموال مرسوم', 'callback_data' => 'asset_type_common']
+                ['text' => '📁 اموال مرسوم', 'callback_data' => 'asset_type_common']
             ],
             [
-                ['text' => 'اموال خاص', 'callback_data' => 'asset_type_special']
+                ['text' => '⭐ اموال خاص', 'callback_data' => 'asset_type_special']
             ]
         ]
     ];
 
-    sendMessage($token, $chatId, 'نوع مال را انتخاب کنید:', $markup);
+    sendOrEditMessage(
+        $token,
+        $chatId,
+        $messageId,
+        "🧭 <b>انتخاب نوع دارایی</b>\n\nبرای ادامه فرآیند، لطفا نوع دارایی را از گزینه‌های زیر انتخاب کنید.",
+        $markup
+    );
 }
 
-function sendAncestorMenu(string $token, string $chatId, array $ancestors): void
+function sendAncestorMenu(string $token, string $chatId, array $ancestors, ?string $messageId = null): void
 {
     $rows = [];
     foreach ($ancestors as $ancestor) {
@@ -434,25 +561,46 @@ function sendAncestorMenu(string $token, string $chatId, array $ancestors): void
             continue;
         }
         $rows[] = [
-            ['text' => $ancestorName, 'callback_data' => 'ancestor:' . $ancestorId]
+            ['text' => '🔹 ' . $ancestorName, 'callback_data' => 'ancestor:' . $ancestorId]
         ];
     }
 
     if (!$rows) {
-        sendMessage($token, $chatId, 'هیچ مال مرسومی ثبت نشده است.');
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>مال مرسومی برای انتخاب وجود ندارد.</b>\n\nابتدا از پنل مدیریت، موردهای اموال مرسوم را ثبت کنید.",
+            getStartMenuMarkup()
+        );
         return;
     }
 
-    sendMessage($token, $chatId, 'اموال مرسوم را انتخاب کنید:', [
-        'inline_keyboard' => $rows
-    ]);
+    sendOrEditMessage(
+        $token,
+        $chatId,
+        $messageId,
+        "📁 <b>انتخاب اموال مرسوم</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید تا مرحله بعد فعال شود.",
+        ['inline_keyboard' => $rows]
+    );
 }
 
-function sendStorageMenu(string $token, string $chatId): void
+function sendStorageMenu(
+    string $token,
+    string $chatId,
+    ?string $messageId = null,
+    ?string $customText = null
+): void
 {
     $storages = loadStorages();
     if (!$storages) {
-        sendMessage($token, $chatId, 'هیچ انباری ثبت نشده است.');
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>انباری برای انتخاب پیدا نشد.</b>\n\nلطفا ابتدا انبارها را در پنل تعریف کنید.",
+            getStartMenuMarkup()
+        );
         return;
     }
 
@@ -464,22 +612,35 @@ function sendStorageMenu(string $token, string $chatId): void
             continue;
         }
         $rows[] = [
-            ['text' => $storageName, 'callback_data' => 'storage:' . $storageId]
+            ['text' => '🏬 ' . $storageName, 'callback_data' => 'storage:' . $storageId]
         ];
     }
 
     if (!$rows) {
-        sendMessage($token, $chatId, 'هیچ انباری ثبت نشده است.');
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>انباری برای انتخاب پیدا نشد.</b>\n\nلطفا ابتدا انبارها را در پنل تعریف کنید.",
+            getStartMenuMarkup()
+        );
         return;
     }
 
-    sendMessage($token, $chatId, 'انبار را انتخاب کنید:', [
-        'inline_keyboard' => $rows
-    ]);
+    $text = $customText !== null
+        ? $customText
+        : "🏬 <b>انتخاب انبار</b>\n\nلطفا انبار مقصد این دارایی را انتخاب کنید تا ثبت نهایی انجام شود.";
+    sendOrEditMessage($token, $chatId, $messageId, $text, ['inline_keyboard' => $rows]);
 }
 
-function sendParentLabelMenu(string $token, string $chatId, array $state, ?array $labels = null): void
-{
+function sendParentLabelMenu(
+    string $token,
+    string $chatId,
+    array $state,
+    ?array $labels = null,
+    ?string $messageId = null,
+    ?string $ancestorName = null
+): void {
     if (!is_array($labels)) {
         $labels = loadLabels();
     }
@@ -489,12 +650,19 @@ function sendParentLabelMenu(string $token, string $chatId, array $state, ?array
         $state['step'] = 'awaiting_asset_code';
         unset($state['active_parent_label_id']);
         setChatState($chatId, $state);
-        sendMessage($token, $chatId, 'No labels available. Now send asset code.');
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "ℹ️ <b>برای این مال، برچسبی تعریف نشده است.</b>\n\nلطفا حالا <b>کد مال</b> را در یک پیام متنی ارسال کنید.",
+            null
+        );
         return;
     }
 
     $labelValues = is_array($state['label_values'] ?? null) ? $state['label_values'] : [];
     $rows = [];
+    $selectedLines = [];
     foreach ($parentIds as $parentId) {
         $parent = findById($labels, $parentId);
         if (!is_array($parent)) {
@@ -505,13 +673,14 @@ function sendParentLabelMenu(string $token, string $chatId, array $state, ?array
             continue;
         }
 
-        $buttonText = $parentName;
+        $buttonText = '🏷️ ' . $parentName;
         $selectedChildId = trim((string) ($labelValues[$parentId] ?? ''));
         if ($selectedChildId !== '' && labelIsDirectChild($labels, $parentId, $selectedChildId)) {
             $child = findById($labels, $selectedChildId);
             $childName = clean((string) ($child['name'] ?? ''));
             if ($childName !== '') {
-                $buttonText .= ' => ' . $childName;
+                $buttonText = '✅ ' . $parentName . ': ' . $childName;
+                $selectedLines[] = '• ' . htmlEscape($parentName) . ': <b>' . htmlEscape($childName) . '</b>';
             }
         }
 
@@ -521,23 +690,56 @@ function sendParentLabelMenu(string $token, string $chatId, array $state, ?array
     }
 
     $rows[] = [
-        ['text' => 'Skip / Done', 'callback_data' => 'label_skip']
+        ['text' => '⏭️ رد کردن برچسب‌ها', 'callback_data' => 'label_skip']
     ];
 
-    sendMessage($token, $chatId, 'Add Label (optional): select parent label.', [
+    $resolvedAncestorName = $ancestorName !== null
+        ? $ancestorName
+        : htmlEscape(clean((string) ($state['ancestor_name'] ?? '')));
+    if ($resolvedAncestorName === '') {
+        $resolvedAncestorName = 'نامشخص';
+    }
+    $selectedSection = $selectedLines
+        ? "\n\n✅ <b>برچسب‌های انتخاب‌شده:</b>\n" . implode("\n", $selectedLines)
+        : "\n\nهنوز برچسبی انتخاب نشده است.";
+
+    $text = "🏷️ <b>افزودن برچسب به دارایی (اختیاری)</b>\n\n"
+        . "📦 مال انتخاب‌شده: <b>{$resolvedAncestorName}</b>\n"
+        . "لطفا یک <b>برچسب والد</b> را انتخاب کنید تا زیر‌برچسب‌های آن نمایش داده شود."
+        . $selectedSection
+        . "\n\nاگر مایل نیستید برچسب اضافه کنید، گزینه «⏭️ رد کردن برچسب‌ها» را بزنید.";
+
+    sendOrEditMessage($token, $chatId, $messageId, $text, [
         'inline_keyboard' => $rows
     ]);
 }
 
-function sendChildLabelMenu(string $token, string $chatId, string $parentId, ?array $labels = null): void
-{
+function sendChildLabelMenu(
+    string $token,
+    string $chatId,
+    string $parentId,
+    ?array $labels = null,
+    ?string $messageId = null
+): void {
     if (!is_array($labels)) {
         $labels = loadLabels();
     }
 
     $parent = findById($labels, $parentId);
     if (!is_array($parent)) {
-        sendMessage($token, $chatId, 'Parent label is invalid.');
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>برچسب والد انتخاب‌شده معتبر نیست.</b>\n\nلطفا دوباره از لیست والدها انتخاب کنید.",
+            [
+                'inline_keyboard' => [
+                    [
+                        ['text' => '⬅️ بازگشت به والدها', 'callback_data' => 'label_back_parents']
+                    ]
+                ]
+            ]
+        );
         return;
     }
 
@@ -553,27 +755,31 @@ function sendChildLabelMenu(string $token, string $chatId, string $parentId, ?ar
             continue;
         }
         $rows[] = [
-            ['text' => $name, 'callback_data' => 'label_child:' . $parentId . ':' . $id]
+            ['text' => '🔸 ' . $name, 'callback_data' => 'label_child:' . $parentId . ':' . $id]
         ];
     }
 
-    if (!$rows) {
-        sendMessage($token, $chatId, 'No child labels found for this parent.', [
-            'inline_keyboard' => [
-                [
-                    ['text' => 'Back', 'callback_data' => 'label_back_parents']
-                ]
-            ]
-        ]);
+    $rows[] = [
+        ['text' => '⬅️ بازگشت به والدها', 'callback_data' => 'label_back_parents']
+    ];
+
+    $parentName = htmlEscape(clean((string) ($parent['name'] ?? '')));
+    $prefixText = "🧩 <b>انتخاب زیر‌برچسب</b>\n\n"
+        . "🏷️ برچسب والد: <b>{$parentName}</b>\n"
+        . "لطفا یکی از زیر‌برچسب‌های این گروه را انتخاب کنید.";
+
+    if (count($rows) === 1) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            $prefixText . "\n\n⚠️ برای این والد، زیر‌برچسبی ثبت نشده است.",
+            ['inline_keyboard' => $rows]
+        );
         return;
     }
 
-    $rows[] = [
-        ['text' => 'Back', 'callback_data' => 'label_back_parents']
-    ];
-
-    $parentName = clean((string) ($parent['name'] ?? ''));
-    sendMessage($token, $chatId, 'Select child label: ' . $parentName, [
+    sendOrEditMessage($token, $chatId, $messageId, $prefixText, [
         'inline_keyboard' => $rows
     ]);
 }
@@ -585,11 +791,26 @@ function answerCallbackQuery(string $token, string $callbackQueryId): void
     ]);
 }
 
+function sendOrEditMessage(
+    string $token,
+    string $chatId,
+    ?string $messageId,
+    string $text,
+    ?array $replyMarkup = null
+): void {
+    $normalizedMessageId = trim((string) $messageId);
+    if ($normalizedMessageId !== '' && editMessage($token, $chatId, $normalizedMessageId, $text, $replyMarkup)) {
+        return;
+    }
+    sendMessage($token, $chatId, $text, $replyMarkup);
+}
+
 function sendMessage(string $token, string $chatId, string $text, ?array $replyMarkup = null): void
 {
     $payload = [
         'chat_id' => $chatId,
         'text' => $text,
+        'parse_mode' => 'HTML',
     ];
     if (is_array($replyMarkup)) {
         $payload['reply_markup'] = json_encode($replyMarkup, JSON_UNESCAPED_UNICODE);
@@ -603,7 +824,60 @@ function sendMessage(string $token, string $chatId, string $text, ?array $replyM
     telegramRequest($token, 'sendMessage', $payload);
 }
 
-function telegramRequest(string $token, string $method, array $payload): void
+function editMessage(
+    string $token,
+    string $chatId,
+    string $messageId,
+    string $text,
+    ?array $replyMarkup = null
+): bool {
+    $payload = [
+        'chat_id' => $chatId,
+        'message_id' => $messageId,
+        'text' => $text,
+        'parse_mode' => 'HTML',
+    ];
+    if (is_array($replyMarkup)) {
+        $payload['reply_markup'] = json_encode($replyMarkup, JSON_UNESCAPED_UNICODE);
+    } else {
+        $payload['reply_markup'] = json_encode(['inline_keyboard' => []], JSON_UNESCAPED_UNICODE);
+    }
+
+    logEvent('telegram_edit_message', [
+        'chat_id' => $chatId,
+        'message_id' => $messageId,
+        'text' => textSnippet($text, 180),
+        'has_reply_markup' => is_array($replyMarkup)
+    ]);
+    $result = telegramRequest($token, 'editMessageText', $payload);
+    if (telegramResponseOk($result)) {
+        return true;
+    }
+    if (telegramResponseIsNotModified($result)) {
+        return true;
+    }
+
+    logEvent('telegram_edit_failed', [
+        'chat_id' => $chatId,
+        'message_id' => $messageId,
+        'http_code' => (int) ($result['http_code'] ?? 0),
+        'description' => (string) ($result['description'] ?? ''),
+    ]);
+    return false;
+}
+
+function telegramResponseOk(array $result): bool
+{
+    return ($result['ok'] ?? false) === true;
+}
+
+function telegramResponseIsNotModified(array $result): bool
+{
+    $description = strtolower((string) ($result['description'] ?? ''));
+    return $description !== '' && strpos($description, 'message is not modified') !== false;
+}
+
+function telegramRequest(string $token, string $method, array $payload): array
 {
     $url = "https://api.telegram.org/bot{$token}/{$method}";
     $postData = http_build_query($payload);
@@ -621,13 +895,24 @@ function telegramRequest(string $token, string $method, array $payload): void
             $error = curl_error($ch);
             $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
+
+            $decoded = is_string($response) ? json_decode($response, true) : null;
+            $responseOk = is_array($decoded) && (($decoded['ok'] ?? false) === true);
+            $description = is_array($decoded) ? (string) ($decoded['description'] ?? '') : '';
             logEvent('telegram_request', [
                 'method' => $method,
                 'http_code' => $httpCode,
                 'curl_error' => $error,
                 'response' => is_string($response) ? textSnippet($response, 400) : ''
             ]);
-            return;
+            return [
+                'ok' => $responseOk,
+                'description' => $description,
+                'http_code' => $httpCode,
+                'curl_error' => $error,
+                'response' => $decoded,
+                'raw' => is_string($response) ? $response : '',
+            ];
         }
     }
 
@@ -640,17 +925,35 @@ function telegramRequest(string $token, string $method, array $payload): void
         ],
     ]);
     $response = @file_get_contents($url, false, $context);
+    $decoded = is_string($response) ? json_decode($response, true) : null;
+    $responseOk = is_array($decoded) && (($decoded['ok'] ?? false) === true);
+    $description = is_array($decoded) ? (string) ($decoded['description'] ?? '') : '';
+    $httpCode = 0;
+    if (isset($http_response_header[0]) && is_string($http_response_header[0])) {
+        if (preg_match('/\s(\d{3})\s/', $http_response_header[0], $matches)) {
+            $httpCode = (int) ($matches[1] ?? 0);
+        }
+    }
     logEvent('telegram_request_fopen', [
         'method' => $method,
+        'http_code' => $httpCode,
         'response' => is_string($response) ? textSnippet($response, 400) : ''
     ]);
+    return [
+        'ok' => $responseOk,
+        'description' => $description,
+        'http_code' => $httpCode,
+        'curl_error' => '',
+        'response' => $decoded,
+        'raw' => is_string($response) ? $response : '',
+    ];
 }
 
 function addAssetFromState(array $state, string $storageId): array
 {
     $storageId = trim($storageId);
     if ($storageId === '') {
-        return ['ok' => false, 'message' => 'انبار انتخاب شده معتبر نیست.'];
+        return ['ok' => false, 'message' => 'انبار انتخاب‌شده معتبر نیست.'];
     }
 
     $storages = loadStorages();
@@ -659,7 +962,7 @@ function addAssetFromState(array $state, string $storageId): array
     $assets = loadAssets($ancestors, $labels);
 
     if (!storageExists($storages, $storageId)) {
-        return ['ok' => false, 'message' => 'انبار انتخاب شده معتبر نیست.'];
+        return ['ok' => false, 'message' => 'انبار انتخاب‌شده معتبر نیست.'];
     }
 
     $assetType = trim((string) ($state['asset_type'] ?? ''));
@@ -670,11 +973,11 @@ function addAssetFromState(array $state, string $storageId): array
     if ($assetType === 'common') {
         $ancestorId = trim((string) ($state['ancestor_id'] ?? ''));
         if ($ancestorId === '' || !ancestorExists($ancestors, $ancestorId)) {
-            return ['ok' => false, 'message' => 'مال مرسوم انتخاب شده معتبر نیست.'];
+            return ['ok' => false, 'message' => 'مال مرسوم انتخاب‌شده معتبر نیست.'];
         }
         $name = ancestorNameById($ancestors, $ancestorId);
         if ($name === '') {
-            return ['ok' => false, 'message' => 'مال مرسوم انتخاب شده معتبر نیست.'];
+            return ['ok' => false, 'message' => 'مال مرسوم انتخاب‌شده معتبر نیست.'];
         }
     } elseif ($assetType === 'special') {
         $specialAsset = true;
@@ -688,10 +991,10 @@ function addAssetFromState(array $state, string $storageId): array
 
     $code = normalizeAssetCode((string) ($state['asset_code'] ?? ''));
     if ($code === '') {
-        return ['ok' => false, 'message' => 'Asset code is invalid.'];
+        return ['ok' => false, 'message' => 'کد مال معتبر نیست.'];
     }
     if (assetCodeExists($assets, $code)) {
-        return ['ok' => false, 'message' => 'Asset code already exists.'];
+        return ['ok' => false, 'message' => 'کد مال تکراری است.'];
     }
 
     $labelValues = [];
@@ -723,7 +1026,13 @@ function addAssetFromState(array $state, string $storageId): array
 
     $storageName = storageNameById($storages, $storageId);
     $summary = "مال ثبت شد.\nنام: {$name}\nانبار: {$storageName}\nکد: {$code}";
-    return ['ok' => true, 'message' => $summary];
+    return [
+        'ok' => true,
+        'message' => $summary,
+        'name' => $name,
+        'code' => $code,
+        'storage_name' => $storageName,
+    ];
 }
 
 function ensureAssetDataFiles(): void
@@ -780,6 +1089,11 @@ function clean(string $value): string
 {
     $trimmed = trim($value);
     return preg_replace('/\s+/', ' ', $trimmed) ?? $trimmed;
+}
+
+function htmlEscape(string $value): string
+{
+    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
 function normalizeAssetCode(string $code): string

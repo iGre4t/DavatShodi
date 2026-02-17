@@ -667,6 +667,7 @@ $accountEmail = $currentUser['email'] ?? '';
                           <th>نام/مال مرسوم</th>
                           <th>کد مال</th>
                           <th>انبار</th>
+                          <th>برچسب‌ها</th>
                           <th>عملیات</th>
                         </tr>
                       </thead>
@@ -826,6 +827,36 @@ $accountEmail = $currentUser['email'] ?? '';
             <div class="modal-actions">
               <button type="button" class="btn" data-pm-ancestor-modal-close>انصراف</button>
               <button type="button" class="btn primary" id="pm-ancestor-modal-save">ذخیره</button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="pm-asset-labels-modal"
+          class="modal hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pm-asset-labels-title"
+        >
+          <div class="modal-card" style="max-width: 560px;">
+            <div class="modal-card-header">
+              <h3 id="pm-asset-labels-title">برچسب‌های مال</h3>
+              <button
+                type="button"
+                class="icon-btn"
+                data-pm-asset-modal-close
+                aria-label="بستن"
+              >
+                ×
+              </button>
+            </div>
+            <div class="form">
+              <div id="pm-asset-modal-label-fields" class="grid one-column"></div>
+            </div>
+            <p id="pm-asset-modal-status" class="hint pm-status" aria-live="polite"></p>
+            <div class="modal-actions">
+              <button type="button" class="btn" data-pm-asset-modal-close>انصراف</button>
+              <button type="button" class="btn primary" id="pm-asset-modal-save">ذخیره</button>
             </div>
           </div>
         </div>
