@@ -1550,6 +1550,7 @@ tbody tr:hover { background: var(--sidebar-active); }
 .users-actions-cell {
   direction: ltr;
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }

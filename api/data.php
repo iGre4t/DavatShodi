@@ -121,6 +121,16 @@ function normalizeDigits(string $value): string
     return preg_replace('/\D+/', '', $value) ?? '';
 }
 
+function isValidTelegramId(string $value): bool
+{
+    return $value === '' || preg_match('/^\d+$/', $value) === 1;
+}
+
+function isValidPinCode(string $value): bool
+{
+    return $value === '' || preg_match('/^\d{4}$/', $value) === 1;
+}
+
 function isPhoneTaken(string $phone, array $data, string $excludeCode = ''): bool
 {
     $target = normalizeDigits($phone);
@@ -255,6 +265,8 @@ if ($method === 'POST') {
         handleUserUpdateAccount($payload, $pdo, $currentUserCode);
     } elseif ($action === 'update_user_password') {
         handleUserUpdatePassword($payload, $pdo, $currentUserCode);
+    } elseif ($action === 'admin_reset_user_password') {
+        handleAdminResetUserPassword($payload, $pdo, $isAuthenticated);
     }
 
     // User tab CRUD actions (add, update, delete) land here so the panel can persist the JSON store and optional DB.
@@ -284,9 +296,19 @@ if ($method === 'POST') {
         $workId = trim((string)($user['work_id'] ?? ''));
         $idNumber = normalizeDigits(trim((string)($user['id_number'] ?? '')));
         $email = trim((string)($user['email'] ?? ''));
+        $telegramId = trim((string)($user['telegram_id'] ?? ''));
+        $pinCode = trim((string)($user['pin_code'] ?? ''));
         if (!isValidEmail($email)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
         }
+        if (!isValidTelegramId($telegramId)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Telegram ID must contain only digits.']);
+        }
+        if (!isValidPinCode($pinCode)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'PIN code must be exactly 4 digits.']);
+        }
+        $telegramId = normalizeDigits($telegramId);
+        $pinCode = normalizeDigits($pinCode);
         if (isEmailTaken($email, $data)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
         }
@@ -323,6 +345,8 @@ if ($method === 'POST') {
             'work_id' => $workId,
             'id_number' => $idNumber,
             'email' => $email,
+            'telegram_id' => $telegramId,
+            'pin_code' => $pinCode,
             'active' => !empty($user['active']),
             'createdAt' => time()
         ];
@@ -334,6 +358,8 @@ if ($method === 'POST') {
             'work_id' => $newUser['work_id'],
             'id_number' => $newUser['id_number'],
             'email' => $email,
+            'telegram_id' => $newUser['telegram_id'],
+            'pin_code' => $newUser['pin_code'],
             'password_hash' => $passwordHash
         ])) {
             sendJsonResponse(['status' => 'error', 'message' => 'Failed to insert user into the database.']);
@@ -362,11 +388,21 @@ if ($method === 'POST') {
         $workId = trim((string)($user['work_id'] ?? ''));
         $idNumber = normalizeDigits(trim((string)($user['id_number'] ?? '')));
         $email = trim((string)($user['email'] ?? ''));
+        $telegramId = trim((string)($user['telegram_id'] ?? ''));
+        $pinCode = trim((string)($user['pin_code'] ?? ''));
         if (!isValidEmail($email)) {
             if ($email !== '') {
                 sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
             }
         }
+        if (!isValidTelegramId($telegramId)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Telegram ID must contain only digits.']);
+        }
+        if (!isValidPinCode($pinCode)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'PIN code must be exactly 4 digits.']);
+        }
+        $telegramId = normalizeDigits($telegramId);
+        $pinCode = normalizeDigits($pinCode);
         if ($email !== '' && isEmailTaken($email, $data, $code)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
         }
@@ -392,7 +428,9 @@ if ($method === 'POST') {
                 'phone' => $phone,
                 'work_id' => $workId,
                 'id_number' => $idNumber,
-                'email' => $email
+                'email' => $email,
+                'telegram_id' => ($telegramId === '' ? null : $telegramId),
+                'pin_code' => ($pinCode === '' ? null : $pinCode)
             ];
             if (!updateUserByCode($pdo, $code, $updateFields)) {
                 sendJsonResponse(['status' => 'error', 'message' => 'Failed to update user information.']);
@@ -405,6 +443,8 @@ if ($method === 'POST') {
             'work_id' => $workId,
             'id_number' => $idNumber,
             'email' => $email,
+            'telegram_id' => $telegramId,
+            'pin_code' => $pinCode,
             'active' => !empty($user['active'])
         ])) {
             sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
@@ -1311,6 +1351,33 @@ function handleUserUpdatePassword(array $payload, ?PDO $pdo, string $userCode): 
     sendJsonResponse(['status' => 'ok', 'message' => 'Password updated successfully.']);
 }
 
+function handleAdminResetUserPassword(array $payload, ?PDO $pdo, bool $isAuthenticated): void
+{
+    if (!$isAuthenticated) {
+        sendJsonResponse(['status' => 'error', 'message' => 'You must be logged in to perform this action.']);
+    }
+    if (!$pdo) {
+        sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
+    }
+    $code = trim((string)($payload['code'] ?? ''));
+    $newPassword = trim((string)($payload['new_password'] ?? ''));
+    if ($code === '') {
+        sendJsonResponse(['status' => 'error', 'message' => 'User code is required.']);
+    }
+    if (preg_match('/^\d{8}$/', $newPassword) !== 1) {
+        sendJsonResponse(['status' => 'error', 'message' => 'New password must be exactly 8 digits.']);
+    }
+    $user = loadUserByCode($pdo, $code);
+    if (!$user) {
+        sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
+    }
+    $hash = password_hash($newPassword, PASSWORD_DEFAULT);
+    if ($hash === false || !updateUserByCode($pdo, $code, ['password_hash' => $hash])) {
+        sendJsonResponse(['status' => 'error', 'message' => 'An error occurred while saving the password.']);
+    }
+    sendJsonResponse(['status' => 'ok', 'message' => 'User password updated successfully.']);
+}
+
 function normalizeUserForResponse(array $row): array
 {
     return [
@@ -1320,7 +1387,9 @@ function normalizeUserForResponse(array $row): array
         'phone' => $row['phone'] ?? '',
         'email' => $row['email'] ?? '',
         'id_number' => $row['id_number'] ?? '',
-        'work_id' => $row['work_id'] ?? ''
+        'work_id' => $row['work_id'] ?? '',
+        'telegram_id' => $row['telegram_id'] ?? '',
+        'pin_code' => $row['pin_code'] ?? ''
     ];
 }
 

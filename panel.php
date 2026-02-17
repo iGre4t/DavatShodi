@@ -964,6 +964,29 @@ $accountEmail = $currentUser['email'] ?? '';
             <span>کد پرسنلی</span>
             <input id="user-work-id" type="text" />
           </label>
+          <label class="field">
+            <span>شناسه تلگرام</span>
+            <input
+              id="user-telegram-id"
+              type="text"
+              inputmode="numeric"
+              pattern="^\d*$"
+              placeholder="Only numerals"
+              oninput="this.value = this.value.replace(/\D/g, '')"
+            />
+          </label>
+          <label class="field">
+            <span>پین‌کد کاربر (4 رقم)</span>
+            <input
+              id="user-pin-code"
+              type="text"
+              inputmode="numeric"
+              pattern="^\d{4}$"
+              maxlength="4"
+              placeholder="1234"
+              oninput="this.value = this.value.replace(/\D/g, '')"
+            />
+          </label>
           <!-- National ID spans the full grid because it pairs with additional validation hints in the JS handler. -->
           <label class="field full">
             <span>کد ملی</span>
@@ -995,6 +1018,32 @@ $accountEmail = $currentUser['email'] ?? '';
           <button type="button" class="btn" id="user-delete-cancel">انصراف</button>
           <button type="button" class="btn primary" id="user-delete-confirm">حذف</button>
         </div>
+      </div>
+    </div>
+
+    <div id="user-password-reset-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-password-reset-title">
+      <div class="modal-card">
+        <h3 id="user-password-reset-title">تغییر گذرواژه کاربر</h3>
+        <form id="user-password-reset-form" class="form">
+          <label class="field">
+            <span>گذرواژه جدید (8 رقم عددی)</span>
+            <input
+              id="user-password-reset-input"
+              type="password"
+              inputmode="numeric"
+              pattern="^\d{8}$"
+              maxlength="8"
+              autocomplete="new-password"
+              placeholder="12345678"
+              oninput="this.value = this.value.replace(/\D/g, '')"
+              required
+            />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn" id="user-password-reset-cancel">انصراف</button>
+            <button type="submit" class="btn primary">ذخیره</button>
+          </div>
+        </form>
       </div>
     </div>
 

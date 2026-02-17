@@ -4,10 +4,52 @@ declare(strict_types=1);
 /**
  * Loads rows from the `users` table, normalizes the values, and exposes `username` so the frontend always shows the proper login name.
  */
+function getUsersTableColumns(PDO $pdo): array
+{
+    static $cache = [];
+    $cacheKey = spl_object_id($pdo);
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+    try {
+        $stmt = $pdo->query('SHOW COLUMNS FROM `users`');
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $err) {
+        error_log('Failed to load users table columns: ' . $err->getMessage());
+        $cache[$cacheKey] = [];
+        return [];
+    }
+    $columns = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $name = trim((string)($row['Field'] ?? ''));
+        if ($name !== '') {
+            $columns[] = $name;
+        }
+    }
+    $cache[$cacheKey] = $columns;
+    return $columns;
+}
+
+function usersTableHasColumn(PDO $pdo, string $column): bool
+{
+    return in_array($column, getUsersTableColumns($pdo), true);
+}
+
 function loadUsersFromUsersTable(PDO $pdo): array
 {
     try {
-        $stmt = $pdo->query('SELECT `code`, `username`, `fullname`, `phone`, `work_id`, `id_number`, `email` FROM `users` ORDER BY `fullname` ASC, `code` ASC');
+        $selectColumns = ['`code`', '`username`', '`fullname`', '`phone`', '`work_id`', '`id_number`', '`email`'];
+        if (usersTableHasColumn($pdo, 'telegram_id')) {
+            $selectColumns[] = '`telegram_id`';
+        }
+        if (usersTableHasColumn($pdo, 'pin_code')) {
+            $selectColumns[] = '`pin_code`';
+        }
+        $sql = 'SELECT ' . implode(', ', $selectColumns) . ' FROM `users` ORDER BY `fullname` ASC, `code` ASC';
+        $stmt = $pdo->query($sql);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $err) {
         error_log('Failed to fetch users table: ' . $err->getMessage());
@@ -38,6 +80,8 @@ function loadUsersFromUsersTable(PDO $pdo): array
             'work_id' => trim((string)($row['work_id'] ?? '')),
             'id_number' => trim((string)($row['id_number'] ?? '')),
             'email' => trim((string)($row['email'] ?? '')),
+            'telegram_id' => trim((string)($row['telegram_id'] ?? '')),
+            'pin_code' => trim((string)($row['pin_code'] ?? '')),
             'active' => true
         ];
     }, $rows));
@@ -109,7 +153,16 @@ function loadUserByCode(PDO $pdo, string $code): ?array
         return null;
     }
     try {
-        $stmt = $pdo->prepare('SELECT `code`, `username`, `fullname`, `phone`, `email`, `id_number`, `work_id`, `password_hash` FROM `users` WHERE `code` = :code LIMIT 1');
+        $selectColumns = ['`code`', '`username`', '`fullname`', '`phone`', '`email`', '`id_number`', '`work_id`'];
+        if (usersTableHasColumn($pdo, 'telegram_id')) {
+            $selectColumns[] = '`telegram_id`';
+        }
+        if (usersTableHasColumn($pdo, 'pin_code')) {
+            $selectColumns[] = '`pin_code`';
+        }
+        $selectColumns[] = '`password_hash`';
+        $sql = 'SELECT ' . implode(', ', $selectColumns) . ' FROM `users` WHERE `code` = :code LIMIT 1';
+        $stmt = $pdo->prepare($sql);
         $stmt->execute([':code' => $code]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
     } catch (PDOException $err) {
@@ -151,6 +204,12 @@ function updateUserByCode(PDO $pdo, string $code, array $fields): bool
         return false;
     }
     $allowed = ['fullname', 'username', 'phone', 'email', 'password_hash', 'id_number', 'work_id'];
+    if (usersTableHasColumn($pdo, 'telegram_id')) {
+        $allowed[] = 'telegram_id';
+    }
+    if (usersTableHasColumn($pdo, 'pin_code')) {
+        $allowed[] = 'pin_code';
+    }
     $updates = [];
     $params = [];
     foreach ($fields as $key => $value) {
@@ -229,30 +288,28 @@ function insertUserRecord(PDO $pdo, array $user): bool
     $email = trim((string)($user['email'] ?? ''));
     $idNumber = trim((string)($user['id_number'] ?? ''));
     $workId = trim((string)($user['work_id'] ?? ''));
+    $telegramId = trim((string)($user['telegram_id'] ?? ''));
+    $pinCode = trim((string)($user['pin_code'] ?? ''));
     $passwordHash = trim((string)($user['password_hash'] ?? '')) ?: getDefaultUserPasswordHash();
     try {
-        $stmt = $pdo->prepare('
-            INSERT INTO `users` (
-                `code`,
-                `username`,
-                `fullname`,
-                `phone`,
-                `email`,
-                `id_number`,
-                `work_id`,
-                `password_hash`
-            ) VALUES (
-                :code,
-                :username,
-                :fullname,
-                :phone,
-                :email,
-                :id_number,
-                :work_id,
-                :password_hash
-            )
-        ');
-        return $stmt->execute([
+        $columns = [
+            '`code`' => ':code',
+            '`username`' => ':username',
+            '`fullname`' => ':fullname',
+            '`phone`' => ':phone',
+            '`email`' => ':email',
+            '`id_number`' => ':id_number',
+            '`work_id`' => ':work_id',
+            '`password_hash`' => ':password_hash'
+        ];
+        if (usersTableHasColumn($pdo, 'telegram_id')) {
+            $columns['`telegram_id`'] = ':telegram_id';
+        }
+        if (usersTableHasColumn($pdo, 'pin_code')) {
+            $columns['`pin_code`'] = ':pin_code';
+        }
+        $sql = 'INSERT INTO `users` (' . implode(', ', array_keys($columns)) . ') VALUES (' . implode(', ', array_values($columns)) . ')';
+        $params = [
             ':code' => $code,
             ':username' => $username,
             ':fullname' => $fullname,
@@ -261,7 +318,15 @@ function insertUserRecord(PDO $pdo, array $user): bool
             ':id_number' => $idNumber,
             ':work_id' => $workId,
             ':password_hash' => $passwordHash
-        ]);
+        ];
+        if (usersTableHasColumn($pdo, 'telegram_id')) {
+            $params[':telegram_id'] = ($telegramId === '' ? null : $telegramId);
+        }
+        if (usersTableHasColumn($pdo, 'pin_code')) {
+            $params[':pin_code'] = ($pinCode === '' ? null : $pinCode);
+        }
+        $stmt = $pdo->prepare($sql);
+        return $stmt->execute($params);
     } catch (PDOException $err) {
         error_log('Failed to insert user record: ' . $err->getMessage());
         return false;

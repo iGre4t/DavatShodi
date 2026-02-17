@@ -7,6 +7,8 @@ const DEFAULT_USERS = [
     phone: "09123456789",
     work_id: "EMP-1001",
     id_number: "007000111",
+    telegram_id: "",
+    pin_code: "",
     active: true
   },
   {
@@ -17,12 +19,15 @@ const DEFAULT_USERS = [
     phone: "09350001122",
     work_id: "EMP-1002",
     id_number: "007000112",
+    telegram_id: "",
+    pin_code: "",
     active: false
   }
 ];
 let USER_DB = [...DEFAULT_USERS];
 let editingUserCode = "";
 let deletingUserCode = "";
+let passwordResetUserCode = "";
 // Keys stored in localStorage plus appearance defaults keep the UI consistent between sessions.
 
 const TITLE_KEY = "frontend_panel_title";
@@ -502,6 +507,8 @@ async function loadServerData() {
           work_id: normalizeValue(u.work_id),
           id_number: normalizeValue(u.id_number),
           email: normalizeValue(u.email),
+          telegram_id: normalizeDigits(u.telegram_id),
+          pin_code: normalizeDigits(u.pin_code),
           active: Boolean(u.active)
         };
       });
@@ -4563,6 +4570,11 @@ function renderUsers() {
     editBtn.className = 'btn ghost';
     editBtn.textContent = 'Edit';
     editBtn.addEventListener('click', () => openUserModal(user));
+    const passwordBtn = document.createElement('button');
+    passwordBtn.type = 'button';
+    passwordBtn.className = 'btn ghost';
+    passwordBtn.textContent = 'گذرواژه';
+    passwordBtn.addEventListener('click', () => openPasswordResetModal(user));
     // The delete CTA uses the primary theme so it visually matches the requested styling.
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
@@ -4575,6 +4587,7 @@ function renderUsers() {
     permissionsBtn.textContent = 'دسترسی ها';
     permissionsBtn.addEventListener('click', () => openPermissionsModal(user));
     actionCell.appendChild(editBtn);
+    actionCell.appendChild(passwordBtn);
     actionCell.appendChild(permissionsBtn);
     actionCell.appendChild(deleteBtn);
     tr.appendChild(actionCell);
@@ -4626,6 +4639,8 @@ function openUserModal(user = null) {
   const workInput = qs('#user-work-id');
   const idInput = qs('#user-id-number');
   const emailInput = qs('#user-email');
+  const telegramInput = qs('#user-telegram-id');
+  const pinCodeInput = qs('#user-pin-code');
   const activeInput = qs('#user-active');
   const passwordInput = qs('#user-password');
   const passwordField = qs('[data-password-field]');
@@ -4646,6 +4661,12 @@ function openUserModal(user = null) {
   }
   if (emailInput) {
     emailInput.value = user?.email ?? '';
+  }
+  if (telegramInput) {
+    telegramInput.value = normalizeDigits(user?.telegram_id ?? '');
+  }
+  if (pinCodeInput) {
+    pinCodeInput.value = normalizeDigits(user?.pin_code ?? '');
   }
   if (passwordInput) {
     passwordInput.value = '';
@@ -4695,6 +4716,36 @@ function closeDeleteModal() {
     nameHolder.textContent = '';
   }
   qs('#user-delete-modal')?.classList.add('hidden');
+}
+
+function openPasswordResetModal(user) {
+  if (!user) return;
+  passwordResetUserCode = user.code ?? '';
+  const modal = qs('#user-password-reset-modal');
+  const titleEl = qs('#user-password-reset-title');
+  const input = qs('#user-password-reset-input');
+  if (titleEl) {
+    const displayName = user.name || user.fullname || user.username || 'کاربر';
+    titleEl.textContent = `تغییر گذرواژه · ${displayName}`;
+  }
+  if (input) {
+    input.value = '';
+  }
+  modal?.classList.remove('hidden');
+}
+
+function closePasswordResetModal() {
+  passwordResetUserCode = '';
+  const modal = qs('#user-password-reset-modal');
+  const form = qs('#user-password-reset-form');
+  const titleEl = qs('#user-password-reset-title');
+  modal?.classList.add('hidden');
+  if (form) {
+    form.reset();
+  }
+  if (titleEl) {
+    titleEl.textContent = 'تغییر گذرواژه کاربر';
+  }
 }
 
 // Removes the user from local state and notifies the backend.
@@ -5164,6 +5215,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const codeValue = (codeInput?.value ?? "").trim();
   const workId = qs('#user-work-id').value.trim();
   const idNumber = qs('#user-id-number').value.trim();
+  const telegramIdRaw = qs('#user-telegram-id').value.trim();
+  const pinCodeRaw = qs('#user-pin-code').value.trim();
   const activeInput = qs('#user-active');
   const isActive = activeInput ? activeInput.checked : true;
   const passwordInput = qs('#user-password');
@@ -5237,6 +5290,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
   }
+  const normalizedTelegramId = normalizeDigits(telegramIdRaw);
+  if (telegramIdRaw !== '' && !/^\d+$/.test(telegramIdRaw)) {
+    showErrorSnackbar({ message: 'Telegram ID must contain only digits.' });
+    return;
+  }
+  const normalizedPinCode = normalizeDigits(pinCodeRaw);
+  if (normalizedPinCode !== '' && !/^\d{4}$/.test(normalizedPinCode)) {
+    showErrorSnackbar({ message: 'PIN code must be exactly 4 digits.' });
+    return;
+  }
   const normalizedId = normalizeDigits(idNumber);
     if (normalizedId) {
       const duplicateIdNumber = USER_DB.some(u => {
@@ -5259,6 +5322,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       phone: normalizedPhone,
       work_id: workId,
       id_number: normalizedId,
+      telegram_id: normalizedTelegramId,
+      pin_code: normalizedPinCode,
       active: isActive
     };
     payload.email = email;
@@ -5279,6 +5344,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           work_id: workId,
           id_number: normalizedId,
           email,
+          telegram_id: normalizedTelegramId,
+          pin_code: normalizedPinCode,
           active: isActive
         };
         renderUsers();
@@ -5317,6 +5384,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Delete modal buttons drive the confirm/cancel flow.
   qs('#user-delete-cancel')?.addEventListener('click', closeDeleteModal);
   qs('#user-delete-confirm')?.addEventListener('click', confirmUserDeletion);
+  qs('#user-password-reset-cancel')?.addEventListener('click', closePasswordResetModal);
+  qs('#user-password-reset-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!passwordResetUserCode) {
+      showErrorSnackbar({ message: 'No user selected.' });
+      return;
+    }
+    const passwordInputEl = qs('#user-password-reset-input');
+    const nextPassword = (passwordInputEl?.value ?? '').trim();
+    if (!/^\d{8}$/.test(nextPassword)) {
+      showErrorSnackbar({ message: 'Password must be exactly 8 digits.' });
+      return;
+    }
+    try {
+      const result = await sendAccountAction('admin_reset_user_password', {
+        code: passwordResetUserCode,
+        new_password: nextPassword
+      });
+      closePasswordResetModal();
+      showDefaultToast(result.message || 'User password updated successfully.');
+    } catch (error) {
+      showErrorSnackbar({
+        message: error?.message || 'Failed to update user password.'
+      });
+    }
+  });
+  qs('#user-password-reset-modal')?.addEventListener('click', event => {
+    if (event.target === event.currentTarget) {
+      closePasswordResetModal();
+    }
+  });
 
   const personalInfoForm = qs('#personal-info-form');
   const personalFullnameInput = qs('#personal-fullname');
