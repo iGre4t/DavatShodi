@@ -12,7 +12,8 @@ if (!empty($_SESSION['authenticated'])) {
 
 $dbConfig = loadConfig($configFile);
 $pdo = connectDatabase($dbConfig);
-$connectionError = $pdo ? null : 'Database connection failed.';
+$connectionError = $pdo ? null : 'Ø§ØªØµØ§Ù„ Ø¨Ù‡ Ù¾Ø§ÛŒÚ¯Ø§Ù‡ Ø¯Ø§Ø¯Ù‡ Ø¨Ø±Ù‚Ø±Ø§Ø± Ù†Ø´Ø¯.';
+$siteIconUrl = resolveSiteIconForLogin($dbConfig, $pdo);
 
 if (!$connectionError && $pdo && !isInstallComplete()) {
   try {
@@ -33,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $password = trim($_POST['password'] ?? '');
 
   if ($username === '' || $password === '') {
-    $errors[] = 'Username and password are required.';
+    $errors[] = 'Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ Ùˆ Ø±Ù…Ø² Ø¹Ø¨ÙˆØ± Ø§Ù„Ø²Ø§Ù…ÛŒ Ø§Ø³Øª.';
   } else {
     if (!$connectionError && $pdo) {
       try {
@@ -58,11 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           exit;
         }
       } catch (PDOException $exception) {
-        $connectionError = 'Database query failed.';
+        $connectionError = 'Ø§Ø¬Ø±Ø§ÛŒ Ù¾Ø±Ø³ ÙˆØ¬ÙˆÛŒ Ù¾Ø§ÛŒÚ¯Ø§Ù‡ Ø¯Ø§Ø¯Ù‡ Ù†Ø§Ù…ÙˆÙÙ‚ Ø¨ÙˆØ¯.';
       }
     }
 
-    $errors[] = $connectionError ?? 'Invalid username or password.';
+    $errors[] = $connectionError ?? 'Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ ÛŒØ§ Ø±Ù…Ø² Ø¹Ø¨ÙˆØ± Ù†Ø§Ø¯Ø±Ø³Øª Ø§Ø³Øª.';
   }
 }
 
@@ -83,7 +84,51 @@ function buildUserDisplayName(array $user = []): string
     }
     return $value;
   }
-  return 'Admin';
+  return 'Ù…Ø¯ÛŒØ±';
+}
+
+function loadJsonPayload(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function formatSiteIconUrlForHtml(string $value = ''): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  if (preg_match('/^(?:data:|https?:\\/\\/|\\/\\/)/i', $trimmed)) {
+    return $trimmed;
+  }
+  if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
+    return $trimmed;
+  }
+  return "./{$trimmed}";
+}
+
+function resolveSiteIconForLogin(array $dbConfig, ?PDO $pdo): string
+{
+  $settings = [];
+  $fileData = loadJsonPayload(__DIR__ . '/data/store.json');
+  if (isset($fileData['settings']) && is_array($fileData['settings'])) {
+    $settings = $fileData['settings'];
+  }
+  if ($pdo) {
+    $dbData = loadDataFromDb($pdo, $dbConfig);
+    if (isset($dbData['settings']) && is_array($dbData['settings'])) {
+      $settings = $dbData['settings'];
+    }
+  }
+  return formatSiteIconUrlForHtml((string)($settings['siteIcon'] ?? ''));
 }
 ?>
 <!doctype html>
@@ -91,8 +136,8 @@ function buildUserDisplayName(array $user = []): string
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin Panel</title>
-    <link rel="icon" href="data:," />
+    <title>ÙˆØ±ÙˆØ¯ Ø¨Ù‡ Ù¾Ù†Ù„ Ù…Ø¯ÛŒØ±ÛŒØª</title>
+    <link rel="icon" id="site-icon-link" href="<?= escape($siteIconUrl !== '' ? $siteIconUrl : 'data:,') ?>" />
     <script src="General%20Setting/general-settings.js"></script>
     <script src="style/appearance.js"></script>
     <link rel="stylesheet" href="style/styles.css" />
@@ -132,6 +177,20 @@ function buildUserDisplayName(array $user = []): string
         display: grid;
         place-items: center;
         letter-spacing: 0.8px;
+        overflow: hidden;
+        border: 1px solid transparent;
+      }
+
+      .brand-logo.has-site-icon {
+        background: #fff;
+        border-color: #e5e7eb;
+      }
+
+      .brand-logo img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
       }
 
       .brand-title {
@@ -207,9 +266,15 @@ function buildUserDisplayName(array $user = []): string
   <body class="login-body">
     <main>
       <section class="login-card">
-        <div class="brand-logo">GN</div>
-        <h1 class="brand-title">Admin Panel</h1>
-        <p class="brand-subtitle">Sign in to continue managing</p>
+        <div class="brand-logo<?= $siteIconUrl !== '' ? ' has-site-icon' : '' ?>">
+          <?php if ($siteIconUrl !== ''): ?>
+            <img src="<?= escape($siteIconUrl) ?>" alt="Ø¢ÛŒÚ©ÙˆÙ† Ø³Ø§ÛŒØª" />
+          <?php else: ?>
+            GN
+          <?php endif; ?>
+        </div>
+        <h1 class="brand-title">ÙˆØ±ÙˆØ¯ Ø¨Ù‡ Ù¾Ù†Ù„ Ù…Ø¯ÛŒØ±ÛŒØª</h1>
+        <p class="brand-subtitle">Ø¨Ø±Ø§ÛŒ Ø§Ø¯Ø§Ù…Ù‡ ÙˆØ§Ø±Ø¯ Ø­Ø³Ø§Ø¨ Ú©Ø§Ø±Ø¨Ø±ÛŒ Ø®ÙˆØ¯ Ø´ÙˆÛŒØ¯</p>
         <?php if ($errors): ?>
           <div class="alert" role="alert" aria-live="assertive">
             <ul>
@@ -221,16 +286,17 @@ function buildUserDisplayName(array $user = []): string
         <?php endif; ?>
         <form method="post" class="login-form" novalidate>
           <label class="field">
-            <span>Username</span>
-            <input name="username" type="text" placeholder="e.g. admin" value="<?= escape($username) ?>" autofocus required />
+            <span>Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ</span>
+            <input name="username" type="text" placeholder="Ù…Ø«Ø§Ù„: admin" value="<?= escape($username) ?>" autofocus required />
           </label>
           <label class="field">
-            <span>Password</span>
-            <input name="password" type="password" placeholder="••••••••" required />
+            <span>Ø±Ù…Ø² Ø¹Ø¨ÙˆØ±</span>
+            <input name="password" type="password" placeholder="رمز عبور" required />
           </label>
-          <button type="submit">Sign In</button>
+          <button type="submit">ÙˆØ±ÙˆØ¯</button>
         </form>
       </section>
     </main>
   </body>
 </html>
+

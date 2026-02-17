@@ -66,7 +66,8 @@
   };
 
   function initAssetsManagerTab(options) {
-    if (assetsManagerInitialized) {
+    const forceRebind = Boolean(options?.forceRebind);
+    if (assetsManagerInitialized && !forceRebind) {
       return;
     }
 

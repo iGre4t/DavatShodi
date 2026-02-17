@@ -81,6 +81,7 @@ const COLOR_PICKER_GRID = {
 };
 const appearancePickerGridState = {};
 let activeAppearancePickerKey = null;
+let appearanceGlobalKeyupBound = false;
 const STYLE_COLOR_PICKER_KEY = "__style_color_picker";
 const STYLE_COLOR_PICKER_HSL_BASE = APPEARANCE_HSL_BASE.text;
 const styleColorPickerGridState = {};
@@ -1670,93 +1671,102 @@ function initAppearanceControls() {
       }
     });
   });
+  const modal = qs("#appearance-picker-modal");
+  const modalBindingsReady = modal?.dataset.appearanceBound === "1";
   const modalPicker = qs("[data-appearance-modal-picker]");
   const slider = modalPicker?.querySelector("input[type='range']");
-  slider?.addEventListener("input", () => {
-    const hue = Number(slider.value) || 0;
-    if (styleColorPickerContext) {
-      const gridHsl =
-        styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] ||
-        normalizeGridHsl(STYLE_COLOR_PICKER_HSL_BASE, "text");
-      const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
-      styleColorPickerContext.color = nextColor;
-      styleColorPickerContext.onChoose?.(nextColor);
-      refreshModalPicker(null, nextColor);
-      return;
-    }
-    if (!activeAppearancePickerKey) {
-      return;
-    }
-    const gridHsl =
-      appearancePickerGridState[activeAppearancePickerKey] ||
-      normalizeGridHsl(APPEARANCE_HSL_BASE[activeAppearancePickerKey], activeAppearancePickerKey);
-    const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
-    updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
-  });
   const pickerGrid = modalPicker?.querySelector(".default-color-picker__grid");
-  let isPickerDragging = false;
-  const handleGridInteraction = (event) => {
-    if (!pickerGrid) {
-      return;
-    }
-    const rect = pickerGrid.getBoundingClientRect();
-    const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-    const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
-    const { s, l } = hslFromGridCoords({ x, y });
-    if (styleColorPickerContext) {
-      styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] = { s, l };
+  if (!modalBindingsReady) {
+    slider?.addEventListener("input", () => {
+      const hue = Number(slider.value) || 0;
+      if (styleColorPickerContext) {
+        const gridHsl =
+          styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] ||
+          normalizeGridHsl(STYLE_COLOR_PICKER_HSL_BASE, "text");
+        const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
+        styleColorPickerContext.color = nextColor;
+        styleColorPickerContext.onChoose?.(nextColor);
+        refreshModalPicker(null, nextColor);
+        return;
+      }
+      if (!activeAppearancePickerKey) {
+        return;
+      }
+      const gridHsl =
+        appearancePickerGridState[activeAppearancePickerKey] ||
+        normalizeGridHsl(APPEARANCE_HSL_BASE[activeAppearancePickerKey], activeAppearancePickerKey);
+      const nextColor = hslToHex({ h: hue, s: gridHsl.s, l: gridHsl.l });
+      updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
+    });
+    let isPickerDragging = false;
+    const handleGridInteraction = (event) => {
+      if (!pickerGrid) {
+        return;
+      }
+      const rect = pickerGrid.getBoundingClientRect();
+      const x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+      const y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+      const { s, l } = hslFromGridCoords({ x, y });
+      if (styleColorPickerContext) {
+        styleColorPickerGridState[STYLE_COLOR_PICKER_KEY] = { s, l };
+        const hue =
+          Number(slider?.value ?? getHueFromColor(styleColorPickerContext.color)) || 0;
+        const nextColor = hslToHex({ h: hue, s, l });
+        styleColorPickerContext.color = nextColor;
+        styleColorPickerContext.onChoose?.(nextColor);
+        refreshModalPicker(null, nextColor);
+        return;
+      }
+      if (!activeAppearancePickerKey) {
+        return;
+      }
+      appearancePickerGridState[activeAppearancePickerKey] = { s, l };
       const hue =
-        Number(slider?.value ?? getHueFromColor(styleColorPickerContext.color)) || 0;
+        Number(slider?.value ?? getHueFromColor(currentAppearanceState[activeAppearancePickerKey])) || 0;
       const nextColor = hslToHex({ h: hue, s, l });
-      styleColorPickerContext.color = nextColor;
-      styleColorPickerContext.onChoose?.(nextColor);
-      refreshModalPicker(null, nextColor);
-      return;
-    }
-    if (!activeAppearancePickerKey) {
-      return;
-    }
-    appearancePickerGridState[activeAppearancePickerKey] = { s, l };
-    const hue =
-      Number(slider?.value ?? getHueFromColor(currentAppearanceState[activeAppearancePickerKey])) || 0;
-    const nextColor = hslToHex({ h: hue, s, l });
-    updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
-  };
-  pickerGrid?.addEventListener("pointerdown", (event) => {
-    if (!activeAppearancePickerKey && !styleColorPickerContext) {
-      return;
-    }
-    isPickerDragging = true;
-    pickerGrid.setPointerCapture?.(event.pointerId);
-    handleGridInteraction(event);
-  });
-  pickerGrid?.addEventListener("pointermove", (event) => {
-    if (isPickerDragging) {
+      updateAppearanceState({ [activeAppearancePickerKey]: nextColor });
+    };
+    pickerGrid?.addEventListener("pointerdown", (event) => {
+      if (!activeAppearancePickerKey && !styleColorPickerContext) {
+        return;
+      }
+      isPickerDragging = true;
+      pickerGrid.setPointerCapture?.(event.pointerId);
       handleGridInteraction(event);
+    });
+    pickerGrid?.addEventListener("pointermove", (event) => {
+      if (isPickerDragging) {
+        handleGridInteraction(event);
+      }
+    });
+    const stopGridInteraction = (event) => {
+      if (!isPickerDragging) {
+        return;
+      }
+      isPickerDragging = false;
+      pickerGrid.releasePointerCapture?.(event.pointerId);
+    };
+    pickerGrid?.addEventListener("pointerup", stopGridInteraction);
+    pickerGrid?.addEventListener("pointerleave", stopGridInteraction);
+    pickerGrid?.addEventListener("pointercancel", stopGridInteraction);
+    qs("[data-close-appearance-picker]")?.addEventListener("click", closeColorPickerModal);
+    modal?.addEventListener("click", (event) => {
+      if (event.target === modal) {
+        closeColorPickerModal();
+      }
+    });
+    if (modal) {
+      modal.dataset.appearanceBound = "1";
     }
-  });
-  const stopGridInteraction = (event) => {
-    if (!isPickerDragging) {
-      return;
-    }
-    isPickerDragging = false;
-    pickerGrid.releasePointerCapture?.(event.pointerId);
-  };
-  pickerGrid?.addEventListener("pointerup", stopGridInteraction);
-  pickerGrid?.addEventListener("pointerleave", stopGridInteraction);
-  pickerGrid?.addEventListener("pointercancel", stopGridInteraction);
-  qs("[data-close-appearance-picker]")?.addEventListener("click", closeColorPickerModal);
-  const modal = qs("#appearance-picker-modal");
-  modal?.addEventListener("click", (event) => {
-    if (event.target === modal) {
-      closeColorPickerModal();
-    }
-  });
-  document.addEventListener("keyup", (event) => {
-    if (event.key === "Escape" && activeAppearancePickerKey) {
-      closeColorPickerModal();
-    }
-  });
+  }
+  if (!appearanceGlobalKeyupBound) {
+    document.addEventListener("keyup", (event) => {
+      if (event.key === "Escape" && activeAppearancePickerKey) {
+        closeColorPickerModal();
+      }
+    });
+    appearanceGlobalKeyupBound = true;
+  }
   qs("#save-appearance-settings")?.addEventListener("click", () => {
     void handleAppearanceSave();
   });
@@ -4519,6 +4529,94 @@ function setActiveTab(tab) {
   const el = qs('#page-title');
   if (el) el.textContent = titles[tab] || '';
 }
+
+function getExternalTabHost(tab) {
+  return qs(`#tab-${tab}[data-tab-source]`);
+}
+
+function buildExternalTabRequestUrl(source) {
+  const divider = source.includes("?") ? "&" : "?";
+  return `${source}${divider}_tab_reload=${Date.now()}`;
+}
+
+function extractExternalTabMarkup(rawHtml, tab) {
+  const parsed = new DOMParser().parseFromString(rawHtml, "text/html");
+  const matchingSection = parsed.querySelector(`#tab-${tab}`);
+  if (matchingSection) {
+    return matchingSection.innerHTML;
+  }
+  const firstTabSection = parsed.querySelector("section.tab");
+  if (firstTabSection) {
+    return firstTabSection.innerHTML;
+  }
+  return rawHtml;
+}
+
+function resetDomNodeById(id) {
+  const node = qs(`#${id}`);
+  if (!node || !node.parentElement) {
+    return;
+  }
+  const cleanNode = node.cloneNode(true);
+  node.parentElement.replaceChild(cleanNode, node);
+}
+
+function runExternalTabInitializers(tab) {
+  if (tab === "features") {
+    initSubSidebars();
+    initModalsPreviewModalControls();
+    initCodeEditorControls();
+    return;
+  }
+  if (tab === "devsettings") {
+    initSubSidebars();
+    initDeveloperSettingsControls();
+    initPrinterSettingsControls();
+    return;
+  }
+  if (tab === "asset-manager" && typeof window.initAssetsManagerTab === "function") {
+    resetDomNodeById("pm-ancestor-labels-modal");
+    resetDomNodeById("pm-asset-labels-modal");
+    window.initAssetsManagerTab({ forceRebind: true });
+  }
+}
+
+async function reloadExternalTab(tab) {
+  const host = getExternalTabHost(tab);
+  const source = host?.dataset?.tabSource ?? "";
+  if (!host || !source) {
+    return;
+  }
+
+  host.setAttribute("aria-busy", "true");
+  host.innerHTML = '<div class="card"><p class="muted">Loading tab content...</p></div>';
+
+  try {
+    const response = await fetch(buildExternalTabRequestUrl(source), {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to load tab content (${response.status}).`);
+    }
+    const rawHtml = await response.text();
+    host.innerHTML = extractExternalTabMarkup(rawHtml, tab);
+    runExternalTabInitializers(tab);
+  } catch (error) {
+    host.innerHTML = '<div class="card"><p class="muted">Failed to load tab content.</p></div>';
+    showErrorSnackbar({
+      message: error?.message || "Failed to load tab content."
+    });
+  } finally {
+    host.removeAttribute("aria-busy");
+  }
+}
+
+async function activateTab(tab) {
+  setActiveTab(tab);
+  await reloadExternalTab(tab);
+}
 function getActivePanelTimezone() {
   return (
     localStorage.getItem(TIMEZONE_KEY) ||
@@ -5358,6 +5456,8 @@ function initSubSidebars(){
   qsa('.sub-layout').forEach(layout => {
     const nav = layout.querySelector('.sub-nav');
     if (!nav) return;
+    if (nav.dataset.sidebarBound === "1") return;
+    nav.dataset.sidebarBound = "1";
     nav.addEventListener('click', (event) => {
       const trigger = event.target instanceof Element ? event.target.closest('.sub-item[data-pane]') : null;
       if (!trigger) return;
@@ -5455,6 +5555,175 @@ function initPrinterSettingsControls() {
   qs("#printer-settings-save")?.addEventListener("click", handlePrinterSettingsSave);
   renderPrinterSettingsForm();
 }
+
+function initDeveloperSettingsControls() {
+  const panelInput = qs('#dev-panel-name');
+  const panelSaveBtn = qs('#save-panel-settings');
+  const storedPanel = localStorage.getItem(PANEL_TITLE_KEY);
+  const serverPanel = SERVER_DATA_LOADED ? SERVER_SETTINGS.panelName : null;
+  const initialPanel = serverPanel ?? storedPanel ?? PANEL_TITLE_DEFAULT;
+  if (panelInput) {
+    panelInput.value = initialPanel;
+  }
+  applyPanelTitle(initialPanel, true);
+  panelSaveBtn?.addEventListener('click', () => {
+    const previousPanelName =
+      qs('.sidebar .title')?.textContent?.trim() ||
+      PANEL_TITLE_DEFAULT;
+    const value = (panelInput?.value ?? '').trim();
+    const panelName = value || PANEL_TITLE_DEFAULT;
+    applyPanelTitle(panelName, true);
+    SERVER_SETTINGS.panelName = panelName;
+    void syncSettings({ panelName }).then(success => {
+      if (success) {
+        showActionSnackbar({
+          message: "Panel title updated.",
+          instructionLabel: "Undo change",
+          onAction: () => {
+            applyPanelTitle(previousPanelName, true);
+            SERVER_SETTINGS.panelName = previousPanelName;
+            void syncSettings({ panelName: previousPanelName });
+          }
+        });
+      } else {
+        applyPanelTitle(previousPanelName, true);
+        SERVER_SETTINGS.panelName = previousPanelName;
+        showErrorSnackbar({ message: "Failed to save panel title." });
+      }
+    });
+  });
+
+  populateTimezoneSelect();
+  initAppearanceControls();
+  faviconLinkElement = qs('#site-icon-link');
+  sidebarLogoImage = qs('[data-sidebar-site-icon]');
+  sidebarLogoText = qs('[data-sidebar-logo-text]');
+  siteIconPreviewImage = qs('[data-site-icon-image]');
+  siteIconPlaceholder = qs('[data-site-icon-placeholder]');
+  siteIconAddButton = qs('[data-open-photo-chooser]');
+  siteIconClearButton = qs('[data-clear-site-icon]');
+  applySiteIconValue(SERVER_SETTINGS.siteIcon ?? "");
+  siteIconAddButton?.addEventListener('click', () => {
+    const activePhoto = findGalleryPhotoMatchingSiteIcon();
+    const initialSelection = activePhoto ? [activePhoto.id] : [];
+    openPhotoChooserModal({
+      allowMultiple: false,
+      initialSelection,
+      onChoose: (selectedPhotos = []) => {
+        const photo = selectedPhotos[0];
+        if (!photo) {
+          return;
+        }
+        const filename = normalizeValue(photo.filename);
+        persistSiteIconChange(filename, "Site icon saved.");
+      }
+    });
+  });
+  siteIconClearButton?.addEventListener('click', () => {
+    persistSiteIconChange("", "Site icon removed.");
+  });
+  const generalSaveBtn = qs('#save-general-settings');
+  const timezoneSelect = qs('#timezone-select');
+  generalSaveBtn?.addEventListener('click', () => {
+    const previousTimezone = SERVER_SETTINGS.timezone || DEFAULT_SETTINGS.timezone;
+    const timezoneValue = timezoneSelect?.value || DEFAULT_SETTINGS.timezone;
+    if (timezoneSelect) {
+      localStorage.setItem(TIMEZONE_KEY, timezoneValue);
+    }
+    SERVER_SETTINGS.timezone = timezoneValue;
+    renderClock();
+    void syncSettings({ timezone: timezoneValue }).then(success => {
+      if (success) {
+        showActionSnackbar({
+          message: "Timezone saved.",
+          instructionLabel: "Undo change",
+          onAction: () => {
+            SERVER_SETTINGS.timezone = previousTimezone;
+            if (timezoneSelect) {
+              timezoneSelect.value = previousTimezone;
+            }
+            localStorage.setItem(TIMEZONE_KEY, previousTimezone);
+            renderClock();
+            void syncSettings({ timezone: previousTimezone });
+          }
+        });
+      } else {
+        SERVER_SETTINGS.timezone = previousTimezone;
+        if (timezoneSelect) {
+          timezoneSelect.value = previousTimezone;
+        }
+        localStorage.setItem(TIMEZONE_KEY, previousTimezone);
+        renderClock();
+        showErrorSnackbar({ message: "Failed to save timezone." });
+      }
+    });
+  });
+  instantBackupButton = qs("#instant-backup-btn");
+  backupImportInput = qs("#dev-db-backup-file");
+  backupImportTrigger = qs("#backup-import-trigger");
+  backupFileChosen = qs("#backup-file-chosen");
+  backupSettingsFormElement = qs("#backup-settings-form");
+  backupIntervalInput = qs("#auto-backup-interval");
+  backupLimitInput = qs("#auto-backup-limit");
+  backupSaveButton = qs("#save-backup-settings");
+  instantBackupButton?.addEventListener("click", () => {
+    void handleInstantBackup();
+  });
+  backupImportTrigger?.addEventListener("click", () => {
+    backupImportInput?.click();
+  });
+  backupImportInput?.addEventListener("change", async () => {
+    const file = backupImportInput?.files?.[0] ?? null;
+    if (!file) {
+      return;
+    }
+    setBackupFileLabel(file.name);
+    const confirmed = await showDialog(
+      'This will replace the current panel data with the imported backup. Continue?',
+      { confirm: true, title: 'Import backup', okText: 'Import', cancelText: 'Cancel' }
+    );
+    if (confirmed) {
+      await handleBackupImport(file);
+    } else {
+      backupImportInput.value = "";
+      setBackupFileLabel("No file selected.");
+    }
+  });
+  backupSettingsFormElement?.addEventListener("submit", handleBackupSettingsSave);
+  const backupHistoryContainer = qs("#backup-history");
+  backupHistoryContainer?.addEventListener("click", handleBackupActionClick);
+  applyBackupSettingsInputs();
+  setBackupFileLabel("No file selected.");
+  const developerSqlForm = qs("#developer-sql-form");
+  const sqlTextarea = qs("#dev-db-sql");
+  const clearSqlBtn = qs("#clear-sql-query");
+  developerSqlForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const query = (sqlTextarea?.value ?? "").trim();
+    if (query === "") {
+      showErrorSnackbar({ message: "Please enter a SQL statement." });
+      return;
+    }
+    clearSqlResult();
+    setSqlFormSubmitting(true);
+    try {
+      const response = await executeSqlQuery(query);
+      renderSqlResult(response);
+    } catch (error) {
+      showErrorSnackbar({
+        message: error?.message || "Failed to execute SQL query."
+      });
+    } finally {
+      setSqlFormSubmitting(false);
+    }
+  });
+  clearSqlBtn?.addEventListener("click", () => {
+    if (sqlTextarea) {
+      sqlTextarea.value = "";
+    }
+    clearSqlResult();
+  });
+}
 // Bootstraps the UI once DOM is ready: load data, render galleries/users, and attach all handlers.
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -5462,7 +5731,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } finally {
     hideAppLoader();
   }
-  setActiveTab('home');
+  await activateTab('home');
   renderUsers();
   updateKpis({ forceMetricsRefresh: true });
   initHomeSubTabs();
@@ -5497,7 +5766,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tab = btn.dataset.tab;
     if (tab) {
       event.preventDefault();
-      setActiveTab(tab);
+      await activateTab(tab);
     }
   });
   qsa('[data-close-permissions]').forEach(btn => {
@@ -5526,7 +5795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     event.preventDefault();
-    setActiveTab('home');
+    void activateTab('home');
   };
   document.addEventListener('keydown', handleHomeShortcut);
 
@@ -5920,172 +6189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  const panelInput = qs('#dev-panel-name');
-  const panelSaveBtn = qs('#save-panel-settings');
-  const storedPanel = localStorage.getItem(PANEL_TITLE_KEY);
-  const serverPanel = SERVER_DATA_LOADED ? SERVER_SETTINGS.panelName : null;
-  const initialPanel = serverPanel ?? storedPanel ?? PANEL_TITLE_DEFAULT;
-  if (panelInput) {
-    panelInput.value = initialPanel;
-  }
-  applyPanelTitle(initialPanel, true);
-  panelSaveBtn?.addEventListener('click', () => {
-    const previousPanelName =
-      qs('.sidebar .title')?.textContent?.trim() ||
-      PANEL_TITLE_DEFAULT;
-    const value = (panelInput?.value ?? '').trim();
-    const panelName = value || PANEL_TITLE_DEFAULT;
-    applyPanelTitle(panelName, true);
-    SERVER_SETTINGS.panelName = panelName;
-    void syncSettings({ panelName }).then(success => {
-      if (success) {
-        showActionSnackbar({
-          message: "Panel title updated.",
-          instructionLabel: "Undo change",
-          onAction: () => {
-            applyPanelTitle(previousPanelName, true);
-            SERVER_SETTINGS.panelName = previousPanelName;
-            void syncSettings({ panelName: previousPanelName });
-          }
-        });
-      } else {
-        applyPanelTitle(previousPanelName, true);
-        SERVER_SETTINGS.panelName = previousPanelName;
-        showErrorSnackbar({ message: "Failed to save panel title." });
-      }
-    });
-  });
-
-  populateTimezoneSelect();
-  initAppearanceControls();
-  faviconLinkElement = qs('#site-icon-link');
-  sidebarLogoImage = qs('[data-sidebar-site-icon]');
-  sidebarLogoText = qs('[data-sidebar-logo-text]');
-  siteIconPreviewImage = qs('[data-site-icon-image]');
-  siteIconPlaceholder = qs('[data-site-icon-placeholder]');
-  siteIconAddButton = qs('[data-open-photo-chooser]');
-  siteIconClearButton = qs('[data-clear-site-icon]');
-  applySiteIconValue(SERVER_SETTINGS.siteIcon ?? "");
-  siteIconAddButton?.addEventListener('click', () => {
-    const activePhoto = findGalleryPhotoMatchingSiteIcon();
-    const initialSelection = activePhoto ? [activePhoto.id] : [];
-    openPhotoChooserModal({
-      allowMultiple: false,
-      initialSelection,
-      onChoose: (selectedPhotos = []) => {
-        const photo = selectedPhotos[0];
-        if (!photo) {
-          return;
-        }
-        const filename = normalizeValue(photo.filename);
-        persistSiteIconChange(filename, "Site icon saved.");
-      }
-    });
-  });
-  siteIconClearButton?.addEventListener('click', () => {
-    persistSiteIconChange("", "Site icon removed.");
-  });
-  const generalSaveBtn = qs('#save-general-settings');
-  const timezoneSelect = qs('#timezone-select');
-  generalSaveBtn?.addEventListener('click', () => {
-    const previousTimezone = SERVER_SETTINGS.timezone || DEFAULT_SETTINGS.timezone;
-    const timezoneValue = timezoneSelect?.value || DEFAULT_SETTINGS.timezone;
-    if (timezoneSelect) {
-      localStorage.setItem(TIMEZONE_KEY, timezoneValue);
-    }
-    SERVER_SETTINGS.timezone = timezoneValue;
-    renderClock();
-    void syncSettings({ timezone: timezoneValue }).then(success => {
-      if (success) {
-        showActionSnackbar({
-          message: "Timezone saved.",
-          instructionLabel: "Undo change",
-          onAction: () => {
-            SERVER_SETTINGS.timezone = previousTimezone;
-            if (timezoneSelect) {
-              timezoneSelect.value = previousTimezone;
-            }
-            localStorage.setItem(TIMEZONE_KEY, previousTimezone);
-            renderClock();
-            void syncSettings({ timezone: previousTimezone });
-          }
-        });
-      } else {
-        SERVER_SETTINGS.timezone = previousTimezone;
-        if (timezoneSelect) {
-          timezoneSelect.value = previousTimezone;
-        }
-        localStorage.setItem(TIMEZONE_KEY, previousTimezone);
-        renderClock();
-        showErrorSnackbar({ message: "Failed to save timezone." });
-      }
-    });
-  });
-  instantBackupButton = qs("#instant-backup-btn");
-  backupImportInput = qs("#dev-db-backup-file");
-  backupImportTrigger = qs("#backup-import-trigger");
-  backupFileChosen = qs("#backup-file-chosen");
-  backupSettingsFormElement = qs("#backup-settings-form");
-  backupIntervalInput = qs("#auto-backup-interval");
-  backupLimitInput = qs("#auto-backup-limit");
-  backupSaveButton = qs("#save-backup-settings");
-  instantBackupButton?.addEventListener("click", () => {
-    void handleInstantBackup();
-  });
-  backupImportTrigger?.addEventListener("click", () => {
-    backupImportInput?.click();
-  });
-  backupImportInput?.addEventListener("change", async () => {
-    const file = backupImportInput?.files?.[0] ?? null;
-    if (!file) {
-      return;
-    }
-    setBackupFileLabel(file.name);
-    const confirmed = await showDialog(
-      'This will replace the current panel data with the imported backup. Continue?',
-      { confirm: true, title: 'Import backup', okText: 'Import', cancelText: 'Cancel' }
-    );
-    if (confirmed) {
-      await handleBackupImport(file);
-    } else {
-      backupImportInput.value = "";
-      setBackupFileLabel("No file selected.");
-    }
-  });
-  backupSettingsFormElement?.addEventListener("submit", handleBackupSettingsSave);
-  const backupHistoryContainer = qs("#backup-history");
-  backupHistoryContainer?.addEventListener("click", handleBackupActionClick);
-  applyBackupSettingsInputs();
-  setBackupFileLabel("No file selected.");
-  const developerSqlForm = qs("#developer-sql-form");
-  const sqlTextarea = qs("#dev-db-sql");
-  const clearSqlBtn = qs("#clear-sql-query");
-  developerSqlForm?.addEventListener("submit", async event => {
-    event.preventDefault();
-    const query = (sqlTextarea?.value ?? "").trim();
-    if (query === "") {
-      showErrorSnackbar({ message: "Please enter a SQL statement." });
-      return;
-    }
-    clearSqlResult();
-    setSqlFormSubmitting(true);
-    try {
-      const response = await executeSqlQuery(query);
-      renderSqlResult(response);
-    } catch (error) {
-      showErrorSnackbar({
-        message: error?.message || "Failed to execute SQL query."
-      });
-    } finally {
-      setSqlFormSubmitting(false);
-    }
-  });
-  clearSqlBtn?.addEventListener("click", () => {
-    if (sqlTextarea) {
-      sqlTextarea.value = "";
-    }
-    clearSqlResult();
-  });
+  initDeveloperSettingsControls();
   const galleryPhotoForms = qsa('[data-gallery-photo-form]');
   galleryPhotoModalElement = qs('#gallery-photo-modal');
   galleryPhotoModalFormElement = qs('[data-gallery-photo-modal-form]');
@@ -6372,4 +6476,3 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   window.addEventListener('storage', updateKpis);
 });
-

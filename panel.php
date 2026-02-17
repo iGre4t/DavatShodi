@@ -335,9 +335,21 @@ $accountEmail = $currentUser['email'] ?? '';
           </div>
         </section>
 
-        <?php include __DIR__ . '/guide/components.php'; ?>
-        <?php include __DIR__ . '/dev-settings.php'; ?>
-        <?php include __DIR__ . '/mini apps/Asset Manager/panel-tab.php'; ?>
+        <section
+          id="tab-features"
+          class="tab"
+          data-tab-source="guide/components.php"
+        ></section>
+        <section
+          id="tab-devsettings"
+          class="tab"
+          data-tab-source="dev-settings.php"
+        ></section>
+        <section
+          id="tab-asset-manager"
+          class="tab"
+          data-tab-source="mini%20apps/Asset%20Manager/panel-tab.php"
+        ></section>
 
         <div
           id="pm-ancestor-labels-modal"
