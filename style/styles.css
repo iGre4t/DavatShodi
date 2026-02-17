@@ -1533,6 +1533,24 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 .cards-pane {
   direction: rtl;
 }
+.checkbox-pane {
+  direction: rtl;
+}
+.checkbox-preview-list {
+  gap: 14px;
+  width: 100%;
+}
+.checkbox-preview-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.checkbox-preview-caption {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
 .cards-footer {
   justify-content: flex-start;
 }

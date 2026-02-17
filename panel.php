@@ -169,7 +169,7 @@ $accountEmail = $currentUser['email'] ?? '';
             <span>Features</span>
           </button>
           <button class="nav-item" data-tab="asset-manager">
-            <span class="nav-icon ri ri-building-2-line" aria-hidden="true"></span>
+            <span class="nav-icon ri ri-archive-drawer-line" aria-hidden="true"></span>
             <span>مدیریت اموال</span>
           </button>
           <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
@@ -197,7 +197,6 @@ $accountEmail = $currentUser['email'] ?? '';
         <!-- Top bar displays the current tab title and hooks into sidebar toggle + live clock logic defined in app.js. -->
         <header class="topbar">
           <button id="sidebarToggle" class="icon-btn" title="نمایش/پنهان کردن نوار کناری" aria-label="نمایش/پنهان کردن نوار کناری">≡</button>
-          <h2 id="page-title">خانه</h2>
           <div class="spacer"></div>
           <div id="live-clock" class="clock" aria-live="polite"></div>
         </header>
@@ -336,7 +335,7 @@ $accountEmail = $currentUser['email'] ?? '';
           </div>
         </section>
 
-        <?php include __DIR__ . '/features.php'; ?>
+        <?php include __DIR__ . '/guide/components.php'; ?>
         <!-- Developer settings tab contains the general and appearance panes controlled by the sub-nav buttons. -->
         <section id="tab-devsettings" class="tab">
             <div class="sub-layout" data-sub-layout>
@@ -942,20 +941,20 @@ $accountEmail = $currentUser['email'] ?? '';
           <button type="button" class="icon-btn" data-close-permissions aria-label="بستن دسترسی ها">×</button>
         </div>
         <p class="hint">علامت‌زدن هر گزینه صرفاً پیش‌نمایش است و تغییری در داده‌های واقعی ایجاد نمی‌کند.</p>
-        <div class="form grid one-column permissions-checkboxes">
-          <label class="field checkbox">
+        <div class="permissions-checkboxes pm-permission-grid">
+          <label class="pm-permission-item">
             <input type="checkbox" data-permissions-tab="home" checked />
             <span>خانه</span>
           </label>
-          <label class="field checkbox">
+          <label class="pm-permission-item">
             <input type="checkbox" data-permissions-tab="users" checked />
             <span>کاربران</span>
           </label>
-          <label class="field checkbox">
+          <label class="pm-permission-item">
             <input type="checkbox" data-permissions-tab="settings" checked />
             <span>تنظیمات حساب</span>
           </label>
-          <label class="field checkbox">
+          <label class="pm-permission-item">
             <input type="checkbox" data-permissions-tab="devsettings" />
             <span>تنظیمات توسعه‌دهنده</span>
           </label>
@@ -1361,4 +1360,3 @@ $accountEmail = $currentUser['email'] ?? '';
     <script src="app.js?v=<?= (int)@filemtime(__DIR__ . '/app.js') ?>"></script>
   </body>
 </html>
-

@@ -18,6 +18,9 @@
         <button type="button" class="sub-item" data-pane="code-editor">
           Code Editor
         </button>
+        <button type="button" class="sub-item" data-pane="checkbox">
+          Checkbox
+        </button>
       </div>
     </aside>
     <div class="sub-content">
@@ -146,6 +149,42 @@
             <button type="button" class="btn ghost" data-clear-code>
               Clear
             </button>
+          </div>
+        </div>
+      </div>
+      <div class="sub-pane checkbox-pane" data-pane="checkbox" dir="rtl">
+        <div class="card default-card checkbox-card">
+          <div class="default-card-header">
+            <h3>Default Checkboxes</h3>
+          </div>
+          <div class="default-card-body checkbox-preview-list">
+            <p class="muted">
+              These are the default permission checkboxes reused from the asset manager table.
+            </p>
+            <div class="checkbox-preview-group">
+              <p class="checkbox-preview-caption">Permission Grid</p>
+              <div class="pm-permission-grid">
+                <label class="pm-permission-item">
+                  <input type="checkbox" checked />
+                  <span>Main Storage</span>
+                </label>
+                <label class="pm-permission-item">
+                  <input type="checkbox" />
+                  <span>Branch Storage</span>
+                </label>
+                <label class="pm-permission-item">
+                  <input type="checkbox" checked />
+                  <span>Repair Shop Storage</span>
+                </label>
+              </div>
+            </div>
+            <div class="checkbox-preview-group">
+              <p class="checkbox-preview-caption">Single Permission</p>
+              <label class="pm-permission-item">
+                <input type="checkbox" />
+                <span>Board Member Access</span>
+              </label>
+            </div>
           </div>
         </div>
       </div>
