@@ -23,6 +23,18 @@
     return ASSETS_MANAGER_STATE.labels.some((label) => String(label?.parent_id || "") === id);
   };
 
+  const getRootParentLabels = () => {
+    return ASSETS_MANAGER_STATE.labels.filter((label) => {
+      const id = String(label?.id || "");
+      const parentId = String(label?.parent_id || "");
+      return parentId === "" && labelHasChildren(id);
+    });
+  };
+
+  const getChildParentLabels = (parentId) => {
+    return getChildLabels(parentId).filter((label) => labelHasChildren(String(label?.id || "")));
+  };
+
   const labelPathName = (labelId) => {
     const id = String(labelId || "");
     if (!id) return "";
@@ -41,39 +53,6 @@
     }
 
     return chain.join(" / ");
-  };
-
-  const getRootLabelCandidates = () => {
-    return ASSETS_MANAGER_STATE.labels.filter((label) => {
-      const id = String(label?.id || "");
-      const parentId = String(label?.parent_id || "");
-      return parentId === "" || labelHasChildren(id);
-    });
-  };
-
-  const getDescendantsAndSelf = (rootId) => {
-    const root = String(rootId || "");
-    if (!root) return [];
-
-    const result = [];
-    const queue = [root];
-    const seen = new Set();
-
-    while (queue.length) {
-      const currentId = String(queue.shift() || "");
-      if (!currentId || seen.has(currentId)) continue;
-      seen.add(currentId);
-
-      const label = byId(ASSETS_MANAGER_STATE.labels, currentId);
-      if (!label) continue;
-      result.push(label);
-
-      getChildLabels(currentId).forEach((child) => {
-        queue.push(String(child.id || ""));
-      });
-    }
-
-    return result;
   };
 
   function initAssetsManagerTab(options) {
@@ -217,89 +196,124 @@
       });
     };
 
-    const collectAncestorChainSelected = (maxDepth = null) => {
+    const readAncestorChainSelected = () => {
       if (!ancestorLabelChain) return [];
-      const selected = [];
-      qsa("select[data-chain-depth]", ancestorLabelChain).forEach((select) => {
-        const depth = Number(select.dataset.chainDepth || "0");
-        if (maxDepth !== null && depth > maxDepth) {
-          return;
+      const raw = String(ancestorLabelChain.dataset.selected || "").trim();
+      if (!raw) return [];
+      try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          return [];
         }
-        const value = String(select.value || "").trim();
-        if (!value) {
-          return;
-        }
-        selected.push(value);
-      });
-      return selected;
+        return parsed.map((id) => String(id || "").trim()).filter(Boolean);
+      } catch (error) {
+        return [];
+      }
+    };
+
+    const collectAncestorChainSelected = () => {
+      return readAncestorChainSelected();
     };
 
     const renderAncestorLabelChain = (selectedIds = []) => {
       if (!ancestorLabelChain) return;
       ancestorLabelChain.innerHTML = "";
 
+      const requested = Array.isArray(selectedIds)
+        ? selectedIds.map((id) => String(id || "").trim()).filter(Boolean)
+        : [];
+
       const finalSelected = [];
-      let depth = 0;
       let parentId = "";
-
-      while (true) {
-        const options = depth === 0 ? getRootLabelCandidates() : getChildLabels(parentId);
-        if (!options.length) {
-          if (depth === 0) {
-            const hint = document.createElement("p");
-            hint.className = "hint";
-            hint.textContent = "برچسبی ثبت نشده است.";
-            ancestorLabelChain.appendChild(hint);
-          }
-          break;
+      requested.forEach((candidateId, index) => {
+        const options = index === 0 ? getRootParentLabels() : getChildParentLabels(parentId);
+        if (!options.some((label) => String(label.id || "") === candidateId)) {
+          return;
         }
-
-        const wrapper = document.createElement("label");
-        wrapper.className = "field";
-
-        const caption = document.createElement("span");
-        caption.textContent = `برچسب سطح ${depth + 1}`;
-
-        const select = document.createElement("select");
-        select.dataset.chainDepth = String(depth);
-
-        const emptyOption = document.createElement("option");
-        emptyOption.value = "";
-        emptyOption.textContent = "انتخاب برچسب";
-        select.appendChild(emptyOption);
-
-        options.forEach((label) => {
-          const option = document.createElement("option");
-          option.value = String(label.id || "");
-          option.textContent = String(label.name || "");
-          select.appendChild(option);
-        });
-
-        const desired = String(selectedIds[depth] || "");
-        if (desired && options.some((label) => String(label.id || "") === desired)) {
-          select.value = desired;
-        }
-
-        wrapper.append(caption, select);
-        ancestorLabelChain.appendChild(wrapper);
-
-        select.addEventListener("change", () => {
-          const currentDepth = Number(select.dataset.chainDepth || "0");
-          const nextSelected = collectAncestorChainSelected(currentDepth);
-          renderAncestorLabelChain(nextSelected);
-        });
-
-        const picked = String(select.value || "").trim();
-        if (!picked) {
-          break;
-        }
-
-        finalSelected.push(picked);
-        parentId = picked;
-        depth += 1;
-      }
+        finalSelected.push(candidateId);
+        parentId = candidateId;
+      });
 
       ancestorLabelChain.dataset.selected = JSON.stringify(finalSelected);
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "field";
+
+      const caption = document.createElement("span");
+      caption.textContent = "\u0632\u0646\u062C\u06CC\u0631\u0647 \u0628\u0631\u0686\u0633\u0628";
+
+      const chips = document.createElement("div");
+      chips.className = "pm-label-chip-list";
+
+      if (!finalSelected.length) {
+        const emptyHint = document.createElement("p");
+        emptyHint.className = "hint";
+        emptyHint.textContent = "\u0647\u0646\u0648\u0632 \u0628\u0631\u0686\u0633\u0628\u06CC \u0627\u0646\u062A\u062E\u0627\u0628 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.";
+        chips.appendChild(emptyHint);
+      } else {
+        finalSelected.forEach((labelId, index) => {
+          const label = byId(ASSETS_MANAGER_STATE.labels, labelId);
+          if (!label) return;
+
+          const chip = document.createElement("span");
+          chip.className = "pm-label-chip";
+
+          const chipText = document.createElement("span");
+          chipText.textContent = String(label.name || "");
+
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "pm-label-chip-remove";
+          removeButton.setAttribute("aria-label", "\u062D\u0630\u0641 \u0628\u0631\u0686\u0633\u0628");
+          removeButton.textContent = "x";
+          removeButton.addEventListener("click", () => {
+            const nextSelected = finalSelected.slice(0, index);
+            renderAncestorLabelChain(nextSelected);
+          });
+
+          chip.append(chipText, removeButton);
+          chips.appendChild(chip);
+        });
+      }
+
+      const nextParentId = finalSelected.length
+        ? String(finalSelected[finalSelected.length - 1] || "")
+        : "";
+      const nextOptions = finalSelected.length
+        ? getChildParentLabels(nextParentId)
+        : getRootParentLabels();
+
+      const addField = document.createElement("label");
+      addField.className = "field";
+
+      const addCaption = document.createElement("span");
+      addCaption.textContent = "\u0627\u0641\u0632\u0648\u062F\u0646 \u0628\u0631\u0686\u0633\u0628";
+
+      const select = document.createElement("select");
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = nextOptions.length
+        ? "\u0627\u0646\u062A\u062E\u0627\u0628 \u0628\u0631\u0686\u0633\u0628"
+        : "\u0628\u0631\u0686\u0633\u0628 \u0642\u0627\u0628\u0644 \u0627\u0646\u062A\u062E\u0627\u0628\u06CC \u0648\u062C\u0648\u062F \u0646\u062F\u0627\u0631\u062F";
+      select.appendChild(emptyOption);
+
+      nextOptions.forEach((label) => {
+        const option = document.createElement("option");
+        option.value = String(label.id || "");
+        option.textContent = String(label.name || "");
+        select.appendChild(option);
+      });
+
+      select.disabled = nextOptions.length === 0;
+      select.addEventListener("change", () => {
+        const picked = String(select.value || "").trim();
+        if (!picked) return;
+        renderAncestorLabelChain([...finalSelected, picked]);
+      });
+
+      addField.append(addCaption, select);
+      wrapper.append(caption, chips, addField);
+      ancestorLabelChain.appendChild(wrapper);
     };
 
     const collectAssetLabelValues = () => {
@@ -335,10 +349,14 @@
       }
 
       const previous = collectAssetLabelValues();
+      let renderedFields = 0;
 
       labelIds.forEach((labelId, index) => {
         const sourceLabel = byId(ASSETS_MANAGER_STATE.labels, labelId);
-        const options = getDescendantsAndSelf(labelId);
+        const options = getChildLabels(labelId);
+        if (!options.length) {
+          return;
+        }
 
         const field = document.createElement("label");
         field.className = "field";
@@ -368,7 +386,13 @@
 
         field.append(caption, select);
         assetLabelValuesWrap.appendChild(field);
+        renderedFields += 1;
       });
+
+      if (!renderedFields) {
+        assetLabelValuesWrap.classList.add("hidden");
+        return;
+      }
 
       assetLabelValuesWrap.classList.remove("hidden");
     };

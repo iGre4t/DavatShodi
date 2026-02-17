@@ -2017,6 +2017,41 @@ select[multiple] { min-height: 140px; padding: 8px; }
     min-width: 70px;
     padding: 6px 12px;
   }
+  .pm-label-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+  }
+  .pm-label-chip-list .hint {
+    margin: 0;
+    text-align: right;
+  }
+  .pm-label-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    background: #fff;
+    font-size: 13px;
+  }
+  .pm-label-chip-remove {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    font-size: 14px;
+    padding: 0;
+  }
+  .pm-label-chip-remove:hover {
+    color: #b91c1c;
+  }
   @media (max-width: 900px) {
     .pm-layout {
       grid-template-columns: 1fr;
