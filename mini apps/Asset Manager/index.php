@@ -11,6 +11,7 @@ const DATA_DIR = __DIR__ . '/data';
 const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
+const LABELS_FILE = DATA_DIR . '/labels.json';
 const LEGACY_DATA_DIRS = [
     __DIR__ . '/../preopreties manager',
     __DIR__ . '/../Asset Manager data'
@@ -50,22 +51,10 @@ function ensureDataDir(): void
     if (!is_dir(DATA_DIR)) {
         @mkdir(DATA_DIR, 0755, true);
     }
-    ensureFileInitialized(
-        ASSETS_FILE,
-        array_merge(
-            legacyPathCandidates('assets.json')
-        )
-    );
-    ensureFileInitialized(
-        STORAGES_FILE,
-        legacyPathCandidates('storages.json')
-    );
-    ensureFileInitialized(
-        ANCESTOR_ASSETS_FILE,
-        array_merge(
-            legacyPathCandidates('ancestor_assets.json')
-        )
-    );
+    ensureFileInitialized(ASSETS_FILE, legacyPathCandidates('assets.json'));
+    ensureFileInitialized(STORAGES_FILE, legacyPathCandidates('storages.json'));
+    ensureFileInitialized(ANCESTOR_ASSETS_FILE, legacyPathCandidates('ancestor_assets.json'));
+    ensureFileInitialized(LABELS_FILE, legacyPathCandidates('labels.json'));
 }
 
 function clean(string $value): string
@@ -81,6 +70,47 @@ function parseBool($value): bool
     }
     $normalized = strtolower(trim((string)$value));
     return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+}
+
+function uniqueNonEmptyStrings(array $values): array
+{
+    $out = [];
+    $seen = [];
+    foreach ($values as $value) {
+        $candidate = trim((string)$value);
+        if ($candidate === '' || isset($seen[$candidate])) {
+            continue;
+        }
+        $seen[$candidate] = true;
+        $out[] = $candidate;
+    }
+    return $out;
+}
+
+function parseJsonArrayRaw(string $raw): array
+{
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    return uniqueNonEmptyStrings($decoded);
+}
+
+function parseJsonMapRaw(string $raw): array
+{
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    $out = [];
+    foreach ($decoded as $key => $value) {
+        $k = trim((string)$key);
+        if ($k === '') {
+            continue;
+        }
+        $out[$k] = trim((string)$value);
+    }
+    return $out;
 }
 
 function readArray(string $path): array
@@ -101,6 +131,59 @@ function writeArray(string $path, array $items): bool
         return false;
     }
     return @file_put_contents($path, $json . "\n", LOCK_EX) !== false;
+}
+
+function idxById(array $items, string $id): int
+{
+    foreach ($items as $i => $item) {
+        if ((string)($item['id'] ?? '') === $id) {
+            return (int)$i;
+        }
+    }
+    return -1;
+}
+
+function storageExists(array $storages, string $storageId): bool
+{
+    return idxById($storages, $storageId) >= 0;
+}
+
+function ancestorExists(array $ancestors, string $ancestorId): bool
+{
+    return idxById($ancestors, $ancestorId) >= 0;
+}
+
+function labelExists(array $labels, string $labelId): bool
+{
+    return idxById($labels, $labelId) >= 0;
+}
+
+function sanitizeLabelIds(array $labels, array $labelIds): array
+{
+    $result = [];
+    $seen = [];
+    foreach ($labelIds as $labelId) {
+        $id = trim((string)$labelId);
+        if ($id === '' || isset($seen[$id]) || !labelExists($labels, $id)) {
+            continue;
+        }
+        $seen[$id] = true;
+        $result[] = $id;
+    }
+    return $result;
+}
+
+function normalizeAssetLabelValues(array $labelValues, array $ancestorLabelIds, array $labels): array
+{
+    $normalized = [];
+    foreach ($ancestorLabelIds as $labelId) {
+        $value = trim((string)($labelValues[$labelId] ?? ''));
+        if ($value !== '' && !labelExists($labels, $value)) {
+            $value = '';
+        }
+        $normalized[$labelId] = $value;
+    }
+    return $normalized;
 }
 
 function loadStorages(): array
@@ -125,7 +208,47 @@ function loadStorages(): array
     return $items;
 }
 
-function loadAncestors(): array
+function loadLabels(): array
+{
+    $items = [];
+    foreach (readArray(LABELS_FILE) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $id = trim((string)($row['id'] ?? ''));
+        $name = clean((string)($row['name'] ?? ''));
+        $parentId = trim((string)($row['parent_id'] ?? ''));
+        if ($id === '' || $name === '') {
+            continue;
+        }
+        if ($parentId === $id) {
+            $parentId = '';
+        }
+        $items[] = [
+            'id' => $id,
+            'name' => $name,
+            'parent_id' => $parentId,
+            'created_at' => (string)($row['created_at'] ?? ''),
+            'updated_at' => (string)($row['updated_at'] ?? '')
+        ];
+    }
+
+    $validIds = [];
+    foreach ($items as $label) {
+        $validIds[(string)$label['id']] = true;
+    }
+    foreach ($items as &$label) {
+        $parentId = (string)($label['parent_id'] ?? '');
+        if ($parentId !== '' && !isset($validIds[$parentId])) {
+            $label['parent_id'] = '';
+        }
+    }
+    unset($label);
+
+    return $items;
+}
+
+function loadAncestors(array $labels = []): array
 {
     $items = [];
     foreach (readArray(ANCESTOR_ASSETS_FILE) as $row) {
@@ -134,12 +257,17 @@ function loadAncestors(): array
         }
         $id = trim((string)($row['id'] ?? ''));
         $name = clean((string)($row['name'] ?? ''));
+        $labelIds = uniqueNonEmptyStrings((array)($row['label_ids'] ?? []));
+        if ($labels) {
+            $labelIds = sanitizeLabelIds($labels, $labelIds);
+        }
         if ($id === '' || $name === '') {
             continue;
         }
         $items[] = [
             'id' => $id,
             'name' => $name,
+            'label_ids' => $labelIds,
             'created_at' => (string)($row['created_at'] ?? ''),
             'updated_at' => (string)($row['updated_at'] ?? '')
         ];
@@ -147,7 +275,40 @@ function loadAncestors(): array
     return $items;
 }
 
-function loadAssets(array $ancestors = []): array
+function ancestorById(array $ancestors, string $ancestorId): ?array
+{
+    foreach ($ancestors as $ancestor) {
+        if ((string)($ancestor['id'] ?? '') === $ancestorId) {
+            return $ancestor;
+        }
+    }
+    return null;
+}
+
+function ancestorNameById(array $ancestors, string $ancestorId): string
+{
+    $ancestor = ancestorById($ancestors, $ancestorId);
+    if ($ancestor === null) {
+        return '';
+    }
+    return clean((string)($ancestor['name'] ?? ''));
+}
+
+function ancestorIdByName(array $ancestors, string $name): string
+{
+    $needle = strtolower(clean($name));
+    if ($needle === '') {
+        return '';
+    }
+    foreach ($ancestors as $ancestor) {
+        if (strtolower(clean((string)($ancestor['name'] ?? ''))) === $needle) {
+            return (string)($ancestor['id'] ?? '');
+        }
+    }
+    return '';
+}
+
+function loadAssets(array $ancestors = [], array $labels = []): array
 {
     $items = [];
     foreach (readArray(ASSETS_FILE) as $row) {
@@ -175,6 +336,18 @@ function loadAssets(array $ancestors = []): array
         if ($id === '' || $code === '' || ($specialAsset && $name === '')) {
             continue;
         }
+
+        $ancestor = ancestorById($ancestors, $ancestorId);
+        $ancestorLabelIds = [];
+        if ($ancestor !== null) {
+            $ancestorLabelIds = sanitizeLabelIds($labels, (array)($ancestor['label_ids'] ?? []));
+        }
+
+        $rawLabelValues = is_array($row['label_values'] ?? null)
+            ? $row['label_values']
+            : [];
+        $labelValues = normalizeAssetLabelValues($rawLabelValues, $ancestorLabelIds, $labels);
+
         $items[] = [
             'id' => $id,
             'special_asset' => $specialAsset,
@@ -182,31 +355,12 @@ function loadAssets(array $ancestors = []): array
             'name' => $name,
             'code' => $code,
             'storage_id' => $storageId,
+            'label_values' => $labelValues,
             'created_at' => (string)($row['created_at'] ?? ''),
             'updated_at' => (string)($row['updated_at'] ?? '')
         ];
     }
     return $items;
-}
-
-function idxById(array $items, string $id): int
-{
-    foreach ($items as $i => $item) {
-        if ((string)($item['id'] ?? '') === $id) {
-            return (int)$i;
-        }
-    }
-    return -1;
-}
-
-function storageExists(array $storages, string $storageId): bool
-{
-    return idxById($storages, $storageId) >= 0;
-}
-
-function ancestorExists(array $ancestors, string $ancestorId): bool
-{
-    return idxById($ancestors, $ancestorId) >= 0;
 }
 
 function storageNameExists(array $storages, string $name, string $except = ''): bool
@@ -215,12 +369,12 @@ function storageNameExists(array $storages, string $name, string $except = ''): 
     if ($needle === '') {
         return false;
     }
-    foreach ($storages as $s) {
-        $id = (string)($s['id'] ?? '');
+    foreach ($storages as $storage) {
+        $id = (string)($storage['id'] ?? '');
         if ($except !== '' && $id === $except) {
             continue;
         }
-        if (strtolower(clean((string)($s['name'] ?? ''))) === $needle) {
+        if (strtolower(clean((string)($storage['name'] ?? ''))) === $needle) {
             return true;
         }
     }
@@ -233,12 +387,30 @@ function ancestorNameExists(array $ancestors, string $name, string $except = '')
     if ($needle === '') {
         return false;
     }
-    foreach ($ancestors as $a) {
-        $id = (string)($a['id'] ?? '');
+    foreach ($ancestors as $ancestor) {
+        $id = (string)($ancestor['id'] ?? '');
         if ($except !== '' && $id === $except) {
             continue;
         }
-        if (strtolower(clean((string)($a['name'] ?? ''))) === $needle) {
+        if (strtolower(clean((string)($ancestor['name'] ?? ''))) === $needle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function labelNameExists(array $labels, string $name, string $except = ''): bool
+{
+    $needle = strtolower(clean($name));
+    if ($needle === '') {
+        return false;
+    }
+    foreach ($labels as $label) {
+        $id = (string)($label['id'] ?? '');
+        if ($except !== '' && $id === $except) {
+            continue;
+        }
+        if (strtolower(clean((string)($label['name'] ?? ''))) === $needle) {
             return true;
         }
     }
@@ -251,46 +423,22 @@ function assetCodeExists(array $assets, string $code, string $except = ''): bool
     if ($needle === '') {
         return false;
     }
-    foreach ($assets as $p) {
-        $id = (string)($p['id'] ?? '');
+    foreach ($assets as $asset) {
+        $id = (string)($asset['id'] ?? '');
         if ($except !== '' && $id === $except) {
             continue;
         }
-        if (strtolower(clean((string)($p['code'] ?? ''))) === $needle) {
+        if (strtolower(clean((string)($asset['code'] ?? ''))) === $needle) {
             return true;
         }
     }
     return false;
 }
 
-function ancestorNameById(array $ancestors, string $ancestorId): string
-{
-    foreach ($ancestors as $a) {
-        if ((string)($a['id'] ?? '') === $ancestorId) {
-            return clean((string)($a['name'] ?? ''));
-        }
-    }
-    return '';
-}
-
-function ancestorIdByName(array $ancestors, string $name): string
-{
-    $needle = strtolower(clean($name));
-    if ($needle === '') {
-        return '';
-    }
-    foreach ($ancestors as $a) {
-        if (strtolower(clean((string)($a['name'] ?? ''))) === $needle) {
-            return (string)($a['id'] ?? '');
-        }
-    }
-    return '';
-}
-
 function storageUsed(array $assets, string $storageId): bool
 {
-    foreach ($assets as $p) {
-        if ((string)($p['storage_id'] ?? '') === $storageId) {
+    foreach ($assets as $asset) {
+        if ((string)($asset['storage_id'] ?? '') === $storageId) {
             return true;
         }
     }
@@ -299,10 +447,70 @@ function storageUsed(array $assets, string $storageId): bool
 
 function ancestorUsed(array $assets, string $ancestorId): bool
 {
-    foreach ($assets as $p) {
-        if ((string)($p['ancestor_id'] ?? '') === $ancestorId) {
+    foreach ($assets as $asset) {
+        if ((string)($asset['ancestor_id'] ?? '') === $ancestorId) {
             return true;
         }
+    }
+    return false;
+}
+
+function labelUsedAsParent(array $labels, string $labelId): bool
+{
+    foreach ($labels as $label) {
+        if ((string)($label['parent_id'] ?? '') === $labelId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function ancestorUsesLabel(array $ancestors, string $labelId): bool
+{
+    foreach ($ancestors as $ancestor) {
+        foreach ((array)($ancestor['label_ids'] ?? []) as $ancestorLabelId) {
+            if ((string)$ancestorLabelId === $labelId) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function assetUsesLabel(array $assets, string $labelId): bool
+{
+    foreach ($assets as $asset) {
+        $labelValues = (array)($asset['label_values'] ?? []);
+        foreach ($labelValues as $key => $value) {
+            if ((string)$key === $labelId || (string)$value === $labelId) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function labelParentCreatesCycle(array $labels, string $labelId, string $newParentId): bool
+{
+    if ($newParentId === '' || $labelId === '') {
+        return false;
+    }
+    if ($newParentId === $labelId) {
+        return true;
+    }
+    $parentById = [];
+    foreach ($labels as $label) {
+        $parentById[(string)($label['id'] ?? '')] = (string)($label['parent_id'] ?? '');
+    }
+
+    $current = $newParentId;
+    $guard = 0;
+    while ($current !== '' && $guard < 2000) {
+        if ($current === $labelId) {
+            return true;
+        }
+        $current = $parentById[$current] ?? '';
+        $guard++;
     }
     return false;
 }
@@ -315,11 +523,12 @@ function out(array $payload, int $status = 200): void
     exit;
 }
 
-function okData(array $storages, array $ancestors, array $assets): array
+function okData(array $storages, array $labels, array $ancestors, array $assets): array
 {
     return [
         'status' => 'ok',
         'storages' => array_values($storages),
+        'labels' => array_values($labels),
         'ancestors' => array_values($ancestors),
         'assets' => array_values($assets)
     ];
@@ -328,11 +537,12 @@ function okData(array $storages, array $ancestors, array $assets): array
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = clean((string)($_POST['action'] ?? ''));
     $storages = loadStorages();
-    $ancestors = loadAncestors();
-    $assets = loadAssets($ancestors);
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $assets = loadAssets($ancestors, $labels);
 
     if ($action === 'load_data') {
-        out(okData($storages, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'add_storage') {
@@ -348,7 +558,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage.'], 500);
         }
-        out(okData($storages, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'update_storage') {
@@ -369,7 +579,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage changes.'], 500);
         }
-        out(okData($storages, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'remove_storage') {
@@ -382,12 +592,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         $next = [];
         $removed = false;
-        foreach ($storages as $s) {
-            if ((string)($s['id'] ?? '') === $id) {
+        foreach ($storages as $storage) {
+            if ((string)($storage['id'] ?? '') === $id) {
                 $removed = true;
                 continue;
             }
-            $next[] = $s;
+            $next[] = $storage;
         }
         if (!$removed) {
             out(['status' => 'error', 'message' => 'Storage not found.'], 404);
@@ -395,11 +605,122 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove storage.'], 500);
         }
-        out(okData($next, $ancestors, $assets));
+        out(okData($next, $labels, $ancestors, $assets));
+    }
+
+    if ($action === 'add_label') {
+        $name = clean((string)($_POST['name'] ?? ''));
+        $parentId = trim((string)($_POST['parent_id'] ?? ''));
+        if ($name === '') {
+            out(['status' => 'error', 'message' => 'Label name is required.'], 422);
+        }
+        if (labelNameExists($labels, $name)) {
+            out(['status' => 'error', 'message' => 'Label name must be unique.'], 422);
+        }
+        if ($parentId !== '' && !labelExists($labels, $parentId)) {
+            out(['status' => 'error', 'message' => 'Selected parent label is invalid.'], 422);
+        }
+
+        $now = date('c');
+        $labels[] = [
+            'id' => bin2hex(random_bytes(8)),
+            'name' => $name,
+            'parent_id' => $parentId,
+            'created_at' => $now,
+            'updated_at' => $now
+        ];
+        if (!writeArray(LABELS_FILE, $labels)) {
+            out(['status' => 'error', 'message' => 'Unable to save label.'], 500);
+        }
+
+        $ancestors = loadAncestors($labels);
+        $assets = loadAssets($ancestors, $labels);
+        out(okData($storages, $labels, $ancestors, $assets));
+    }
+
+    if ($action === 'update_label') {
+        $id = trim((string)($_POST['id'] ?? ''));
+        $field = trim((string)($_POST['field'] ?? ''));
+        $value = trim((string)($_POST['value'] ?? ''));
+        if ($id === '') {
+            out(['status' => 'error', 'message' => 'Label id is required.'], 422);
+        }
+        $idx = idxById($labels, $id);
+        if ($idx < 0) {
+            out(['status' => 'error', 'message' => 'Label not found.'], 404);
+        }
+
+        if ($field === 'name') {
+            $name = clean($value);
+            if ($name === '') {
+                out(['status' => 'error', 'message' => 'Label name is required.'], 422);
+            }
+            if (labelNameExists($labels, $name, $id)) {
+                out(['status' => 'error', 'message' => 'Label name must be unique.'], 422);
+            }
+            $labels[$idx]['name'] = $name;
+        } elseif ($field === 'parent_id') {
+            $parentId = trim($value);
+            if ($parentId !== '' && !labelExists($labels, $parentId)) {
+                out(['status' => 'error', 'message' => 'Selected parent label is invalid.'], 422);
+            }
+            if (labelParentCreatesCycle($labels, $id, $parentId)) {
+                out(['status' => 'error', 'message' => 'Label parent cannot create a cycle.'], 422);
+            }
+            $labels[$idx]['parent_id'] = $parentId;
+        } else {
+            out(['status' => 'error', 'message' => 'Invalid label field.'], 422);
+        }
+
+        $labels[$idx]['updated_at'] = date('c');
+        if (!writeArray(LABELS_FILE, $labels)) {
+            out(['status' => 'error', 'message' => 'Unable to save label changes.'], 500);
+        }
+
+        $ancestors = loadAncestors($labels);
+        $assets = loadAssets($ancestors, $labels);
+        out(okData($storages, $labels, $ancestors, $assets));
+    }
+
+    if ($action === 'remove_label') {
+        $id = trim((string)($_POST['id'] ?? ''));
+        if ($id === '') {
+            out(['status' => 'error', 'message' => 'Label id is required.'], 422);
+        }
+        if (labelUsedAsParent($labels, $id)) {
+            out(['status' => 'error', 'message' => 'Label has child labels and cannot be removed.'], 422);
+        }
+        if (ancestorUsesLabel($ancestors, $id) || assetUsesLabel($assets, $id)) {
+            out(['status' => 'error', 'message' => 'Label is used and cannot be removed.'], 422);
+        }
+
+        $next = [];
+        $removed = false;
+        foreach ($labels as $label) {
+            if ((string)($label['id'] ?? '') === $id) {
+                $removed = true;
+                continue;
+            }
+            $next[] = $label;
+        }
+        if (!$removed) {
+            out(['status' => 'error', 'message' => 'Label not found.'], 404);
+        }
+
+        if (!writeArray(LABELS_FILE, $next)) {
+            out(['status' => 'error', 'message' => 'Unable to remove label.'], 500);
+        }
+
+        $labels = loadLabels();
+        $ancestors = loadAncestors($labels);
+        $assets = loadAssets($ancestors, $labels);
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'add_ancestor') {
         $name = clean((string)($_POST['name'] ?? ''));
+        $labelIds = parseJsonArrayRaw((string)($_POST['label_ids'] ?? '[]'));
+        $labelIds = sanitizeLabelIds($labels, $labelIds);
         if ($name === '') {
             out(['status' => 'error', 'message' => 'Ancestor asset name is required.'], 422);
         }
@@ -407,32 +728,55 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             out(['status' => 'error', 'message' => 'Ancestor asset name must be unique.'], 422);
         }
         $now = date('c');
-        $ancestors[] = ['id' => bin2hex(random_bytes(8)), 'name' => $name, 'created_at' => $now, 'updated_at' => $now];
+        $ancestors[] = [
+            'id' => bin2hex(random_bytes(8)),
+            'name' => $name,
+            'label_ids' => $labelIds,
+            'created_at' => $now,
+            'updated_at' => $now
+        ];
         if (!writeArray(ANCESTOR_ASSETS_FILE, $ancestors)) {
             out(['status' => 'error', 'message' => 'Unable to save ancestor asset.'], 500);
         }
-        out(okData($storages, $ancestors, $assets));
+
+        $assets = loadAssets($ancestors, $labels);
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'update_ancestor') {
         $id = trim((string)($_POST['id'] ?? ''));
-        $name = clean((string)($_POST['value'] ?? ''));
-        if ($id === '' || $name === '') {
-            out(['status' => 'error', 'message' => 'Invalid ancestor asset update.'], 422);
+        $field = trim((string)($_POST['field'] ?? 'name'));
+        if ($id === '') {
+            out(['status' => 'error', 'message' => 'Ancestor asset id is required.'], 422);
         }
         $idx = idxById($ancestors, $id);
         if ($idx < 0) {
             out(['status' => 'error', 'message' => 'Ancestor asset not found.'], 404);
         }
-        if (ancestorNameExists($ancestors, $name, $id)) {
-            out(['status' => 'error', 'message' => 'Ancestor asset name must be unique.'], 422);
+
+        if ($field === '' || $field === 'name') {
+            $name = clean((string)($_POST['value'] ?? ''));
+            if ($name === '') {
+                out(['status' => 'error', 'message' => 'Invalid ancestor asset update.'], 422);
+            }
+            if (ancestorNameExists($ancestors, $name, $id)) {
+                out(['status' => 'error', 'message' => 'Ancestor asset name must be unique.'], 422);
+            }
+            $ancestors[$idx]['name'] = $name;
+        } elseif ($field === 'label_ids') {
+            $labelIds = parseJsonArrayRaw((string)($_POST['value'] ?? '[]'));
+            $ancestors[$idx]['label_ids'] = sanitizeLabelIds($labels, $labelIds);
+        } else {
+            out(['status' => 'error', 'message' => 'Invalid ancestor asset field.'], 422);
         }
-        $ancestors[$idx]['name'] = $name;
+
         $ancestors[$idx]['updated_at'] = date('c');
         if (!writeArray(ANCESTOR_ASSETS_FILE, $ancestors)) {
             out(['status' => 'error', 'message' => 'Unable to save ancestor asset changes.'], 500);
         }
-        out(okData($storages, $ancestors, $assets));
+
+        $assets = loadAssets($ancestors, $labels);
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'remove_ancestor') {
@@ -445,12 +789,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         $next = [];
         $removed = false;
-        foreach ($ancestors as $a) {
-            if ((string)($a['id'] ?? '') === $id) {
+        foreach ($ancestors as $ancestor) {
+            if ((string)($ancestor['id'] ?? '') === $id) {
                 $removed = true;
                 continue;
             }
-            $next[] = $a;
+            $next[] = $ancestor;
         }
         if (!$removed) {
             out(['status' => 'error', 'message' => 'Ancestor asset not found.'], 404);
@@ -458,7 +802,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(ANCESTOR_ASSETS_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove ancestor asset.'], 500);
         }
-        out(okData($storages, $next, $assets));
+        out(okData($storages, $labels, $next, $assets));
     }
 
     if ($action === 'add_asset') {
@@ -467,9 +811,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $ancestorId = trim((string)($_POST['ancestor_id'] ?? ''));
         $code = clean((string)($_POST['code'] ?? ''));
         $storageId = trim((string)($_POST['storage_id'] ?? ''));
+        $rawLabelValues = parseJsonMapRaw((string)($_POST['label_values'] ?? '{}'));
+
         if ($code === '' || $storageId === '') {
             out(['status' => 'error', 'message' => 'All asset fields are required.'], 422);
         }
+
+        $ancestorLabelIds = [];
         if ($specialAsset) {
             if ($name === '') {
                 out(['status' => 'error', 'message' => 'Special asset name is required.'], 422);
@@ -478,17 +826,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if ($ancestorId === '') {
                 out(['status' => 'error', 'message' => 'All asset fields are required.'], 422);
             }
-            if (!ancestorExists($ancestors, $ancestorId)) {
+            $ancestor = ancestorById($ancestors, $ancestorId);
+            if ($ancestor === null) {
                 out(['status' => 'error', 'message' => 'Selected ancestor asset is invalid.'], 422);
             }
             $name = ancestorNameById($ancestors, $ancestorId);
+            $ancestorLabelIds = sanitizeLabelIds($labels, (array)($ancestor['label_ids'] ?? []));
         }
+
         if (!storageExists($storages, $storageId)) {
             out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
         }
         if (assetCodeExists($assets, $code)) {
             out(['status' => 'error', 'message' => 'Asset code must be unique.'], 422);
         }
+
+        $labelValues = $specialAsset
+            ? []
+            : normalizeAssetLabelValues($rawLabelValues, $ancestorLabelIds, $labels);
+
         $now = date('c');
         $assets[] = [
             'id' => bin2hex(random_bytes(8)),
@@ -497,31 +853,36 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             'name' => $name,
             'code' => $code,
             'storage_id' => $storageId,
+            'label_values' => $labelValues,
             'created_at' => $now,
             'updated_at' => $now
         ];
         if (!writeArray(ASSETS_FILE, $assets)) {
             out(['status' => 'error', 'message' => 'Unable to save asset.'], 500);
         }
-        out(okData($storages, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'update_asset') {
         $id = trim((string)($_POST['id'] ?? ''));
         $field = trim((string)($_POST['field'] ?? ''));
-        $value = clean((string)($_POST['value'] ?? ''));
-        if ($id === '' || $value === '') {
+        $value = trim((string)($_POST['value'] ?? ''));
+        if ($id === '') {
             out(['status' => 'error', 'message' => 'Invalid asset update.'], 422);
         }
-        if (!in_array($field, ['ancestor_id', 'name', 'code', 'storage_id'], true)) {
+        if (!in_array($field, ['ancestor_id', 'name', 'code', 'storage_id', 'label_values'], true)) {
             out(['status' => 'error', 'message' => 'Invalid asset field.'], 422);
+        }
+        if ($field !== 'label_values' && $value === '') {
+            out(['status' => 'error', 'message' => 'Invalid asset update.'], 422);
         }
         $idx = idxById($assets, $id);
         if ($idx < 0) {
             out(['status' => 'error', 'message' => 'Asset not found.'], 404);
         }
+
         $isSpecialAsset = parseBool($assets[$idx]['special_asset'] ?? false);
-        if ($field === 'code' && assetCodeExists($assets, $value, $id)) {
+        if ($field === 'code' && assetCodeExists($assets, clean($value), $id)) {
             out(['status' => 'error', 'message' => 'Asset code must be unique.'], 422);
         }
         if ($field === 'storage_id' && !storageExists($storages, $value)) {
@@ -538,15 +899,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($field === 'name' && !$isSpecialAsset) {
             out(['status' => 'error', 'message' => 'Only special assets can use custom text names.'], 422);
         }
-        $assets[$idx][$field] = $value;
+
         if ($field === 'ancestor_id') {
+            $assets[$idx]['ancestor_id'] = $value;
             $assets[$idx]['name'] = ancestorNameById($ancestors, $value);
+            $ancestor = ancestorById($ancestors, $value);
+            $ancestorLabelIds = sanitizeLabelIds($labels, (array)($ancestor['label_ids'] ?? []));
+            $assets[$idx]['label_values'] = normalizeAssetLabelValues([], $ancestorLabelIds, $labels);
+        } elseif ($field === 'label_values') {
+            if ($isSpecialAsset) {
+                $assets[$idx]['label_values'] = [];
+            } else {
+                $currentAncestorId = (string)($assets[$idx]['ancestor_id'] ?? '');
+                $ancestor = ancestorById($ancestors, $currentAncestorId);
+                $ancestorLabelIds = sanitizeLabelIds($labels, (array)($ancestor['label_ids'] ?? []));
+                $mapValue = parseJsonMapRaw($value);
+                $assets[$idx]['label_values'] = normalizeAssetLabelValues($mapValue, $ancestorLabelIds, $labels);
+            }
+        } else {
+            $assets[$idx][$field] = clean($value);
         }
+
         $assets[$idx]['updated_at'] = date('c');
         if (!writeArray(ASSETS_FILE, $assets)) {
             out(['status' => 'error', 'message' => 'Unable to save asset changes.'], 500);
         }
-        out(okData($storages, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'remove_asset') {
@@ -556,12 +934,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         $next = [];
         $removed = false;
-        foreach ($assets as $p) {
-            if ((string)($p['id'] ?? '') === $id) {
+        foreach ($assets as $asset) {
+            if ((string)($asset['id'] ?? '') === $id) {
                 $removed = true;
                 continue;
             }
-            $next[] = $p;
+            $next[] = $asset;
         }
         if (!$removed) {
             out(['status' => 'error', 'message' => 'Asset not found.'], 404);
@@ -569,15 +947,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(ASSETS_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove asset.'], 500);
         }
-        out(okData($storages, $ancestors, $next));
+        out(okData($storages, $labels, $ancestors, $next));
     }
 
     out(['status' => 'error', 'message' => 'Unsupported action.'], 400);
 }
 
 $storages = loadStorages();
-$ancestors = loadAncestors();
-$assets = loadAssets($ancestors);
+$labels = loadLabels();
+$ancestors = loadAncestors($labels);
+$assets = loadAssets($ancestors, $labels);
 ?>
 <!doctype html>
 <html lang="en">
@@ -1108,4 +1487,3 @@ $assets = loadAssets($ancestors);
   </script>
 </body>
 </html>
-

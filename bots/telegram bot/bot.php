@@ -124,13 +124,38 @@ function handleMessage(string $token, array $message): void
         }
 
         setChatState($chatId, [
-            'step' => 'awaiting_storage',
+            'step' => 'awaiting_asset_code',
             'asset_type' => 'special',
             'special_name' => $text
         ]);
 
         logEvent('special_name_received', ['chat_id' => $chatId, 'name' => $text]);
         sendMessage($token, $chatId, 'نام ثبت شد: ' . $text);
+        sendMessage($token, $chatId, "Now send asset code.");
+        return;
+    }
+
+    if ($step === 'awaiting_asset_code') {
+        $assetCode = normalizeAssetCode($text);
+        if ($assetCode === '') {
+            logEvent('asset_code_empty', ['chat_id' => $chatId]);
+            sendMessage($token, $chatId, 'Send a valid asset code.');
+            return;
+        }
+
+        $assets = loadAssets(loadAncestors());
+        if (assetCodeExists($assets, $assetCode)) {
+            logEvent('asset_code_duplicate', ['chat_id' => $chatId, 'code' => $assetCode]);
+            sendMessage($token, $chatId, 'This asset code already exists. Send another code.');
+            return;
+        }
+
+        $state['asset_code'] = $assetCode;
+        $state['step'] = 'awaiting_storage';
+        setChatState($chatId, $state);
+
+        logEvent('asset_code_received', ['chat_id' => $chatId, 'code' => $assetCode]);
+        sendMessage($token, $chatId, "Code saved: {$assetCode}");
         sendStorageMenu($token, $chatId);
         return;
     }
@@ -201,7 +226,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         }
 
         setChatState($chatId, [
-            'step' => 'awaiting_storage',
+            'step' => 'awaiting_asset_code',
             'asset_type' => 'common',
             'ancestor_id' => (string) $ancestor['id'],
             'ancestor_name' => (string) $ancestor['name']
@@ -213,7 +238,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             'ancestor_name' => (string) $ancestor['name']
         ]);
         sendMessage($token, $chatId, 'نام مال: ' . (string) $ancestor['name']);
-        sendStorageMenu($token, $chatId);
+        sendMessage($token, $chatId, 'Now send asset code.');
         return;
     }
 
@@ -224,6 +249,10 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
         if ($step !== 'awaiting_storage') {
             logEvent('storage_click_invalid_step', ['chat_id' => $chatId, 'step' => $step, 'storage_id' => $storageId]);
+            if ($step === 'awaiting_asset_code') {
+                sendMessage($token, $chatId, 'Send asset code first.');
+                return;
+            }
             sendMessage($token, $chatId, 'ابتدا از منوی شروع اقدام کنید.');
             sendStartMenu($token, $chatId);
             return;
@@ -439,7 +468,14 @@ function addAssetFromState(array $state, string $storageId): array
         return ['ok' => false, 'message' => 'وضعیت عملیات نامعتبر است.'];
     }
 
-    $code = generateUniqueAssetCode($assets);
+    $code = normalizeAssetCode((string) ($state['asset_code'] ?? ''));
+    if ($code === '') {
+        return ['ok' => false, 'message' => 'Asset code is invalid.'];
+    }
+    if (assetCodeExists($assets, $code)) {
+        return ['ok' => false, 'message' => 'Asset code already exists.'];
+    }
+
     $now = date('c');
     $assets[] = [
         'id' => randomId(),
@@ -514,6 +550,24 @@ function clean(string $value): string
 {
     $trimmed = trim($value);
     return preg_replace('/\s+/', ' ', $trimmed) ?? $trimmed;
+}
+
+function normalizeAssetCode(string $code): string
+{
+    $normalized = clean($code);
+    if ($normalized === '') {
+        return '';
+    }
+
+    $length = function_exists('mb_strlen')
+        ? (int) mb_strlen($normalized)
+        : (int) strlen($normalized);
+
+    if ($length > 100) {
+        return '';
+    }
+
+    return $normalized;
 }
 
 function parseBool($value): bool
@@ -708,23 +762,6 @@ function randomId(): string
     } catch (Throwable $e) {
         return substr(hash('sha256', uniqid('', true) . microtime(true)), 0, 16);
     }
-}
-
-function generateUniqueAssetCode(array $assets): string
-{
-    for ($i = 0; $i < 20; $i++) {
-        $candidate = 'TG-' . date('Ymd-His') . '-' . strtoupper(substr(randomId(), 0, 4));
-        if (!assetCodeExists($assets, $candidate)) {
-            return $candidate;
-        }
-        usleep(25000);
-    }
-
-    do {
-        $fallback = 'TG-' . strtoupper(substr(randomId(), 0, 12));
-    } while (assetCodeExists($assets, $fallback));
-
-    return $fallback;
 }
 
 function loadStates(): array

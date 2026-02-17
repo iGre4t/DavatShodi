@@ -608,6 +608,9 @@ $accountEmail = $currentUser['email'] ?? '';
                 <button type="button" class="sub-item" data-pm-pane-target="ancestors">
                   افزودن مال مرسوم
                 </button>
+                <button type="button" class="sub-item" data-pm-pane-target="labels">
+                  برچسب‌ها
+                </button>
               </div>
             </aside>
             <div class="sub-content">
@@ -641,6 +644,11 @@ $accountEmail = $currentUser['email'] ?? '';
                         <span>انبار</span>
                         <select id="pm-asset-storage" required></select>
                       </label>
+                      <div
+                        id="pm-asset-label-values"
+                        class="grid one-column hidden"
+                        style="grid-column: 1 / -1;"
+                      ></div>
                     </div>
                     <div class="section-footer">
                       <button type="submit" class="btn primary">افزودن مال</button>
@@ -715,6 +723,10 @@ $accountEmail = $currentUser['email'] ?? '';
                         <span>نام مال مرسوم</span>
                         <input id="pm-ancestor-name" type="text" required />
                       </label>
+                      <div class="field">
+                        <span>زنجیره برچسب</span>
+                        <div id="pm-ancestor-label-chain" class="grid one-column"></div>
+                      </div>
                     </div>
                     <div class="section-footer">
                       <button type="submit" class="btn primary">افزودن مال مرسوم</button>
@@ -735,6 +747,47 @@ $accountEmail = $currentUser['email'] ?? '';
                         </tr>
                       </thead>
                       <tbody id="pm-ancestors-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sub-pane" data-pm-pane="labels">
+                <div class="card settings-section">
+                  <div class="section-header">
+                    <h3>افزودن برچسب</h3>
+                  </div>
+                  <form id="pm-add-label-form" class="form">
+                    <div class="grid one-column">
+                      <label class="field">
+                        <span>نام برچسب</span>
+                        <input id="pm-label-name" type="text" required />
+                      </label>
+                      <label class="field">
+                        <span>برچسب والد</span>
+                        <select id="pm-label-parent"></select>
+                      </label>
+                    </div>
+                    <div class="section-footer">
+                      <button type="submit" class="btn primary">افزودن برچسب</button>
+                    </div>
+                    <p id="pm-label-status" class="hint pm-status" aria-live="polite"></p>
+                  </form>
+                </div>
+                <div class="card settings-section">
+                  <div class="section-header">
+                    <h3>برچسب‌ها</h3>
+                  </div>
+                  <div class="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>نام برچسب</th>
+                          <th>برچسب والد</th>
+                          <th>عملیات</th>
+                        </tr>
+                      </thead>
+                      <tbody id="pm-labels-body"></tbody>
                     </table>
                   </div>
                 </div>
