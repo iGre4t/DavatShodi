@@ -4,10 +4,13 @@ declare(strict_types=1);
 /**
  * Loads rows from the `users` table, normalizes the values, and exposes `username` so the frontend always shows the proper login name.
  */
-function getUsersTableColumns(PDO $pdo): array
+function getUsersTableColumns(PDO $pdo, bool $refresh = false): array
 {
     static $cache = [];
     $cacheKey = spl_object_id($pdo);
+    if ($refresh) {
+        unset($cache[$cacheKey]);
+    }
     if (isset($cache[$cacheKey])) {
         return $cache[$cacheKey];
     }
@@ -36,6 +39,27 @@ function getUsersTableColumns(PDO $pdo): array
 function usersTableHasColumn(PDO $pdo, string $column): bool
 {
     return in_array($column, getUsersTableColumns($pdo), true);
+}
+
+function ensureUsersExtendedColumns(PDO $pdo): void
+{
+    $alterParts = [];
+    if (!usersTableHasColumn($pdo, 'telegram_id')) {
+        $alterParts[] = "ADD COLUMN `telegram_id` BIGINT UNSIGNED NULL COMMENT 'Telegram user id, numerals only'";
+    }
+    if (!usersTableHasColumn($pdo, 'pin_code')) {
+        $alterParts[] = "ADD COLUMN `pin_code` CHAR(4) NULL COMMENT '4-digit numeric PIN'";
+    }
+    if (!$alterParts) {
+        return;
+    }
+    try {
+        $sql = 'ALTER TABLE `users` ' . implode(', ', $alterParts);
+        $pdo->exec($sql);
+        getUsersTableColumns($pdo, true);
+    } catch (PDOException $err) {
+        error_log('Failed to ensure users extended columns: ' . $err->getMessage());
+    }
 }
 
 function loadUsersFromUsersTable(PDO $pdo): array

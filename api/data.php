@@ -30,6 +30,7 @@ $configFile = __DIR__ . '/config.php';
 $config = loadConfig($configFile);
 $pdo = connectDatabase($config);
 if ($pdo) {
+    ensureUsersExtendedColumns($pdo);
     ensureGallerySchema($pdo);
 }
 

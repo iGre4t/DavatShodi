@@ -1312,7 +1312,7 @@ $accountEmail = $currentUser['email'] ?? '';
       window.__CURRENT_USER_NAME = <?= json_encode($topbarUserName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     </script>
     <script src="mini%20apps/Asset%20Manager/assets-manager.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=<?= (int)@filemtime(__DIR__ . '/app.js') ?>"></script>
   </body>
 </html>
 

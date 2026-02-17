@@ -4573,7 +4573,7 @@ function renderUsers() {
     const passwordBtn = document.createElement('button');
     passwordBtn.type = 'button';
     passwordBtn.className = 'btn ghost';
-    passwordBtn.textContent = 'گذرواژه';
+    passwordBtn.textContent = 'تغییر گذرواژه';
     passwordBtn.addEventListener('click', () => openPasswordResetModal(user));
     // The delete CTA uses the primary theme so it visually matches the requested styling.
     const deleteBtn = document.createElement('button');
