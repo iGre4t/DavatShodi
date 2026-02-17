@@ -2032,18 +2032,6 @@ function startAssetTransferJourney(string $token, string $chatId, string $messag
         return;
     }
 
-    $allowedStorages = filterStoragesByPermission($telegramUserId, $storages, $storagePermissions);
-    if (!$allowedStorages) {
-        sendOrEditMessage(
-            $token,
-            $chatId,
-            $messageId,
-            "⛔️ <b>هیچ انبار مجازی برای شما ثبت نشده است.</b>\n\nبرای انتقال، ابتدا دسترسی انبارها را از پنل مدیریت تنظیم کنید.",
-            getStartMenuMarkup()
-        );
-        return;
-    }
-
     setChatState($chatId, [
         'step' => 'asset_lookup_transfer_select',
         'asset_action_asset_id' => $assetId,
@@ -2057,7 +2045,7 @@ function startAssetTransferJourney(string $token, string $chatId, string $messag
         . "🔐 کد: <b>{$assetCode}</b>\n"
         . "📍 انبار فعلی: <b>{$currentStorage}</b>\n\n"
         . "لطفا انبار جدید را انتخاب کنید.";
-    sendOrEditMessage($token, $chatId, $messageId, $text, buildTransferStorageMarkup($allowedStorages));
+    sendOrEditMessage($token, $chatId, $messageId, $text, buildTransferStorageMarkup($storages));
 }
 function completeAssetTransferJourney(
     string $token,
@@ -2098,18 +2086,6 @@ function completeAssetTransferJourney(
     }
 
     $storagePermissions = loadStoragePermissionsMap($storages);
-    $allowedStorages = filterStoragesByPermission($telegramUserId, $storages, $storagePermissions);
-    if (!$allowedStorages) {
-        clearChatState($chatId);
-        sendOrEditMessage(
-            $token,
-            $chatId,
-            $messageId,
-            "⛔️ <b>هیچ انبار مجازی برای شما ثبت نشده است.</b>",
-            getStartMenuMarkup()
-        );
-        return;
-    }
 
     $beforeStorageId = trim((string) ($assets[$assetIndex]['storage_id'] ?? ''));
     if (!userHasStoragePermission($telegramUserId, $beforeStorageId, $storagePermissions)) {
@@ -2125,23 +2101,12 @@ function completeAssetTransferJourney(
     }
 
     if (!storageExists($storages, $storageId)) {
-        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>انبار انتخاب‌شده معتبر نیست.</b>", buildTransferStorageMarkup($allowedStorages));
-        return;
-    }
-
-    if (!userHasStoragePermission($telegramUserId, $storageId, $storagePermissions)) {
-        sendOrEditMessage(
-            $token,
-            $chatId,
-            $messageId,
-            "⛔️ <b>به انبار مقصد دسترسی ندارید.</b>",
-            buildTransferStorageMarkup($allowedStorages)
-        );
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>انبار انتخاب‌شده معتبر نیست.</b>", buildTransferStorageMarkup($storages));
         return;
     }
 
     if ($beforeStorageId === $storageId) {
-        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>این مال از قبل در همین انبار است.</b>", buildTransferStorageMarkup($allowedStorages));
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>این مال از قبل در همین انبار است.</b>", buildTransferStorageMarkup($storages));
         return;
     }
 
