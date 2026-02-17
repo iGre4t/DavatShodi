@@ -22,6 +22,7 @@ function renderApiException(Throwable $exception): void
 
 require_once __DIR__ . '/lib/common.php';
 require_once __DIR__ . '/lib/users.php';
+require_once __DIR__ . '/lib/tab-permissions.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 // This single handler responds with the normalized payload used by both the users and gallery tabs.
@@ -246,8 +247,24 @@ $usersFromTable = $pdo ? loadUsersFromUsersTable($pdo) : null;
 
 $isAuthenticated = !empty($_SESSION['authenticated']) && is_array($_SESSION['user']);
 $currentUserCode = $isAuthenticated ? trim((string)($_SESSION['user']['code'] ?? '')) : '';
-
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if (!$isAuthenticated) {
+    http_response_code(401);
+    sendJsonResponse([
+        'status' => 'error',
+        'message' => 'You must be logged in to access this API.'
+    ]);
+}
+$currentSessionUser = is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [];
+$currentDbUser = ($pdo && $currentUserCode !== '') ? loadUserByCode($pdo, $currentUserCode) : null;
+$currentAuthUser = array_merge($currentSessionUser, is_array($currentDbUser) ? $currentDbUser : []);
+unset($currentAuthUser['password_hash']);
+$currentAuthUser['permissions'] = normalizeTabPermissions($currentAuthUser['permissions'] ?? null, true);
+$currentAllowedTabs = $currentAuthUser['permissions'];
+$_SESSION['user'] = array_merge($currentSessionUser, $currentAuthUser, [
+    'permissions' => $currentAllowedTabs
+]);
+$_SESSION['user']['display_name'] = buildUserDisplayNameFromRow($_SESSION['user']);
 if ($method === 'POST') {
     $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
     $isMultipart = stripos($contentType, 'multipart/form-data') !== false;
@@ -259,6 +276,54 @@ if ($method === 'POST') {
     }
     $action = $payload['action'] ?? '';
     $postResponse = ['status' => 'ok'];
+    $requiredTabByAction = [
+        'update_user_personal' => 'settings',
+        'update_user_account' => 'settings',
+        'update_user_password' => 'settings',
+        'admin_reset_user_password' => 'users',
+        'add_user' => 'users',
+        'update_user' => 'users',
+        'delete_user' => 'users',
+        'update_user_permissions' => 'users',
+        'save_settings' => 'devsettings',
+        'save_printer_settings' => 'devsettings',
+        'save_database_config' => 'devsettings',
+        'download_database_backup' => 'devsettings',
+        'fetch_backup_file' => 'devsettings',
+        'delete_backup_file' => 'devsettings',
+        'apply_backup_by_filename' => 'devsettings',
+        'import_database_backup' => 'devsettings',
+        'save_backup_settings' => 'devsettings',
+        'run_sql_query' => 'devsettings'
+    ];
+    $galleryTabActions = [
+        'add_gallery_category',
+        'update_gallery_category',
+        'delete_gallery_category',
+        'update_gallery_photo',
+        'replace_gallery_photo',
+        'delete_gallery_photo',
+        'add_gallery_photo'
+    ];
+    if (isset($requiredTabByAction[$action])) {
+        $requiredTab = $requiredTabByAction[$action];
+        if (!in_array($requiredTab, $currentAllowedTabs, true)) {
+            sendJsonResponse([
+                'status' => 'error',
+                'message' => 'You do not have permission to perform this action.'
+            ]);
+        }
+    }
+    if (in_array($action, $galleryTabActions, true)) {
+        $hasGalleryPermission = in_array('features', $currentAllowedTabs, true)
+            || in_array('devsettings', $currentAllowedTabs, true);
+        if (!$hasGalleryPermission) {
+            sendJsonResponse([
+                'status' => 'error',
+                'message' => 'You do not have permission to manage gallery data.'
+            ]);
+        }
+    }
 
     if ($action === 'update_user_personal') {
         handleUserUpdatePersonal($payload, $pdo, $currentUserCode);
@@ -299,6 +364,7 @@ if ($method === 'POST') {
         $email = trim((string)($user['email'] ?? ''));
         $telegramId = trim((string)($user['telegram_id'] ?? ''));
         $pinCode = trim((string)($user['pin_code'] ?? ''));
+        $permissions = normalizeTabPermissions($user['permissions'] ?? null, true);
         if (!isValidEmail($email)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
         }
@@ -348,6 +414,7 @@ if ($method === 'POST') {
             'email' => $email,
             'telegram_id' => $telegramId,
             'pin_code' => $pinCode,
+            'permissions' => $permissions,
             'active' => !empty($user['active']),
             'createdAt' => time()
         ];
@@ -361,6 +428,7 @@ if ($method === 'POST') {
             'email' => $email,
             'telegram_id' => $newUser['telegram_id'],
             'pin_code' => $newUser['pin_code'],
+            'permissions' => $newUser['permissions'],
             'password_hash' => $passwordHash
         ])) {
             sendJsonResponse(['status' => 'error', 'message' => 'Failed to insert user into the database.']);
@@ -404,6 +472,13 @@ if ($method === 'POST') {
         }
         $telegramId = normalizeDigits($telegramId);
         $pinCode = normalizeDigits($pinCode);
+        $permissionsIncluded = array_key_exists('permissions', $user);
+        $permissions = $permissionsIncluded
+            ? normalizeTabPermissions($user['permissions'], false)
+            : [];
+        if ($permissionsIncluded && empty($permissions)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'At least one tab permission must be selected.']);
+        }
         if ($email !== '' && isEmailTaken($email, $data, $code)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
         }
@@ -433,11 +508,14 @@ if ($method === 'POST') {
                 'telegram_id' => ($telegramId === '' ? null : $telegramId),
                 'pin_code' => ($pinCode === '' ? null : $pinCode)
             ];
+            if ($permissionsIncluded) {
+                $updateFields['permissions'] = encodeTabPermissionsForStorage($permissions);
+            }
             if (!updateUserByCode($pdo, $code, $updateFields)) {
                 sendJsonResponse(['status' => 'error', 'message' => 'Failed to update user information.']);
             }
         }
-        if (!updateUserInStore($data, $code, [
+        $storeUpdate = [
             'username' => $username,
             'name' => $fullname,
             'phone' => $phone,
@@ -447,10 +525,43 @@ if ($method === 'POST') {
             'telegram_id' => $telegramId,
             'pin_code' => $pinCode,
             'active' => !empty($user['active'])
-        ])) {
+        ];
+        if ($permissionsIncluded) {
+            $storeUpdate['permissions'] = $permissions;
+        }
+        if (!updateUserInStore($data, $code, $storeUpdate)) {
             sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
         }
+        if ($permissionsIncluded && $code !== '' && $code === $currentUserCode) {
+            $_SESSION['user']['permissions'] = $permissions;
+        }
         $postResponse['message'] = 'User updated successfully.';
+    } elseif ($action === 'update_user_permissions') {
+        $code = trim((string)($payload['code'] ?? ''));
+        if ($code === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'User code is required.']);
+        }
+        $permissions = normalizeTabPermissions($payload['permissions'] ?? null, false);
+        if (empty($permissions)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'At least one tab permission must be selected.']);
+        }
+        if ($pdo) {
+            $updated = updateUserByCode($pdo, $code, [
+                'permissions' => encodeTabPermissionsForStorage($permissions)
+            ]);
+            if (!$updated) {
+                sendJsonResponse(['status' => 'error', 'message' => 'Failed to save user permissions.']);
+            }
+        }
+        if (!updateUserInStore($data, $code, ['permissions' => $permissions])) {
+            sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
+        }
+        if ($code === $currentUserCode) {
+            $_SESSION['user']['permissions'] = $permissions;
+            $currentAllowedTabs = $permissions;
+        }
+        $postResponse['message'] = 'Permissions updated successfully.';
+        $postResponse['permissions'] = $permissions;
     } elseif ($action === 'delete_user' && !empty($payload['code'])) {
         // Confirmed deletions come from the users tab list after hitting the primary Delete button.
         $code = trim((string)($payload['code'] ?? ''));
@@ -784,6 +895,24 @@ $data['databaseConfig'] = getDatabaseConfigForResponse($config);
 $data['backups'] = getBackupHistoryForResponse();
 
 applyPrinterState($data);
+$data['currentUserPermissions'] = $currentAllowedTabs;
+$data['tabCatalog'] = getPanelTabOptionsForFrontend();
+if (!in_array('users', $currentAllowedTabs, true)) {
+    $data['users'] = [];
+}
+if (!in_array('devsettings', $currentAllowedTabs, true)) {
+    $data['databaseConfig'] = [];
+    $data['backups'] = [];
+    $data['printerSettings'] = [];
+    $data['printerDevices'] = [];
+}
+if (
+    !in_array('features', $currentAllowedTabs, true) &&
+    !in_array('devsettings', $currentAllowedTabs, true)
+) {
+    $data['galleryCategories'] = [];
+    $data['galleryPhotos'] = [];
+}
 echo json_encode($data);
 exit;
 
@@ -1390,7 +1519,8 @@ function normalizeUserForResponse(array $row): array
         'id_number' => $row['id_number'] ?? '',
         'work_id' => $row['work_id'] ?? '',
         'telegram_id' => $row['telegram_id'] ?? '',
-        'pin_code' => $row['pin_code'] ?? ''
+        'pin_code' => $row['pin_code'] ?? '',
+        'permissions' => normalizeTabPermissions($row['permissions'] ?? null, true)
     ];
 }
 

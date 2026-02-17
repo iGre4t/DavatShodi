@@ -2,8 +2,24 @@
 declare(strict_types=1);
 
 session_start();
+require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 if (empty($_SESSION['authenticated'])) {
     header('Location: ../../login.php');
+    exit;
+}
+if (!userHasTabPermission(is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [], 'asset-manager')) {
+    $isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
+    http_response_code(403);
+    if ($isPost) {
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'You do not have permission to access asset management.'
+        ], JSON_UNESCAPED_UNICODE);
+    } else {
+        header('Content-Type: text/plain; charset=UTF-8');
+        echo 'You do not have permission to access asset management.';
+    }
     exit;
 }
 

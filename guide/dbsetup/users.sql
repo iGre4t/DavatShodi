@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `work_id` VARCHAR(64) NOT NULL DEFAULT '0',
   `telegram_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'Telegram user id, numerals only',
   `pin_code` CHAR(4) DEFAULT NULL COMMENT '4-digit numeric PIN',
+  `permissions` TEXT DEFAULT NULL COMMENT 'JSON array of allowed panel tab ids',
   `password_hash` VARCHAR(255) NOT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`code`),
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `users` (
-  `code`, `username`, `fullname`, `phone`, `email`, `id_number`, `work_id`, `telegram_id`, `pin_code`, `password_hash`
+  `code`, `username`, `fullname`, `phone`, `email`, `id_number`, `work_id`, `telegram_id`, `pin_code`, `permissions`, `password_hash`
 ) VALUES (
   '000001',
   'kadkhodaee',
@@ -29,6 +30,7 @@ INSERT INTO `users` (
   '0',
   NULL,
   NULL,
+  '["home","users","settings","features","asset-manager","devsettings"]',
   '$2y$10$OB5XZZ9F6KOLyhUcvgvvJOi7gF1GvUbbXOBCrw7H2xM727BQxUbf.'
 ) ON DUPLICATE KEY UPDATE
   `username` = VALUES(`username`),
@@ -39,4 +41,5 @@ INSERT INTO `users` (
   `work_id` = VALUES(`work_id`),
   `telegram_id` = VALUES(`telegram_id`),
   `pin_code` = VALUES(`pin_code`),
+  `permissions` = VALUES(`permissions`),
   `password_hash` = VALUES(`password_hash`);

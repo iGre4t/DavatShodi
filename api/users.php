@@ -1,8 +1,11 @@
 <?php
 declare(strict_types=1);
 
+session_start();
 require_once __DIR__ . '/lib/common.php';
 require_once __DIR__ . '/lib/users.php';
+require_once __DIR__ . '/lib/tab-permissions.php';
+requireTabPermissionFromSession('users', true);
 
 header('Content-Type: application/json; charset=UTF-8');
 

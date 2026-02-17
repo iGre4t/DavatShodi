@@ -1,3 +1,10 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/api/lib/tab-permissions.php';
+requireTabPermissionFromSession('users', false);
+?>
+
 <section id="tab-users" class="tab">
   <div class="card">
     <div class="table-header">

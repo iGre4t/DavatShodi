@@ -3,6 +3,7 @@ session_start();
 
 require_once __DIR__ . '/api/lib/common.php';
 require_once __DIR__ . '/api/lib/users.php';
+require_once __DIR__ . '/api/lib/tab-permissions.php';
 
 const DEFAULT_PANEL_SETTINGS = [
   'title' => 'Great Panel',
@@ -79,9 +80,26 @@ if (empty($_SESSION['authenticated'])) {
 $sessionUser = $_SESSION['user'] ?? [];
 $userConfig = loadConfig(__DIR__ . '/api/config.php');
 $userPdo = connectDatabase($userConfig);
+if ($userPdo) {
+  ensureUsersExtendedColumns($userPdo);
+}
 $userCode = normalizeUserValue($sessionUser['code'] ?? '');
 $dbUser = ($userPdo && $userCode !== '') ? loadUserByCode($userPdo, $userCode) : null;
 $currentUser = array_merge($sessionUser, is_array($dbUser) ? $dbUser : []);
+unset($currentUser['password_hash']);
+$currentUser['permissions'] = resolveAllowedPanelTabsForUser($currentUser);
+$allowedTabs = $currentUser['permissions'];
+$initialTab = in_array('home', $allowedTabs, true) ? 'home' : ($allowedTabs[0] ?? '');
+if ($initialTab === '') {
+  http_response_code(403);
+  echo 'No tab permissions assigned to this account.';
+  exit;
+}
+$_SESSION['user'] = array_merge($sessionUser, $currentUser, [
+  'permissions' => $allowedTabs,
+  'display_name' => normalizeUserValue($currentUser['fullname'] ?? '') ?: (normalizeUserValue($currentUser['username'] ?? '') ?: 'Admin')
+]);
+$tabCatalog = getPanelTabOptionsForFrontend();
 $sidebarName = normalizeUserValue($currentUser['fullname'] ?? '');
 if ($sidebarName === '') {
   $sidebarName = normalizeUserValue($currentUser['username'] ?? '') ?: 'Admin';
@@ -147,36 +165,50 @@ $accountEmail = $currentUser['email'] ?? '';
           <div class="title"><?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?></div>
         </div>
         <nav class="nav">
-          <!-- Home expands the KPI overview; app.js also controls the headline text for this tab. -->
-          <button class="nav-item active" data-tab="home" aria-current="page">
-            <span class="nav-icon ri ri-home-4-line" aria-hidden="true"></span>
-            <span>خانه</span>
-          </button>
-          <!-- Users tab is driven by app.js: it fetches the user list, wires up add/edit/delete modals, and calls api/data.php with add_user/update_user/delete_user actions. -->
-          <button class="nav-item" data-tab="users">
-            <span class="nav-icon ri ri-user-3-line" aria-hidden="true"></span>
-            <span>کاربران</span>
-          </button>
-          <!-- Account tab contains the static forms that post to update_user_* actions. -->
-          <button class="nav-item" data-tab="settings">
-            <span class="nav-icon ri ri-user-settings-line" aria-hidden="true"></span>
-            <span>تنظیمات حساب</span>
-          </button>
-          <div class="nav-separator" aria-hidden="true"></div>
-          <!-- Features tab placeholder has no content yet but reserves a nav entry. -->
-          <button class="nav-item" data-tab="features">
-            <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
-            <span>Features</span>
-          </button>
-          <button class="nav-item" data-tab="asset-manager">
-            <span class="nav-icon ri ri-archive-drawer-line" aria-hidden="true"></span>
-            <span>مدیریت اموال</span>
-          </button>
-          <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
-          <button class="nav-item" data-tab="devsettings">
-            <span class="nav-icon ri ri-terminal-box-line" aria-hidden="true"></span>
-            <span>تنظیمات توسعه‌دهنده</span>
-          </button>
+          <?php if (in_array('home', $allowedTabs, true)): ?>
+            <!-- Home expands the KPI overview; app.js also controls the headline text for this tab. -->
+            <button class="nav-item<?= $initialTab === 'home' ? ' active' : '' ?>" data-tab="home"<?= $initialTab === 'home' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-home-4-line" aria-hidden="true"></span>
+              <span>خانه</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('users', $allowedTabs, true)): ?>
+            <!-- Users tab is driven by app.js: it fetches the user list, wires up add/edit/delete modals, and calls api/data.php with add_user/update_user/delete_user actions. -->
+            <button class="nav-item<?= $initialTab === 'users' ? ' active' : '' ?>" data-tab="users"<?= $initialTab === 'users' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-user-3-line" aria-hidden="true"></span>
+              <span>کاربران</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('settings', $allowedTabs, true)): ?>
+            <!-- Account tab contains the static forms that post to update_user_* actions. -->
+            <button class="nav-item<?= $initialTab === 'settings' ? ' active' : '' ?>" data-tab="settings"<?= $initialTab === 'settings' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-user-settings-line" aria-hidden="true"></span>
+              <span>تنظیمات حساب</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('features', $allowedTabs, true) || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
+            <div class="nav-separator" aria-hidden="true"></div>
+          <?php endif; ?>
+          <?php if (in_array('features', $allowedTabs, true)): ?>
+            <!-- Features tab placeholder has no content yet but reserves a nav entry. -->
+            <button class="nav-item<?= $initialTab === 'features' ? ' active' : '' ?>" data-tab="features"<?= $initialTab === 'features' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
+              <span>Features</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('asset-manager', $allowedTabs, true)): ?>
+            <button class="nav-item<?= $initialTab === 'asset-manager' ? ' active' : '' ?>" data-tab="asset-manager"<?= $initialTab === 'asset-manager' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-archive-drawer-line" aria-hidden="true"></span>
+              <span>مدیریت اموال</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('devsettings', $allowedTabs, true)): ?>
+            <!-- Developer settings tab exposes appearance controls and general settings via dev-settings.php. -->
+            <button class="nav-item<?= $initialTab === 'devsettings' ? ' active' : '' ?>" data-tab="devsettings"<?= $initialTab === 'devsettings' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-terminal-box-line" aria-hidden="true"></span>
+              <span>تنظیمات توسعه‌دهنده</span>
+            </button>
+          <?php endif; ?>
         </nav>
 
         <!-- Logout link hits logout.php directly to end the session without JavaScript. -->
@@ -201,8 +233,9 @@ $accountEmail = $currentUser['email'] ?? '';
           <div id="live-clock" class="clock" aria-live="polite"></div>
         </header>
 
+        <?php if (in_array('home', $allowedTabs, true)): ?>
         <!-- Home tab shows quick KPI cards and recent asset system logs populated by app.js. -->
-        <section id="tab-home" class="tab active">
+        <section id="tab-home" class="tab<?= $initialTab === 'home' ? ' active' : '' ?>">
           <div class="cards">
             <div class="card kpi">
               <div class="kpi-label">مجموع کاربران</div>
@@ -229,15 +262,19 @@ $accountEmail = $currentUser['email'] ?? '';
             </div>
           </div>
         </section>
+        <?php endif; ?>
 
-        <section
-          id="tab-users"
-          class="tab"
-          data-tab-source="users.php"
-        ></section>
+        <?php if (in_array('users', $allowedTabs, true)): ?>
+          <section
+            id="tab-users"
+            class="tab<?= $initialTab === 'users' ? ' active' : '' ?>"
+            data-tab-source="users.php"
+          ></section>
+        <?php endif; ?>
 
+        <?php if (in_array('settings', $allowedTabs, true)): ?>
         <!-- Account Settings tab is intentionally stable; the three forms below hook into API actions (update_user_personal, update_user_account, update_user_password) handled in api/data.php. -->
-        <section id="tab-settings" class="tab">
+        <section id="tab-settings" class="tab<?= $initialTab === 'settings' ? ' active' : '' ?>">
           <div class="settings-grid">
             <div class="card settings-section">
               <div class="section-header">
@@ -312,22 +349,29 @@ $accountEmail = $currentUser['email'] ?? '';
             </div>
           </div>
         </section>
+        <?php endif; ?>
 
-        <section
-          id="tab-features"
-          class="tab"
-          data-tab-source="guide/components.php"
-        ></section>
-        <section
-          id="tab-devsettings"
-          class="tab"
-          data-tab-source="dev-settings.php"
-        ></section>
-        <section
-          id="tab-asset-manager"
-          class="tab"
-          data-tab-source="mini%20apps/Asset%20Manager/panel-tab.php"
-        ></section>
+        <?php if (in_array('features', $allowedTabs, true)): ?>
+          <section
+            id="tab-features"
+            class="tab<?= $initialTab === 'features' ? ' active' : '' ?>"
+            data-tab-source="guide/components.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('devsettings', $allowedTabs, true)): ?>
+          <section
+            id="tab-devsettings"
+            class="tab<?= $initialTab === 'devsettings' ? ' active' : '' ?>"
+            data-tab-source="dev-settings.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('asset-manager', $allowedTabs, true)): ?>
+          <section
+            id="tab-asset-manager"
+            class="tab<?= $initialTab === 'asset-manager' ? ' active' : '' ?>"
+            data-tab-source="mini%20apps/Asset%20Manager/panel-tab.php"
+          ></section>
+        <?php endif; ?>
 
         <div
           id="pm-ancestor-labels-modal"
@@ -419,34 +463,26 @@ $accountEmail = $currentUser['email'] ?? '';
       </main>
     </div>
 
-    <!-- Permissions modal lets you preview which sidebar tabs could be granted; it remains client-side only. -->
+    <!-- Permissions modal controls which panel tabs each user can access. -->
     <div id="permissions-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="permissions-modal-title">
       <div class="modal-card default-modal-card">
         <div class="modal-card-header">
           <h3 id="permissions-modal-title">دسترسی ها</h3>
           <button type="button" class="icon-btn" data-close-permissions aria-label="بستن دسترسی ها">×</button>
         </div>
-        <p class="hint">علامت‌زدن هر گزینه صرفاً پیش‌نمایش است و تغییری در داده‌های واقعی ایجاد نمی‌کند.</p>
-        <div class="permissions-checkboxes pm-permission-grid">
-          <label class="pm-permission-item">
-            <input type="checkbox" data-permissions-tab="home" checked />
-            <span>خانه</span>
-          </label>
-          <label class="pm-permission-item">
-            <input type="checkbox" data-permissions-tab="users" checked />
-            <span>کاربران</span>
-          </label>
-          <label class="pm-permission-item">
-            <input type="checkbox" data-permissions-tab="settings" checked />
-            <span>تنظیمات حساب</span>
-          </label>
-          <label class="pm-permission-item">
-            <input type="checkbox" data-permissions-tab="devsettings" />
-            <span>تنظیمات توسعه‌دهنده</span>
-          </label>
+        <p class="hint">دسترسی هر کاربر فقط به تب‌های انتخاب‌شده محدود می‌شود.</p>
+        <div id="permissions-checkboxes" class="permissions-checkboxes pm-permission-grid">
+          <?php foreach ($tabCatalog as $tabOption): ?>
+            <label class="pm-permission-item">
+              <input type="checkbox" data-permissions-tab="<?= htmlspecialchars((string)$tabOption['id'], ENT_QUOTES, 'UTF-8') ?>" />
+              <span><?= htmlspecialchars((string)$tabOption['label'], ENT_QUOTES, 'UTF-8') ?></span>
+            </label>
+          <?php endforeach; ?>
         </div>
+        <p id="permissions-modal-status" class="hint" aria-live="polite"></p>
         <div class="modal-actions">
           <button type="button" class="btn" data-close-permissions>بستن</button>
+          <button type="button" class="btn primary" id="permissions-save">ذخیره دسترسی ها</button>
         </div>
       </div>
     </div>
@@ -841,6 +877,10 @@ $accountEmail = $currentUser['email'] ?? '';
 
     <script>
       window.__CURRENT_USER_NAME = <?= json_encode($topbarUserName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.__CURRENT_USER_CODE = <?= json_encode($userCode, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.PANEL_TAB_CATALOG = <?= json_encode($tabCatalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.PANEL_ALLOWED_TABS = <?= json_encode(array_values($allowedTabs), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.PANEL_INITIAL_TAB = <?= json_encode($initialTab, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     </script>
     <script src="mini%20apps/Asset%20Manager/assets-manager.js"></script>
     <script src="app.js?v=<?= (int)@filemtime(__DIR__ . '/app.js') ?>"></script>

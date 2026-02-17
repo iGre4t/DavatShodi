@@ -1,3 +1,10 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+requireTabPermissionFromSession('asset-manager', false);
+?>
+
         <section id="tab-asset-manager" class="tab">
           <div class="sub-layout pm-layout" data-pm-root>
             <aside class="sub-sidebar">

@@ -1,3 +1,10 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../api/lib/tab-permissions.php';
+requireTabPermissionFromSession('features', false);
+?>
+
 <section id="tab-features" class="tab">
   <div class="sub-layout" data-sub-layout>
     <aside class="sub-sidebar">

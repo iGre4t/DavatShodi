@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/tab-permissions.php';
+
 /**
  * Loads rows from the `users` table, normalizes the values, and exposes `username` so the frontend always shows the proper login name.
  */
@@ -50,6 +52,9 @@ function ensureUsersExtendedColumns(PDO $pdo): void
     if (!usersTableHasColumn($pdo, 'pin_code')) {
         $alterParts[] = "ADD COLUMN `pin_code` CHAR(4) NULL COMMENT '4-digit numeric PIN'";
     }
+    if (!usersTableHasColumn($pdo, 'permissions')) {
+        $alterParts[] = "ADD COLUMN `permissions` TEXT NULL COMMENT 'JSON array of allowed panel tab ids'";
+    }
     if (!$alterParts) {
         return;
     }
@@ -71,6 +76,9 @@ function loadUsersFromUsersTable(PDO $pdo): array
         }
         if (usersTableHasColumn($pdo, 'pin_code')) {
             $selectColumns[] = '`pin_code`';
+        }
+        if (usersTableHasColumn($pdo, 'permissions')) {
+            $selectColumns[] = '`permissions`';
         }
         $sql = 'SELECT ' . implode(', ', $selectColumns) . ' FROM `users` ORDER BY `fullname` ASC, `code` ASC';
         $stmt = $pdo->query($sql);
@@ -106,6 +114,7 @@ function loadUsersFromUsersTable(PDO $pdo): array
             'email' => trim((string)($row['email'] ?? '')),
             'telegram_id' => trim((string)($row['telegram_id'] ?? '')),
             'pin_code' => trim((string)($row['pin_code'] ?? '')),
+            'permissions' => normalizeTabPermissions($row['permissions'] ?? null, true),
             'active' => true
         ];
     }, $rows));
@@ -184,6 +193,9 @@ function loadUserByCode(PDO $pdo, string $code): ?array
         if (usersTableHasColumn($pdo, 'pin_code')) {
             $selectColumns[] = '`pin_code`';
         }
+        if (usersTableHasColumn($pdo, 'permissions')) {
+            $selectColumns[] = '`permissions`';
+        }
         $selectColumns[] = '`password_hash`';
         $sql = 'SELECT ' . implode(', ', $selectColumns) . ' FROM `users` WHERE `code` = :code LIMIT 1';
         $stmt = $pdo->prepare($sql);
@@ -233,6 +245,9 @@ function updateUserByCode(PDO $pdo, string $code, array $fields): bool
     }
     if (usersTableHasColumn($pdo, 'pin_code')) {
         $allowed[] = 'pin_code';
+    }
+    if (usersTableHasColumn($pdo, 'permissions')) {
+        $allowed[] = 'permissions';
     }
     $updates = [];
     $params = [];
@@ -314,6 +329,8 @@ function insertUserRecord(PDO $pdo, array $user): bool
     $workId = trim((string)($user['work_id'] ?? ''));
     $telegramId = trim((string)($user['telegram_id'] ?? ''));
     $pinCode = trim((string)($user['pin_code'] ?? ''));
+    $permissions = normalizeTabPermissions($user['permissions'] ?? null, true);
+    $permissionsJson = encodeTabPermissionsForStorage($permissions);
     $passwordHash = trim((string)($user['password_hash'] ?? '')) ?: getDefaultUserPasswordHash();
     try {
         $columns = [
@@ -332,6 +349,9 @@ function insertUserRecord(PDO $pdo, array $user): bool
         if (usersTableHasColumn($pdo, 'pin_code')) {
             $columns['`pin_code`'] = ':pin_code';
         }
+        if (usersTableHasColumn($pdo, 'permissions')) {
+            $columns['`permissions`'] = ':permissions';
+        }
         $sql = 'INSERT INTO `users` (' . implode(', ', array_keys($columns)) . ') VALUES (' . implode(', ', array_values($columns)) . ')';
         $params = [
             ':code' => $code,
@@ -348,6 +368,9 @@ function insertUserRecord(PDO $pdo, array $user): bool
         }
         if (usersTableHasColumn($pdo, 'pin_code')) {
             $params[':pin_code'] = ($pinCode === '' ? null : $pinCode);
+        }
+        if (usersTableHasColumn($pdo, 'permissions')) {
+            $params[':permissions'] = $permissionsJson;
         }
         $stmt = $pdo->prepare($sql);
         return $stmt->execute($params);

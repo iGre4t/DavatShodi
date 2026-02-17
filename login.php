@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 session_start();
 require_once __DIR__ . '/api/lib/common.php';
+require_once __DIR__ . '/api/lib/users.php';
 
 $configFile = __DIR__ . '/api/config.php';
 if (!empty($_SESSION['authenticated'])) {
@@ -12,6 +13,9 @@ if (!empty($_SESSION['authenticated'])) {
 
 $dbConfig = loadConfig($configFile);
 $pdo = connectDatabase($dbConfig);
+if ($pdo) {
+  ensureUsersExtendedColumns($pdo);
+}
 $connectionError = $pdo ? null : 'اتصال به پایگاه داده برقرار نشد.';
 $siteIconUrl = resolveSiteIconForLogin($dbConfig, $pdo);
 
@@ -38,11 +42,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     if (!$connectionError && $pdo) {
       try {
-        $statement = $pdo->prepare('SELECT `code`, `username`, `fullname`, `phone`, `email`, `id_number`, `work_id`, `password_hash` FROM `users` WHERE `username` = :username LIMIT 1');
+        $selectColumns = ['`code`', '`username`', '`fullname`', '`phone`', '`email`', '`id_number`', '`work_id`', '`password_hash`'];
+        if (usersTableHasColumn($pdo, 'permissions')) {
+          $selectColumns[] = '`permissions`';
+        }
+        $statement = $pdo->prepare('SELECT ' . implode(', ', $selectColumns) . ' FROM `users` WHERE `username` = :username LIMIT 1');
         $statement->execute(['username' => $username]);
         $user = $statement->fetch();
 
         if ($user && password_verify($password, $user['password_hash'])) {
+          $permissions = normalizeTabPermissions($user['permissions'] ?? null, true);
           $_SESSION['authenticated'] = true;
           $sessionUser = [
             'code' => $user['code'],
@@ -51,7 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'phone' => $user['phone'] ?? '',
             'email' => $user['email'] ?? '',
             'id_number' => $user['id_number'] ?? '',
-            'work_id' => $user['work_id'] ?? ''
+            'work_id' => $user['work_id'] ?? '',
+            'permissions' => $permissions
           ];
           $sessionUser['display_name'] = buildUserDisplayName($sessionUser);
           $_SESSION['user'] = $sessionUser;
@@ -182,15 +192,17 @@ function resolveSiteIconForLogin(array $dbConfig, ?PDO $pdo): string
       }
 
       .brand-logo.has-site-icon {
-        background: #fff;
-        border-color: #e5e7eb;
+        background: transparent;
+        border: none;
+        border-radius: 0;
       }
 
       .brand-logo img {
         width: 100%;
         height: 100%;
         display: block;
-        object-fit: cover;
+        margin: 0;
+        object-fit: contain;
       }
 
       .brand-title {

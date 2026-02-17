@@ -1,3 +1,10 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/api/lib/tab-permissions.php';
+requireTabPermissionFromSession('devsettings', false);
+?>
+
         <section id="tab-devsettings" class="tab">
           <div class="sub-layout" data-sub-layout>
             <aside class="sub-sidebar">
@@ -44,7 +51,7 @@
                   <div class="form grid one-column">
                     <label class="field">
                       <span>عنوان پنل</span>
-                      <input id="dev-panel-name" type="text" value="<?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?>" />
+                      <input id="dev-panel-name" type="text" value="" />
                     </label>
                     <label class="field icon-field">
                       <span>آیکون سایت</span>

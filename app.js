@@ -28,12 +28,53 @@ let USER_DB = [...DEFAULT_USERS];
 let editingUserCode = "";
 let deletingUserCode = "";
 let passwordResetUserCode = "";
+let permissionsModalUserCode = "";
+const normalizeTabToken = (value) => String(value ?? "").trim().toLowerCase();
 // Keys stored in localStorage plus appearance defaults keep the UI consistent between sessions.
 
 const TITLE_KEY = "frontend_panel_title";
 const TIMEZONE_KEY = "frontend_panel_timezone";
 const API_ENDPOINT = "./api/data.php"; // Shared handler supplying data for both users and gallery tabs.
 const ASSET_MANAGER_ENDPOINT = "mini%20apps/Asset%20Manager/index.php";
+const PANEL_TAB_FALLBACK_IDS = [
+  "home",
+  "users",
+  "settings",
+  "features",
+  "asset-manager",
+  "devsettings"
+];
+const PANEL_TAB_CATALOG = Array.isArray(window.PANEL_TAB_CATALOG)
+  ? window.PANEL_TAB_CATALOG
+      .map((tab) => {
+        const id = normalizeTabToken(tab?.id);
+        if (!id) return null;
+        return {
+          id,
+          label: String(tab?.label ?? id),
+          title: String(tab?.title ?? id)
+        };
+      })
+      .filter(Boolean)
+  : PANEL_TAB_FALLBACK_IDS.map((id) => ({ id, label: id, title: id }));
+const PANEL_TAB_IDS = PANEL_TAB_CATALOG.map((tab) => tab.id);
+const PANEL_ALLOWED_TABS = (() => {
+  const incoming = Array.isArray(window.PANEL_ALLOWED_TABS)
+    ? window.PANEL_ALLOWED_TABS
+    : [];
+  const selected = incoming
+    .map((tabId) => normalizeTabToken(tabId))
+    .filter((tabId) => PANEL_TAB_IDS.includes(tabId));
+  return selected.length ? selected : [...PANEL_TAB_IDS];
+})();
+const PANEL_ALLOWED_TAB_SET = new Set(PANEL_ALLOWED_TABS);
+const PANEL_INITIAL_TAB = (() => {
+  const requested = normalizeTabToken(window.PANEL_INITIAL_TAB);
+  if (requested && PANEL_ALLOWED_TAB_SET.has(requested)) {
+    return requested;
+  }
+  return PANEL_ALLOWED_TABS[0] || "home";
+})();
 const HOME_ASSET_METRICS_CACHE_MS = 30000;
 const PANEL_TITLE_KEY = "frontend_panel_name";
 const PANEL_TITLE_DEFAULT = "Frontend panel";
@@ -493,15 +534,72 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function getAllPanelTabIds() {
+  return [...PANEL_TAB_IDS];
+}
+
+function normalizeUserTabPermissions(value, fallbackToAll = true) {
+  let candidates = [];
+  if (Array.isArray(value)) {
+    candidates = value;
+  } else {
+    const raw = String(value ?? "").trim();
+    if (raw !== "") {
+      if (raw.startsWith("[") || raw.startsWith("{")) {
+        try {
+          const decoded = JSON.parse(raw);
+          if (Array.isArray(decoded)) {
+            candidates = decoded;
+          }
+        } catch {
+          candidates = [];
+        }
+      }
+      if (!candidates.length) {
+        candidates = raw.split(/[\s,;|]+/).filter(Boolean);
+      }
+    }
+  }
+  const selected = new Set(
+    candidates
+      .map((entry) => normalizeTabToken(entry))
+      .filter((tabId) => PANEL_TAB_IDS.includes(tabId))
+  );
+  if (!selected.size) {
+    return fallbackToAll ? getAllPanelTabIds() : [];
+  }
+  return getAllPanelTabIds().filter((tabId) => selected.has(tabId));
+}
+
+function getUserTabPermissions(user, fallbackToAll = true) {
+  return normalizeUserTabPermissions(user?.permissions ?? null, fallbackToAll);
+}
+
+function isTabAllowed(tab) {
+  return PANEL_ALLOWED_TAB_SET.has(normalizeTabToken(tab));
+}
+
+function getAccessibleTab(tab) {
+  const normalized = normalizeTabToken(tab);
+  if (normalized && isTabAllowed(normalized)) {
+    return normalized;
+  }
+  return PANEL_INITIAL_TAB;
+}
+
 async function loadServerData() {
   SERVER_DATABASE_CONNECTED = false;
   try {
     const response = await fetch(API_ENDPOINT);
+    if (response.status === 401) {
+      window.location.href = "login.php";
+      return;
+    }
     if (!response.ok) {
       throw new Error(`Failed to fetch backend data (${response.status})`);
     }
     const payload = await response.json();
-    if (Array.isArray(payload.users) && payload.users.length) {
+    if (Array.isArray(payload.users)) {
       USER_DB = payload.users.map(u => {
         const username = normalizeValue(u.username) || normalizeValue(u.code);
         return {
@@ -518,6 +616,7 @@ async function loadServerData() {
           email: normalizeValue(u.email),
           telegram_id: normalizeDigits(u.telegram_id),
           pin_code: normalizeDigits(u.pin_code),
+          permissions: getUserTabPermissions(u, true),
           active: Boolean(u.active)
         };
       });
@@ -4516,18 +4615,15 @@ async function undoGalleryPhotoUpdate(photoId, previousSnapshot) {
 
 // Highlights the requested tab and updates the page title bar.
 function setActiveTab(tab) {
-  qsa('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  qsa('.tab').forEach(t => t.classList.toggle('active', t.id === `tab-${tab}`));
-  const titles = {
-    home: 'Home',
-    users: 'Users',
-    settings: 'Account Settings',
-    features: 'Features',
-    'asset-manager': 'مدیریت اموال',
-    devsettings: 'Developer Settings'
-  };
+  const safeTab = getAccessibleTab(tab);
+  qsa('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === safeTab));
+  qsa('.tab').forEach(t => t.classList.toggle('active', t.id === `tab-${safeTab}`));
+  const titles = PANEL_TAB_CATALOG.reduce((acc, tabInfo) => {
+    acc[tabInfo.id] = tabInfo.title || tabInfo.label || "";
+    return acc;
+  }, {});
   const el = qs('#page-title');
-  if (el) el.textContent = titles[tab] || '';
+  if (el) el.textContent = titles[safeTab] || '';
 }
 
 function getExternalTabHost(tab) {
@@ -4619,8 +4715,12 @@ async function reloadExternalTab(tab) {
 }
 
 async function activateTab(tab) {
-  setActiveTab(tab);
-  await reloadExternalTab(tab);
+  const safeTab = getAccessibleTab(tab);
+  if (!safeTab) {
+    return;
+  }
+  setActiveTab(safeTab);
+  await reloadExternalTab(safeTab);
 }
 function getActivePanelTimezone() {
   return (
@@ -5054,25 +5154,107 @@ function initUsersTabControls() {
   renderUsers();
 }
 
+function setPermissionsModalStatus(message = "", isError = false) {
+  const statusEl = qs('#permissions-modal-status');
+  if (!statusEl) {
+    return;
+  }
+  statusEl.textContent = String(message ?? "");
+  statusEl.classList.toggle('error', Boolean(isError));
+}
+
+function applyPermissionsModalSelection(permissions = []) {
+  const selected = new Set(normalizeUserTabPermissions(permissions, false));
+  qsa('#permissions-checkboxes [data-permissions-tab]').forEach((input) => {
+    const tabId = normalizeTabToken(input.dataset.permissionsTab);
+    input.checked = selected.has(tabId);
+  });
+}
+
+function readPermissionsModalSelection() {
+  const checked = qsa('#permissions-checkboxes [data-permissions-tab]')
+    .filter((input) => input.checked)
+    .map((input) => input.dataset.permissionsTab);
+  return normalizeUserTabPermissions(checked, false);
+}
+
 function openPermissionsModal(user) {
   const modal = qs('#permissions-modal');
   if (!modal) return;
+  permissionsModalUserCode = normalizeValue(user?.code);
+  if (!permissionsModalUserCode) {
+    showErrorSnackbar({ message: 'User code is missing.' });
+    return;
+  }
   const titleEl = qs('#permissions-modal-title');
   const displayName = getUserDisplayName(user) || user?.username || 'کاربر';
   if (titleEl) {
     titleEl.textContent = `دسترسی ها · ${displayName}`;
   }
+  applyPermissionsModalSelection(getUserTabPermissions(user, true));
+  setPermissionsModalStatus("");
   modal.classList.remove('hidden');
 }
 
 function closePermissionsModal() {
+  permissionsModalUserCode = "";
   const modal = qs('#permissions-modal');
   if (!modal) return;
   const titleEl = qs('#permissions-modal-title');
   if (titleEl) {
     titleEl.textContent = 'دسترسی ها';
   }
+  setPermissionsModalStatus("");
   modal.classList.add('hidden');
+}
+
+async function savePermissionsModal() {
+  if (!permissionsModalUserCode) {
+    setPermissionsModalStatus('No user selected.', true);
+    return;
+  }
+  const nextPermissions = readPermissionsModalSelection();
+  if (!nextPermissions.length) {
+    setPermissionsModalStatus('Select at least one tab permission.', true);
+    return;
+  }
+  const userIndex = USER_DB.findIndex(
+    (entry) => normalizeValue(entry.code) === permissionsModalUserCode
+  );
+  if (userIndex < 0) {
+    setPermissionsModalStatus('User not found.', true);
+    return;
+  }
+  const previousPermissions = getUserTabPermissions(USER_DB[userIndex], true);
+  USER_DB[userIndex] = {
+    ...USER_DB[userIndex],
+    permissions: [...nextPermissions]
+  };
+  const saveButton = qs('#permissions-save');
+  saveButton?.setAttribute('disabled', 'disabled');
+  setPermissionsModalStatus('Saving permissions...');
+  try {
+    await sendAccountAction('update_user_permissions', {
+      code: permissionsModalUserCode,
+      permissions: nextPermissions
+    });
+    closePermissionsModal();
+    showDefaultToast('Permissions updated successfully.');
+    if (normalizeValue(window.__CURRENT_USER_CODE) === permissionsModalUserCode) {
+      window.location.reload();
+      return;
+    }
+  } catch (error) {
+    USER_DB[userIndex] = {
+      ...USER_DB[userIndex],
+      permissions: previousPermissions
+    };
+    const message = error?.message || 'Failed to save permissions.';
+    setPermissionsModalStatus(message, true);
+    showErrorSnackbar({ message });
+  } finally {
+    saveButton?.removeAttribute('disabled');
+  }
 }
 
 // Prepares and shows the modal that allows adding or editing a user record.
@@ -5783,7 +5965,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } finally {
     hideAppLoader();
   }
-  await activateTab('home');
+  await activateTab(PANEL_INITIAL_TAB);
   renderUsers();
   updateKpis({ forceMetricsRefresh: true });
   initHomeSubTabs();
@@ -5824,6 +6006,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   qsa('[data-close-permissions]').forEach(btn => {
     btn.addEventListener('click', closePermissionsModal);
   });
+  qs('#permissions-save')?.addEventListener('click', () => {
+    void savePermissionsModal();
+  });
+  qs('#permissions-modal')?.addEventListener('click', event => {
+    if (event.target === event.currentTarget) {
+      closePermissionsModal();
+    }
+  });
   const isEditableShortcutTarget = (element) => {
     if (!element) return false;
     if (
@@ -5846,8 +6036,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isEditableShortcutTarget(target)) {
       return;
     }
+    const shortcutTab = isTabAllowed('home') ? 'home' : PANEL_INITIAL_TAB;
+    if (!shortcutTab) {
+      return;
+    }
     event.preventDefault();
-    void activateTab('home');
+    void activateTab(shortcutTab);
   };
   document.addEventListener('keydown', handleHomeShortcut);
 
@@ -6061,8 +6255,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     payload.email = email;
     const backendPayload = { ...payload };
+    const defaultPermissions = getAllPanelTabIds();
     if (isAddMode) {
       backendPayload.password = password;
+      backendPayload.permissions = defaultPermissions;
     }
     if (editingUserCode) {
       const index = USER_DB.findIndex(u => u.code === editingUserCode);
@@ -6105,7 +6301,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       ...payload,
       name: fullname,
       username,
-      fullname
+      fullname,
+      permissions: defaultPermissions
     };
     USER_DB.push(newUser);
     renderUsers();
