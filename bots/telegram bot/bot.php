@@ -11,6 +11,7 @@ const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
 const LABELS_FILE = DATA_DIR . '/labels.json';
+const ASSET_LOGS_HELPER_FILE = __DIR__ . '/../../mini apps/Asset Manager/asset_logs.php';
 const API_CONFIG_FILE = __DIR__ . '/../../api/config.php';
 const API_COMMON_FILE = __DIR__ . '/../../api/lib/common.php';
 const API_USERS_FILE = __DIR__ . '/../../api/lib/users.php';
@@ -37,6 +38,11 @@ if (!is_array($config) || empty($config['bot_token'])) {
 }
 
 define('LOG_ENABLED', !array_key_exists('log_enabled', $config) || parseBool($config['log_enabled']));
+define('OCR_ENABLED', !array_key_exists('ocr_enabled', $config) || parseBool($config['ocr_enabled']));
+define('OCR_TESSERACT_CMD', trim((string) ($config['tesseract_cmd'] ?? 'tesseract')));
+define('OCR_SPACE_API_KEY', trim((string) ($config['ocr_space_api_key'] ?? '')));
+define('OCR_SPACE_ENDPOINT', trim((string) ($config['ocr_space_endpoint'] ?? 'https://api.ocr.space/parse/image')));
+define('OCR_SPACE_LANGUAGE', trim((string) ($config['ocr_space_language'] ?? 'eng')));
 logEvent('request_received', [
     'method' => $_SERVER['REQUEST_METHOD'] ?? '',
     'remote_addr' => $_SERVER['REMOTE_ADDR'] ?? '',
@@ -83,7 +89,8 @@ if (isset($update['message']) && is_array($update['message'])) {
     logEvent('incoming_message', [
         'chat_id' => (string)($update['message']['chat']['id'] ?? ''),
         'from_id' => (string)($update['message']['from']['id'] ?? ''),
-        'text' => (string)($update['message']['text'] ?? '')
+        'text' => (string)($update['message']['text'] ?? $update['message']['caption'] ?? ''),
+        'has_photo' => isset($update['message']['photo']) && is_array($update['message']['photo']) ? '1' : '0'
     ]);
     handleMessage($token, $update['message']);
     http_response_code(200);
@@ -118,7 +125,8 @@ function handleMessage(string $token, array $message): void
         return;
     }
 
-    $text = clean((string) ($message['text'] ?? ''));
+    $text = clean((string) ($message['text'] ?? $message['caption'] ?? ''));
+    $hasPhoto = isset($message['photo']) && is_array($message['photo']);
     $state = refreshAuthSecurityState($chatId, getChatState($chatId));
     $authBlockRemaining = getAuthBlockRemainingSeconds($state);
 
@@ -184,6 +192,26 @@ function handleMessage(string $token, array $message): void
 
     $state = getChatState($chatId);
     $step = (string) ($state['step'] ?? '');
+
+    if ($step === 'asset_lookup_delete_pin') {
+        handleDeleteAssetPinStep($token, $chatId, $telegramUserId, $text, $state);
+        return;
+    }
+
+    if ($step === 'asset_lookup_delete_note') {
+        handleDeleteAssetNoteStep($token, $chatId, $telegramUserId, $text, $state);
+        return;
+    }
+
+    if (in_array($step, ['asset_lookup_transfer_select', 'asset_lookup_labels_parent', 'asset_lookup_labels_child'], true)) {
+        sendMessage(
+            $token,
+            $chatId,
+            "ℹ️ <b>در حال انجام عملیات روی مال هستید.</b>\n\n"
+                . "برای ادامه، از دکمه‌های همین پیام استفاده کنید یا <code>/cancel</code> را بزنید."
+        );
+        return;
+    }
 
     if ($step === 'awaiting_special_name') {
         if ($text === '') {
@@ -260,6 +288,12 @@ function handleMessage(string $token, array $message): void
         return;
     }
 
+    if (!isAssetJourneyStep($step)) {
+        if (handlePassiveAssetLookupMessage($token, $chatId, $telegramUserId, $message, $text, $hasPhoto)) {
+            return;
+        }
+    }
+
     logEvent('message_default_to_start_menu', ['chat_id' => $chatId, 'step' => $step, 'text' => $text]);
     sendStartMenu($token, $chatId);
 }
@@ -328,6 +362,52 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
     if (isAuthStep((string) ($state['step'] ?? ''))) {
         clearChatState($chatId);
+    }
+
+    if (strpos($data, 'a_t:') === 0) {
+        $assetId = trim(substr($data, 4));
+        startAssetTransferJourney($token, $chatId, $messageId, $assetId);
+        return;
+    }
+
+    if (strpos($data, 'a_tt:') === 0) {
+        $storageId = trim(substr($data, 5));
+        completeAssetTransferJourney($token, $chatId, $messageId, $telegramUserId, $storageId);
+        return;
+    }
+
+    if (strpos($data, 'a_l:') === 0) {
+        $assetId = trim(substr($data, 4));
+        startAssetLabelJourney($token, $chatId, $messageId, $assetId);
+        return;
+    }
+
+    if (strpos($data, 'al_p:') === 0) {
+        $parentId = trim(substr($data, 5));
+        handleAssetLabelParentCallback($token, $chatId, $messageId, $parentId);
+        return;
+    }
+
+    if (strpos($data, 'al_c:') === 0) {
+        $childId = trim(substr($data, 5));
+        handleAssetLabelChildCallback($token, $chatId, $messageId, $childId);
+        return;
+    }
+
+    if ($data === 'al_b') {
+        handleAssetLabelBackCallback($token, $chatId, $messageId);
+        return;
+    }
+
+    if ($data === 'al_d') {
+        finalizeAssetLabelJourney($token, $chatId, $messageId, $telegramUserId);
+        return;
+    }
+
+    if (strpos($data, 'a_d:') === 0) {
+        $assetId = trim(substr($data, 4));
+        startAssetDeleteJourney($token, $chatId, $messageId, $assetId);
+        return;
     }
 
     if ($data === 'menu_add_asset') {
@@ -1181,6 +1261,1330 @@ function linkTelegramUserToProfile(string $userCode, string $telegramUserId): ar
         logEvent('auth_link_telegram_failed', ['message' => $error->getMessage(), 'code' => $normalizedCode]);
         return ['ok' => false, 'message' => 'خطا در ذخیره شناسه تلگرام.'];
     }
+}
+
+function isAssetJourneyStep(string $step): bool
+{
+    return in_array($step, [
+        'choosing_type',
+        'choosing_ancestor',
+        'awaiting_special_name',
+        'awaiting_asset_code',
+        'awaiting_storage',
+        'choosing_label_parent',
+        'choosing_label_child',
+        'asset_lookup_transfer_select',
+        'asset_lookup_labels_parent',
+        'asset_lookup_labels_child',
+        'asset_lookup_delete_pin',
+        'asset_lookup_delete_note',
+    ], true);
+}
+
+function canonicalDigits(string $digits): string
+{
+    $normalized = ltrim($digits, '0');
+    if ($normalized === '') {
+        return $digits === '' ? '' : '0';
+    }
+    return $normalized;
+}
+
+function normalizeAssetCodeDigits(string $code): string
+{
+    $normalized = normalizeDigits($code);
+    $digits = preg_replace('/\D+/', '', $normalized) ?? '';
+    return canonicalDigits($digits);
+}
+
+function extractDigitCandidatesFromText(string $text, int $minLength = 1): array
+{
+    $normalized = normalizeDigits($text);
+    if ($normalized === '') {
+        return [];
+    }
+
+    preg_match_all('/\d+/', $normalized, $matches);
+    $parts = is_array($matches[0] ?? null) ? $matches[0] : [];
+    $seen = [];
+    $candidates = [];
+    foreach ($parts as $part) {
+        $digits = trim((string) $part);
+        if ($digits === '' || strlen($digits) < $minLength) {
+            continue;
+        }
+        $canonical = canonicalDigits($digits);
+        if ($canonical === '' || isset($seen[$canonical])) {
+            continue;
+        }
+        $seen[$canonical] = true;
+        $candidates[] = $canonical;
+    }
+
+    // OCR often splits codes (e.g. "1 2 3 4"), so also try all detected digits joined.
+    $joinedDigits = preg_replace('/\D+/', '', $normalized) ?? '';
+    if ($joinedDigits !== '' && strlen($joinedDigits) >= $minLength) {
+        $joinedCanonical = canonicalDigits($joinedDigits);
+        if ($joinedCanonical !== '' && !isset($seen[$joinedCanonical])) {
+            $seen[$joinedCanonical] = true;
+            $candidates[] = $joinedCanonical;
+        }
+    }
+
+    usort($candidates, static function (string $a, string $b): int {
+        $len = strlen($b) <=> strlen($a);
+        if ($len !== 0) {
+            return $len;
+        }
+        return strcmp($a, $b);
+    });
+    return $candidates;
+}
+
+function findAssetsByCodeDigits(array $assets, string $codeDigits): array
+{
+    $needle = canonicalDigits($codeDigits);
+    if ($needle === '') {
+        return [];
+    }
+
+    $matches = [];
+    foreach ($assets as $asset) {
+        if (!is_array($asset)) {
+            continue;
+        }
+        $assetDigits = normalizeAssetCodeDigits((string) ($asset['code'] ?? ''));
+        if ($assetDigits === '' || $assetDigits !== $needle) {
+            continue;
+        }
+        $matches[] = $asset;
+    }
+    return $matches;
+}
+
+function resolveAssetByDigitCandidates(array $assets, array $candidates): array
+{
+    $firstMultiple = null;
+
+    foreach ($candidates as $candidate) {
+        $digits = canonicalDigits((string) $candidate);
+        if ($digits === '') {
+            continue;
+        }
+        $matches = findAssetsByCodeDigits($assets, $digits);
+        if (count($matches) === 1) {
+            return [
+                'status' => 'single',
+                'asset' => $matches[0],
+                'candidate' => $digits,
+            ];
+        }
+
+        if (count($matches) > 1 && $firstMultiple === null) {
+            $firstMultiple = [
+                'status' => 'multiple',
+                'assets' => $matches,
+                'candidate' => $digits,
+            ];
+        }
+    }
+
+    if (is_array($firstMultiple)) {
+        return $firstMultiple;
+    }
+
+    return ['status' => 'none', 'assets' => [], 'candidate' => ''];
+}
+
+function findAssetIndexById(array $assets, string $assetId): int
+{
+    foreach ($assets as $index => $asset) {
+        if (!is_array($asset)) {
+            continue;
+        }
+        if (trim((string) ($asset['id'] ?? '')) === $assetId) {
+            return (int) $index;
+        }
+    }
+    return -1;
+}
+
+function handlePassiveAssetLookupMessage(
+    string $token,
+    string $chatId,
+    string $telegramUserId,
+    array $message,
+    string $text,
+    bool $hasPhoto
+): bool {
+    $textCandidates = extractDigitCandidatesFromText($text);
+    $photoCandidates = [];
+
+    if ($hasPhoto) {
+        $photoCandidates = extractPhotoDigitCandidates($token, $message);
+    }
+
+    $candidateMap = [];
+    foreach (array_merge($textCandidates, $photoCandidates) as $candidate) {
+        $normalized = canonicalDigits((string) $candidate);
+        if ($normalized === '') {
+            continue;
+        }
+        $candidateMap[$normalized] = true;
+    }
+    $candidates = array_keys($candidateMap);
+    usort($candidates, static function (string $a, string $b): int {
+        $len = strlen($b) <=> strlen($a);
+        if ($len !== 0) {
+            return $len;
+        }
+        return strcmp($a, $b);
+    });
+
+    if (!$candidates) {
+        if ($hasPhoto) {
+            sendMessage(
+                $token,
+                $chatId,
+                "📷 <b>کد عددی در تصویر تشخیص داده نشد.</b>\n\n"
+                    . "لطفا عکس واضح‌تر ارسال کنید یا کد مال را به‌صورت متنی بفرستید."
+            );
+            return true;
+        }
+        return false;
+    }
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
+    $assets = loadAssets($ancestors, $labels);
+
+    $resolved = resolveAssetByDigitCandidates($assets, $candidates);
+    if (($resolved['status'] ?? '') === 'single' && is_array($resolved['asset'] ?? null)) {
+        sendAssetLookupCard(
+            $token,
+            $chatId,
+            $resolved['asset'],
+            $storages,
+            $ancestors,
+            $labels,
+            null,
+            "✅ <b>مال با این کد پیدا شد.</b>"
+        );
+        return true;
+    }
+
+    if (($resolved['status'] ?? '') === 'multiple') {
+        $matchedAssets = is_array($resolved['assets'] ?? null) ? $resolved['assets'] : [];
+        $codes = [];
+        foreach ($matchedAssets as $asset) {
+            $code = clean((string) ($asset['code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            $codes[] = '• <b>' . htmlEscape($code) . '</b>';
+            if (count($codes) >= 6) {
+                break;
+            }
+        }
+        $codesText = $codes ? implode("\n", $codes) : '• کدهای متعدد یافت شد';
+        sendMessage(
+            $token,
+            $chatId,
+            "⚠️ <b>چند مال با این ورودی پیدا شد.</b>\n\n"
+                . "برای انتخاب دقیق، لطفا کد کامل را واضح‌تر ارسال کنید.\n\n"
+                . $codesText
+        );
+        return true;
+    }
+
+    $safeCandidate = htmlEscape((string) ($candidates[0] ?? ''));
+    sendMessage(
+        $token,
+        $chatId,
+        "🔎 <b>مالی با کد ارسال‌شده پیدا نشد.</b>\n\n"
+            . "کد تشخیص داده‌شده: <b>{$safeCandidate}</b>\n"
+            . "لطفا دوباره بررسی و ارسال کنید."
+    );
+    return true;
+}
+
+function extractPhotoDigitCandidates(string $token, array $message): array
+{
+    if (!OCR_ENABLED) {
+        return [];
+    }
+
+    $photos = is_array($message['photo'] ?? null) ? $message['photo'] : [];
+    if (!$photos) {
+        return [];
+    }
+    $bestPhoto = $photos[count($photos) - 1];
+    $fileId = trim((string) ($bestPhoto['file_id'] ?? ''));
+    if ($fileId === '') {
+        return [];
+    }
+
+    $getFileResult = telegramRequest($token, 'getFile', ['file_id' => $fileId]);
+    if (!telegramResponseOk($getFileResult)) {
+        logEvent('photo_get_file_failed', [
+            'file_id' => $fileId,
+            'description' => (string) ($getFileResult['description'] ?? ''),
+        ]);
+        return [];
+    }
+
+    $filePath = trim((string) ($getFileResult['response']['result']['file_path'] ?? ''));
+    if ($filePath === '') {
+        return [];
+    }
+
+    $tempFilePath = downloadTelegramFileToTemp($token, $filePath);
+    if ($tempFilePath === null) {
+        return [];
+    }
+
+    try {
+        $ocrText = extractTextFromImage($tempFilePath);
+        if ($ocrText === '') {
+            logEvent('photo_ocr_no_text', ['file_id' => $fileId]);
+            return [];
+        }
+        $candidates = extractDigitCandidatesFromText($ocrText);
+        logEvent('photo_ocr_candidates', [
+            'file_id' => $fileId,
+            'candidate_count' => count($candidates),
+            'ocr_text' => textSnippet($ocrText, 180),
+        ]);
+        return $candidates;
+    } finally {
+        deleteFileIfExists($tempFilePath);
+    }
+}
+
+function downloadTelegramFileToTemp(string $token, string $filePath): ?string
+{
+    $tmp = tempnam(sys_get_temp_dir(), 'tg_asset_');
+    if (!is_string($tmp) || $tmp === '') {
+        return null;
+    }
+
+    $ext = strtolower(trim((string) pathinfo($filePath, PATHINFO_EXTENSION)));
+    $targetPath = $tmp;
+    if ($ext !== '' && preg_match('/^[a-z0-9]{1,8}$/', $ext)) {
+        $withExt = $tmp . '.' . $ext;
+        if (@rename($tmp, $withExt)) {
+            $targetPath = $withExt;
+        }
+    }
+
+    $url = "https://api.telegram.org/file/bot{$token}/{$filePath}";
+    if (!httpDownloadToFile($url, $targetPath)) {
+        deleteFileIfExists($targetPath);
+        return null;
+    }
+
+    $size = @filesize($targetPath);
+    if (!is_int($size) || $size <= 0) {
+        deleteFileIfExists($targetPath);
+        return null;
+    }
+    return $targetPath;
+}
+
+function httpDownloadToFile(string $url, string $targetPath): bool
+{
+    if (function_exists('curl_init')) {
+        $fp = @fopen($targetPath, 'wb');
+        if ($fp !== false) {
+            $ch = curl_init($url);
+            if ($ch !== false) {
+                curl_setopt_array($ch, [
+                    CURLOPT_FILE => $fp,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_TIMEOUT => 20,
+                ]);
+                $ok = curl_exec($ch);
+                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                fclose($fp);
+                return $ok !== false && $httpCode >= 200 && $httpCode < 300;
+            }
+            fclose($fp);
+        }
+    }
+
+    $binary = @file_get_contents($url);
+    if (!is_string($binary) || $binary === '') {
+        return false;
+    }
+    return @file_put_contents($targetPath, $binary, LOCK_EX) !== false;
+}
+
+function extractTextFromImage(string $imagePath): string
+{
+    $local = extractTextWithLocalTesseract($imagePath);
+    if ($local !== '') {
+        return $local;
+    }
+    return extractTextWithOcrSpace($imagePath);
+}
+
+function extractTextWithLocalTesseract(string $imagePath): string
+{
+    if (!function_exists('shell_exec')) {
+        return '';
+    }
+    $cmd = trim((string) OCR_TESSERACT_CMD);
+    if ($cmd === '') {
+        return '';
+    }
+
+    $base = escapeshellcmd($cmd) . ' ' . escapeshellarg($imagePath) . ' stdout --psm 6 -l eng 2>/dev/null';
+    $output = shell_exec($base);
+    if (!is_string($output) || trim($output) === '') {
+        $fallback = escapeshellcmd($cmd) . ' ' . escapeshellarg($imagePath) . ' stdout --psm 6 -l eng+fas 2>/dev/null';
+        $output = shell_exec($fallback);
+    }
+    return is_string($output) ? trim($output) : '';
+}
+
+function extractTextWithOcrSpace(string $imagePath): string
+{
+    $apiKey = trim((string) OCR_SPACE_API_KEY);
+    if ($apiKey === '' || !function_exists('curl_init') || !class_exists('CURLFile')) {
+        return '';
+    }
+
+    $endpoint = trim((string) OCR_SPACE_ENDPOINT);
+    if ($endpoint === '') {
+        $endpoint = 'https://api.ocr.space/parse/image';
+    }
+    $language = trim((string) OCR_SPACE_LANGUAGE);
+    if ($language === '') {
+        $language = 'eng';
+    }
+
+    $ch = curl_init($endpoint);
+    if ($ch === false) {
+        return '';
+    }
+
+    $payload = [
+        'apikey' => $apiKey,
+        'language' => $language,
+        'isOverlayRequired' => 'false',
+        'OCREngine' => '2',
+        'scale' => 'true',
+        'file' => new CURLFile($imagePath),
+    ];
+
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+    ]);
+
+    $raw = curl_exec($ch);
+    curl_close($ch);
+    if (!is_string($raw) || trim($raw) === '') {
+        return '';
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || !empty($decoded['IsErroredOnProcessing'])) {
+        return '';
+    }
+
+    $texts = [];
+    $parsedResults = is_array($decoded['ParsedResults'] ?? null) ? $decoded['ParsedResults'] : [];
+    foreach ($parsedResults as $parsed) {
+        if (!is_array($parsed)) {
+            continue;
+        }
+        $text = trim((string) ($parsed['ParsedText'] ?? ''));
+        if ($text !== '') {
+            $texts[] = $text;
+        }
+    }
+    return trim(implode("\n", $texts));
+}
+
+function deleteFileIfExists(string $path): void
+{
+    if ($path === '') {
+        return;
+    }
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
+function buildAssetActionMarkup(string $assetId): array
+{
+    return [
+        'inline_keyboard' => [
+            [
+                ['text' => '🏬 انتقال به انبار دیگر', 'callback_data' => 'a_t:' . $assetId],
+            ],
+            [
+                ['text' => '🏷️ تغییر برچسب ها', 'callback_data' => 'a_l:' . $assetId],
+            ],
+            [
+                ['text' => '🗑️ حذف', 'callback_data' => 'a_d:' . $assetId],
+            ],
+        ],
+    ];
+}
+
+function labelPathById(array $labels, string $labelId): string
+{
+    $currentId = trim($labelId);
+    if ($currentId === '') {
+        return '';
+    }
+
+    $parts = [];
+    $seen = [];
+    while ($currentId !== '' && !isset($seen[$currentId])) {
+        $seen[$currentId] = true;
+        $label = findById($labels, $currentId);
+        if (!is_array($label)) {
+            break;
+        }
+        $name = clean((string) ($label['name'] ?? ''));
+        if ($name !== '') {
+            array_unshift($parts, $name);
+        }
+        $currentId = trim((string) ($label['parent_id'] ?? ''));
+    }
+    return implode(' / ', $parts);
+}
+
+function assetDisplayName(array $asset, array $ancestors): string
+{
+    $special = parseBool($asset['special_asset'] ?? false);
+    if ($special) {
+        $name = clean((string) ($asset['name'] ?? ''));
+        return $name !== '' ? $name : 'مال خاص';
+    }
+
+    $ancestorId = trim((string) ($asset['ancestor_id'] ?? ''));
+    $ancestorName = ancestorNameById($ancestors, $ancestorId);
+    if ($ancestorName !== '') {
+        return $ancestorName;
+    }
+    $fallback = clean((string) ($asset['name'] ?? ''));
+    return $fallback !== '' ? $fallback : 'مال مرسوم';
+}
+
+function formatAssetLabelSummaryHtml(array $asset, array $ancestors, array $labels): string
+{
+    if (parseBool($asset['special_asset'] ?? false)) {
+        return 'ندارد';
+    }
+
+    $ancestor = findById($ancestors, trim((string) ($asset['ancestor_id'] ?? '')));
+    if (!is_array($ancestor)) {
+        return 'ندارد';
+    }
+
+    $parentIds = sanitizeParentLabelIds($labels, (array) ($ancestor['label_ids'] ?? []));
+    if (!$parentIds) {
+        return 'ندارد';
+    }
+
+    $labelValues = normalizeAssetLabelValues(
+        is_array($asset['label_values'] ?? null) ? $asset['label_values'] : [],
+        $parentIds,
+        $labels
+    );
+
+    $lines = [];
+    foreach ($parentIds as $parentId) {
+        $childId = trim((string) ($labelValues[$parentId] ?? ''));
+        if ($childId === '') {
+            continue;
+        }
+        $parent = findById($labels, $parentId);
+        $parentName = clean((string) ($parent['name'] ?? ''));
+        $childPath = labelPathById($labels, $childId);
+        if ($childPath === '') {
+            continue;
+        }
+        $safeParent = htmlEscape($parentName !== '' ? $parentName : 'برچسب');
+        $safeChild = htmlEscape($childPath);
+        $lines[] = "• {$safeParent}: <b>{$safeChild}</b>";
+    }
+
+    return $lines ? implode("\n", $lines) : 'تعیین نشده';
+}
+
+function buildAssetLookupText(array $asset, array $storages, array $ancestors, array $labels): string
+{
+    $special = parseBool($asset['special_asset'] ?? false);
+    $name = assetDisplayName($asset, $ancestors);
+    $code = clean((string) ($asset['code'] ?? ''));
+    $storageName = storageNameById($storages, trim((string) ($asset['storage_id'] ?? '')));
+    $ancestorName = $special ? '' : ancestorNameById($ancestors, trim((string) ($asset['ancestor_id'] ?? '')));
+    $labelSummary = formatAssetLabelSummaryHtml($asset, $ancestors, $labels);
+
+    $safeName = htmlEscape($name);
+    $safeCode = htmlEscape($code !== '' ? $code : 'ندارد');
+    $safeStorage = htmlEscape($storageName !== '' ? $storageName : 'نامشخص');
+    $safeType = $special ? 'خاص' : 'مرسوم';
+    $safeAncestor = htmlEscape($ancestorName !== '' ? $ancestorName : '—');
+
+    return "📦 <b>اطلاعات مال</b>\n\n"
+        . "🧾 نام مال: <b>{$safeName}</b>\n"
+        . "🔐 کد مال: <b>{$safeCode}</b>\n"
+        . "📚 نوع مال: <b>{$safeType}</b>\n"
+        . "🧩 مال مرسوم پایه: <b>{$safeAncestor}</b>\n"
+        . "🏬 انبار فعلی: <b>{$safeStorage}</b>\n"
+        . "🏷️ برچسب ها:\n{$labelSummary}\n\n"
+        . "از دکمه‌های زیر عملیات موردنظر را انتخاب کنید.";
+}
+
+function sendAssetLookupCard(
+    string $token,
+    string $chatId,
+    array $asset,
+    array $storages,
+    array $ancestors,
+    array $labels,
+    ?string $messageId = null,
+    string $prefix = ''
+): void {
+    $assetId = trim((string) ($asset['id'] ?? ''));
+    if ($assetId === '') {
+        sendMessage($token, $chatId, "⚠️ <b>مال معتبر نیست.</b>");
+        return;
+    }
+
+    $body = buildAssetLookupText($asset, $storages, $ancestors, $labels);
+    $text = $prefix !== '' ? $prefix . "\n\n" . $body : $body;
+    $markup = buildAssetActionMarkup($assetId);
+
+    if ($messageId !== null && trim($messageId) !== '') {
+        sendOrEditMessage($token, $chatId, $messageId, $text, $markup);
+        return;
+    }
+    sendMessage($token, $chatId, $text, $markup);
+}
+
+function buildTransferStorageMarkup(array $storages): array
+{
+    $rows = [];
+    foreach ($storages as $storage) {
+        if (!is_array($storage)) {
+            continue;
+        }
+        $storageId = trim((string) ($storage['id'] ?? ''));
+        $storageName = clean((string) ($storage['name'] ?? ''));
+        if ($storageId === '' || $storageName === '') {
+            continue;
+        }
+        $rows[] = [
+            ['text' => '🏬 ' . $storageName, 'callback_data' => 'a_tt:' . $storageId],
+        ];
+    }
+    return ['inline_keyboard' => $rows];
+}
+
+function startAssetTransferJourney(string $token, string $chatId, string $messageId, string $assetId): void
+{
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
+    $assets = loadAssets($ancestors, $labels);
+    $asset = findById($assets, $assetId);
+    if (!is_array($asset)) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>مال انتخاب‌شده پیدا نشد.</b>\n\nلطفا دوباره کد مال را ارسال کنید.",
+            getStartMenuMarkup()
+        );
+        return;
+    }
+    if (!$storages) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>انباری برای انتقال وجود ندارد.</b>\n\nابتدا انبارها را در پنل ثبت کنید.",
+            null
+        );
+        return;
+    }
+
+    setChatState($chatId, [
+        'step' => 'asset_lookup_transfer_select',
+        'asset_action_asset_id' => $assetId,
+    ]);
+
+    $assetName = htmlEscape(assetDisplayName($asset, $ancestors));
+    $assetCode = htmlEscape(clean((string) ($asset['code'] ?? '')));
+    $currentStorage = htmlEscape(storageNameById($storages, trim((string) ($asset['storage_id'] ?? ''))) ?: 'نامشخص');
+    $text = "🏬 <b>انتقال مال به انبار دیگر</b>\n\n"
+        . "🧾 مال: <b>{$assetName}</b>\n"
+        . "🔐 کد: <b>{$assetCode}</b>\n"
+        . "📍 انبار فعلی: <b>{$currentStorage}</b>\n\n"
+        . "لطفا انبار جدید را انتخاب کنید.";
+    sendOrEditMessage($token, $chatId, $messageId, $text, buildTransferStorageMarkup($storages));
+}
+
+function completeAssetTransferJourney(
+    string $token,
+    string $chatId,
+    string $messageId,
+    string $telegramUserId,
+    string $storageId
+): void {
+    $state = getChatState($chatId);
+    if ((string) ($state['step'] ?? '') !== 'asset_lookup_transfer_select') {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "ℹ️ <b>ابتدا از اطلاعات مال، گزینه انتقال را انتخاب کنید.</b>",
+            null
+        );
+        return;
+    }
+
+    $assetId = trim((string) ($state['asset_action_asset_id'] ?? ''));
+    if ($assetId === '') {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>وضعیت انتقال معتبر نیست.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
+    $assets = loadAssets($ancestors, $labels);
+
+    $assetIndex = findAssetIndexById($assets, $assetId);
+    if ($assetIndex < 0) {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال انتخاب‌شده پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+    if (!storageExists($storages, $storageId)) {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>انبار انتخاب‌شده معتبر نیست.</b>", buildTransferStorageMarkup($storages));
+        return;
+    }
+
+    $beforeStorageId = trim((string) ($assets[$assetIndex]['storage_id'] ?? ''));
+    if ($beforeStorageId === $storageId) {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>این مال از قبل در همین انبار است.</b>", buildTransferStorageMarkup($storages));
+        return;
+    }
+
+    $assets[$assetIndex]['storage_id'] = $storageId;
+    $assets[$assetIndex]['updated_at'] = date('c');
+    if (!writeJsonList(ASSETS_FILE, $assets)) {
+        sendOrEditMessage($token, $chatId, $messageId, "❌ <b>ذخیره انتقال انجام نشد.</b>", null);
+        return;
+    }
+
+    $asset = $assets[$assetIndex];
+    $assetName = assetDisplayName($asset, $ancestors);
+    $assetCode = clean((string) ($asset['code'] ?? ''));
+    $fromStorageName = storageNameById($storages, $beforeStorageId) ?: 'نامشخص';
+    $toStorageName = storageNameById($storages, $storageId) ?: 'نامشخص';
+    $actor = getAuthorizedActorName($telegramUserId);
+    appendAssetManagerLog(
+        'asset_transferred',
+        sprintf(
+            'مال %s با کد %s توسط کاربر (%s) از انبار %s به انبار %s منتقل شد',
+            $assetName,
+            $assetCode !== '' ? $assetCode : 'بدون کد',
+            $actor,
+            $fromStorageName,
+            $toStorageName
+        ),
+        [
+            'asset_id' => (string) ($asset['id'] ?? ''),
+            'asset_code' => $assetCode,
+            'actor' => $actor,
+            'from_storage_id' => $beforeStorageId,
+            'to_storage_id' => $storageId,
+        ]
+    );
+
+    clearChatState($chatId);
+    sendAssetLookupCard(
+        $token,
+        $chatId,
+        $asset,
+        $storages,
+        $ancestors,
+        $labels,
+        $messageId,
+        "✅ <b>انتقال مال با موفقیت انجام شد.</b>"
+    );
+}
+
+function startAssetLabelJourney(string $token, string $chatId, string $messageId, string $assetId): void
+{
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
+    $assets = loadAssets($ancestors, $labels);
+    $asset = findById($assets, $assetId);
+    if (!is_array($asset)) {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال انتخاب‌شده پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    if (parseBool($asset['special_asset'] ?? false)) {
+        sendAssetLookupCard(
+            $token,
+            $chatId,
+            $asset,
+            $storages,
+            $ancestors,
+            $labels,
+            $messageId,
+            "ℹ️ <b>برای مال خاص، تغییر برچسب فعال نیست.</b>"
+        );
+        return;
+    }
+
+    $ancestor = findById($ancestors, trim((string) ($asset['ancestor_id'] ?? '')));
+    $parentIds = is_array($ancestor)
+        ? sanitizeParentLabelIds($labels, (array) ($ancestor['label_ids'] ?? []))
+        : [];
+    if (!$parentIds) {
+        sendAssetLookupCard(
+            $token,
+            $chatId,
+            $asset,
+            $storages,
+            $ancestors,
+            $labels,
+            $messageId,
+            "ℹ️ <b>برای این مال، برچسب قابل انتخابی تعریف نشده است.</b>"
+        );
+        return;
+    }
+
+    $currentValues = normalizeAssetLabelValues(
+        is_array($asset['label_values'] ?? null) ? $asset['label_values'] : [],
+        $parentIds,
+        $labels
+    );
+    setChatState($chatId, [
+        'step' => 'asset_lookup_labels_parent',
+        'asset_action_asset_id' => $assetId,
+        'asset_action_parent_ids' => $parentIds,
+        'asset_action_label_values' => $currentValues,
+    ]);
+    renderAssetLabelParentMenu($token, $chatId, $messageId, getChatState($chatId), $asset, $labels, $ancestors);
+}
+
+function renderAssetLabelParentMenu(
+    string $token,
+    string $chatId,
+    string $messageId,
+    array $state,
+    array $asset,
+    array $labels,
+    array $ancestors
+): void {
+    $parentIds = is_array($state['asset_action_parent_ids'] ?? null) ? $state['asset_action_parent_ids'] : [];
+    $labelValues = is_array($state['asset_action_label_values'] ?? null) ? $state['asset_action_label_values'] : [];
+
+    $rows = [];
+    $summaryLines = [];
+    foreach ($parentIds as $parentId) {
+        $parent = findById($labels, (string) $parentId);
+        if (!is_array($parent)) {
+            continue;
+        }
+        $parentName = clean((string) ($parent['name'] ?? ''));
+        if ($parentName === '') {
+            continue;
+        }
+        $buttonText = '🏷️ ' . $parentName;
+        $childId = trim((string) ($labelValues[$parentId] ?? ''));
+        if ($childId !== '' && labelIsDirectChild($labels, (string) $parentId, $childId)) {
+            $childPath = labelPathById($labels, $childId);
+            if ($childPath !== '') {
+                $buttonText = '✅ ' . $parentName . ': ' . $childPath;
+                $summaryLines[] = '• ' . htmlEscape($parentName) . ': <b>' . htmlEscape($childPath) . '</b>';
+            }
+        }
+        $rows[] = [['text' => $buttonText, 'callback_data' => 'al_p:' . (string) $parentId]];
+    }
+    $rows[] = [['text' => '✅ ثبت تغییرات برچسب ها', 'callback_data' => 'al_d']];
+
+    $assetName = htmlEscape(assetDisplayName($asset, $ancestors));
+    $assetCode = htmlEscape(clean((string) ($asset['code'] ?? '')));
+    $summary = $summaryLines
+        ? implode("\n", $summaryLines)
+        : 'هنوز برچسبی انتخاب نشده است.';
+    $text = "🏷️ <b>تغییر برچسب های مال</b>\n\n"
+        . "🧾 مال: <b>{$assetName}</b>\n"
+        . "🔐 کد: <b>{$assetCode}</b>\n\n"
+        . "یک برچسب والد را انتخاب کنید:\n\n{$summary}";
+    sendOrEditMessage($token, $chatId, $messageId, $text, ['inline_keyboard' => $rows]);
+}
+
+function renderAssetLabelChildMenu(
+    string $token,
+    string $chatId,
+    string $messageId,
+    string $parentId,
+    array $labels
+): void {
+    $parent = findById($labels, $parentId);
+    if (!is_array($parent)) {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>برچسب والد معتبر نیست.</b>", null);
+        return;
+    }
+
+    $rows = [];
+    foreach ($labels as $label) {
+        if (!is_array($label)) {
+            continue;
+        }
+        $id = trim((string) ($label['id'] ?? ''));
+        $name = clean((string) ($label['name'] ?? ''));
+        if ($id === '' || $name === '' || trim((string) ($label['parent_id'] ?? '')) !== $parentId) {
+            continue;
+        }
+        $rows[] = [['text' => '🔸 ' . $name, 'callback_data' => 'al_c:' . $id]];
+    }
+    $rows[] = [['text' => '⬅️ بازگشت', 'callback_data' => 'al_b']];
+
+    $parentName = htmlEscape(clean((string) ($parent['name'] ?? '')));
+    $text = "🧩 <b>انتخاب زیر‌برچسب</b>\n\n"
+        . "والد: <b>{$parentName}</b>\n"
+        . "لطفا یک زیر‌برچسب را انتخاب کنید.";
+    if (count($rows) === 1) {
+        $text .= "\n\n⚠️ برای این والد زیر‌برچسبی ثبت نشده است.";
+    }
+    sendOrEditMessage($token, $chatId, $messageId, $text, ['inline_keyboard' => $rows]);
+}
+
+function handleAssetLabelParentCallback(string $token, string $chatId, string $messageId, string $parentId): void
+{
+    $state = getChatState($chatId);
+    $step = (string) ($state['step'] ?? '');
+    if (!in_array($step, ['asset_lookup_labels_parent', 'asset_lookup_labels_child'], true)) {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>ابتدا تغییر برچسب را از کارت مال شروع کنید.</b>", null);
+        return;
+    }
+
+    $parentIds = is_array($state['asset_action_parent_ids'] ?? null) ? $state['asset_action_parent_ids'] : [];
+    if (!in_array($parentId, $parentIds, true)) {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>برچسب انتخابی معتبر نیست.</b>", null);
+        return;
+    }
+
+    $labels = loadLabels();
+    $state['step'] = 'asset_lookup_labels_child';
+    $state['asset_action_active_parent_id'] = $parentId;
+    setChatState($chatId, $state);
+    renderAssetLabelChildMenu($token, $chatId, $messageId, $parentId, $labels);
+}
+
+function handleAssetLabelChildCallback(string $token, string $chatId, string $messageId, string $childId): void
+{
+    $state = getChatState($chatId);
+    if ((string) ($state['step'] ?? '') !== 'asset_lookup_labels_child') {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>ابتدا یک برچسب والد انتخاب کنید.</b>", null);
+        return;
+    }
+
+    $parentId = trim((string) ($state['asset_action_active_parent_id'] ?? ''));
+    if ($parentId === '') {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>وضعیت انتخاب برچسب معتبر نیست.</b>", null);
+        return;
+    }
+
+    $labels = loadLabels();
+    if (!labelIsDirectChild($labels, $parentId, $childId)) {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>زیر‌برچسب انتخابی معتبر نیست.</b>", null);
+        return;
+    }
+
+    $values = is_array($state['asset_action_label_values'] ?? null) ? $state['asset_action_label_values'] : [];
+    $values[$parentId] = $childId;
+    $state['asset_action_label_values'] = $values;
+    $state['step'] = 'asset_lookup_labels_parent';
+    unset($state['asset_action_active_parent_id']);
+    setChatState($chatId, $state);
+
+    $assetId = trim((string) ($state['asset_action_asset_id'] ?? ''));
+    $ancestors = loadAncestors($labels);
+    $assets = loadAssets($ancestors, $labels);
+    $asset = findById($assets, $assetId);
+    if (!is_array($asset)) {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+    renderAssetLabelParentMenu($token, $chatId, $messageId, $state, $asset, $labels, $ancestors);
+}
+
+function handleAssetLabelBackCallback(string $token, string $chatId, string $messageId): void
+{
+    $state = getChatState($chatId);
+    if ((string) ($state['step'] ?? '') !== 'asset_lookup_labels_child') {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>شما در صفحه والدها هستید.</b>", null);
+        return;
+    }
+
+    $state['step'] = 'asset_lookup_labels_parent';
+    unset($state['asset_action_active_parent_id']);
+    setChatState($chatId, $state);
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $assets = loadAssets($ancestors, $labels);
+    $asset = findById($assets, trim((string) ($state['asset_action_asset_id'] ?? '')));
+    if (!is_array($asset)) {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    renderAssetLabelParentMenu($token, $chatId, $messageId, $state, $asset, $labels, $ancestors);
+}
+
+function finalizeAssetLabelJourney(string $token, string $chatId, string $messageId, string $telegramUserId): void
+{
+    $state = getChatState($chatId);
+    $step = (string) ($state['step'] ?? '');
+    if (!in_array($step, ['asset_lookup_labels_parent', 'asset_lookup_labels_child'], true)) {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>ابتدا تغییر برچسب را از کارت مال شروع کنید.</b>", null);
+        return;
+    }
+
+    $assetId = trim((string) ($state['asset_action_asset_id'] ?? ''));
+    if ($assetId === '') {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>وضعیت تغییر برچسب معتبر نیست.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
+    $assets = loadAssets($ancestors, $labels);
+    $assetIndex = findAssetIndexById($assets, $assetId);
+    if ($assetIndex < 0) {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    $asset = $assets[$assetIndex];
+    if (parseBool($asset['special_asset'] ?? false)) {
+        clearChatState($chatId);
+        sendAssetLookupCard($token, $chatId, $asset, $storages, $ancestors, $labels, $messageId, "ℹ️ <b>این مال برچسب‌پذیر نیست.</b>");
+        return;
+    }
+
+    $ancestor = findById($ancestors, trim((string) ($asset['ancestor_id'] ?? '')));
+    $parentIds = is_array($ancestor)
+        ? sanitizeParentLabelIds($labels, (array) ($ancestor['label_ids'] ?? []))
+        : [];
+    $newValues = normalizeAssetLabelValues(
+        is_array($state['asset_action_label_values'] ?? null) ? $state['asset_action_label_values'] : [],
+        $parentIds,
+        $labels
+    );
+    $beforeValues = normalizeAssetLabelValues(
+        is_array($asset['label_values'] ?? null) ? $asset['label_values'] : [],
+        $parentIds,
+        $labels
+    );
+
+    $beforeComparable = json_encode($beforeValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $afterComparable = json_encode($newValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $changed = (string) $beforeComparable !== (string) $afterComparable;
+    if ($changed) {
+        $assets[$assetIndex]['label_values'] = $newValues;
+        $assets[$assetIndex]['updated_at'] = date('c');
+        if (!writeJsonList(ASSETS_FILE, $assets)) {
+            sendOrEditMessage($token, $chatId, $messageId, "❌ <b>ذخیره برچسب ها انجام نشد.</b>", null);
+            return;
+        }
+        $asset = $assets[$assetIndex];
+        $actor = getAuthorizedActorName($telegramUserId);
+        $assetName = assetDisplayName($asset, $ancestors);
+        $assetCode = clean((string) ($asset['code'] ?? ''));
+        appendAssetManagerLog(
+            'asset_updated',
+            sprintf(
+                'برچسب های مال %s با کد %s توسط کاربر (%s) ویرایش شد',
+                $assetName,
+                $assetCode !== '' ? $assetCode : 'بدون کد',
+                $actor
+            ),
+            [
+                'asset_id' => $assetId,
+                'asset_code' => $assetCode,
+                'actor' => $actor,
+                'field' => 'label_values',
+            ]
+        );
+    }
+
+    clearChatState($chatId);
+    $prefix = $changed ? "✅ <b>برچسب های مال با موفقیت به‌روزرسانی شد.</b>" : "ℹ️ <b>تغییری در برچسب ها اعمال نشد.</b>";
+    sendAssetLookupCard($token, $chatId, $asset, $storages, $ancestors, $labels, $messageId, $prefix);
+}
+
+function startAssetDeleteJourney(string $token, string $chatId, string $messageId, string $assetId): void
+{
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $assets = loadAssets($ancestors, $labels);
+    $asset = findById($assets, $assetId);
+    if (!is_array($asset)) {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال انتخاب‌شده پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    setChatState($chatId, [
+        'step' => 'asset_lookup_delete_pin',
+        'asset_action_asset_id' => $assetId,
+        'asset_action_delete_pin_attempts' => 0,
+    ]);
+
+    $assetName = htmlEscape(assetDisplayName($asset, $ancestors));
+    $assetCode = htmlEscape(clean((string) ($asset['code'] ?? '')));
+    $text = "🗑️ <b>حذف مال</b>\n\n"
+        . "🧾 مال: <b>{$assetName}</b>\n"
+        . "🔐 کد: <b>{$assetCode}</b>\n\n"
+        . "برای ادامه حذف، لطفا <b>پین‌کد ۴ رقمی</b> خود را به‌صورت پیام متنی ارسال کنید.";
+    sendOrEditMessage($token, $chatId, $messageId, $text, null);
+}
+
+function handleDeleteAssetPinStep(
+    string $token,
+    string $chatId,
+    string $telegramUserId,
+    string $text,
+    array $state
+): void {
+    $pinInput = normalizePinInput($text);
+    if ($pinInput === '') {
+        sendMessage(
+            $token,
+            $chatId,
+            "⚠️ <b>پین‌کد معتبر نیست.</b>\n\nلطفا پین‌کد را به‌صورت دقیق و ۴ رقمی ارسال کنید."
+        );
+        return;
+    }
+
+    $user = findAuthUserByTelegramId($telegramUserId);
+    if (!is_array($user)) {
+        clearChatState($chatId);
+        sendMessage($token, $chatId, "⚠️ <b>اطلاعات کاربر یافت نشد.</b>\n\nلطفا دوباره <code>/start</code> را ارسال کنید.");
+        return;
+    }
+    $storedPin = normalizePinInput((string) ($user['pin_code'] ?? ''));
+    if ($storedPin === '') {
+        clearChatState($chatId);
+        sendMessage($token, $chatId, "⚠️ <b>برای حساب شما پین‌کد تعریف نشده است.</b>");
+        return;
+    }
+
+    if (!hash_equals($storedPin, $pinInput)) {
+        $attempts = (int) ($state['asset_action_delete_pin_attempts'] ?? 0) + 1;
+        if ($attempts >= 3) {
+            clearChatState($chatId);
+            sendMessage(
+                $token,
+                $chatId,
+                "⛔ <b>۳ بار پین‌کد اشتباه وارد شد.</b>\n\nفرآیند حذف لغو شد."
+            );
+            return;
+        }
+        $state['asset_action_delete_pin_attempts'] = $attempts;
+        setChatState($chatId, $state);
+        $remaining = 3 - $attempts;
+        sendMessage(
+            $token,
+            $chatId,
+            "❌ <b>پین‌کد اشتباه است.</b>\n\n"
+                . "تعداد تلاش باقی‌مانده: <b>{$remaining}</b>"
+        );
+        return;
+    }
+
+    $state['step'] = 'asset_lookup_delete_note';
+    $state['asset_action_delete_pin_attempts'] = 0;
+    setChatState($chatId, $state);
+    sendMessage(
+        $token,
+        $chatId,
+        "✍️ <b>توضیحات حذف مال</b>\n\nلطفا دلیل یا توضیح حذف این مال را در یک پیام متنی ارسال کنید."
+    );
+}
+
+function handleDeleteAssetNoteStep(
+    string $token,
+    string $chatId,
+    string $telegramUserId,
+    string $text,
+    array $state
+): void {
+    $note = clean($text);
+    if ($note === '') {
+        sendMessage(
+            $token,
+            $chatId,
+            "⚠️ <b>توضیحات حذف نمی‌تواند خالی باشد.</b>\n\nلطفا متن توضیح را ارسال کنید."
+        );
+        return;
+    }
+
+    $assetId = trim((string) ($state['asset_action_asset_id'] ?? ''));
+    if ($assetId === '') {
+        clearChatState($chatId);
+        sendMessage($token, $chatId, "⚠️ <b>وضعیت حذف معتبر نیست.</b>");
+        return;
+    }
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $assets = loadAssets($ancestors, $labels);
+    $assetIndex = findAssetIndexById($assets, $assetId);
+    if ($assetIndex < 0) {
+        clearChatState($chatId);
+        sendMessage($token, $chatId, "⚠️ <b>مال موردنظر پیدا نشد.</b>");
+        return;
+    }
+
+    $asset = $assets[$assetIndex];
+    array_splice($assets, $assetIndex, 1);
+    if (!writeJsonList(ASSETS_FILE, $assets)) {
+        sendMessage($token, $chatId, "❌ <b>حذف مال انجام نشد.</b>\n\nخطا در ذخیره اطلاعات.");
+        return;
+    }
+
+    $actor = getAuthorizedActorName($telegramUserId);
+    $assetName = assetDisplayName($asset, $ancestors);
+    $assetCode = clean((string) ($asset['code'] ?? ''));
+    appendAssetManagerLog(
+        'asset_removed',
+        sprintf(
+            'مال %s با کد %s توسط کاربر (%s) حذف شد. توضیحات حذف: %s',
+            $assetName,
+            $assetCode !== '' ? $assetCode : 'بدون کد',
+            $actor,
+            $note
+        ),
+        [
+            'asset_id' => $assetId,
+            'asset_code' => $assetCode,
+            'actor' => $actor,
+            'delete_note' => $note,
+        ]
+    );
+
+    clearChatState($chatId);
+    $safeName = htmlEscape($assetName);
+    $safeCode = htmlEscape($assetCode !== '' ? $assetCode : 'بدون کد');
+    sendMessage(
+        $token,
+        $chatId,
+        "✅ <b>مال با موفقیت حذف شد.</b>\n\n"
+            . "🧾 نام مال: <b>{$safeName}</b>\n"
+            . "🔐 کد مال: <b>{$safeCode}</b>\n"
+            . "📝 توضیحات حذف در لاگ‌ها ثبت شد."
+    );
+    sendStartMenu($token, $chatId);
+}
+
+function getAuthorizedActorName(string $telegramUserId): string
+{
+    $user = findAuthUserByTelegramId($telegramUserId);
+    if (!is_array($user)) {
+        return 'کاربر نامشخص';
+    }
+    foreach (['fullname', 'username', 'phone', 'code'] as $field) {
+        $value = clean((string) ($user[$field] ?? ''));
+        if ($value !== '' && $value !== '0') {
+            return $value;
+        }
+    }
+    return 'کاربر نامشخص';
+}
+
+function ensureAssetLogHelpersLoaded(): bool
+{
+    static $attempted = false;
+    static $loaded = false;
+    if ($attempted) {
+        return $loaded;
+    }
+    $attempted = true;
+    if (!is_file(ASSET_LOGS_HELPER_FILE)) {
+        return false;
+    }
+    require_once ASSET_LOGS_HELPER_FILE;
+    $loaded = function_exists('assetLogsAppend');
+    return $loaded;
+}
+
+function appendAssetManagerLog(string $action, string $message, array $context = []): void
+{
+    $timestamp = gmdate('c');
+    if (!ensureAssetLogHelpersLoaded()) {
+        $fallbackPayload = [
+            'id' => randomId(),
+            'action' => $action,
+            'timestamp' => $timestamp,
+            'message' => clean($message),
+        ];
+        foreach ($context as $key => $value) {
+            if (!is_string($key) || $key === '') {
+                continue;
+            }
+            if (is_scalar($value) || $value === null) {
+                $fallbackPayload[$key] = (string) $value;
+            }
+        }
+
+        $fallbackJson = json_encode($fallbackPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $fallbackDir = DATA_DIR . '/logs';
+        if (!is_dir($fallbackDir)) {
+            @mkdir($fallbackDir, 0755, true);
+        }
+        $fallbackFile = $fallbackDir . '/' . gmdate('Y-m-d') . '.jsonl';
+        if (!is_string($fallbackJson) || $fallbackJson === '' || @file_put_contents($fallbackFile, $fallbackJson . "\n", FILE_APPEND | LOCK_EX) === false) {
+            logEvent('asset_log_helper_missing', ['action' => $action, 'message' => $message, 'fallback' => 'failed']);
+        } else {
+            logEvent('asset_log_helper_missing', ['action' => $action, 'message' => $message, 'fallback' => 'written']);
+        }
+        return;
+    }
+
+    $payload = [
+        'action' => $action,
+        'timestamp' => $timestamp,
+        'message' => $message,
+    ];
+    foreach ($context as $key => $value) {
+        if (!is_string($key) || $key === '') {
+            continue;
+        }
+        if (is_scalar($value) || $value === null) {
+            $payload[$key] = (string) $value;
+        }
+    }
+    assetLogsAppend($payload);
 }
 
 function getStartMenuMarkup(): array

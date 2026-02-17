@@ -199,48 +199,31 @@ $accountEmail = $currentUser['email'] ?? '';
           <div id="live-clock" class="clock" aria-live="polite"></div>
         </header>
 
-        <!-- Home tab shows quick KPI cards populated by the front-end fetch loop in app.js; the release info block is static text only. -->
+        <!-- Home tab shows quick KPI cards and recent asset system logs populated by app.js. -->
         <section id="tab-home" class="tab active">
-          <div class="home-sub-nav" role="tablist" aria-label="تب‌های خانه">
-            <button type="button" class="sub-item active" data-home-pane-target="overview" role="tab" aria-selected="true">
-              نمای کلی
-            </button>
-            <button type="button" class="sub-item" data-home-pane-target="system-logs" role="tab" aria-selected="false">
-              گزارشات سیستم
-            </button>
-          </div>
-
-          <div class="home-sub-pane active" data-home-pane="overview">
-            <div class="cards">
-              <div class="card kpi">
-                <div class="kpi-label">مجموع کاربران</div>
-                <div class="kpi-value" id="kpi-users">0</div>
-              </div>
-              <div class="card kpi">
-                <div class="kpi-label">عکس‌های گالری</div>
-                <div class="kpi-value" id="kpi-photos">0</div>
-              </div>
-              <div class="card kpi">
-                <div class="kpi-label">وضعیت پایگاه داده</div>
-                <div class="kpi-value db-status" id="kpi-db-status">در حال بررسی...</div>
-              </div>
+          <div class="cards">
+            <div class="card kpi">
+              <div class="kpi-label">مجموع کاربران</div>
+              <div class="kpi-value" id="kpi-users">0</div>
             </div>
-            <div class="card">
-              <h3>نسخه رابط کاربری</h3>
-              <p class="muted">این نسخه از رابط کاربری کاملاً در مرورگر اجرا می‌شود و به بک‌اند یا ورود کاربر وابسته نیست.</p>
+            <div class="card kpi">
+              <div class="kpi-label">تعداد اموال</div>
+              <div class="kpi-value" id="kpi-photos">0</div>
+            </div>
+            <div class="card kpi">
+              <div class="kpi-label">گزارشات 24 ساعت اخیر</div>
+              <div class="kpi-value" id="kpi-db-status">0</div>
             </div>
           </div>
 
-          <div class="home-sub-pane" data-home-pane="system-logs">
-            <div class="card home-log-card">
-              <div class="section-header">
-                <h3>گزارشات سیستم اموال</h3>
-              </div>
-              <p id="home-asset-log-status" class="hint home-log-status" aria-live="polite"></p>
-              <div id="home-asset-log-days" class="home-log-days"></div>
-              <div class="section-footer home-log-footer">
-                <button type="button" id="home-asset-log-more" class="btn ghost hidden">نمایش بیشتر</button>
-              </div>
+          <div class="card home-log-card">
+            <div class="section-header">
+              <h3>گزارشات سیستم اموال</h3>
+            </div>
+            <p id="home-asset-log-status" class="hint home-log-status" aria-live="polite"></p>
+            <div id="home-asset-log-days" class="home-log-days"></div>
+            <div class="section-footer home-log-footer">
+              <button type="button" id="home-asset-log-more" class="btn ghost hidden">نمایش بیشتر</button>
             </div>
           </div>
         </section>

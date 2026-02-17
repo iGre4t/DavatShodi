@@ -634,7 +634,30 @@ function okData(array $storages, array $labels, array $ancestors, array $assets)
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = clean((string)($_POST['action'] ?? ''));
 
+    if ($action === 'load_asset_dashboard_metrics') {
+        $labelsForMetrics = loadLabels();
+        $ancestorsForMetrics = loadAncestors($labelsForMetrics);
+        $assetsForMetrics = loadAssets($ancestorsForMetrics, $labelsForMetrics);
+        out([
+            'status' => 'ok',
+            'asset_count' => count($assetsForMetrics),
+            'recent_logs_count' => assetLogsCountRecentHours(24)
+        ]);
+    }
+
     if ($action === 'load_asset_logs') {
+        $dayOffsetRaw = $_POST['day_offset'] ?? null;
+        if ($dayOffsetRaw !== null && trim((string)$dayOffsetRaw) !== '') {
+            $dayOffset = (int)$dayOffsetRaw;
+            $window = assetLogsReadRecentDayWindow($dayOffset);
+            out([
+                'status' => 'ok',
+                'logs' => $window['items'],
+                'has_more' => (bool)($window['has_more'] ?? false),
+                'next_day_offset' => (int)($window['next_day_offset'] ?? ($dayOffset + 1))
+            ]);
+        }
+
         $limit = (int)($_POST['limit'] ?? 30);
         $cursor = trim((string)($_POST['cursor'] ?? ''));
         $logsPage = assetLogsReadPage($limit, $cursor);

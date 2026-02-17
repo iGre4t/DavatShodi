@@ -34,7 +34,7 @@ const TITLE_KEY = "frontend_panel_title";
 const TIMEZONE_KEY = "frontend_panel_timezone";
 const API_ENDPOINT = "./api/data.php"; // Shared handler supplying data for both users and gallery tabs.
 const ASSET_MANAGER_ENDPOINT = "mini%20apps/Asset%20Manager/index.php";
-const HOME_ASSET_LOGS_PAGE_SIZE = 35;
+const HOME_ASSET_METRICS_CACHE_MS = 30000;
 const PANEL_TITLE_KEY = "frontend_panel_name";
 const PANEL_TITLE_DEFAULT = "Frontend panel";
 const DEFAULT_SETTINGS = {
@@ -214,10 +214,12 @@ let backupImportTrigger = null;
 let backupFileChosen = null;
 let pendingBackupImportFile = null;
 let backupSettingsFormElement = null;
-let homeAssetLogsCursor = "";
-let homeAssetLogsHasMore = true;
+let homeAssetLogsDayOffset = 0;
+let homeAssetLogsHasMore = false;
 let homeAssetLogsLoading = false;
 let homeAssetLogsInitialized = false;
+let homeAssetMetricsCache = null;
+let homeAssetMetricsRequest = null;
 
 let PRINTER_DEVICES = [];
 let PRINTER_SETTINGS = {
@@ -4648,13 +4650,11 @@ function updateHomeAssetLoadMoreButton() {
   button.disabled = homeAssetLogsLoading;
 }
 
-async function requestHomeAssetLogsPage(cursor = "") {
+async function requestHomeAssetLogsDayWindow(dayOffset = 0) {
+  const safeDayOffset = Math.max(0, Number.parseInt(String(dayOffset), 10) || 0);
   const fd = new FormData();
   fd.append("action", "load_asset_logs");
-  fd.append("limit", String(HOME_ASSET_LOGS_PAGE_SIZE));
-  if (cursor) {
-    fd.append("cursor", cursor);
-  }
+  fd.append("day_offset", String(safeDayOffset));
 
   const response = await fetch(ASSET_MANAGER_ENDPOINT, {
     method: "POST",
@@ -4693,7 +4693,7 @@ async function loadHomeAssetLogs({ reset = false } = {}) {
   }
 
   if (reset) {
-    homeAssetLogsCursor = "";
+    homeAssetLogsDayOffset = 0;
     homeAssetLogsHasMore = true;
     const listRoot = qs("#home-asset-log-days");
     if (listRoot) {
@@ -4703,7 +4703,7 @@ async function loadHomeAssetLogs({ reset = false } = {}) {
   }
 
   try {
-    const payload = await requestHomeAssetLogsPage(reset ? "" : homeAssetLogsCursor);
+    const payload = await requestHomeAssetLogsDayWindow(homeAssetLogsDayOffset);
     const logs = Array.isArray(payload.logs) ? payload.logs : [];
     if (reset && logs.length === 0) {
       renderEmptyHomeAssetLogs();
@@ -4713,8 +4713,12 @@ async function loadHomeAssetLogs({ reset = false } = {}) {
       setHomeAssetLogStatus("");
     }
 
-    homeAssetLogsCursor = String(payload.next_cursor || "").trim();
-    homeAssetLogsHasMore = homeAssetLogsCursor !== "";
+    const nextDayOffset = Number.parseInt(String(payload.next_day_offset ?? ""), 10);
+    homeAssetLogsDayOffset =
+      Number.isFinite(nextDayOffset) && nextDayOffset >= 0
+        ? nextDayOffset
+        : homeAssetLogsDayOffset + 1;
+    homeAssetLogsHasMore = Boolean(payload.has_more);
     homeAssetLogsInitialized = true;
 
     const listRoot = qs("#home-asset-log-days");
@@ -4722,6 +4726,8 @@ async function loadHomeAssetLogs({ reset = false } = {}) {
     if (!hasRenderedItems && !homeAssetLogsHasMore) {
       renderEmptyHomeAssetLogs();
     }
+
+    void refreshHomeAssetKpis({ force: true });
   } catch (error) {
     setHomeAssetLogStatus(error?.message || "خطا در دریافت گزارشات سیستم.", true);
   } finally {
@@ -4740,6 +4746,19 @@ function initHomeSubTabs() {
 
   const buttons = qsa("[data-home-pane-target]", root);
   const panes = qsa("[data-home-pane]", root);
+  const loadMoreButton = qs("#home-asset-log-more");
+  loadMoreButton?.addEventListener("click", () => {
+    void loadHomeAssetLogs();
+  });
+
+  if (!buttons.length || !panes.length) {
+    if (!homeAssetLogsInitialized) {
+      void loadHomeAssetLogs({ reset: true });
+    }
+    updateHomeAssetLoadMoreButton();
+    return;
+  }
+
   const setPane = (paneId) => {
     buttons.forEach((button) => {
       const isActive = button.dataset.homePaneTarget === paneId;
@@ -4759,10 +4778,6 @@ function initHomeSubTabs() {
     button.addEventListener("click", () => {
       setPane(button.dataset.homePaneTarget || "overview");
     });
-  });
-
-  qs("#home-asset-log-more")?.addEventListener("click", () => {
-    void loadHomeAssetLogs();
   });
 
   setPane("overview");
@@ -5033,23 +5048,89 @@ function confirmUserDeletion() {
   closeDeleteModal();
 }
 
-// Refreshes the KPI cards with the latest user/photo counts and database connectivity.
-function updateKpis() {
-  const total = USER_DB.length;
-  const photoCount = GALLERY_PHOTOS.length;
-  const setKpiValue = (selector, value) => {
-    const el = qs(selector);
-    if (el) el.textContent = value;
-  };
-  setKpiValue('#kpi-users', total);
-  setKpiValue('#kpi-photos', photoCount);
-  const statusEl = qs('#kpi-db-status');
-  if (statusEl) {
-    const connected = SERVER_DATABASE_CONNECTED;
-    statusEl.textContent = connected ? 'Connected' : 'Disconnected';
-    statusEl.classList.toggle('connected', connected);
-    statusEl.classList.toggle('disconnected', !connected);
+function setKpiValue(selector, value) {
+  const el = qs(selector);
+  if (!el) return;
+  el.textContent = String(value);
+}
+
+async function requestHomeAssetMetrics({ force = false } = {}) {
+  const now = Date.now();
+  const cacheAge = homeAssetMetricsCache ? now - homeAssetMetricsCache.fetchedAt : Number.POSITIVE_INFINITY;
+  if (!force && homeAssetMetricsCache && cacheAge < HOME_ASSET_METRICS_CACHE_MS) {
+    return homeAssetMetricsCache;
   }
+  if (homeAssetMetricsRequest) {
+    return homeAssetMetricsRequest;
+  }
+
+  homeAssetMetricsRequest = (async () => {
+    const fd = new FormData();
+    fd.append("action", "load_asset_dashboard_metrics");
+
+    const response = await fetch(ASSET_MANAGER_ENDPOINT, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin"
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = null;
+    }
+
+    if (!response.ok || !payload || payload.status !== "ok") {
+      throw new Error(payload?.message || "Failed to load home metrics.");
+    }
+
+    const assetCount = Number.parseInt(String(payload.asset_count ?? "0"), 10);
+    const recentLogsCount = Number.parseInt(String(payload.recent_logs_count ?? "0"), 10);
+    homeAssetMetricsCache = {
+      assetCount: Number.isFinite(assetCount) && assetCount >= 0 ? assetCount : 0,
+      recentLogsCount: Number.isFinite(recentLogsCount) && recentLogsCount >= 0 ? recentLogsCount : 0,
+      fetchedAt: Date.now()
+    };
+    return homeAssetMetricsCache;
+  })();
+
+  try {
+    return await homeAssetMetricsRequest;
+  } finally {
+    homeAssetMetricsRequest = null;
+  }
+}
+
+async function refreshHomeAssetKpis({ force = false } = {}) {
+  const hasAssetCounter = Boolean(qs("#kpi-photos"));
+  const hasLogsCounter = Boolean(qs("#kpi-db-status"));
+  if (!hasAssetCounter && !hasLogsCounter) {
+    return;
+  }
+
+  try {
+    const metrics = await requestHomeAssetMetrics({ force });
+    setKpiValue("#kpi-photos", metrics.assetCount);
+    setKpiValue("#kpi-db-status", metrics.recentLogsCount);
+  } catch (error) {
+    if (!String(qs("#kpi-photos")?.textContent || "").trim()) {
+      setKpiValue("#kpi-photos", "0");
+    }
+    if (!String(qs("#kpi-db-status")?.textContent || "").trim()) {
+      setKpiValue("#kpi-db-status", "0");
+    }
+  }
+}
+
+// Refreshes the KPI cards with the latest user count plus asset/log counters.
+function updateKpis({ forceMetricsRefresh = false } = {}) {
+  setKpiValue("#kpi-users", USER_DB.length);
+  if (forceMetricsRefresh && !homeAssetMetricsCache) {
+    setKpiValue("#kpi-photos", "...");
+    setKpiValue("#kpi-db-status", "...");
+  }
+  void refreshHomeAssetKpis({ force: forceMetricsRefresh });
 }
 
 // Updates the live clock in the top bar using the selected timezone.
@@ -5308,7 +5389,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   setActiveTab('home');
   renderUsers();
-  updateKpis();
+  updateKpis({ forceMetricsRefresh: true });
   initHomeSubTabs();
   renderGalleryCategories();
   gallerySearchCountElement = qs("[data-gallery-search-count]");

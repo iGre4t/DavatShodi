@@ -139,6 +139,144 @@ function assetLogsNormalizeEntry(array $entry): ?array
     ];
 }
 
+function assetLogsParseEpoch(string $timestamp): ?int
+{
+    $parsed = strtotime($timestamp);
+    if ($parsed === false) {
+        return null;
+    }
+    return (int)$parsed;
+}
+
+function assetLogsFileEpochRange(string $path): ?array
+{
+    $name = basename($path, '.jsonl');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $name)) {
+        return null;
+    }
+    $start = strtotime($name . ' 00:00:00 UTC');
+    if ($start === false) {
+        return null;
+    }
+    $startEpoch = (int)$start;
+    return [
+        'start' => $startEpoch,
+        'end' => $startEpoch + 86400
+    ];
+}
+
+function assetLogsReadWindow(int $startEpoch, int $endEpoch): array
+{
+    if ($endEpoch <= $startEpoch) {
+        return [];
+    }
+
+    $items = [];
+    $files = assetLogsListFilesDesc();
+    foreach ($files as $filePath) {
+        $range = assetLogsFileEpochRange($filePath);
+        if ($range !== null && ((int)$range['end'] <= $startEpoch || (int)$range['start'] >= $endEpoch)) {
+            continue;
+        }
+
+        $lines = @file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines) || !$lines) {
+            continue;
+        }
+
+        for ($lineIndex = count($lines) - 1; $lineIndex >= 0; $lineIndex--) {
+            $rawLine = trim((string)$lines[$lineIndex]);
+            if ($rawLine === '') {
+                continue;
+            }
+            $decoded = json_decode($rawLine, true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            $entry = assetLogsNormalizeEntry($decoded);
+            if ($entry === null) {
+                continue;
+            }
+            $epoch = assetLogsParseEpoch((string)$entry['timestamp']);
+            if ($epoch === null || $epoch < $startEpoch || $epoch >= $endEpoch) {
+                continue;
+            }
+            $items[] = $entry;
+        }
+    }
+
+    return $items;
+}
+
+function assetLogsHasEntriesOlderThan(int $epochExclusive): bool
+{
+    $files = assetLogsListFilesDesc();
+    foreach ($files as $filePath) {
+        $range = assetLogsFileEpochRange($filePath);
+        if ($range !== null) {
+            if ((int)$range['end'] <= $epochExclusive) {
+                return true;
+            }
+            if ((int)$range['start'] >= $epochExclusive) {
+                continue;
+            }
+        }
+
+        $lines = @file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines) || !$lines) {
+            continue;
+        }
+        foreach ($lines as $rawLine) {
+            $line = trim((string)$rawLine);
+            if ($line === '') {
+                continue;
+            }
+            $decoded = json_decode($line, true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            $entry = assetLogsNormalizeEntry($decoded);
+            if ($entry === null) {
+                continue;
+            }
+            $entryEpoch = assetLogsParseEpoch((string)$entry['timestamp']);
+            if ($entryEpoch !== null && $entryEpoch < $epochExclusive) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function assetLogsReadRecentDayWindow(int $dayOffset = 0): array
+{
+    $offset = max(0, $dayOffset);
+    $now = time();
+    $windowEnd = $now - ($offset * 86400);
+    $windowStart = $windowEnd - 86400;
+    $items = assetLogsReadWindow($windowStart, $windowEnd);
+
+    return [
+        'items' => $items,
+        'has_more' => assetLogsHasEntriesOlderThan($windowStart),
+        'next_day_offset' => $offset + 1
+    ];
+}
+
+function assetLogsCountRange(int $startEpoch, int $endEpoch): int
+{
+    return count(assetLogsReadWindow($startEpoch, $endEpoch));
+}
+
+function assetLogsCountRecentHours(int $hours): int
+{
+    $boundedHours = max(1, min(24 * 31, $hours));
+    $now = time();
+    $windowStart = $now - ($boundedHours * 3600);
+    return assetLogsCountRange($windowStart, $now);
+}
+
 function assetLogsReadPage(int $limit = 40, string $cursor = ''): array
 {
     $boundedLimit = max(1, min(100, $limit));
