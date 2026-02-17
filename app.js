@@ -4613,6 +4613,49 @@ function renderEmptyHomeAssetLogs() {
   listRoot.appendChild(empty);
 }
 
+function escapeHomeAssetLogHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatHomeAssetLogMessage(message = "") {
+  const compactMessage = String(message).replace(/\s+/g, " ").trim();
+  if (!compactMessage) {
+    return "";
+  }
+
+  let styled = escapeHomeAssetLogHtml(compactMessage);
+  styled = styled.replace(
+    /(مال\s+)(.+?)(?=(?:\s+با\s+کد|\s+از\s+انبار|\s+در\s+انبار|\s+توسط\s+کاربر|$))/g,
+    (_match, prefix, assetName) => `${prefix}<span class="home-log-asset">${assetName}</span>`
+  );
+  styled = styled.replace(
+    /(با\s+کد\s+)(.+?)(?=(?:\s+توسط\s+کاربر|\s+از\s+انبار|\s+به\s+انبار|\s+در\s+انبار|\s+حذف\s+شد|\s+ویرایش\s+شد|\.|،|$))/g,
+    (_match, prefix, assetCode) => `${prefix}<span class="home-log-code">${assetCode}</span>`
+  );
+  styled = styled.replace(
+    /(توسط\s+کاربر\s+)(.+?)(?=(?:\s+از\s+انبار|\s+به\s+انبار|\s+در\s+انبار|\s+ثبت\s+شد|\s+حذف\s+شد|\s+ویرایش\s+شد|\s+منتقل\s+شد|\.|،|$))/g,
+    (_match, prefix, actorName) => `${prefix}<span class="home-log-user">${actorName}</span>`
+  );
+  styled = styled.replace(
+    /(از\s+انبار\s+)(.+?)(?=(?:\s+توسط\s+کاربر|\s+به\s+انبار|\s+منتقل\s+شد|\.|،|$))/g,
+    (_match, prefix, storageName) => `${prefix}<span class="home-log-storage">${storageName}</span>`
+  );
+  styled = styled.replace(
+    /(به\s+انبار\s+)(.+?)(?=(?:\s+منتقل\s+شد|\.|،|$))/g,
+    (_match, prefix, storageName) => `${prefix}<span class="home-log-storage">${storageName}</span>`
+  );
+  styled = styled.replace(
+    /(در\s+انبار\s+)(.+?)(?=(?:\s+ثبت\s+شد|\.|،|$))/g,
+    (_match, prefix, storageName) => `${prefix}<span class="home-log-storage">${storageName}</span>`
+  );
+  return styled;
+}
+
 function appendHomeAssetLogs(logs = []) {
   const listRoot = qs("#home-asset-log-days");
   if (!listRoot) return;
@@ -4666,7 +4709,7 @@ function appendHomeAssetLogs(logs = []) {
 
     const messageEl = document.createElement("span");
     messageEl.className = "home-log-message";
-    messageEl.textContent = compactMessage;
+    messageEl.innerHTML = formatHomeAssetLogMessage(compactMessage) || escapeHomeAssetLogHtml(compactMessage);
 
     lineEl.append(timeEl, sep1, typeEl, sep2, messageEl);
 

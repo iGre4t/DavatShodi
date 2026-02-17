@@ -2607,7 +2607,7 @@ function completeAssetTransferJourney(
     appendAssetManagerLog(
         'asset_transferred',
         sprintf(
-            'مال %s با کد %s توسط کاربر (%s) از انبار %s به انبار %s منتقل شد',
+            'مال %s با کد %s توسط کاربر %s از انبار %s به انبار %s منتقل شد',
             $assetName,
             $assetCode !== '' ? $assetCode : 'بدون کد',
             $actor,
@@ -3066,7 +3066,7 @@ function finalizeAssetLabelJourney(string $token, string $chatId, string $messag
         appendAssetManagerLog(
             'asset_updated',
             sprintf(
-                'برچسب های مال %s با کد %s توسط کاربر (%s) ویرایش شد',
+                'برچسب های مال %s با کد %s توسط کاربر %s ویرایش شد',
                 $assetName,
                 $assetCode !== '' ? $assetCode : 'بدون کد',
                 $actor
@@ -3248,7 +3248,7 @@ function handleDeleteAssetNoteStep(
     appendAssetManagerLog(
         'asset_removed',
         sprintf(
-            'مال %s با کد %s توسط کاربر (%s) حذف شد. توضیحات حذف: %s',
+            'مال %s با کد %s توسط کاربر %s حذف شد. توضیحات حذف: %s',
             $assetName,
             $assetCode !== '' ? $assetCode : 'بدون کد',
             $actor,
@@ -3962,7 +3962,7 @@ function addAssetFromState(array $state, string $storageId, string $telegramUser
     appendAssetManagerLog(
         'asset_created',
         sprintf(
-            'مال %s با کد %s توسط کاربر (%s) در انبار %s ثبت شد',
+            'مال %s با کد %s توسط کاربر %s در انبار %s ثبت شد',
             $name,
             $code !== '' ? $code : 'بدون کد',
             $actor,

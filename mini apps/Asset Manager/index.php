@@ -1353,7 +1353,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         writeAssetActionLog(
             'asset_created',
             sprintf(
-                'مال %s با کد %s توسط کاربر (%s) در انبار %s ثبت شد',
+                'مال %s با کد %s توسط کاربر %s در انبار %s ثبت شد',
                 $assetName,
                 $assetCodeText,
                 $actor,
@@ -1448,7 +1448,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 writeAssetActionLog(
                     'asset_transferred',
                     sprintf(
-                        'مال %s از انبار %s توسط کاربر (%s) به انبار %s منتقل شد',
+                        'مال %s از انبار %s توسط کاربر %s به انبار %s منتقل شد',
                         $assetName,
                         $fromStorageName,
                         $actor,
@@ -1475,7 +1475,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 writeAssetActionLog(
                     'asset_updated',
                     sprintf(
-                        'اطلاعات مال %s با کد %s توسط کاربر (%s) ویرایش شد',
+                        'اطلاعات مال %s با کد %s توسط کاربر %s ویرایش شد',
                         $assetName,
                         $assetCodeText,
                         $actor
@@ -1524,7 +1524,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             writeAssetActionLog(
                 'asset_removed',
                 sprintf(
-                    'مال %s با کد %s توسط کاربر (%s) حذف شد',
+                    'مال %s با کد %s توسط کاربر %s حذف شد',
                     $assetName,
                     $assetCodeText,
                     $actor

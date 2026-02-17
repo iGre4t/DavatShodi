@@ -1480,9 +1480,27 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 }
 .home-log-message {
   color: #0f172a;
-  font-weight: 600;
+  font-weight: 400;
   flex: 1 1 auto;
   min-width: 0;
+}
+.home-log-asset {
+  color: #0f172a;
+  font-weight: 700;
+}
+.home-log-code {
+  color: #1d4ed8;
+  font-weight: 700;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.home-log-user {
+  color: #b45309;
+  font-weight: 700;
+}
+.home-log-storage {
+  color: #047857;
+  font-weight: 700;
 }
 .home-log-empty {
   margin: 0;
