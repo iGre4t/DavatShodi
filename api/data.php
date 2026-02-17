@@ -285,16 +285,15 @@ if ($method === 'POST') {
         'update_user' => 'users',
         'delete_user' => 'users',
         'update_user_permissions' => 'users',
-        'save_settings' => 'devsettings',
-        'save_printer_settings' => 'devsettings',
-        'save_database_config' => 'devsettings',
-        'download_database_backup' => 'devsettings',
-        'fetch_backup_file' => 'devsettings',
-        'delete_backup_file' => 'devsettings',
-        'apply_backup_by_filename' => 'devsettings',
-        'import_database_backup' => 'devsettings',
-        'save_backup_settings' => 'devsettings',
-        'run_sql_query' => 'devsettings'
+        'save_printer_settings' => 'devsettings:printer-settings',
+        'save_database_config' => 'devsettings:database',
+        'download_database_backup' => 'devsettings:database',
+        'fetch_backup_file' => 'devsettings:database',
+        'delete_backup_file' => 'devsettings:database',
+        'apply_backup_by_filename' => 'devsettings:database',
+        'import_database_backup' => 'devsettings:database',
+        'save_backup_settings' => 'devsettings:database',
+        'run_sql_query' => 'devsettings:database'
     ];
     $galleryTabActions = [
         'add_gallery_category',
@@ -314,9 +313,32 @@ if ($method === 'POST') {
             ]);
         }
     }
+    if ($action === 'save_settings') {
+        $settingsPayload = is_array($payload['settings'] ?? null) ? $payload['settings'] : [];
+        $requiresGeneralPane = array_key_exists('timezone', $settingsPayload);
+        $requiresAppearancePane = false;
+        foreach (['title', 'panelName', 'siteIcon', 'appearance'] as $field) {
+            if (array_key_exists($field, $settingsPayload)) {
+                $requiresAppearancePane = true;
+                break;
+            }
+        }
+        if ($requiresGeneralPane && !in_array('devsettings:panel-settings', $currentAllowedTabs, true)) {
+            sendJsonResponse([
+                'status' => 'error',
+                'message' => 'You do not have permission to update general developer settings.'
+            ]);
+        }
+        if ($requiresAppearancePane && !in_array('devsettings:appearance', $currentAllowedTabs, true)) {
+            sendJsonResponse([
+                'status' => 'error',
+                'message' => 'You do not have permission to update appearance settings.'
+            ]);
+        }
+    }
     if (in_array($action, $galleryTabActions, true)) {
         $hasGalleryPermission = in_array('features', $currentAllowedTabs, true)
-            || in_array('devsettings', $currentAllowedTabs, true);
+            || in_array('devsettings:appearance', $currentAllowedTabs, true);
         if (!$hasGalleryPermission) {
             sendJsonResponse([
                 'status' => 'error',
@@ -897,19 +919,23 @@ $data['backups'] = getBackupHistoryForResponse();
 applyPrinterState($data);
 $data['currentUserPermissions'] = $currentAllowedTabs;
 $data['tabCatalog'] = getPanelTabOptionsForFrontend();
-if (!in_array('users', $currentAllowedTabs, true)) {
+$canUsersTab = in_array('users', $currentAllowedTabs, true);
+$canDevDatabase = in_array('devsettings:database', $currentAllowedTabs, true);
+$canDevPrinter = in_array('devsettings:printer-settings', $currentAllowedTabs, true);
+$canGalleryRead = in_array('features', $currentAllowedTabs, true)
+    || in_array('devsettings:appearance', $currentAllowedTabs, true);
+if (!$canUsersTab) {
     $data['users'] = [];
 }
-if (!in_array('devsettings', $currentAllowedTabs, true)) {
+if (!$canDevDatabase) {
     $data['databaseConfig'] = [];
     $data['backups'] = [];
+}
+if (!$canDevPrinter) {
     $data['printerSettings'] = [];
     $data['printerDevices'] = [];
 }
-if (
-    !in_array('features', $currentAllowedTabs, true) &&
-    !in_array('devsettings', $currentAllowedTabs, true)
-) {
+if (!$canGalleryRead) {
     $data['galleryCategories'] = [];
     $data['galleryPhotos'] = [];
 }

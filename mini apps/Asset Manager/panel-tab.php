@@ -3,6 +3,23 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 requireTabPermissionFromSession('asset-manager', false);
+
+$sessionUser = is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [];
+$allowedAssetPermissions = resolveAllowedPanelChildTabsForUser($sessionUser, 'asset-manager');
+$assetPaneOrder = [
+  'asset-manager:assets',
+  'asset-manager:storages',
+  'asset-manager:ancestors',
+  'asset-manager:labels',
+  'asset-manager:permissions'
+];
+$visibleAssetPanes = [];
+foreach ($assetPaneOrder as $permissionId) {
+  if (in_array($permissionId, $allowedAssetPermissions, true)) {
+    $visibleAssetPanes[] = explode(':', $permissionId, 2)[1] ?? '';
+  }
+}
+$activeAssetPane = $visibleAssetPanes[0] ?? '';
 ?>
 
         <section id="tab-asset-manager" class="tab">
@@ -10,25 +27,41 @@ requireTabPermissionFromSession('asset-manager', false);
             <aside class="sub-sidebar">
               <div class="sub-header">مدیریت اموال</div>
               <div class="sub-nav">
-                <button type="button" class="sub-item active" data-pm-pane-target="assets">
-                  افزودن مال
-                </button>
-                <button type="button" class="sub-item" data-pm-pane-target="storages">
-                  افزودن انبار
-                </button>
-                <button type="button" class="sub-item" data-pm-pane-target="ancestors">
-                  افزودن مال مرسوم
-                </button>
-                <button type="button" class="sub-item" data-pm-pane-target="labels">
-                  برچسب‌ها
-                </button>
-                <button type="button" class="sub-item" data-pm-pane-target="permissions">
-                  دسترسی‌ها
-                </button>
+                <?php if (in_array('assets', $visibleAssetPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeAssetPane === 'assets' ? ' active' : '' ?>" data-pm-pane-target="assets">
+                    افزودن مال
+                  </button>
+                <?php endif; ?>
+                <?php if (in_array('storages', $visibleAssetPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeAssetPane === 'storages' ? ' active' : '' ?>" data-pm-pane-target="storages">
+                    افزودن انبار
+                  </button>
+                <?php endif; ?>
+                <?php if (in_array('ancestors', $visibleAssetPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeAssetPane === 'ancestors' ? ' active' : '' ?>" data-pm-pane-target="ancestors">
+                    افزودن مال مرسوم
+                  </button>
+                <?php endif; ?>
+                <?php if (in_array('labels', $visibleAssetPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeAssetPane === 'labels' ? ' active' : '' ?>" data-pm-pane-target="labels">
+                    برچسب‌ها
+                  </button>
+                <?php endif; ?>
+                <?php if (in_array('permissions', $visibleAssetPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeAssetPane === 'permissions' ? ' active' : '' ?>" data-pm-pane-target="permissions">
+                    دسترسی‌ها
+                  </button>
+                <?php endif; ?>
               </div>
             </aside>
             <div class="sub-content">
-              <div class="sub-pane active" data-pm-pane="assets">
+              <?php if (empty($visibleAssetPanes)): ?>
+                <div class="card settings-section">
+                  <p class="hint">شما دسترسی به هیچ زیرتب مدیریت اموال ندارید.</p>
+                </div>
+              <?php endif; ?>
+              <?php if (in_array('assets', $visibleAssetPanes, true)): ?>
+              <div class="sub-pane<?= $activeAssetPane === 'assets' ? ' active' : '' ?>" data-pm-pane="assets">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>افزودن مال</h3>
@@ -90,8 +123,10 @@ requireTabPermissionFromSession('asset-manager', false);
                   </div>
                 </div>
               </div>
+              <?php endif; ?>
 
-              <div class="sub-pane" data-pm-pane="storages">
+              <?php if (in_array('storages', $visibleAssetPanes, true)): ?>
+              <div class="sub-pane<?= $activeAssetPane === 'storages' ? ' active' : '' ?>" data-pm-pane="storages">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>افزودن انبار</h3>
@@ -135,8 +170,10 @@ requireTabPermissionFromSession('asset-manager', false);
                   </div>
                 </div>
               </div>
+              <?php endif; ?>
 
-              <div class="sub-pane" data-pm-pane="ancestors">
+              <?php if (in_array('ancestors', $visibleAssetPanes, true)): ?>
+              <div class="sub-pane<?= $activeAssetPane === 'ancestors' ? ' active' : '' ?>" data-pm-pane="ancestors">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>افزودن مال مرسوم</h3>
@@ -176,8 +213,10 @@ requireTabPermissionFromSession('asset-manager', false);
                   </div>
                 </div>
               </div>
+              <?php endif; ?>
 
-              <div class="sub-pane" data-pm-pane="labels">
+              <?php if (in_array('labels', $visibleAssetPanes, true)): ?>
+              <div class="sub-pane<?= $activeAssetPane === 'labels' ? ' active' : '' ?>" data-pm-pane="labels">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>افزودن برچسب</h3>
@@ -217,8 +256,10 @@ requireTabPermissionFromSession('asset-manager', false);
                   </div>
                 </div>
               </div>
+              <?php endif; ?>
 
-              <div class="sub-pane" data-pm-pane="permissions">
+              <?php if (in_array('permissions', $visibleAssetPanes, true)): ?>
+              <div class="sub-pane<?= $activeAssetPane === 'permissions' ? ' active' : '' ?>" data-pm-pane="permissions">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>دسترسی کاربران به انبارها</h3>
@@ -241,6 +282,7 @@ requireTabPermissionFromSession('asset-manager', false);
                   </div>
                 </div>
               </div>
+              <?php endif; ?>
             </div>
           </div>
         </section>

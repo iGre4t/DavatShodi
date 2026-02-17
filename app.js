@@ -58,6 +58,31 @@ const PANEL_TAB_CATALOG = Array.isArray(window.PANEL_TAB_CATALOG)
       .filter(Boolean)
   : PANEL_TAB_FALLBACK_IDS.map((id) => ({ id, label: id, title: id }));
 const PANEL_TAB_IDS = PANEL_TAB_CATALOG.map((tab) => tab.id);
+const PANEL_CHILD_TAB_MAP = (() => {
+  const incoming =
+    window.PANEL_CHILD_TAB_MAP && typeof window.PANEL_CHILD_TAB_MAP === "object"
+      ? window.PANEL_CHILD_TAB_MAP
+      : {};
+  const mapped = {};
+  PANEL_TAB_IDS.forEach((parentId) => {
+    const rawChildren = Array.isArray(incoming[parentId]) ? incoming[parentId] : [];
+    mapped[parentId] = rawChildren
+      .map((childId) => normalizeTabToken(childId))
+      .filter(Boolean);
+  });
+  return mapped;
+})();
+const PANEL_CHILD_TAB_IDS = PANEL_TAB_IDS.flatMap(
+  (parentId) => PANEL_CHILD_TAB_MAP[parentId] || []
+);
+const PANEL_CUSTOM_PERMISSION_MARKERS = PANEL_TAB_IDS
+  .filter((parentId) => (PANEL_CHILD_TAB_MAP[parentId] || []).length > 0)
+  .map((parentId) => `${parentId}:custom`);
+const PANEL_PERMISSION_ID_SET = new Set([
+  ...PANEL_TAB_IDS,
+  ...PANEL_CHILD_TAB_IDS,
+  ...PANEL_CUSTOM_PERMISSION_MARKERS
+]);
 const PANEL_ALLOWED_TABS = (() => {
   const incoming = Array.isArray(window.PANEL_ALLOWED_TABS)
     ? window.PANEL_ALLOWED_TABS
@@ -538,7 +563,12 @@ function getAllPanelTabIds() {
   return [...PANEL_TAB_IDS];
 }
 
-function normalizeUserTabPermissions(value, fallbackToAll = true) {
+function getPanelChildrenCustomizationMarker(parentTabId) {
+  const parentId = normalizeTabToken(parentTabId);
+  return parentId ? `${parentId}:custom` : "";
+}
+
+function parseUserPermissionTokens(value) {
   let candidates = [];
   if (Array.isArray(value)) {
     candidates = value;
@@ -550,6 +580,8 @@ function normalizeUserTabPermissions(value, fallbackToAll = true) {
           const decoded = JSON.parse(raw);
           if (Array.isArray(decoded)) {
             candidates = decoded;
+          } else if (decoded && typeof decoded === "object") {
+            candidates = Object.values(decoded);
           }
         } catch {
           candidates = [];
@@ -560,15 +592,77 @@ function normalizeUserTabPermissions(value, fallbackToAll = true) {
       }
     }
   }
-  const selected = new Set(
-    candidates
-      .map((entry) => normalizeTabToken(entry))
-      .filter((tabId) => PANEL_TAB_IDS.includes(tabId))
-  );
-  if (!selected.size) {
-    return fallbackToAll ? getAllPanelTabIds() : [];
+  return candidates
+    .map((entry) => normalizeTabToken(entry))
+    .filter((token) => token !== "" && PANEL_PERMISSION_ID_SET.has(token));
+}
+
+function orderNormalizedUserPermissionIds(permissionIds) {
+  const selectedSet = permissionIds instanceof Set
+    ? permissionIds
+    : new Set(
+        Array.isArray(permissionIds)
+          ? permissionIds.map((token) => normalizeTabToken(token)).filter(Boolean)
+          : []
+      );
+  const ordered = [];
+  PANEL_TAB_IDS.forEach((parentId) => {
+    if (!selectedSet.has(parentId)) {
+      return;
+    }
+    ordered.push(parentId);
+    const childIds = PANEL_CHILD_TAB_MAP[parentId] || [];
+    if (!childIds.length) {
+      return;
+    }
+    const marker = getPanelChildrenCustomizationMarker(parentId);
+    if (marker && selectedSet.has(marker)) {
+      ordered.push(marker);
+    }
+    childIds.forEach((childId) => {
+      if (selectedSet.has(childId)) {
+        ordered.push(childId);
+      }
+    });
+  });
+  return ordered;
+}
+
+function normalizeUserTabPermissions(value, fallbackToAll = true) {
+  const inputTokens = parseUserPermissionTokens(value);
+  const inputSet = new Set(inputTokens);
+  let selectedParents = PANEL_TAB_IDS.filter((parentId) => inputSet.has(parentId));
+
+  if (!selectedParents.length) {
+    if (!fallbackToAll) {
+      return [];
+    }
+    selectedParents = [...PANEL_TAB_IDS];
   }
-  return getAllPanelTabIds().filter((tabId) => selected.has(tabId));
+
+  const normalizedSet = new Set();
+  selectedParents.forEach((parentId) => {
+    normalizedSet.add(parentId);
+    const childIds = PANEL_CHILD_TAB_MAP[parentId] || [];
+    if (!childIds.length) {
+      return;
+    }
+
+    const marker = getPanelChildrenCustomizationMarker(parentId);
+    const hasCustomizationMarker = marker !== "" && inputSet.has(marker);
+    const selectedChildren = childIds.filter((childId) => inputSet.has(childId));
+    if (hasCustomizationMarker || selectedChildren.length > 0) {
+      if (marker !== "") {
+        normalizedSet.add(marker);
+      }
+      selectedChildren.forEach((childId) => normalizedSet.add(childId));
+      return;
+    }
+
+    childIds.forEach((childId) => normalizedSet.add(childId));
+  });
+
+  return orderNormalizedUserPermissionIds(normalizedSet);
 }
 
 function getUserTabPermissions(user, fallbackToAll = true) {
@@ -4657,6 +4751,21 @@ function resetDomNodeById(id) {
   node.parentElement.replaceChild(cleanNode, node);
 }
 
+function getTabLazyLoaderMarkup(message = "Loading tab content...") {
+  return `
+    <div class="tab-lazy-loader" role="status" aria-live="polite" aria-label="${message}">
+      <div class="loader-card">
+        <div class="loader-ring" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <p class="loader-title">${message}</p>
+      </div>
+    </div>
+  `;
+}
+
 function runExternalTabInitializers(tab) {
   if (tab === "users") {
     initUsersTabControls();
@@ -4690,7 +4799,7 @@ async function reloadExternalTab(tab) {
   }
 
   host.setAttribute("aria-busy", "true");
-  host.innerHTML = '<div class="card"><p class="muted">Loading tab content...</p></div>';
+  host.innerHTML = getTabLazyLoaderMarkup();
 
   try {
     const response = await fetch(buildExternalTabRequestUrl(source), {
@@ -4705,7 +4814,7 @@ async function reloadExternalTab(tab) {
     host.innerHTML = extractExternalTabMarkup(rawHtml, tab);
     runExternalTabInitializers(tab);
   } catch (error) {
-    host.innerHTML = '<div class="card"><p class="muted">Failed to load tab content.</p></div>';
+    host.innerHTML = '<div class="tab-load-error muted">Failed to load tab content.</div>';
     showErrorSnackbar({
       message: error?.message || "Failed to load tab content."
     });
@@ -5163,19 +5272,135 @@ function setPermissionsModalStatus(message = "", isError = false) {
   statusEl.classList.toggle('error', Boolean(isError));
 }
 
+function getPermissionsModalParentInputs() {
+  return qsa('#permissions-checkboxes [data-permissions-role="parent"]');
+}
+
+function getPermissionsModalChildInputs(parentId = "") {
+  const normalizedParentId = normalizeTabToken(parentId);
+  return qsa('#permissions-checkboxes [data-permissions-role="child"]').filter((input) => {
+    const owner = normalizeTabToken(input.dataset.permissionsParent);
+    return normalizedParentId === "" || owner === normalizedParentId;
+  });
+}
+
+function getPermissionsModalParentInput(parentId = "") {
+  const normalizedParentId = normalizeTabToken(parentId);
+  return getPermissionsModalParentInputs().find((input) => {
+    return normalizeTabToken(input.dataset.permissionsTab) === normalizedParentId;
+  }) || null;
+}
+
+function syncPermissionsModalChildrenState(parentId, options = {}) {
+  const normalizedParentId = normalizeTabToken(parentId);
+  if (!normalizedParentId) {
+    return;
+  }
+  const parentInput = getPermissionsModalParentInput(normalizedParentId);
+  const childInputs = getPermissionsModalChildInputs(normalizedParentId);
+  if (!parentInput || !childInputs.length) {
+    return;
+  }
+
+  const keepCurrentSelection = Boolean(options.keepCurrentSelection);
+  if (!parentInput.checked) {
+    childInputs.forEach((childInput) => {
+      childInput.checked = false;
+      childInput.disabled = true;
+    });
+    return;
+  }
+
+  childInputs.forEach((childInput) => {
+    childInput.disabled = false;
+  });
+
+  if (!keepCurrentSelection && childInputs.every((childInput) => !childInput.checked)) {
+    childInputs.forEach((childInput) => {
+      childInput.checked = true;
+    });
+  }
+}
+
+function bindPermissionsModalCheckboxBehavior() {
+  const container = qs('#permissions-checkboxes');
+  if (!container || container.dataset.permissionsBound === '1') {
+    return;
+  }
+  container.dataset.permissionsBound = '1';
+  container.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') {
+      return;
+    }
+
+    const role = normalizeTabToken(target.dataset.permissionsRole);
+    if (role === 'parent') {
+      const parentId = normalizeTabToken(target.dataset.permissionsTab);
+      syncPermissionsModalChildrenState(parentId, { keepCurrentSelection: !target.checked });
+      setPermissionsModalStatus("");
+      return;
+    }
+
+    if (role !== 'child') {
+      return;
+    }
+    const parentId = normalizeTabToken(target.dataset.permissionsParent);
+    const parentInput = getPermissionsModalParentInput(parentId);
+    if (!parentInput) {
+      return;
+    }
+    if (!parentInput.checked) {
+      parentInput.checked = true;
+    }
+    syncPermissionsModalChildrenState(parentId, { keepCurrentSelection: true });
+    setPermissionsModalStatus("");
+  });
+}
+
 function applyPermissionsModalSelection(permissions = []) {
   const selected = new Set(normalizeUserTabPermissions(permissions, false));
-  qsa('#permissions-checkboxes [data-permissions-tab]').forEach((input) => {
-    const tabId = normalizeTabToken(input.dataset.permissionsTab);
-    input.checked = selected.has(tabId);
+  getPermissionsModalParentInputs().forEach((input) => {
+    const parentId = normalizeTabToken(input.dataset.permissionsTab);
+    input.checked = selected.has(parentId);
+  });
+  getPermissionsModalChildInputs().forEach((input) => {
+    const childId = normalizeTabToken(input.dataset.permissionsTab);
+    input.checked = selected.has(childId);
+  });
+  getPermissionsModalParentInputs().forEach((input) => {
+    const parentId = normalizeTabToken(input.dataset.permissionsTab);
+    syncPermissionsModalChildrenState(parentId, { keepCurrentSelection: true });
   });
 }
 
 function readPermissionsModalSelection() {
-  const checked = qsa('#permissions-checkboxes [data-permissions-tab]')
-    .filter((input) => input.checked)
-    .map((input) => input.dataset.permissionsTab);
-  return normalizeUserTabPermissions(checked, false);
+  const selected = [];
+  getPermissionsModalParentInputs().forEach((parentInput) => {
+    if (!parentInput.checked) {
+      return;
+    }
+    const parentId = normalizeTabToken(parentInput.dataset.permissionsTab);
+    if (!parentId) {
+      return;
+    }
+    selected.push(parentId);
+    const childIds = PANEL_CHILD_TAB_MAP[parentId] || [];
+    if (!childIds.length) {
+      return;
+    }
+    selected.push(getPanelChildrenCustomizationMarker(parentId));
+    getPermissionsModalChildInputs(parentId).forEach((childInput) => {
+      if (!childInput.checked) {
+        return;
+      }
+      const childId = normalizeTabToken(childInput.dataset.permissionsTab);
+      if (childId) {
+        selected.push(childId);
+      }
+    });
+  });
+  return normalizeUserTabPermissions(selected, false);
 }
 
 function openPermissionsModal(user) {
@@ -6003,6 +6228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await activateTab(tab);
     }
   });
+  bindPermissionsModalCheckboxBehavior();
   qsa('[data-close-permissions]').forEach(btn => {
     btn.addEventListener('click', closePermissionsModal);
   });

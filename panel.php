@@ -87,8 +87,9 @@ $userCode = normalizeUserValue($sessionUser['code'] ?? '');
 $dbUser = ($userPdo && $userCode !== '') ? loadUserByCode($userPdo, $userCode) : null;
 $currentUser = array_merge($sessionUser, is_array($dbUser) ? $dbUser : []);
 unset($currentUser['password_hash']);
-$currentUser['permissions'] = resolveAllowedPanelTabsForUser($currentUser);
-$allowedTabs = $currentUser['permissions'];
+$currentUserPermissions = normalizeTabPermissions($currentUser['permissions'] ?? null, true);
+$currentUser['permissions'] = $currentUserPermissions;
+$allowedTabs = resolveAllowedPanelTabsForUser($currentUser);
 $initialTab = in_array('home', $allowedTabs, true) ? 'home' : ($allowedTabs[0] ?? '');
 if ($initialTab === '') {
   http_response_code(403);
@@ -96,10 +97,12 @@ if ($initialTab === '') {
   exit;
 }
 $_SESSION['user'] = array_merge($sessionUser, $currentUser, [
-  'permissions' => $allowedTabs,
+  'permissions' => $currentUserPermissions,
   'display_name' => normalizeUserValue($currentUser['fullname'] ?? '') ?: (normalizeUserValue($currentUser['username'] ?? '') ?: 'Admin')
 ]);
 $tabCatalog = getPanelTabOptionsForFrontend();
+$permissionTree = getPanelPermissionTreeForFrontend();
+$childPermissionMap = getPanelChildTabIdsByParent();
 $sidebarName = normalizeUserValue($currentUser['fullname'] ?? '');
 if ($sidebarName === '') {
   $sidebarName = normalizeUserValue($currentUser['username'] ?? '') ?: 'Admin';
@@ -134,8 +137,9 @@ $accountEmail = $currentUser['email'] ?? '';
   <body>
     <!-- Loader remains until app.js finishes initializing the view and hides this element. -->
     <div id="app-loader" role="status" aria-live="polite" aria-label="در حال بارگذاری پنل...">
-          <div class="loader-card">
+      <div class="loader-card">
         <div class="loader-ring" aria-hidden="true">
+          <span></span>
           <span></span>
           <span></span>
         </div>
@@ -472,11 +476,37 @@ $accountEmail = $currentUser['email'] ?? '';
         </div>
         <p class="hint">دسترسی هر کاربر فقط به تب‌های انتخاب‌شده محدود می‌شود.</p>
         <div id="permissions-checkboxes" class="permissions-checkboxes pm-permission-grid">
-          <?php foreach ($tabCatalog as $tabOption): ?>
-            <label class="pm-permission-item">
-              <input type="checkbox" data-permissions-tab="<?= htmlspecialchars((string)$tabOption['id'], ENT_QUOTES, 'UTF-8') ?>" />
-              <span><?= htmlspecialchars((string)$tabOption['label'], ENT_QUOTES, 'UTF-8') ?></span>
-            </label>
+          <?php foreach ($permissionTree as $group): ?>
+            <?php $parentId = (string)($group['id'] ?? ''); ?>
+            <?php $parentLabel = (string)($group['label'] ?? $parentId); ?>
+            <?php $children = is_array($group['children'] ?? null) ? $group['children'] : []; ?>
+            <div class="pm-permission-group">
+              <label class="pm-permission-item">
+                <input
+                  type="checkbox"
+                  data-permissions-role="parent"
+                  data-permissions-tab="<?= htmlspecialchars($parentId, ENT_QUOTES, 'UTF-8') ?>"
+                />
+                <span><?= htmlspecialchars($parentLabel, ENT_QUOTES, 'UTF-8') ?></span>
+              </label>
+              <?php if (!empty($children)): ?>
+                <div class="pm-permission-children">
+                  <?php foreach ($children as $child): ?>
+                    <?php $childId = (string)($child['id'] ?? ''); ?>
+                    <?php $childLabel = (string)($child['label'] ?? $childId); ?>
+                    <label class="pm-permission-item pm-permission-child">
+                      <input
+                        type="checkbox"
+                        data-permissions-role="child"
+                        data-permissions-parent="<?= htmlspecialchars($parentId, ENT_QUOTES, 'UTF-8') ?>"
+                        data-permissions-tab="<?= htmlspecialchars($childId, ENT_QUOTES, 'UTF-8') ?>"
+                      />
+                      <span><?= htmlspecialchars($childLabel, ENT_QUOTES, 'UTF-8') ?></span>
+                    </label>
+                  <?php endforeach; ?>
+                </div>
+              <?php endif; ?>
+            </div>
           <?php endforeach; ?>
         </div>
         <p id="permissions-modal-status" class="hint" aria-live="polite"></p>
@@ -879,6 +909,7 @@ $accountEmail = $currentUser['email'] ?? '';
       window.__CURRENT_USER_NAME = <?= json_encode($topbarUserName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.__CURRENT_USER_CODE = <?= json_encode($userCode, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_TAB_CATALOG = <?= json_encode($tabCatalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.PANEL_CHILD_TAB_MAP = <?= json_encode($childPermissionMap, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_ALLOWED_TABS = <?= json_encode(array_values($allowedTabs), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_INITIAL_TAB = <?= json_encode($initialTab, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     </script>

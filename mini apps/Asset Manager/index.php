@@ -3,11 +3,12 @@ declare(strict_types=1);
 
 session_start();
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+$sessionUser = is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [];
 if (empty($_SESSION['authenticated'])) {
     header('Location: ../../login.php');
     exit;
 }
-if (!userHasTabPermission(is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [], 'asset-manager')) {
+if (!userHasTabPermission($sessionUser, 'asset-manager')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
     http_response_code(403);
     if ($isPost) {
@@ -22,6 +23,9 @@ if (!userHasTabPermission(is_array($_SESSION['user'] ?? null) ? $_SESSION['user'
     }
     exit;
 }
+$allowedAssetChildPermissions = resolveAllowedPanelChildTabsForUser($sessionUser, 'asset-manager');
+$allowedAssetChildPermissionSet = array_fill_keys($allowedAssetChildPermissions, true);
+$canManageAssetPermissions = isset($allowedAssetChildPermissionSet['asset-manager:permissions']);
 
 const DATA_DIR = __DIR__ . '/data';
 const ASSETS_FILE = DATA_DIR . '/assets.json';
@@ -895,11 +899,21 @@ function out(array $payload, int $status = 200): void
     exit;
 }
 
-function okData(array $storages, array $labels, array $ancestors, array $assets): array
+function okData(
+    array $storages,
+    array $labels,
+    array $ancestors,
+    array $assets,
+    bool $includePermissionPaneData = true
+): array
 {
-    $users = loadSystemUsersForPermissions();
-    $storagePermissions = loadStoragePermissions($storages, $users);
-    $specialPermissions = loadSpecialPermissions($users);
+    $users = $includePermissionPaneData ? loadSystemUsersForPermissions() : [];
+    $storagePermissions = $includePermissionPaneData
+        ? loadStoragePermissions($storages, $users)
+        : [];
+    $specialPermissions = $includePermissionPaneData
+        ? loadSpecialPermissions($users)
+        : [];
     return [
         'status' => 'ok',
         'storages' => array_values($storages),
@@ -914,6 +928,36 @@ function okData(array $storages, array $labels, array $ancestors, array $assets)
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = clean((string)($_POST['action'] ?? ''));
+    $requiredPermissionByAction = [
+        'add_asset' => 'asset-manager:assets',
+        'update_asset' => 'asset-manager:assets',
+        'remove_asset' => 'asset-manager:assets',
+        'add_storage' => 'asset-manager:storages',
+        'update_storage' => 'asset-manager:storages',
+        'remove_storage' => 'asset-manager:storages',
+        'add_ancestor' => 'asset-manager:ancestors',
+        'update_ancestor' => 'asset-manager:ancestors',
+        'remove_ancestor' => 'asset-manager:ancestors',
+        'add_label' => 'asset-manager:labels',
+        'update_label' => 'asset-manager:labels',
+        'remove_label' => 'asset-manager:labels',
+        'update_storage_permissions' => 'asset-manager:permissions'
+    ];
+    if (isset($requiredPermissionByAction[$action])) {
+        $requiredPermission = $requiredPermissionByAction[$action];
+        if (!isset($allowedAssetChildPermissionSet[$requiredPermission])) {
+            out([
+                'status' => 'error',
+                'message' => 'You do not have permission to perform this action.'
+            ], 403);
+        }
+    }
+    if ($action === 'load_data' && empty($allowedAssetChildPermissionSet)) {
+        out([
+            'status' => 'error',
+            'message' => 'You do not have permission to access this section.'
+        ], 403);
+    }
 
     if ($action === 'load_asset_dashboard_metrics') {
         $labelsForMetrics = loadLabels();
@@ -955,7 +999,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $assets = loadAssets($ancestors, $labels);
 
     if ($action === 'load_data') {
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'add_storage') {
@@ -982,7 +1026,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage.'], 500);
         }
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'update_storage') {
@@ -1017,7 +1061,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage changes.'], 500);
         }
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'remove_storage') {
@@ -1048,7 +1092,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeStoragePermissions($permissions)) {
             out(['status' => 'error', 'message' => 'Unable to update storage permissions.'], 500);
         }
-        out(okData($next, $labels, $ancestors, $assets));
+        out(okData($next, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'update_storage_permissions') {
@@ -1094,7 +1138,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
         }
 
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'add_label') {
@@ -1124,7 +1168,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         $ancestors = loadAncestors($labels);
         $assets = loadAssets($ancestors, $labels);
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'update_label') {
@@ -1168,7 +1212,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         $ancestors = loadAncestors($labels);
         $assets = loadAssets($ancestors, $labels);
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'remove_label') {
@@ -1203,7 +1247,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $labels = loadLabels();
         $ancestors = loadAncestors($labels);
         $assets = loadAssets($ancestors, $labels);
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'add_ancestor') {
@@ -1234,7 +1278,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         $assets = loadAssets($ancestors, $labels);
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'update_ancestor') {
@@ -1275,7 +1319,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         $assets = loadAssets($ancestors, $labels);
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'remove_ancestor') {
@@ -1301,7 +1345,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(ANCESTOR_ASSETS_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove ancestor asset.'], 500);
         }
-        out(okData($storages, $labels, $next, $assets));
+        out(okData($storages, $labels, $next, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'add_asset') {
@@ -1383,7 +1427,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             ]
         );
 
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'update_asset') {
@@ -1506,7 +1550,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
         }
 
-        out(okData($storages, $labels, $ancestors, $assets));
+        out(okData($storages, $labels, $ancestors, $assets, $canManageAssetPermissions));
     }
 
     if ($action === 'remove_asset') {
@@ -1553,7 +1597,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             );
         }
 
-        out(okData($storages, $labels, $ancestors, $next));
+        out(okData($storages, $labels, $ancestors, $next, $canManageAssetPermissions));
     }
 
     out(['status' => 'error', 'message' => 'Unsupported action.'], 400);

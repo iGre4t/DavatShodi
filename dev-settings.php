@@ -3,6 +3,22 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/api/lib/tab-permissions.php';
 requireTabPermissionFromSession('devsettings', false);
+
+$sessionUser = is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [];
+$allowedDevPermissions = resolveAllowedPanelChildTabsForUser($sessionUser, 'devsettings');
+$devPaneOrder = [
+  'devsettings:panel-settings',
+  'devsettings:appearance',
+  'devsettings:database',
+  'devsettings:printer-settings'
+];
+$visibleDevPanes = [];
+foreach ($devPaneOrder as $permissionId) {
+  if (in_array($permissionId, $allowedDevPermissions, true)) {
+    $visibleDevPanes[] = explode(':', $permissionId, 2)[1] ?? '';
+  }
+}
+$activeDevPane = $visibleDevPanes[0] ?? '';
 ?>
 
         <section id="tab-devsettings" class="tab">
@@ -10,22 +26,36 @@ requireTabPermissionFromSession('devsettings', false);
             <aside class="sub-sidebar">
               <div class="sub-header">تنظیمات توسعه‌دهنده</div>
               <div class="sub-nav">
-                <button type="button" class="sub-item active" data-pane="panel-settings">
-                  عمومی
-                </button>
-                <button type="button" class="sub-item" data-pane="appearance">
-                  ظاهر
-                </button>
-                <button type="button" class="sub-item" data-pane="database">
-                  پایگاه داده
-                </button>
-                <button type="button" class="sub-item" data-pane="printer-settings">
-                  تنظیمات چاپگر
-                </button>
+                <?php if (in_array('panel-settings', $visibleDevPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeDevPane === 'panel-settings' ? ' active' : '' ?>" data-pane="panel-settings">
+                    عمومی
+                  </button>
+                <?php endif; ?>
+                <?php if (in_array('appearance', $visibleDevPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeDevPane === 'appearance' ? ' active' : '' ?>" data-pane="appearance">
+                    ظاهر
+                  </button>
+                <?php endif; ?>
+                <?php if (in_array('database', $visibleDevPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeDevPane === 'database' ? ' active' : '' ?>" data-pane="database">
+                    پایگاه داده
+                  </button>
+                <?php endif; ?>
+                <?php if (in_array('printer-settings', $visibleDevPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeDevPane === 'printer-settings' ? ' active' : '' ?>" data-pane="printer-settings">
+                    تنظیمات چاپگر
+                  </button>
+                <?php endif; ?>
               </div>
             </aside>
             <div class="sub-content">
-              <div class="sub-pane active" data-pane="panel-settings">
+              <?php if (empty($visibleDevPanes)): ?>
+                <div class="card settings-section">
+                  <p class="hint">شما دسترسی به هیچ زیرتب تنظیمات توسعه‌دهنده ندارید.</p>
+                </div>
+              <?php endif; ?>
+              <?php if (in_array('panel-settings', $visibleDevPanes, true)): ?>
+              <div class="sub-pane<?= $activeDevPane === 'panel-settings' ? ' active' : '' ?>" data-pane="panel-settings">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>تنظیمات عمومی</h3>
@@ -42,8 +72,10 @@ requireTabPermissionFromSession('devsettings', false);
                   <p class="hint">برای دقیق بودن ساعت و گزارش‌ها، منطقه زمانی صحیح را انتخاب کنید.</p>
                 </div>
               </div>
+              <?php endif; ?>
 
-              <div class="sub-pane" data-pane="appearance">
+              <?php if (in_array('appearance', $visibleDevPanes, true)): ?>
+              <div class="sub-pane<?= $activeDevPane === 'appearance' ? ' active' : '' ?>" data-pane="appearance">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>تنظیمات عمومی ظاهر</h3>
@@ -134,8 +166,10 @@ requireTabPermissionFromSession('devsettings', false);
                   <p class="hint" id="appearance-hint">رنگ‌های رابط کاربری را مستقیما از پنل تنظیمات توسعه‌دهنده تنظیم کنید.</p>
                 </div>
               </div>
+              <?php endif; ?>
 
-              <div class="sub-pane" data-pane="database">
+              <?php if (in_array('database', $visibleDevPanes, true)): ?>
+              <div class="sub-pane<?= $activeDevPane === 'database' ? ' active' : '' ?>" data-pane="database">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>درون‌ریزی / برون‌ریزی پایگاه داده</h3>
@@ -233,8 +267,10 @@ requireTabPermissionFromSession('devsettings', false);
                   </div>
                 </div>
               </div>
+              <?php endif; ?>
 
-              <div class="sub-pane" data-pane="printer-settings">
+              <?php if (in_array('printer-settings', $visibleDevPanes, true)): ?>
+              <div class="sub-pane<?= $activeDevPane === 'printer-settings' ? ' active' : '' ?>" data-pane="printer-settings">
                 <div class="card settings-section">
                   <div class="section-header">
                     <h3>تنظیمات چاپگر</h3>
@@ -283,6 +319,7 @@ requireTabPermissionFromSession('devsettings', false);
                   </div>
                 </div>
               </div>
+              <?php endif; ?>
             </div>
           </div>
         </section>
