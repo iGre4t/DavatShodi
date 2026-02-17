@@ -6,9 +6,11 @@
     ancestors: [],
     assets: [],
     users: [],
-    storagePermissions: {}
+    storagePermissions: {},
+    specialPermissions: { board_member: [] }
   };
   const DEFAULT_ENDPOINT = "mini%20apps/Asset%20Manager/index.php";
+  const SPECIAL_PERMISSION_BOARD_MEMBER = "board_member";
   const STORAGE_KIND_OPTIONS = [
     { value: "branch", label: "\u0634\u0639\u0628\u0647" },
     { value: "person", label: "\u0634\u062e\u0635" },
@@ -181,6 +183,26 @@
         });
         result[userCode] = normalizedIds;
       });
+      return result;
+    };
+
+    const normalizeSpecialPermissions = (rawMap) => {
+      const result = { [SPECIAL_PERMISSION_BOARD_MEMBER]: [] };
+      if (!rawMap || typeof rawMap !== "object") {
+        return result;
+      }
+
+      const rawBoardMembers = Array.isArray(rawMap[SPECIAL_PERMISSION_BOARD_MEMBER])
+        ? rawMap[SPECIAL_PERMISSION_BOARD_MEMBER]
+        : [];
+      const seen = new Set();
+      result[SPECIAL_PERMISSION_BOARD_MEMBER] = rawBoardMembers
+        .map((rawUserCode) => String(rawUserCode || "").trim())
+        .filter((userCode) => {
+          if (!userCode || seen.has(userCode)) return false;
+          seen.add(userCode);
+          return true;
+        });
       return result;
     };
 
@@ -887,7 +909,7 @@ const readLabelChainSelected = (container) => {
         : [];
       if (!users.length) {
         const row = document.createElement("tr");
-        row.innerHTML = '<td class="empty" colspan="2">\u06A9\u0627\u0631\u0628\u0631\u06CC \u0628\u0631\u0627\u06CC \u062A\u0646\u0638\u06CC\u0645 \u062F\u0633\u062A\u0631\u0633\u06CC \u06CC\u0627\u0641\u062A \u0646\u0634\u062F.</td>';
+        row.innerHTML = '<td class="empty" colspan="3">\u06A9\u0627\u0631\u0628\u0631\u06CC \u0628\u0631\u0627\u06CC \u062A\u0646\u0638\u06CC\u0645 \u062F\u0633\u062A\u0631\u0633\u06CC \u06CC\u0627\u0641\u062A \u0646\u0634\u062F.</td>';
         permissionsBody.appendChild(row);
         return;
       }
@@ -902,6 +924,13 @@ const readLabelChainSelected = (container) => {
       storages.sort((left, right) => {
         return String(left?.name || "").localeCompare(String(right?.name || ""), "fa");
       });
+      const boardMemberSet = new Set(
+        Array.isArray(ASSETS_MANAGER_STATE.specialPermissions?.[SPECIAL_PERMISSION_BOARD_MEMBER])
+          ? ASSETS_MANAGER_STATE.specialPermissions[SPECIAL_PERMISSION_BOARD_MEMBER]
+            .map((userCode) => String(userCode || "").trim())
+            .filter(Boolean)
+          : []
+      );
 
       users.forEach((user) => {
         const userCode = getUserCode(user);
@@ -957,13 +986,26 @@ const readLabelChainSelected = (container) => {
           storageCell.appendChild(grid);
         }
 
-        row.append(nameCell, storageCell);
+        const boardMemberCell = document.createElement("td");
+        boardMemberCell.className = "pm-permission-flag-cell";
+        const boardMemberItem = document.createElement("label");
+        boardMemberItem.className = "pm-permission-item";
+        const boardMemberCheckbox = document.createElement("input");
+        boardMemberCheckbox.type = "checkbox";
+        boardMemberCheckbox.dataset.specialPermission = SPECIAL_PERMISSION_BOARD_MEMBER;
+        boardMemberCheckbox.checked = boardMemberSet.has(userCode);
+        const boardMemberCaption = document.createElement("span");
+        boardMemberCaption.textContent = "\u062F\u0627\u0631\u062F";
+        boardMemberItem.append(boardMemberCheckbox, boardMemberCaption);
+        boardMemberCell.appendChild(boardMemberItem);
+
+        row.append(nameCell, storageCell, boardMemberCell);
         permissionsBody.appendChild(row);
       });
 
       if (!permissionsBody.children.length) {
         const row = document.createElement("tr");
-        row.innerHTML = '<td class="empty" colspan="2">\u06A9\u0627\u0631\u0628\u0631 \u0645\u0639\u062A\u0628\u0631\u06CC \u06CC\u0627\u0641\u062A \u0646\u0634\u062F.</td>';
+        row.innerHTML = '<td class="empty" colspan="3">\u06A9\u0627\u0631\u0628\u0631 \u0645\u0639\u062A\u0628\u0631\u06CC \u06CC\u0627\u0641\u062A \u0646\u0634\u062F.</td>';
         permissionsBody.appendChild(row);
       }
     };
@@ -1020,6 +1062,7 @@ const readLabelChainSelected = (container) => {
       ASSETS_MANAGER_STATE.assets = Array.isArray(data.assets) ? data.assets : [];
       ASSETS_MANAGER_STATE.users = Array.isArray(data.users) ? data.users : [];
       ASSETS_MANAGER_STATE.storagePermissions = normalizeStoragePermissions(data.storage_permissions);
+      ASSETS_MANAGER_STATE.specialPermissions = normalizeSpecialPermissions(data.special_permissions);
 
       renderAll();
       return data;
@@ -1320,26 +1363,35 @@ const readLabelChainSelected = (container) => {
         return;
       }
 
-      const rowCheckboxes = qsa('input[type="checkbox"][data-storage-id]', row);
-      const storageIds = rowCheckboxes
+      const storageCheckboxes = qsa('input[type="checkbox"][data-storage-id]', row);
+      const boardMemberCheckbox = qs(`input[type="checkbox"][data-special-permission="${SPECIAL_PERMISSION_BOARD_MEMBER}"]`, row);
+      const storageIds = storageCheckboxes
         .filter((input) => input.checked)
         .map((input) => String(input.dataset.storageId || "").trim())
         .filter(Boolean);
+      const allRowInputs = [...storageCheckboxes];
+      if (boardMemberCheckbox) {
+        allRowInputs.push(boardMemberCheckbox);
+      }
 
-      rowCheckboxes.forEach((input) => {
+      allRowInputs.forEach((input) => {
         input.disabled = true;
       });
       try {
-        await syncAssetsManager("update_storage_permissions", {
+        const payload = {
           user_code: userCode,
           storage_ids: JSON.stringify(storageIds)
-        });
+        };
+        if (boardMemberCheckbox) {
+          payload.board_member = boardMemberCheckbox.checked ? "1" : "0";
+        }
+        await syncAssetsManager("update_storage_permissions", payload);
         setStatus(permissionsStatus, "\u062F\u0633\u062A\u0631\u0633\u06CC\u200C\u0647\u0627 \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F.");
       } catch (error) {
         renderPermissions();
         setStatus(permissionsStatus, error?.message || "\u0630\u062E\u06CC\u0631\u0647 \u062F\u0633\u062A\u0631\u0633\u06CC\u200C\u0647\u0627 \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.", true);
       } finally {
-        rowCheckboxes.forEach((input) => {
+        allRowInputs.forEach((input) => {
           input.disabled = false;
         });
       }

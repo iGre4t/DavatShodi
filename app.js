@@ -4647,7 +4647,28 @@ function appendHomeAssetLogs(logs = []) {
     const compactMessage = String(message).replace(/\s+/g, " ").trim();
     const lineEl = document.createElement("span");
     lineEl.className = "home-log-line";
-    lineEl.textContent = `${formatPersianLogTime(parsed)} | ${typeMeta.label} | ${compactMessage}`;
+
+    const timeEl = document.createElement("span");
+    timeEl.className = "home-log-time";
+    timeEl.textContent = formatPersianLogTime(parsed);
+
+    const sep1 = document.createElement("span");
+    sep1.className = "home-log-sep";
+    sep1.textContent = "|";
+
+    const typeEl = document.createElement("span");
+    typeEl.className = `home-log-type home-log-type--${typeMeta.className}`;
+    typeEl.textContent = typeMeta.label;
+
+    const sep2 = document.createElement("span");
+    sep2.className = "home-log-sep";
+    sep2.textContent = "|";
+
+    const messageEl = document.createElement("span");
+    messageEl.className = "home-log-message";
+    messageEl.textContent = compactMessage;
+
+    lineEl.append(timeEl, sep1, typeEl, sep2, messageEl);
 
     item.append(lineEl);
     dayList.appendChild(item);

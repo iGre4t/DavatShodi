@@ -12,6 +12,8 @@ const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
 const LABELS_FILE = DATA_DIR . '/labels.json';
 const STORAGE_PERMISSIONS_FILE = DATA_DIR . '/storage_permissions.json';
+const SPECIAL_PERMISSIONS_FILE = DATA_DIR . '/special_permissions.json';
+const SPECIAL_PERMISSION_BOARD_MEMBER = 'board_member';
 const ASSET_LOGS_HELPER_FILE = __DIR__ . '/../../mini apps/Asset Manager/asset_logs.php';
 const API_CONFIG_FILE = __DIR__ . '/../../api/config.php';
 const API_COMMON_FILE = __DIR__ . '/../../api/lib/common.php';
@@ -179,13 +181,13 @@ function handleMessage(string $token, array $message): void
         $state = [];
     }
 
-    if ($text === '/cancel') {
+    if (isCancelText($text)) {
         logEvent('command_cancel', ['chat_id' => $chatId]);
         clearChatState($chatId);
         sendMessage(
             $token,
             $chatId,
-            "🛑 <b>فرآیند ثبت دارایی متوقف شد.</b>\n\nاگر تمایل داشتید، از منوی زیر دوباره و خیلی سریع شروع کنید."
+            "🛑 <b>عملیات لغو شد.</b>\n\nهر زمان بخواهید می‌توانید دوباره از منوی اصلی شروع کنید."
         );
         sendStartMenu($token, $chatId);
         return;
@@ -204,12 +206,53 @@ function handleMessage(string $token, array $message): void
         return;
     }
 
+    if ($step === 'awaiting_asset_lookup_code') {
+        if ($text === '' && !$hasPhoto) {
+            sendMessage(
+                $token,
+                $chatId,
+                "🔎 <b>کد مال دریافت نشد.</b>\n\nکد مال را به‌صورت پیام متنی یا تصویر ارسال کنید.",
+                getLookupPromptMarkup()
+            );
+            return;
+        }
+
+        if (!handlePassiveAssetLookupMessage($token, $chatId, $telegramUserId, $message, $text, $hasPhoto)) {
+            sendMessage(
+                $token,
+                $chatId,
+                "🔎 <b>کد مال دریافت نشد.</b>\n\nکد مال را به‌صورت پیام متنی یا تصویر ارسال کنید.",
+                getLookupPromptMarkup()
+            );
+        }
+        return;
+    }
+
+    if ($step === 'listing_assets_choose_storage') {
+        sendMessage(
+            $token,
+            $chatId,
+            "ℹ️ <b>برای ادامه، یکی از انبارهای همین پیام را انتخاب کنید.</b>",
+            [
+                'inline_keyboard' => [
+                    [
+                        ['text' => '⬅️ برگشت', 'callback_data' => 'nav_start']
+                    ],
+                    [
+                        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+                    ],
+                ],
+            ]
+        );
+        return;
+    }
+
     if (in_array($step, ['asset_lookup_transfer_select', 'asset_lookup_labels_parent', 'asset_lookup_labels_child'], true)) {
         sendMessage(
             $token,
             $chatId,
             "ℹ️ <b>در حال انجام عملیات روی مال هستید.</b>\n\n"
-                . "برای ادامه، از دکمه‌های همین پیام استفاده کنید یا <code>/cancel</code> را بزنید."
+                . "برای ادامه، از دکمه‌های همین پیام استفاده کنید یا «لغو» را بزنید."
         );
         return;
     }
@@ -220,7 +263,8 @@ function handleMessage(string $token, array $message): void
             sendMessage(
                 $token,
                 $chatId,
-                "✍️ <b>نام مال خاص دریافت نشد.</b>\n\nلطفا نام مال خاص را به‌صورت یک پیام متنی ارسال کنید تا وارد مرحله بعد شویم."
+                "✍️ <b>نام مال خاص دریافت نشد.</b>\n\nلطفا نام مال خاص را به‌صورت یک پیام متنی ارسال کنید تا وارد مرحله بعد شویم.",
+                getCancelOnlyMarkup()
             );
             return;
         }
@@ -236,7 +280,8 @@ function handleMessage(string $token, array $message): void
         sendMessage(
             $token,
             $chatId,
-            "✅ <b>نام مال خاص با موفقیت ثبت شد.</b>\n\n🧾 عنوان ثبت‌شده: <b>{$safeName}</b>\n\n🔐 لطفا در پیام بعدی، <b>کد مال</b> را ارسال کنید."
+            "✅ <b>نام مال خاص با موفقیت ثبت شد.</b>\n\n🧾 عنوان ثبت‌شده: <b>{$safeName}</b>\n\n🔐 لطفا در پیام بعدی، <b>کد مال</b> را ارسال کنید.",
+            getCancelOnlyMarkup()
         );
         return;
     }
@@ -248,7 +293,8 @@ function handleMessage(string $token, array $message): void
             sendMessage(
                 $token,
                 $chatId,
-                "⚠️ <b>کد مال معتبر نیست.</b>\n\nلطفا یک کد معتبر و کوتاه برای مال ارسال کنید."
+                "⚠️ <b>کد مال معتبر نیست.</b>\n\nلطفا یک کد معتبر و کوتاه برای مال ارسال کنید.",
+                getCancelOnlyMarkup()
             );
             return;
         }
@@ -260,7 +306,8 @@ function handleMessage(string $token, array $message): void
             sendMessage(
                 $token,
                 $chatId,
-                "❌ <b>این کد قبلا ثبت شده است.</b>\n\nلطفا یک کد جدید و یکتا برای دارایی ارسال کنید."
+                "❌ <b>این کد قبلا ثبت شده است.</b>\n\nلطفا یک کد جدید و یکتا برای دارایی ارسال کنید.",
+                getCancelOnlyMarkup()
             );
             return;
         }
@@ -284,7 +331,8 @@ function handleMessage(string $token, array $message): void
         sendMessage(
             $token,
             $chatId,
-            "🏷️ <b>در حال انتخاب برچسب هستید.</b>\n\nلطفا فقط از دکمه‌های زیر همان پیام استفاده کنید، یا گزینه «⏭️ رد کردن برچسب‌ها» را بزنید."
+            "🏷️ <b>در حال انتخاب برچسب هستید.</b>\n\n"
+                . "لطفا فقط از دکمه‌های همان پیام استفاده کنید. می‌توانید «برگشت»، «رد کردن برچسب‌ها» یا «لغو» را بزنید."
         );
         return;
     }
@@ -365,6 +413,79 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         clearChatState($chatId);
     }
 
+    if ($data === 'menu_cancel') {
+        logEvent('callback_menu_cancel', ['chat_id' => $chatId]);
+        clearChatState($chatId);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "🛑 <b>عملیات لغو شد.</b>\n\nاز منوی اصلی می‌توانید دوباره شروع کنید.",
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
+    if ($data === 'nav_start') {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, getStartMenuText(), getStartMenuMarkup());
+        return;
+    }
+
+    if ($data === 'menu_lookup_asset') {
+        logEvent('callback_menu_lookup_asset', ['chat_id' => $chatId]);
+        setChatState($chatId, ['step' => 'awaiting_asset_lookup_code']);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "🔎 <b>جستجوی اموال</b>\n\nکد مال را به‌صورت پیام متنی یا تصویر ارسال کنید.",
+            getLookupPromptMarkup()
+        );
+        return;
+    }
+
+    if ($data === 'menu_list_assets') {
+        logEvent('callback_menu_list_assets', ['chat_id' => $chatId]);
+        setChatState($chatId, ['step' => 'listing_assets_choose_storage']);
+        sendAssetListStorageMenu($token, $chatId, $telegramUserId, $messageId);
+        return;
+    }
+
+    if ($data === 'nav_list_storage') {
+        setChatState($chatId, ['step' => 'listing_assets_choose_storage']);
+        sendAssetListStorageMenu($token, $chatId, $telegramUserId, $messageId);
+        return;
+    }
+
+    if ($data === 'nav_asset_type') {
+        setChatState($chatId, ['step' => 'choosing_type']);
+        sendAssetTypeMenu($token, $chatId, $messageId);
+        return;
+    }
+
+    if ($data === 'nav_ancestor_menu') {
+        $labels = loadLabels();
+        $ancestors = loadAncestors($labels);
+        if (!$ancestors) {
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "⚠️ <b>لیست اموال مرسوم خالی است</b>\n\nابتدا در پنل، اموال مرسوم را ثبت کنید.",
+                getStartMenuMarkup()
+            );
+            return;
+        }
+
+        setChatState($chatId, [
+            'step' => 'choosing_ancestor',
+            'asset_type' => 'common',
+        ]);
+        sendAncestorMenu($token, $chatId, $ancestors, $messageId);
+        return;
+    }
+
     if (strpos($data, 'a_t:') === 0) {
         $assetId = trim(substr($data, 4));
         startAssetTransferJourney($token, $chatId, $messageId, $telegramUserId, $assetId);
@@ -374,6 +495,11 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
     if (strpos($data, 'a_tt:') === 0) {
         $storageId = trim(substr($data, 5));
         completeAssetTransferJourney($token, $chatId, $messageId, $telegramUserId, $storageId);
+        return;
+    }
+
+    if ($data === 'a_tb') {
+        cancelAssetTransferJourney($token, $chatId, $messageId);
         return;
     }
 
@@ -405,9 +531,31 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         return;
     }
 
+    if ($data === 'al_x') {
+        cancelAssetLabelJourney($token, $chatId, $messageId);
+        return;
+    }
+
     if (strpos($data, 'a_d:') === 0) {
         $assetId = trim(substr($data, 4));
         startAssetDeleteJourney($token, $chatId, $messageId, $telegramUserId, $assetId);
+        return;
+    }
+
+    if (strpos($data, 'list_storage:') === 0) {
+        $storageId = trim(substr($data, strlen('list_storage:')));
+        $state = getChatState($chatId);
+        if ((string) ($state['step'] ?? '') !== 'listing_assets_choose_storage') {
+            sendOrEditMessage(
+                $token,
+                $chatId,
+                $messageId,
+                "ℹ️ <b>ابتدا از منوی اصلی، گزینه لیست اموال را انتخاب کنید.</b>",
+                getStartMenuMarkup()
+            );
+            return;
+        }
+        sendAssetListByStorage($token, $chatId, $telegramUserId, $messageId, $storageId);
         return;
     }
 
@@ -453,7 +601,16 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             $chatId,
             $messageId,
             "⭐ <b>ثبت مال خاص</b>\n\nلطفا نام مال خاص را در یک پیام متنی ارسال کنید تا مرحله بعد فعال شود.",
-            null
+            [
+                'inline_keyboard' => [
+                    [
+                        ['text' => '⬅️ برگشت', 'callback_data' => 'nav_asset_type']
+                    ],
+                    [
+                        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+                    ],
+                ],
+            ]
         );
         return;
     }
@@ -501,7 +658,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
                 $chatId,
                 $messageId,
                 "✅ <b>مال مرسوم انتخاب شد</b>\n\nنام انتخاب‌شده: <b>{$ancestorName}</b>\n\n✍️ لطفا حالا <b>کد مال</b> را در یک پیام متنی ارسال کنید.",
-                null
+                getCancelOnlyMarkup()
             );
         }
         return;
@@ -531,7 +688,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             $chatId,
             $messageId,
             "⏭️ <b>مرحله برچسب رد شد</b>\n\nخیلی خوب، بدون برچسب ادامه می‌دهیم.\n✍️ لطفا الان <b>کد مال</b> را ارسال کنید.",
-            null
+            getCancelOnlyMarkup()
         );
         return;
     }
@@ -642,7 +799,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
                     $chatId,
                     $messageId,
                     "✍️ <b>ابتدا کد مال را ارسال کنید</b>\n\nبعد از ثبت کد، انتخاب انبار فعال می‌شود.",
-                    null
+                    getCancelOnlyMarkup()
                 );
                 return;
             }
@@ -652,7 +809,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
                     $chatId,
                     $messageId,
                     "🏷️ <b>ابتدا مرحله برچسب‌ها را تکمیل کنید</b>\n\nیک برچسب انتخاب کنید یا گزینه رد کردن را بزنید.",
-                    null
+                    getCancelOnlyMarkup()
                 );
                 return;
             }
@@ -707,6 +864,12 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 function isAuthStep(string $step): bool
 {
     return in_array($step, ['awaiting_auth_identifier', 'awaiting_auth_pin', 'auth_blocked'], true);
+}
+
+function isCancelText(string $text): bool
+{
+    $normalized = strtolower(clean($text));
+    return in_array($normalized, ['/cancel', 'cancel', 'لغو', 'انصراف'], true);
 }
 
 function normalizeTelegramUserId(string $value): string
@@ -874,7 +1037,7 @@ function handleUnauthorizedMessage(
     string $text,
     array $state
 ): void {
-    if ($text === '/cancel') {
+    if (isCancelText($text)) {
         sendMessage(
             $token,
             $chatId,
@@ -1279,6 +1442,8 @@ function isAssetJourneyStep(string $step): bool
         'asset_lookup_labels_child',
         'asset_lookup_delete_pin',
         'asset_lookup_delete_note',
+        'awaiting_asset_lookup_code',
+        'listing_assets_choose_storage',
     ], true);
 }
 
@@ -1735,6 +1900,9 @@ function buildAssetActionMarkup(string $assetId): array
             [
                 ['text' => '🗑️ حذف', 'callback_data' => 'a_d:' . $assetId],
             ],
+            [
+                ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel'],
+            ],
         ],
     ];
 }
@@ -1927,6 +2095,113 @@ function loadStoragePermissionsMap(array $storages = []): array
     return $result;
 }
 
+function loadSpecialPermissionsMap(): array
+{
+    return readJsonMap(SPECIAL_PERMISSIONS_FILE);
+}
+
+function loadBoardMemberUserCodes(): array
+{
+    $permissions = loadSpecialPermissionsMap();
+    return uniqueNonEmptyStrings((array) ($permissions[SPECIAL_PERMISSION_BOARD_MEMBER] ?? []));
+}
+
+function resolveBoardMemberChatIds(): array
+{
+    $chatIds = [];
+    $seen = [];
+    foreach (loadBoardMemberUserCodes() as $userCode) {
+        $user = findAuthUserByCode($userCode);
+        if (!is_array($user)) {
+            logEvent('board_notify_user_missing', [
+                'user_code' => $userCode,
+                'reason' => 'user_not_found',
+            ]);
+            continue;
+        }
+
+        $telegramId = normalizeTelegramUserId((string) ($user['telegram_id'] ?? ''));
+        if ($telegramId === '') {
+            logEvent('board_notify_user_missing', [
+                'user_code' => $userCode,
+                'reason' => 'telegram_not_linked',
+            ]);
+            continue;
+        }
+
+        if (isset($seen[$telegramId])) {
+            continue;
+        }
+        $seen[$telegramId] = true;
+        $chatIds[] = $telegramId;
+    }
+    return $chatIds;
+}
+
+function notifyBoardMembers(string $token, string $text): void
+{
+    $chatIds = resolveBoardMemberChatIds();
+    if (!$chatIds) {
+        logEvent('board_notify_skipped', ['reason' => 'no_recipients']);
+        return;
+    }
+
+    foreach ($chatIds as $chatId) {
+        sendMessage($token, $chatId, $text);
+    }
+
+    logEvent('board_notify_sent', [
+        'recipient_count' => count($chatIds),
+        'text' => textSnippet($text, 180),
+    ]);
+}
+
+function buildBoardTransferNotificationText(
+    string $assetName,
+    string $assetCode,
+    string $fromStorageName,
+    string $toStorageName,
+    string $actor
+): string {
+    $safeAssetName = htmlEscape($assetName !== '' ? $assetName : 'نامشخص');
+    $safeAssetCode = htmlEscape($assetCode !== '' ? $assetCode : 'بدون کد');
+    $safeFromStorage = htmlEscape($fromStorageName !== '' ? $fromStorageName : 'نامشخص');
+    $safeToStorage = htmlEscape($toStorageName !== '' ? $toStorageName : 'نامشخص');
+    $safeActor = htmlEscape($actor !== '' ? $actor : 'کاربر نامشخص');
+    $safeTimestamp = htmlEscape(date('Y-m-d H:i:s'));
+
+    return "🔔 <b>گزارش انتقال مال</b>\n\n"
+        . "🧾 مال: <b>{$safeAssetName}</b>\n"
+        . "🔐 کد: <b>{$safeAssetCode}</b>\n"
+        . "🏬 از انبار: <b>{$safeFromStorage}</b>\n"
+        . "🏬 به انبار: <b>{$safeToStorage}</b>\n"
+        . "👤 توسط: <b>{$safeActor}</b>\n"
+        . "🕒 زمان: <b>{$safeTimestamp}</b>";
+}
+
+function buildBoardDeleteNotificationText(
+    string $assetName,
+    string $assetCode,
+    string $storageName,
+    string $actor,
+    string $deleteNote
+): string {
+    $safeAssetName = htmlEscape($assetName !== '' ? $assetName : 'نامشخص');
+    $safeAssetCode = htmlEscape($assetCode !== '' ? $assetCode : 'بدون کد');
+    $safeStorage = htmlEscape($storageName !== '' ? $storageName : 'نامشخص');
+    $safeActor = htmlEscape($actor !== '' ? $actor : 'کاربر نامشخص');
+    $safeNote = htmlEscape($deleteNote !== '' ? $deleteNote : '-');
+    $safeTimestamp = htmlEscape(date('Y-m-d H:i:s'));
+
+    return "🚨 <b>گزارش حذف مال</b>\n\n"
+        . "🧾 مال: <b>{$safeAssetName}</b>\n"
+        . "🔐 کد: <b>{$safeAssetCode}</b>\n"
+        . "🏬 انبار: <b>{$safeStorage}</b>\n"
+        . "👤 توسط: <b>{$safeActor}</b>\n"
+        . "📝 توضیحات حذف: <b>{$safeNote}</b>\n"
+        . "🕒 زمان: <b>{$safeTimestamp}</b>";
+}
+
 function userHasStoragePermission(string $telegramUserId, string $storageId, ?array $permissions = null): bool
 {
     $targetStorageId = trim($storageId);
@@ -1972,6 +2247,206 @@ function filterStoragesByPermission(string $telegramUserId, array $storages, ?ar
     return $result;
 }
 
+function sendAssetListStorageMenu(
+    string $token,
+    string $chatId,
+    string $telegramUserId,
+    ?string $messageId = null
+): void {
+    $storages = loadStorages();
+    if (!$storages) {
+        clearChatState($chatId);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>انباری برای نمایش لیست پیدا نشد.</b>\n\nابتدا انبارها را در پنل تعریف کنید.",
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
+    $permissions = loadStoragePermissionsMap($storages);
+    $allowedStorages = filterStoragesByPermission($telegramUserId, $storages, $permissions);
+    if (!$allowedStorages) {
+        clearChatState($chatId);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⛔️ <b>دسترسی کافی ندارید.</b>\n\nبرای شما انبار مجازی تعریف نشده است.",
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
+    $rows = [];
+    foreach ($allowedStorages as $storage) {
+        if (!is_array($storage)) {
+            continue;
+        }
+        $storageId = trim((string) ($storage['id'] ?? ''));
+        $storageName = clean((string) ($storage['name'] ?? ''));
+        if ($storageId === '' || $storageName === '') {
+            continue;
+        }
+        $rows[] = [
+            ['text' => '🏬 ' . $storageName, 'callback_data' => 'list_storage:' . $storageId]
+        ];
+    }
+
+    if (!$rows) {
+        clearChatState($chatId);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⛔️ <b>دسترسی کافی ندارید.</b>\n\nبرای شما انبار مجازی تعریف نشده است.",
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
+    $rows[] = [
+        ['text' => '⬅️ برگشت', 'callback_data' => 'nav_start']
+    ];
+    $rows[] = [
+        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+    ];
+
+    sendOrEditMessage(
+        $token,
+        $chatId,
+        $messageId,
+        "📋 <b>لیست اموال</b>\n\nانبار موردنظر را انتخاب کنید.",
+        ['inline_keyboard' => $rows]
+    );
+}
+
+function sendAssetListByStorage(
+    string $token,
+    string $chatId,
+    string $telegramUserId,
+    string $messageId,
+    string $storageId
+): void {
+    $targetStorageId = trim($storageId);
+    if ($targetStorageId === '') {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>انبار انتخاب‌شده معتبر نیست.</b>",
+            [
+                'inline_keyboard' => [
+                    [
+                        ['text' => '⬅️ برگشت', 'callback_data' => 'nav_list_storage']
+                    ],
+                    [
+                        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+                    ],
+                ],
+            ]
+        );
+        return;
+    }
+
+    $storages = loadStorages();
+    $permissions = loadStoragePermissionsMap($storages);
+    $allowedStorages = filterStoragesByPermission($telegramUserId, $storages, $permissions);
+    $allowedStorage = findById($allowedStorages, $targetStorageId);
+    if (!is_array($allowedStorage)) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⛔️ <b>شما به این انبار دسترسی ندارید.</b>",
+            [
+                'inline_keyboard' => [
+                    [
+                        ['text' => '⬅️ برگشت', 'callback_data' => 'nav_list_storage']
+                    ],
+                    [
+                        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+                    ],
+                ],
+            ]
+        );
+        return;
+    }
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $assets = loadAssets($ancestors, $labels);
+
+    $lines = [];
+    foreach ($assets as $asset) {
+        if (!is_array($asset)) {
+            continue;
+        }
+        if (trim((string) ($asset['storage_id'] ?? '')) !== $targetStorageId) {
+            continue;
+        }
+
+        $name = clean(assetDisplayName($asset, $ancestors));
+        $code = clean((string) ($asset['code'] ?? ''));
+        if ($name === '' && $code === '') {
+            continue;
+        }
+        if ($name === '') {
+            $name = 'نامشخص';
+        }
+        if ($code === '') {
+            $code = 'بدون کد';
+        }
+        $lines[] = htmlEscape($name) . ' - ' . htmlEscape($code);
+    }
+
+    $storageName = htmlEscape(clean((string) ($allowedStorage['name'] ?? '')));
+    if ($storageName === '') {
+        $storageName = 'نامشخص';
+    }
+
+    if (!$lines) {
+        $text = "📋 <b>لیست اموال انبار {$storageName}</b>\n\nموردی یافت نشد.";
+    } else {
+        $header = "📋 <b>لیست اموال انبار {$storageName}</b>\n\n";
+        $maxLength = 3500;
+        $buffer = '';
+        $shown = 0;
+        foreach ($lines as $line) {
+            $candidate = $buffer === '' ? $line : ($buffer . "\n" . $line);
+            if (strlen($header . $candidate) > $maxLength) {
+                break;
+            }
+            $buffer = $candidate;
+            $shown++;
+        }
+        $text = $header . $buffer;
+        $truncated = $shown < count($lines);
+        if ($truncated) {
+            $text .= "\n\n…";
+        }
+    }
+
+    sendOrEditMessage(
+        $token,
+        $chatId,
+        $messageId,
+        $text,
+        [
+            'inline_keyboard' => [
+                [
+                    ['text' => '⬅️ برگشت', 'callback_data' => 'nav_list_storage']
+                ],
+                [
+                    ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+                ],
+            ],
+        ]
+    );
+}
+
 function buildTransferStorageMarkup(array $storages): array
 {
     $rows = [];
@@ -1988,6 +2463,12 @@ function buildTransferStorageMarkup(array $storages): array
             ['text' => '🏬 ' . $storageName, 'callback_data' => 'a_tt:' . $storageId],
         ];
     }
+    $rows[] = [
+        ['text' => '⬅️ برگشت', 'callback_data' => 'a_tb'],
+    ];
+    $rows[] = [
+        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel'],
+    ];
     return ['inline_keyboard' => $rows];
 }
 
@@ -2141,6 +2622,16 @@ function completeAssetTransferJourney(
             'to_storage_id' => $storageId,
         ]
     );
+    notifyBoardMembers(
+        $token,
+        buildBoardTransferNotificationText(
+            $assetName,
+            $assetCode,
+            $fromStorageName,
+            $toStorageName,
+            $actor
+        )
+    );
 
     clearChatState($chatId);
     sendAssetLookupCard(
@@ -2154,6 +2645,46 @@ function completeAssetTransferJourney(
         "✅ <b>انتقال مال با موفقیت انجام شد.</b>"
     );
 }
+
+function cancelAssetTransferJourney(string $token, string $chatId, string $messageId): void
+{
+    $state = getChatState($chatId);
+    if ((string) ($state['step'] ?? '') !== 'asset_lookup_transfer_select') {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>انتقال فعالی برای لغو وجود ندارد.</b>", null);
+        return;
+    }
+
+    $assetId = trim((string) ($state['asset_action_asset_id'] ?? ''));
+    if ($assetId === '') {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>انتقال لغو شد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
+    $assets = loadAssets($ancestors, $labels);
+    $asset = findById($assets, $assetId);
+
+    clearChatState($chatId);
+    if (!is_array($asset)) {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>انتقال لغو شد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    sendAssetLookupCard(
+        $token,
+        $chatId,
+        $asset,
+        $storages,
+        $ancestors,
+        $labels,
+        $messageId,
+        "ℹ️ <b>عملیات انتقال لغو شد.</b>"
+    );
+}
+
 function startAssetLabelJourney(string $token, string $chatId, string $messageId, string $telegramUserId, string $assetId): void
 {
     $labels = loadLabels();
@@ -2259,6 +2790,8 @@ function renderAssetLabelParentMenu(
         $rows[] = [['text' => $buttonText, 'callback_data' => 'al_p:' . (string) $parentId]];
     }
     $rows[] = [['text' => '✅ ثبت تغییرات برچسب ها', 'callback_data' => 'al_d']];
+    $rows[] = [['text' => '⬅️ برگشت', 'callback_data' => 'al_x']];
+    $rows[] = [['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']];
 
     $assetName = htmlEscape(assetDisplayName($asset, $ancestors));
     $assetCode = htmlEscape(clean((string) ($asset['code'] ?? '')));
@@ -2281,11 +2814,27 @@ function renderAssetLabelChildMenu(
 ): void {
     $parent = findById($labels, $parentId);
     if (!is_array($parent)) {
-        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>برچسب والد معتبر نیست.</b>", null);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>برچسب والد معتبر نیست.</b>",
+            [
+                'inline_keyboard' => [
+                    [
+                        ['text' => '⬅️ برگشت', 'callback_data' => 'al_b']
+                    ],
+                    [
+                        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+                    ],
+                ],
+            ]
+        );
         return;
     }
 
     $rows = [];
+    $hasChildren = false;
     foreach ($labels as $label) {
         if (!is_array($label)) {
             continue;
@@ -2295,15 +2844,17 @@ function renderAssetLabelChildMenu(
         if ($id === '' || $name === '' || trim((string) ($label['parent_id'] ?? '')) !== $parentId) {
             continue;
         }
+        $hasChildren = true;
         $rows[] = [['text' => '🔸 ' . $name, 'callback_data' => 'al_c:' . $id]];
     }
-    $rows[] = [['text' => '⬅️ بازگشت', 'callback_data' => 'al_b']];
+    $rows[] = [['text' => '⬅️ برگشت', 'callback_data' => 'al_b']];
+    $rows[] = [['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']];
 
     $parentName = htmlEscape(clean((string) ($parent['name'] ?? '')));
     $text = "🧩 <b>انتخاب زیر‌برچسب</b>\n\n"
         . "والد: <b>{$parentName}</b>\n"
         . "لطفا یک زیر‌برچسب را انتخاب کنید.";
-    if (count($rows) === 1) {
+    if (!$hasChildren) {
         $text .= "\n\n⚠️ برای این والد زیر‌برچسبی ثبت نشده است.";
     }
     sendOrEditMessage($token, $chatId, $messageId, $text, ['inline_keyboard' => $rows]);
@@ -2393,6 +2944,46 @@ function handleAssetLabelBackCallback(string $token, string $chatId, string $mes
     }
 
     renderAssetLabelParentMenu($token, $chatId, $messageId, $state, $asset, $labels, $ancestors);
+}
+
+function cancelAssetLabelJourney(string $token, string $chatId, string $messageId): void
+{
+    $state = getChatState($chatId);
+    $step = (string) ($state['step'] ?? '');
+    if (!in_array($step, ['asset_lookup_labels_parent', 'asset_lookup_labels_child'], true)) {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>ویرایش برچسب فعالی برای لغو وجود ندارد.</b>", null);
+        return;
+    }
+
+    $assetId = trim((string) ($state['asset_action_asset_id'] ?? ''));
+    if ($assetId === '') {
+        clearChatState($chatId);
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>ویرایش برچسب لغو شد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
+    $assets = loadAssets($ancestors, $labels);
+    $asset = findById($assets, $assetId);
+
+    clearChatState($chatId);
+    if (!is_array($asset)) {
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>ویرایش برچسب لغو شد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    sendAssetLookupCard(
+        $token,
+        $chatId,
+        $asset,
+        $storages,
+        $ancestors,
+        $labels,
+        $messageId,
+        "ℹ️ <b>ویرایش برچسب لغو شد.</b>"
+    );
 }
 
 function finalizeAssetLabelJourney(string $token, string $chatId, string $messageId, string $telegramUserId): void
@@ -2530,7 +3121,7 @@ function startAssetDeleteJourney(string $token, string $chatId, string $messageI
         . "🧾 مال: <b>{$assetName}</b>\n"
         . "🔐 کد: <b>{$assetCode}</b>\n\n"
         . "برای ادامه حذف، لطفا <b>پین‌کد ۴ رقمی</b> خود را به‌صورت پیام متنی ارسال کنید.";
-    sendOrEditMessage($token, $chatId, $messageId, $text, null);
+    sendOrEditMessage($token, $chatId, $messageId, $text, getCancelOnlyMarkup());
 }
 function handleDeleteAssetPinStep(
     string $token,
@@ -2544,7 +3135,8 @@ function handleDeleteAssetPinStep(
         sendMessage(
             $token,
             $chatId,
-            "⚠️ <b>پین‌کد معتبر نیست.</b>\n\nلطفا پین‌کد را به‌صورت دقیق و ۴ رقمی ارسال کنید."
+            "⚠️ <b>پین‌کد معتبر نیست.</b>\n\nلطفا پین‌کد را به‌صورت دقیق و ۴ رقمی ارسال کنید.",
+            getCancelOnlyMarkup()
         );
         return;
     }
@@ -2580,7 +3172,8 @@ function handleDeleteAssetPinStep(
             $token,
             $chatId,
             "❌ <b>پین‌کد اشتباه است.</b>\n\n"
-                . "تعداد تلاش باقی‌مانده: <b>{$remaining}</b>"
+                . "تعداد تلاش باقی‌مانده: <b>{$remaining}</b>",
+            getCancelOnlyMarkup()
         );
         return;
     }
@@ -2591,7 +3184,8 @@ function handleDeleteAssetPinStep(
     sendMessage(
         $token,
         $chatId,
-        "✍️ <b>توضیحات حذف مال</b>\n\nلطفا دلیل یا توضیح حذف این مال را در یک پیام متنی ارسال کنید."
+        "✍️ <b>توضیحات حذف مال</b>\n\nلطفا دلیل یا توضیح حذف این مال را در یک پیام متنی ارسال کنید.",
+        getCancelOnlyMarkup()
     );
 }
 
@@ -2607,7 +3201,8 @@ function handleDeleteAssetNoteStep(
         sendMessage(
             $token,
             $chatId,
-            "⚠️ <b>توضیحات حذف نمی‌تواند خالی باشد.</b>\n\nلطفا متن توضیح را ارسال کنید."
+            "⚠️ <b>توضیحات حذف نمی‌تواند خالی باشد.</b>\n\nلطفا متن توضیح را ارسال کنید.",
+            getCancelOnlyMarkup()
         );
         return;
     }
@@ -2649,6 +3244,7 @@ function handleDeleteAssetNoteStep(
     $actor = getAuthorizedActorName($telegramUserId);
     $assetName = assetDisplayName($asset, $ancestors);
     $assetCode = clean((string) ($asset['code'] ?? ''));
+    $storageName = storageNameById($storages, $assetStorageId) ?: 'نامشخص';
     appendAssetManagerLog(
         'asset_removed',
         sprintf(
@@ -2664,6 +3260,16 @@ function handleDeleteAssetNoteStep(
             'actor' => $actor,
             'delete_note' => $note,
         ]
+    );
+    notifyBoardMembers(
+        $token,
+        buildBoardDeleteNotificationText(
+            $assetName,
+            $assetCode,
+            $storageName,
+            $actor,
+            $note
+        )
     );
 
     clearChatState($chatId);
@@ -2764,8 +3370,46 @@ function getStartMenuMarkup(): array
     return [
         'inline_keyboard' => [
             [
-                ['text' => '➕ اضافه کردن اموال', 'callback_data' => 'menu_add_asset']
-            ]
+                ['text' => '➕ افزودن اموال', 'callback_data' => 'menu_add_asset']
+            ],
+            [
+                ['text' => '🔎 جستجوی اموال', 'callback_data' => 'menu_lookup_asset']
+            ],
+            [
+                ['text' => '📋 لیست اموال', 'callback_data' => 'menu_list_assets']
+            ],
+        ]
+    ];
+}
+
+function getStartMenuText(): string
+{
+    return "📦 <b>مدیریت اموال</b>\n\n"
+        . "یک گزینه را انتخاب کنید.\n"
+        . "می‌توانید مال اضافه کنید، مال جستجو کنید یا لیست اموال هر انبار را ببینید.";
+}
+
+function getLookupPromptMarkup(): array
+{
+    return [
+        'inline_keyboard' => [
+            [
+                ['text' => '⬅️ برگشت', 'callback_data' => 'nav_start']
+            ],
+            [
+                ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+            ],
+        ]
+    ];
+}
+
+function getCancelOnlyMarkup(): array
+{
+    return [
+        'inline_keyboard' => [
+            [
+                ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+            ],
         ]
     ];
 }
@@ -2775,7 +3419,7 @@ function sendStartMenu(string $token, string $chatId): void
     sendMessage(
         $token,
         $chatId,
-        "📦 <b>شروع انبار گردانی</b>\n\nبه ربات مدیریت اموال خوش آمدید.\nبرای ثبت یک دارایی جدید، از دکمه زیر استفاده کنید.",
+        getStartMenuText(),
         getStartMenuMarkup()
     );
 }
@@ -2789,6 +3433,12 @@ function sendAssetTypeMenu(string $token, string $chatId, ?string $messageId = n
             ],
             [
                 ['text' => '⭐ اموال خاص', 'callback_data' => 'asset_type_special']
+            ],
+            [
+                ['text' => '⬅️ برگشت', 'callback_data' => 'nav_start']
+            ],
+            [
+                ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
             ]
         ]
     ];
@@ -2826,6 +3476,13 @@ function sendAncestorMenu(string $token, string $chatId, array $ancestors, ?stri
         );
         return;
     }
+
+    $rows[] = [
+        ['text' => '⬅️ برگشت', 'callback_data' => 'nav_asset_type']
+    ];
+    $rows[] = [
+        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+    ];
 
     sendOrEditMessage(
         $token,
@@ -2878,6 +3535,16 @@ function sendStorageMenu(
         return;
     }
 
+    $state = getChatState($chatId);
+    $assetType = trim((string) ($state['asset_type'] ?? ''));
+    $backCallback = $assetType === 'common' ? 'nav_ancestor_menu' : 'nav_asset_type';
+    $rows[] = [
+        ['text' => '⬅️ برگشت', 'callback_data' => $backCallback]
+    ];
+    $rows[] = [
+        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+    ];
+
     $text = $customText !== null
         ? $customText
         : "🏬 <b>انتخاب انبار</b>\n\nلطفا انبار مقصد این دارایی را انتخاب کنید تا ثبت نهایی انجام شود.";
@@ -2906,7 +3573,7 @@ function sendParentLabelMenu(
             $chatId,
             $messageId,
             "ℹ️ <b>برای این مال، برچسبی تعریف نشده است.</b>\n\nلطفا حالا <b>کد مال</b> را در یک پیام متنی ارسال کنید.",
-            null
+            getCancelOnlyMarkup()
         );
         return;
     }
@@ -2942,6 +3609,12 @@ function sendParentLabelMenu(
 
     $rows[] = [
         ['text' => '⏭️ رد کردن برچسب‌ها', 'callback_data' => 'label_skip']
+    ];
+    $rows[] = [
+        ['text' => '⬅️ برگشت', 'callback_data' => 'nav_ancestor_menu']
+    ];
+    $rows[] = [
+        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
     ];
 
     $resolvedAncestorName = $ancestorName !== null
@@ -2986,8 +3659,11 @@ function sendChildLabelMenu(
             [
                 'inline_keyboard' => [
                     [
-                        ['text' => '⬅️ بازگشت به والدها', 'callback_data' => 'label_back_parents']
-                    ]
+                        ['text' => '⬅️ برگشت', 'callback_data' => 'label_back_parents']
+                    ],
+                    [
+                        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
+                    ],
                 ]
             ]
         );
@@ -2995,6 +3671,7 @@ function sendChildLabelMenu(
     }
 
     $rows = [];
+    $hasChildren = false;
     foreach ($labels as $label) {
         if (!is_array($label)) {
             continue;
@@ -3005,13 +3682,17 @@ function sendChildLabelMenu(
         if ($id === '' || $name === '' || $labelParentId !== $parentId) {
             continue;
         }
+        $hasChildren = true;
         $rows[] = [
             ['text' => '🔸 ' . $name, 'callback_data' => 'label_child:' . $parentId . ':' . $id]
         ];
     }
 
     $rows[] = [
-        ['text' => '⬅️ بازگشت به والدها', 'callback_data' => 'label_back_parents']
+        ['text' => '⬅️ برگشت', 'callback_data' => 'label_back_parents']
+    ];
+    $rows[] = [
+        ['text' => '🛑 لغو', 'callback_data' => 'menu_cancel']
     ];
 
     $parentName = htmlEscape(clean((string) ($parent['name'] ?? '')));
@@ -3019,7 +3700,7 @@ function sendChildLabelMenu(
         . "🏷️ برچسب والد: <b>{$parentName}</b>\n"
         . "لطفا یکی از زیر‌برچسب‌های این گروه را انتخاب کنید.";
 
-    if (count($rows) === 1) {
+    if (!$hasChildren) {
         sendOrEditMessage(
             $token,
             $chatId,
@@ -3317,6 +3998,7 @@ function ensureAssetDataFiles(): void
     ensureFileInitialized(ANCESTOR_ASSETS_FILE, legacyPathCandidates('ancestor_assets.json'));
     ensureFileInitialized(LABELS_FILE, legacyPathCandidates('labels.json'));
     ensureObjectFileInitialized(STORAGE_PERMISSIONS_FILE);
+    ensureObjectFileInitialized(SPECIAL_PERMISSIONS_FILE);
 }
 
 function legacyPathCandidates(string $filename): array

@@ -13,9 +13,11 @@ const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
 const LABELS_FILE = DATA_DIR . '/labels.json';
 const STORAGE_PERMISSIONS_FILE = DATA_DIR . '/storage_permissions.json';
+const SPECIAL_PERMISSIONS_FILE = DATA_DIR . '/special_permissions.json';
 const API_CONFIG_FILE = __DIR__ . '/../../api/config.php';
 const API_COMMON_FILE = __DIR__ . '/../../api/lib/common.php';
 const API_USERS_FILE = __DIR__ . '/../../api/lib/users.php';
+const SPECIAL_PERMISSION_BOARD_MEMBER = 'board_member';
 const STORAGE_KIND_BRANCH = 'branch';
 const STORAGE_KIND_PERSON = 'person';
 const STORAGE_KIND_REPAIR_SHOP = 'repair_shop';
@@ -77,6 +79,7 @@ function ensureDataDir(): void
     ensureFileInitialized(ANCESTOR_ASSETS_FILE, legacyPathCandidates('ancestor_assets.json'));
     ensureFileInitialized(LABELS_FILE, legacyPathCandidates('labels.json'));
     ensureObjectFileInitialized(STORAGE_PERMISSIONS_FILE);
+    ensureObjectFileInitialized(SPECIAL_PERMISSIONS_FILE);
 }
 
 function clean(string $value): string
@@ -570,6 +573,47 @@ function writeStoragePermissions(array $permissions): bool
 {
     return writeMap(STORAGE_PERMISSIONS_FILE, $permissions);
 }
+
+function loadSpecialPermissions(array $users = []): array
+{
+    $validUserCodes = [];
+    foreach ($users as $user) {
+        $userCode = clean((string)($user['code'] ?? ''));
+        if ($userCode !== '') {
+            $validUserCodes[$userCode] = true;
+        }
+    }
+
+    $raw = readMap(SPECIAL_PERMISSIONS_FILE);
+    $boardMembers = uniqueNonEmptyStrings((array)($raw[SPECIAL_PERMISSION_BOARD_MEMBER] ?? []));
+    if ($validUserCodes) {
+        $boardMembers = array_values(array_filter($boardMembers, function (string $userCode) use ($validUserCodes): bool {
+            return isset($validUserCodes[$userCode]);
+        }));
+    }
+
+    return [
+        SPECIAL_PERMISSION_BOARD_MEMBER => $boardMembers
+    ];
+}
+
+function writeSpecialPermissions(array $permissions): bool
+{
+    $normalized = [];
+    foreach ($permissions as $permissionKey => $userCodes) {
+        $key = clean((string)$permissionKey);
+        if ($key === '') {
+            continue;
+        }
+        $normalized[$key] = uniqueNonEmptyStrings(is_array($userCodes) ? $userCodes : []);
+    }
+
+    if (!isset($normalized[SPECIAL_PERMISSION_BOARD_MEMBER])) {
+        $normalized[SPECIAL_PERMISSION_BOARD_MEMBER] = [];
+    }
+
+    return writeMap(SPECIAL_PERMISSIONS_FILE, $normalized);
+}
 function assetNameForLog(array $asset): string
 {
     $name = clean((string)($asset['name'] ?? ''));
@@ -839,6 +883,7 @@ function okData(array $storages, array $labels, array $ancestors, array $assets)
 {
     $users = loadSystemUsersForPermissions();
     $storagePermissions = loadStoragePermissions($storages, $users);
+    $specialPermissions = loadSpecialPermissions($users);
     return [
         'status' => 'ok',
         'storages' => array_values($storages),
@@ -846,7 +891,8 @@ function okData(array $storages, array $labels, array $ancestors, array $assets)
         'ancestors' => array_values($ancestors),
         'assets' => array_values($assets),
         'users' => array_values($users),
-        'storage_permissions' => $storagePermissions
+        'storage_permissions' => $storagePermissions,
+        'special_permissions' => $specialPermissions
     ];
 }
 
@@ -1011,6 +1057,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $permissions[$userCode] = $storageIds;
         if (!writeStoragePermissions($permissions)) {
             out(['status' => 'error', 'message' => 'Unable to save storage permissions.'], 500);
+        }
+
+        if (array_key_exists('board_member', $_POST)) {
+            $specialPermissions = loadSpecialPermissions($usersForPermissions);
+            $boardMemberCodes = uniqueNonEmptyStrings((array)($specialPermissions[SPECIAL_PERMISSION_BOARD_MEMBER] ?? []));
+            $isBoardMember = parseBool($_POST['board_member'] ?? false);
+            if ($isBoardMember) {
+                if (!in_array($userCode, $boardMemberCodes, true)) {
+                    $boardMemberCodes[] = $userCode;
+                }
+            } else {
+                $boardMemberCodes = array_values(array_filter($boardMemberCodes, function (string $code) use ($userCode): bool {
+                    return $code !== $userCode;
+                }));
+            }
+            $specialPermissions[SPECIAL_PERMISSION_BOARD_MEMBER] = $boardMemberCodes;
+            if (!writeSpecialPermissions($specialPermissions)) {
+                out(['status' => 'error', 'message' => 'Unable to save special permissions.'], 500);
+            }
         }
 
         out(okData($storages, $labels, $ancestors, $assets));

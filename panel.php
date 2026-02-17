@@ -832,6 +832,7 @@ $accountEmail = $currentUser['email'] ?? '';
                         <tr>
                           <th>کاربر</th>
                           <th>انبارهای مجاز</th>
+                          <th>هیات مدیره</th>
                         </tr>
                       </thead>
                       <tbody id="pm-permissions-body"></tbody>
