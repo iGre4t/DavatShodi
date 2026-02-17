@@ -190,7 +190,6 @@
       </div>
     </div>
   </div>
-</section>
 
 <div id="modals-preview-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modals-preview-modal-title">
   <div class="modal-card default-modal-card">
@@ -211,3 +210,4 @@
     </div>
   </div>
 </div>
+</section>

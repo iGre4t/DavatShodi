@@ -12,7 +12,7 @@ if (!empty($_SESSION['authenticated'])) {
 
 $dbConfig = loadConfig($configFile);
 $pdo = connectDatabase($dbConfig);
-$connectionError = $pdo ? null : 'Ø§ØªØµØ§Ù„ Ø¨Ù‡ Ù¾Ø§ÛŒÚ¯Ø§Ù‡ Ø¯Ø§Ø¯Ù‡ Ø¨Ø±Ù‚Ø±Ø§Ø± Ù†Ø´Ø¯.';
+$connectionError = $pdo ? null : 'اتصال به پایگاه داده برقرار نشد.';
 $siteIconUrl = resolveSiteIconForLogin($dbConfig, $pdo);
 
 if (!$connectionError && $pdo && !isInstallComplete()) {
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $password = trim($_POST['password'] ?? '');
 
   if ($username === '' || $password === '') {
-    $errors[] = 'Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ Ùˆ Ø±Ù…Ø² Ø¹Ø¨ÙˆØ± Ø§Ù„Ø²Ø§Ù…ÛŒ Ø§Ø³Øª.';
+    $errors[] = 'نام کاربری و رمز عبور الزامی است.';
   } else {
     if (!$connectionError && $pdo) {
       try {
@@ -59,11 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           exit;
         }
       } catch (PDOException $exception) {
-        $connectionError = 'Ø§Ø¬Ø±Ø§ÛŒ Ù¾Ø±Ø³ ÙˆØ¬ÙˆÛŒ Ù¾Ø§ÛŒÚ¯Ø§Ù‡ Ø¯Ø§Ø¯Ù‡ Ù†Ø§Ù…ÙˆÙÙ‚ Ø¨ÙˆØ¯.';
+        $connectionError = 'اجرای پرس وجوی پایگاه داده ناموفق بود.';
       }
     }
 
-    $errors[] = $connectionError ?? 'Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ ÛŒØ§ Ø±Ù…Ø² Ø¹Ø¨ÙˆØ± Ù†Ø§Ø¯Ø±Ø³Øª Ø§Ø³Øª.';
+    $errors[] = $connectionError ?? 'نام کاربری یا رمز عبور نادرست است.';
   }
 }
 
@@ -84,7 +84,7 @@ function buildUserDisplayName(array $user = []): string
     }
     return $value;
   }
-  return 'Ù…Ø¯ÛŒØ±';
+  return 'مدیر';
 }
 
 function loadJsonPayload(string $path): array
@@ -106,7 +106,7 @@ function formatSiteIconUrlForHtml(string $value = ''): string
   if ($trimmed === '') {
     return '';
   }
-  if (preg_match('/^(?:data:|https?:\\/\\/|\\/\\/)/i', $trimmed)) {
+  if (preg_match('/^(?:data:|https?:\/\/|\/\/)/i', $trimmed)) {
     return $trimmed;
   }
   if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
@@ -136,7 +136,7 @@ function resolveSiteIconForLogin(array $dbConfig, ?PDO $pdo): string
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ÙˆØ±ÙˆØ¯ Ø¨Ù‡ Ù¾Ù†Ù„ Ù…Ø¯ÛŒØ±ÛŒØª</title>
+    <title>ورود به پنل مدیریت</title>
     <link rel="icon" id="site-icon-link" href="<?= escape($siteIconUrl !== '' ? $siteIconUrl : 'data:,') ?>" />
     <script src="General%20Setting/general-settings.js"></script>
     <script src="style/appearance.js"></script>
@@ -260,7 +260,6 @@ function resolveSiteIconForLogin(array $dbConfig, ?PDO $pdo): string
       .login-form button:hover {
         background: var(--primary-600);
       }
-
     </style>
   </head>
   <body class="login-body">
@@ -268,13 +267,13 @@ function resolveSiteIconForLogin(array $dbConfig, ?PDO $pdo): string
       <section class="login-card">
         <div class="brand-logo<?= $siteIconUrl !== '' ? ' has-site-icon' : '' ?>">
           <?php if ($siteIconUrl !== ''): ?>
-            <img src="<?= escape($siteIconUrl) ?>" alt="Ø¢ÛŒÚ©ÙˆÙ† Ø³Ø§ÛŒØª" />
+            <img src="<?= escape($siteIconUrl) ?>" alt="آیکون سایت" />
           <?php else: ?>
             GN
           <?php endif; ?>
         </div>
-        <h1 class="brand-title">ÙˆØ±ÙˆØ¯ Ø¨Ù‡ Ù¾Ù†Ù„ Ù…Ø¯ÛŒØ±ÛŒØª</h1>
-        <p class="brand-subtitle">Ø¨Ø±Ø§ÛŒ Ø§Ø¯Ø§Ù…Ù‡ ÙˆØ§Ø±Ø¯ Ø­Ø³Ø§Ø¨ Ú©Ø§Ø±Ø¨Ø±ÛŒ Ø®ÙˆØ¯ Ø´ÙˆÛŒØ¯</p>
+        <h1 class="brand-title">ورود به پنل مدیریت</h1>
+        <p class="brand-subtitle">برای ادامه وارد حساب کاربری خود شوید</p>
         <?php if ($errors): ?>
           <div class="alert" role="alert" aria-live="assertive">
             <ul>
@@ -286,17 +285,16 @@ function resolveSiteIconForLogin(array $dbConfig, ?PDO $pdo): string
         <?php endif; ?>
         <form method="post" class="login-form" novalidate>
           <label class="field">
-            <span>Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ</span>
-            <input name="username" type="text" placeholder="Ù…Ø«Ø§Ù„: admin" value="<?= escape($username) ?>" autofocus required />
+            <span>نام کاربری</span>
+            <input name="username" type="text" placeholder="مثال: admin" value="<?= escape($username) ?>" autofocus required />
           </label>
           <label class="field">
-            <span>Ø±Ù…Ø² Ø¹Ø¨ÙˆØ±</span>
+            <span>رمز عبور</span>
             <input name="password" type="password" placeholder="رمز عبور" required />
           </label>
-          <button type="submit">ÙˆØ±ÙˆØ¯</button>
+          <button type="submit">ورود</button>
         </form>
       </section>
     </main>
   </body>
 </html>
-

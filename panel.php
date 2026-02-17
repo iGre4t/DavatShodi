@@ -230,33 +230,11 @@ $accountEmail = $currentUser['email'] ?? '';
           </div>
         </section>
 
-        <!-- User Settings tab renders the grid/table managed by app.js; user-related modals post to api/data.php so the backend can enforce phone/email uniqueness and persist to both JSON store and the optional DB. -->
-        <section id="tab-users" class="tab">
-          <div class="card">
-            <div class="table-header">
-              <h3>کاربران</h3>
-              <!-- JS binds #add-user to open the management modal in add mode. -->
-              <button class="btn primary" id="add-user">افزودن کاربر</button>
-            </div>
-            <div class="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>کد یکتای کاربر</th>
-                    <th>نام کامل</th>
-                    <th>شماره تلفن</th>
-                    <th>کد پرسنلی</th>
-                    <th>کد ملی</th>
-                    <th>ایمیل</th>
-                    <th>عملیات</th>
-                  </tr>
-                </thead>
-                <!-- Rows are injected by app.js -> renderUsers(), keeping USER_DB as the source of truth. -->
-                <tbody id="users-body"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+        <section
+          id="tab-users"
+          class="tab"
+          data-tab-source="users.php"
+        ></section>
 
         <!-- Account Settings tab is intentionally stable; the three forms below hook into API actions (update_user_personal, update_user_account, update_user_password) handled in api/data.php. -->
         <section id="tab-settings" class="tab">

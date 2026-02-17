@@ -4562,9 +4562,14 @@ function resetDomNodeById(id) {
 }
 
 function runExternalTabInitializers(tab) {
+  if (tab === "users") {
+    initUsersTabControls();
+    return;
+  }
   if (tab === "features") {
     initSubSidebars();
     initModalsPreviewModalControls();
+    initFeatureNotificationTestControls();
     initCodeEditorControls();
     return;
   }
@@ -5040,6 +5045,15 @@ function renderUsers() {
   });
 }
 
+function initUsersTabControls() {
+  const addUserButton = qs('#add-user');
+  if (addUserButton && addUserButton.dataset.usersBound !== '1') {
+    addUserButton.dataset.usersBound = '1';
+    addUserButton.addEventListener('click', () => openUserModal());
+  }
+  renderUsers();
+}
+
 function openPermissionsModal(user) {
   const modal = qs('#permissions-modal');
   if (!modal) return;
@@ -5508,6 +5522,44 @@ function initModalsPreviewModalControls() {
   });
 }
 
+function initFeatureNotificationTestControls() {
+  const testToastTrigger = qs('[data-test-toast]');
+  if (testToastTrigger && testToastTrigger.dataset.toastBound !== '1') {
+    testToastTrigger.dataset.toastBound = '1';
+    testToastTrigger.addEventListener('click', () => {
+      showDefaultToast('\u0627\u06CC\u0646 \u0627\u0639\u0644\u0627\u0646 \u062A\u0633\u062A \u0633\u0628\u06A9 \u067E\u06CC\u0634\u200C\u0641\u0631\u0636 \u0627\u0633\u062A.', {
+        duration: DEFAULT_TOAST_DURATION
+      });
+    });
+  }
+
+  const testSnackbarTrigger = qs('[data-test-snackbar]');
+  if (testSnackbarTrigger && testSnackbarTrigger.dataset.snackbarBound !== '1') {
+    testSnackbarTrigger.dataset.snackbarBound = '1';
+    testSnackbarTrigger.addEventListener('click', () => {
+      showActionSnackbar({
+        message: '\u0627\u0642\u062F\u0627\u0645 \u0627\u0646\u062C\u0627\u0645 \u0634\u062F. \u0627\u06AF\u0631 \u0646\u06CC\u0627\u0632 \u062F\u0627\u0631\u06CC\u062F\u060C \u0622\u0646 \u0631\u0627 \u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u06CC\u062F.',
+        actionLabel: 'Undo (Ctrl+Z)',
+        duration: DEFAULT_TOAST_DURATION,
+        onAction: () => {
+          showDefaultToast('\u0628\u0627\u0632\u06AF\u0634\u062A \u0627\u0646\u062C\u0627\u0645 \u0634\u062F.', { duration: 2500 });
+        }
+      });
+    });
+  }
+
+  const testErrorSnackbarTrigger = qs('[data-test-error-snackbar]');
+  if (testErrorSnackbarTrigger && testErrorSnackbarTrigger.dataset.errorSnackbarBound !== '1') {
+    testErrorSnackbarTrigger.dataset.errorSnackbarBound = '1';
+    testErrorSnackbarTrigger.addEventListener('click', () => {
+      showErrorSnackbar({
+        message: '\u0639\u0645\u0644\u06CC\u0627\u062A \u0628\u0627 \u062E\u0637\u0627 \u0645\u0648\u0627\u062C\u0647 \u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u062F\u0648\u0628\u0627\u0631\u0647 \u062A\u0644\u0627\u0634 \u06A9\u0646\u06CC\u062F.',
+        duration: DEFAULT_TOAST_DURATION
+      });
+    });
+  }
+}
+
 function initCodeEditorControls() {
   const editor = qs('.code-editor');
   if (!editor) return;
@@ -5811,8 +5863,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     app.style.gridTemplateColumns = '';
   });
 
-  // Wire add/edit user button to show the modal.
-  qs('#add-user')?.addEventListener('click', () => openUserModal());
   // Cancel button simply hides the modal.
   qs('#user-cancel')?.addEventListener('click', closeUserModal);
   inviteCardChoosePhotoButton = qs('#invite-card-choose-photo');
