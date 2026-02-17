@@ -10,6 +10,7 @@ const DATA_DIR = __DIR__ . '/../../mini apps/Asset Manager/data';
 const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
+const LABELS_FILE = DATA_DIR . '/labels.json';
 const LEGACY_DATA_DIRS = [
     __DIR__ . '/../../mini apps/preopreties manager',
     __DIR__ . '/../../mini apps/Asset Manager data'
@@ -160,6 +161,11 @@ function handleMessage(string $token, array $message): void
         return;
     }
 
+    if (in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
+        sendMessage($token, $chatId, 'Use label buttons, or press Skip / Done.');
+        return;
+    }
+
     logEvent('message_default_to_start_menu', ['chat_id' => $chatId, 'step' => $step, 'text' => $text]);
     sendStartMenu($token, $chatId);
 }
@@ -187,7 +193,8 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
     if ($data === 'asset_type_common') {
         logEvent('callback_asset_type_common', ['chat_id' => $chatId]);
-        $ancestors = loadAncestors();
+        $labels = loadLabels();
+        $ancestors = loadAncestors($labels);
         if (!$ancestors) {
             logEvent('common_no_ancestors', ['chat_id' => $chatId]);
             sendMessage($token, $chatId, 'هیچ مال مرسومی ثبت نشده است.');
@@ -215,7 +222,8 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
     if (strpos($data, 'ancestor:') === 0) {
         $ancestorId = trim(substr($data, strlen('ancestor:')));
-        $ancestors = loadAncestors();
+        $labels = loadLabels();
+        $ancestors = loadAncestors($labels);
         $ancestor = findById($ancestors, $ancestorId);
 
         if (!is_array($ancestor)) {
@@ -225,11 +233,15 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             return;
         }
 
+        $ancestorLabelParentIds = sanitizeParentLabelIds($labels, (array) ($ancestor['label_ids'] ?? []));
+
         setChatState($chatId, [
-            'step' => 'awaiting_asset_code',
+            'step' => $ancestorLabelParentIds ? 'choosing_label_parent' : 'awaiting_asset_code',
             'asset_type' => 'common',
             'ancestor_id' => (string) $ancestor['id'],
-            'ancestor_name' => (string) $ancestor['name']
+            'ancestor_name' => (string) $ancestor['name'],
+            'ancestor_label_parent_ids' => $ancestorLabelParentIds,
+            'label_values' => [],
         ]);
 
         logEvent('ancestor_selected', [
@@ -238,7 +250,108 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             'ancestor_name' => (string) $ancestor['name']
         ]);
         sendMessage($token, $chatId, 'نام مال: ' . (string) $ancestor['name']);
-        sendMessage($token, $chatId, 'Now send asset code.');
+        if ($ancestorLabelParentIds) {
+            sendParentLabelMenu($token, $chatId, getChatState($chatId), $labels);
+        } else {
+            sendMessage($token, $chatId, 'Now send asset code.');
+        }
+        return;
+    }
+
+    if ($data === 'label_skip') {
+        $state = getChatState($chatId);
+        $step = (string) ($state['step'] ?? '');
+        if (!in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
+            sendMessage($token, $chatId, 'Start the flow from beginning.');
+            sendStartMenu($token, $chatId);
+            return;
+        }
+
+        $state['step'] = 'awaiting_asset_code';
+        unset($state['active_parent_label_id']);
+        setChatState($chatId, $state);
+        logEvent('labels_skipped', ['chat_id' => $chatId]);
+
+        sendMessage($token, $chatId, 'Labels skipped. Now send asset code.');
+        return;
+    }
+
+    if ($data === 'label_back_parents') {
+        $state = getChatState($chatId);
+        $step = (string) ($state['step'] ?? '');
+        if ($step !== 'choosing_label_child') {
+            sendMessage($token, $chatId, 'Select a parent label first.');
+            return;
+        }
+
+        $labels = loadLabels();
+        $state['step'] = 'choosing_label_parent';
+        unset($state['active_parent_label_id']);
+        setChatState($chatId, $state);
+        sendParentLabelMenu($token, $chatId, $state, $labels);
+        return;
+    }
+
+    if (strpos($data, 'label_parent:') === 0) {
+        $parentId = trim(substr($data, strlen('label_parent:')));
+        $state = getChatState($chatId);
+        $step = (string) ($state['step'] ?? '');
+        if (!in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
+            sendMessage($token, $chatId, 'Start the flow from beginning.');
+            sendStartMenu($token, $chatId);
+            return;
+        }
+
+        $labels = loadLabels();
+        $parentIds = sanitizeParentLabelIds($labels, (array) ($state['ancestor_label_parent_ids'] ?? []));
+        if (!in_array($parentId, $parentIds, true)) {
+            sendMessage($token, $chatId, 'Invalid parent label.');
+            sendParentLabelMenu($token, $chatId, $state, $labels);
+            return;
+        }
+
+        $state['step'] = 'choosing_label_child';
+        $state['active_parent_label_id'] = $parentId;
+        setChatState($chatId, $state);
+        sendChildLabelMenu($token, $chatId, $parentId, $labels);
+        return;
+    }
+
+    if (strpos($data, 'label_child:') === 0) {
+        $rest = trim(substr($data, strlen('label_child:')));
+        $parts = explode(':', $rest, 2);
+        $parentId = trim((string) ($parts[0] ?? ''));
+        $childId = trim((string) ($parts[1] ?? ''));
+
+        $state = getChatState($chatId);
+        $step = (string) ($state['step'] ?? '');
+        if (!in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
+            sendMessage($token, $chatId, 'Start the flow from beginning.');
+            sendStartMenu($token, $chatId);
+            return;
+        }
+
+        $labels = loadLabels();
+        $parentIds = sanitizeParentLabelIds($labels, (array) ($state['ancestor_label_parent_ids'] ?? []));
+        if (!in_array($parentId, $parentIds, true) || !labelIsDirectChild($labels, $parentId, $childId)) {
+            sendMessage($token, $chatId, 'Invalid child label.');
+            sendParentLabelMenu($token, $chatId, $state, $labels);
+            return;
+        }
+
+        $labelValues = is_array($state['label_values'] ?? null) ? $state['label_values'] : [];
+        $labelValues[$parentId] = $childId;
+        $state['label_values'] = $labelValues;
+        $state['step'] = 'choosing_label_parent';
+        unset($state['active_parent_label_id']);
+        setChatState($chatId, $state);
+
+        logEvent('label_child_selected', [
+            'chat_id' => $chatId,
+            'parent_id' => $parentId,
+            'child_id' => $childId,
+        ]);
+        sendParentLabelMenu($token, $chatId, $state, $labels);
         return;
     }
 
@@ -251,6 +364,10 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             logEvent('storage_click_invalid_step', ['chat_id' => $chatId, 'step' => $step, 'storage_id' => $storageId]);
             if ($step === 'awaiting_asset_code') {
                 sendMessage($token, $chatId, 'Send asset code first.');
+                return;
+            }
+            if (in_array($step, ['choosing_label_parent', 'choosing_label_child'], true)) {
+                sendMessage($token, $chatId, 'Select labels or skip labels first.');
                 return;
             }
             sendMessage($token, $chatId, 'ابتدا از منوی شروع اقدام کنید.');
@@ -361,6 +478,106 @@ function sendStorageMenu(string $token, string $chatId): void
     ]);
 }
 
+function sendParentLabelMenu(string $token, string $chatId, array $state, ?array $labels = null): void
+{
+    if (!is_array($labels)) {
+        $labels = loadLabels();
+    }
+
+    $parentIds = sanitizeParentLabelIds($labels, (array) ($state['ancestor_label_parent_ids'] ?? []));
+    if (!$parentIds) {
+        $state['step'] = 'awaiting_asset_code';
+        unset($state['active_parent_label_id']);
+        setChatState($chatId, $state);
+        sendMessage($token, $chatId, 'No labels available. Now send asset code.');
+        return;
+    }
+
+    $labelValues = is_array($state['label_values'] ?? null) ? $state['label_values'] : [];
+    $rows = [];
+    foreach ($parentIds as $parentId) {
+        $parent = findById($labels, $parentId);
+        if (!is_array($parent)) {
+            continue;
+        }
+        $parentName = clean((string) ($parent['name'] ?? ''));
+        if ($parentName === '') {
+            continue;
+        }
+
+        $buttonText = $parentName;
+        $selectedChildId = trim((string) ($labelValues[$parentId] ?? ''));
+        if ($selectedChildId !== '' && labelIsDirectChild($labels, $parentId, $selectedChildId)) {
+            $child = findById($labels, $selectedChildId);
+            $childName = clean((string) ($child['name'] ?? ''));
+            if ($childName !== '') {
+                $buttonText .= ' => ' . $childName;
+            }
+        }
+
+        $rows[] = [
+            ['text' => $buttonText, 'callback_data' => 'label_parent:' . $parentId]
+        ];
+    }
+
+    $rows[] = [
+        ['text' => 'Skip / Done', 'callback_data' => 'label_skip']
+    ];
+
+    sendMessage($token, $chatId, 'Add Label (optional): select parent label.', [
+        'inline_keyboard' => $rows
+    ]);
+}
+
+function sendChildLabelMenu(string $token, string $chatId, string $parentId, ?array $labels = null): void
+{
+    if (!is_array($labels)) {
+        $labels = loadLabels();
+    }
+
+    $parent = findById($labels, $parentId);
+    if (!is_array($parent)) {
+        sendMessage($token, $chatId, 'Parent label is invalid.');
+        return;
+    }
+
+    $rows = [];
+    foreach ($labels as $label) {
+        if (!is_array($label)) {
+            continue;
+        }
+        $id = trim((string) ($label['id'] ?? ''));
+        $name = clean((string) ($label['name'] ?? ''));
+        $labelParentId = trim((string) ($label['parent_id'] ?? ''));
+        if ($id === '' || $name === '' || $labelParentId !== $parentId) {
+            continue;
+        }
+        $rows[] = [
+            ['text' => $name, 'callback_data' => 'label_child:' . $parentId . ':' . $id]
+        ];
+    }
+
+    if (!$rows) {
+        sendMessage($token, $chatId, 'No child labels found for this parent.', [
+            'inline_keyboard' => [
+                [
+                    ['text' => 'Back', 'callback_data' => 'label_back_parents']
+                ]
+            ]
+        ]);
+        return;
+    }
+
+    $rows[] = [
+        ['text' => 'Back', 'callback_data' => 'label_back_parents']
+    ];
+
+    $parentName = clean((string) ($parent['name'] ?? ''));
+    sendMessage($token, $chatId, 'Select child label: ' . $parentName, [
+        'inline_keyboard' => $rows
+    ]);
+}
+
 function answerCallbackQuery(string $token, string $callbackQueryId): void
 {
     telegramRequest($token, 'answerCallbackQuery', [
@@ -437,8 +654,9 @@ function addAssetFromState(array $state, string $storageId): array
     }
 
     $storages = loadStorages();
-    $ancestors = loadAncestors();
-    $assets = loadAssets($ancestors);
+    $labels = loadLabels();
+    $ancestors = loadAncestors($labels);
+    $assets = loadAssets($ancestors, $labels);
 
     if (!storageExists($storages, $storageId)) {
         return ['ok' => false, 'message' => 'انبار انتخاب شده معتبر نیست.'];
@@ -476,6 +694,16 @@ function addAssetFromState(array $state, string $storageId): array
         return ['ok' => false, 'message' => 'Asset code already exists.'];
     }
 
+    $labelValues = [];
+    if (!$specialAsset) {
+        $ancestor = findById($ancestors, $ancestorId);
+        $ancestorLabelParentIds = is_array($ancestor)
+            ? sanitizeParentLabelIds($labels, (array) ($ancestor['label_ids'] ?? []))
+            : [];
+        $rawLabelValues = is_array($state['label_values'] ?? null) ? $state['label_values'] : [];
+        $labelValues = normalizeAssetLabelValues($rawLabelValues, $ancestorLabelParentIds, $labels);
+    }
+
     $now = date('c');
     $assets[] = [
         'id' => randomId(),
@@ -484,6 +712,7 @@ function addAssetFromState(array $state, string $storageId): array
         'name' => $name,
         'code' => $code,
         'storage_id' => $storageId,
+        'label_values' => $labelValues,
         'created_at' => $now,
         'updated_at' => $now,
     ];
@@ -508,6 +737,7 @@ function ensureAssetDataFiles(): void
     ensureFileInitialized(ASSETS_FILE, legacyPathCandidates('assets.json'));
     ensureFileInitialized(STORAGES_FILE, legacyPathCandidates('storages.json'));
     ensureFileInitialized(ANCESTOR_ASSETS_FILE, legacyPathCandidates('ancestor_assets.json'));
+    ensureFileInitialized(LABELS_FILE, legacyPathCandidates('labels.json'));
 }
 
 function legacyPathCandidates(string $filename): array
@@ -579,6 +809,88 @@ function parseBool($value): bool
     return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
 }
 
+function uniqueNonEmptyStrings(array $values): array
+{
+    $out = [];
+    $seen = [];
+    foreach ($values as $value) {
+        $candidate = trim((string) $value);
+        if ($candidate === '' || isset($seen[$candidate])) {
+            continue;
+        }
+        $seen[$candidate] = true;
+        $out[] = $candidate;
+    }
+    return $out;
+}
+
+function labelExists(array $labels, string $labelId): bool
+{
+    return findById($labels, $labelId) !== null;
+}
+
+function labelHasChildren(array $labels, string $labelId): bool
+{
+    foreach ($labels as $label) {
+        if (!is_array($label)) {
+            continue;
+        }
+        if (trim((string) ($label['parent_id'] ?? '')) === $labelId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function labelIsDirectChild(array $labels, string $parentId, string $childId): bool
+{
+    $label = findById($labels, $childId);
+    if (!is_array($label)) {
+        return false;
+    }
+    return trim((string) ($label['parent_id'] ?? '')) === $parentId;
+}
+
+function sanitizeLabelIds(array $labels, array $labelIds): array
+{
+    $result = [];
+    $seen = [];
+    foreach ($labelIds as $labelId) {
+        $id = trim((string) $labelId);
+        if ($id === '' || isset($seen[$id]) || !labelExists($labels, $id)) {
+            continue;
+        }
+        $seen[$id] = true;
+        $result[] = $id;
+    }
+    return $result;
+}
+
+function sanitizeParentLabelIds(array $labels, array $labelIds): array
+{
+    $result = [];
+    foreach (sanitizeLabelIds($labels, $labelIds) as $labelId) {
+        if (!labelHasChildren($labels, $labelId)) {
+            continue;
+        }
+        $result[] = $labelId;
+    }
+    return $result;
+}
+
+function normalizeAssetLabelValues(array $labelValues, array $ancestorLabelIds, array $labels): array
+{
+    $normalized = [];
+    foreach ($ancestorLabelIds as $labelId) {
+        $value = trim((string) ($labelValues[$labelId] ?? ''));
+        if ($value !== '' && (!labelExists($labels, $value) || !labelIsDirectChild($labels, $labelId, $value))) {
+            $value = '';
+        }
+        $normalized[$labelId] = $value;
+    }
+    return $normalized;
+}
+
 function readJsonList(string $path): array
 {
     $raw = @file_get_contents($path);
@@ -620,7 +932,47 @@ function loadStorages(): array
     return $items;
 }
 
-function loadAncestors(): array
+function loadLabels(): array
+{
+    $items = [];
+    foreach (readJsonList(LABELS_FILE) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $id = trim((string) ($row['id'] ?? ''));
+        $name = clean((string) ($row['name'] ?? ''));
+        $parentId = trim((string) ($row['parent_id'] ?? ''));
+        if ($id === '' || $name === '') {
+            continue;
+        }
+        if ($parentId === $id) {
+            $parentId = '';
+        }
+        $items[] = [
+            'id' => $id,
+            'name' => $name,
+            'parent_id' => $parentId,
+            'created_at' => (string) ($row['created_at'] ?? ''),
+            'updated_at' => (string) ($row['updated_at'] ?? ''),
+        ];
+    }
+
+    $validIds = [];
+    foreach ($items as $label) {
+        $validIds[(string) ($label['id'] ?? '')] = true;
+    }
+    foreach ($items as &$label) {
+        $parentId = (string) ($label['parent_id'] ?? '');
+        if ($parentId !== '' && !isset($validIds[$parentId])) {
+            $label['parent_id'] = '';
+        }
+    }
+    unset($label);
+
+    return $items;
+}
+
+function loadAncestors(array $labels = []): array
 {
     $items = [];
     foreach (readJsonList(ANCESTOR_ASSETS_FILE) as $row) {
@@ -632,9 +984,14 @@ function loadAncestors(): array
         if ($id === '' || $name === '') {
             continue;
         }
+        $labelIds = uniqueNonEmptyStrings((array) ($row['label_ids'] ?? []));
+        if ($labels) {
+            $labelIds = sanitizeParentLabelIds($labels, $labelIds);
+        }
         $items[] = [
             'id' => $id,
             'name' => $name,
+            'label_ids' => $labelIds,
             'created_at' => (string) ($row['created_at'] ?? ''),
             'updated_at' => (string) ($row['updated_at'] ?? ''),
         ];
@@ -642,7 +999,7 @@ function loadAncestors(): array
     return $items;
 }
 
-function loadAssets(array $ancestors = []): array
+function loadAssets(array $ancestors = [], array $labels = []): array
 {
     $items = [];
     foreach (readJsonList(ASSETS_FILE) as $row) {
@@ -667,6 +1024,16 @@ function loadAssets(array $ancestors = []): array
         }
         $code = clean((string) ($row['code'] ?? ''));
         $storageId = trim((string) ($row['storage_id'] ?? ''));
+        $ancestor = !$specialAsset ? findById($ancestors, $ancestorId) : null;
+        $ancestorLabelIds = (!$specialAsset && is_array($ancestor))
+            ? sanitizeParentLabelIds($labels, (array) ($ancestor['label_ids'] ?? []))
+            : [];
+        $rawLabelValues = is_array($row['label_values'] ?? null)
+            ? $row['label_values']
+            : [];
+        $labelValues = $specialAsset
+            ? []
+            : normalizeAssetLabelValues($rawLabelValues, $ancestorLabelIds, $labels);
         if ($id === '' || $code === '' || ($specialAsset && $name === '')) {
             continue;
         }
@@ -677,6 +1044,7 @@ function loadAssets(array $ancestors = []): array
             'name' => $name,
             'code' => $code,
             'storage_id' => $storageId,
+            'label_values' => $labelValues,
             'created_at' => (string) ($row['created_at'] ?? ''),
             'updated_at' => (string) ($row['updated_at'] ?? ''),
         ];

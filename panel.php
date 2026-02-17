@@ -743,6 +743,7 @@ $accountEmail = $currentUser['email'] ?? '';
                       <thead>
                         <tr>
                           <th>نام مال مرسوم</th>
+                          <th>برچسب‌ها</th>
                           <th>عملیات</th>
                         </tr>
                       </thead>
@@ -795,6 +796,39 @@ $accountEmail = $currentUser['email'] ?? '';
             </div>
           </div>
         </section>
+
+        <div
+          id="pm-ancestor-labels-modal"
+          class="modal hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pm-ancestor-labels-title"
+        >
+          <div class="modal-card" style="max-width: 560px;">
+            <div class="modal-card-header">
+              <h3 id="pm-ancestor-labels-title">برچسب‌های مال مرسوم</h3>
+              <button
+                type="button"
+                class="icon-btn"
+                data-pm-ancestor-modal-close
+                aria-label="بستن"
+              >
+                ×
+              </button>
+            </div>
+            <div class="form">
+              <div class="field">
+                <span>زنجیره برچسب</span>
+                <div id="pm-ancestor-modal-label-chain" class="grid one-column"></div>
+              </div>
+            </div>
+            <p id="pm-ancestor-modal-status" class="hint pm-status" aria-live="polite"></p>
+            <div class="modal-actions">
+              <button type="button" class="btn" data-pm-ancestor-modal-close>انصراف</button>
+              <button type="button" class="btn primary" id="pm-ancestor-modal-save">ذخیره</button>
+            </div>
+          </div>
+        </div>
 
         <!-- Color picker modal is toggled by app.js whenever a hex field requests a swatch. -->
         <div

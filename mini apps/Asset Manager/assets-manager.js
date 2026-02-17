@@ -104,6 +104,14 @@
     const storagesBody = qs("#pm-storages-body", root);
     const ancestorsBody = qs("#pm-ancestors-body", root);
     const labelsBody = qs("#pm-labels-body", root);
+    const ancestorLabelsModal = qs("#pm-ancestor-labels-modal");
+    const ancestorLabelsModalTitle = qs("#pm-ancestor-labels-title");
+    const ancestorLabelsModalChain = qs("#pm-ancestor-modal-label-chain");
+    const ancestorLabelsModalStatus = qs("#pm-ancestor-modal-status");
+    const ancestorLabelsModalSave = qs("#pm-ancestor-modal-save");
+    const ancestorLabelsModalCloseButtons = qsa("[data-pm-ancestor-modal-close]", ancestorLabelsModal || document);
+
+    let editingAncestorLabelsId = "";
 
     const setStatus = (element, message, isError = false) => {
       if (!element) return;
@@ -196,9 +204,9 @@
       });
     };
 
-    const readAncestorChainSelected = () => {
-      if (!ancestorLabelChain) return [];
-      const raw = String(ancestorLabelChain.dataset.selected || "").trim();
+const readLabelChainSelected = (container) => {
+      if (!container) return [];
+      const raw = String(container.dataset.selected || "").trim();
       if (!raw) return [];
       try {
         const parsed = JSON.parse(raw);
@@ -212,12 +220,12 @@
     };
 
     const collectAncestorChainSelected = () => {
-      return readAncestorChainSelected();
+      return readLabelChainSelected(ancestorLabelChain);
     };
 
-    const renderAncestorLabelChain = (selectedIds = []) => {
-      if (!ancestorLabelChain) return;
-      ancestorLabelChain.innerHTML = "";
+    const renderLabelChainPicker = (container, selectedIds = []) => {
+      if (!container) return;
+      container.innerHTML = "";
 
       const requested = Array.isArray(selectedIds)
         ? selectedIds.map((id) => String(id || "").trim()).filter(Boolean)
@@ -234,7 +242,7 @@
         parentId = candidateId;
       });
 
-      ancestorLabelChain.dataset.selected = JSON.stringify(finalSelected);
+      container.dataset.selected = JSON.stringify(finalSelected);
 
       const wrapper = document.createElement("div");
       wrapper.className = "field";
@@ -268,7 +276,7 @@
           removeButton.textContent = "x";
           removeButton.addEventListener("click", () => {
             const nextSelected = finalSelected.slice(0, index);
-            renderAncestorLabelChain(nextSelected);
+            renderLabelChainPicker(container, nextSelected);
           });
 
           chip.append(chipText, removeButton);
@@ -308,12 +316,16 @@
       select.addEventListener("change", () => {
         const picked = String(select.value || "").trim();
         if (!picked) return;
-        renderAncestorLabelChain([...finalSelected, picked]);
+        renderLabelChainPicker(container, [...finalSelected, picked]);
       });
 
       addField.append(addCaption, select);
       wrapper.append(caption, chips, addField);
-      ancestorLabelChain.appendChild(wrapper);
+      container.appendChild(wrapper);
+    };
+
+    const renderAncestorLabelChain = (selectedIds = []) => {
+      renderLabelChainPicker(ancestorLabelChain, selectedIds);
     };
 
     const collectAssetLabelValues = () => {
@@ -419,6 +431,37 @@
 
       renderAssetLabelFields();
     };
+
+    const closeAncestorLabelsModal = () => {
+      if (!ancestorLabelsModal) return;
+      ancestorLabelsModal.classList.add("hidden");
+      editingAncestorLabelsId = "";
+      if (ancestorLabelsModalChain) {
+        ancestorLabelsModalChain.innerHTML = "";
+        ancestorLabelsModalChain.dataset.selected = "[]";
+      }
+      setStatus(ancestorLabelsModalStatus, "");
+    };
+
+    const openAncestorLabelsModal = (ancestorId) => {
+      if (!ancestorLabelsModal || !ancestorLabelsModalChain) return;
+      const ancestor = byId(ASSETS_MANAGER_STATE.ancestors, ancestorId);
+      if (!ancestor) return;
+
+      editingAncestorLabelsId = String(ancestor.id || "");
+      const ancestorName = String(ancestor.name || "");
+      if (ancestorLabelsModalTitle) {
+        ancestorLabelsModalTitle.textContent = `\u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627\u06CC ${ancestorName}`;
+      }
+
+      const selectedIds = Array.isArray(ancestor.label_ids)
+        ? ancestor.label_ids.map((id) => String(id || "")).filter(Boolean)
+        : [];
+      renderLabelChainPicker(ancestorLabelsModalChain, selectedIds);
+      setStatus(ancestorLabelsModalStatus, "");
+      ancestorLabelsModal.classList.remove("hidden");
+    };
+
     const renderAssets = () => {
       if (!assetsBody) return;
       assetsBody.innerHTML = "";
@@ -514,7 +557,7 @@
       ancestorsBody.innerHTML = "";
       if (!ASSETS_MANAGER_STATE.ancestors.length) {
         const row = document.createElement("tr");
-        row.innerHTML = '<td class="empty" colspan="2">مال مرسومی ثبت نشده است.</td>';
+        row.innerHTML = '<td class="empty" colspan="3">\u0645\u0627\u0644 \u0645\u0631\u0633\u0648\u0645\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.</td>';
         ancestorsBody.appendChild(row);
         return;
       }
@@ -530,16 +573,25 @@
         nameInput.dataset.field = "name";
         nameCell.appendChild(nameInput);
 
+        const labelsCell = document.createElement("td");
+        labelsCell.className = "pm-actions-cell";
+        const labelsButton = document.createElement("button");
+        labelsButton.type = "button";
+        labelsButton.className = "btn ghost";
+        labelsButton.dataset.action = "edit-ancestor-labels";
+        labelsButton.textContent = "\u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627";
+        labelsCell.appendChild(labelsButton);
+
         const actionCell = document.createElement("td");
         actionCell.className = "pm-actions-cell";
         const removeButton = document.createElement("button");
         removeButton.type = "button";
         removeButton.className = "btn ghost";
         removeButton.dataset.action = "remove-ancestor";
-        removeButton.textContent = "حذف";
+        removeButton.textContent = "\u062D\u0630\u0641";
         actionCell.appendChild(removeButton);
 
-        row.append(nameCell, actionCell);
+        row.append(nameCell, labelsCell, actionCell);
         ancestorsBody.appendChild(row);
       });
     };
@@ -654,6 +706,43 @@
 
     assetAncestorSelect?.addEventListener("change", () => {
       renderAssetLabelFields();
+    });
+
+    ancestorLabelsModalCloseButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        closeAncestorLabelsModal();
+      });
+    });
+
+    ancestorLabelsModal?.addEventListener("click", (event) => {
+      if (event.target === ancestorLabelsModal) {
+        closeAncestorLabelsModal();
+      }
+    });
+
+    ancestorLabelsModalSave?.addEventListener("click", async () => {
+      const ancestorId = String(editingAncestorLabelsId || "").trim();
+      if (!ancestorId) {
+        closeAncestorLabelsModal();
+        return;
+      }
+
+      const labelIds = readLabelChainSelected(ancestorLabelsModalChain);
+      ancestorLabelsModalSave.disabled = true;
+      setStatus(ancestorLabelsModalStatus, "\u062F\u0631 \u062D\u0627\u0644 \u0630\u062E\u06CC\u0631\u0647...");
+      try {
+        await syncAssetsManager("update_ancestor", {
+          id: ancestorId,
+          field: "label_ids",
+          value: JSON.stringify(labelIds)
+        });
+        setStatus(ancestorStatus, "\u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627\u06CC \u0645\u0627\u0644 \u0645\u0631\u0633\u0648\u0645 \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F.");
+        closeAncestorLabelsModal();
+      } catch (error) {
+        setStatus(ancestorLabelsModalStatus, error?.message || "\u0630\u062E\u06CC\u0631\u0647 \u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627 \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.", true);
+      } finally {
+        ancestorLabelsModalSave.disabled = false;
+      }
     });
 
     storageForm?.addEventListener("submit", async (event) => {
@@ -883,17 +972,25 @@
     });
 
     ancestorsBody?.addEventListener("click", async (event) => {
+      const editButton = event.target instanceof Element ? event.target.closest('[data-action="edit-ancestor-labels"]') : null;
+      if (editButton instanceof HTMLButtonElement) {
+        const id = String(editButton.closest("tr")?.dataset.id || "");
+        if (!id) return;
+        openAncestorLabelsModal(id);
+        return;
+      }
+
       const button = event.target instanceof Element ? event.target.closest('[data-action="remove-ancestor"]') : null;
       if (!(button instanceof HTMLButtonElement)) return;
       const id = String(button.closest("tr")?.dataset.id || "");
-      if (!id || !confirm("این مال مرسوم حذف شود؟")) return;
+      if (!id || !confirm("\u0627\u06CC\u0646 \u0645\u0627\u0644 \u0645\u0631\u0633\u0648\u0645 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F")) return;
 
       button.disabled = true;
       try {
         await syncAssetsManager("remove_ancestor", { id });
-        setStatus(ancestorStatus, "مال مرسوم حذف شد.");
+        setStatus(ancestorStatus, "\u0645\u0627\u0644 \u0645\u0631\u0633\u0648\u0645 \u062D\u0630\u0641 \u0634\u062F.");
       } catch (error) {
-        setStatus(ancestorStatus, error?.message || "حذف مال مرسوم انجام نشد.", true);
+        setStatus(ancestorStatus, error?.message || "\u062D\u0630\u0641 \u0645\u0627\u0644 \u0645\u0631\u0633\u0648\u0645 \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.", true);
       } finally {
         button.disabled = false;
       }
