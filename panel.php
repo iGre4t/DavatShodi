@@ -621,6 +621,9 @@ $accountEmail = $currentUser['email'] ?? '';
                 <button type="button" class="sub-item" data-pm-pane-target="labels">
                   برچسب‌ها
                 </button>
+                <button type="button" class="sub-item" data-pm-pane-target="permissions">
+                  دسترسی‌ها
+                </button>
               </div>
             </aside>
             <div class="sub-content">
@@ -809,6 +812,29 @@ $accountEmail = $currentUser['email'] ?? '';
                         </tr>
                       </thead>
                       <tbody id="pm-labels-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sub-pane" data-pm-pane="permissions">
+                <div class="card settings-section">
+                  <div class="section-header">
+                    <h3>دسترسی کاربران به انبارها</h3>
+                  </div>
+                  <p class="hint">
+                    این دسترسی‌ها مخصوص ربات تلگرام است. جستجوی کد مال برای همه انبارها فعال است، اما ویرایش و انتقال فقط برای انبارهای مجاز هر کاربر انجام می‌شود.
+                  </p>
+                  <p id="pm-permissions-status" class="hint pm-status" aria-live="polite"></p>
+                  <div class="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>کاربر</th>
+                          <th>انبارهای مجاز</th>
+                        </tr>
+                      </thead>
+                      <tbody id="pm-permissions-body"></tbody>
                     </table>
                   </div>
                 </div>

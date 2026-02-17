@@ -4595,12 +4595,12 @@ function formatHomeAssetLogMessage(message) {
   let html = escapeHomeLogHtml(message);
 
   html = html.replace(
-    /^مال\s+(.+?)\s+(?=(?:با کد|از انبار|توسط کاربر|در انبار|حذف شد|ویرایش شد|ثبت شد))/u,
-    (_, assetName) => `مال <span class="home-log-asset">${assetName}</span> `
+    /^(مال\s+)(.+?)(?=\s+(?:با کد|از انبار|به انبار|توسط کاربر|در انبار|حذف شد|ویرایش شد|ثبت شد|منتقل شد))/u,
+    (_, prefix, assetName) => `${prefix}<span class="home-log-asset">${assetName}</span>`
   );
 
   html = html.replace(
-    /((?:از|به|در)\s+انبار\s+)(.+?)(?=\s+(?:توسط کاربر|به انبار|منتقل شد|ثبت شد|حذف شد|ویرایش شد|\.|$))/gu,
+    /((?:از|به|در)\s+انبار\s+)(.+?)(?=\s+(?:از|به|در|توسط کاربر|منتقل شد|ثبت شد|حذف شد|ویرایش شد|\.|$))/gu,
     (_, prefix, storageName) => `${prefix}<span class="home-log-storage">${storageName}</span>`
   );
 
@@ -4610,7 +4610,17 @@ function formatHomeAssetLogMessage(message) {
   );
 
   html = html.replace(
+    /(کد\s+)([^\s<]+)/gu,
+    (_, prefix, code) => `${prefix}<span class="home-log-code">${code}</span>`
+  );
+
+  html = html.replace(
     /(کاربر\s*\()([^)<>]+)(\))/gu,
+    (_, prefix, userName, suffix) => `${prefix}<span class="home-log-user">${userName}</span>${suffix}`
+  );
+
+  html = html.replace(
+    /(\()([^)<>]+)(\))/gu,
     (_, prefix, userName, suffix) => `${prefix}<span class="home-log-user">${userName}</span>${suffix}`
   );
 

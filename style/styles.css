@@ -2188,6 +2188,28 @@ select[multiple] { min-height: 140px; padding: 8px; }
   .pm-label-chip-remove:hover {
     color: #b91c1c;
   }
+  .pm-permission-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+  .pm-permission-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    background: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .pm-permission-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--primary);
+  }
   @media (max-width: 900px) {
     .pm-layout {
       grid-template-columns: 1fr;

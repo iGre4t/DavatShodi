@@ -12,6 +12,10 @@ const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
 const LABELS_FILE = DATA_DIR . '/labels.json';
+const STORAGE_PERMISSIONS_FILE = DATA_DIR . '/storage_permissions.json';
+const API_CONFIG_FILE = __DIR__ . '/../../api/config.php';
+const API_COMMON_FILE = __DIR__ . '/../../api/lib/common.php';
+const API_USERS_FILE = __DIR__ . '/../../api/lib/users.php';
 const STORAGE_KIND_BRANCH = 'branch';
 const STORAGE_KIND_PERSON = 'person';
 const STORAGE_KIND_REPAIR_SHOP = 'repair_shop';
@@ -55,6 +59,14 @@ function ensureFileInitialized(string $targetPath, array $legacyCandidates = [])
     @file_put_contents($targetPath, "[]\n", LOCK_EX);
 }
 
+function ensureObjectFileInitialized(string $targetPath): void
+{
+    if (is_file($targetPath)) {
+        return;
+    }
+    @file_put_contents($targetPath, "{}\n", LOCK_EX);
+}
+
 function ensureDataDir(): void
 {
     if (!is_dir(DATA_DIR)) {
@@ -64,6 +76,7 @@ function ensureDataDir(): void
     ensureFileInitialized(STORAGES_FILE, legacyPathCandidates('storages.json'));
     ensureFileInitialized(ANCESTOR_ASSETS_FILE, legacyPathCandidates('ancestor_assets.json'));
     ensureFileInitialized(LABELS_FILE, legacyPathCandidates('labels.json'));
+    ensureObjectFileInitialized(STORAGE_PERMISSIONS_FILE);
 }
 
 function clean(string $value): string
@@ -131,6 +144,46 @@ function parseJsonMapRaw(string $raw): array
         $out[$k] = trim((string)$value);
     }
     return $out;
+}
+
+function readMap(string $path): array
+{
+    ensureDataDir();
+    $raw = @file_get_contents($path);
+    if ($raw === false) {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    $result = [];
+    foreach ($decoded as $key => $value) {
+        $mapKey = clean((string)$key);
+        if ($mapKey === '' || !is_array($value)) {
+            continue;
+        }
+        $result[$mapKey] = uniqueNonEmptyStrings($value);
+    }
+    return $result;
+}
+
+function writeMap(string $path, array $items): bool
+{
+    $normalized = [];
+    foreach ($items as $key => $value) {
+        $mapKey = clean((string)$key);
+        if ($mapKey === '') {
+            continue;
+        }
+        $normalized[$mapKey] = uniqueNonEmptyStrings(is_array($value) ? $value : []);
+    }
+    ksort($normalized);
+    $json = json_encode((object)$normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        return false;
+    }
+    return @file_put_contents($path, $json . "\n", LOCK_EX) !== false;
 }
 
 function readArray(string $path): array
@@ -375,6 +428,148 @@ function currentActorDisplayName(): string
     return 'کاربر نامشخص';
 }
 
+function loadSystemUsersForPermissions(): array
+{
+    static $cached = null;
+    if (is_array($cached)) {
+        return $cached;
+    }
+
+    $usersByCode = [];
+
+    if (is_file(API_CONFIG_FILE) && is_file(API_COMMON_FILE) && is_file(API_USERS_FILE)) {
+        require_once API_COMMON_FILE;
+        require_once API_USERS_FILE;
+
+        if (function_exists('loadConfig') && function_exists('connectDatabase') && function_exists('loadUsersFromUsersTable')) {
+            try {
+                $config = loadConfig(API_CONFIG_FILE);
+                $pdo = connectDatabase($config);
+                if ($pdo instanceof PDO) {
+                    if (function_exists('ensureUsersExtendedColumns')) {
+                        ensureUsersExtendedColumns($pdo);
+                    }
+                    $rows = loadUsersFromUsersTable($pdo);
+                    foreach ($rows as $row) {
+                        if (!is_array($row)) {
+                            continue;
+                        }
+                        $code = clean((string)($row['code'] ?? ''));
+                        if ($code === '') {
+                            continue;
+                        }
+                        $fullname = clean((string)($row['fullname'] ?? ''));
+                        $username = clean((string)($row['username'] ?? ''));
+                        $name = clean((string)($row['name'] ?? ''));
+                        $display = $fullname !== ''
+                            ? $fullname
+                            : ($name !== '' ? $name : ($username !== '' ? $username : $code));
+
+                        $usersByCode[$code] = [
+                            'code' => $code,
+                            'fullname' => $fullname,
+                            'username' => $username,
+                            'name' => $display
+                        ];
+                    }
+                }
+            } catch (Throwable $error) {
+                // Ignore user lookup failures and fall back to session user.
+            }
+        }
+    }
+
+    $sessionUser = $_SESSION['user'] ?? [];
+    if (is_array($sessionUser)) {
+        $sessionCode = clean((string)($sessionUser['code'] ?? ''));
+        if ($sessionCode !== '' && !isset($usersByCode[$sessionCode])) {
+            $sessionFullname = clean((string)($sessionUser['fullname'] ?? ''));
+            $sessionUsername = clean((string)($sessionUser['username'] ?? ''));
+            $sessionName = clean((string)($sessionUser['name'] ?? ''));
+            $display = $sessionFullname !== ''
+                ? $sessionFullname
+                : ($sessionName !== '' ? $sessionName : ($sessionUsername !== '' ? $sessionUsername : $sessionCode));
+            $usersByCode[$sessionCode] = [
+                'code' => $sessionCode,
+                'fullname' => $sessionFullname,
+                'username' => $sessionUsername,
+                'name' => $display
+            ];
+        }
+    }
+
+    $users = array_values($usersByCode);
+    usort($users, function (array $left, array $right): int {
+        $leftName = clean((string)($left['name'] ?? ''));
+        $rightName = clean((string)($right['name'] ?? ''));
+        return strnatcasecmp($leftName, $rightName);
+    });
+
+    $cached = $users;
+    return $cached;
+}
+
+function systemUserExistsByCode(array $users, string $userCode): bool
+{
+    $needle = clean($userCode);
+    if ($needle === '') {
+        return false;
+    }
+    foreach ($users as $user) {
+        if (clean((string)($user['code'] ?? '')) === $needle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function loadStoragePermissions(array $storages = [], array $users = []): array
+{
+    $validStorageIds = [];
+    foreach ($storages as $storage) {
+        $storageId = trim((string)($storage['id'] ?? ''));
+        if ($storageId !== '') {
+            $validStorageIds[$storageId] = true;
+        }
+    }
+
+    $validUserCodes = [];
+    foreach ($users as $user) {
+        $userCode = clean((string)($user['code'] ?? ''));
+        if ($userCode !== '') {
+            $validUserCodes[$userCode] = true;
+        }
+    }
+
+    $raw = readMap(STORAGE_PERMISSIONS_FILE);
+    $result = [];
+    foreach ($raw as $userCode => $storageIds) {
+        $code = clean((string)$userCode);
+        if ($code === '') {
+            continue;
+        }
+        if ($validUserCodes && !isset($validUserCodes[$code])) {
+            continue;
+        }
+
+        $allowed = [];
+        foreach (uniqueNonEmptyStrings((array)$storageIds) as $storageId) {
+            if ($validStorageIds && !isset($validStorageIds[$storageId])) {
+                continue;
+            }
+            $allowed[] = $storageId;
+        }
+        $result[$code] = $allowed;
+    }
+
+    ksort($result);
+    return $result;
+}
+
+function writeStoragePermissions(array $permissions): bool
+{
+    return writeMap(STORAGE_PERMISSIONS_FILE, $permissions);
+}
 function assetNameForLog(array $asset): string
 {
     $name = clean((string)($asset['name'] ?? ''));
@@ -642,12 +837,16 @@ function out(array $payload, int $status = 200): void
 
 function okData(array $storages, array $labels, array $ancestors, array $assets): array
 {
+    $users = loadSystemUsersForPermissions();
+    $storagePermissions = loadStoragePermissions($storages, $users);
     return [
         'status' => 'ok',
         'storages' => array_values($storages),
         'labels' => array_values($labels),
         'ancestors' => array_values($ancestors),
-        'assets' => array_values($assets)
+        'assets' => array_values($assets),
+        'users' => array_values($users),
+        'storage_permissions' => $storagePermissions
     ];
 }
 
@@ -782,7 +981,39 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(STORAGES_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove storage.'], 500);
         }
+        $usersForPermissions = loadSystemUsersForPermissions();
+        $permissions = loadStoragePermissions($next, $usersForPermissions);
+        if (!writeStoragePermissions($permissions)) {
+            out(['status' => 'error', 'message' => 'Unable to update storage permissions.'], 500);
+        }
         out(okData($next, $labels, $ancestors, $assets));
+    }
+
+    if ($action === 'update_storage_permissions') {
+        $userCode = clean((string)($_POST['user_code'] ?? ''));
+        if ($userCode === '') {
+            out(['status' => 'error', 'message' => 'User code is required.'], 422);
+        }
+
+        $usersForPermissions = loadSystemUsersForPermissions();
+        if (!systemUserExistsByCode($usersForPermissions, $userCode)) {
+            out(['status' => 'error', 'message' => 'User not found.'], 404);
+        }
+
+        $storageIds = parseJsonArrayRaw((string)($_POST['storage_ids'] ?? '[]'));
+        foreach ($storageIds as $storageId) {
+            if (!storageExists($storages, $storageId)) {
+                out(['status' => 'error', 'message' => 'Selected storage is invalid.'], 422);
+            }
+        }
+
+        $permissions = loadStoragePermissions($storages, $usersForPermissions);
+        $permissions[$userCode] = $storageIds;
+        if (!writeStoragePermissions($permissions)) {
+            out(['status' => 'error', 'message' => 'Unable to save storage permissions.'], 500);
+        }
+
+        out(okData($storages, $labels, $ancestors, $assets));
     }
 
     if ($action === 'add_label') {

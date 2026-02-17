@@ -11,6 +11,7 @@ const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
 const LABELS_FILE = DATA_DIR . '/labels.json';
+const STORAGE_PERMISSIONS_FILE = DATA_DIR . '/storage_permissions.json';
 const ASSET_LOGS_HELPER_FILE = __DIR__ . '/../../mini apps/Asset Manager/asset_logs.php';
 const API_CONFIG_FILE = __DIR__ . '/../../api/config.php';
 const API_COMMON_FILE = __DIR__ . '/../../api/lib/common.php';
@@ -366,7 +367,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
     if (strpos($data, 'a_t:') === 0) {
         $assetId = trim(substr($data, 4));
-        startAssetTransferJourney($token, $chatId, $messageId, $assetId);
+        startAssetTransferJourney($token, $chatId, $messageId, $telegramUserId, $assetId);
         return;
     }
 
@@ -378,7 +379,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
     if (strpos($data, 'a_l:') === 0) {
         $assetId = trim(substr($data, 4));
-        startAssetLabelJourney($token, $chatId, $messageId, $assetId);
+        startAssetLabelJourney($token, $chatId, $messageId, $telegramUserId, $assetId);
         return;
     }
 
@@ -406,7 +407,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
 
     if (strpos($data, 'a_d:') === 0) {
         $assetId = trim(substr($data, 4));
-        startAssetDeleteJourney($token, $chatId, $messageId, $assetId);
+        startAssetDeleteJourney($token, $chatId, $messageId, $telegramUserId, $assetId);
         return;
     }
 
@@ -1873,6 +1874,104 @@ function sendAssetLookupCard(
     sendMessage($token, $chatId, $text, $markup);
 }
 
+function buildStoragePermissionDeniedText(array $storages, string $storageId): string
+{
+    $storageName = storageNameById($storages, trim($storageId));
+    $safeStorageName = htmlEscape($storageName !== '' ? $storageName : 'نامشخص');
+    return "⛔️ <b>دسترسی کافی ندارید.</b>\n\n"
+        . "شما فقط می‌توانید روی انبارهای مجاز خود عملیات انجام دهید.\n"
+        . "انبار این مال: <b>{$safeStorageName}</b>";
+}
+
+function getAuthorizedUserCodeByTelegramId(string $telegramUserId): string
+{
+    $user = findAuthUserByTelegramId($telegramUserId);
+    if (!is_array($user)) {
+        return '';
+    }
+    return clean((string) ($user['code'] ?? ''));
+}
+
+function loadStoragePermissionsMap(array $storages = []): array
+{
+    $validStorageIds = [];
+    foreach ($storages as $storage) {
+        if (!is_array($storage)) {
+            continue;
+        }
+        $storageId = trim((string) ($storage['id'] ?? ''));
+        if ($storageId !== '') {
+            $validStorageIds[$storageId] = true;
+        }
+    }
+
+    $rawMap = readJsonMap(STORAGE_PERMISSIONS_FILE);
+    $result = [];
+    foreach ($rawMap as $userCode => $storageIds) {
+        $code = clean((string) $userCode);
+        if ($code === '') {
+            continue;
+        }
+
+        $allowed = [];
+        foreach (uniqueNonEmptyStrings(is_array($storageIds) ? $storageIds : []) as $storageId) {
+            if ($validStorageIds && !isset($validStorageIds[$storageId])) {
+                continue;
+            }
+            $allowed[] = $storageId;
+        }
+        $result[$code] = $allowed;
+    }
+
+    ksort($result);
+    return $result;
+}
+
+function userHasStoragePermission(string $telegramUserId, string $storageId, ?array $permissions = null): bool
+{
+    $targetStorageId = trim($storageId);
+    if ($targetStorageId === '') {
+        return false;
+    }
+
+    $userCode = getAuthorizedUserCodeByTelegramId($telegramUserId);
+    if ($userCode === '') {
+        return false;
+    }
+
+    $permissionsMap = is_array($permissions) ? $permissions : loadStoragePermissionsMap(loadStorages());
+    $allowedStorageIds = is_array($permissionsMap[$userCode] ?? null) ? $permissionsMap[$userCode] : [];
+    return in_array($targetStorageId, $allowedStorageIds, true);
+}
+
+function filterStoragesByPermission(string $telegramUserId, array $storages, ?array $permissions = null): array
+{
+    $userCode = getAuthorizedUserCodeByTelegramId($telegramUserId);
+    if ($userCode === '') {
+        return [];
+    }
+
+    $permissionsMap = is_array($permissions) ? $permissions : loadStoragePermissionsMap($storages);
+    $allowedStorageIds = is_array($permissionsMap[$userCode] ?? null) ? $permissionsMap[$userCode] : [];
+    if (!$allowedStorageIds) {
+        return [];
+    }
+
+    $allowedSet = array_fill_keys($allowedStorageIds, true);
+    $result = [];
+    foreach ($storages as $storage) {
+        if (!is_array($storage)) {
+            continue;
+        }
+        $storageId = trim((string) ($storage['id'] ?? ''));
+        if ($storageId === '' || !isset($allowedSet[$storageId])) {
+            continue;
+        }
+        $result[] = $storage;
+    }
+    return $result;
+}
+
 function buildTransferStorageMarkup(array $storages): array
 {
     $rows = [];
@@ -1892,7 +1991,7 @@ function buildTransferStorageMarkup(array $storages): array
     return ['inline_keyboard' => $rows];
 }
 
-function startAssetTransferJourney(string $token, string $chatId, string $messageId, string $assetId): void
+function startAssetTransferJourney(string $token, string $chatId, string $messageId, string $telegramUserId, string $assetId): void
 {
     $labels = loadLabels();
     $ancestors = loadAncestors($labels);
@@ -1920,6 +2019,31 @@ function startAssetTransferJourney(string $token, string $chatId, string $messag
         return;
     }
 
+    $storagePermissions = loadStoragePermissionsMap($storages);
+    $currentStorageId = trim((string) ($asset['storage_id'] ?? ''));
+    if (!userHasStoragePermission($telegramUserId, $currentStorageId, $storagePermissions)) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            buildStoragePermissionDeniedText($storages, $currentStorageId),
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
+    $allowedStorages = filterStoragesByPermission($telegramUserId, $storages, $storagePermissions);
+    if (!$allowedStorages) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⛔️ <b>هیچ انبار مجازی برای شما ثبت نشده است.</b>\n\nبرای انتقال، ابتدا دسترسی انبارها را از پنل مدیریت تنظیم کنید.",
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
     setChatState($chatId, [
         'step' => 'asset_lookup_transfer_select',
         'asset_action_asset_id' => $assetId,
@@ -1927,15 +2051,14 @@ function startAssetTransferJourney(string $token, string $chatId, string $messag
 
     $assetName = htmlEscape(assetDisplayName($asset, $ancestors));
     $assetCode = htmlEscape(clean((string) ($asset['code'] ?? '')));
-    $currentStorage = htmlEscape(storageNameById($storages, trim((string) ($asset['storage_id'] ?? ''))) ?: 'نامشخص');
+    $currentStorage = htmlEscape(storageNameById($storages, $currentStorageId) ?: 'نامشخص');
     $text = "🏬 <b>انتقال مال به انبار دیگر</b>\n\n"
         . "🧾 مال: <b>{$assetName}</b>\n"
         . "🔐 کد: <b>{$assetCode}</b>\n"
         . "📍 انبار فعلی: <b>{$currentStorage}</b>\n\n"
         . "لطفا انبار جدید را انتخاب کنید.";
-    sendOrEditMessage($token, $chatId, $messageId, $text, buildTransferStorageMarkup($storages));
+    sendOrEditMessage($token, $chatId, $messageId, $text, buildTransferStorageMarkup($allowedStorages));
 }
-
 function completeAssetTransferJourney(
     string $token,
     string $chatId,
@@ -1973,14 +2096,52 @@ function completeAssetTransferJourney(
         sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال انتخاب‌شده پیدا نشد.</b>", getStartMenuMarkup());
         return;
     }
-    if (!storageExists($storages, $storageId)) {
-        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>انبار انتخاب‌شده معتبر نیست.</b>", buildTransferStorageMarkup($storages));
+
+    $storagePermissions = loadStoragePermissionsMap($storages);
+    $allowedStorages = filterStoragesByPermission($telegramUserId, $storages, $storagePermissions);
+    if (!$allowedStorages) {
+        clearChatState($chatId);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⛔️ <b>هیچ انبار مجازی برای شما ثبت نشده است.</b>",
+            getStartMenuMarkup()
+        );
         return;
     }
 
     $beforeStorageId = trim((string) ($assets[$assetIndex]['storage_id'] ?? ''));
+    if (!userHasStoragePermission($telegramUserId, $beforeStorageId, $storagePermissions)) {
+        clearChatState($chatId);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            buildStoragePermissionDeniedText($storages, $beforeStorageId),
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
+    if (!storageExists($storages, $storageId)) {
+        sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>انبار انتخاب‌شده معتبر نیست.</b>", buildTransferStorageMarkup($allowedStorages));
+        return;
+    }
+
+    if (!userHasStoragePermission($telegramUserId, $storageId, $storagePermissions)) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⛔️ <b>به انبار مقصد دسترسی ندارید.</b>",
+            buildTransferStorageMarkup($allowedStorages)
+        );
+        return;
+    }
+
     if ($beforeStorageId === $storageId) {
-        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>این مال از قبل در همین انبار است.</b>", buildTransferStorageMarkup($storages));
+        sendOrEditMessage($token, $chatId, $messageId, "ℹ️ <b>این مال از قبل در همین انبار است.</b>", buildTransferStorageMarkup($allowedStorages));
         return;
     }
 
@@ -2028,8 +2189,7 @@ function completeAssetTransferJourney(
         "✅ <b>انتقال مال با موفقیت انجام شد.</b>"
     );
 }
-
-function startAssetLabelJourney(string $token, string $chatId, string $messageId, string $assetId): void
+function startAssetLabelJourney(string $token, string $chatId, string $messageId, string $telegramUserId, string $assetId): void
 {
     $labels = loadLabels();
     $ancestors = loadAncestors($labels);
@@ -2038,6 +2198,19 @@ function startAssetLabelJourney(string $token, string $chatId, string $messageId
     $asset = findById($assets, $assetId);
     if (!is_array($asset)) {
         sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال انتخاب‌شده پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    $storagePermissions = loadStoragePermissionsMap($storages);
+    $assetStorageId = trim((string) ($asset['storage_id'] ?? ''));
+    if (!userHasStoragePermission($telegramUserId, $assetStorageId, $storagePermissions)) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            buildStoragePermissionDeniedText($storages, $assetStorageId),
+            getStartMenuMarkup()
+        );
         return;
     }
 
@@ -2086,7 +2259,6 @@ function startAssetLabelJourney(string $token, string $chatId, string $messageId
     ]);
     renderAssetLabelParentMenu($token, $chatId, $messageId, getChatState($chatId), $asset, $labels, $ancestors);
 }
-
 function renderAssetLabelParentMenu(
     string $token,
     string $chatId,
@@ -2286,6 +2458,20 @@ function finalizeAssetLabelJourney(string $token, string $chatId, string $messag
     }
 
     $asset = $assets[$assetIndex];
+    $storagePermissions = loadStoragePermissionsMap($storages);
+    $assetStorageId = trim((string) ($asset['storage_id'] ?? ''));
+    if (!userHasStoragePermission($telegramUserId, $assetStorageId, $storagePermissions)) {
+        clearChatState($chatId);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            buildStoragePermissionDeniedText($storages, $assetStorageId),
+            getStartMenuMarkup()
+        );
+        return;
+    }
+
     if (parseBool($asset['special_asset'] ?? false)) {
         clearChatState($chatId);
         sendAssetLookupCard($token, $chatId, $asset, $storages, $ancestors, $labels, $messageId, "ℹ️ <b>این مال برچسب‌پذیر نیست.</b>");
@@ -2342,15 +2528,28 @@ function finalizeAssetLabelJourney(string $token, string $chatId, string $messag
     $prefix = $changed ? "✅ <b>برچسب های مال با موفقیت به‌روزرسانی شد.</b>" : "ℹ️ <b>تغییری در برچسب ها اعمال نشد.</b>";
     sendAssetLookupCard($token, $chatId, $asset, $storages, $ancestors, $labels, $messageId, $prefix);
 }
-
-function startAssetDeleteJourney(string $token, string $chatId, string $messageId, string $assetId): void
+function startAssetDeleteJourney(string $token, string $chatId, string $messageId, string $telegramUserId, string $assetId): void
 {
     $labels = loadLabels();
     $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
     $assets = loadAssets($ancestors, $labels);
     $asset = findById($assets, $assetId);
     if (!is_array($asset)) {
         sendOrEditMessage($token, $chatId, $messageId, "⚠️ <b>مال انتخاب‌شده پیدا نشد.</b>", getStartMenuMarkup());
+        return;
+    }
+
+    $storagePermissions = loadStoragePermissionsMap($storages);
+    $assetStorageId = trim((string) ($asset['storage_id'] ?? ''));
+    if (!userHasStoragePermission($telegramUserId, $assetStorageId, $storagePermissions)) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            buildStoragePermissionDeniedText($storages, $assetStorageId),
+            getStartMenuMarkup()
+        );
         return;
     }
 
@@ -2368,7 +2567,6 @@ function startAssetDeleteJourney(string $token, string $chatId, string $messageI
         . "برای ادامه حذف، لطفا <b>پین‌کد ۴ رقمی</b> خود را به‌صورت پیام متنی ارسال کنید.";
     sendOrEditMessage($token, $chatId, $messageId, $text, null);
 }
-
 function handleDeleteAssetPinStep(
     string $token,
     string $chatId,
@@ -2458,6 +2656,7 @@ function handleDeleteAssetNoteStep(
 
     $labels = loadLabels();
     $ancestors = loadAncestors($labels);
+    $storages = loadStorages();
     $assets = loadAssets($ancestors, $labels);
     $assetIndex = findAssetIndexById($assets, $assetId);
     if ($assetIndex < 0) {
@@ -2467,6 +2666,15 @@ function handleDeleteAssetNoteStep(
     }
 
     $asset = $assets[$assetIndex];
+    $storagePermissions = loadStoragePermissionsMap($storages);
+    $assetStorageId = trim((string) ($asset['storage_id'] ?? ''));
+    if (!userHasStoragePermission($telegramUserId, $assetStorageId, $storagePermissions)) {
+        clearChatState($chatId);
+        sendMessage($token, $chatId, buildStoragePermissionDeniedText($storages, $assetStorageId));
+        sendStartMenu($token, $chatId);
+        return;
+    }
+
     array_splice($assets, $assetIndex, 1);
     if (!writeJsonList(ASSETS_FILE, $assets)) {
         sendMessage($token, $chatId, "❌ <b>حذف مال انجام نشد.</b>\n\nخطا در ذخیره اطلاعات.");
@@ -2506,7 +2714,6 @@ function handleDeleteAssetNoteStep(
     );
     sendStartMenu($token, $chatId);
 }
-
 function getAuthorizedActorName(string $telegramUserId): string
 {
     $user = findAuthUserByTelegramId($telegramUserId);
@@ -3144,6 +3351,7 @@ function ensureAssetDataFiles(): void
     ensureFileInitialized(STORAGES_FILE, legacyPathCandidates('storages.json'));
     ensureFileInitialized(ANCESTOR_ASSETS_FILE, legacyPathCandidates('ancestor_assets.json'));
     ensureFileInitialized(LABELS_FILE, legacyPathCandidates('labels.json'));
+    ensureObjectFileInitialized(STORAGE_PERMISSIONS_FILE);
 }
 
 function legacyPathCandidates(string $filename): array
@@ -3179,6 +3387,18 @@ function ensureFileInitialized(string $targetPath, array $legacyCandidates = [])
         logEvent('file_init_failed', ['target' => $targetPath]);
     } else {
         logEvent('file_initialized_empty', ['target' => $targetPath]);
+    }
+}
+
+function ensureObjectFileInitialized(string $targetPath): void
+{
+    if (is_file($targetPath)) {
+        return;
+    }
+    if (@file_put_contents($targetPath, "{}\n", LOCK_EX) === false) {
+        logEvent('file_init_failed', ['target' => $targetPath]);
+    } else {
+        logEvent('file_initialized_empty_object', ['target' => $targetPath]);
     }
 }
 
@@ -3310,6 +3530,27 @@ function readJsonList(string $path): array
     }
     $decoded = json_decode($raw, true);
     return is_array($decoded) ? array_values($decoded) : [];
+}
+
+function readJsonMap(string $path): array
+{
+    $raw = @file_get_contents($path);
+    if ($raw === false) {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    $result = [];
+    foreach ($decoded as $key => $value) {
+        $mapKey = clean((string) $key);
+        if ($mapKey === '' || !is_array($value)) {
+            continue;
+        }
+        $result[$mapKey] = uniqueNonEmptyStrings($value);
+    }
+    return $result;
 }
 
 function writeJsonList(string $path, array $items): bool

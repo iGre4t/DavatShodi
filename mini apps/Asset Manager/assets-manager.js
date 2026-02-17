@@ -4,7 +4,9 @@
     storages: [],
     labels: [],
     ancestors: [],
-    assets: []
+    assets: [],
+    users: [],
+    storagePermissions: {}
   };
   const DEFAULT_ENDPOINT = "mini%20apps/Asset%20Manager/index.php";
   const STORAGE_KIND_OPTIONS = [
@@ -106,11 +108,13 @@
     const storageStatus = qs("#pm-storage-status", root);
     const ancestorStatus = qs("#pm-ancestor-status", root);
     const labelStatus = qs("#pm-label-status", root);
+    const permissionsStatus = qs("#pm-permissions-status", root);
 
     const assetsBody = qs("#pm-assets-body", root);
     const storagesBody = qs("#pm-storages-body", root);
     const ancestorsBody = qs("#pm-ancestors-body", root);
     const labelsBody = qs("#pm-labels-body", root);
+    const permissionsBody = qs("#pm-permissions-body", root);
     const ancestorLabelsModal = qs("#pm-ancestor-labels-modal");
     const ancestorLabelsModalTitle = qs("#pm-ancestor-labels-title");
     const ancestorLabelsModalChain = qs("#pm-ancestor-modal-label-chain");
@@ -151,6 +155,52 @@
       return STORAGE_KIND_OPTIONS.some((option) => option.value === normalized)
         ? normalized
         : DEFAULT_STORAGE_KIND;
+    };
+
+    const normalizeStoragePermissions = (rawMap) => {
+      if (!rawMap || typeof rawMap !== "object") {
+        return {};
+      }
+
+      const result = {};
+      Object.entries(rawMap).forEach(([rawUserCode, rawStorageIds]) => {
+        const userCode = String(rawUserCode || "").trim();
+        if (!userCode || !Array.isArray(rawStorageIds)) {
+          return;
+        }
+
+        const seen = new Set();
+        const normalizedIds = [];
+        rawStorageIds.forEach((rawStorageId) => {
+          const storageId = String(rawStorageId || "").trim();
+          if (!storageId || seen.has(storageId)) {
+            return;
+          }
+          seen.add(storageId);
+          normalizedIds.push(storageId);
+        });
+        result[userCode] = normalizedIds;
+      });
+      return result;
+    };
+
+    const getUserCode = (user) => String(user?.code || "").trim();
+
+    const getUserDisplayName = (user) => {
+      const fullname = String(user?.fullname || "").trim();
+      if (fullname) {
+        return fullname;
+      }
+      const name = String(user?.name || "").trim();
+      if (name) {
+        return name;
+      }
+      const username = String(user?.username || "").trim();
+      if (username) {
+        return username;
+      }
+      const code = getUserCode(user);
+      return code || "\u06A9\u0627\u0631\u0628\u0631";
     };
 
     const fillStorageOptions = (select, selected = "") => {
@@ -828,6 +878,96 @@ const readLabelChainSelected = (container) => {
       });
     };
 
+    const renderPermissions = () => {
+      if (!permissionsBody) return;
+      permissionsBody.innerHTML = "";
+
+      const users = Array.isArray(ASSETS_MANAGER_STATE.users)
+        ? [...ASSETS_MANAGER_STATE.users]
+        : [];
+      if (!users.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = '<td class="empty" colspan="2">\u06A9\u0627\u0631\u0628\u0631\u06CC \u0628\u0631\u0627\u06CC \u062A\u0646\u0638\u06CC\u0645 \u062F\u0633\u062A\u0631\u0633\u06CC \u06CC\u0627\u0641\u062A \u0646\u0634\u062F.</td>';
+        permissionsBody.appendChild(row);
+        return;
+      }
+
+      users.sort((left, right) => {
+        return getUserDisplayName(left).localeCompare(getUserDisplayName(right), "fa");
+      });
+
+      const storages = Array.isArray(ASSETS_MANAGER_STATE.storages)
+        ? [...ASSETS_MANAGER_STATE.storages]
+        : [];
+      storages.sort((left, right) => {
+        return String(left?.name || "").localeCompare(String(right?.name || ""), "fa");
+      });
+
+      users.forEach((user) => {
+        const userCode = getUserCode(user);
+        if (!userCode) return;
+
+        const row = document.createElement("tr");
+        row.dataset.userCode = userCode;
+
+        const nameCell = document.createElement("td");
+        const nameTitle = document.createElement("strong");
+        nameTitle.textContent = getUserDisplayName(user);
+        const nameMeta = document.createElement("p");
+        nameMeta.className = "hint";
+        nameMeta.style.margin = "4px 0 0";
+        nameMeta.textContent = userCode;
+        nameCell.append(nameTitle, nameMeta);
+
+        const storageCell = document.createElement("td");
+        if (!storages.length) {
+          const emptyHint = document.createElement("p");
+          emptyHint.className = "hint";
+          emptyHint.style.margin = "0";
+          emptyHint.textContent = "\u0627\u0646\u0628\u0627\u0631\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.";
+          storageCell.appendChild(emptyHint);
+        } else {
+          const selectedStorageIds = new Set(
+            Array.isArray(ASSETS_MANAGER_STATE.storagePermissions[userCode])
+              ? ASSETS_MANAGER_STATE.storagePermissions[userCode].map((storageId) => String(storageId || "").trim()).filter(Boolean)
+              : []
+          );
+          const grid = document.createElement("div");
+          grid.className = "pm-permission-grid";
+
+          storages.forEach((storage) => {
+            const storageId = String(storage?.id || "").trim();
+            if (!storageId) return;
+
+            const item = document.createElement("label");
+            item.className = "pm-permission-item";
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.dataset.storageId = storageId;
+            checkbox.checked = selectedStorageIds.has(storageId);
+
+            const caption = document.createElement("span");
+            caption.textContent = String(storage?.name || storageId);
+
+            item.append(checkbox, caption);
+            grid.appendChild(item);
+          });
+
+          storageCell.appendChild(grid);
+        }
+
+        row.append(nameCell, storageCell);
+        permissionsBody.appendChild(row);
+      });
+
+      if (!permissionsBody.children.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = '<td class="empty" colspan="2">\u06A9\u0627\u0631\u0628\u0631 \u0645\u0639\u062A\u0628\u0631\u06CC \u06CC\u0627\u0641\u062A \u0646\u0634\u062F.</td>';
+        permissionsBody.appendChild(row);
+      }
+    };
+
     const renderAll = () => {
       const selectedAncestorId = String(assetAncestorSelect?.value || "").trim();
       const selectedStorageId = String(assetStorageSelect?.value || "").trim();
@@ -844,6 +984,7 @@ const readLabelChainSelected = (container) => {
       renderStorages();
       renderAncestors();
       renderLabels();
+      renderPermissions();
 
       renderAncestorLabelChain(selectedChain);
       setSpecialMode(Boolean(assetSpecialToggle?.checked));
@@ -877,6 +1018,8 @@ const readLabelChainSelected = (container) => {
       ASSETS_MANAGER_STATE.labels = Array.isArray(data.labels) ? data.labels : [];
       ASSETS_MANAGER_STATE.ancestors = Array.isArray(data.ancestors) ? data.ancestors : [];
       ASSETS_MANAGER_STATE.assets = Array.isArray(data.assets) ? data.assets : [];
+      ASSETS_MANAGER_STATE.users = Array.isArray(data.users) ? data.users : [];
+      ASSETS_MANAGER_STATE.storagePermissions = normalizeStoragePermissions(data.storage_permissions);
 
       renderAll();
       return data;
@@ -1163,6 +1306,42 @@ const readLabelChainSelected = (container) => {
         setStatus(labelStatus, error?.message || "ذخیره تغییرات برچسب انجام نشد.", true);
       } finally {
         target.disabled = false;
+      }
+    });
+
+    permissionsBody?.addEventListener("change", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
+
+      const row = target.closest("tr");
+      const userCode = String(row?.dataset.userCode || "").trim();
+      if (!userCode) {
+        renderPermissions();
+        return;
+      }
+
+      const rowCheckboxes = qsa('input[type="checkbox"][data-storage-id]', row);
+      const storageIds = rowCheckboxes
+        .filter((input) => input.checked)
+        .map((input) => String(input.dataset.storageId || "").trim())
+        .filter(Boolean);
+
+      rowCheckboxes.forEach((input) => {
+        input.disabled = true;
+      });
+      try {
+        await syncAssetsManager("update_storage_permissions", {
+          user_code: userCode,
+          storage_ids: JSON.stringify(storageIds)
+        });
+        setStatus(permissionsStatus, "\u062F\u0633\u062A\u0631\u0633\u06CC\u200C\u0647\u0627 \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F.");
+      } catch (error) {
+        renderPermissions();
+        setStatus(permissionsStatus, error?.message || "\u0630\u062E\u06CC\u0631\u0647 \u062F\u0633\u062A\u0631\u0633\u06CC\u200C\u0647\u0627 \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.", true);
+      } finally {
+        rowCheckboxes.forEach((input) => {
+          input.disabled = false;
+        });
       }
     });
 
