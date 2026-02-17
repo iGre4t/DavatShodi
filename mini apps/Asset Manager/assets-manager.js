@@ -7,6 +7,12 @@
     assets: []
   };
   const DEFAULT_ENDPOINT = "mini%20apps/Asset%20Manager/index.php";
+  const STORAGE_KIND_OPTIONS = [
+    { value: "branch", label: "\u0634\u0639\u0628\u0647" },
+    { value: "person", label: "\u0634\u062e\u0635" },
+    { value: "repair_shop", label: "\u062a\u0639\u0645\u06cc\u0631\u06af\u0627\u0647" }
+  ];
+  const DEFAULT_STORAGE_KIND = STORAGE_KIND_OPTIONS[0].value;
 
   const qs = (selector, root) => (root || document).querySelector(selector);
   const qsa = (selector, root) => Array.from((root || document).querySelectorAll(selector));
@@ -89,6 +95,7 @@
     const assetLabelValuesWrap = qs("#pm-asset-label-values", root);
 
     const storageNameInput = qs("#pm-storage-name", root);
+    const storageKindSelect = qs("#pm-storage-kind", root);
     const ancestorNameInput = qs("#pm-ancestor-name", root);
     const ancestorLabelChain = qs("#pm-ancestor-label-chain", root);
 
@@ -138,6 +145,14 @@
     const isSpecialAsset = (item) => {
       return item?.special_asset === true || String(item?.special_asset || "") === "1";
     };
+
+    const normalizeStorageKind = (kind) => {
+      const normalized = String(kind || "").trim();
+      return STORAGE_KIND_OPTIONS.some((option) => option.value === normalized)
+        ? normalized
+        : DEFAULT_STORAGE_KIND;
+    };
+
     const fillStorageOptions = (select, selected = "") => {
       if (!select) return;
       const selectedId = String(selected || "");
@@ -158,6 +173,21 @@
       });
 
       select.disabled = ASSETS_MANAGER_STATE.storages.length === 0;
+    };
+
+    const fillStorageKindOptions = (select, selected = DEFAULT_STORAGE_KIND) => {
+      if (!select) return;
+      const selectedKind = normalizeStorageKind(selected);
+      select.innerHTML = "";
+      STORAGE_KIND_OPTIONS.forEach((optionDef) => {
+        const option = document.createElement("option");
+        option.value = optionDef.value;
+        option.textContent = optionDef.label;
+        if (option.value === selectedKind) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      });
     };
 
     const fillAncestorOptions = (select, selected = "") => {
@@ -673,7 +703,7 @@ const readLabelChainSelected = (container) => {
       storagesBody.innerHTML = "";
       if (!ASSETS_MANAGER_STATE.storages.length) {
         const row = document.createElement("tr");
-        row.innerHTML = '<td class="empty" colspan="2">انباری ثبت نشده است.</td>';
+        row.innerHTML = '<td class="empty" colspan="3">انباری ثبت نشده است.</td>';
         storagesBody.appendChild(row);
         return;
       }
@@ -689,6 +719,12 @@ const readLabelChainSelected = (container) => {
         nameInput.dataset.field = "name";
         nameCell.appendChild(nameInput);
 
+        const kindCell = document.createElement("td");
+        const kindSelect = document.createElement("select");
+        kindSelect.dataset.field = "kind";
+        fillStorageKindOptions(kindSelect, storage.kind);
+        kindCell.appendChild(kindSelect);
+
         const actionCell = document.createElement("td");
         actionCell.className = "pm-actions-cell";
         const removeButton = document.createElement("button");
@@ -698,7 +734,7 @@ const readLabelChainSelected = (container) => {
         removeButton.textContent = "حذف";
         actionCell.appendChild(removeButton);
 
-        row.append(nameCell, actionCell);
+        row.append(nameCell, kindCell, actionCell);
         storagesBody.appendChild(row);
       });
     };
@@ -795,11 +831,13 @@ const readLabelChainSelected = (container) => {
     const renderAll = () => {
       const selectedAncestorId = String(assetAncestorSelect?.value || "").trim();
       const selectedStorageId = String(assetStorageSelect?.value || "").trim();
+      const selectedStorageKind = String(storageKindSelect?.value || "").trim();
       const selectedParentLabelId = String(labelParentSelect?.value || "").trim();
       const selectedChain = collectAncestorChainSelected();
 
       fillAncestorOptions(assetAncestorSelect, selectedAncestorId);
       fillStorageOptions(assetStorageSelect, selectedStorageId);
+      fillStorageKindOptions(storageKindSelect, selectedStorageKind);
       fillLabelParentOptions(labelParentSelect, selectedParentLabelId);
 
       renderAssets();
@@ -936,6 +974,7 @@ const readLabelChainSelected = (container) => {
     storageForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const name = String(storageNameInput?.value || "").trim();
+      const kind = normalizeStorageKind(storageKindSelect?.value);
       if (!name) {
         setStatus(storageStatus, "نام انبار الزامی است.", true);
         return;
@@ -943,8 +982,9 @@ const readLabelChainSelected = (container) => {
 
       setStatus(storageStatus, "در حال ذخیره...");
       try {
-        await syncAssetsManager("add_storage", { name });
+        await syncAssetsManager("add_storage", { name, kind });
         storageForm.reset();
+        fillStorageKindOptions(storageKindSelect, DEFAULT_STORAGE_KIND);
         setStatus(storageStatus, "انبار با موفقیت اضافه شد.");
       } catch (error) {
         setStatus(storageStatus, error?.message || "افزودن انبار انجام نشد.", true);
@@ -1056,18 +1096,19 @@ const readLabelChainSelected = (container) => {
 
     storagesBody?.addEventListener("change", async (event) => {
       const target = event.target;
-      if (!(target instanceof HTMLInputElement)) return;
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
       const row = target.closest("tr");
       const id = String(row?.dataset.id || "");
+      const field = String(target.dataset.field || "").trim();
       const value = String(target.value || "").trim();
-      if (!id || !value) {
+      if (!id || !field || (field === "name" && !value)) {
         renderStorages();
         return;
       }
 
       target.disabled = true;
       try {
-        await syncAssetsManager("update_storage", { id, value });
+        await syncAssetsManager("update_storage", { id, field, value });
       } catch (error) {
         renderStorages();
         setStatus(storageStatus, error?.message || "ذخیره تغییرات انبار انجام نشد.", true);

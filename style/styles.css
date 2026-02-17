@@ -1417,7 +1417,7 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 }
 .home-log-item {
   display: grid;
-  grid-template-columns: 112px 1fr;
+  grid-template-columns: 112px auto 1fr;
   gap: 10px;
   align-items: start;
   padding: 8px;
@@ -1431,7 +1431,69 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.home-log-message { color: var(--text); }
+.home-log-type {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.home-log-type--created {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+  border-color: rgba(5, 150, 105, 0.26);
+}
+.home-log-type--transferred {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.26);
+}
+.home-log-type--updated {
+  background: rgba(180, 83, 9, 0.12);
+  color: #b45309;
+  border-color: rgba(180, 83, 9, 0.26);
+}
+.home-log-type--removed {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.22);
+}
+.home-log-type--default {
+  background: rgba(75, 85, 99, 0.1);
+  color: #374151;
+  border-color: rgba(75, 85, 99, 0.2);
+}
+.home-log-message {
+  color: var(--text);
+  line-height: 1.75;
+}
+.home-log-asset {
+  font-weight: 700;
+  color: #0f172a;
+}
+.home-log-code {
+  direction: ltr;
+  unicode-bidi: plaintext;
+  font-family: "Consolas", "SFMono-Regular", Menlo, Monaco, monospace;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 6px;
+  padding: 0 6px;
+}
+.home-log-user {
+  font-weight: 700;
+  color: #047857;
+}
+.home-log-storage {
+  font-weight: 700;
+  color: #0f766e;
+}
 .home-log-empty {
   margin: 0;
   padding: 18px 12px;

@@ -86,8 +86,11 @@ $sidebarName = normalizeUserValue($currentUser['fullname'] ?? '');
 if ($sidebarName === '') {
   $sidebarName = normalizeUserValue($currentUser['username'] ?? '') ?: 'Admin';
 }
-$topbarName = normalizeUserValue($currentUser['username'] ?? '');
-$topbarUserName = $topbarName !== '' ? $topbarName : ($sidebarName ?: 'Admin');
+$topbarName = normalizeUserValue($currentUser['fullname'] ?? '');
+if ($topbarName === '') {
+  $topbarName = normalizeUserValue($currentUser['username'] ?? '');
+}
+$topbarUserName = $topbarName !== '' ? $topbarName : 'Admin';
 $personalFullname = $currentUser['fullname'] ?? '';
 $personalIdNumber = $currentUser['id_number'] ?? $currentUser['id'] ?? '';
 $personalWorkId = $currentUser['work_id'] ?? '';
@@ -695,6 +698,14 @@ $accountEmail = $currentUser['email'] ?? '';
                         <span>نام انبار</span>
                         <input id="pm-storage-name" type="text" required />
                       </label>
+                      <label class="field">
+                        <span>نوع انبار</span>
+                        <select id="pm-storage-kind" required>
+                          <option value="branch">شعبه</option>
+                          <option value="person">شخص</option>
+                          <option value="repair_shop">تعمیرگاه</option>
+                        </select>
+                      </label>
                     </div>
                     <div class="section-footer">
                       <button type="submit" class="btn primary">افزودن انبار</button>
@@ -711,6 +722,7 @@ $accountEmail = $currentUser['email'] ?? '';
                       <thead>
                         <tr>
                           <th>نام انبار</th>
+                          <th>نوع انبار</th>
                           <th>عملیات</th>
                         </tr>
                       </thead>

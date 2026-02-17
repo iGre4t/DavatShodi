@@ -12,6 +12,14 @@ const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
 const LABELS_FILE = DATA_DIR . '/labels.json';
+const STORAGE_KIND_BRANCH = 'branch';
+const STORAGE_KIND_PERSON = 'person';
+const STORAGE_KIND_REPAIR_SHOP = 'repair_shop';
+const STORAGE_KINDS = [
+    STORAGE_KIND_BRANCH,
+    STORAGE_KIND_PERSON,
+    STORAGE_KIND_REPAIR_SHOP
+];
 const LEGACY_DATA_DIRS = [
     __DIR__ . '/../preopreties manager',
     __DIR__ . '/../Asset Manager data'
@@ -71,6 +79,17 @@ function parseBool($value): bool
     }
     $normalized = strtolower(trim((string)$value));
     return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+}
+
+function normalizeStorageKind(string $kind): string
+{
+    $normalized = strtolower(trim($kind));
+    return in_array($normalized, STORAGE_KINDS, true) ? $normalized : STORAGE_KIND_BRANCH;
+}
+
+function isValidStorageKind(string $kind): bool
+{
+    return in_array(strtolower(trim($kind)), STORAGE_KINDS, true);
 }
 
 function uniqueNonEmptyStrings(array $values): array
@@ -235,6 +254,7 @@ function loadStorages(): array
         $items[] = [
             'id' => $id,
             'name' => $name,
+            'kind' => normalizeStorageKind((string)($row['kind'] ?? '')),
             'created_at' => (string)($row['created_at'] ?? ''),
             'updated_at' => (string)($row['updated_at'] ?? '')
         ];
@@ -679,14 +699,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'add_storage') {
         $name = clean((string)($_POST['name'] ?? ''));
+        $kindRaw = strtolower(trim((string)($_POST['kind'] ?? '')));
+        $kind = $kindRaw === '' ? STORAGE_KIND_BRANCH : $kindRaw;
         if ($name === '') {
             out(['status' => 'error', 'message' => 'Storage name is required.'], 422);
+        }
+        if (!isValidStorageKind($kind)) {
+            out(['status' => 'error', 'message' => 'Storage kind is invalid.'], 422);
         }
         if (storageNameExists($storages, $name)) {
             out(['status' => 'error', 'message' => 'Storage name must be unique.'], 422);
         }
         $now = date('c');
-        $storages[] = ['id' => bin2hex(random_bytes(8)), 'name' => $name, 'created_at' => $now, 'updated_at' => $now];
+        $storages[] = [
+            'id' => bin2hex(random_bytes(8)),
+            'name' => $name,
+            'kind' => $kind,
+            'created_at' => $now,
+            'updated_at' => $now
+        ];
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage.'], 500);
         }
@@ -695,18 +726,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'update_storage') {
         $id = trim((string)($_POST['id'] ?? ''));
-        $name = clean((string)($_POST['value'] ?? ''));
-        if ($id === '' || $name === '') {
+        $field = trim((string)($_POST['field'] ?? 'name'));
+        $value = clean((string)($_POST['value'] ?? ''));
+        if ($id === '' || $field === '') {
             out(['status' => 'error', 'message' => 'Invalid storage update.'], 422);
         }
         $idx = idxById($storages, $id);
         if ($idx < 0) {
             out(['status' => 'error', 'message' => 'Storage not found.'], 404);
         }
-        if (storageNameExists($storages, $name, $id)) {
-            out(['status' => 'error', 'message' => 'Storage name must be unique.'], 422);
+        if ($field === 'name') {
+            if ($value === '') {
+                out(['status' => 'error', 'message' => 'Invalid storage update.'], 422);
+            }
+            if (storageNameExists($storages, $value, $id)) {
+                out(['status' => 'error', 'message' => 'Storage name must be unique.'], 422);
+            }
+            $storages[$idx]['name'] = $value;
+        } elseif ($field === 'kind') {
+            $kind = strtolower(trim((string)($_POST['value'] ?? '')));
+            if (!isValidStorageKind($kind)) {
+                out(['status' => 'error', 'message' => 'Storage kind is invalid.'], 422);
+            }
+            $storages[$idx]['kind'] = $kind;
+        } else {
+            out(['status' => 'error', 'message' => 'Invalid storage update field.'], 422);
         }
-        $storages[$idx]['name'] = $name;
         $storages[$idx]['updated_at'] = date('c');
         if (!writeArray(STORAGES_FILE, $storages)) {
             out(['status' => 'error', 'message' => 'Unable to save storage changes.'], 500);
@@ -1306,6 +1351,14 @@ $assets = loadAssets($ancestors, $labels);
           <form id="add-storage-form">
             <div class="grid one">
               <div class="field"><label for="storage-name">Storage Name</label><input id="storage-name" name="name" type="text" required /></div>
+              <div class="field">
+                <label for="storage-kind">Storage Kind</label>
+                <select id="storage-kind" name="kind" required>
+                  <option value="branch">Branch</option>
+                  <option value="person">Person</option>
+                  <option value="repair_shop">Repair Shop</option>
+                </select>
+              </div>
             </div>
             <div class="actions">
               <button class="btn primary" type="submit">Add Storage</button>
@@ -1317,7 +1370,7 @@ $assets = loadAssets($ancestors, $labels);
           <h2>Storages</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Storage Name</th><th>Action</th></tr></thead>
+              <thead><tr><th>Storage Name</th><th>Storage Kind</th><th>Action</th></tr></thead>
               <tbody id="storages-body"></tbody>
             </table>
           </div>
@@ -1356,6 +1409,12 @@ $assets = loadAssets($ancestors, $labels);
       ancestors: <?= json_encode($ancestors, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
       assets: <?= json_encode($assets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
     };
+    const STORAGE_KIND_OPTIONS = [
+      { value: "branch", label: "Branch" },
+      { value: "person", label: "Person" },
+      { value: "repair_shop", label: "Repair Shop" }
+    ];
+    const DEFAULT_STORAGE_KIND = STORAGE_KIND_OPTIONS[0].value;
 
     const paneButtons = [...document.querySelectorAll("[data-pane-target]")];
     const panes = [...document.querySelectorAll("[data-pane]")];
@@ -1371,6 +1430,7 @@ $assets = loadAssets($ancestors, $labels);
     const assetAncestorSelect = document.getElementById("asset-ancestor");
     const assetSpecialNameInput = document.getElementById("asset-special-name");
     const assetStorageSelect = document.getElementById("asset-storage");
+    const storageKindSelect = document.getElementById("storage-kind");
     const assetsBody = document.getElementById("assets-body");
     const storagesBody = document.getElementById("storages-body");
     const ancestorsBody = document.getElementById("ancestors-body");
@@ -1387,6 +1447,26 @@ $assets = loadAssets($ancestors, $labels);
 
     function isSpecialAsset(item) {
       return item?.special_asset === true || String(item?.special_asset || "") === "1";
+    }
+
+    function normalizeStorageKind(kind) {
+      const value = String(kind || "").trim();
+      return STORAGE_KIND_OPTIONS.some((option) => option.value === value)
+        ? value
+        : DEFAULT_STORAGE_KIND;
+    }
+
+    function fillStorageKindOptions(select, selected = DEFAULT_STORAGE_KIND) {
+      if (!select) return;
+      const value = normalizeStorageKind(selected);
+      select.innerHTML = "";
+      STORAGE_KIND_OPTIONS.forEach((optionData) => {
+        const option = document.createElement("option");
+        option.value = optionData.value;
+        option.textContent = optionData.label;
+        if (option.value === value) option.selected = true;
+        select.appendChild(option);
+      });
     }
 
     function setAssetSpecialMode(isSpecial) {
@@ -1504,7 +1584,7 @@ $assets = loadAssets($ancestors, $labels);
       storagesBody.innerHTML = "";
       if (!state.storages.length) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td class="empty" colspan="2">No storages added yet.</td>';
+        tr.innerHTML = '<td class="empty" colspan="3">No storages added yet.</td>';
         storagesBody.appendChild(tr);
         return;
       }
@@ -1517,6 +1597,13 @@ $assets = loadAssets($ancestors, $labels);
         nameInput.dataset.field = "name";
         nameInput.value = String(s.name || "");
         nameCell.appendChild(nameInput);
+
+        const kindCell = document.createElement("td");
+        const kindSelect = document.createElement("select");
+        kindSelect.dataset.field = "kind";
+        fillStorageKindOptions(kindSelect, s.kind);
+        kindCell.appendChild(kindSelect);
+
         const actionCell = document.createElement("td");
         const remove = document.createElement("button");
         remove.type = "button";
@@ -1524,7 +1611,7 @@ $assets = loadAssets($ancestors, $labels);
         remove.dataset.action = "remove-storage";
         remove.textContent = "Remove";
         actionCell.appendChild(remove);
-        tr.append(nameCell, actionCell);
+        tr.append(nameCell, kindCell, actionCell);
         storagesBody.appendChild(tr);
       });
     }
@@ -1561,6 +1648,7 @@ $assets = loadAssets($ancestors, $labels);
     function renderAll() {
       fillAncestorOptions(assetAncestorSelect, assetAncestorSelect.value);
       fillStorageOptions(assetStorageSelect, assetStorageSelect.value);
+      fillStorageKindOptions(storageKindSelect, storageKindSelect?.value);
       setAssetSpecialMode(!!assetSpecialToggle?.checked);
       renderAssets();
       renderStorages();
@@ -1587,11 +1675,13 @@ $assets = loadAssets($ancestors, $labels);
     storageForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = storageForm.elements.name.value.trim();
+      const kind = normalizeStorageKind(storageForm.elements.kind?.value);
       if (!name) return setStatus(storageStatus, "Storage name is required.", true);
       setStatus(storageStatus, "Saving...");
       try {
-        await action("add_storage", { name });
+        await action("add_storage", { name, kind });
         storageForm.reset();
+        fillStorageKindOptions(storageKindSelect, DEFAULT_STORAGE_KIND);
         setStatus(storageStatus, "Storage added.");
       } catch (err) {
         setStatus(storageStatus, err.message || "Unable to add storage.", true);
@@ -1664,14 +1754,15 @@ $assets = loadAssets($ancestors, $labels);
 
     storagesBody.addEventListener("change", async (e) => {
       const t = e.target;
-      if (!(t instanceof HTMLInputElement)) return;
+      if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement)) return;
       const row = t.closest("tr");
       const id = String(row?.dataset.id || "");
+      const field = String(t.dataset.field || "");
       const value = String(t.value || "").trim();
-      if (!id || !value) return renderStorages();
+      if (!id || !field || (field === "name" && !value)) return renderStorages();
       t.disabled = true;
       try {
-        await action("update_storage", { id, value });
+        await action("update_storage", { id, field, value });
       } catch (err) {
         renderStorages();
         alert(err.message || "Unable to save storage changes.");

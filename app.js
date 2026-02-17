@@ -4569,6 +4569,54 @@ function setHomeAssetLogStatus(message = "", isError = false) {
   statusEl.classList.toggle("error", Boolean(isError));
 }
 
+function escapeHomeLogHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => {
+    if (char === "&") return "&amp;";
+    if (char === "<") return "&lt;";
+    if (char === ">") return "&gt;";
+    if (char === '"') return "&quot;";
+    return "&#39;";
+  });
+}
+
+function getHomeAssetLogTypeMeta(action) {
+  const normalized = String(action || "").trim().toLowerCase();
+  const map = {
+    asset_created: { label: "مال جدید", className: "created" },
+    asset_transferred: { label: "انتقال", className: "transferred" },
+    asset_removed: { label: "حذف", className: "removed" },
+    asset_deleted: { label: "حذف", className: "removed" },
+    asset_updated: { label: "ویرایش", className: "updated" }
+  };
+  return map[normalized] || { label: "رویداد", className: "default" };
+}
+
+function formatHomeAssetLogMessage(message) {
+  let html = escapeHomeLogHtml(message);
+
+  html = html.replace(
+    /^مال\s+(.+?)\s+(?=(?:با کد|از انبار|توسط کاربر|در انبار|حذف شد|ویرایش شد|ثبت شد))/u,
+    (_, assetName) => `مال <span class="home-log-asset">${assetName}</span> `
+  );
+
+  html = html.replace(
+    /((?:از|به|در)\s+انبار\s+)(.+?)(?=\s+(?:توسط کاربر|به انبار|منتقل شد|ثبت شد|حذف شد|ویرایش شد|\.|$))/gu,
+    (_, prefix, storageName) => `${prefix}<span class="home-log-storage">${storageName}</span>`
+  );
+
+  html = html.replace(
+    /(با کد\s+)([^\s<]+)/gu,
+    (_, prefix, code) => `${prefix}<span class="home-log-code">${code}</span>`
+  );
+
+  html = html.replace(
+    /(کاربر\s*\()([^)<>]+)(\))/gu,
+    (_, prefix, userName, suffix) => `${prefix}<span class="home-log-user">${userName}</span>${suffix}`
+  );
+
+  return html;
+}
+
 function ensureHomeAssetLogDay(listRoot, dayKey, dayLabel) {
   if (!listRoot) return null;
   const existing = listRoot.querySelector(`[data-home-log-day=\"${dayKey}\"]`);
@@ -4613,6 +4661,7 @@ function appendHomeAssetLogs(logs = []) {
   logs.forEach((entry) => {
     const timestamp = String(entry?.timestamp || "").trim();
     const message = String(entry?.message || "").trim();
+    const action = String(entry?.action || "").trim();
     if (!timestamp || !message) {
       return;
     }
@@ -4634,11 +4683,16 @@ function appendHomeAssetLogs(logs = []) {
     timeEl.className = "home-log-time";
     timeEl.textContent = formatPersianLogTime(parsed);
 
+    const typeMeta = getHomeAssetLogTypeMeta(action);
+    const typeEl = document.createElement("span");
+    typeEl.className = `home-log-type home-log-type--${typeMeta.className}`;
+    typeEl.textContent = typeMeta.label;
+
     const messageEl = document.createElement("span");
     messageEl.className = "home-log-message";
-    messageEl.textContent = message;
+    messageEl.innerHTML = formatHomeAssetLogMessage(message);
 
-    item.append(timeEl, messageEl);
+    item.append(timeEl, typeEl, messageEl);
     dayList.appendChild(item);
   });
 }

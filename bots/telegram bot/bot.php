@@ -665,7 +665,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
             return;
         }
 
-        $result = addAssetFromState($state, $storageId);
+        $result = addAssetFromState($state, $storageId, $telegramUserId);
         if (!$result['ok']) {
             logEvent('asset_save_failed', ['chat_id' => $chatId, 'storage_id' => $storageId, 'message' => (string) $result['message']]);
             $errorText = htmlEscape((string) $result['message']);
@@ -3028,7 +3028,7 @@ function telegramRequest(string $token, string $method, array $payload): array
     ];
 }
 
-function addAssetFromState(array $state, string $storageId): array
+function addAssetFromState(array $state, string $storageId, string $telegramUserId = ''): array
 {
     $storageId = trim($storageId);
     if ($storageId === '') {
@@ -3104,6 +3104,24 @@ function addAssetFromState(array $state, string $storageId): array
     }
 
     $storageName = storageNameById($storages, $storageId);
+    $savedAsset = $assets[count($assets) - 1] ?? [];
+    $actor = $telegramUserId !== '' ? getAuthorizedActorName($telegramUserId) : 'کاربر نامشخص';
+    appendAssetManagerLog(
+        'asset_created',
+        sprintf(
+            'مال %s با کد %s توسط کاربر (%s) در انبار %s ثبت شد',
+            $name,
+            $code !== '' ? $code : 'بدون کد',
+            $actor,
+            $storageName !== '' ? $storageName : 'نامشخص'
+        ),
+        [
+            'asset_id' => (string) ($savedAsset['id'] ?? ''),
+            'asset_code' => $code,
+            'actor' => $actor,
+            'storage_id' => $storageId,
+        ]
+    );
     $summary = "مال ثبت شد.\nنام: {$name}\nانبار: {$storageName}\nکد: {$code}";
     return [
         'ok' => true,
