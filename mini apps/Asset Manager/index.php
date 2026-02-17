@@ -16,6 +16,7 @@ const LEGACY_DATA_DIRS = [
     __DIR__ . '/../preopreties manager',
     __DIR__ . '/../Asset Manager data'
 ];
+require_once __DIR__ . '/asset_logs.php';
 
 function legacyPathCandidates(string $filename): array
 {
@@ -327,6 +328,51 @@ function ancestorNameById(array $ancestors, string $ancestorId): string
     return clean((string)($ancestor['name'] ?? ''));
 }
 
+function storageNameById(array $storages, string $storageId): string
+{
+    foreach ($storages as $storage) {
+        if ((string)($storage['id'] ?? '') !== $storageId) {
+            continue;
+        }
+        return clean((string)($storage['name'] ?? ''));
+    }
+    return '';
+}
+
+function currentActorDisplayName(): string
+{
+    $user = $_SESSION['user'] ?? [];
+    if (!is_array($user)) {
+        return 'کاربر نامشخص';
+    }
+
+    foreach (['fullname', 'display_name', 'name', 'username', 'code'] as $field) {
+        $value = clean((string)($user[$field] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+    return 'کاربر نامشخص';
+}
+
+function assetNameForLog(array $asset): string
+{
+    $name = clean((string)($asset['name'] ?? ''));
+    if ($name !== '') {
+        return $name;
+    }
+    $code = clean((string)($asset['code'] ?? ''));
+    if ($code !== '') {
+        return 'کد ' . $code;
+    }
+    return 'مال بدون نام';
+}
+
+function assetCodeForLog(array $asset): string
+{
+    return clean((string)($asset['code'] ?? ''));
+}
+
 function ancestorIdByName(array $ancestors, string $name): string
 {
     $needle = strtolower(clean($name));
@@ -548,6 +594,24 @@ function labelParentCreatesCycle(array $labels, string $labelId, string $newPare
     return false;
 }
 
+function writeAssetActionLog(string $action, string $message, array $context = []): void
+{
+    $payload = [
+        'action' => $action,
+        'timestamp' => gmdate('c'),
+        'message' => $message
+    ];
+    foreach ($context as $key => $value) {
+        if (!is_string($key) || $key === '') {
+            continue;
+        }
+        if (is_scalar($value) || $value === null) {
+            $payload[$key] = (string)$value;
+        }
+    }
+    assetLogsAppend($payload);
+}
+
 function out(array $payload, int $status = 200): void
 {
     http_response_code($status);
@@ -569,6 +633,18 @@ function okData(array $storages, array $labels, array $ancestors, array $assets)
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = clean((string)($_POST['action'] ?? ''));
+
+    if ($action === 'load_asset_logs') {
+        $limit = (int)($_POST['limit'] ?? 30);
+        $cursor = trim((string)($_POST['cursor'] ?? ''));
+        $logsPage = assetLogsReadPage($limit, $cursor);
+        out([
+            'status' => 'ok',
+            'logs' => $logsPage['items'],
+            'next_cursor' => (string)($logsPage['next_cursor'] ?? '')
+        ]);
+    }
+
     $storages = loadStorages();
     $labels = loadLabels();
     $ancestors = loadAncestors($labels);
@@ -903,6 +979,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(ASSETS_FILE, $assets)) {
             out(['status' => 'error', 'message' => 'Unable to save asset.'], 500);
         }
+
+        $savedAsset = $assets[count($assets) - 1] ?? [];
+        $actor = currentActorDisplayName();
+        $assetName = assetNameForLog($savedAsset);
+        $assetCode = assetCodeForLog($savedAsset);
+        $storageName = storageNameById($storages, $storageId) ?: 'نامشخص';
+        $assetCodeText = $assetCode !== '' ? $assetCode : 'بدون کد';
+        writeAssetActionLog(
+            'asset_created',
+            sprintf(
+                'مال %s با کد %s توسط کاربر (%s) در انبار %s ثبت شد',
+                $assetName,
+                $assetCodeText,
+                $actor,
+                $storageName
+            ),
+            [
+                'asset_id' => (string)($savedAsset['id'] ?? ''),
+                'asset_code' => $assetCode,
+                'actor' => $actor,
+                'storage_id' => $storageId
+            ]
+        );
+
         out(okData($storages, $labels, $ancestors, $assets));
     }
 
@@ -923,6 +1023,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($idx < 0) {
             out(['status' => 'error', 'message' => 'Asset not found.'], 404);
         }
+        $beforeAsset = $assets[$idx];
 
         $isSpecialAsset = parseBool($assets[$idx]['special_asset'] ?? false);
         if ($field === 'code' && assetCodeExists($assets, clean($value), $id)) {
@@ -967,6 +1068,64 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(ASSETS_FILE, $assets)) {
             out(['status' => 'error', 'message' => 'Unable to save asset changes.'], 500);
         }
+
+        $afterAsset = $assets[$idx];
+        $actor = currentActorDisplayName();
+        $assetName = assetNameForLog($afterAsset);
+        $assetCode = assetCodeForLog($afterAsset);
+        $assetCodeText = $assetCode !== '' ? $assetCode : 'بدون کد';
+
+        if ($field === 'storage_id') {
+            $beforeStorageId = trim((string)($beforeAsset['storage_id'] ?? ''));
+            $afterStorageId = trim((string)($afterAsset['storage_id'] ?? ''));
+            if ($beforeStorageId !== $afterStorageId) {
+                $fromStorageName = storageNameById($storages, $beforeStorageId) ?: 'نامشخص';
+                $toStorageName = storageNameById($storages, $afterStorageId) ?: 'نامشخص';
+                writeAssetActionLog(
+                    'asset_transferred',
+                    sprintf(
+                        'مال %s از انبار %s توسط کاربر (%s) به انبار %s منتقل شد',
+                        $assetName,
+                        $fromStorageName,
+                        $actor,
+                        $toStorageName
+                    ),
+                    [
+                        'asset_id' => $id,
+                        'asset_code' => $assetCode,
+                        'actor' => $actor,
+                        'from_storage_id' => $beforeStorageId,
+                        'to_storage_id' => $afterStorageId
+                    ]
+                );
+            }
+        } else {
+            $beforeComparable = $field === 'label_values'
+                ? json_encode((array)($beforeAsset['label_values'] ?? []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : clean((string)($beforeAsset[$field] ?? ''));
+            $afterComparable = $field === 'label_values'
+                ? json_encode((array)($afterAsset['label_values'] ?? []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : clean((string)($afterAsset[$field] ?? ''));
+
+            if ((string)$beforeComparable !== (string)$afterComparable) {
+                writeAssetActionLog(
+                    'asset_updated',
+                    sprintf(
+                        'اطلاعات مال %s با کد %s توسط کاربر (%s) ویرایش شد',
+                        $assetName,
+                        $assetCodeText,
+                        $actor
+                    ),
+                    [
+                        'asset_id' => $id,
+                        'asset_code' => $assetCode,
+                        'actor' => $actor,
+                        'field' => $field
+                    ]
+                );
+            }
+        }
+
         out(okData($storages, $labels, $ancestors, $assets));
     }
 
@@ -977,9 +1136,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         $next = [];
         $removed = false;
+        $removedAsset = null;
         foreach ($assets as $asset) {
             if ((string)($asset['id'] ?? '') === $id) {
                 $removed = true;
+                $removedAsset = $asset;
                 continue;
             }
             $next[] = $asset;
@@ -990,6 +1151,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!writeArray(ASSETS_FILE, $next)) {
             out(['status' => 'error', 'message' => 'Unable to remove asset.'], 500);
         }
+
+        if (is_array($removedAsset)) {
+            $actor = currentActorDisplayName();
+            $assetName = assetNameForLog($removedAsset);
+            $assetCode = assetCodeForLog($removedAsset);
+            $assetCodeText = $assetCode !== '' ? $assetCode : 'بدون کد';
+            writeAssetActionLog(
+                'asset_removed',
+                sprintf(
+                    'مال %s با کد %s توسط کاربر (%s) حذف شد',
+                    $assetName,
+                    $assetCodeText,
+                    $actor
+                ),
+                [
+                    'asset_id' => $id,
+                    'asset_code' => $assetCode,
+                    'actor' => $actor
+                ]
+            );
+        }
+
         out(okData($storages, $labels, $ancestors, $next));
     }
 

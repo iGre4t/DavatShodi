@@ -11,6 +11,11 @@ const ASSETS_FILE = DATA_DIR . '/assets.json';
 const STORAGES_FILE = DATA_DIR . '/storages.json';
 const ANCESTOR_ASSETS_FILE = DATA_DIR . '/ancestor_assets.json';
 const LABELS_FILE = DATA_DIR . '/labels.json';
+const API_CONFIG_FILE = __DIR__ . '/../../api/config.php';
+const API_COMMON_FILE = __DIR__ . '/../../api/lib/common.php';
+const API_USERS_FILE = __DIR__ . '/../../api/lib/users.php';
+const AUTH_MAX_FAILED_ATTEMPTS = 3;
+const AUTH_BLOCK_DURATION_SECONDS = 600;
 const LEGACY_DATA_DIRS = [
     __DIR__ . '/../../mini apps/preopreties manager',
     __DIR__ . '/../../mini apps/Asset Manager data'
@@ -98,12 +103,71 @@ function handleMessage(string $token, array $message): void
         return;
     }
 
-    $text = clean((string) ($message['text'] ?? ''));
-    if ($text === '/start') {
-        logEvent('command_start', ['chat_id' => $chatId]);
-        clearChatState($chatId);
-        sendStartMenu($token, $chatId);
+    $telegramUserId = normalizeTelegramUserId((string) ($message['from']['id'] ?? ''));
+    if ($telegramUserId === '') {
+        logEvent('message_missing_from_id', ['chat_id' => $chatId]);
         return;
+    }
+
+    if (!authDatabaseAvailable()) {
+        sendMessage(
+            $token,
+            $chatId,
+            "⚠️ <b>ارتباط با دیتابیس برقرار نیست.</b>\n\nلطفا چند دقیقه دیگر دوباره تلاش کنید."
+        );
+        return;
+    }
+
+    $text = clean((string) ($message['text'] ?? ''));
+    $state = refreshAuthSecurityState($chatId, getChatState($chatId));
+    $authBlockRemaining = getAuthBlockRemainingSeconds($state);
+
+    if ($text === '/start') {
+        logEvent('command_start', ['chat_id' => $chatId, 'from_id' => $telegramUserId]);
+        if ($authBlockRemaining > 0) {
+            sendMessage($token, $chatId, buildAuthBlockedText($authBlockRemaining));
+            return;
+        }
+
+        if (isTelegramUserAuthorized($telegramUserId)) {
+            clearChatState($chatId);
+            sendStartMenu($token, $chatId);
+            return;
+        }
+
+        $authState = [
+            'step' => 'awaiting_auth_identifier',
+            'auth_fail_count' => (int) ($state['auth_fail_count'] ?? 0),
+        ];
+        if (!empty($state['auth_block_until'])) {
+            $authState['auth_block_until'] = (string) $state['auth_block_until'];
+        }
+        setChatState($chatId, $authState);
+        sendMessage(
+            $token,
+            $chatId,
+            "🔐 <b>احراز هویت لازم است</b>\n\n"
+                . "برای استفاده از امکانات ربات، ابتدا یکی از موارد زیر را ارسال کنید:\n"
+                . "• <b>نام کاربری</b>\n"
+                . "• <b>شماره موبایل</b>\n\n"
+                . "بعد از شناسایی حساب، از شما <b>پین‌کد</b> خواسته می‌شود."
+        );
+        return;
+    }
+
+    if ($authBlockRemaining > 0) {
+        sendMessage($token, $chatId, buildAuthBlockedText($authBlockRemaining));
+        return;
+    }
+
+    if (!isTelegramUserAuthorized($telegramUserId)) {
+        handleUnauthorizedMessage($token, $chatId, $telegramUserId, $text, $state);
+        return;
+    }
+
+    if (isAuthStep((string) ($state['step'] ?? ''))) {
+        clearChatState($chatId);
+        $state = [];
     }
 
     if ($text === '/cancel') {
@@ -205,6 +269,7 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
     $callbackId = trim((string) ($callbackQuery['id'] ?? ''));
     $chatId = trim((string) ($callbackQuery['message']['chat']['id'] ?? ''));
     $messageId = trim((string) ($callbackQuery['message']['message_id'] ?? ''));
+    $telegramUserId = normalizeTelegramUserId((string) ($callbackQuery['from']['id'] ?? ''));
     $data = trim((string) ($callbackQuery['data'] ?? ''));
 
     if ($callbackId !== '') {
@@ -213,6 +278,56 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
     if ($chatId === '') {
         logEvent('callback_missing_chat_id', ['data' => $data]);
         return;
+    }
+
+    if ($telegramUserId === '') {
+        logEvent('callback_missing_from_id', ['chat_id' => $chatId, 'data' => $data]);
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>شناسه کاربر تلگرام معتبر نیست.</b>\n\nلطفا دوباره <code>/start</code> را ارسال کنید.",
+            null
+        );
+        return;
+    }
+
+    if (!authDatabaseAvailable()) {
+        sendOrEditMessage(
+            $token,
+            $chatId,
+            $messageId,
+            "⚠️ <b>ارتباط با دیتابیس برقرار نیست.</b>\n\nلطفا چند دقیقه دیگر دوباره تلاش کنید.",
+            null
+        );
+        return;
+    }
+
+    $state = refreshAuthSecurityState($chatId, getChatState($chatId));
+    $authBlockRemaining = getAuthBlockRemainingSeconds($state);
+    if ($authBlockRemaining > 0) {
+        sendOrEditMessage($token, $chatId, $messageId, buildAuthBlockedText($authBlockRemaining), null);
+        return;
+    }
+
+    if (!isTelegramUserAuthorized($telegramUserId)) {
+        $step = (string) ($state['step'] ?? '');
+        if (!isAuthStep($step)) {
+            setChatState($chatId, [
+                'step' => 'awaiting_auth_identifier',
+                'auth_fail_count' => (int) ($state['auth_fail_count'] ?? 0),
+            ]);
+        }
+        $authText = $step === 'awaiting_auth_pin'
+            ? "🔐 <b>ابتدا احراز هویت را کامل کنید.</b>\n\nلطفا <b>پین‌کد ۴ رقمی</b> خود را به‌صورت پیام متنی ارسال کنید."
+            : "🔐 <b>برای استفاده از دکمه‌های ربات باید وارد شوید.</b>\n\n"
+                . "لطفا همین حالا <b>نام کاربری</b> یا <b>شماره موبایل</b> خود را به‌صورت پیام متنی ارسال کنید.";
+        sendOrEditMessage($token, $chatId, $messageId, $authText, null);
+        return;
+    }
+
+    if (isAuthStep((string) ($state['step'] ?? ''))) {
+        clearChatState($chatId);
     }
 
     if ($data === 'menu_add_asset') {
@@ -506,6 +621,566 @@ function handleCallbackQuery(string $token, array $callbackQuery): void
         "⚠️ <b>گزینه انتخابی معتبر نیست</b>\n\nلطفا دوباره از منوی شروع انتخاب کنید.",
         getStartMenuMarkup()
     );
+}
+
+function isAuthStep(string $step): bool
+{
+    return in_array($step, ['awaiting_auth_identifier', 'awaiting_auth_pin', 'auth_blocked'], true);
+}
+
+function normalizeTelegramUserId(string $value): string
+{
+    $normalized = normalizeDigits($value);
+    $digits = preg_replace('/\D+/', '', $normalized) ?? '';
+    return trim($digits);
+}
+
+function normalizeDigits(string $value): string
+{
+    return strtr($value, [
+        '۰' => '0',
+        '۱' => '1',
+        '۲' => '2',
+        '۳' => '3',
+        '۴' => '4',
+        '۵' => '5',
+        '۶' => '6',
+        '۷' => '7',
+        '۸' => '8',
+        '۹' => '9',
+        '٠' => '0',
+        '١' => '1',
+        '٢' => '2',
+        '٣' => '3',
+        '٤' => '4',
+        '٥' => '5',
+        '٦' => '6',
+        '٧' => '7',
+        '٨' => '8',
+        '٩' => '9',
+    ]);
+}
+
+function normalizePhoneForLookup(string $value): string
+{
+    $digits = preg_replace('/\D+/', '', normalizeDigits($value)) ?? '';
+    if ($digits === '') {
+        return '';
+    }
+    if (strpos($digits, '0098') === 0) {
+        $digits = substr($digits, 4);
+    } elseif (strpos($digits, '98') === 0) {
+        $digits = substr($digits, 2);
+    }
+    if (strlen($digits) === 10 && strpos($digits, '9') === 0) {
+        $digits = '0' . $digits;
+    }
+    if (strlen($digits) !== 11 || strpos($digits, '09') !== 0) {
+        return '';
+    }
+    return $digits;
+}
+
+function normalizeUsernameForLookup(string $value): string
+{
+    $cleaned = clean($value);
+    $withoutAt = ltrim($cleaned, '@');
+    return trim($withoutAt);
+}
+
+function normalizePinInput(string $value): string
+{
+    $digits = preg_replace('/\D+/', '', normalizeDigits($value)) ?? '';
+    return strlen($digits) === 4 ? $digits : '';
+}
+
+function authBlockUntilTimestamp(array $state): int
+{
+    $raw = trim((string) ($state['auth_block_until'] ?? ''));
+    if ($raw === '') {
+        return 0;
+    }
+    $timestamp = strtotime($raw);
+    return is_int($timestamp) && $timestamp > 0 ? $timestamp : 0;
+}
+
+function getAuthBlockRemainingSeconds(array $state): int
+{
+    $blockUntil = authBlockUntilTimestamp($state);
+    if ($blockUntil <= 0) {
+        return 0;
+    }
+    $remaining = $blockUntil - time();
+    return $remaining > 0 ? $remaining : 0;
+}
+
+function refreshAuthSecurityState(string $chatId, array $state): array
+{
+    $remaining = getAuthBlockRemainingSeconds($state);
+    if ($remaining > 0) {
+        return $state;
+    }
+
+    if (authBlockUntilTimestamp($state) <= 0) {
+        return $state;
+    }
+
+    unset($state['auth_block_until'], $state['auth_fail_count'], $state['auth_user_code'], $state['auth_user_label']);
+    if ((string) ($state['step'] ?? '') === 'auth_blocked') {
+        $state['step'] = 'awaiting_auth_identifier';
+    }
+    setChatState($chatId, $state);
+    return $state;
+}
+
+function formatDurationText(int $seconds): string
+{
+    $seconds = max(0, $seconds);
+    $minutes = (int) ceil($seconds / 60);
+    if ($minutes <= 1) {
+        return 'کمتر از ۱ دقیقه';
+    }
+    return $minutes . ' دقیقه';
+}
+
+function buildAuthBlockedText(int $remainingSeconds): string
+{
+    $duration = htmlEscape(formatDurationText($remainingSeconds));
+    return "⛔ <b>دسترسی شما موقتاً مسدود شده است.</b>\n\n"
+        . "به‌دلیل ۳ تلاش ناموفق، برای جلوگیری از سوءاستفاده تا <b>{$duration}</b> دیگر امکان ورود ندارید.\n"
+        . "بعد از اتمام زمان، دوباره تلاش کنید.";
+}
+
+function registerAuthFailure(string $chatId, array $state, string $stepForRetry): array
+{
+    $failedCount = (int) ($state['auth_fail_count'] ?? 0) + 1;
+    logEvent('auth_failed_attempt', [
+        'chat_id' => $chatId,
+        'step' => $stepForRetry,
+        'failed_count' => $failedCount,
+    ]);
+    if ($failedCount >= AUTH_MAX_FAILED_ATTEMPTS) {
+        $state['auth_fail_count'] = 0;
+        $state['auth_block_until'] = date('c', time() + AUTH_BLOCK_DURATION_SECONDS);
+        $state['step'] = 'auth_blocked';
+        unset($state['auth_user_code'], $state['auth_user_label']);
+        setChatState($chatId, $state);
+        logEvent('auth_blocked', ['chat_id' => $chatId, 'duration_seconds' => AUTH_BLOCK_DURATION_SECONDS]);
+        return [
+            'blocked' => true,
+            'remaining_attempts' => 0,
+            'remaining_seconds' => AUTH_BLOCK_DURATION_SECONDS,
+        ];
+    }
+
+    $state['auth_fail_count'] = $failedCount;
+    $state['step'] = $stepForRetry;
+    if ($stepForRetry !== 'awaiting_auth_pin') {
+        unset($state['auth_user_code'], $state['auth_user_label']);
+    }
+    setChatState($chatId, $state);
+    return [
+        'blocked' => false,
+        'remaining_attempts' => AUTH_MAX_FAILED_ATTEMPTS - $failedCount,
+        'remaining_seconds' => 0,
+    ];
+}
+
+function handleUnauthorizedMessage(
+    string $token,
+    string $chatId,
+    string $telegramUserId,
+    string $text,
+    array $state
+): void {
+    if ($text === '/cancel') {
+        sendMessage(
+            $token,
+            $chatId,
+            "ℹ️ <b>هنوز احراز هویت نشده‌اید.</b>\n\n"
+                . "برای ورود به ربات، لطفا <b>نام کاربری</b> یا <b>شماره موبایل</b> خود را ارسال کنید."
+        );
+        return;
+    }
+
+    $step = (string) ($state['step'] ?? '');
+    if (!isAuthStep($step)) {
+        $state = [
+            'step' => 'awaiting_auth_identifier',
+            'auth_fail_count' => (int) ($state['auth_fail_count'] ?? 0),
+            'auth_block_until' => (string) ($state['auth_block_until'] ?? ''),
+        ];
+        setChatState($chatId, $state);
+        $step = 'awaiting_auth_identifier';
+    }
+
+    if ($step === 'awaiting_auth_identifier') {
+        if ($text === '') {
+            sendMessage(
+                $token,
+                $chatId,
+                "🔎 <b>شناسه ورود دریافت نشد.</b>\n\n"
+                    . "لطفا <b>نام کاربری</b> یا <b>شماره موبایل</b> خود را ارسال کنید."
+            );
+            return;
+        }
+
+        $user = findAuthUserByIdentifier($text);
+        if (!is_array($user)) {
+            $result = registerAuthFailure($chatId, $state, 'awaiting_auth_identifier');
+            if ($result['blocked']) {
+                sendMessage($token, $chatId, buildAuthBlockedText((int) $result['remaining_seconds']));
+                return;
+            }
+            $remainingAttempts = (int) $result['remaining_attempts'];
+            sendMessage(
+                $token,
+                $chatId,
+                "❌ <b>کاربری با این اطلاعات پیدا نشد.</b>\n\n"
+                    . "لطفا دوباره <b>نام کاربری</b> یا <b>شماره موبایل</b> صحیح را ارسال کنید.\n"
+                    . "تعداد تلاش باقی‌مانده: <b>{$remainingAttempts}</b>"
+            );
+            return;
+        }
+
+        $storedPin = normalizePinInput((string) ($user['pin_code'] ?? ''));
+        if ($storedPin === '') {
+            $state['step'] = 'awaiting_auth_identifier';
+            unset($state['auth_user_code'], $state['auth_user_label']);
+            setChatState($chatId, $state);
+            sendMessage(
+                $token,
+                $chatId,
+                "⚠️ <b>برای این حساب پین‌کد تعریف نشده است.</b>\n\n"
+                    . "لطفا با مدیر سیستم تماس بگیرید تا پین‌کد شما در پنل ثبت شود."
+            );
+            return;
+        }
+
+        $displayName = clean((string) ($user['fullname'] ?? ''));
+        if ($displayName === '' || $displayName === '0') {
+            $displayName = clean((string) ($user['username'] ?? ''));
+        }
+        if ($displayName === '') {
+            $displayName = clean((string) ($user['phone'] ?? ''));
+        }
+
+        $state['step'] = 'awaiting_auth_pin';
+        $state['auth_user_code'] = (string) ($user['code'] ?? '');
+        $state['auth_user_label'] = $displayName;
+        setChatState($chatId, $state);
+        logEvent('auth_identifier_matched', [
+            'chat_id' => $chatId,
+            'user_code' => (string) ($user['code'] ?? ''),
+        ]);
+
+        $safeLabel = htmlEscape($displayName);
+        sendMessage(
+            $token,
+            $chatId,
+            "✅ <b>حساب شما شناسایی شد.</b>\n\n"
+                . "کاربر: <b>{$safeLabel}</b>\n"
+                . "لطفا حالا <b>پین‌کد ۴ رقمی</b> را ارسال کنید."
+        );
+        return;
+    }
+
+    if ($step === 'awaiting_auth_pin') {
+        $userCode = trim((string) ($state['auth_user_code'] ?? ''));
+        if ($userCode === '') {
+            $state['step'] = 'awaiting_auth_identifier';
+            unset($state['auth_user_label']);
+            setChatState($chatId, $state);
+            sendMessage(
+                $token,
+                $chatId,
+                "ℹ️ <b>جلسه ورود شما منقضی شد.</b>\n\n"
+                    . "لطفا دوباره <b>نام کاربری</b> یا <b>شماره موبایل</b> خود را ارسال کنید."
+            );
+            return;
+        }
+
+        $pinInput = normalizePinInput($text);
+        if ($pinInput === '') {
+            $result = registerAuthFailure($chatId, $state, 'awaiting_auth_pin');
+            if ($result['blocked']) {
+                sendMessage($token, $chatId, buildAuthBlockedText((int) $result['remaining_seconds']));
+                return;
+            }
+            $remainingAttempts = (int) $result['remaining_attempts'];
+            sendMessage(
+                $token,
+                $chatId,
+                "❌ <b>پین‌کد معتبر نیست.</b>\n\n"
+                    . "پین‌کد باید دقیقا <b>۴ رقم</b> باشد.\n"
+                    . "تعداد تلاش باقی‌مانده: <b>{$remainingAttempts}</b>"
+            );
+            return;
+        }
+
+        $user = findAuthUserByCode($userCode);
+        if (!is_array($user)) {
+            $result = registerAuthFailure($chatId, $state, 'awaiting_auth_identifier');
+            if ($result['blocked']) {
+                sendMessage($token, $chatId, buildAuthBlockedText((int) $result['remaining_seconds']));
+                return;
+            }
+            sendMessage(
+                $token,
+                $chatId,
+                "⚠️ <b>حساب کاربری پیدا نشد.</b>\n\n"
+                    . "لطفا دوباره <b>نام کاربری</b> یا <b>شماره موبایل</b> خود را ارسال کنید."
+            );
+            return;
+        }
+
+        $storedPin = normalizePinInput((string) ($user['pin_code'] ?? ''));
+        if ($storedPin === '' || !hash_equals($storedPin, $pinInput)) {
+            $result = registerAuthFailure($chatId, $state, 'awaiting_auth_pin');
+            if ($result['blocked']) {
+                sendMessage($token, $chatId, buildAuthBlockedText((int) $result['remaining_seconds']));
+                return;
+            }
+            $remainingAttempts = (int) $result['remaining_attempts'];
+            sendMessage(
+                $token,
+                $chatId,
+                "❌ <b>پین‌کد اشتباه است.</b>\n\n"
+                    . "لطفا دوباره پین‌کد صحیح را ارسال کنید.\n"
+                    . "تعداد تلاش باقی‌مانده: <b>{$remainingAttempts}</b>"
+            );
+            return;
+        }
+
+        $linkResult = linkTelegramUserToProfile($userCode, $telegramUserId);
+        if (!$linkResult['ok']) {
+            sendMessage(
+                $token,
+                $chatId,
+                "⚠️ <b>ورود انجام نشد.</b>\n\n"
+                    . htmlEscape((string) $linkResult['message'])
+            );
+            return;
+        }
+
+        clearChatState($chatId);
+        logEvent('auth_verified', ['chat_id' => $chatId, 'user_code' => $userCode, 'telegram_id' => $telegramUserId]);
+        $displayName = clean((string) ($user['fullname'] ?? ''));
+        if ($displayName === '' || $displayName === '0') {
+            $displayName = clean((string) ($user['username'] ?? ''));
+        }
+        $safeName = htmlEscape($displayName);
+        sendMessage(
+            $token,
+            $chatId,
+            "🎉 <b>احراز هویت با موفقیت انجام شد.</b>\n\n"
+                . "کاربر تایید شده: <b>{$safeName}</b>\n"
+                . "اکنون به امکانات ربات دسترسی دارید."
+        );
+        sendStartMenu($token, $chatId);
+        return;
+    }
+
+    sendMessage(
+        $token,
+        $chatId,
+        "🔐 <b>برای استفاده از ربات باید وارد شوید.</b>\n\n"
+            . "لطفا <b>نام کاربری</b> یا <b>شماره موبایل</b> خود را ارسال کنید."
+    );
+}
+
+function authDatabaseAvailable(): bool
+{
+    return getUsersPdoForBot() instanceof PDO;
+}
+
+function getUsersPdoForBot(): ?PDO
+{
+    static $resolved = false;
+    static $cachedPdo = null;
+
+    if ($resolved) {
+        return $cachedPdo instanceof PDO ? $cachedPdo : null;
+    }
+    $resolved = true;
+
+    if (!is_file(API_CONFIG_FILE) || !is_file(API_COMMON_FILE) || !is_file(API_USERS_FILE)) {
+        logEvent('auth_db_files_missing', [
+            'config_exists' => is_file(API_CONFIG_FILE),
+            'common_exists' => is_file(API_COMMON_FILE),
+            'users_exists' => is_file(API_USERS_FILE),
+        ]);
+        return null;
+    }
+
+    require_once API_COMMON_FILE;
+    require_once API_USERS_FILE;
+
+    if (!function_exists('loadConfig') || !function_exists('connectDatabase')) {
+        logEvent('auth_db_functions_missing');
+        return null;
+    }
+
+    try {
+        $config = loadConfig(API_CONFIG_FILE);
+        $pdo = connectDatabase($config);
+        if (!$pdo instanceof PDO) {
+            logEvent('auth_db_connect_failed');
+            return null;
+        }
+        if (function_exists('ensureUsersExtendedColumns')) {
+            ensureUsersExtendedColumns($pdo);
+        }
+        $cachedPdo = $pdo;
+        return $cachedPdo;
+    } catch (Throwable $error) {
+        logEvent('auth_db_exception', ['message' => $error->getMessage()]);
+        return null;
+    }
+}
+
+function buildAuthUserSelectColumns(PDO $pdo): string
+{
+    $columns = ['`code`', '`username`', '`fullname`', '`phone`'];
+    if (function_exists('usersTableHasColumn') && usersTableHasColumn($pdo, 'telegram_id')) {
+        $columns[] = '`telegram_id`';
+    }
+    if (function_exists('usersTableHasColumn') && usersTableHasColumn($pdo, 'pin_code')) {
+        $columns[] = '`pin_code`';
+    }
+    return implode(', ', $columns);
+}
+
+function findAuthUserByIdentifier(string $identifier): ?array
+{
+    $pdo = getUsersPdoForBot();
+    if (!$pdo instanceof PDO) {
+        return null;
+    }
+
+    $phone = normalizePhoneForLookup($identifier);
+    if ($phone !== '') {
+        try {
+            $sql = 'SELECT ' . buildAuthUserSelectColumns($pdo) . ' FROM `users` WHERE `phone` = :phone LIMIT 1';
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([':phone' => $phone]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (is_array($row)) {
+                return $row;
+            }
+        } catch (PDOException $error) {
+            logEvent('auth_lookup_phone_failed', ['message' => $error->getMessage()]);
+            return null;
+        }
+    }
+
+    $username = normalizeUsernameForLookup($identifier);
+    if ($username === '') {
+        return null;
+    }
+    try {
+        $sql = 'SELECT ' . buildAuthUserSelectColumns($pdo) . ' FROM `users` WHERE LOWER(`username`) = LOWER(:username) LIMIT 1';
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([':username' => $username]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    } catch (PDOException $error) {
+        logEvent('auth_lookup_username_failed', ['message' => $error->getMessage()]);
+        return null;
+    }
+}
+
+function findAuthUserByCode(string $code): ?array
+{
+    $normalizedCode = clean($code);
+    if ($normalizedCode === '') {
+        return null;
+    }
+
+    $pdo = getUsersPdoForBot();
+    if (!$pdo instanceof PDO) {
+        return null;
+    }
+
+    try {
+        $sql = 'SELECT ' . buildAuthUserSelectColumns($pdo) . ' FROM `users` WHERE `code` = :code LIMIT 1';
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([':code' => $normalizedCode]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    } catch (PDOException $error) {
+        logEvent('auth_lookup_code_failed', ['message' => $error->getMessage()]);
+        return null;
+    }
+}
+
+function findAuthUserByTelegramId(string $telegramUserId): ?array
+{
+    $normalizedTelegramId = normalizeTelegramUserId($telegramUserId);
+    if ($normalizedTelegramId === '') {
+        return null;
+    }
+
+    $pdo = getUsersPdoForBot();
+    if (!$pdo instanceof PDO) {
+        return null;
+    }
+    if (function_exists('usersTableHasColumn') && !usersTableHasColumn($pdo, 'telegram_id')) {
+        return null;
+    }
+
+    try {
+        $sql = 'SELECT ' . buildAuthUserSelectColumns($pdo) . ' FROM `users` WHERE `telegram_id` = :telegram_id LIMIT 1';
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([':telegram_id' => $normalizedTelegramId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    } catch (PDOException $error) {
+        logEvent('auth_lookup_telegram_failed', ['message' => $error->getMessage()]);
+        return null;
+    }
+}
+
+function isTelegramUserAuthorized(string $telegramUserId): bool
+{
+    return is_array(findAuthUserByTelegramId($telegramUserId));
+}
+
+function linkTelegramUserToProfile(string $userCode, string $telegramUserId): array
+{
+    $normalizedCode = clean($userCode);
+    $normalizedTelegramId = normalizeTelegramUserId($telegramUserId);
+    if ($normalizedCode === '' || $normalizedTelegramId === '') {
+        return ['ok' => false, 'message' => 'اطلاعات ورود معتبر نیست.'];
+    }
+
+    $pdo = getUsersPdoForBot();
+    if (!$pdo instanceof PDO) {
+        return ['ok' => false, 'message' => 'اتصال به دیتابیس برقرار نشد.'];
+    }
+    if (function_exists('usersTableHasColumn') && !usersTableHasColumn($pdo, 'telegram_id')) {
+        return ['ok' => false, 'message' => 'فیلد telegram_id در دیتابیس موجود نیست.'];
+    }
+
+    $existing = findAuthUserByTelegramId($normalizedTelegramId);
+    if (is_array($existing) && trim((string) ($existing['code'] ?? '')) !== $normalizedCode) {
+        return ['ok' => false, 'message' => 'این حساب تلگرام قبلاً به کاربر دیگری متصل شده است.'];
+    }
+
+    try {
+        $stmt = $pdo->prepare('UPDATE `users` SET `telegram_id` = :telegram_id WHERE `code` = :code');
+        $ok = $stmt->execute([
+            ':telegram_id' => $normalizedTelegramId,
+            ':code' => $normalizedCode,
+        ]);
+        if (!$ok) {
+            return ['ok' => false, 'message' => 'ذخیره شناسه تلگرام انجام نشد.'];
+        }
+        return ['ok' => true, 'message' => 'Telegram ID linked'];
+    } catch (PDOException $error) {
+        logEvent('auth_link_telegram_failed', ['message' => $error->getMessage(), 'code' => $normalizedCode]);
+        return ['ok' => false, 'message' => 'خطا در ذخیره شناسه تلگرام.'];
+    }
 }
 
 function getStartMenuMarkup(): array

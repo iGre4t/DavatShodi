@@ -33,6 +33,8 @@ let passwordResetUserCode = "";
 const TITLE_KEY = "frontend_panel_title";
 const TIMEZONE_KEY = "frontend_panel_timezone";
 const API_ENDPOINT = "./api/data.php"; // Shared handler supplying data for both users and gallery tabs.
+const ASSET_MANAGER_ENDPOINT = "mini%20apps/Asset%20Manager/index.php";
+const HOME_ASSET_LOGS_PAGE_SIZE = 35;
 const PANEL_TITLE_KEY = "frontend_panel_name";
 const PANEL_TITLE_DEFAULT = "Frontend panel";
 const DEFAULT_SETTINGS = {
@@ -212,6 +214,10 @@ let backupImportTrigger = null;
 let backupFileChosen = null;
 let pendingBackupImportFile = null;
 let backupSettingsFormElement = null;
+let homeAssetLogsCursor = "";
+let homeAssetLogsHasMore = true;
+let homeAssetLogsLoading = false;
+let homeAssetLogsInitialized = false;
 
 let PRINTER_DEVICES = [];
 let PRINTER_SETTINGS = {
@@ -4511,6 +4517,257 @@ function setActiveTab(tab) {
   const el = qs('#page-title');
   if (el) el.textContent = titles[tab] || '';
 }
+function getActivePanelTimezone() {
+  return (
+    localStorage.getItem(TIMEZONE_KEY) ||
+    SERVER_SETTINGS.timezone ||
+    DEFAULT_SETTINGS.timezone ||
+    "Asia/Tehran"
+  );
+}
+
+function getPersianLogDayMeta(dateValue) {
+  const timezone = getActivePanelTimezone();
+  const dayKey = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: timezone
+  }).format(dateValue);
+
+  const formatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: timezone
+  });
+  const parts = formatter.formatToParts(dateValue);
+  const readPart = (type) => parts.find((entry) => entry.type === type)?.value || "";
+  return {
+    key: dayKey,
+    label: `${readPart("weekday")}، ${readPart("day")} ${readPart("month")} ${readPart("year")}`.trim()
+  };
+}
+
+function formatPersianLogTime(dateValue) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: getActivePanelTimezone()
+  }).format(dateValue);
+}
+
+function setHomeAssetLogStatus(message = "", isError = false) {
+  const statusEl = qs("#home-asset-log-status");
+  if (!statusEl) return;
+  statusEl.textContent = message;
+  statusEl.classList.toggle("error", Boolean(isError));
+}
+
+function ensureHomeAssetLogDay(listRoot, dayKey, dayLabel) {
+  if (!listRoot) return null;
+  const existing = listRoot.querySelector(`[data-home-log-day=\"${dayKey}\"]`);
+  if (existing) {
+    return qs(".home-log-list", existing);
+  }
+
+  const section = document.createElement("section");
+  section.className = "home-log-day";
+  section.dataset.homeLogDay = dayKey;
+
+  const title = document.createElement("h2");
+  title.textContent = dayLabel;
+
+  const list = document.createElement("ul");
+  list.className = "home-log-list";
+
+  section.append(title, list);
+  listRoot.appendChild(section);
+  return list;
+}
+
+function renderEmptyHomeAssetLogs() {
+  const listRoot = qs("#home-asset-log-days");
+  if (!listRoot) return;
+  listRoot.innerHTML = "";
+  const empty = document.createElement("p");
+  empty.className = "home-log-empty";
+  empty.textContent = "هنوز گزارشی ثبت نشده است.";
+  listRoot.appendChild(empty);
+}
+
+function appendHomeAssetLogs(logs = []) {
+  const listRoot = qs("#home-asset-log-days");
+  if (!listRoot) return;
+
+  const emptyState = qs(".home-log-empty", listRoot);
+  if (emptyState) {
+    emptyState.remove();
+  }
+
+  logs.forEach((entry) => {
+    const timestamp = String(entry?.timestamp || "").trim();
+    const message = String(entry?.message || "").trim();
+    if (!timestamp || !message) {
+      return;
+    }
+    const parsed = new Date(timestamp);
+    if (Number.isNaN(parsed.getTime())) {
+      return;
+    }
+
+    const dayMeta = getPersianLogDayMeta(parsed);
+    const dayList = ensureHomeAssetLogDay(listRoot, dayMeta.key, dayMeta.label);
+    if (!dayList) {
+      return;
+    }
+
+    const item = document.createElement("li");
+    item.className = "home-log-item";
+
+    const timeEl = document.createElement("span");
+    timeEl.className = "home-log-time";
+    timeEl.textContent = formatPersianLogTime(parsed);
+
+    const messageEl = document.createElement("span");
+    messageEl.className = "home-log-message";
+    messageEl.textContent = message;
+
+    item.append(timeEl, messageEl);
+    dayList.appendChild(item);
+  });
+}
+
+function updateHomeAssetLoadMoreButton() {
+  const button = qs("#home-asset-log-more");
+  if (!button) return;
+  button.classList.toggle("hidden", !homeAssetLogsHasMore);
+  button.disabled = homeAssetLogsLoading;
+}
+
+async function requestHomeAssetLogsPage(cursor = "") {
+  const fd = new FormData();
+  fd.append("action", "load_asset_logs");
+  fd.append("limit", String(HOME_ASSET_LOGS_PAGE_SIZE));
+  if (cursor) {
+    fd.append("cursor", cursor);
+  }
+
+  const response = await fetch(ASSET_MANAGER_ENDPOINT, {
+    method: "POST",
+    body: fd,
+    credentials: "same-origin"
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!response.ok || !payload || payload.status !== "ok") {
+    throw new Error(payload?.message || "خطا در دریافت گزارشات سیستم.");
+  }
+
+  return payload;
+}
+
+async function loadHomeAssetLogs({ reset = false } = {}) {
+  if (homeAssetLogsLoading) {
+    return;
+  }
+  if (!reset && !homeAssetLogsHasMore) {
+    return;
+  }
+
+  const loadMoreButton = qs("#home-asset-log-more");
+  homeAssetLogsLoading = true;
+  const previousButtonLabel = loadMoreButton?.textContent || "";
+  if (loadMoreButton) {
+    loadMoreButton.disabled = true;
+    loadMoreButton.textContent = "در حال بارگذاری...";
+  }
+
+  if (reset) {
+    homeAssetLogsCursor = "";
+    homeAssetLogsHasMore = true;
+    const listRoot = qs("#home-asset-log-days");
+    if (listRoot) {
+      listRoot.innerHTML = "";
+    }
+    setHomeAssetLogStatus("در حال دریافت گزارشات...");
+  }
+
+  try {
+    const payload = await requestHomeAssetLogsPage(reset ? "" : homeAssetLogsCursor);
+    const logs = Array.isArray(payload.logs) ? payload.logs : [];
+    if (reset && logs.length === 0) {
+      renderEmptyHomeAssetLogs();
+      setHomeAssetLogStatus("");
+    } else {
+      appendHomeAssetLogs(logs);
+      setHomeAssetLogStatus("");
+    }
+
+    homeAssetLogsCursor = String(payload.next_cursor || "").trim();
+    homeAssetLogsHasMore = homeAssetLogsCursor !== "";
+    homeAssetLogsInitialized = true;
+
+    const listRoot = qs("#home-asset-log-days");
+    const hasRenderedItems = !!listRoot?.querySelector(".home-log-day");
+    if (!hasRenderedItems && !homeAssetLogsHasMore) {
+      renderEmptyHomeAssetLogs();
+    }
+  } catch (error) {
+    setHomeAssetLogStatus(error?.message || "خطا در دریافت گزارشات سیستم.", true);
+  } finally {
+    homeAssetLogsLoading = false;
+    if (loadMoreButton) {
+      loadMoreButton.disabled = false;
+      loadMoreButton.textContent = previousButtonLabel || "نمایش بیشتر";
+    }
+    updateHomeAssetLoadMoreButton();
+  }
+}
+
+function initHomeSubTabs() {
+  const root = qs("#tab-home");
+  if (!root) return;
+
+  const buttons = qsa("[data-home-pane-target]", root);
+  const panes = qsa("[data-home-pane]", root);
+  const setPane = (paneId) => {
+    buttons.forEach((button) => {
+      const isActive = button.dataset.homePaneTarget === paneId;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    panes.forEach((pane) => {
+      pane.classList.toggle("active", pane.dataset.homePane === paneId);
+    });
+
+    if (paneId === "system-logs" && !homeAssetLogsInitialized) {
+      void loadHomeAssetLogs({ reset: true });
+    }
+  };
+
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setPane(button.dataset.homePaneTarget || "overview");
+    });
+  });
+
+  qs("#home-asset-log-more")?.addEventListener("click", () => {
+    void loadHomeAssetLogs();
+  });
+
+  setPane("overview");
+  updateHomeAssetLoadMoreButton();
+}
 
 function createTextCell(value) {
   const td = document.createElement('td');
@@ -5052,6 +5309,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setActiveTab('home');
   renderUsers();
   updateKpis();
+  initHomeSubTabs();
   renderGalleryCategories();
   gallerySearchCountElement = qs("[data-gallery-search-count]");
   photoChooserSearchCountElement = qs("[data-photo-chooser-search-count]");
