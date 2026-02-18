@@ -915,6 +915,31 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     render();
   };
 
+  let isPersisting = false;
+  const persistAllChanges = async (successMessage = 'All changes saved.') => {
+    if (isPersisting) return false;
+    const validationError = validateAll();
+    if (validationError) {
+      setStatus(validationError, true);
+      return false;
+    }
+    isPersisting = true;
+    saveAllBtn.disabled = true;
+    try {
+      const data = await postAction('save_all', { items: JSON.stringify(items) });
+      items = Array.isArray(data.items) ? data.items : items;
+      render();
+      setStatus(successMessage || data.message || 'All changes saved.');
+      return true;
+    } catch (error) {
+      setStatus(error?.message || 'Failed to save changes.', true);
+      return false;
+    } finally {
+      isPersisting = false;
+      saveAllBtn.disabled = false;
+    }
+  };
+
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const fd = new FormData(form);
@@ -942,7 +967,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     }
     items.push(next);
     render();
-    setStatus('Question added to list. Click Save to persist changes.');
+    void persistAllChanges('Question saved.');
     form.reset();
     const defaultType = form.querySelector('input[name="questionType"][value="mcq"]');
     if (defaultType instanceof HTMLInputElement) {
@@ -991,6 +1016,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       items[idx].answers = normalizeAnswers(items[idx].answers);
     }
     render();
+    void persistAllChanges('Question type updated and saved.');
   });
 
   body.addEventListener('click', (event) => {
@@ -1001,7 +1027,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     const id = deleteBtn.getAttribute('data-delete-id') || '';
     items = items.filter((item) => item.id !== id);
     render();
-    setStatus('Row removed from list. Click Save to persist changes.');
+    void persistAllChanges('Question removed and saved.');
   });
 
   body.addEventListener('dragstart', (event) => {
@@ -1055,7 +1081,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     const placeAfter = event.clientY > (rect.top + rect.height / 2);
     if (reorderById(draggedRowId, targetId, placeAfter)) {
       render();
-      setStatus('Order changed. Click Save to persist changes.');
+      void persistAllChanges('Question order saved.');
     }
     draggedRowId = '';
     clearDragVisuals();
@@ -1067,22 +1093,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   });
 
   saveAllBtn.addEventListener('click', async () => {
-    const validationError = validateAll();
-    if (validationError) {
-      setStatus(validationError, true);
-      return;
-    }
-    saveAllBtn.disabled = true;
-    try {
-      const data = await postAction('save_all', { items: JSON.stringify(items) });
-      items = Array.isArray(data.items) ? data.items : items;
-      render();
-      setStatus(data.message || 'All changes saved.');
-    } catch (error) {
-      setStatus(error?.message || 'Failed to save changes.', true);
-    } finally {
-      saveAllBtn.disabled = false;
-    }
+    await persistAllChanges('All changes saved.');
   });
 
   formTypeInputs.forEach((radio) => {
