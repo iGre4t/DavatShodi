@@ -316,7 +316,7 @@ const GLOBAL_LAZY_LOADER_DEFAULTS = Object.freeze({
   fontFaces: ['400 16px "PeydaWebFaNum"', '700 16px "PeydaWebFaNum"']
 });
 const GLOBAL_LAZY_LOADER_TRACE_PATH_D = "M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z";
-const GLOBAL_LAZY_LOADER_SHOW_DELAY_MS = 500;
+const GLOBAL_LAZY_LOADER_SHOW_DELAY_MS = 0;
 const TAB_LAZY_LOADER_FADEOUT_MS = 260;
 const GLOBAL_LAZY_LOADER_USAGE_SNIPPET = [
   "// Available globally after app.js loads:",
@@ -4839,19 +4839,9 @@ function scheduleTabLazyLoader(host, message = "Loading tab content...", delayMs
   if (!(host instanceof Element)) {
     return { cancel: () => {} };
   }
-  const safeDelay = Math.max(0, Number(delayMs) || 0);
-  let cancelled = false;
-  const timerId = setTimeout(() => {
-    if (cancelled || !host.isConnected || host.getAttribute("aria-busy") !== "true") {
-      return;
-    }
-    host.replaceChildren(createTabLazyLoaderElement(message));
-  }, safeDelay);
+  host.replaceChildren(createTabLazyLoaderElement(message));
   return {
-    cancel: () => {
-      cancelled = true;
-      clearTimeout(timerId);
-    }
+    cancel: () => {}
   };
 }
 
@@ -5889,12 +5879,7 @@ function hideAppLoader(){
   }
   const loader = qs('#app-loader');
   if (!loader) return;
-  const wasPending = loader.classList.contains("global-lazy-loader-pending");
   loader.classList.remove("global-lazy-loader-pending");
-  if (wasPending) {
-    loader.remove();
-    return;
-  }
   loader.classList.add('is-hidden');
   loader.classList.add("global-lazy-loader-hidden");
   const removeLoader = () => loader.remove();
@@ -5907,24 +5892,8 @@ function scheduleInitialAppLoaderReveal(delayMs = GLOBAL_LAZY_LOADER_SHOW_DELAY_
   if (!(loader instanceof Element)) {
     return;
   }
-  if (initialAppLoaderRevealTimer) {
-    clearTimeout(initialAppLoaderRevealTimer);
-  }
-  loader.classList.add("global-lazy-loader-pending");
-  initialAppLoaderRevealTimer = setTimeout(() => {
-    initialAppLoaderRevealTimer = null;
-    const currentLoader = qs("#app-loader");
-    if (!(currentLoader instanceof Element)) {
-      return;
-    }
-    if (
-      currentLoader.classList.contains("is-hidden") ||
-      currentLoader.classList.contains("global-lazy-loader-hidden")
-    ) {
-      return;
-    }
-    currentLoader.classList.remove("global-lazy-loader-pending");
-  }, Math.max(0, Number(delayMs) || 0));
+  void delayMs;
+  loader.classList.remove("global-lazy-loader-pending");
 }
 
 function normalizeInitialAppLoader() {
@@ -5934,7 +5903,7 @@ function normalizeInitialAppLoader() {
   }
   loader.classList.add("global-lazy-loader-overlay");
   loader.classList.remove("is-hidden", "global-lazy-loader-hidden");
-  loader.classList.add("global-lazy-loader-pending");
+  loader.classList.remove("global-lazy-loader-pending");
   let card = qs(".global-lazy-loader-card", loader);
   if (!(card instanceof Element)) {
     const legacyTitle = qs(".loader-title", loader)?.textContent ?? "";
@@ -5993,8 +5962,30 @@ function isSvgSiteIconSource(rawValue, iconUrl = "") {
   if (/^data:image\/svg\+xml/i.test(raw) || /^data:image\/svg\+xml/i.test(normalizedHref)) {
     return true;
   }
-  const candidate = stripUrlQueryAndHash(normalizedHref || raw);
-  return /\.svg$/i.test(candidate);
+  const candidates = [raw, normalizedHref]
+    .filter(Boolean)
+    .flatMap((candidate) => {
+      try {
+        return [candidate, decodeURIComponent(candidate)];
+      } catch {
+        return [candidate];
+      }
+    });
+  if (candidates.some((candidate) => /\.svg(?:$|[?#&])/i.test(candidate))) {
+    return true;
+  }
+  const matchedPhoto =
+    typeof findGalleryPhotoMatchingSiteIcon === "function"
+      ? findGalleryPhotoMatchingSiteIcon()
+      : null;
+  if (!matchedPhoto) {
+    return false;
+  }
+  const photoFilename = normalizeValue(matchedPhoto.filename);
+  const photoUrl = typeof getGalleryPhotoFileUrl === "function"
+    ? getGalleryPhotoFileUrl(matchedPhoto)
+    : "";
+  return [photoFilename, photoUrl].some((value) => /\.svg(?:$|[?#&])/i.test(String(value || "")));
 }
 
 function createGlobalLazyLoaderTraceSvg() {

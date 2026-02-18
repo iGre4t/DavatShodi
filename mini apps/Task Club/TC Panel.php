@@ -14,6 +14,8 @@ requireTabPermissionFromSession('task-club', false);
       <button type="button" class="sub-item active" data-pane="tc-main">Main Panel</button>
       <button type="button" class="sub-item" data-pane="tc-invitees">Invitees</button>
       <button type="button" class="sub-item" data-pane="tc-question">Question</button>
+      <button type="button" class="sub-item" data-pane="tc-manage-tasks">Manage Tasks</button>
+      <div data-tc-task-subtab-nav></div>
     </div>
   </aside>
   <div class="sub-content">
@@ -221,6 +223,10 @@ requireTabPermissionFromSession('task-club', false);
     <div class="sub-pane" data-pane="tc-question">
       <?php include __DIR__ . '/TCQ.php'; ?>
     </div>
+    <div class="sub-pane" data-pane="tc-manage-tasks">
+      <?php include __DIR__ . '/TCT.php'; ?>
+    </div>
+    <div data-tc-task-subtab-panes></div>
   </div>
 </div>
 </div>

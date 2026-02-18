@@ -1,11 +1,18 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+$tcqIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tcq_action']);
+requireTabPermissionFromSession('task-club', $tcqIsJsonRequest);
+
 $tcqStorePath = __DIR__ . '/TCQ list.json';
 $tcqInviteesCsvPath = __DIR__ . '/TC Event/Invitees mapped.csv';
 $tcqAnswersCsvPath = __DIR__ . '/TC Event/Answers.csv';
 $tcqCodeStatePath = __DIR__ . '/TCQ code state.json';
 $tcqSettingsPath = __DIR__ . '/TCQ settings.json';
+$tcqTaskId = '';
+$tcqTaskTagCode = '';
+$tcqTaskTitle = '';
 const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
   'randomOrder' => true
@@ -231,6 +238,67 @@ function tcqSaveCodeState(string $path, array $state): bool
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
+function tcqNormalizeTaskTagCode(string $value): string
+{
+  $upper = strtoupper(trim($value));
+  $clean = preg_replace('/[^A-Z0-9_-]+/', '', $upper);
+  return is_string($clean) ? $clean : '';
+}
+
+function tcqReadTasksStore(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $jsonPayload = '';
+  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
+    $jsonPayload = (string)($m[1] ?? '');
+  } else {
+    $start = strpos($content, '[');
+    $end = strrpos($content, ']');
+    if ($start !== false && $end !== false && $end >= $start) {
+      $jsonPayload = substr($content, $start, $end - $start + 1);
+    }
+  }
+  if ($jsonPayload === '') {
+    return [];
+  }
+  $decoded = json_decode($jsonPayload, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function tcqFindTaskById(string $taskId, string $tasksStorePath): ?array
+{
+  $needle = trim($taskId);
+  if ($needle === '') {
+    return null;
+  }
+  $tasks = tcqReadTasksStore($tasksStorePath);
+  foreach ($tasks as $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    $id = trim((string)($task['id'] ?? ''));
+    if ($id === '' || $id !== $needle) {
+      continue;
+    }
+    $tagCode = tcqNormalizeTaskTagCode((string)($task['tagCode'] ?? ($task['tag_code'] ?? '')));
+    if ($tagCode === '') {
+      return null;
+    }
+    return [
+      'id' => $id,
+      'tagCode' => $tagCode,
+      'title' => trim((string)($task['title'] ?? ''))
+    ];
+  }
+  return null;
+}
+
 function tcqExtractCodeNumber(string $code): int
 {
   if (!preg_match('/^Q(\d+)$/', $code, $m)) {
@@ -395,6 +463,41 @@ function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newIte
 
 if (!defined('TCQ_INCLUDE_ONLY')) {
   define('TCQ_INCLUDE_ONLY', false);
+}
+
+$tcqRequestedTaskId = trim((string)($_POST['task_id'] ?? ($_GET['task_id'] ?? '')));
+$tcqTaskLookupFailed = false;
+if ($tcqRequestedTaskId !== '') {
+  $task = tcqFindTaskById($tcqRequestedTaskId, __DIR__ . '/tasks/tasks.js');
+  if (is_array($task)) {
+    $tcqTaskId = (string)($task['id'] ?? '');
+    $tcqTaskTagCode = tcqNormalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+    $tcqTaskTitle = trim((string)($task['title'] ?? ''));
+    if ($tcqTaskId !== '' && $tcqTaskTagCode !== '') {
+      $tcqTaskDir = __DIR__ . '/tasks/' . $tcqTaskTagCode;
+      $tcqStorePath = $tcqTaskDir . '/TCQ list.json';
+      $tcqInviteesCsvPath = $tcqTaskDir . '/Invitees mapped.csv';
+      $tcqAnswersCsvPath = $tcqTaskDir . '/Answers.csv';
+      $tcqCodeStatePath = $tcqTaskDir . '/TCQ code state.json';
+      $tcqSettingsPath = $tcqTaskDir . '/TCQ settings.json';
+    } else {
+      $tcqTaskLookupFailed = true;
+    }
+  } else {
+    $tcqTaskLookupFailed = true;
+  }
+}
+
+if ($tcqTaskLookupFailed) {
+  if (!TCQ_INCLUDE_ONLY && $tcqIsJsonRequest) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  if (!TCQ_INCLUDE_ONLY) {
+    echo '<div class="card"><p class="muted">Task not found.</p></div>';
+    return;
+  }
 }
 
 if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['tcq_action']))) {
@@ -599,7 +702,10 @@ if (TCQ_INCLUDE_ONLY) {
 
 <script>
 (() => {
-  const endpoint = 'mini%20apps/Task%20Club/TCQ.php';
+  const endpoint = <?= json_encode(
+    'mini%20apps/Task%20Club/TCQ.php' . ($tcqTaskId !== '' ? ('?task_id=' . rawurlencode($tcqTaskId)) : ''),
+    JSON_UNESCAPED_UNICODE
+  ); ?>;
   const form = document.getElementById('tcq-form');
   const input = document.getElementById('tcq-question-input');
   const body = document.getElementById('tcq-list-body');

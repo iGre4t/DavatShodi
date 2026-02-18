@@ -144,7 +144,7 @@ $accountEmail = $currentUser['email'] ?? '';
   </head>
   <body>
     <!-- Loader remains until app.js finishes initializing the view and hides this element. -->
-    <div id="app-loader" class="global-lazy-loader-overlay global-lazy-loader-pending" role="status" aria-live="polite" aria-label="در حال بارگذاری پنل...">
+    <div id="app-loader" class="global-lazy-loader-overlay" role="status" aria-live="polite" aria-label="در حال بارگذاری پنل...">
       <div class="global-lazy-loader-card">
         <div class="global-lazy-loader-icon-wrap global-lazy-loader-icon-wrap--default" aria-hidden="true">
             <svg class="global-lazy-loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">

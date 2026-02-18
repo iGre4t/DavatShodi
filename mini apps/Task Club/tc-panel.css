@@ -464,6 +464,101 @@
   font-size: 12px;
 }
 
+.tc-shell [data-tc-task-subtab-nav],
+.tc-shell [data-tc-task-subtab-panes] {
+  display: contents;
+}
+
+.tc-shell .tct-list-table td {
+  vertical-align: middle;
+}
+
+.tc-shell .tct-list-table code {
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+
+.tc-shell .tct-action-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.tc-shell .tct-drag-cell {
+  width: 56px;
+  text-align: center;
+}
+
+.tc-shell .tct-drag-handle {
+  border: 0;
+  background: transparent;
+  color: var(--muted, #6b7280);
+  font-size: 18px;
+  line-height: 1;
+  cursor: grab;
+  padding: 6px;
+}
+
+.tc-shell .tct-drag-handle:active {
+  cursor: grabbing;
+}
+
+.tc-shell .tct-row-dragging {
+  opacity: 0.55;
+}
+
+.tc-shell .tct-row-drop-target {
+  outline: 2px dashed var(--primary, #111111);
+  outline-offset: -2px;
+}
+
+.tc-shell .tct-tag-code-input {
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+
+.tc-shell .tc-task-top-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.tc-shell .tc-task-top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  padding-bottom: 8px;
+}
+
+.tc-shell .tc-task-top-nav .sub-item {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  min-width: 120px;
+  text-align: center;
+  justify-content: center;
+}
+
+.tc-shell .tc-task-top-section {
+  display: none;
+}
+
+.tc-shell .tc-task-top-section.active {
+  display: block;
+}
+
+.tc-shell .tc-task-quiz-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.tc-shell .tc-task-quiz-frame {
+  width: 100%;
+  min-height: 720px;
+  border: 0;
+  display: block;
+  background: #ffffff;
+}
+
 @media (max-width: 900px) {
   .tc-shell .sub-layout {
     grid-template-columns: 1fr;
@@ -480,6 +575,14 @@
   .tc-shell .tcq-answer-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .tc-shell .tc-task-top-nav .sub-item {
+    min-width: 0;
+  }
+
+  .tc-shell .tc-task-quiz-frame {
+    min-height: 620px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -489,6 +592,10 @@
 
   .tc-shell .grid {
     grid-template-columns: 1fr;
+  }
+
+  .tc-shell .tc-task-quiz-frame {
+    min-height: 520px;
   }
 }
 
