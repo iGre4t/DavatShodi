@@ -204,8 +204,8 @@ $accountEmail = $currentUser['email'] ?? '';
           <?php if (in_array('features', $allowedTabs, true)): ?>
             <!-- Features tab placeholder has no content yet but reserves a nav entry. -->
             <button class="nav-item<?= $initialTab === 'features' ? ' active' : '' ?>" data-tab="features"<?= $initialTab === 'features' ? ' aria-current="page"' : '' ?>>
-              <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
-              <span>Features</span>
+              <span class="nav-icon ri ri-apps-line" aria-hidden="true"></span>
+              <span>المان‌ها</span>
             </button>
           <?php endif; ?>
           <?php if (in_array('wheel-of-fortune', $allowedTabs, true)): ?>

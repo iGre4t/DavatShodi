@@ -25,6 +25,9 @@ requireTabPermissionFromSession('features', false);
         <button type="button" class="sub-item" data-pane="code-editor">
           Code Editor
         </button>
+        <button type="button" class="sub-item" data-pane="lazy-loader">
+          Lazy Loader
+        </button>
         <button type="button" class="sub-item" data-pane="checkbox">
           Checkbox
         </button>
@@ -156,6 +159,80 @@ requireTabPermissionFromSession('features', false);
             <button type="button" class="btn ghost" data-clear-code>
               Clear
             </button>
+          </div>
+        </div>
+      </div>
+      <div class="sub-pane lazy-loader-pane" data-pane="lazy-loader" dir="rtl">
+        <div class="card default-card code-editor-card">
+          <div class="default-card-header">
+            <h3>Global Lazy Loader (WFM Style)</h3>
+          </div>
+          <div class="default-card-body">
+            <p class="muted">
+              This component exposes a global loader API on <code>window.GlobalLazyLoader</code> so any tab or async
+              operation can show the same overlay UI.
+            </p>
+            <div class="lazy-loader-fields">
+              <label class="field standard-width">
+                <span>Primary text</span>
+                <input
+                  type="text"
+                  data-lazy-loader-primary
+                  value="در حال آماده سازی"
+                  placeholder="Primary loader text"
+                  dir="auto"
+                />
+              </label>
+              <label class="field standard-width">
+                <span>Secondary text</span>
+                <input
+                  type="text"
+                  data-lazy-loader-secondary
+                  value="لطفاً چند لحظه صبر کنید"
+                  placeholder="Secondary loader text"
+                  dir="auto"
+                />
+              </label>
+            </div>
+            <div class="section-footer lazy-loader-actions">
+              <button type="button" class="btn secondary" data-lazy-loader-show>
+                Show
+              </button>
+              <button type="button" class="btn secondary" data-lazy-loader-hide>
+                Hide
+              </button>
+              <button type="button" class="btn secondary" data-lazy-loader-boot>
+                Boot demo
+              </button>
+              <button type="button" class="btn secondary" data-lazy-loader-task>
+                Async task demo
+              </button>
+            </div>
+            <p class="hint">
+              Available API: <code>show</code>, <code>hide</code>, <code>setText</code>, <code>boot</code>,
+              <code>remove</code>, <code>getElement</code>.
+            </p>
+            <label class="code-editor-title" for="lazy-loader-code">
+              Global API usage
+            </label>
+            <div class="code-editor-wrapper">
+              <textarea
+                id="lazy-loader-code"
+                class="code-editor"
+                rows="12"
+                spellcheck="false"
+                readonly
+              ></textarea>
+              <button
+                type="button"
+                class="icon-btn code-editor-copy-btn"
+                data-copy-lazy-loader-code
+                aria-label="Copy lazy loader code"
+              >
+                <span class="ri ri-clipboard-line"></span>
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

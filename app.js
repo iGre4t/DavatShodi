@@ -299,6 +299,42 @@ let PRINTER_SETTINGS = {
   scale: ""
 };
 let backupSaveButton = null;
+const GLOBAL_LAZY_LOADER_ROOT_ID = "global-lazy-loader";
+const GLOBAL_LAZY_LOADER_DEFAULT_PRIMARY_TEXT = "در حال آماده سازی";
+const GLOBAL_LAZY_LOADER_DEFAULT_SECONDARY_TEXT = "لطفاً چند لحظه صبر کنید";
+const GLOBAL_LAZY_LOADER_DEFAULTS = Object.freeze({
+  primaryText: GLOBAL_LAZY_LOADER_DEFAULT_PRIMARY_TEXT,
+  secondaryText: GLOBAL_LAZY_LOADER_DEFAULT_SECONDARY_TEXT,
+  minDuration: 1300,
+  removeDelay: 450,
+  bodyLoadingClass: "page-loading",
+  waitForFonts: true,
+  waitForWindowLoad: true,
+  removeOnDone: true,
+  hideOnDone: true,
+  fontFaces: ['400 16px "PeydaWebFaNum"', '700 16px "PeydaWebFaNum"']
+});
+const GLOBAL_LAZY_LOADER_USAGE_SNIPPET = [
+  "// Available globally after app.js loads:",
+  "window.GlobalLazyLoader.show(\"در حال پردازش\", \"لطفاً صبر کنید\");",
+  "",
+  "// Optional: update texts while a request runs",
+  "window.GlobalLazyLoader.setText(\"در حال نهایی سازی\", \"تقریباً تمام شد\");",
+  "",
+  "// Hide overlay (removes the element after transition)",
+  "window.GlobalLazyLoader.hide();",
+  "",
+  "// Startup helper similar to WFM boot flow",
+  "await window.GlobalLazyLoader.boot({",
+  "  primaryText: \"در حال آماده سازی\",",
+  "  secondaryText: \"لطفاً چند لحظه صبر کنید\",",
+  "  minDuration: 1300",
+  "});",
+  "",
+  "// Remove immediately if needed",
+  "window.GlobalLazyLoader.remove();"
+].join("\n");
+let globalLazyLoaderRemoveTimer = null;
 
 function normalizeValue(value) {
   if (value === null || value === undefined) {
@@ -4802,6 +4838,7 @@ function runExternalTabInitializers(tab) {
     initModalsPreviewModalControls();
     initFeatureNotificationTestControls();
     initCodeEditorControls();
+    initFeatureLazyLoaderControls();
     return;
   }
   if (tab === "devsettings") {
@@ -5798,6 +5835,211 @@ function hideAppLoader(){
   setTimeout(removeLoader, 700);
 }
 
+function normalizeLazyLoaderText(value, fallback = "") {
+  const normalized = String(value ?? "").trim();
+  return normalized || fallback;
+}
+
+function getGlobalLazyLoaderElement() {
+  return qs(`#${GLOBAL_LAZY_LOADER_ROOT_ID}`);
+}
+
+function applyGlobalLazyLoaderText(overlay, primaryText, secondaryText = "") {
+  if (!(overlay instanceof Element)) {
+    return;
+  }
+  const primaryEl = qs(".global-lazy-loader-text", overlay);
+  const secondaryEl = qs(".global-lazy-loader-subtext", overlay);
+  const primary = normalizeLazyLoaderText(primaryText, GLOBAL_LAZY_LOADER_DEFAULT_PRIMARY_TEXT);
+  const secondary = normalizeLazyLoaderText(secondaryText);
+  if (primaryEl) {
+    primaryEl.textContent = primary;
+  }
+  if (secondaryEl) {
+    secondaryEl.textContent = secondary;
+  }
+  overlay.setAttribute("aria-label", primary);
+}
+
+function createGlobalLazyLoaderElement(primaryText, secondaryText = "") {
+  const overlay = document.createElement("div");
+  overlay.id = GLOBAL_LAZY_LOADER_ROOT_ID;
+  overlay.className = "global-lazy-loader-overlay";
+  overlay.setAttribute("role", "status");
+  overlay.setAttribute("aria-live", "polite");
+  overlay.innerHTML = [
+    '<div class="global-lazy-loader-card">',
+    '<div class="global-lazy-loader-icon-wrap" aria-hidden="true">',
+    '<svg class="global-lazy-loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">',
+    '<path class="global-lazy-loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>',
+    '<path class="global-lazy-loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>',
+    '</svg>',
+    '</div>',
+    '<p class="global-lazy-loader-text"></p>',
+    '<p class="global-lazy-loader-subtext"></p>',
+    '</div>'
+  ].join("");
+  applyGlobalLazyLoaderText(overlay, primaryText, secondaryText);
+  return overlay;
+}
+
+function showGlobalLazyLoader(primaryText, secondaryText = "") {
+  if (globalLazyLoaderRemoveTimer) {
+    clearTimeout(globalLazyLoaderRemoveTimer);
+    globalLazyLoaderRemoveTimer = null;
+  }
+  let overlay = getGlobalLazyLoaderElement();
+  if (!overlay) {
+    overlay = createGlobalLazyLoaderElement(primaryText, secondaryText);
+    if (document.body) {
+      document.body.appendChild(overlay);
+    } else {
+      window.addEventListener("DOMContentLoaded", () => {
+        if (!getGlobalLazyLoaderElement() && document.body) {
+          document.body.appendChild(overlay);
+        }
+      }, { once: true });
+    }
+    return overlay;
+  }
+  applyGlobalLazyLoaderText(overlay, primaryText, secondaryText);
+  overlay.classList.remove("global-lazy-loader-hidden");
+  return overlay;
+}
+
+function setGlobalLazyLoaderText(primaryText, secondaryText = "") {
+  const overlay = getGlobalLazyLoaderElement();
+  if (!overlay) {
+    return null;
+  }
+  applyGlobalLazyLoaderText(overlay, primaryText, secondaryText);
+  return overlay;
+}
+
+function hideGlobalLazyLoader(options = {}) {
+  const overlay = getGlobalLazyLoaderElement();
+  if (!overlay) {
+    return;
+  }
+  const remove = options.remove !== false;
+  const removeDelayValue = Number(options.removeDelay);
+  const removeDelay = Number.isFinite(removeDelayValue)
+    ? Math.max(0, removeDelayValue)
+    : GLOBAL_LAZY_LOADER_DEFAULTS.removeDelay;
+  overlay.classList.add("global-lazy-loader-hidden");
+  if (!remove) {
+    return;
+  }
+  if (globalLazyLoaderRemoveTimer) {
+    clearTimeout(globalLazyLoaderRemoveTimer);
+  }
+  globalLazyLoaderRemoveTimer = setTimeout(() => {
+    const current = getGlobalLazyLoaderElement();
+    if (current && current.classList.contains("global-lazy-loader-hidden")) {
+      current.remove();
+    }
+    globalLazyLoaderRemoveTimer = null;
+  }, removeDelay);
+}
+
+function removeGlobalLazyLoader() {
+  if (globalLazyLoaderRemoveTimer) {
+    clearTimeout(globalLazyLoaderRemoveTimer);
+    globalLazyLoaderRemoveTimer = null;
+  }
+  const overlay = getGlobalLazyLoaderElement();
+  overlay?.remove();
+}
+
+async function waitForGlobalLazyLoaderFonts(fontFaces = []) {
+  if (!document.fonts || !Array.isArray(fontFaces) || !fontFaces.length) {
+    return;
+  }
+  try {
+    await Promise.all([
+      ...fontFaces.map((fontFace) => document.fonts.load(String(fontFace || "").trim())),
+      document.fonts.ready
+    ]);
+  } catch {}
+}
+
+function waitForWindowLoadOnce() {
+  if (document.readyState === "complete") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    window.addEventListener("load", resolve, { once: true });
+  });
+}
+
+async function bootGlobalLazyLoader(options = {}) {
+  const config = {
+    ...GLOBAL_LAZY_LOADER_DEFAULTS,
+    ...(options && typeof options === "object" ? options : {})
+  };
+  const minDurationValue = Number(config.minDuration);
+  const minDuration = Number.isFinite(minDurationValue)
+    ? Math.max(0, minDurationValue)
+    : 0;
+  const startAt = performance.now();
+  if (config.bodyLoadingClass && document.body) {
+    document.body.classList.add(String(config.bodyLoadingClass));
+  }
+  showGlobalLazyLoader(config.primaryText, config.secondaryText);
+  try {
+    const waitTasks = [];
+    if (config.waitForFonts) {
+      waitTasks.push(
+        waitForGlobalLazyLoaderFonts(Array.isArray(config.fontFaces) ? config.fontFaces : [])
+      );
+    }
+    if (config.waitForWindowLoad) {
+      waitTasks.push(waitForWindowLoadOnce());
+    }
+    if (Array.isArray(config.awaitPromises)) {
+      waitTasks.push(
+        ...config.awaitPromises.filter((entry) => entry && typeof entry.then === "function")
+      );
+    }
+    if (waitTasks.length) {
+      await Promise.all(waitTasks);
+    }
+  } catch {}
+  const elapsed = performance.now() - startAt;
+  if (elapsed < minDuration) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, minDuration - elapsed);
+    });
+  }
+  if (config.bodyLoadingClass && document.body) {
+    document.body.classList.remove(String(config.bodyLoadingClass));
+  }
+  if (config.hideOnDone === false) {
+    return getGlobalLazyLoaderElement();
+  }
+  hideGlobalLazyLoader({
+    remove: config.removeOnDone !== false,
+    removeDelay: config.removeDelay
+  });
+  return null;
+}
+
+function exposeGlobalLazyLoaderApi() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.GlobalLazyLoader = {
+    show: showGlobalLazyLoader,
+    hide: hideGlobalLazyLoader,
+    setText: setGlobalLazyLoaderText,
+    boot: bootGlobalLazyLoader,
+    remove: removeGlobalLazyLoader,
+    getElement: getGlobalLazyLoaderElement
+  };
+}
+
+exposeGlobalLazyLoaderApi();
+
 // Displays the reusable modal dialog for confirmations and alerts.
 function showDialog(message, opts = {}){
   const modal = qs('#dialog-modal');
@@ -6040,6 +6282,85 @@ function initCodeEditorControls() {
       showDefaultToast('Code copied.', { duration: 1500 });
     } catch (error) {
       showDefaultToast('Copy failed. Please highlight and copy manually.', { duration: 2000 });
+    }
+  });
+}
+
+function initFeatureLazyLoaderControls() {
+  const pane = qs('.lazy-loader-pane[data-pane="lazy-loader"]');
+  if (!pane || pane.dataset.lazyLoaderBound === "1") {
+    return;
+  }
+  pane.dataset.lazyLoaderBound = "1";
+  const primaryInput = qs("[data-lazy-loader-primary]", pane);
+  const secondaryInput = qs("[data-lazy-loader-secondary]", pane);
+  const showButton = qs("[data-lazy-loader-show]", pane);
+  const hideButton = qs("[data-lazy-loader-hide]", pane);
+  const bootButton = qs("[data-lazy-loader-boot]", pane);
+  const taskButton = qs("[data-lazy-loader-task]", pane);
+  const codeTextarea = qs("#lazy-loader-code", pane);
+  const copyButton = qs("[data-copy-lazy-loader-code]", pane);
+  if (codeTextarea) {
+    codeTextarea.value = GLOBAL_LAZY_LOADER_USAGE_SNIPPET;
+    codeTextarea.setAttribute("dir", "ltr");
+  }
+  const readTexts = () => ({
+    primary:
+      normalizeLazyLoaderText(primaryInput?.value, GLOBAL_LAZY_LOADER_DEFAULT_PRIMARY_TEXT),
+    secondary:
+      normalizeLazyLoaderText(secondaryInput?.value)
+  });
+  showButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    const { primary, secondary } = readTexts();
+    showGlobalLazyLoader(primary, secondary);
+  });
+  hideButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    hideGlobalLazyLoader();
+  });
+  bootButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    const { primary, secondary } = readTexts();
+    void bootGlobalLazyLoader({
+      primaryText: primary,
+      secondaryText: secondary,
+      minDuration: 1300,
+      waitForWindowLoad: false
+    });
+  });
+  taskButton?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    if (taskButton.dataset.busy === "1") {
+      return;
+    }
+    taskButton.dataset.busy = "1";
+    taskButton.setAttribute("disabled", "disabled");
+    const { primary, secondary } = readTexts();
+    showGlobalLazyLoader(primary, secondary);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1400));
+      setGlobalLazyLoaderText("در حال نهایی سازی", "تقریباً تمام شد");
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      hideGlobalLazyLoader();
+      showDefaultToast("Lazy loader async demo completed.", { duration: 1600 });
+    } finally {
+      taskButton.dataset.busy = "0";
+      taskButton.removeAttribute("disabled");
+    }
+  });
+  copyButton?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    const snippet = codeTextarea?.value || "";
+    if (!snippet) {
+      showDefaultToast("Nothing to copy.", { duration: 1200 });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(snippet);
+      showDefaultToast("Lazy loader snippet copied.", { duration: 1500 });
+    } catch {
+      showDefaultToast("Copy failed. Please highlight and copy manually.", { duration: 2200 });
     }
   });
 }
@@ -6914,6 +7235,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   initModalsPreviewModalControls();
   initCodeEditorControls();
+  initFeatureLazyLoaderControls();
 
   const galleryUploadModalOpenButton = qs('#open-gallery-upload-modal');
   galleryUploadModalOpenButton?.addEventListener('click', (event) => {

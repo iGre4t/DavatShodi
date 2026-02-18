@@ -100,6 +100,84 @@
   letter-spacing: 0.01em;
 }
 
+body.page-loading {
+  overflow: hidden;
+}
+
+.global-lazy-loader-overlay {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at top, rgba(223, 236, 255, 0.9), rgba(244, 247, 251, 0.92) 50%, rgba(255, 255, 255, 0.95));
+  display: grid;
+  place-items: center;
+  z-index: 1400;
+  transition: opacity 0.35s ease;
+}
+
+.global-lazy-loader-overlay.global-lazy-loader-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.global-lazy-loader-card {
+  width: min(280px, 80vw);
+  padding: 10px 8px;
+  text-align: center;
+  display: grid;
+  gap: 12px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.global-lazy-loader-icon-wrap {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.global-lazy-loader-icon-svg {
+  width: 72px;
+  height: 48px;
+  display: block;
+}
+
+.global-lazy-loader-icon-fill {
+  fill: rgba(47, 143, 255, 0.16);
+}
+
+.global-lazy-loader-icon-path {
+  fill: none;
+  stroke: #2f8fff;
+  stroke-width: 22;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 950 1250;
+  stroke-dashoffset: 0;
+  animation: global-lazy-loader-stroke 2.4s linear infinite;
+}
+
+.global-lazy-loader-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #516089;
+  font-weight: 600;
+}
+
+.global-lazy-loader-subtext {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #8a97b2;
+}
+
+.global-lazy-loader-subtext:empty {
+  display: none;
+}
+
 @keyframes loader-pulse {
   0%,
   100% {
@@ -115,6 +193,20 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes global-lazy-loader-stroke {
+  0% {
+    stroke-dashoffset: 0;
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -2200;
+    opacity: 0.8;
   }
 }
 
@@ -1693,6 +1785,20 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
 .code-editor-copy-btn:hover,
 .code-editor-copy-btn:focus-visible {
   background: rgba(59, 130, 246, 0.2);
+}
+.lazy-loader-pane {
+  direction: rtl;
+}
+.lazy-loader-fields {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.lazy-loader-actions {
+  margin-top: 4px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 .card h3 { margin: 0 0 8px; font-size: 16px; }
 
