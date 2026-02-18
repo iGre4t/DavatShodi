@@ -560,6 +560,8 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'prize won at',
     'wheel angle',
     'invitees',
+    'answers',
+    'score',
     'Answered'
   ]);
   $header = $rows[0];

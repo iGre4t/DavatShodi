@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 requireTabPermissionFromSession('task-club', false);
+
+$tcPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
+$tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time());
 ?>
 
-<link rel="stylesheet" href="mini%20apps/Task%20Club/tc-panel.css" />
+<link rel="stylesheet" href="mini%20apps/Task%20Club/tc-panel.css?v=<?= htmlspecialchars($tcPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
 <div class="tc-shell">
 <div class="sub-layout" data-tc-sub-layout>
   <aside class="sub-sidebar">
@@ -221,6 +224,7 @@ requireTabPermissionFromSession('task-club', false);
       <?php include __DIR__ . '/invitees.php'; ?>
     </div>
     <div class="sub-pane" data-pane="tc-question">
+      <?php if (!defined('TCQ_EMBEDDED_IN_PANEL')) { define('TCQ_EMBEDDED_IN_PANEL', true); } ?>
       <?php include __DIR__ . '/TCQ.php'; ?>
     </div>
     <div class="sub-pane" data-pane="tc-manage-tasks">
@@ -231,7 +235,7 @@ requireTabPermissionFromSession('task-club', false);
 </div>
 </div>
 
-<script src="mini%20apps/Task%20Club/tc-panel-local.js" defer></script>
+<script src="mini%20apps/Task%20Club/tc-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js" defer></script>
 <script src="mini%20apps/Task%20Club/TCSetting.js" defer></script>
 

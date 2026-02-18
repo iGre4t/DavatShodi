@@ -293,6 +293,98 @@ function tctSaveStoreTasks(string $storePath, array $tasks): bool
   return file_put_contents($storePath, $payload, LOCK_EX) !== false;
 }
 
+function tctReadCsvRows(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $rows = [];
+  $handle = fopen($path, 'r');
+  if ($handle === false) {
+    return [];
+  }
+  while (($row = fgetcsv($handle)) !== false) {
+    $rows[] = $row;
+  }
+  fclose($handle);
+  return $rows;
+}
+
+function tctWriteCsvRows(string $path, array $rows): bool
+{
+  $dir = dirname($path);
+  if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
+    return false;
+  }
+  $handle = fopen($path, 'c+');
+  if ($handle === false) {
+    return false;
+  }
+  if (!flock($handle, LOCK_EX)) {
+    fclose($handle);
+    return false;
+  }
+  ftruncate($handle, 0);
+  rewind($handle);
+  foreach ($rows as $row) {
+    fputcsv($handle, is_array($row) ? $row : []);
+  }
+  fflush($handle);
+  flock($handle, LOCK_UN);
+  fclose($handle);
+  return true;
+}
+
+function tctNormalizeHeaderName(string $value): string
+{
+  $normalized = strtolower(trim($value));
+  $normalized = preg_replace('/\s+/', ' ', $normalized);
+  return is_string($normalized) ? $normalized : '';
+}
+
+function tctFindHeaderIndex(array $header, string $name): int
+{
+  $needle = tctNormalizeHeaderName($name);
+  foreach ($header as $index => $value) {
+    if (tctNormalizeHeaderName((string)$value) === $needle) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function tctEnsureInviteesMappedColumns(string $filePath): bool
+{
+  $required = ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
+  $rows = tctReadCsvRows($filePath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return tctWriteCsvRows($filePath, [$required]);
+  }
+
+  $header = $rows[0];
+  $changed = false;
+  foreach ($required as $columnName) {
+    $existingIndex = tctFindHeaderIndex($header, $columnName);
+    if ($existingIndex >= 0) {
+      continue;
+    }
+    $header[] = $columnName;
+    $newIndex = count($header) - 1;
+    for ($i = 1; $i < count($rows); $i += 1) {
+      if (!is_array($rows[$i])) {
+        $rows[$i] = [];
+      }
+      $rows[$i][$newIndex] = '';
+    }
+    $changed = true;
+  }
+  if (!$changed) {
+    return true;
+  }
+  $rows[0] = $header;
+  return tctWriteCsvRows($filePath, $rows);
+}
+
 function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
 {
   $normalizedTagCode = tctNormalizeTagCode($tagCode);
@@ -332,7 +424,7 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
 
   $defaultCsvFiles = [
     'Answers.csv' => ['Work ID'],
-    'Invitees mapped.csv' => ['Work ID', 'Invitees', 'Answered']
+    'Invitees mapped.csv' => ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered']
   ];
   foreach ($defaultCsvFiles as $fileName => $header) {
     $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
@@ -353,6 +445,10 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
     fflush($handle);
     flock($handle, LOCK_UN);
     fclose($handle);
+  }
+
+  if (!tctEnsureInviteesMappedColumns($taskDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv')) {
+    return false;
   }
 
   return true;

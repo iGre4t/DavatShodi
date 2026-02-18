@@ -523,19 +523,45 @@
 
 .tc-shell .tc-task-top-nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 0;
+  align-items: flex-end;
+  overflow-x: auto;
   border-bottom: 1px solid var(--border, #e5e7eb);
-  padding-bottom: 8px;
+  padding-bottom: 0;
 }
 
-.tc-shell .tc-task-top-nav .sub-item {
+.tc-shell .tc-task-top-item {
   display: inline-flex;
   width: auto;
   align-items: center;
-  min-width: 120px;
+  min-width: 128px;
   text-align: center;
   justify-content: center;
+  border: 1px solid var(--border, #e5e7eb);
+  border-bottom: 0;
+  background: #f8fafc;
+  color: var(--muted, #6b7280);
+  border-radius: 12px 12px 0 0;
+  padding: 10px 14px;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tc-shell .tc-task-top-item + .tc-task-top-item {
+  margin-inline-start: 6px;
+}
+
+.tc-shell .tc-task-top-item:hover {
+  background: #eef2f7;
+}
+
+.tc-shell .tc-task-top-item.active {
+  background: #ffffff;
+  color: var(--primary, #111111);
+  font-weight: 600;
+  border-color: var(--border, #e5e7eb);
 }
 
 .tc-shell .tc-task-top-section {
@@ -576,7 +602,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .tc-shell .tc-task-top-nav .sub-item {
+  .tc-shell .tc-task-top-item {
     min-width: 0;
   }
 

@@ -270,11 +270,15 @@
     if (!(shell instanceof HTMLElement)) return;
     shell.querySelectorAll('[data-task-top-trigger]').forEach((button) => {
       if (!(button instanceof HTMLElement)) return;
-      button.classList.toggle('active', button.getAttribute('data-task-top-trigger') === sectionKey);
+      const isActive = button.getAttribute('data-task-top-trigger') === sectionKey;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
     shell.querySelectorAll('[data-task-top-section]').forEach((section) => {
       if (!(section instanceof HTMLElement)) return;
-      section.classList.toggle('active', section.getAttribute('data-task-top-section') === sectionKey);
+      const isActive = section.getAttribute('data-task-top-section') === sectionKey;
+      section.classList.toggle('active', isActive);
+      section.hidden = !isActive;
     });
   }
 
@@ -443,9 +447,9 @@
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
     return `
       <div class="tc-task-top-shell" data-task-top-shell>
-        <div class="tc-task-top-nav">
-          <button type="button" class="sub-item active" data-task-top-trigger="control">Control Pane</button>
-          <button type="button" class="sub-item" data-task-top-trigger="quiz">Quiz</button>
+        <div class="tc-task-top-nav" role="tablist" aria-label="Task Tabs">
+          <button type="button" class="tc-task-top-item active" aria-selected="true" data-task-top-trigger="control">Control Pane</button>
+          <button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>
         </div>
 
         <div class="tc-task-top-section active" data-task-top-section="control">
@@ -524,7 +528,7 @@
           </div>
         </div>
 
-        <div class="tc-task-top-section" data-task-top-section="quiz">
+        <div class="tc-task-top-section" data-task-top-section="quiz" hidden>
           <div class="card tc-task-quiz-card">
             <iframe
               class="tc-task-quiz-frame"

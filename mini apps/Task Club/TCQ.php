@@ -85,7 +85,7 @@ function tcqEnsureInviteesColumns(string $path): void
     return;
   }
   $header = $rows[0];
-  $required = ['invitees', 'Answered'];
+  $required = ['count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
   $changed = false;
   foreach ($required as $columnName) {
     $idx = tcqFindHeaderIndex($header, $columnName);
@@ -606,7 +606,30 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
 if (TCQ_INCLUDE_ONLY) {
   return;
 }
+
+$tcqEmbeddedInPanel = defined('TCQ_EMBEDDED_IN_PANEL') && TCQ_EMBEDDED_IN_PANEL === true;
+$tcqStandaloneCoreCssHref = '../../style/styles.css';
+$tcqStandalonePanelCssHref = 'tc-panel.css';
+$tcqStandaloneCoreCssVersion = @filemtime(__DIR__ . '/../../style/styles.css');
+$tcqStandalonePanelCssVersion = @filemtime(__DIR__ . '/tc-panel.css');
+if (is_int($tcqStandaloneCoreCssVersion) && $tcqStandaloneCoreCssVersion > 0) {
+  $tcqStandaloneCoreCssHref .= '?v=' . rawurlencode((string)$tcqStandaloneCoreCssVersion);
+}
+if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) {
+  $tcqStandalonePanelCssHref .= '?v=' . rawurlencode((string)$tcqStandalonePanelCssVersion);
+}
 ?>
+
+<?php if (!$tcqEmbeddedInPanel): ?>
+<link rel="stylesheet" href="<?= htmlspecialchars($tcqStandaloneCoreCssHref, ENT_QUOTES, 'UTF-8') ?>" />
+<link rel="stylesheet" href="<?= htmlspecialchars($tcqStandalonePanelCssHref, ENT_QUOTES, 'UTF-8') ?>" />
+<style>
+  html, body { margin: 0; padding: 0; }
+  .tcq-standalone-shell { padding: 14px; }
+</style>
+<?php endif; ?>
+
+<div class="tc-shell tcq-standalone-shell">
 
 <div class="card">
   <div class="section-header">
@@ -702,8 +725,11 @@ if (TCQ_INCLUDE_ONLY) {
 
 <script>
 (() => {
+  <?php
+  $tcqEndpointBase = $tcqEmbeddedInPanel ? 'mini%20apps/Task%20Club/TCQ.php' : 'TCQ.php';
+  ?>
   const endpoint = <?= json_encode(
-    'mini%20apps/Task%20Club/TCQ.php' . ($tcqTaskId !== '' ? ('?task_id=' . rawurlencode($tcqTaskId)) : ''),
+    $tcqEndpointBase . ($tcqTaskId !== '' ? ('?task_id=' . rawurlencode($tcqTaskId)) : ''),
     JSON_UNESCAPED_UNICODE
   ); ?>;
   const form = document.getElementById('tcq-form');
@@ -1093,4 +1119,4 @@ if (TCQ_INCLUDE_ONLY) {
 })();
 </script>
 
-
+</div>
