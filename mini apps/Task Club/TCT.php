@@ -78,6 +78,37 @@ function tctNormalizeTagCode(string $value): string
   return is_string($clean) ? $clean : '';
 }
 
+function tctGenerateNextTagCode(array $tasks): string
+{
+  $maxNumber = 0;
+  $used = [];
+  foreach ($tasks as $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    $tagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      continue;
+    }
+    $used[strtolower($tagCode)] = true;
+    if (preg_match('/^\d+$/', $tagCode)) {
+      $num = (int)$tagCode;
+      if ($num > $maxNumber) {
+        $maxNumber = $num;
+      }
+    }
+  }
+
+  $next = max(1, $maxNumber + 1);
+  while (true) {
+    $candidate = str_pad((string)$next, 3, '0', STR_PAD_LEFT);
+    if (!isset($used[strtolower($candidate)])) {
+      return $candidate;
+    }
+    $next += 1;
+  }
+}
+
 function tctNormalizeScoreValue($value): int
 {
   if (!is_scalar($value)) {
@@ -480,22 +511,12 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
 
   if ($action === 'add') {
     $title = trim((string)($_POST['title'] ?? ''));
-    $tagCode = tctNormalizeTagCode((string)($_POST['tag_code'] ?? ''));
     $taskType = tctNormalizeTaskType((string)($_POST['task_type'] ?? 'quiz'));
     if ($title === '') {
       echo json_encode(['status' => 'error', 'message' => 'Task title is required.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if ($tagCode === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Tag Code is required and must be A-Z, 0-9, "_" or "-".'], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
-    foreach ($tasks as $row) {
-      if (strtolower((string)($row['tagCode'] ?? '')) === strtolower($tagCode)) {
-        echo json_encode(['status' => 'error', 'message' => 'Tag Code already exists.'], JSON_UNESCAPED_UNICODE);
-        exit;
-      }
-    }
+    $tagCode = tctGenerateNextTagCode($tasks);
     if (!tctEnsureTaskFolder($tctTasksDir, $tagCode)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to create task folder.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -514,7 +535,12 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to save task list.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task added.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode([
+      'status' => 'ok',
+      'message' => "Task added. Tag Code: {$tagCode}",
+      'generatedTagCode' => $tagCode,
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -669,8 +695,8 @@ if (TCT_INCLUDE_ONLY) {
     </label>
     <label class="field standard-width">
       <span>Tag Code</span>
-      <input id="tct-tag-code" class="tct-tag-code-input" name="tag_code" type="text" autocomplete="off" maxlength="64" required />
-      <small class="muted">Folder path: <code>/tasks/&lt;Tag Code&gt;</code></small>
+      <input id="tct-tag-code-auto" type="text" value="Auto-generated (001, 002, ...)" readonly />
+      <small class="muted">Folder path: <code>/tasks/&lt;Auto Tag Code&gt;</code></small>
     </label>
     <label class="field standard-width">
       <span>Task Type</span>
@@ -712,11 +738,10 @@ if (TCT_INCLUDE_ONLY) {
   const endpoint = 'mini%20apps/Task%20Club/TCT.php';
   const form = document.getElementById('tct-form');
   const titleInput = document.getElementById('tct-title');
-  const tagCodeInput = document.getElementById('tct-tag-code');
   const taskTypeInput = document.getElementById('tct-task-type');
   const statusEl = document.getElementById('tct-status');
   const listBody = document.getElementById('tct-list-body');
-  if (!form || !titleInput || !tagCodeInput || !taskTypeInput || !statusEl || !listBody) return;
+  if (!form || !titleInput || !taskTypeInput || !statusEl || !listBody) return;
 
   let tasks = [];
   let draggedTaskId = '';
@@ -727,10 +752,6 @@ if (TCT_INCLUDE_ONLY) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-
-  const normalizeTagCode = (value) => String(value ?? '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9_-]+/g, '');
 
   const normalizeTaskType = (value) => {
     const token = String(value ?? '').trim().toLowerCase();
@@ -757,7 +778,7 @@ if (TCT_INCLUDE_ONLY) {
     const snapshot = tasks.map((task, index) => ({
       id: String(task.id || ''),
       title: String(task.title || ''),
-      tagCode: normalizeTagCode(task.tagCode || ''),
+      tagCode: String(task.tagCode || '').trim(),
       taskType: normalizeTaskType(task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
@@ -846,7 +867,7 @@ if (TCT_INCLUDE_ONLY) {
     tasks = loaded.map((task, index) => ({
       id: String(task.id || ''),
       title: String(task.title || ''),
-      tagCode: normalizeTagCode(task.tagCode || ''),
+      tagCode: String(task.tagCode || '').trim(),
       taskType: normalizeTaskType(task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
@@ -871,7 +892,7 @@ if (TCT_INCLUDE_ONLY) {
     tasks = loaded.map((task, index) => ({
       id: String(task.id || ''),
       title: String(task.title || ''),
-      tagCode: normalizeTagCode(task.tagCode || ''),
+      tagCode: String(task.tagCode || '').trim(),
       taskType: normalizeTaskType(task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
@@ -890,23 +911,13 @@ if (TCT_INCLUDE_ONLY) {
     setStatus(data.message || 'Task order updated.');
   };
 
-  tagCodeInput.addEventListener('input', () => {
-    tagCodeInput.value = normalizeTagCode(tagCodeInput.value);
-  });
-
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const title = String(titleInput.value || '').trim();
-    const tagCode = normalizeTagCode(tagCodeInput.value);
     const taskType = normalizeTaskType(taskTypeInput.value);
     if (!title) {
       setStatus('Task title is required.', true);
       titleInput.focus();
-      return;
-    }
-    if (!tagCode) {
-      setStatus('Tag Code is required.', true);
-      tagCodeInput.focus();
       return;
     }
     const submitButton = form.querySelector('button[type="submit"]');
@@ -914,7 +925,7 @@ if (TCT_INCLUDE_ONLY) {
       submitButton.disabled = true;
     }
     try {
-      const data = await postAction('add', { title, tag_code: tagCode, task_type: taskType });
+      const data = await postAction('add', { title, task_type: taskType });
       tasks = Array.isArray(data.tasks) ? data.tasks : tasks;
       tasks.sort((a, b) => Number(a.order) - Number(b.order));
       renderTasks();
