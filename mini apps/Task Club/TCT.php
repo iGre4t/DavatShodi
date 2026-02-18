@@ -7,6 +7,7 @@ requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
 
 $tctTasksDir = __DIR__ . '/tasks';
 $tctStorePath = $tctTasksDir . '/tasks.js';
+$tctEventInviteesPath = __DIR__ . '/TC Event/Invitees mapped.csv';
 const TCT_SCORE_SETTINGS_FILE = 'task-score.json';
 
 function tctNormalizeTaskType(string $value): string
@@ -76,6 +77,40 @@ function tctNormalizeTagCode(string $value): string
   $upper = strtoupper(trim($value));
   $clean = preg_replace('/[^A-Z0-9_-]+/', '', $upper);
   return is_string($clean) ? $clean : '';
+}
+
+function tctParseTaskCompletedIds(string $value): array
+{
+  $parts = preg_split('/\s*,\s*/', trim($value));
+  if (!is_array($parts)) {
+    return [];
+  }
+  $seen = [];
+  $result = [];
+  foreach ($parts as $part) {
+    $token = trim((string)$part);
+    if ($token === '' || isset($seen[$token])) {
+      continue;
+    }
+    $seen[$token] = true;
+    $result[] = $token;
+  }
+  return $result;
+}
+
+function tctSerializeTaskCompletedIds(array $ids): string
+{
+  $seen = [];
+  $result = [];
+  foreach ($ids as $id) {
+    $token = trim((string)$id);
+    if ($token === '' || isset($seen[$token])) {
+      continue;
+    }
+    $seen[$token] = true;
+    $result[] = $token;
+  }
+  return implode(',', $result);
 }
 
 function tctGenerateNextTagCode(array $tasks): string
@@ -485,6 +520,103 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
   return true;
 }
 
+function tctRemoveDirectoryRecursive(string $path): bool
+{
+  if (!is_dir($path)) {
+    return true;
+  }
+  $entries = scandir($path);
+  if (!is_array($entries)) {
+    return false;
+  }
+  foreach ($entries as $entry) {
+    if ($entry === '.' || $entry === '..') {
+      continue;
+    }
+    $full = $path . DIRECTORY_SEPARATOR . $entry;
+    if (is_dir($full)) {
+      if (!tctRemoveDirectoryRecursive($full)) {
+        return false;
+      }
+      continue;
+    }
+    if (!@unlink($full)) {
+      return false;
+    }
+  }
+  return @rmdir($path);
+}
+
+function tctCleanupInviteesMappedForRemovedTask(string $inviteesPath, array $task, string $tasksDir): bool
+{
+  $rows = tctReadCsvRows($inviteesPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return true;
+  }
+
+  $header = $rows[0];
+  $taskId = trim((string)($task['id'] ?? ''));
+  $tagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
+  $taskScore = 0;
+  if ($tagCode !== '') {
+    $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
+    $taskScore = max(0, (int)($scoreSettings['score'] ?? 0));
+  }
+
+  $scoreIndex = tctFindHeaderIndex($header, 'score');
+  $completedIdsIndex = tctFindHeaderIndex($header, 'task completed ids');
+  if ($completedIdsIndex >= 0 && $taskId !== '') {
+    for ($i = 1; $i < count($rows); $i += 1) {
+      if (!is_array($rows[$i])) {
+        $rows[$i] = [];
+      }
+      $ids = tctParseTaskCompletedIds((string)($rows[$i][$completedIdsIndex] ?? ''));
+      $hadTask = in_array($taskId, $ids, true);
+      if (!$hadTask) {
+        continue;
+      }
+      $ids = array_values(array_filter($ids, static fn(string $value): bool => $value !== $taskId));
+      $rows[$i][$completedIdsIndex] = tctSerializeTaskCompletedIds($ids);
+
+      if ($scoreIndex >= 0 && $taskScore > 0) {
+        $currentScore = max(0, (int)($rows[$i][$scoreIndex] ?? 0));
+        $rows[$i][$scoreIndex] = (string)max(0, $currentScore - $taskScore);
+      }
+    }
+  }
+
+  // Remove task-specific columns if they exist in this mapped CSV.
+  $dropCandidates = [];
+  if ($taskId !== '') {
+    $dropCandidates[] = $taskId;
+  }
+  if ($tagCode !== '') {
+    $dropCandidates[] = $tagCode;
+  }
+  $dropIndexes = [];
+  foreach ($dropCandidates as $candidate) {
+    $idx = tctFindHeaderIndex($header, $candidate);
+    if ($idx >= 0) {
+      $dropIndexes[$idx] = true;
+    }
+  }
+  if ($dropIndexes) {
+    $indexes = array_keys($dropIndexes);
+    rsort($indexes, SORT_NUMERIC);
+    foreach ($rows as $rowIdx => $row) {
+      if (!is_array($row)) {
+        $row = [];
+      }
+      foreach ($indexes as $colIdx) {
+        array_splice($row, $colIdx, 1);
+      }
+      $rows[$rowIdx] = $row;
+    }
+  }
+
+  return tctWriteCsvRows($inviteesPath, $rows);
+}
+
 if (!defined('TCT_INCLUDE_ONLY')) {
   define('TCT_INCLUDE_ONLY', false);
 }
@@ -550,18 +682,40 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    $beforeCount = count($tasks);
-    $tasks = array_values(array_filter($tasks, static fn(array $task): bool => (string)($task['id'] ?? '') !== $id));
-    if ($beforeCount === count($tasks)) {
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
       echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    $tasks = tctReindexTasks($tasks);
+
+    $nextTasks = array_values(array_filter($tasks, static fn(array $task): bool => (string)($task['id'] ?? '') !== $id));
+
+    if (!tctCleanupInviteesMappedForRemovedTask($tctEventInviteesPath, $targetTask, $tctTasksDir)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to cleanup invitees mapped CSV.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($targetTagCode !== '') {
+      $taskDir = $tctTasksDir . DIRECTORY_SEPARATOR . $targetTagCode;
+      if (!tctRemoveDirectoryRecursive($taskDir)) {
+        echo json_encode(['status' => 'error', 'message' => 'Task removed from list, but cleanup of task files failed.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+    }
+
+    $tasks = tctReindexTasks($nextTasks);
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save task list.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task removed.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'Task removed and cleaned up.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
