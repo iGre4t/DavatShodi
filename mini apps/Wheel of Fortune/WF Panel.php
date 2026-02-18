@@ -5,7 +5,7 @@ require_once __DIR__ . '/../api/lib/tab-permissions.php';
 requireTabPermissionFromSession('wheel-of-fortune', false);
 ?>
 
-<link rel="stylesheet" href="Wheel%20of%20Fortune/wf-panel.css" />
+<link rel="stylesheet" href="mini%20apps/Wheel%20of%20Fortune/wf-panel.css" />
 <div class="wf-shell">
 <div class="sub-layout" data-wf-sub-layout>
   <aside class="sub-sidebar">
@@ -23,7 +23,7 @@ requireTabPermissionFromSession('wheel-of-fortune', false);
     <h3>Status</h3>
   </div>
   <div class="field">
-    <a class="btn primary standard-primary-button" href="Wheel%20of%20Fortune/WFM.php" target="_blank" rel="noopener">Open Wheel</a>
+    <a class="btn primary standard-primary-button" href="mini%20apps/Wheel%20of%20Fortune/WFM.php" target="_blank" rel="noopener">Open Wheel</a>
   </div>
 </div>
 
@@ -225,9 +225,9 @@ requireTabPermissionFromSession('wheel-of-fortune', false);
 </div>
 </div>
 
-<script src="Wheel%20of%20Fortune/wf-panel-local.js" defer></script>
-<script src="Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
-<script src="Wheel%20of%20Fortune/WFSetting.js" defer></script>
+<script src="mini%20apps/Wheel%20of%20Fortune/wf-panel-local.js" defer></script>
+<script src="mini%20apps/Wheel%20of%20Fortune/WF%20Prizes.js" defer></script>
+<script src="mini%20apps/Wheel%20of%20Fortune/WFSetting.js" defer></script>
 
 
 

@@ -90,7 +90,15 @@ unset($currentUser['password_hash']);
 $currentUserPermissions = normalizeTabPermissions($currentUser['permissions'] ?? null, true);
 $currentUser['permissions'] = $currentUserPermissions;
 $allowedTabs = resolveAllowedPanelTabsForUser($currentUser);
-$initialTab = in_array('home', $allowedTabs, true) ? 'home' : ($allowedTabs[0] ?? '');
+$initialTab = '';
+if (in_array('home', $allowedTabs, true)) {
+  $initialTab = 'home';
+} else {
+  $preferredTabs = array_values(array_filter($allowedTabs, static function ($tabId): bool {
+    return $tabId !== 'wheel-of-fortune';
+  }));
+  $initialTab = $preferredTabs[0] ?? ($allowedTabs[0] ?? '');
+}
 if ($initialTab === '') {
   http_response_code(403);
   echo 'No tab permissions assigned to this account.';
@@ -203,7 +211,7 @@ $accountEmail = $currentUser['email'] ?? '';
           <?php if (in_array('wheel-of-fortune', $allowedTabs, true)): ?>
             <button class="nav-item<?= $initialTab === 'wheel-of-fortune' ? ' active' : '' ?>" data-tab="wheel-of-fortune"<?= $initialTab === 'wheel-of-fortune' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-gamepad-line" aria-hidden="true"></span>
-              <span>Wheel of Fortune</span>
+              <span>گردونه شانس</span>
             </button>
           <?php endif; ?>
           <?php if (in_array('asset-manager', $allowedTabs, true)): ?>
@@ -372,8 +380,7 @@ $accountEmail = $currentUser['email'] ?? '';
           <section
             id="tab-wheel-of-fortune"
             class="tab<?= $initialTab === 'wheel-of-fortune' ? ' active' : '' ?>"
-            data-tab-source="Wheel%20of%20Fortune/WF%20Panel.php"
-            data-tab-cache="1"
+            data-tab-source="mini%20apps/Wheel%20of%20Fortune/WF%20Panel.php"
           ></section>
         <?php endif; ?>
         <?php if (in_array('devsettings', $allowedTabs, true)): ?>

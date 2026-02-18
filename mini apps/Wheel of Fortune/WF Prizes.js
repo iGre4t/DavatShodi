@@ -1,5 +1,6 @@
 (() => {
-  const API_URL = "Wheel%20of%20Fortune/wf_store.php";
+  const API_URL = "mini%20apps/Wheel%20of%20Fortune/wf_store.php";
+  const WF_PRIZE_STATUS_INTERVAL_KEY = "__wfPrizeStatusInterval";
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -209,7 +210,7 @@
 
     async function refreshStatus() {
       try {
-        const response = await fetch("Wheel%20of%20Fortune/WF%20Prizes.json", { cache: "no-store" });
+        const response = await fetch("mini%20apps/Wheel%20of%20Fortune/WF%20Prizes.json", { cache: "no-store" });
         const payload = await response.json();
         if (!Array.isArray(payload)) {
           return;
@@ -241,7 +242,11 @@
     }
 
     refreshStatus();
-    setInterval(refreshStatus, 5000);
+    const previousStatusInterval = window[WF_PRIZE_STATUS_INTERVAL_KEY];
+    if (typeof previousStatusInterval === "number") {
+      clearInterval(previousStatusInterval);
+    }
+    window[WF_PRIZE_STATUS_INTERVAL_KEY] = window.setInterval(refreshStatus, 5000);
 
     listEl.addEventListener("input", event => {
       const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"]');

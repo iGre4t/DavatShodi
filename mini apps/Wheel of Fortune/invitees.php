@@ -216,7 +216,7 @@ if ($rows) {
   </div>
 </div>
 
-<script src="Wheel%20of%20Fortune/vendor/xlsx/xlsx.full.min.js" defer></script>
+<script src="mini%20apps/Wheel%20of%20Fortune/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
   const pickBtn = document.getElementById('wf-invite-pick');
@@ -396,7 +396,7 @@ if ($rows) {
 
     try {
       showProgress('در حال آپلود و ساخت فایل...');
-      const response = await fetch('Wheel%20of%20Fortune/invitees_upload.php', {
+      const response = await fetch('mini%20apps/Wheel%20of%20Fortune/invitees_upload.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

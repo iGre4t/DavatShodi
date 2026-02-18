@@ -3,7 +3,7 @@
     return document.getElementById(id);
   }
 
-  const API_URL = "Wheel%20of%20Fortune/wf_store.php";
+  const API_URL = "mini%20apps/Wheel%20of%20Fortune/wf_store.php";
 
   async function loadSettings() {
     try {

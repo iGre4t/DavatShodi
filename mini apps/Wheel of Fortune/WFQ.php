@@ -599,7 +599,7 @@ if (WFQ_INCLUDE_ONLY) {
 
 <script>
 (() => {
-  const endpoint = 'Wheel%20of%20Fortune/WFQ.php';
+  const endpoint = 'mini%20apps/Wheel%20of%20Fortune/WFQ.php';
   const form = document.getElementById('wfq-form');
   const input = document.getElementById('wfq-question-input');
   const body = document.getElementById('wfq-list-body');
