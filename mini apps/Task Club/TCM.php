@@ -13,6 +13,7 @@ const DEFAULT_PANEL_SETTINGS = [
 ];
 const TASKS_DIR_PATH = __DIR__ . '/tasks';
 const TASKS_JS_STORE_PATH = TASKS_DIR_PATH . '/tasks.js';
+const TASK_SCORE_SETTINGS_FILE = 'task-score.json';
 
 $prizeStorePath = __DIR__ . '/TC Prizes.json';
 $questionsStorePath = __DIR__ . '/TCQ list.json';
@@ -494,6 +495,448 @@ function loadTaskTitles(string $tasksDir, string $storePath): array
     return $fromJson;
   }
   return readTaskTitlesFromJsStore($storePath);
+}
+
+function normalizeTaskTagCode(string $value): string
+{
+  $upper = strtoupper(trim($value));
+  $clean = preg_replace('/[^A-Z0-9_-]+/', '', $upper);
+  return is_string($clean) ? $clean : '';
+}
+
+function normalizeTaskBoolValue($value): bool
+{
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_int($value) || is_float($value)) {
+    return ((int)$value) === 1;
+  }
+  $token = strtolower(trim((string)$value));
+  return in_array($token, ['1', 'true', 'on', 'yes'], true);
+}
+
+function normalizeTaskDateValue(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  return preg_match('/^\d{4}-\d{2}-\d{2}$/', $trimmed) ? $trimmed : '';
+}
+
+function normalizeTaskTimeValue(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  if (preg_match('/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/', $trimmed, $m)) {
+    return ($m[1] ?? '00') . ':' . ($m[2] ?? '00');
+  }
+  return '';
+}
+
+function normalizeTaskScoreValue($value): int
+{
+  if (!is_scalar($value)) {
+    return 0;
+  }
+  $token = trim((string)$value);
+  if ($token === '' || !is_numeric($token)) {
+    return 0;
+  }
+  $number = (int)floor((float)$token);
+  return $number > 0 ? $number : 0;
+}
+
+function readTasksStoreItems(string $storePath): array
+{
+  if (!is_file($storePath)) {
+    return [];
+  }
+  $content = file_get_contents($storePath);
+  if ($content === false) {
+    return [];
+  }
+  $jsonPayload = '';
+  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
+    $jsonPayload = (string)($m[1] ?? '');
+  } else {
+    $start = strpos($content, '[');
+    $end = strrpos($content, ']');
+    if ($start !== false && $end !== false && $end >= $start) {
+      $jsonPayload = substr($content, $start, $end - $start + 1);
+    }
+  }
+  if ($jsonPayload === '') {
+    return [];
+  }
+  $decoded = json_decode($jsonPayload, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function readTaskScoreSettings(string $tasksDir, string $tagCode): array
+{
+  $defaults = [
+    'score' => 0,
+    'afterEndtimeScore' => 0
+  ];
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return $defaults;
+  }
+  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_SCORE_SETTINGS_FILE;
+  if (!is_file($path)) {
+    return $defaults;
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return $defaults;
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return $defaults;
+  }
+  return [
+    'score' => normalizeTaskScoreValue($decoded['score'] ?? 0),
+    'afterEndtimeScore' => normalizeTaskScoreValue($decoded['afterEndtimeScore'] ?? ($decoded['after_endtime_score'] ?? 0))
+  ];
+}
+
+function normalizeTaskRecord(array $task, int $fallbackOrder): array
+{
+  $id = trim((string)($task['id'] ?? ''));
+  $title = trim((string)($task['title'] ?? ($task['name'] ?? '')));
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ($task['tag_code'] ?? '')));
+  $order = (int)($task['order'] ?? $fallbackOrder);
+  if ($order < 1) {
+    $order = $fallbackOrder;
+  }
+  return [
+    'id' => $id,
+    'title' => $title,
+    'tagCode' => $tagCode,
+    'active' => normalizeTaskBoolValue($task['active'] ?? false),
+    'duration' => normalizeTaskBoolValue($task['duration'] ?? false),
+    'startDate' => normalizeTaskDateValue((string)($task['startDate'] ?? ($task['start_date'] ?? ''))),
+    'startTime' => normalizeTaskTimeValue((string)($task['startTime'] ?? ($task['start_time'] ?? ''))),
+    'endDate' => normalizeTaskDateValue((string)($task['endDate'] ?? ($task['end_date'] ?? ''))),
+    'endTime' => normalizeTaskTimeValue((string)($task['endTime'] ?? ($task['end_time'] ?? ''))),
+    'order' => $order,
+    'createdAt' => trim((string)($task['createdAt'] ?? ''))
+  ];
+}
+
+function loadTaskRecords(string $storePath, string $tasksDir): array
+{
+  $rawItems = readTasksStoreItems($storePath);
+  $normalized = [];
+  foreach ($rawItems as $index => $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $normalized[] = normalizeTaskRecord($item, $index + 1);
+  }
+  usort($normalized, static function (array $left, array $right): int {
+    $orderDiff = ((int)($left['order'] ?? 0)) <=> ((int)($right['order'] ?? 0));
+    if ($orderDiff !== 0) {
+      return $orderDiff;
+    }
+    return strcmp((string)($left['createdAt'] ?? ''), (string)($right['createdAt'] ?? ''));
+  });
+
+  $result = [];
+  $seenIds = [];
+  $seenTagCodes = [];
+  $nextOrder = 1;
+  foreach ($normalized as $task) {
+    $id = trim((string)($task['id'] ?? ''));
+    $title = trim((string)($task['title'] ?? ''));
+    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+    if ($id === '' || $title === '' || $tagCode === '') {
+      continue;
+    }
+    $idKey = strtolower($id);
+    $tagKey = strtolower($tagCode);
+    if (isset($seenIds[$idKey]) || isset($seenTagCodes[$tagKey])) {
+      continue;
+    }
+    $scoreSettings = readTaskScoreSettings($tasksDir, $tagCode);
+    $task['id'] = $id;
+    $task['title'] = $title;
+    $task['tagCode'] = $tagCode;
+    $task['order'] = $nextOrder;
+    $task['score'] = (int)$scoreSettings['score'];
+    $task['afterEndtimeScore'] = (int)$scoreSettings['afterEndtimeScore'];
+    $result[] = $task;
+    $seenIds[$idKey] = true;
+    $seenTagCodes[$tagKey] = true;
+    $nextOrder += 1;
+  }
+  return $result;
+}
+
+function getTehranDateTimeParts(): array
+{
+  try {
+    $dt = new DateTime('now', new DateTimeZone('Asia/Tehran'));
+  } catch (Throwable $e) {
+    $dt = new DateTime('now');
+  }
+  return [
+    'date' => $dt->format('Y-m-d'),
+    'time' => $dt->format('H:i:s')
+  ];
+}
+
+function parseTaskTimeToSeconds(string $value): ?int
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return null;
+  }
+  if (!preg_match('/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/', $trimmed, $m)) {
+    return null;
+  }
+  $hours = (int)($m[1] ?? 0);
+  $minutes = (int)($m[2] ?? 0);
+  $seconds = isset($m[3]) ? (int)$m[3] : 0;
+  return $hours * 3600 + $minutes * 60 + $seconds;
+}
+
+function compareTaskDates(string $left, string $right): ?int
+{
+  $l = normalizeTaskDateValue($left);
+  $r = normalizeTaskDateValue($right);
+  if ($l === '' || $r === '') {
+    return null;
+  }
+  if ($l === $r) {
+    return 0;
+  }
+  return $l > $r ? 1 : -1;
+}
+
+function deriveTaskAvailabilityStatus(array $task): string
+{
+  $active = normalizeTaskBoolValue($task['active'] ?? false);
+  $duration = normalizeTaskBoolValue($task['duration'] ?? false);
+  if (!$duration) {
+    return $active ? 'active' : 'inactive';
+  }
+
+  $startDate = normalizeTaskDateValue((string)($task['startDate'] ?? ''));
+  $endDate = normalizeTaskDateValue((string)($task['endDate'] ?? ''));
+  $startTime = normalizeTaskTimeValue((string)($task['startTime'] ?? ''));
+  $endTime = normalizeTaskTimeValue((string)($task['endTime'] ?? ''));
+  $nowParts = getTehranDateTimeParts();
+  $today = (string)($nowParts['date'] ?? '');
+  if ($startDate === '' || $today === '') {
+    return 'inactive';
+  }
+
+  $startRelation = compareTaskDates($startDate, $today);
+  $endRelation = compareTaskDates($endDate, $today);
+  if ($startRelation === 1) {
+    return 'upcoming';
+  }
+  if ($endRelation !== null && $endRelation === -1) {
+    return 'ended';
+  }
+
+  if ($startRelation === 0 || $endRelation === 0) {
+    $nowSeconds = parseTaskTimeToSeconds((string)($nowParts['time'] ?? '')) ?? 0;
+    $startSeconds = parseTaskTimeToSeconds($startTime);
+    $endSeconds = parseTaskTimeToSeconds($endTime);
+    if ($endSeconds !== null && $nowSeconds >= $endSeconds) {
+      return 'ended';
+    }
+    if ($startSeconds !== null && $nowSeconds >= $startSeconds) {
+      return 'active';
+    }
+    if ($startSeconds !== null && $nowSeconds < $startSeconds) {
+      return 'upcoming';
+    }
+  }
+
+  return 'active';
+}
+
+function resolveTaskStatusLabel(string $status): string
+{
+  if ($status === 'active') {
+    return 'Active';
+  }
+  if ($status === 'upcoming') {
+    return 'Upcoming';
+  }
+  if ($status === 'ended') {
+    return 'Ended';
+  }
+  return 'Inactive';
+}
+
+function findTaskById(array $tasks, string $taskId): ?array
+{
+  $needle = trim($taskId);
+  if ($needle === '') {
+    return null;
+  }
+  foreach ($tasks as $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    if (trim((string)($task['id'] ?? '')) === $needle) {
+      return $task;
+    }
+  }
+  return null;
+}
+
+function ensureTaskInviteesMappedFile(string $path): array
+{
+  $required = ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
+  $rows = readInviteesCsv($path);
+  $changed = false;
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    $rows = [$required];
+    $changed = true;
+  }
+
+  $columns = ensureInviteeColumns($rows, $required);
+  if ($columns['added'] ?? false) {
+    $changed = true;
+  }
+
+  $header = is_array($rows[0] ?? null) ? $rows[0] : $required;
+  $workIdIndex = findHeaderIndex($header, 'Work ID');
+  if ($workIdIndex < 0) {
+    $header = array_merge(['Work ID'], array_values($header));
+    $rows[0] = $header;
+    $workIdIndex = 0;
+    $changed = true;
+  }
+
+  if ($changed) {
+    writeInviteesCsv($path, $rows);
+  }
+
+  return [
+    'rows' => $rows,
+    'columns' => $columns['index'] ?? [],
+    'workIdIndex' => $workIdIndex
+  ];
+}
+
+function findOrCreateInviteeRowIndex(array &$rows, int $workIdIndex, string $workId): int
+{
+  $existing = findInviteeRowIndex($rows, $workIdIndex, $workId);
+  if ($existing >= 0) {
+    return $existing;
+  }
+  if ($workIdIndex < 0) {
+    return -1;
+  }
+  $header = is_array($rows[0] ?? null) ? $rows[0] : [];
+  $rowLength = count($header);
+  if ($rowLength <= $workIdIndex) {
+    $rowLength = $workIdIndex + 1;
+  }
+  $newRow = array_fill(0, $rowLength, '');
+  $newRow[$workIdIndex] = $workId;
+  $rows[] = $newRow;
+  return count($rows) - 1;
+}
+
+function readTaskUserProgress(array $task, string $tasksDir, string $workId): array
+{
+  $defaults = [
+    'score' => 0,
+    'answered' => 0,
+    'completed' => false
+  ];
+  $normalizedWorkId = trim($workId);
+  if ($normalizedWorkId === '') {
+    return $defaults;
+  }
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+  if ($tagCode === '') {
+    return $defaults;
+  }
+
+  $inviteesPath = $tasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
+  $table = ensureTaskInviteesMappedFile($inviteesPath);
+  $rows = $table['rows'] ?? [];
+  $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+  $columns = is_array($table['columns'] ?? null) ? $table['columns'] : [];
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $normalizedWorkId);
+  if ($rowIndex < 0) {
+    return $defaults;
+  }
+
+  $scoreIndex = (int)($columns['score'] ?? -1);
+  $answeredIndex = (int)($columns['Answered'] ?? -1);
+  $score = 0;
+  $answered = 0;
+  if ($scoreIndex >= 0) {
+    $score = max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0));
+  }
+  if ($answeredIndex >= 0) {
+    $answered = max(0, (int)($rows[$rowIndex][$answeredIndex] ?? 0));
+  }
+  return [
+    'score' => $score,
+    'answered' => $answered,
+    'completed' => ($answered > 0) || ($score > 0)
+  ];
+}
+
+function computeUserTotalTaskScore(array $tasks, string $tasksDir, string $workId): int
+{
+  $total = 0;
+  foreach ($tasks as $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    $progress = readTaskUserProgress($task, $tasksDir, $workId);
+    $total += (int)($progress['score'] ?? 0);
+  }
+  return $total > 0 ? $total : 0;
+}
+
+function buildTaskPayloadForView(array $tasks, string $tasksDir, string $workId): array
+{
+  $items = [];
+  foreach ($tasks as $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    $status = deriveTaskAvailabilityStatus($task);
+    $isActive = $status === 'active';
+    $progress = readTaskUserProgress($task, $tasksDir, $workId);
+    $completed = (bool)($progress['completed'] ?? false);
+    $statusLabel = $completed ? 'Completed' : resolveTaskStatusLabel($status);
+    $items[] = [
+      'id' => (string)($task['id'] ?? ''),
+      'title' => (string)($task['title'] ?? ''),
+      'tagCode' => (string)($task['tagCode'] ?? ''),
+      'active' => (bool)($task['active'] ?? false),
+      'duration' => (bool)($task['duration'] ?? false),
+      'startDate' => (string)($task['startDate'] ?? ''),
+      'startTime' => (string)($task['startTime'] ?? ''),
+      'endDate' => (string)($task['endDate'] ?? ''),
+      'endTime' => (string)($task['endTime'] ?? ''),
+      'score' => (int)($task['score'] ?? 0),
+      'afterEndtimeScore' => (int)($task['afterEndtimeScore'] ?? 0),
+      'status' => $status,
+      'statusLabel' => $statusLabel,
+      'completed' => $completed,
+      'available' => $isActive && !$completed,
+      'userScore' => (int)($progress['score'] ?? 0)
+    ];
+  }
+  return $items;
 }
 
 function readInviteesCsv(string $path): array
@@ -1011,6 +1454,192 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     exit;
   }
 
+  if ($action === 'task_fetch') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'Login required.']);
+      exit;
+    }
+
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    if ($taskId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Task is required.']);
+      exit;
+    }
+
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.']);
+      exit;
+    }
+
+    $status = deriveTaskAvailabilityStatus($task);
+    $available = $status === 'active';
+    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+    $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
+    $questionPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
+    $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ settings.json';
+    $questions = readQuestionStore($questionPath);
+    $settings = loadWfqSettings($settingsPath);
+    $progress = readTaskUserProgress($task, TASKS_DIR_PATH, $sessionWorkId);
+    echo json_encode([
+      'status' => 'ok',
+      'task' => [
+        'id' => (string)($task['id'] ?? ''),
+        'title' => (string)($task['title'] ?? ''),
+        'tagCode' => $tagCode,
+        'score' => (int)($task['score'] ?? 0),
+        'afterEndtimeScore' => (int)($task['afterEndtimeScore'] ?? 0),
+        'status' => $status,
+        'available' => $available,
+        'statusLabel' => resolveTaskStatusLabel($status)
+      ],
+      'questions' => $questions,
+      'settings' => $settings,
+      'progress' => $progress
+    ]);
+    exit;
+  }
+
+  if ($action === 'task_log_answer') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'Login required.']);
+      exit;
+    }
+
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    $questionCode = strtoupper(trim((string)($payload['questionCode'] ?? '')));
+    $question = trim((string)($payload['question'] ?? ''));
+    $answer = trim((string)($payload['answer'] ?? ''));
+    if ($taskId === '' || $questionCode === '' || $question === '') {
+      echo json_encode(['status' => 'ok']);
+      exit;
+    }
+
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.']);
+      exit;
+    }
+
+    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+    $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
+    $answersPath = $taskDir . DIRECTORY_SEPARATOR . 'Answers.csv';
+    $questionsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
+    if (!logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $question, $answer)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to store answer.']);
+      exit;
+    }
+    echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
+  if ($action === 'task_complete') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'Login required.']);
+      exit;
+    }
+
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    if ($taskId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Task is required.']);
+      exit;
+    }
+
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.']);
+      exit;
+    }
+
+    $status = deriveTaskAvailabilityStatus($task);
+    if ($status !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => 'Task is not active.']);
+      exit;
+    }
+
+    $existingProgress = readTaskUserProgress($task, TASKS_DIR_PATH, $sessionWorkId);
+    if ((bool)($existingProgress['completed'] ?? false)) {
+      $totalScore = computeUserTotalTaskScore($tasks, TASKS_DIR_PATH, $sessionWorkId);
+      echo json_encode([
+        'status' => 'ok',
+        'alreadyCompleted' => true,
+        'awardedScore' => 0,
+        'userTaskScore' => (int)($existingProgress['score'] ?? 0),
+        'totalScore' => $totalScore
+      ]);
+      exit;
+    }
+
+    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+    $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
+    $inviteesPath = $taskDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
+    $table = ensureTaskInviteesMappedFile($inviteesPath);
+    $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+    $columns = is_array($table['columns'] ?? null) ? $table['columns'] : [];
+    $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+    $rowIndex = findOrCreateInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    if ($rowIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to resolve user row.']);
+      exit;
+    }
+
+    $header = is_array($rows[0] ?? null) ? $rows[0] : [];
+    $rowLength = count($header);
+    if (!isset($rows[$rowIndex]) || !is_array($rows[$rowIndex])) {
+      $rows[$rowIndex] = [];
+    }
+    if (count($rows[$rowIndex]) < $rowLength) {
+      $rows[$rowIndex] = array_pad($rows[$rowIndex], $rowLength, '');
+    }
+
+    $awardedScore = (int)($task['score'] ?? 0);
+    $scoreIndex = (int)($columns['score'] ?? -1);
+    $answeredIndex = (int)($columns['Answered'] ?? -1);
+    $answersIndex = (int)($columns['answers'] ?? -1);
+    if ($scoreIndex >= 0) {
+      $rows[$rowIndex][$scoreIndex] = (string)$awardedScore;
+    }
+    if ($answeredIndex >= 0) {
+      $rows[$rowIndex][$answeredIndex] = '1';
+    }
+    if ($answersIndex >= 0) {
+      $stamp = date('Y-m-d H:i:s');
+      $existing = trim((string)($rows[$rowIndex][$answersIndex] ?? ''));
+      $rows[$rowIndex][$answersIndex] = $existing !== '' ? ($existing . ', ' . $stamp) : $stamp;
+    }
+
+    if (!writeInviteesCsv($inviteesPath, $rows)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save score.']);
+      exit;
+    }
+
+    $questionCode = strtoupper(trim((string)($payload['questionCode'] ?? '')));
+    $question = trim((string)($payload['question'] ?? ''));
+    $answer = trim((string)($payload['answer'] ?? ''));
+    if ($questionCode !== '' && $question !== '') {
+      $answersPath = $taskDir . DIRECTORY_SEPARATOR . 'Answers.csv';
+      $questionsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
+      logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $question, $answer);
+    }
+
+    $updatedTasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $totalScore = computeUserTotalTaskScore($updatedTasks, TASKS_DIR_PATH, $sessionWorkId);
+    echo json_encode([
+      'status' => 'ok',
+      'alreadyCompleted' => false,
+      'awardedScore' => $awardedScore,
+      'userTaskScore' => $awardedScore,
+      'totalScore' => $totalScore
+    ]);
+    exit;
+  }
+
 
   if ($action === 'log_roll') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
@@ -1186,7 +1815,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 $initialPrizes = readPrizeStore($prizeStorePath);
 $initialQuestions = readQuestionStore($questionsStorePath);
 syncAnswersSheet($answersSheetPath, readQuestionColumnsFromStore($questionsStorePath));
-$taskTitles = loadTaskTitles(TASKS_DIR_PATH, TASKS_JS_STORE_PATH);
+$taskRecords = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
 $faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
@@ -1300,6 +1929,10 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     }
   }
 }
+$taskItemsForView = buildTaskPayloadForView($taskRecords, TASKS_DIR_PATH, $sessionAuthed ? $sessionWorkId : '');
+$sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
+  ? computeUserTotalTaskScore($taskRecords, TASKS_DIR_PATH, $sessionWorkId)
+  : 0;
 $tcqSettingsForPayload = loadWfqSettings($tcqSettingsPath);
 $sessionPayload = [
   'authed' => $sessionAuthed,
@@ -1310,6 +1943,7 @@ $sessionPayload = [
   'wheelAngle' => $sessionWheelAngle,
   'quizOrder' => $sessionQuizOrder,
   'answered' => $sessionAnswered,
+  'taskTotalScore' => $sessionTaskTotalScore,
   'answerTimeLimit' => (bool)($tcqSettingsForPayload['answerTimeLimit'] ?? true),
   'randomOrder' => (bool)($tcqSettingsForPayload['randomOrder'] ?? true)
 ];
@@ -1513,6 +2147,24 @@ $sessionPayload = [
         gap: 10px;
       }
 
+      .user-score-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid #d7e5fb;
+        background: #f4f9ff;
+        color: #304c7a;
+        font-size: 0.8rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .user-score-chip strong {
+        color: #1f3761;
+      }
+
       .logout-btn {
         border: none;
         background: transparent;
@@ -1596,6 +2248,18 @@ $sessionPayload = [
         transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
       }
 
+      .task-item-title {
+        display: block;
+      }
+
+      .task-item-meta {
+        display: block;
+        margin-top: 3px;
+        font-size: 0.78rem;
+        font-weight: 400;
+        color: #6f7f9f;
+      }
+
       .task-item-btn:hover {
         background: #edf5ff;
         border-color: #bfd7ff;
@@ -1606,11 +2270,85 @@ $sessionPayload = [
         transform: translateY(0);
       }
 
+      .task-item-btn.is-disabled,
+      .task-item-btn:disabled {
+        background: #f2f4f8;
+        border-color: #d7dde8;
+        color: #8b97ac;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .task-item-btn.is-disabled .task-item-meta,
+      .task-item-btn:disabled .task-item-meta {
+        color: #9aa6bb;
+      }
+
+      .task-item-btn.is-completed {
+        background: #eef9f1;
+        border-color: #c7e9d0;
+        color: #2f5f3c;
+      }
+
+      .task-item-btn.is-completed .task-item-meta {
+        color: #4d7a58;
+      }
+
       .tasks-empty {
         margin: 8px 0 0;
         font-size: 0.88rem;
         color: #7b8aa8;
         text-align: center;
+      }
+
+      .tc-task-quiz-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(16, 30, 56, 0.52);
+        z-index: 70;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .tc-task-quiz-overlay.open {
+        display: flex;
+      }
+
+      .tc-task-quiz-sheet {
+        width: min(420px, calc(100vw - 28px));
+        border-radius: 22px;
+        border: 1px solid #d8e6fb;
+        background: #fff;
+        box-shadow: 0 24px 44px rgba(15, 40, 82, 0.24);
+        padding: 14px;
+      }
+
+      .tc-task-quiz-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .tc-task-quiz-title {
+        margin: 0;
+        color: #29416b;
+        font-size: 0.92rem;
+        font-weight: 700;
+      }
+
+      .tc-task-quiz-close {
+        border: none;
+        background: #eef4ff;
+        color: #2e4f85;
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        font-size: 1rem;
+        cursor: pointer;
       }
 
       .repeat-area {
@@ -2636,6 +3374,12 @@ $sessionPayload = [
           <p class="brand">چرخ شانس شگفتانه</p>
           <div class="topbar-actions">
             <?php if ($sessionPayload['authed']): ?>
+              <div class="user-score-chip">
+                <span>Score</span>
+                <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
+              </div>
+            <?php endif; ?>
+            <?php if ($sessionPayload['authed']): ?>
               <button id="tc-logout" class="logout-btn" type="button">
                 <span aria-hidden="true"></span>
                 خروج
@@ -2678,9 +3422,43 @@ $sessionPayload = [
             <p id="tc-time-counter" class="result-value">—</p>
           </div>
           <div class="tasks-list" aria-label="لیست تسک‌ها">
-            <?php if ($taskTitles): ?>
-              <?php foreach ($taskTitles as $taskTitle): ?>
-                <button class="task-item-btn" type="button"><?= htmlspecialchars($taskTitle, ENT_QUOTES, 'UTF-8') ?></button>
+            <?php if ($taskItemsForView): ?>
+              <?php foreach ($taskItemsForView as $taskItem): ?>
+                <?php
+                  $taskId = (string)($taskItem['id'] ?? '');
+                  $taskTitle = (string)($taskItem['title'] ?? '');
+                  $isAvailable = (bool)($taskItem['available'] ?? false);
+                  $isCompleted = (bool)($taskItem['completed'] ?? false);
+                  $buttonClass = 'task-item-btn';
+                  if (!$isAvailable) {
+                    $buttonClass .= ' is-disabled';
+                  }
+                  if ($isCompleted) {
+                    $buttonClass .= ' is-completed';
+                  }
+                  $disabledAttr = $isAvailable ? '' : 'disabled';
+                ?>
+                <button
+                  class="<?= htmlspecialchars($buttonClass, ENT_QUOTES, 'UTF-8') ?>"
+                  type="button"
+                  data-task-id="<?= htmlspecialchars($taskId, ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-title="<?= htmlspecialchars($taskTitle, ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-active="<?= !empty($taskItem['active']) ? '1' : '0' ?>"
+                  data-task-duration="<?= !empty($taskItem['duration']) ? '1' : '0' ?>"
+                  data-task-start-date="<?= htmlspecialchars((string)($taskItem['startDate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-start-time="<?= htmlspecialchars((string)($taskItem['startTime'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-end-date="<?= htmlspecialchars((string)($taskItem['endDate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-end-time="<?= htmlspecialchars((string)($taskItem['endTime'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-score="<?= (int)($taskItem['score'] ?? 0) ?>"
+                  data-task-after-end-score="<?= (int)($taskItem['afterEndtimeScore'] ?? 0) ?>"
+                  data-task-status="<?= htmlspecialchars((string)($taskItem['status'] ?? 'inactive'), ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-completed="<?= $isCompleted ? '1' : '0' ?>"
+                  data-task-user-score="<?= (int)($taskItem['userScore'] ?? 0) ?>"
+                  <?= $disabledAttr ?>
+                >
+                  <span class="task-item-title"><?= htmlspecialchars($taskTitle, ENT_QUOTES, 'UTF-8') ?></span>
+                  <span class="task-item-meta"><?= htmlspecialchars((string)($taskItem['statusLabel'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
+                </button>
               <?php endforeach; ?>
             <?php else: ?>
               <p class="tasks-empty">تسکی برای نمایش پیدا نشد.</p>
@@ -2690,6 +3468,33 @@ $sessionPayload = [
       <?php endif; ?>
       </section>
     </main>
+    <?php if ($sessionPayload['authed']): ?>
+      <div id="tc-task-quiz-overlay" class="tc-task-quiz-overlay" aria-hidden="true">
+        <section class="tc-task-quiz-sheet" role="dialog" aria-modal="true" aria-labelledby="tc-task-quiz-title">
+          <div class="tc-task-quiz-head">
+            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">Task Quiz</h3>
+            <button id="tc-task-quiz-close" class="tc-task-quiz-close" type="button" aria-label="Close">X</button>
+          </div>
+          <div id="tc-task-quiz-counter" class="quiz-counter">1 / 1</div>
+          <div id="tc-task-quiz-question" class="quiz-question-box">—</div>
+          <div id="tc-task-quiz-answers" class="quiz-answers-grid"></div>
+          <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
+        </section>
+      </div>
+      <div id="tc-task-result-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
+        <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-task-result-title">
+          <h3 id="tc-task-result-title" class="tc-result-dialog-title">Task Result</h3>
+          <div class="tc-result-dialog-content">
+            <div class="result">
+              <span class="result-label">Score</span>
+              <p id="tc-task-result-value" class="result-value">0</p>
+            </div>
+            <p id="tc-task-result-message" class="hint hint-align-center">—</p>
+          </div>
+          <button id="tc-task-result-confirm" class="tc-result-dialog-confirm" type="button">OK</button>
+        </section>
+      </div>
+    <?php endif; ?>
 
     <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       const loaderEl = document.getElementById('tc-loader');
@@ -2819,7 +3624,31 @@ $sessionPayload = [
         const timeCounterLabelEl = document.getElementById('tc-time-counter-label');
         const timeCounterEl = document.getElementById('tc-time-counter');
         const statusEl = document.getElementById('tc-status');
+        const userScoreEl = document.getElementById('tc-user-score');
+        const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
+        const quizOverlayEl = document.getElementById('tc-task-quiz-overlay');
+        const quizCloseBtn = document.getElementById('tc-task-quiz-close');
+        const quizTitleEl = document.getElementById('tc-task-quiz-title');
+        const quizCounterEl = document.getElementById('tc-task-quiz-counter');
+        const quizQuestionEl = document.getElementById('tc-task-quiz-question');
+        const quizAnswersEl = document.getElementById('tc-task-quiz-answers');
+        const quizTimerFillEl = document.getElementById('tc-task-quiz-timer-fill');
+        const resultDialogEl = document.getElementById('tc-task-result-dialog');
+        const resultValueEl = document.getElementById('tc-task-result-value');
+        const resultMessageEl = document.getElementById('tc-task-result-message');
+        const resultConfirmBtn = document.getElementById('tc-task-result-confirm');
+
         let statusTickTimer = null;
+        let taskStatusTimer = null;
+        let quizTimerHandle = null;
+        let quizLocked = false;
+        let currentTaskId = '';
+        let currentTaskTitle = '';
+        let currentQuestions = [];
+        let currentQuestionIndex = 0;
+        let answerTimeLimitEnabled = true;
+
+        const QUIZ_TIME_LIMIT_MS = 14000;
 
         const setTimeCounter = (label, value) => {
           if (timeCounterLabelEl) {
@@ -2939,37 +3768,37 @@ $sessionPayload = [
 
         const setFallbackCounter = (status) => {
           if (status === 'upcoming') {
-            setTimeCounter('\u062A\u0627 \u0634\u0631\u0648\u0639 \u0634\u06AF\u0641\u062A\u0627\u0646\u0647', '\u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u0634\u0631\u0648\u0639');
+            setTimeCounter('تا شروع شگفتانه', 'در انتظار شروع');
             return;
           }
           if (status === 'active') {
-            setTimeCounter('\u062A\u0627 \u0627\u062A\u0645\u0627\u0645 \u0634\u06AF\u0641\u062A\u0627\u0646\u0647', '-');
+            setTimeCounter('تا اتمام شگفتانه', '-');
             return;
           }
           if (status === 'inactive') {
-            setTimeCounter('\u0648\u0636\u0639\u06CC\u062A', '\u063A\u06CC\u0631\u0641\u0639\u0627\u0644');
+            setTimeCounter('وضعیت', 'غیرفعال');
             return;
           }
-          setTimeCounter('\u0648\u0636\u0639\u06CC\u062A', '\u062A\u0645\u0627\u0645 \u0634\u062F\u0647');
+          setTimeCounter('وضعیت', 'تمام شده');
         };
 
         const updateTimerByStatus = (status, settings) => {
           clearStatusTimer();
           if (status === 'inactive') {
-            showStatus(status, '\u063A\u06CC\u0631\u0641\u0639\u0627\u0644');
-            setTimeCounter('\u0648\u0636\u0639\u06CC\u062A', '\u063A\u06CC\u0631\u0641\u0639\u0627\u0644');
+            showStatus(status, 'غیرفعال');
+            setTimeCounter('وضعیت', 'غیرفعال');
             return;
           }
           if (status === 'ended') {
-            showStatus(status, '\u0628\u0647 \u067E\u0627\u06CC\u0627\u0646 \u0631\u0633\u06CC\u062F\u0647');
-            setTimeCounter('\u0648\u0636\u0639\u06CC\u062A', '\u062A\u0645\u0627\u0645 \u0634\u062F\u0647');
+            showStatus(status, 'به پایان رسیده');
+            setTimeCounter('وضعیت', 'تمام شده');
             return;
           }
 
           if (status === 'upcoming') {
-            showStatus(status, '\u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u0634\u0631\u0648\u0639');
+            showStatus(status, 'در انتظار شروع');
           } else {
-            showStatus(status, '\u0641\u0639\u0627\u0644');
+            showStatus(status, 'فعال');
           }
 
           const durationOn = Boolean(settings?.duration);
@@ -2984,9 +3813,7 @@ $sessionPayload = [
           const endTime = String(settings?.endTime ?? '').trim();
           const targetDate = status === 'upcoming' ? startDate : endDate;
           const targetTime = status === 'upcoming' ? startTime : endTime;
-          const label = status === 'upcoming'
-            ? '\u062A\u0627 \u0634\u0631\u0648\u0639 \u0634\u06AF\u0641\u062A\u0627\u0646\u0647'
-            : '\u062A\u0627 \u0627\u062A\u0645\u0627\u0645 \u0634\u06AF\u0641\u062A\u0627\u0646\u0647';
+          const label = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا اتمام شگفتانه';
 
           const updateCountdown = () => {
             if (!targetDate || !targetTime) {
@@ -3017,6 +3844,494 @@ $sessionPayload = [
           updateTimerByStatus(status, settings);
         };
 
+        const readTaskBool = (value) => {
+          const token = String(value ?? '').trim().toLowerCase();
+          return token === '1' || token === 'true' || token === 'on' || token === 'yes';
+        };
+
+        const taskStatusLabel = (status, completed = false) => {
+          if (completed) return 'Completed';
+          if (status === 'active') return 'Active';
+          if (status === 'upcoming') return 'Upcoming';
+          if (status === 'ended') return 'Ended';
+          return 'Inactive';
+        };
+
+        const deriveTaskStatusFromButton = (button) => {
+          const active = readTaskBool(button.dataset.taskActive);
+          const duration = readTaskBool(button.dataset.taskDuration);
+          if (!duration) {
+            return active ? 'active' : 'inactive';
+          }
+
+          const startDate = String(button.dataset.taskStartDate || '').trim();
+          const startTime = String(button.dataset.taskStartTime || '').trim();
+          const endDate = String(button.dataset.taskEndDate || '').trim();
+          const endTime = String(button.dataset.taskEndTime || '').trim();
+          const today = getTehranDateTimeParts();
+          const startRelation = compareDates(startDate, today.date);
+          const endRelation = compareDates(endDate, today.date);
+          if (!startDate || !today.date) return 'inactive';
+          if (startRelation === 1) return 'upcoming';
+          if (endRelation !== null && endRelation === -1) return 'ended';
+
+          const nowSeconds = getCurrentTehranSeconds();
+          if (startRelation === 0 || endRelation === 0) {
+            const startSeconds = parseTimeToSeconds(startTime);
+            const endSeconds = parseTimeToSeconds(endTime);
+            if (endSeconds !== null && nowSeconds >= endSeconds) return 'ended';
+            if (startSeconds !== null && nowSeconds >= startSeconds) return 'active';
+            if (startSeconds !== null && nowSeconds < startSeconds) return 'upcoming';
+          }
+          return 'active';
+        };
+
+        const setTaskButtonState = (button, status) => {
+          if (!(button instanceof HTMLButtonElement)) {
+            return;
+          }
+          const metaEl = button.querySelector('.task-item-meta');
+          const completed = String(button.dataset.taskCompleted || '') === '1';
+          const taskScore = Number.parseInt(button.dataset.taskUserScore || '0', 10);
+
+          if (completed) {
+            button.disabled = true;
+            button.classList.remove('is-disabled');
+            button.classList.add('is-completed');
+            button.dataset.taskStatus = 'completed';
+            if (metaEl) {
+              const shownScore = Number.isFinite(taskScore) ? Math.max(0, taskScore) : 0;
+              metaEl.textContent = shownScore > 0 ? `Completed (${shownScore})` : 'Completed';
+            }
+            return;
+          }
+
+          const available = status === 'active';
+          button.disabled = !available;
+          button.classList.toggle('is-disabled', !available);
+          button.classList.remove('is-completed');
+          button.dataset.taskStatus = status;
+          if (metaEl) {
+            metaEl.textContent = taskStatusLabel(status, false);
+          }
+        };
+
+        const refreshTaskButtonsStatus = () => {
+          taskButtons.forEach((button) => {
+            const status = deriveTaskStatusFromButton(button);
+            setTaskButtonState(button, status);
+          });
+        };
+
+        const clearQuizTimer = () => {
+          if (quizTimerHandle) {
+            clearInterval(quizTimerHandle);
+            quizTimerHandle = null;
+          }
+        };
+
+        const setQuizTimerProgress = (remainingMs) => {
+          if (!quizTimerFillEl) return;
+          if (!answerTimeLimitEnabled) {
+            quizTimerFillEl.style.width = '100%';
+            quizTimerFillEl.classList.remove('is-danger');
+            return;
+          }
+          const clamped = Math.max(0, Math.min(QUIZ_TIME_LIMIT_MS, remainingMs));
+          const ratio = clamped / QUIZ_TIME_LIMIT_MS;
+          quizTimerFillEl.style.width = `${Math.round(ratio * 1000) / 10}%`;
+          quizTimerFillEl.classList.toggle('is-danger', clamped <= 5000);
+        };
+
+        const openQuizOverlay = () => {
+          if (!quizOverlayEl) return;
+          quizOverlayEl.classList.add('open');
+          quizOverlayEl.setAttribute('aria-hidden', 'false');
+        };
+
+        const closeQuizOverlay = () => {
+          clearQuizTimer();
+          if (quizOverlayEl) {
+            quizOverlayEl.classList.remove('open');
+            quizOverlayEl.setAttribute('aria-hidden', 'true');
+          }
+          if (quizAnswersEl) {
+            quizAnswersEl.innerHTML = '';
+          }
+          quizLocked = false;
+          currentTaskId = '';
+          currentTaskTitle = '';
+          currentQuestions = [];
+          currentQuestionIndex = 0;
+        };
+
+        const openTaskResultDialog = (scoreValue, messageText) => {
+          if (resultValueEl) {
+            resultValueEl.textContent = String(Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0));
+          }
+          if (resultMessageEl) {
+            resultMessageEl.textContent = String(messageText || '').trim() || 'Done.';
+          }
+          if (resultDialogEl) {
+            resultDialogEl.classList.add('open');
+            resultDialogEl.setAttribute('aria-hidden', 'false');
+          }
+        };
+
+        const closeTaskResultDialog = () => {
+          if (resultDialogEl) {
+            resultDialogEl.classList.remove('open');
+            resultDialogEl.setAttribute('aria-hidden', 'true');
+          }
+        };
+
+        const postJson = async (body) => {
+          const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...body, csrf: csrfToken })
+          });
+          let payload = null;
+          try {
+            payload = await response.json();
+          } catch {
+            payload = { status: 'error', message: 'Invalid server response.' };
+          }
+          if (!response.ok || payload?.status !== 'ok') {
+            throw new Error(payload?.message || 'Request failed.');
+          }
+          return payload;
+        };
+
+        const sendTaskAnswer = async (item, answerText) => {
+          if (!currentTaskId) return;
+          const questionCode = String(item?.code ?? '').trim();
+          const questionText = String(item?.question ?? '').trim();
+          if (!questionCode || !questionText) return;
+          try {
+            await postJson({
+              action: 'task_log_answer',
+              taskId: currentTaskId,
+              questionCode,
+              question: questionText,
+              answer: String(answerText ?? '').trim()
+            });
+          } catch {}
+        };
+
+        const completeCurrentTask = async (item, answerText = '') => {
+          const completedTaskId = currentTaskId;
+          let payload;
+          try {
+            payload = await postJson({
+              action: 'task_complete',
+              taskId: completedTaskId,
+              questionCode: String(item?.code ?? '').trim(),
+              question: String(item?.question ?? '').trim(),
+              answer: String(answerText ?? '').trim()
+            });
+          } catch (error) {
+            closeQuizOverlay();
+            openTaskResultDialog(0, error?.message || 'Failed to save task score.');
+            return;
+          }
+
+          const totalScore = Number.parseInt(payload?.totalScore ?? 0, 10);
+          if (userScoreEl && Number.isFinite(totalScore)) {
+            userScoreEl.textContent = String(Math.max(0, totalScore));
+          }
+
+          const targetButton = taskButtons.find((button) => String(button.dataset.taskId || '') === completedTaskId);
+          if (targetButton) {
+            const userTaskScore = Number.parseInt(payload?.userTaskScore ?? payload?.awardedScore ?? 0, 10);
+            targetButton.dataset.taskCompleted = '1';
+            targetButton.dataset.taskUserScore = String(Number.isFinite(userTaskScore) ? Math.max(0, userTaskScore) : 0);
+            setTaskButtonState(targetButton, 'completed');
+          }
+
+          closeQuizOverlay();
+          if (payload?.alreadyCompleted) {
+            openTaskResultDialog(payload?.userTaskScore ?? 0, 'This task was already completed.');
+            return;
+          }
+          openTaskResultDialog(payload?.awardedScore ?? 0, 'Task completed and score saved.');
+        };
+
+        const continueQuiz = () => {
+          clearQuizTimer();
+          currentQuestionIndex += 1;
+          quizLocked = false;
+          if (currentQuestionIndex >= currentQuestions.length) {
+            closeQuizOverlay();
+            openTaskResultDialog(0, 'No correct answer was submitted.');
+            return;
+          }
+          renderQuizQuestion();
+        };
+
+        const handleQuizTimeout = async () => {
+          if (quizLocked) return;
+          quizLocked = true;
+          const item = currentQuestions[currentQuestionIndex] || null;
+          await sendTaskAnswer(item, '');
+          setTimeout(() => {
+            continueQuiz();
+          }, 500);
+        };
+
+        const startQuizTimer = () => {
+          clearQuizTimer();
+          if (!answerTimeLimitEnabled) {
+            setQuizTimerProgress(QUIZ_TIME_LIMIT_MS);
+            return;
+          }
+          setQuizTimerProgress(QUIZ_TIME_LIMIT_MS);
+          const startedAt = Date.now();
+          quizTimerHandle = setInterval(() => {
+            const elapsed = Date.now() - startedAt;
+            const remaining = QUIZ_TIME_LIMIT_MS - elapsed;
+            setQuizTimerProgress(remaining);
+            if (remaining <= 0) {
+              clearQuizTimer();
+              void handleQuizTimeout();
+            }
+          }, 100);
+        };
+
+        const handleChoiceAnswer = async (button, item, isCorrect, answerText) => {
+          if (quizLocked) return;
+          quizLocked = true;
+          clearQuizTimer();
+          Array.from(quizAnswersEl?.querySelectorAll('button') || []).forEach((node) => {
+            if (node instanceof HTMLButtonElement) {
+              node.disabled = true;
+            }
+          });
+
+          await sendTaskAnswer(item, answerText);
+
+          if (isCorrect) {
+            if (button instanceof HTMLButtonElement) {
+              button.classList.add('is-correct');
+            }
+            setTimeout(() => {
+              void completeCurrentTask(item, answerText);
+            }, 420);
+            return;
+          }
+
+          if (button instanceof HTMLButtonElement) {
+            button.classList.add('is-wrong');
+          }
+          const correctButton = quizAnswersEl
+            ? quizAnswersEl.querySelector('.quiz-answer-btn[data-correct="1"]')
+            : null;
+          if (correctButton instanceof HTMLButtonElement) {
+            correctButton.classList.add('is-correct-reveal');
+          }
+          setTimeout(() => {
+            continueQuiz();
+          }, 700);
+        };
+
+        const handlePercentageAnswer = async (submitButton, slider, item) => {
+          if (quizLocked) return;
+          if (!(slider instanceof HTMLInputElement)) return;
+          quizLocked = true;
+          clearQuizTimer();
+          const value = Math.max(0, Math.min(100, Number.parseInt(slider.value || '0', 10)));
+          await sendTaskAnswer(item, String(value));
+          if (submitButton instanceof HTMLButtonElement) {
+            submitButton.classList.add('is-correct');
+            submitButton.disabled = true;
+          }
+          setTimeout(() => {
+            void completeCurrentTask(item, String(value));
+          }, 420);
+        };
+
+        const renderQuizQuestion = () => {
+          if (!quizCounterEl || !quizQuestionEl || !quizAnswersEl) {
+            return;
+          }
+
+          if (quizTitleEl) {
+            quizTitleEl.textContent = currentTaskTitle || 'Task Quiz';
+          }
+
+          const total = currentQuestions.length;
+          const item = currentQuestions[currentQuestionIndex] || null;
+          if (!item) {
+            closeQuizOverlay();
+            return;
+          }
+
+          quizCounterEl.textContent = `${currentQuestionIndex + 1} / ${total}`;
+          quizQuestionEl.textContent = String(item.question || '').trim() || '-';
+          quizAnswersEl.innerHTML = '';
+
+          if (item.type === 'percentage') {
+            const wrap = document.createElement('div');
+            wrap.className = 'quiz-percentage-wrap';
+            const valueLabel = document.createElement('div');
+            valueLabel.className = 'quiz-percentage-value';
+            valueLabel.textContent = '50%';
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '0';
+            slider.max = '100';
+            slider.step = '1';
+            slider.value = '50';
+            slider.className = 'quiz-percentage-slider';
+            slider.style.setProperty('--range-progress', '50%');
+            slider.addEventListener('input', () => {
+              const val = Math.max(0, Math.min(100, Number.parseInt(slider.value || '0', 10)));
+              valueLabel.textContent = `${val}%`;
+              slider.style.setProperty('--range-progress', `${val}%`);
+            });
+            const submit = document.createElement('button');
+            submit.type = 'button';
+            submit.className = 'quiz-answer-btn quiz-percentage-submit quiz-percentage-submit-bottom';
+            submit.textContent = 'Submit';
+            submit.addEventListener('click', () => {
+              void handlePercentageAnswer(submit, slider, item);
+            });
+            wrap.appendChild(valueLabel);
+            wrap.appendChild(slider);
+            quizAnswersEl.appendChild(wrap);
+            quizAnswersEl.appendChild(submit);
+            startQuizTimer();
+            return;
+          }
+
+          const answers = Array.isArray(item.answers)
+            ? item.answers.slice(0, 4).map((answer, index) => ({ text: String(answer ?? '').trim(), isCorrect: index === 0 }))
+            : [];
+          const validAnswers = answers.filter((answer) => answer.text !== '');
+          for (let i = validAnswers.length - 1; i > 0; i -= 1) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const tmp = validAnswers[i];
+            validAnswers[i] = validAnswers[j];
+            validAnswers[j] = tmp;
+          }
+
+          validAnswers.forEach((answerItem) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'quiz-answer-btn';
+            button.textContent = answerItem.text;
+            button.dataset.correct = answerItem.isCorrect ? '1' : '0';
+            button.addEventListener('click', () => {
+              void handleChoiceAnswer(button, item, answerItem.isCorrect, answerItem.text);
+            });
+            quizAnswersEl.appendChild(button);
+          });
+
+          startQuizTimer();
+        };
+
+        const normalizeQuestions = (list) => {
+          if (!Array.isArray(list)) return [];
+          return list
+            .map((item) => ({
+              code: String(item?.code ?? '').trim(),
+              type: String(item?.type ?? 'mcq').toLowerCase() === 'percentage' ? 'percentage' : 'mcq',
+              question: String(item?.question ?? '').trim(),
+              answers: Array.isArray(item?.answers) ? item.answers.slice(0, 4).map((ans) => String(ans ?? '').trim()) : []
+            }))
+            .filter((item) => {
+              if (!item.code || !item.question) return false;
+              if (item.type === 'percentage') return true;
+              return item.answers.length >= 4 && item.answers.slice(0, 4).every((ans) => ans !== '');
+            });
+        };
+
+        const startTaskQuiz = async (button) => {
+          const taskId = String(button?.dataset?.taskId || '').trim();
+          if (!taskId) return;
+
+          try {
+            const payload = await postJson({ action: 'task_fetch', taskId });
+            const progress = payload?.progress || {};
+            if (progress?.completed) {
+              button.dataset.taskCompleted = '1';
+              button.dataset.taskUserScore = String(Number.parseInt(progress?.score ?? 0, 10) || 0);
+              setTaskButtonState(button, 'completed');
+              openTaskResultDialog(progress?.score ?? 0, 'This task was already completed.');
+              return;
+            }
+
+            if (!payload?.task?.available) {
+              setTaskButtonState(button, String(payload?.task?.status || 'inactive'));
+              openTaskResultDialog(0, 'Task is not active right now.');
+              return;
+            }
+
+            const normalizedQuestions = normalizeQuestions(payload?.questions || []);
+            if (!normalizedQuestions.length) {
+              openTaskResultDialog(0, 'No questions are configured for this task.');
+              return;
+            }
+
+            const randomOrder = Boolean(payload?.settings?.randomOrder ?? true);
+            const nextQuestions = normalizedQuestions.slice();
+            if (randomOrder) {
+              for (let i = nextQuestions.length - 1; i > 0; i -= 1) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = nextQuestions[i];
+                nextQuestions[i] = nextQuestions[j];
+                nextQuestions[j] = tmp;
+              }
+            }
+
+            answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
+            currentTaskId = taskId;
+            currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'Task Quiz').trim();
+            currentQuestions = nextQuestions;
+            currentQuestionIndex = 0;
+            quizLocked = false;
+            closeTaskResultDialog();
+            openQuizOverlay();
+            renderQuizQuestion();
+          } catch (error) {
+            openTaskResultDialog(0, error?.message || 'Failed to load task quiz.');
+          }
+        };
+
+        if (quizCloseBtn) {
+          quizCloseBtn.addEventListener('click', () => {
+            closeQuizOverlay();
+          });
+        }
+        if (quizOverlayEl) {
+          quizOverlayEl.addEventListener('click', (event) => {
+            if (event.target === quizOverlayEl) {
+              closeQuizOverlay();
+            }
+          });
+        }
+        if (resultDialogEl) {
+          resultDialogEl.addEventListener('click', (event) => {
+            if (event.target === resultDialogEl) {
+              closeTaskResultDialog();
+            }
+          });
+        }
+        if (resultConfirmBtn) {
+          resultConfirmBtn.addEventListener('click', () => {
+            closeTaskResultDialog();
+          });
+        }
+
+        taskButtons.forEach((button) => {
+          button.addEventListener('click', () => {
+            if (button.disabled) {
+              return;
+            }
+            void startTaskQuiz(button);
+          });
+        });
+
         window.addEventListener('storage', (event) => {
           if (event.key === 'tcSettingsUpdated') {
             refreshStatus();
@@ -3036,7 +4351,9 @@ $sessionPayload = [
         };
 
         refreshStatus();
+        refreshTaskButtonsStatus();
         scheduleHourlyStatusCheck();
+        taskStatusTimer = setInterval(refreshTaskButtonsStatus, 30 * 1000);
       }
     </script>
   </body>
