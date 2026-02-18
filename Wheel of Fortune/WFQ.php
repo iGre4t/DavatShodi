@@ -497,111 +497,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
 }
 ?>
 
-<style>
-  .wfq-answer-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    direction: rtl;
-  }
-  .wfq-list-table td {
-    vertical-align: top;
-  }
-  .wfq-row-grid {
-    display: grid;
-    gap: 8px;
-  }
-  .wfq-field {
-    width: 100%;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 12px;
-    font: inherit;
-    background: #fff;
-  }
-  .wfq-list-actions {
-    display: flex;
-    justify-content: center;
-  }
-  .wfq-save-wrap {
-    margin-top: 12px;
-  }
-  .wfq-settings-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-  .wfq-settings-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 12px;
-    background: #fff;
-  }
-  .wfq-settings-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 10px;
-  }
-  .wfq-settings-status {
-    margin-top: 8px;
-  }
-  .wfq-drag-cell {
-    width: 56px;
-    text-align: center;
-  }
-  .wfq-drag-handle {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    font-size: 18px;
-    line-height: 1;
-    cursor: grab;
-    padding: 6px;
-  }
-  .wfq-drag-handle:active {
-    cursor: grabbing;
-  }
-  .wfq-row-dragging {
-    opacity: 0.55;
-  }
-  .wfq-row-drop-target {
-    outline: 2px dashed var(--primary);
-    outline-offset: -2px;
-  }
-  .wfq-type-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    direction: rtl;
-  }
-  .wfq-type-option {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--muted);
-  }
-  .wfq-type-option input {
-    margin: 0;
-  }
-  .wfq-hidden {
-    display: none;
-  }
-  .wfq-type-hint {
-    margin: 0;
-    color: var(--muted);
-    font-size: 12px;
-  }
-  @media (max-width: 900px) {
-    .wfq-answer-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-</style>
-
 <div class="card">
   <div class="section-header">
     <h3>General Setting</h3>
@@ -1083,3 +978,4 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
     });
 })();
 </script>
+

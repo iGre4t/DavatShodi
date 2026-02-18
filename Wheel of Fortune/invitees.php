@@ -216,7 +216,7 @@ if ($rows) {
   </div>
 </div>
 
-<script src="style/vendor/xlsx/xlsx.full.min.js" defer></script>
+<script src="Wheel%20of%20Fortune/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
   const pickBtn = document.getElementById('wf-invite-pick');
