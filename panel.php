@@ -198,7 +198,7 @@ $accountEmail = $currentUser['email'] ?? '';
               <span>تنظیمات حساب</span>
             </button>
           <?php endif; ?>
-          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
+          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('task-club', $allowedTabs, true) || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
             <div class="nav-separator" aria-hidden="true"></div>
           <?php endif; ?>
           <?php if (in_array('features', $allowedTabs, true)): ?>
@@ -212,6 +212,12 @@ $accountEmail = $currentUser['email'] ?? '';
             <button class="nav-item<?= $initialTab === 'wheel-of-fortune' ? ' active' : '' ?>" data-tab="wheel-of-fortune"<?= $initialTab === 'wheel-of-fortune' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-gamepad-line" aria-hidden="true"></span>
               <span>گردونه شانس</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('task-club', $allowedTabs, true)): ?>
+            <button class="nav-item<?= $initialTab === 'task-club' ? ' active' : '' ?>" data-tab="task-club"<?= $initialTab === 'task-club' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-group-line" aria-hidden="true"></span>
+              <span>باشگاه تعاملی</span>
             </button>
           <?php endif; ?>
           <?php if (in_array('asset-manager', $allowedTabs, true)): ?>
@@ -381,6 +387,13 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-wheel-of-fortune"
             class="tab<?= $initialTab === 'wheel-of-fortune' ? ' active' : '' ?>"
             data-tab-source="mini%20apps/Wheel%20of%20Fortune/WF%20Panel.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('task-club', $allowedTabs, true)): ?>
+          <section
+            id="tab-task-club"
+            class="tab<?= $initialTab === 'task-club' ? ' active' : '' ?>"
+            data-tab-source="mini%20apps/Task%20Club/TC%20Panel.php"
           ></section>
         <?php endif; ?>
         <?php if (in_array('devsettings', $allowedTabs, true)): ?>

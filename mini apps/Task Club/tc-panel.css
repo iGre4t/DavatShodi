@@ -1,0 +1,494 @@
+﻿/* Shared base UI styles come from ../style/styles.css. Keep only Wheel-specific rules here. */
+
+.tc-shell .tc-switch-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tc-shell .tc-datetime-grid {
+  gap: 8px;
+  justify-items: end;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    "start-title start-title empty"
+    "start start-time empty"
+    "end-title end-title empty"
+    "end end-time empty";
+}
+
+.tc-shell .tc-datetime-title {
+  grid-column: 1 / span 2;
+  justify-self: end;
+  font-weight: 600;
+  color: var(--muted, #6b7280);
+  text-align: right;
+  width: 100%;
+}
+
+.tc-shell .tc-datetime-title--start {
+  grid-area: start-title;
+}
+
+.tc-shell .tc-datetime-title--end {
+  grid-area: end-title;
+}
+
+.tc-shell .tc-datetime-start {
+  grid-area: start;
+}
+
+.tc-shell .tc-datetime-start-time {
+  grid-area: start-time;
+}
+
+.tc-shell .tc-datetime-end {
+  grid-area: end;
+}
+
+.tc-shell .tc-datetime-end-time {
+  grid-area: end-time;
+}
+
+.tc-shell .tc-datetime-empty {
+  grid-area: empty;
+}
+
+.tc-shell .tc-prize-grid {
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tc-shell .tc-prize-grid .field.standard-width {
+  width: 100%;
+  margin-left: 0;
+}
+
+.tc-shell .tc-form-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tc-shell .tc-standard-third {
+  width: min(140px, 100%);
+  margin-left: auto;
+  margin-right: 0;
+}
+
+.tc-shell .standard-primary-button {
+  width: min(420px, 100%);
+  margin-left: auto;
+  margin-right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tc-shell .tc-action-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.tc-shell .tc-switch {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+}
+
+.tc-shell .tc-switch .switch-label {
+  color: var(--muted, #6b7280);
+}
+
+.tc-shell .tc-switch .switch-track {
+  background: transparent;
+  border: 2px solid var(--border, #e5e7eb);
+  inset: 2px;
+  border-radius: 999px;
+}
+
+.tc-shell .tc-switch .switch-thumb {
+  width: 24px;
+  height: 24px;
+  left: 2px;
+  top: 50%;
+  transform: translate(0, -50%);
+  background: #ffffff;
+  border: 2px solid var(--border, #e5e7eb);
+  box-shadow: none;
+}
+
+.tc-shell .tc-switch .switch-toggle input:checked + .switch-track {
+  border-color: var(--primary, #111111);
+}
+
+.tc-shell .tc-switch .switch-toggle input:checked + .switch-track .switch-thumb {
+  transform: translate(26px, -50%);
+  border-color: var(--primary, #111111);
+}
+
+.tc-shell .tc-switch .switch-toggle input:disabled + .switch-track {
+  border-color: #e2e8f0;
+}
+
+.tc-shell .tc-switch .switch-toggle input:disabled + .switch-track .switch-thumb {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.tc-shell .tc-btn-danger {
+  background: #e11d2e;
+  border-color: #e11d2e;
+  color: #ffffff;
+}
+
+.tc-shell .tc-btn-danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.tc-shell .tc-count-control {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.tc-shell .tc-count-control .btn {
+  min-width: 56px;
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tc-shell .tc-count-control .btn .ri {
+  font-size: 16px;
+}
+
+.tc-shell .tc-prize-qty {
+  width: 40%;
+}
+
+.tc-shell .tc-btn-count-add {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+
+.tc-shell .tc-btn-count-add:hover {
+  background: #15803d;
+  border-color: #15803d;
+}
+
+.tc-shell .tc-btn-count-sub {
+  background: #0ea5e9;
+  border-color: #0ea5e9;
+  color: #ffffff;
+}
+
+.tc-shell .tc-btn-count-sub:hover {
+  background: #0284c7;
+  border-color: #0284c7;
+}
+
+.tc-shell .tc-btn-count-reset {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.tc-shell .tc-btn-count-reset:hover {
+  background: #d97706;
+  border-color: #d97706;
+}
+
+.tc-shell .tc-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted, #6b7280);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.tc-shell .tc-status-last {
+  color: var(--primary, #111111);
+}
+
+.tc-shell .tc-status-divider,
+.tc-shell .tc-status-qty {
+  color: var(--muted, #6b7280);
+}
+
+.tc-shell .tc-prize-disabled {
+  opacity: 0.65;
+}
+
+.tc-shell .tc-prize-disabled input,
+.tc-shell .tc-prize-disabled select,
+.tc-shell .tc-prize-disabled button {
+  background: #f1f5f9 !important;
+  color: #94a3b8 !important;
+  border-color: #e2e8f0 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+.tc-shell .tc-prize-disabled .table-wrapper tbody tr {
+  pointer-events: none;
+}
+
+.tc-shell .tc-prize-disabled .table-wrapper tbody tr:hover {
+  background: inherit;
+}
+
+.tc-shell .tc-prize-row-locked {
+  opacity: 0.56;
+}
+
+.tc-shell .tc-prize-row-locked td {
+  background: #f8fafc;
+}
+
+.tc-shell .tc-action-disabled {
+  opacity: 0.55;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+.tc-shell .tc-save-active {
+  box-shadow: 0 0 0 3px var(--primary-focus, rgba(0, 0, 0, 0.12));
+}
+
+.tc-shell .tc-prize-form-locked {
+  opacity: 0.65;
+}
+
+.tc-shell .tc-status {
+  font-weight: 600;
+}
+
+.tc-shell .tc-status--active {
+  color: var(--primary, #111111);
+}
+
+.tc-shell .tc-status--ended {
+  color: #e11d2e;
+}
+
+.tc-shell .tc-status--upcoming {
+  color: #f59e0b;
+}
+
+.tc-shell .tc-status--inactive {
+  color: var(--muted, #6b7280);
+}
+
+.tc-shell .tc-datetime-grid input[type="date"] {
+  appearance: none;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  outline: none;
+  background: #ffffff;
+  color: #111111;
+  width: 100%;
+}
+
+.tc-shell .tc-datetime-grid input[type="date"]:focus {
+  border-color: var(--primary, #111111);
+  box-shadow: 0 0 0 3px var(--primary-focus, rgba(0, 0, 0, 0.12));
+}
+
+.tc-shell .tc-fake-table {
+  margin-top: 16px;
+}
+
+.tc-shell .tc-prize-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.tc-shell .tc-prize-table th:nth-child(1),
+.tc-shell .tc-prize-table td:nth-child(1) {
+  width: 26%;
+}
+
+.tc-shell .tc-prize-table th:nth-child(2),
+.tc-shell .tc-prize-table td:nth-child(2) {
+  width: 26%;
+}
+
+.tc-shell .tc-prize-table th:nth-child(3),
+.tc-shell .tc-prize-table td:nth-child(3) {
+  width: 10%;
+}
+
+.tc-shell .tc-prize-table th:nth-child(4),
+.tc-shell .tc-prize-table td:nth-child(4) {
+  width: 10%;
+}
+
+.tc-shell .tc-prize-table th:nth-child(5),
+.tc-shell .tc-prize-table td:nth-child(5) {
+  width: 12%;
+}
+
+.tc-shell .tc-prize-table th:nth-child(6),
+.tc-shell .tc-prize-table td:nth-child(6) {
+  width: 16%;
+}
+
+.tc-shell .tcq-answer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  direction: rtl;
+}
+
+.tc-shell .tcq-list-table td {
+  vertical-align: top;
+}
+
+.tc-shell .tcq-row-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.tc-shell .tcq-field {
+  width: 100%;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  background: #ffffff;
+}
+
+.tc-shell .tcq-list-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.tc-shell .tcq-save-wrap {
+  margin-top: 12px;
+}
+
+.tc-shell .tcq-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.tc-shell .tcq-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.tc-shell .tcq-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.tc-shell .tcq-settings-status {
+  margin-top: 8px;
+}
+
+.tc-shell .tcq-drag-cell {
+  width: 56px;
+  text-align: center;
+}
+
+.tc-shell .tcq-drag-handle {
+  border: 0;
+  background: transparent;
+  color: var(--muted, #6b7280);
+  font-size: 18px;
+  line-height: 1;
+  cursor: grab;
+  padding: 6px;
+}
+
+.tc-shell .tcq-drag-handle:active {
+  cursor: grabbing;
+}
+
+.tc-shell .tcq-row-dragging {
+  opacity: 0.55;
+}
+
+.tc-shell .tcq-row-drop-target {
+  outline: 2px dashed var(--primary, #111111);
+  outline-offset: -2px;
+}
+
+.tc-shell .tcq-type-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  direction: rtl;
+}
+
+.tc-shell .tcq-type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted, #6b7280);
+}
+
+.tc-shell .tcq-type-option input {
+  margin: 0;
+}
+
+.tc-shell .tcq-hidden {
+  display: none;
+}
+
+.tc-shell .tcq-type-hint {
+  margin: 0;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .tc-shell .sub-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tc-shell .sub-sidebar {
+    position: static;
+  }
+
+  .tc-shell .tc-switch-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tc-shell .tcq-answer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .tc-shell .tc-switch-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tc-shell .grid {
+    grid-template-columns: 1fr;
+  }
+}
+

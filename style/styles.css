@@ -20,18 +20,21 @@
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(circle at 50% 46%, rgba(17, 17, 17, 0.07), rgba(255, 255, 255, 0) 42%),
-    var(--bg);
+    radial-gradient(circle at top, rgba(223, 236, 255, 0.9), rgba(244, 247, 251, 0.92) 50%, rgba(255, 255, 255, 0.95));
   display: grid;
   place-items: center;
-  z-index: 1200;
-  transition: opacity 0.35s ease, visibility 0.35s ease;
+  z-index: 1400;
+  transition: opacity 0.35s ease;
   pointer-events: auto;
 }
 
 #app-loader.is-hidden {
   opacity: 0;
-  visibility: hidden;
+  pointer-events: none;
+}
+
+#app-loader.global-lazy-loader-hidden {
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -146,6 +149,23 @@ body.page-loading {
   display: block;
 }
 
+.global-lazy-loader-icon-wrap--vector,
+.global-lazy-loader-icon-wrap--bitmap {
+  width: 110px;
+  height: 110px;
+}
+
+.global-lazy-loader-icon-svg--trace {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 90px;
+  height: 60px;
+  transform: translate(-50%, -50%);
+  opacity: 0.95;
+  z-index: 1;
+}
+
 .global-lazy-loader-icon-fill {
   fill: rgba(47, 143, 255, 0.16);
 }
@@ -159,6 +179,55 @@ body.page-loading {
   stroke-dasharray: 950 1250;
   stroke-dashoffset: 0;
   animation: global-lazy-loader-stroke 2.4s linear infinite;
+}
+
+.global-lazy-loader-icon-wrap--vector .global-lazy-loader-icon-fill {
+  fill: transparent;
+}
+
+.global-lazy-loader-icon-wrap--vector .global-lazy-loader-icon-path {
+  stroke-width: 16;
+}
+
+.global-lazy-loader-icon-image {
+  width: 66px;
+  height: 66px;
+  object-fit: contain;
+  display: block;
+  position: relative;
+  z-index: 2;
+  border-radius: 16px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 30px rgba(47, 143, 255, 0.16);
+}
+
+.global-lazy-loader-icon-image--vector {
+  animation: global-lazy-loader-vector-float 2.2s ease-in-out infinite;
+}
+
+.global-lazy-loader-icon-image--bitmap {
+  animation: global-lazy-loader-bitmap-pop 1.9s ease-in-out infinite;
+}
+
+.global-lazy-loader-bitmap-orbit {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 2px solid rgba(47, 143, 255, 0.28);
+  border-top-color: rgba(47, 143, 255, 0.95);
+  border-right-color: rgba(47, 143, 255, 0.52);
+  animation: global-lazy-loader-orbit-spin 1.2s linear infinite;
+}
+
+.global-lazy-loader-bitmap-orbit--alt {
+  inset: 18px;
+  border-width: 1.5px;
+  border-color: rgba(47, 143, 255, 0.2);
+  border-left-color: rgba(47, 143, 255, 0.88);
+  border-bottom-color: rgba(47, 143, 255, 0.45);
+  animation-duration: 1.7s;
+  animation-direction: reverse;
 }
 
 .global-lazy-loader-text {
@@ -207,6 +276,34 @@ body.page-loading {
   100% {
     stroke-dashoffset: -2200;
     opacity: 0.8;
+  }
+}
+
+@keyframes global-lazy-loader-vector-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(0.96);
+  }
+  50% {
+    transform: translateY(-4px) scale(1);
+  }
+}
+
+@keyframes global-lazy-loader-bitmap-pop {
+  0%,
+  100% {
+    transform: scale(0.94);
+    box-shadow: 0 10px 24px rgba(47, 143, 255, 0.12);
+  }
+  50% {
+    transform: scale(1);
+    box-shadow: 0 14px 30px rgba(47, 143, 255, 0.2);
+  }
+}
+
+@keyframes global-lazy-loader-orbit-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -1825,7 +1922,10 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
   place-items: center;
   padding: 20px 12px;
   background:
-    radial-gradient(circle at 50% 44%, rgba(17, 17, 17, 0.06), rgba(255, 255, 255, 0) 46%);
+    radial-gradient(circle at top, rgba(223, 236, 255, 0.64), rgba(244, 247, 251, 0.6) 52%, rgba(255, 255, 255, 0.7));
+}
+.tab-lazy-loader-card {
+  width: min(280px, 80vw);
 }
 .tab-load-error {
   width: 100%;

@@ -42,6 +42,7 @@ const PANEL_TAB_FALLBACK_IDS = [
   "settings",
   "features",
   "wheel-of-fortune",
+  "task-club",
   "asset-manager",
   "devsettings"
 ];
@@ -258,7 +259,7 @@ let positionPickerCancelButton = null;
 let positionPickerCurrentXInput = null;
 let positionPickerCurrentYInput = null;
 let positionPickerSelection = null;
-let siteIconValue = "";
+let siteIconValue = normalizeValue(SHARED_GENERAL_SETTINGS?.siteIcon ?? "").trim();
 let siteIconPreviewImage = null;
 let siteIconPlaceholder = null;
 let siteIconAddButton = null;
@@ -314,6 +315,7 @@ const GLOBAL_LAZY_LOADER_DEFAULTS = Object.freeze({
   hideOnDone: true,
   fontFaces: ['400 16px "PeydaWebFaNum"', '700 16px "PeydaWebFaNum"']
 });
+const GLOBAL_LAZY_LOADER_TRACE_PATH_D = "M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z";
 const GLOBAL_LAZY_LOADER_USAGE_SNIPPET = [
   "// Available globally after app.js loads:",
   "window.GlobalLazyLoader.show(\"در حال پردازش\", \"لطفاً صبر کنید\");",
@@ -4338,6 +4340,7 @@ function applySiteIconValue(value) {
   updateSiteIconPreview(iconUrl);
   updateSidebarLogoIcon(iconUrl);
   updateFaviconLink(iconUrl);
+  refreshGlobalLazyLoaderIcon();
 }
 
 function persistSiteIconChange(nextIcon, successMessage) {
@@ -4813,19 +4816,20 @@ function resetDomNodeById(id) {
   node.parentElement.replaceChild(cleanNode, node);
 }
 
-function getTabLazyLoaderMarkup(message = "Loading tab content...") {
-  return `
-    <div class="tab-lazy-loader" role="status" aria-live="polite" aria-label="${message}">
-      <div class="loader-card">
-        <div class="loader-ring" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <p class="loader-title">${message}</p>
-      </div>
-    </div>
-  `;
+function createTabLazyLoaderElement(message = "Loading tab content...") {
+  const root = document.createElement("div");
+  root.className = "tab-lazy-loader";
+  root.setAttribute("role", "status");
+  root.setAttribute("aria-live", "polite");
+  root.setAttribute("aria-label", message);
+  const card = document.createElement("div");
+  card.className = "global-lazy-loader-card tab-lazy-loader-card";
+  const primaryTextEl = document.createElement("p");
+  primaryTextEl.className = "global-lazy-loader-text";
+  primaryTextEl.textContent = message;
+  card.append(createGlobalLazyLoaderIconNode(), primaryTextEl);
+  root.appendChild(card);
+  return root;
 }
 
 function runExternalTabInitializers(tab) {
@@ -4867,7 +4871,7 @@ async function reloadExternalTab(tab) {
   }
 
   host.setAttribute("aria-busy", "true");
-  host.innerHTML = getTabLazyLoaderMarkup();
+  host.replaceChildren(createTabLazyLoaderElement());
 
   try {
     const response = await fetch(buildExternalTabRequestUrl(source), {
@@ -5830,6 +5834,7 @@ function hideAppLoader(){
   const loader = qs('#app-loader');
   if (!loader) return;
   loader.classList.add('is-hidden');
+  loader.classList.add("global-lazy-loader-hidden");
   const removeLoader = () => loader.remove();
   loader.addEventListener('transitionend', removeLoader, { once: true });
   setTimeout(removeLoader, 700);
@@ -5861,24 +5866,118 @@ function applyGlobalLazyLoaderText(overlay, primaryText, secondaryText = "") {
   overlay.setAttribute("aria-label", primary);
 }
 
+function stripUrlQueryAndHash(value) {
+  const source = String(value ?? "").trim();
+  if (!source) {
+    return "";
+  }
+  return source.split("#")[0].split("?")[0];
+}
+
+function isSvgSiteIconSource(rawValue, iconUrl = "") {
+  const raw = String(rawValue ?? "").trim();
+  const normalizedHref = String(iconUrl ?? "").trim();
+  if (/^data:image\/svg\+xml/i.test(raw) || /^data:image\/svg\+xml/i.test(normalizedHref)) {
+    return true;
+  }
+  const candidate = stripUrlQueryAndHash(normalizedHref || raw);
+  return /\.svg$/i.test(candidate);
+}
+
+function createGlobalLazyLoaderTraceSvg() {
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("class", "global-lazy-loader-icon-svg");
+  svg.setAttribute("viewBox", "0 0 1173 773");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const fillPath = document.createElementNS(svgNs, "path");
+  fillPath.setAttribute("class", "global-lazy-loader-icon-fill");
+  fillPath.setAttribute("d", GLOBAL_LAZY_LOADER_TRACE_PATH_D);
+  const strokePath = document.createElementNS(svgNs, "path");
+  strokePath.setAttribute("class", "global-lazy-loader-icon-path");
+  strokePath.setAttribute("d", GLOBAL_LAZY_LOADER_TRACE_PATH_D);
+  svg.append(fillPath, strokePath);
+  return svg;
+}
+
+function createGlobalLazyLoaderImageNode(iconUrl, mode) {
+  const image = document.createElement("img");
+  image.className = `global-lazy-loader-icon-image global-lazy-loader-icon-image--${mode}`;
+  image.src = iconUrl;
+  image.alt = "";
+  image.decoding = "async";
+  image.loading = "eager";
+  return image;
+}
+
+function createGlobalLazyLoaderIconNode() {
+  const iconUrl = normalizeSiteIconHref(siteIconValue);
+  const iconWrap = document.createElement("div");
+  iconWrap.className = "global-lazy-loader-icon-wrap";
+  iconWrap.setAttribute("aria-hidden", "true");
+  if (!iconUrl) {
+    iconWrap.classList.add("global-lazy-loader-icon-wrap--default");
+    iconWrap.appendChild(createGlobalLazyLoaderTraceSvg());
+    return iconWrap;
+  }
+  if (isSvgSiteIconSource(siteIconValue, iconUrl)) {
+    iconWrap.classList.add("global-lazy-loader-icon-wrap--vector");
+    const trace = createGlobalLazyLoaderTraceSvg();
+    trace.classList.add("global-lazy-loader-icon-svg--trace");
+    iconWrap.append(createGlobalLazyLoaderImageNode(iconUrl, "vector"), trace);
+    return iconWrap;
+  }
+  iconWrap.classList.add("global-lazy-loader-icon-wrap--bitmap");
+  const orbitPrimary = document.createElement("span");
+  orbitPrimary.className = "global-lazy-loader-bitmap-orbit";
+  const orbitSecondary = document.createElement("span");
+  orbitSecondary.className = "global-lazy-loader-bitmap-orbit global-lazy-loader-bitmap-orbit--alt";
+  iconWrap.append(
+    orbitPrimary,
+    orbitSecondary,
+    createGlobalLazyLoaderImageNode(iconUrl, "bitmap")
+  );
+  return iconWrap;
+}
+
+function refreshGlobalLazyLoaderIcon(overlay = null) {
+  const host = overlay instanceof Element ? overlay : getGlobalLazyLoaderElement();
+  if (!(host instanceof Element)) {
+    return;
+  }
+  const card = qs(".global-lazy-loader-card", host);
+  if (!(card instanceof Element)) {
+    return;
+  }
+  const nextIconWrap = createGlobalLazyLoaderIconNode();
+  const currentIconWrap = qs(".global-lazy-loader-icon-wrap", card);
+  if (currentIconWrap && currentIconWrap.parentElement) {
+    currentIconWrap.replaceWith(nextIconWrap);
+    return;
+  }
+  const primaryTextEl = qs(".global-lazy-loader-text", card);
+  if (primaryTextEl && primaryTextEl.parentElement === card) {
+    card.insertBefore(nextIconWrap, primaryTextEl);
+    return;
+  }
+  card.prepend(nextIconWrap);
+}
+
 function createGlobalLazyLoaderElement(primaryText, secondaryText = "") {
   const overlay = document.createElement("div");
   overlay.id = GLOBAL_LAZY_LOADER_ROOT_ID;
   overlay.className = "global-lazy-loader-overlay";
   overlay.setAttribute("role", "status");
   overlay.setAttribute("aria-live", "polite");
-  overlay.innerHTML = [
-    '<div class="global-lazy-loader-card">',
-    '<div class="global-lazy-loader-icon-wrap" aria-hidden="true">',
-    '<svg class="global-lazy-loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">',
-    '<path class="global-lazy-loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>',
-    '<path class="global-lazy-loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>',
-    '</svg>',
-    '</div>',
-    '<p class="global-lazy-loader-text"></p>',
-    '<p class="global-lazy-loader-subtext"></p>',
-    '</div>'
-  ].join("");
+  const card = document.createElement("div");
+  card.className = "global-lazy-loader-card";
+  const primaryTextEl = document.createElement("p");
+  primaryTextEl.className = "global-lazy-loader-text";
+  const secondaryTextEl = document.createElement("p");
+  secondaryTextEl.className = "global-lazy-loader-subtext";
+  card.append(createGlobalLazyLoaderIconNode(), primaryTextEl, secondaryTextEl);
+  overlay.appendChild(card);
   applyGlobalLazyLoaderText(overlay, primaryText, secondaryText);
   return overlay;
 }
@@ -5902,6 +6001,7 @@ function showGlobalLazyLoader(primaryText, secondaryText = "") {
     }
     return overlay;
   }
+  refreshGlobalLazyLoaderIcon(overlay);
   applyGlobalLazyLoaderText(overlay, primaryText, secondaryText);
   overlay.classList.remove("global-lazy-loader-hidden");
   return overlay;

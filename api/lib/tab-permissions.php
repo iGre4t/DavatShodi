@@ -13,6 +13,7 @@ function getPanelTabDefinitions(): array
         ['id' => 'settings', 'label' => 'تنظیمات حساب', 'title' => 'Account Settings'],
         ['id' => 'features', 'label' => 'Features', 'title' => 'Features'],
         ['id' => 'wheel-of-fortune', 'label' => 'گردونه شانس', 'title' => 'گردونه شانس'],
+        ['id' => 'task-club', 'label' => 'باشگاه تعاملی', 'title' => 'باشگاه تعاملی'],
         ['id' => 'asset-manager', 'label' => 'مدیریت اموال', 'title' => 'مدیریت اموال'],
         ['id' => 'devsettings', 'label' => 'تنظیمات توسعه‌دهنده', 'title' => 'Developer Settings']
     ];
