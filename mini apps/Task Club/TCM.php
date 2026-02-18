@@ -2301,54 +2301,46 @@ $sessionPayload = [
         text-align: center;
       }
 
-      .tc-task-quiz-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(16, 30, 56, 0.52);
-        z-index: 70;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        padding: 16px;
-      }
-
-      .tc-task-quiz-overlay.open {
-        display: flex;
-      }
-
-      .tc-task-quiz-sheet {
-        width: min(420px, calc(100vw - 28px));
-        border-radius: 22px;
-        border: 1px solid #d8e6fb;
-        background: #fff;
-        box-shadow: 0 24px 44px rgba(15, 40, 82, 0.24);
-        padding: 14px;
+      #tc-task-quiz-area {
+        justify-content: flex-start;
+        padding-top: 14px;
       }
 
       .tc-task-quiz-head {
+        width: min(360px, calc(100% - 8px));
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        margin-bottom: 10px;
+        margin: 0 0 2px;
       }
 
       .tc-task-quiz-title {
         margin: 0;
         color: #29416b;
-        font-size: 0.92rem;
+        font-size: 1rem;
         font-weight: 700;
       }
 
       .tc-task-quiz-close {
-        border: none;
-        background: #eef4ff;
+        border: 1px solid #d6e4fb;
+        background: #f3f8ff;
         color: #2e4f85;
-        width: 30px;
-        height: 30px;
         border-radius: 10px;
-        font-size: 1rem;
+        font-size: 0.82rem;
+        font-weight: 700;
+        padding: 8px 12px;
         cursor: pointer;
+      }
+
+      .tc-task-quiz-close:hover {
+        background: #e7f1ff;
+      }
+
+      #tc-task-quiz-area .quiz-counter {
+        position: static;
+        align-self: flex-start;
+        margin: 0;
       }
 
       .repeat-area {
@@ -3465,22 +3457,20 @@ $sessionPayload = [
             <?php endif; ?>
           </div>
         </div>
+        <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
+          <div class="tc-task-quiz-head">
+            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">Task Quiz</h3>
+            <button id="tc-task-quiz-close" class="tc-task-quiz-close" type="button">Back</button>
+          </div>
+          <div id="tc-task-quiz-counter" class="quiz-counter">1 / 1</div>
+          <div id="tc-task-quiz-question" class="quiz-question-box">-</div>
+          <div id="tc-task-quiz-answers" class="quiz-answers-grid"></div>
+          <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
+        </div>
       <?php endif; ?>
       </section>
     </main>
     <?php if ($sessionPayload['authed']): ?>
-      <div id="tc-task-quiz-overlay" class="tc-task-quiz-overlay" aria-hidden="true">
-        <section class="tc-task-quiz-sheet" role="dialog" aria-modal="true" aria-labelledby="tc-task-quiz-title">
-          <div class="tc-task-quiz-head">
-            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">Task Quiz</h3>
-            <button id="tc-task-quiz-close" class="tc-task-quiz-close" type="button" aria-label="Close">X</button>
-          </div>
-          <div id="tc-task-quiz-counter" class="quiz-counter">1 / 1</div>
-          <div id="tc-task-quiz-question" class="quiz-question-box">—</div>
-          <div id="tc-task-quiz-answers" class="quiz-answers-grid"></div>
-          <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
-        </section>
-      </div>
       <div id="tc-task-result-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
         <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-task-result-title">
           <h3 id="tc-task-result-title" class="tc-result-dialog-title">Task Result</h3>
@@ -3625,8 +3615,9 @@ $sessionPayload = [
         const timeCounterEl = document.getElementById('tc-time-counter');
         const statusEl = document.getElementById('tc-status');
         const userScoreEl = document.getElementById('tc-user-score');
+        const timerAreaEl = document.getElementById('tc-timer-area');
+        const quizAreaEl = document.getElementById('tc-task-quiz-area');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
-        const quizOverlayEl = document.getElementById('tc-task-quiz-overlay');
         const quizCloseBtn = document.getElementById('tc-task-quiz-close');
         const quizTitleEl = document.getElementById('tc-task-quiz-title');
         const quizCounterEl = document.getElementById('tc-task-quiz-counter');
@@ -3944,18 +3935,26 @@ $sessionPayload = [
         };
 
         const openQuizOverlay = () => {
-          if (!quizOverlayEl) return;
-          quizOverlayEl.classList.add('open');
-          quizOverlayEl.setAttribute('aria-hidden', 'false');
+          if (timerAreaEl) {
+            timerAreaEl.classList.add('quiz-hidden');
+          }
+          if (quizAreaEl) {
+            quizAreaEl.classList.remove('quiz-hidden');
+          }
         };
 
         const closeQuizOverlay = () => {
           clearQuizTimer();
-          if (quizOverlayEl) {
-            quizOverlayEl.classList.remove('open');
-            quizOverlayEl.setAttribute('aria-hidden', 'true');
+          if (quizAreaEl) {
+            quizAreaEl.classList.add('quiz-hidden');
+            quizAreaEl.classList.remove('quiz-area--percentage');
+            Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
+          }
+          if (timerAreaEl) {
+            timerAreaEl.classList.remove('quiz-hidden');
           }
           if (quizAnswersEl) {
+            quizAnswersEl.classList.remove('quiz-answers-grid--single');
             quizAnswersEl.innerHTML = '';
           }
           quizLocked = false;
@@ -4169,6 +4168,11 @@ $sessionPayload = [
           quizCounterEl.textContent = `${currentQuestionIndex + 1} / ${total}`;
           quizQuestionEl.textContent = String(item.question || '').trim() || '-';
           quizAnswersEl.innerHTML = '';
+          quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
+          if (quizAreaEl) {
+            Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
+            quizAreaEl.classList.toggle('quiz-area--percentage', item.type === 'percentage');
+          }
 
           if (item.type === 'percentage') {
             const wrap = document.createElement('div');
@@ -4192,6 +4196,7 @@ $sessionPayload = [
             const submit = document.createElement('button');
             submit.type = 'button';
             submit.className = 'quiz-answer-btn quiz-percentage-submit quiz-percentage-submit-bottom';
+            submit.dataset.dynamic = '1';
             submit.textContent = 'Submit';
             submit.addEventListener('click', () => {
               void handlePercentageAnswer(submit, slider, item);
@@ -4199,7 +4204,11 @@ $sessionPayload = [
             wrap.appendChild(valueLabel);
             wrap.appendChild(slider);
             quizAnswersEl.appendChild(wrap);
-            quizAnswersEl.appendChild(submit);
+            if (quizAreaEl) {
+              quizAreaEl.appendChild(submit);
+            } else {
+              quizAnswersEl.appendChild(submit);
+            }
             startQuizTimer();
             return;
           }
@@ -4301,13 +4310,6 @@ $sessionPayload = [
         if (quizCloseBtn) {
           quizCloseBtn.addEventListener('click', () => {
             closeQuizOverlay();
-          });
-        }
-        if (quizOverlayEl) {
-          quizOverlayEl.addEventListener('click', (event) => {
-            if (event.target === quizOverlayEl) {
-              closeQuizOverlay();
-            }
           });
         }
         if (resultDialogEl) {
