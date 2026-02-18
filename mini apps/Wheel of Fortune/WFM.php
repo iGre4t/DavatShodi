@@ -354,7 +354,7 @@ function formatSiteIconUrlForHtml(string $value): string
   if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
     return $trimmed;
   }
-  return "../{$trimmed}";
+  return "../../{$trimmed}";
 }
 
 function readInviteesCsv(string $path): array
@@ -1179,7 +1179,7 @@ $sessionPayload = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>چرخ شانس شگفتانه</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
-    <link rel="stylesheet" href="../style/remixicon.css" />
+    <link rel="stylesheet" href="../../style/remixicon.css" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       :root {
         --bg: #f4f7fb;
@@ -1199,8 +1199,8 @@ $sessionPayload = [
       @font-face {
         font-family: 'Peyda Fa Num';
         src:
-          url('../style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2'),
-          url('/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+          url('../../style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2'),
+          url('/style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
         font-weight: 400;
         font-style: normal;
         font-display: swap;
@@ -1209,8 +1209,8 @@ $sessionPayload = [
       @font-face {
         font-family: 'Peyda Fa Num';
         src:
-          url('../style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2'),
-          url('/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+          url('../../style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2'),
+          url('/style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
         font-weight: 700;
         font-style: normal;
         font-display: swap;
