@@ -19,7 +19,6 @@ $prizeStorePath = __DIR__ . '/TC Prizes.json';
 $questionsStorePath = __DIR__ . '/TCQ list.json';
 $tcqSettingsPath = __DIR__ . '/TCQ settings.json';
 $inviteesFilePath = __DIR__ . '/TC Event/Invitees mapped.csv';
-$answersSheetPath = __DIR__ . '/TC Event/Answers.csv';
 $inviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
 $loginAttemptsPath = __DIR__ . '/TC Event/login_attempts.json';
 const TCQ_DEFAULT_SETTINGS = [
@@ -794,62 +793,41 @@ function findTaskById(array $tasks, string $taskId): ?array
   return null;
 }
 
-function ensureTaskInviteesMappedFile(string $path): array
+function parseTaskCompletedIds(string $raw): array
 {
-  $required = ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
-  $rows = readInviteesCsv($path);
-  $changed = false;
-  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
-    $rows = [$required];
-    $changed = true;
+  $parts = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($parts)) {
+    return [];
   }
-
-  $columns = ensureInviteeColumns($rows, $required);
-  if ($columns['added'] ?? false) {
-    $changed = true;
+  $seen = [];
+  $ids = [];
+  foreach ($parts as $part) {
+    $id = trim((string)$part);
+    if ($id === '' || isset($seen[$id])) {
+      continue;
+    }
+    $seen[$id] = true;
+    $ids[] = $id;
   }
-
-  $header = is_array($rows[0] ?? null) ? $rows[0] : $required;
-  $workIdIndex = findHeaderIndex($header, 'Work ID');
-  if ($workIdIndex < 0) {
-    $header = array_merge(['Work ID'], array_values($header));
-    $rows[0] = $header;
-    $workIdIndex = 0;
-    $changed = true;
-  }
-
-  if ($changed) {
-    writeInviteesCsv($path, $rows);
-  }
-
-  return [
-    'rows' => $rows,
-    'columns' => $columns['index'] ?? [],
-    'workIdIndex' => $workIdIndex
-  ];
+  return $ids;
 }
 
-function findOrCreateInviteeRowIndex(array &$rows, int $workIdIndex, string $workId): int
+function serializeTaskCompletedIds(array $ids): string
 {
-  $existing = findInviteeRowIndex($rows, $workIdIndex, $workId);
-  if ($existing >= 0) {
-    return $existing;
+  $seen = [];
+  $normalized = [];
+  foreach ($ids as $id) {
+    $token = trim((string)$id);
+    if ($token === '' || isset($seen[$token])) {
+      continue;
+    }
+    $seen[$token] = true;
+    $normalized[] = $token;
   }
-  if ($workIdIndex < 0) {
-    return -1;
-  }
-  $header = is_array($rows[0] ?? null) ? $rows[0] : [];
-  $rowLength = count($header);
-  if ($rowLength <= $workIdIndex) {
-    $rowLength = $workIdIndex + 1;
-  }
-  $newRow = array_fill(0, $rowLength, '');
-  $newRow[$workIdIndex] = $workId;
-  $rows[] = $newRow;
-  return count($rows) - 1;
+  return implode(',', $normalized);
 }
 
-function readTaskUserProgress(array $task, string $tasksDir, string $workId): array
+function readTaskUserProgress(array $task, string $inviteesPath, string $inviteesMapPath, string $workId): array
 {
   $defaults = [
     'score' => 0,
@@ -857,55 +835,59 @@ function readTaskUserProgress(array $task, string $tasksDir, string $workId): ar
     'completed' => false
   ];
   $normalizedWorkId = trim($workId);
-  if ($normalizedWorkId === '') {
-    return $defaults;
-  }
-  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
-  if ($tagCode === '') {
+  $taskId = trim((string)($task['id'] ?? ''));
+  if ($normalizedWorkId === '' || $taskId === '') {
     return $defaults;
   }
 
-  $inviteesPath = $tasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
-  $table = ensureTaskInviteesMappedFile($inviteesPath);
-  $rows = $table['rows'] ?? [];
+  $table = loadInviteesTable($inviteesPath, $inviteesMapPath);
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
   $workIdIndex = (int)($table['workIdIndex'] ?? -1);
-  $columns = is_array($table['columns'] ?? null) ? $table['columns'] : [];
   $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $normalizedWorkId);
   if ($rowIndex < 0) {
     return $defaults;
   }
 
-  $scoreIndex = (int)($columns['score'] ?? -1);
-  $answeredIndex = (int)($columns['Answered'] ?? -1);
-  $score = 0;
-  $answered = 0;
-  if ($scoreIndex >= 0) {
-    $score = max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0));
+  $taskCompletedIndex = (int)($columns['task completed ids'] ?? -1);
+  $completedIds = [];
+  if ($taskCompletedIndex >= 0) {
+    $completedIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
   }
-  if ($answeredIndex >= 0) {
-    $answered = max(0, (int)($rows[$rowIndex][$answeredIndex] ?? 0));
-  }
+  $isCompleted = in_array($taskId, $completedIds, true);
+  $taskScore = max(0, (int)($task['score'] ?? 0));
+
   return [
-    'score' => $score,
-    'answered' => $answered,
-    'completed' => ($answered > 0) || ($score > 0)
+    'score' => $isCompleted ? $taskScore : 0,
+    'answered' => $isCompleted ? 1 : 0,
+    'completed' => $isCompleted
   ];
 }
 
-function computeUserTotalTaskScore(array $tasks, string $tasksDir, string $workId): int
+function computeUserTotalTaskScore(string $inviteesPath, string $inviteesMapPath, string $workId): int
 {
-  $total = 0;
-  foreach ($tasks as $task) {
-    if (!is_array($task)) {
-      continue;
-    }
-    $progress = readTaskUserProgress($task, $tasksDir, $workId);
-    $total += (int)($progress['score'] ?? 0);
+  $normalizedWorkId = trim($workId);
+  if ($normalizedWorkId === '') {
+    return 0;
   }
-  return $total > 0 ? $total : 0;
+
+  $table = loadInviteesTable($inviteesPath, $inviteesMapPath);
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
+  $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $normalizedWorkId);
+  if ($rowIndex < 0) {
+    return 0;
+  }
+
+  $scoreIndex = (int)($columns['score'] ?? -1);
+  if ($scoreIndex < 0) {
+    return 0;
+  }
+  return max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0));
 }
 
-function buildTaskPayloadForView(array $tasks, string $tasksDir, string $workId): array
+function buildTaskPayloadForView(array $tasks, string $inviteesPath, string $inviteesMapPath, string $workId): array
 {
   $items = [];
   foreach ($tasks as $task) {
@@ -914,7 +896,7 @@ function buildTaskPayloadForView(array $tasks, string $tasksDir, string $workId)
     }
     $status = deriveTaskAvailabilityStatus($task);
     $isActive = $status === 'active';
-    $progress = readTaskUserProgress($task, $tasksDir, $workId);
+    $progress = readTaskUserProgress($task, $inviteesPath, $inviteesMapPath, $workId);
     $completed = (bool)($progress['completed'] ?? false);
     $statusLabel = $completed ? 'Completed' : resolveTaskStatusLabel($status);
     $items[] = [
@@ -1144,7 +1126,8 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'invitees',
     'answers',
     'score',
-    'Answered'
+    'Answered',
+    'task completed ids'
   ]);
   $header = $rows[0];
   $workIdIndex = (int)($mapping['workId'] ?? -1);
@@ -1482,7 +1465,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ settings.json';
     $questions = readQuestionStore($questionPath);
     $settings = loadWfqSettings($settingsPath);
-    $progress = readTaskUserProgress($task, TASKS_DIR_PATH, $sessionWorkId);
+    $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
     echo json_encode([
       'status' => 'ok',
       'task' => [
@@ -1506,31 +1489,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'Login required.']);
-      exit;
-    }
-
-    $taskId = trim((string)($payload['taskId'] ?? ''));
-    $questionCode = strtoupper(trim((string)($payload['questionCode'] ?? '')));
-    $question = trim((string)($payload['question'] ?? ''));
-    $answer = trim((string)($payload['answer'] ?? ''));
-    if ($taskId === '' || $questionCode === '' || $question === '') {
-      echo json_encode(['status' => 'ok']);
-      exit;
-    }
-
-    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
-    $task = findTaskById($tasks, $taskId);
-    if (!is_array($task)) {
-      echo json_encode(['status' => 'error', 'message' => 'Task not found.']);
-      exit;
-    }
-
-    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
-    $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
-    $answersPath = $taskDir . DIRECTORY_SEPARATOR . 'Answers.csv';
-    $questionsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
-    if (!logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $question, $answer)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to store answer.']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -1563,29 +1521,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    $existingProgress = readTaskUserProgress($task, TASKS_DIR_PATH, $sessionWorkId);
-    if ((bool)($existingProgress['completed'] ?? false)) {
-      $totalScore = computeUserTotalTaskScore($tasks, TASKS_DIR_PATH, $sessionWorkId);
-      echo json_encode([
-        'status' => 'ok',
-        'alreadyCompleted' => true,
-        'awardedScore' => 0,
-        'userTaskScore' => (int)($existingProgress['score'] ?? 0),
-        'totalScore' => $totalScore
-      ]);
-      exit;
-    }
-
-    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
-    $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
-    $inviteesPath = $taskDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
-    $table = ensureTaskInviteesMappedFile($inviteesPath);
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
     $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
-    $columns = is_array($table['columns'] ?? null) ? $table['columns'] : [];
+    $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
     $workIdIndex = (int)($table['workIdIndex'] ?? -1);
-    $rowIndex = findOrCreateInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to resolve user row.']);
+      echo json_encode(['status' => 'error', 'message' => 'User row not found.']);
       exit;
     }
 
@@ -1598,44 +1540,44 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $rows[$rowIndex] = array_pad($rows[$rowIndex], $rowLength, '');
     }
 
-    $awardedScore = (int)($task['score'] ?? 0);
     $scoreIndex = (int)($columns['score'] ?? -1);
-    $answeredIndex = (int)($columns['Answered'] ?? -1);
-    $answersIndex = (int)($columns['answers'] ?? -1);
-    if ($scoreIndex >= 0) {
-      $rows[$rowIndex][$scoreIndex] = (string)$awardedScore;
-    }
-    if ($answeredIndex >= 0) {
-      $rows[$rowIndex][$answeredIndex] = '1';
-    }
-    if ($answersIndex >= 0) {
-      $stamp = date('Y-m-d H:i:s');
-      $existing = trim((string)($rows[$rowIndex][$answersIndex] ?? ''));
-      $rows[$rowIndex][$answersIndex] = $existing !== '' ? ($existing . ', ' . $stamp) : $stamp;
+    $taskCompletedIndex = (int)($columns['task completed ids'] ?? -1);
+    if ($scoreIndex < 0 || $taskCompletedIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Score columns are not available.']);
+      exit;
     }
 
-    if (!writeInviteesCsv($inviteesPath, $rows)) {
+    $currentTotalScore = max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0));
+    $completedTaskIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
+    $awardedScore = max(0, (int)($task['score'] ?? 0));
+
+    if (in_array($taskId, $completedTaskIds, true)) {
+      echo json_encode([
+        'status' => 'ok',
+        'alreadyCompleted' => true,
+        'awardedScore' => 0,
+        'userTaskScore' => $awardedScore,
+        'totalScore' => $currentTotalScore
+      ]);
+      exit;
+    }
+
+    $completedTaskIds[] = $taskId;
+    $newTotalScore = $currentTotalScore + $awardedScore;
+    $rows[$rowIndex][$scoreIndex] = (string)$newTotalScore;
+    $rows[$rowIndex][$taskCompletedIndex] = serializeTaskCompletedIds($completedTaskIds);
+
+    if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save score.']);
       exit;
     }
 
-    $questionCode = strtoupper(trim((string)($payload['questionCode'] ?? '')));
-    $question = trim((string)($payload['question'] ?? ''));
-    $answer = trim((string)($payload['answer'] ?? ''));
-    if ($questionCode !== '' && $question !== '') {
-      $answersPath = $taskDir . DIRECTORY_SEPARATOR . 'Answers.csv';
-      $questionsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
-      logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $question, $answer);
-    }
-
-    $updatedTasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
-    $totalScore = computeUserTotalTaskScore($updatedTasks, TASKS_DIR_PATH, $sessionWorkId);
     echo json_encode([
       'status' => 'ok',
       'alreadyCompleted' => false,
       'awardedScore' => $awardedScore,
       'userTaskScore' => $awardedScore,
-      'totalScore' => $totalScore
+      'totalScore' => $newTotalScore
     ]);
     exit;
   }
@@ -1680,18 +1622,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'log_answer') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'ÙˆØ±ÙˆØ¯ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
-      exit;
-    }
-    $questionCode = strtoupper(trim((string)($payload['questionCode'] ?? '')));
-    $question = trim((string)($payload['question'] ?? ''));
-    $answer = trim((string)($payload['answer'] ?? ''));
-    if ($questionCode === '' || $question === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Ø³ÙˆØ§Ù„ Ø§Ø±Ø³Ø§Ù„ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
-      exit;
-    }
-    if (!logAnswerValue($answersSheetPath, $questionsStorePath, $sessionWorkId, $questionCode, $question, $answer)) {
-      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ Ù¾Ø§Ø³Ø® Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
+      echo json_encode(['status' => 'error', 'message' => 'Login required.']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -1814,7 +1745,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 $initialPrizes = readPrizeStore($prizeStorePath);
 $initialQuestions = readQuestionStore($questionsStorePath);
-syncAnswersSheet($answersSheetPath, readQuestionColumnsFromStore($questionsStorePath));
 $taskRecords = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
@@ -1929,9 +1859,9 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     }
   }
 }
-$taskItemsForView = buildTaskPayloadForView($taskRecords, TASKS_DIR_PATH, $sessionAuthed ? $sessionWorkId : '');
+$taskItemsForView = buildTaskPayloadForView($taskRecords, $inviteesFilePath, $inviteesMapPath, $sessionAuthed ? $sessionWorkId : '');
 $sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
-  ? computeUserTotalTaskScore($taskRecords, TASKS_DIR_PATH, $sessionWorkId)
+  ? computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)
   : 0;
 $tcqSettingsForPayload = loadWfqSettings($tcqSettingsPath);
 $sessionPayload = [
