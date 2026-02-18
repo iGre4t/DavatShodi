@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   function initWheelSubLayouts() {
     const layouts = document.querySelectorAll('[data-tc-sub-layout]');
     layouts.forEach((layout) => {

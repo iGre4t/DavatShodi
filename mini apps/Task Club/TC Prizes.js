@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   const API_URL = "mini%20apps/Task%20Club/tc_store.php";
   const TC_PRIZE_STATUS_INTERVAL_KEY = "__tcPrizeStatusInterval";
 

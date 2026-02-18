@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 $baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';
 $mappedFile = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $mapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Mapped.json';

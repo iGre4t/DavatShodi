@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 declare(strict_types=1);
 
 $tcqStorePath = __DIR__ . '/TCQ list.json';
