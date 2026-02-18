@@ -16,7 +16,6 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
     <div class="sub-nav">
       <button type="button" class="sub-item active" data-pane="tc-main">Main Panel</button>
       <button type="button" class="sub-item" data-pane="tc-invitees">Invitees</button>
-      <button type="button" class="sub-item" data-pane="tc-question">Question</button>
       <button type="button" class="sub-item" data-pane="tc-manage-tasks">Manage Tasks</button>
       <div data-tc-task-subtab-nav></div>
     </div>
@@ -222,10 +221,6 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
     </div>
     <div class="sub-pane" data-pane="tc-invitees">
       <?php include __DIR__ . '/invitees.php'; ?>
-    </div>
-    <div class="sub-pane" data-pane="tc-question">
-      <?php if (!defined('TCQ_EMBEDDED_IN_PANEL')) { define('TCQ_EMBEDDED_IN_PANEL', true); } ?>
-      <?php include __DIR__ . '/TCQ.php'; ?>
     </div>
     <div class="sub-pane" data-pane="tc-manage-tasks">
       <?php include __DIR__ . '/TCT.php'; ?>

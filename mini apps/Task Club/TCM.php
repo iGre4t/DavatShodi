@@ -1464,6 +1464,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $questionPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
     $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ settings.json';
     $questions = readQuestionStore($questionPath);
+    if (!$questions) {
+      // Backward compatibility: use shared questions if task-specific file is empty.
+      $questions = readQuestionStore($questionsStorePath);
+    }
     $settings = loadWfqSettings($settingsPath);
     $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
     echo json_encode([
