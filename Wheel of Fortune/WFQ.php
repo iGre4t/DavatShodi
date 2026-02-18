@@ -393,7 +393,11 @@ function wfqSyncAnswersSheet(string $answersPath, array $oldItems, array $newIte
   return wfqWriteCsv($answersPath, $syncedRows);
 }
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action'])) {
+if (!defined('WFQ_INCLUDE_ONLY')) {
+  define('WFQ_INCLUDE_ONLY', false);
+}
+
+if (!WFQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action']))) {
   header('Content-Type: application/json; charset=utf-8');
   $action = trim((string)($_POST['wfq_action'] ?? ''));
 
@@ -494,6 +498,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['wfq_action
 
   echo json_encode(['status' => 'error', 'message' => 'Unsupported action.'], JSON_UNESCAPED_UNICODE);
   exit;
+}
+
+if (WFQ_INCLUDE_ONLY) {
+  return;
 }
 ?>
 
