@@ -144,14 +144,15 @@ $accountEmail = $currentUser['email'] ?? '';
   </head>
   <body>
     <!-- Loader remains until app.js finishes initializing the view and hides this element. -->
-    <div id="app-loader" role="status" aria-live="polite" aria-label="در حال بارگذاری پنل...">
-      <div class="loader-card">
-        <div class="loader-ring" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <p class="loader-title">در حال بارگذاری...</p>
+    <div id="app-loader" class="global-lazy-loader-overlay global-lazy-loader-pending" role="status" aria-live="polite" aria-label="در حال بارگذاری پنل...">
+      <div class="global-lazy-loader-card">
+        <div class="global-lazy-loader-icon-wrap global-lazy-loader-icon-wrap--default" aria-hidden="true">
+            <svg class="global-lazy-loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">
+              <path class="global-lazy-loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>
+              <path class="global-lazy-loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z"></path>
+            </svg>
+          </div>
+        <p class="global-lazy-loader-text">در حال بارگذاری...</p>
       </div>
     </div>
     <!-- The main application shell; app.js toggles tabs within this container. -->

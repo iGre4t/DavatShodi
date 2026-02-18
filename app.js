@@ -316,6 +316,8 @@ const GLOBAL_LAZY_LOADER_DEFAULTS = Object.freeze({
   fontFaces: ['400 16px "PeydaWebFaNum"', '700 16px "PeydaWebFaNum"']
 });
 const GLOBAL_LAZY_LOADER_TRACE_PATH_D = "M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z";
+const GLOBAL_LAZY_LOADER_SHOW_DELAY_MS = 500;
+const TAB_LAZY_LOADER_FADEOUT_MS = 260;
 const GLOBAL_LAZY_LOADER_USAGE_SNIPPET = [
   "// Available globally after app.js loads:",
   "window.GlobalLazyLoader.show(\"در حال پردازش\", \"لطفاً صبر کنید\");",
@@ -337,6 +339,7 @@ const GLOBAL_LAZY_LOADER_USAGE_SNIPPET = [
   "window.GlobalLazyLoader.remove();"
 ].join("\n");
 let globalLazyLoaderRemoveTimer = null;
+let initialAppLoaderRevealTimer = null;
 
 function normalizeValue(value) {
   if (value === null || value === undefined) {
@@ -4832,6 +4835,49 @@ function createTabLazyLoaderElement(message = "Loading tab content...") {
   return root;
 }
 
+function scheduleTabLazyLoader(host, message = "Loading tab content...", delayMs = GLOBAL_LAZY_LOADER_SHOW_DELAY_MS) {
+  if (!(host instanceof Element)) {
+    return { cancel: () => {} };
+  }
+  const safeDelay = Math.max(0, Number(delayMs) || 0);
+  let cancelled = false;
+  const timerId = setTimeout(() => {
+    if (cancelled || !host.isConnected || host.getAttribute("aria-busy") !== "true") {
+      return;
+    }
+    host.replaceChildren(createTabLazyLoaderElement(message));
+  }, safeDelay);
+  return {
+    cancel: () => {
+      cancelled = true;
+      clearTimeout(timerId);
+    }
+  };
+}
+
+async function fadeOutTabLazyLoader(host, fadeMs = TAB_LAZY_LOADER_FADEOUT_MS) {
+  if (!(host instanceof Element)) {
+    return;
+  }
+  const loader = qs(".tab-lazy-loader", host);
+  if (!(loader instanceof Element)) {
+    return;
+  }
+  loader.classList.add("tab-lazy-loader-hidden");
+  await new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+    loader.addEventListener("transitionend", done, { once: true });
+    setTimeout(done, Math.max(120, Number(fadeMs) || TAB_LAZY_LOADER_FADEOUT_MS));
+  });
+}
+
 function runExternalTabInitializers(tab) {
   if (tab === "users") {
     initUsersTabControls();
@@ -4871,7 +4917,8 @@ async function reloadExternalTab(tab) {
   }
 
   host.setAttribute("aria-busy", "true");
-  host.replaceChildren(createTabLazyLoaderElement());
+  host.replaceChildren();
+  const tabLoader = scheduleTabLazyLoader(host);
 
   try {
     const response = await fetch(buildExternalTabRequestUrl(source), {
@@ -4883,6 +4930,8 @@ async function reloadExternalTab(tab) {
       throw new Error(`Failed to load tab content (${response.status}).`);
     }
     const rawHtml = await response.text();
+    tabLoader.cancel();
+    await fadeOutTabLazyLoader(host);
     host.innerHTML = extractExternalTabMarkup(rawHtml, tab);
     await executeExternalTabScripts(host);
     if (cacheEnabled) {
@@ -4890,11 +4939,14 @@ async function reloadExternalTab(tab) {
     }
     runExternalTabInitializers(tab);
   } catch (error) {
+    tabLoader.cancel();
+    await fadeOutTabLazyLoader(host);
     host.innerHTML = '<div class="tab-load-error muted">Failed to load tab content.</div>';
     showErrorSnackbar({
       message: error?.message || "Failed to load tab content."
     });
   } finally {
+    tabLoader.cancel();
     host.removeAttribute("aria-busy");
   }
 }
@@ -5831,13 +5883,74 @@ function renderClock(){
 
 // Removes the initial spinner after transition end to reveal the SPA.
 function hideAppLoader(){
+  if (initialAppLoaderRevealTimer) {
+    clearTimeout(initialAppLoaderRevealTimer);
+    initialAppLoaderRevealTimer = null;
+  }
   const loader = qs('#app-loader');
   if (!loader) return;
+  const wasPending = loader.classList.contains("global-lazy-loader-pending");
+  loader.classList.remove("global-lazy-loader-pending");
+  if (wasPending) {
+    loader.remove();
+    return;
+  }
   loader.classList.add('is-hidden');
   loader.classList.add("global-lazy-loader-hidden");
   const removeLoader = () => loader.remove();
   loader.addEventListener('transitionend', removeLoader, { once: true });
   setTimeout(removeLoader, 700);
+}
+
+function scheduleInitialAppLoaderReveal(delayMs = GLOBAL_LAZY_LOADER_SHOW_DELAY_MS) {
+  const loader = qs("#app-loader");
+  if (!(loader instanceof Element)) {
+    return;
+  }
+  if (initialAppLoaderRevealTimer) {
+    clearTimeout(initialAppLoaderRevealTimer);
+  }
+  loader.classList.add("global-lazy-loader-pending");
+  initialAppLoaderRevealTimer = setTimeout(() => {
+    initialAppLoaderRevealTimer = null;
+    const currentLoader = qs("#app-loader");
+    if (!(currentLoader instanceof Element)) {
+      return;
+    }
+    if (
+      currentLoader.classList.contains("is-hidden") ||
+      currentLoader.classList.contains("global-lazy-loader-hidden")
+    ) {
+      return;
+    }
+    currentLoader.classList.remove("global-lazy-loader-pending");
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+function normalizeInitialAppLoader() {
+  const loader = qs("#app-loader");
+  if (!(loader instanceof Element)) {
+    return;
+  }
+  loader.classList.add("global-lazy-loader-overlay");
+  loader.classList.remove("is-hidden", "global-lazy-loader-hidden");
+  loader.classList.add("global-lazy-loader-pending");
+  let card = qs(".global-lazy-loader-card", loader);
+  if (!(card instanceof Element)) {
+    const legacyTitle = qs(".loader-title", loader)?.textContent ?? "";
+    loader.replaceChildren();
+    card = document.createElement("div");
+    card.className = "global-lazy-loader-card";
+    const primaryText = document.createElement("p");
+    primaryText.className = "global-lazy-loader-text";
+    primaryText.textContent = normalizeLazyLoaderText(
+      legacyTitle,
+      GLOBAL_LAZY_LOADER_DEFAULT_PRIMARY_TEXT
+    );
+    card.appendChild(primaryText);
+    loader.appendChild(card);
+  }
+  refreshGlobalLazyLoaderIcon(loader);
 }
 
 function normalizeLazyLoaderText(value, fallback = "") {
@@ -5923,9 +6036,7 @@ function createGlobalLazyLoaderIconNode() {
   }
   if (isSvgSiteIconSource(siteIconValue, iconUrl)) {
     iconWrap.classList.add("global-lazy-loader-icon-wrap--vector");
-    const trace = createGlobalLazyLoaderTraceSvg();
-    trace.classList.add("global-lazy-loader-icon-svg--trace");
-    iconWrap.append(createGlobalLazyLoaderImageNode(iconUrl, "vector"), trace);
+    iconWrap.appendChild(createGlobalLazyLoaderImageNode(iconUrl, "vector"));
     return iconWrap;
   }
   iconWrap.classList.add("global-lazy-loader-icon-wrap--bitmap");
@@ -6641,6 +6752,8 @@ function initDeveloperSettingsControls() {
 }
 // Bootstraps the UI once DOM is ready: load data, render galleries/users, and attach all handlers.
 document.addEventListener('DOMContentLoaded', async () => {
+  normalizeInitialAppLoader();
+  scheduleInitialAppLoaderReveal();
   try {
     await loadServerData();
   } finally {

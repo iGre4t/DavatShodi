@@ -123,6 +123,11 @@ body.page-loading {
   pointer-events: none;
 }
 
+.global-lazy-loader-overlay.global-lazy-loader-pending {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .global-lazy-loader-card {
   width: min(280px, 80vw);
   padding: 10px 8px;
@@ -151,19 +156,8 @@ body.page-loading {
 
 .global-lazy-loader-icon-wrap--vector,
 .global-lazy-loader-icon-wrap--bitmap {
-  width: 110px;
-  height: 110px;
-}
-
-.global-lazy-loader-icon-svg--trace {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 90px;
-  height: 60px;
-  transform: translate(-50%, -50%);
-  opacity: 0.95;
-  z-index: 1;
+  width: 104px;
+  height: 104px;
 }
 
 .global-lazy-loader-icon-fill {
@@ -190,16 +184,17 @@ body.page-loading {
 }
 
 .global-lazy-loader-icon-image {
-  width: 66px;
-  height: 66px;
+  width: 72px;
+  height: 72px;
   object-fit: contain;
   display: block;
   position: relative;
   z-index: 2;
-  border-radius: 16px;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 12px 30px rgba(47, 143, 255, 0.16);
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 10px 16px rgba(47, 143, 255, 0.18));
 }
 
 .global-lazy-loader-icon-image--vector {
@@ -207,26 +202,26 @@ body.page-loading {
 }
 
 .global-lazy-loader-icon-image--bitmap {
-  animation: global-lazy-loader-bitmap-pop 1.9s ease-in-out infinite;
+  animation: global-lazy-loader-bitmap-pop 2s ease-in-out infinite;
 }
 
 .global-lazy-loader-bitmap-orbit {
   position: absolute;
-  inset: 8px;
+  inset: 10px;
   border-radius: 50%;
-  border: 2px solid rgba(47, 143, 255, 0.28);
+  border: 1.6px solid rgba(47, 143, 255, 0.24);
   border-top-color: rgba(47, 143, 255, 0.95);
   border-right-color: rgba(47, 143, 255, 0.52);
-  animation: global-lazy-loader-orbit-spin 1.2s linear infinite;
+  animation: global-lazy-loader-orbit-spin 1.4s linear infinite;
 }
 
 .global-lazy-loader-bitmap-orbit--alt {
-  inset: 18px;
-  border-width: 1.5px;
+  inset: 20px;
+  border-width: 1.2px;
   border-color: rgba(47, 143, 255, 0.2);
   border-left-color: rgba(47, 143, 255, 0.88);
   border-bottom-color: rgba(47, 143, 255, 0.45);
-  animation-duration: 1.7s;
+  animation-duration: 2s;
   animation-direction: reverse;
 }
 
@@ -1923,6 +1918,12 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary
   padding: 20px 12px;
   background:
     radial-gradient(circle at top, rgba(223, 236, 255, 0.64), rgba(244, 247, 251, 0.6) 52%, rgba(255, 255, 255, 0.7));
+  opacity: 1;
+  transition: opacity 0.26s ease;
+}
+.tab-lazy-loader.tab-lazy-loader-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 .tab-lazy-loader-card {
   width: min(280px, 80vw);
