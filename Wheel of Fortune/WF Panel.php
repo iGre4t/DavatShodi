@@ -1,3 +1,10 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../api/lib/tab-permissions.php';
+requireTabPermissionFromSession('wheel-of-fortune', false);
+?>
+
 <link rel="stylesheet" href="Wheel%20of%20Fortune/wf-panel.css" />
 <div class="wf-shell">
 <div class="sub-layout" data-wf-sub-layout>

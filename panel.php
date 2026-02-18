@@ -190,7 +190,7 @@ $accountEmail = $currentUser['email'] ?? '';
               <span>تنظیمات حساب</span>
             </button>
           <?php endif; ?>
-          <?php if (in_array('features', $allowedTabs, true) || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
+          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
             <div class="nav-separator" aria-hidden="true"></div>
           <?php endif; ?>
           <?php if (in_array('features', $allowedTabs, true)): ?>
@@ -198,6 +198,12 @@ $accountEmail = $currentUser['email'] ?? '';
             <button class="nav-item<?= $initialTab === 'features' ? ' active' : '' ?>" data-tab="features"<?= $initialTab === 'features' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-list-check" aria-hidden="true"></span>
               <span>Features</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('wheel-of-fortune', $allowedTabs, true)): ?>
+            <button class="nav-item<?= $initialTab === 'wheel-of-fortune' ? ' active' : '' ?>" data-tab="wheel-of-fortune"<?= $initialTab === 'wheel-of-fortune' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-gamepad-line" aria-hidden="true"></span>
+              <span>Wheel of Fortune</span>
             </button>
           <?php endif; ?>
           <?php if (in_array('asset-manager', $allowedTabs, true)): ?>
@@ -360,6 +366,14 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-features"
             class="tab<?= $initialTab === 'features' ? ' active' : '' ?>"
             data-tab-source="guide/components.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('wheel-of-fortune', $allowedTabs, true)): ?>
+          <section
+            id="tab-wheel-of-fortune"
+            class="tab<?= $initialTab === 'wheel-of-fortune' ? ' active' : '' ?>"
+            data-tab-source="Wheel%20of%20Fortune/WF%20Panel.php"
+            data-tab-cache="1"
           ></section>
         <?php endif; ?>
         <?php if (in_array('devsettings', $allowedTabs, true)): ?>

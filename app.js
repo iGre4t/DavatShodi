@@ -41,6 +41,7 @@ const PANEL_TAB_FALLBACK_IDS = [
   "users",
   "settings",
   "features",
+  "wheel-of-fortune",
   "asset-manager",
   "devsettings"
 ];
@@ -4742,6 +4743,31 @@ function extractExternalTabMarkup(rawHtml, tab) {
   return rawHtml;
 }
 
+async function executeExternalTabScripts(host) {
+  if (!(host instanceof Element)) {
+    return;
+  }
+  const scripts = Array.from(host.querySelectorAll("script"));
+  for (const script of scripts) {
+    const replacement = document.createElement("script");
+    Array.from(script.attributes).forEach((attribute) => {
+      replacement.setAttribute(attribute.name, attribute.value);
+    });
+    if (script.src) {
+      replacement.async = false;
+      const loaded = new Promise((resolve) => {
+        replacement.addEventListener("load", resolve, { once: true });
+        replacement.addEventListener("error", resolve, { once: true });
+      });
+      script.replaceWith(replacement);
+      await loaded;
+      continue;
+    }
+    replacement.textContent = script.textContent || "";
+    script.replaceWith(replacement);
+  }
+}
+
 function resetDomNodeById(id) {
   const node = qs(`#${id}`);
   if (!node || !node.parentElement) {
@@ -4797,6 +4823,11 @@ async function reloadExternalTab(tab) {
   if (!host || !source) {
     return;
   }
+  const cacheEnabled = host.dataset.tabCache === "1";
+  if (cacheEnabled && host.dataset.tabLoaded === "1") {
+    runExternalTabInitializers(tab);
+    return;
+  }
 
   host.setAttribute("aria-busy", "true");
   host.innerHTML = getTabLazyLoaderMarkup();
@@ -4812,6 +4843,10 @@ async function reloadExternalTab(tab) {
     }
     const rawHtml = await response.text();
     host.innerHTML = extractExternalTabMarkup(rawHtml, tab);
+    await executeExternalTabScripts(host);
+    if (cacheEnabled) {
+      host.dataset.tabLoaded = "1";
+    }
     runExternalTabInitializers(tab);
   } catch (error) {
     host.innerHTML = '<div class="tab-load-error muted">Failed to load tab content.</div>';
