@@ -3,6 +3,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 $baseDir = __DIR__;
 $prizesFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Prizes.json';
+$prizeLevelsFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Prize Levels.json';
 $settingsFile = $baseDir . DIRECTORY_SEPARATOR . 'Setting.json';
 
 function readJsonFile($path, $fallback) {
@@ -23,6 +24,29 @@ function writeJsonFile($path, $data) {
     return false;
   }
   return file_put_contents($path, $encoded, LOCK_EX) !== false;
+}
+
+function normalizePositiveNumber($value) {
+  if (!is_scalar($value)) {
+    return 0;
+  }
+  $normalized = preg_replace('/[,\s]+/', '', (string)$value);
+  if (!is_string($normalized) || $normalized === '' || !is_numeric($normalized)) {
+    return 0;
+  }
+  $parsed = (float)$normalized;
+  if (!is_finite($parsed) || $parsed < 0) {
+    return 0;
+  }
+  return $parsed;
+}
+
+function normalizePositiveInt($value) {
+  if (!is_scalar($value)) {
+    return 0;
+  }
+  $parsed = (int)$value;
+  return $parsed > 0 ? $parsed : 0;
 }
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
@@ -55,6 +79,7 @@ if ($action === 'save_prizes') {
     }
     $quantity = (int)($prize['quantity'] ?? 0);
     $last = (int)($prize['last'] ?? $quantity);
+    $value = normalizePositiveNumber($prize['value'] ?? 0);
     $isFake = (bool)($prize['isFake'] ?? false);
     if ($quantity < 0) {
       $quantity = 0;
@@ -70,11 +95,78 @@ if ($action === 'save_prizes') {
       'onWheelName' => $onWheelName,
       'quantity' => $quantity,
       'last' => $last,
+      'value' => $value,
       'isFake' => $isFake
     ];
   }
   if (!writeJsonFile($prizesFile, $normalized)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save prizes.']);
+    exit;
+  }
+  echo json_encode(['status' => 'ok']);
+  exit;
+}
+
+if ($action === 'get_prize_levels') {
+  $levels = readJsonFile($prizeLevelsFile, []);
+  $normalized = [];
+  foreach ($levels as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $score = normalizePositiveInt($item['score'] ?? 0);
+    if ($score <= 0) {
+      continue;
+    }
+    $id = trim((string)($item['id'] ?? ''));
+    if ($id === '') {
+      $id = uniqid('lvl_', true);
+    }
+    $normalized[] = [
+      'id' => $id,
+      'score' => $score
+    ];
+  }
+  usort($normalized, static function ($a, $b) {
+    return (int)($a['score'] ?? 0) <=> (int)($b['score'] ?? 0);
+  });
+  echo json_encode(['status' => 'ok', 'data' => $normalized], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'save_prize_levels') {
+  $payload = json_decode(file_get_contents('php://input'), true);
+  $levels = $payload['levels'] ?? [];
+  if (!is_array($levels)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid levels.']);
+    exit;
+  }
+
+  $normalized = [];
+  foreach ($levels as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $score = normalizePositiveInt($item['score'] ?? 0);
+    if ($score <= 0) {
+      continue;
+    }
+    $id = trim((string)($item['id'] ?? ''));
+    if ($id === '') {
+      $id = uniqid('lvl_', true);
+    }
+    $normalized[] = [
+      'id' => $id,
+      'score' => $score
+    ];
+  }
+
+  usort($normalized, static function ($a, $b) {
+    return (int)($a['score'] ?? 0) <=> (int)($b['score'] ?? 0);
+  });
+
+  if (!writeJsonFile($prizeLevelsFile, $normalized)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save levels.']);
     exit;
   }
   echo json_encode(['status' => 'ok']);

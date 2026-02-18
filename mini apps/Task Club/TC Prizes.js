@@ -11,6 +11,43 @@
       .replace(/'/g, "&#039;");
   }
 
+  function parsePrizeValue(rawValue, fallback = 0) {
+    const normalized = String(rawValue ?? "")
+      .replace(/,/g, "")
+      .replace(/\s+/g, "")
+      .replace(/[^\d.]/g, "");
+    const parsed = Number.parseFloat(normalized);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  function formatPrizeValue(value) {
+    const normalized = parsePrizeValue(value, 0);
+    const rounded = Math.round(normalized * 100) / 100;
+    const integerPart = Math.trunc(rounded);
+    const decimalPart = rounded - integerPart;
+    const integerText = integerPart.toLocaleString("en-US");
+    if (decimalPart === 0) {
+      return integerText;
+    }
+    const decimalText = String(rounded.toFixed(2)).replace(/^\d+\./, "").replace(/0+$/, "");
+    return decimalText ? `${integerText}.${decimalText}` : integerText;
+  }
+
+  function normalizeLevelScore(rawValue) {
+    const parsed = Number.parseInt(String(rawValue ?? "").trim(), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 0;
+    }
+    return parsed;
+  }
+
+  function makeLevelId() {
+    return `lvl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
   async function loadPrizes() {
     try {
       const response = await fetch(`${API_URL}?action=get_prizes`, { credentials: "same-origin" });
@@ -22,11 +59,13 @@
             const last = Number.parseInt(item?.last ?? quantity, 10);
             const name = String(item?.name ?? "").trim();
             const onWheelName = String(item?.onWheelName ?? name).trim();
+            const value = parsePrizeValue(item?.value ?? 0, 0);
             return {
               name,
               onWheelName,
               quantity,
               last: Number.isFinite(last) ? last : quantity,
+              value,
               isFake: Boolean(item?.isFake)
             };
           })
@@ -47,12 +86,44 @@
     } catch {}
   }
 
+  async function loadPrizeLevels() {
+    try {
+      const response = await fetch(`${API_URL}?action=get_prize_levels`, { credentials: "same-origin" });
+      const payload = await response.json();
+      if (payload?.status === "ok" && Array.isArray(payload.data)) {
+        return payload.data
+          .map((item) => {
+            const id = String(item?.id ?? "").trim() || makeLevelId();
+            const score = normalizeLevelScore(item?.score ?? 0);
+            return { id, score };
+          })
+          .filter((item) => item.score > 0)
+          .sort((a, b) => a.score - b.score);
+      }
+    } catch {}
+    return [];
+  }
+
+  async function savePrizeLevels(levels) {
+    try {
+      const response = await fetch(`${API_URL}?action=save_prize_levels`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ levels })
+      });
+      const payload = await response.json();
+      return response.ok && payload?.status === "ok";
+    } catch {}
+    return false;
+  }
+
   function renderPrizes(prizes, listEl) {
     if (!listEl) {
       return;
     }
     if (!prizes.length) {
-      listEl.innerHTML = '<tr><td colspan="6" class="muted">No prizes added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="7" class="muted">No prizes added yet.</td></tr>';
       return;
     }
     listEl.innerHTML = prizes
@@ -61,6 +132,7 @@
           ? prize.quantity
           : 0;
         const last = Number.isFinite(prize.last) && prize.last >= 0 ? prize.last : quantity;
+        const value = parsePrizeValue(prize.value, 0);
         return `
           <tr data-index="${index}" data-prize-name="${escapeHtml(prize.name)}">
             <td>
@@ -83,6 +155,11 @@
             <td>
               <label class="field tc-standard-third tc-prize-qty" style="margin:0;">
                 <input type="number" data-field="quantity" min="0" step="1" value="${escapeHtml(quantity)}" />
+              </label>
+            </td>
+            <td>
+              <label class="field standard-width" style="margin:0;">
+                <input type="text" data-field="value" inputmode="decimal" value="${escapeHtml(formatPrizeValue(value))}" />
               </label>
             </td>
             <td>
@@ -114,12 +191,13 @@
     const form = document.getElementById("tc-prize-form");
     const nameInput = document.getElementById("tc-prize-name");
     const quantityInput = document.getElementById("tc-prize-quantity");
+    const valueInput = document.getElementById("tc-prize-value");
     const listEl = document.getElementById("tc-prize-list");
     const fakeForm = document.getElementById("tc-fake-form");
     const fakeNameInput = document.getElementById("tc-fake-name");
     const fakeListEl = document.getElementById("tc-fake-list");
 
-    if (!form || !nameInput || !quantityInput || !listEl) {
+    if (!form || !nameInput || !quantityInput || !valueInput || !listEl) {
       return;
     }
 
@@ -135,14 +213,20 @@
       return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
     }
 
+    function parseValue(rawValue, fallback = 0) {
+      return parsePrizeValue(rawValue, fallback);
+    }
+
     function getRowDraft(row) {
       const rowNameInput = row?.querySelector('[data-field="name"]');
       const rowOnWheelNameInput = row?.querySelector('[data-field="onWheelName"]');
       const rowQuantityInput = row?.querySelector('[data-field="quantity"]');
+      const rowValueInput = row?.querySelector('[data-field="value"]');
       return {
         name: String(rowNameInput?.value ?? "").trim(),
         onWheelName: String(rowOnWheelNameInput?.value ?? "").trim(),
-        quantity: parseQuantity(rowQuantityInput?.value, 0)
+        quantity: parseQuantity(rowQuantityInput?.value, 0),
+        value: parseValue(rowValueInput?.value, 0)
       };
     }
 
@@ -155,10 +239,12 @@
       const originalName = String(original?.name ?? "").trim();
       const originalOnWheelName = String(original?.onWheelName ?? originalName).trim();
       const originalQuantity = parseQuantity(original?.quantity, 0);
+      const originalValue = parseValue(original?.value, 0);
       return (
         draft.name !== originalName ||
         draft.onWheelName !== originalOnWheelName ||
-        draft.quantity !== originalQuantity
+        draft.quantity !== originalQuantity ||
+        Math.abs(draft.value - originalValue) > 0.000001
       );
     }
 
@@ -174,6 +260,7 @@
         const rowNameInput = row.querySelector('[data-field="name"]');
         const rowOnWheelNameInput = row.querySelector('[data-field="onWheelName"]');
         const rowQuantityInput = row.querySelector('[data-field="quantity"]');
+        const rowValueInput = row.querySelector('[data-field="value"]');
         const saveBtn = row.querySelector('button[data-action="save"]');
         const deleteBtn = row.querySelector('button[data-action="delete"]');
         const countButtons = row.querySelectorAll('button[data-action="add-count"], button[data-action="sub-count"]');
@@ -183,6 +270,7 @@
         if (rowNameInput) rowNameInput.disabled = isLockedRow;
         if (rowOnWheelNameInput) rowOnWheelNameInput.disabled = isLockedRow;
         if (rowQuantityInput) rowQuantityInput.disabled = isLockedRow;
+        if (rowValueInput) rowValueInput.disabled = isLockedRow;
 
         if (deleteBtn) {
           deleteBtn.disabled = isLockedRow || (isActiveRow && dirty);
@@ -249,7 +337,7 @@
     window[TC_PRIZE_STATUS_INTERVAL_KEY] = window.setInterval(refreshStatus, 5000);
 
     listEl.addEventListener("input", event => {
-      const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"]');
+      const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"], [data-field="value"]');
       if (!field) {
         return;
       }
@@ -327,6 +415,7 @@
         const nameInput = row.querySelector('[data-field="name"]');
         const onWheelNameInput = row.querySelector('[data-field="onWheelName"]');
         const quantityInput = row.querySelector('[data-field="quantity"]');
+        const valueInput = row.querySelector('[data-field="value"]');
         const name = String(nameInput?.value ?? "").trim();
         const onWheelName = String(onWheelNameInput?.value ?? "").trim();
         if (!name) {
@@ -334,6 +423,7 @@
           return;
         }
         const quantity = parseQuantity(quantityInput?.value, 0);
+        const value = parseValue(valueInput?.value, 0);
         const previousQuantity = parseQuantity(prizes[index]?.quantity, 0);
         const previousLast = parseQuantity(prizes[index]?.last, previousQuantity);
         const previousOnWheelName = String(prizes[index]?.onWheelName ?? "").trim();
@@ -346,6 +436,7 @@
           onWheelName: nextOnWheelName,
           quantity,
           last: nextLast,
+          value,
           isFake: false
         };
         editState.index = null;
@@ -366,11 +457,13 @@
         return;
       }
       const quantity = parseQuantity(quantityInput.value, 1);
-      prizes.push({ name, onWheelName: name, quantity, last: quantity, isFake: false });
+      const value = parseValue(valueInput.value, 0);
+      prizes.push({ name, onWheelName: name, quantity, last: quantity, value, isFake: false });
       await savePrizes([...prizes, ...fakeItems]);
       renderPrizes(prizes, listEl);
       nameInput.value = "";
       quantityInput.value = "1";
+      valueInput.value = "";
       nameInput.focus();
       syncEditStateUI();
     });
@@ -425,6 +518,117 @@
     syncEditStateUI();
   }
 
+  function renderPrizeLevels(levels, listEl) {
+    if (!listEl) {
+      return;
+    }
+    if (!levels.length) {
+      listEl.innerHTML = '<tr><td colspan="3" class="muted">No levels added yet.</td></tr>';
+      return;
+    }
+    listEl.innerHTML = levels
+      .map((level, index) => `
+        <tr data-index="${index}" data-level-id="${escapeHtml(level.id)}">
+          <td>${index + 1}</td>
+          <td>
+            <label class="field standard-width" style="margin:0;">
+              <input type="number" min="1" step="1" data-field="level-score" value="${escapeHtml(level.score)}" />
+            </label>
+          </td>
+          <td>
+            <div class="tct-action-wrap">
+              <button type="button" class="btn ghost" data-action="remove-level">Remove</button>
+            </div>
+          </td>
+        </tr>
+      `)
+      .join("");
+  }
+
+  async function initPrizeLevels() {
+    const form = document.getElementById("tc-prize-level-form");
+    const scoreInput = document.getElementById("tc-prize-level-score");
+    const statusEl = document.getElementById("tc-prize-level-status");
+    const listEl = document.getElementById("tc-prize-level-list");
+    if (!form || !scoreInput || !statusEl || !listEl) {
+      return;
+    }
+
+    const setStatus = (message, isError = false) => {
+      statusEl.textContent = message || "";
+      statusEl.style.color = isError ? "#d1434a" : "";
+    };
+
+    let levels = await loadPrizeLevels();
+    renderPrizeLevels(levels, listEl);
+
+    const persistLevels = async (nextLevels, successMessage = "Levels saved.") => {
+      const normalized = nextLevels
+        .map((item) => ({
+          id: String(item?.id ?? "").trim() || makeLevelId(),
+          score: normalizeLevelScore(item?.score ?? 0)
+        }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => a.score - b.score);
+      const saved = await savePrizeLevels(normalized);
+      if (!saved) {
+        setStatus("Failed to save levels.", true);
+        return false;
+      }
+      levels = normalized;
+      renderPrizeLevels(levels, listEl);
+      setStatus(successMessage, false);
+      return true;
+    };
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const score = normalizeLevelScore(scoreInput.value);
+      if (score <= 0) {
+        setStatus("Score must be greater than zero.", true);
+        scoreInput.focus();
+        return;
+      }
+      const nextLevels = [...levels, { id: makeLevelId(), score }];
+      const saved = await persistLevels(nextLevels, "Level added.");
+      if (saved) {
+        scoreInput.value = "";
+        scoreInput.focus();
+      }
+    });
+
+    listEl.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const removeBtn = target.closest('[data-action="remove-level"]');
+      if (!removeBtn) return;
+      const row = removeBtn.closest("tr[data-index]");
+      const index = Number.parseInt(row?.dataset?.index ?? "", 10);
+      if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
+      const nextLevels = levels.filter((_, itemIndex) => itemIndex !== index);
+      await persistLevels(nextLevels, "Level removed.");
+    });
+
+    listEl.addEventListener("change", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (target.getAttribute("data-field") !== "level-score") return;
+      const row = target.closest("tr[data-index]");
+      const index = Number.parseInt(row?.dataset?.index ?? "", 10);
+      if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
+      const nextScore = normalizeLevelScore(target.value);
+      if (nextScore <= 0) {
+        target.value = String(levels[index].score);
+        setStatus("Score must be greater than zero.", true);
+        return;
+      }
+      const nextLevels = levels.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, score: nextScore } : item
+      ));
+      await persistLevels(nextLevels, "Level updated.");
+    });
+  }
+
   function renderFakeItems(fakeItems, listEl) {
     if (!listEl) {
       return;
@@ -453,9 +657,13 @@
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initPrizeForm);
+    document.addEventListener("DOMContentLoaded", () => {
+      initPrizeForm();
+      initPrizeLevels();
+    });
   } else {
     initPrizeForm();
+    initPrizeLevels();
   }
 })();
 

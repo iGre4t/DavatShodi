@@ -16,6 +16,7 @@ const TASKS_JS_STORE_PATH = TASKS_DIR_PATH . '/tasks.js';
 const TASK_SCORE_SETTINGS_FILE = 'task-score.json';
 
 $prizeStorePath = __DIR__ . '/TC Prizes.json';
+$prizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
 $questionsStorePath = __DIR__ . '/TCQ list.json';
 $tcqSettingsPath = __DIR__ . '/TCQ settings.json';
 $inviteesFilePath = __DIR__ . '/TC Event/Invitees mapped.csv';
@@ -46,6 +47,59 @@ function writePrizeStore(string $path, array $payload): bool
     return false;
   }
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function normalizePrizeLevelScoreValue($value): int
+{
+  if (!is_scalar($value)) {
+    return 0;
+  }
+  $parsed = (int)$value;
+  return $parsed > 0 ? $parsed : 0;
+}
+
+function readPrizeLevels(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+  $levels = [];
+  foreach ($decoded as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $score = normalizePrizeLevelScoreValue($item['score'] ?? 0);
+    if ($score <= 0) {
+      continue;
+    }
+    $levels[] = $score;
+  }
+  sort($levels, SORT_NUMERIC);
+  return array_values($levels);
+}
+
+function resolveAllowedRollCountByScore(int $score, array $levels): ?int
+{
+  if (!$levels) {
+    return null;
+  }
+  $normalizedScore = max(0, $score);
+  $allowed = 0;
+  foreach ($levels as $threshold) {
+    $value = normalizePrizeLevelScoreValue($threshold);
+    if ($value > 0 && $normalizedScore >= $value) {
+      $allowed += 1;
+    }
+  }
+  return $allowed;
 }
 
 function readQuestionStore(string $path): array
@@ -1599,6 +1653,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $columns = $table['columns']['index'] ?? [];
     $rollIndex = $columns['count of rolls'] ?? -1;
     $prizeIndex = $columns['prize won'] ?? -1;
+    $scoreIndex = $columns['score'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $rollIndex < 0) {
       echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
@@ -1611,7 +1666,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
       }
     }
-    $rolls = (int)($rows[$rowIndex][$rollIndex] ?? 0);
+    $rolls = max(0, (int)($rows[$rowIndex][$rollIndex] ?? 0));
+    $userScore = $scoreIndex >= 0 ? max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0)) : 0;
+    $prizeLevels = readPrizeLevels($prizeLevelsPath);
+    $allowedRolls = resolveAllowedRollCountByScore($userScore, $prizeLevels);
+    if ($allowedRolls !== null) {
+      if ($allowedRolls <= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'Your score is not enough for a prize attempt yet.']);
+        exit;
+      }
+      if ($rolls >= $allowedRolls) {
+        echo json_encode(['status' => 'error', 'message' => 'No prize attempts left for your current score.']);
+        exit;
+      }
+    }
     $rows[$rowIndex][$rollIndex] = (string)($rolls + 1);
     if (($table['columns']['added'] ?? false) && $rows) {
       writeInviteesCsv($inviteesFilePath, $rows);
@@ -1722,6 +1790,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $isFake = (bool)($item['isFake'] ?? false);
       $quantity = (int)($item['quantity'] ?? 0);
       $last = (int)($item['last'] ?? $quantity);
+      $value = is_numeric($item['value'] ?? null) ? (float)$item['value'] : 0.0;
+      if ($value < 0) {
+        $value = 0.0;
+      }
       if ($itemName !== '' && $itemName === $name && !$isFake) {
         $last = max(0, $last - 1);
       }
@@ -1731,6 +1803,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           'onWheelName' => $onWheelName !== '' ? $onWheelName : $itemName,
           'quantity' => $quantity > 0 ? $quantity : 0,
           'last' => $last > 0 ? $last : 0,
+          'value' => $value,
           'isFake' => $isFake
         ];
       }
@@ -2147,6 +2220,7 @@ $sessionPayload = [
         justify-content: flex-start;
         gap: 12px;
         padding-top: 20px;
+        padding-bottom: 104px;
       }
 
       .tasks-title {
@@ -2235,6 +2309,45 @@ $sessionPayload = [
         text-align: center;
       }
 
+      .tc-bottom-cta {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 10px 18px 14px;
+        background: linear-gradient(180deg, rgba(246, 250, 255, 0) 0%, rgba(246, 250, 255, 0.92) 28%, rgba(246, 250, 255, 1) 100%);
+      }
+
+      .tc-bottom-cta.quiz-hidden {
+        display: none;
+      }
+
+      .tc-bottom-cta-btn {
+        width: min(360px, calc(100vw - 56px));
+        margin: 0 auto;
+        display: block;
+        text-align: center;
+        text-decoration: none;
+        border-radius: 14px;
+        border: 1px solid #ff5b13;
+        background: #ff4f00;
+        color: #ffffff;
+        font-size: 0.96rem;
+        font-weight: 700;
+        padding: 12px 14px;
+        box-shadow: 0 14px 26px rgba(255, 79, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        transition: background-color 0.18s ease, transform 0.18s ease;
+      }
+
+      .tc-bottom-cta-btn:hover {
+        background: #ff5f1e;
+        transform: translateY(-1px);
+      }
+
+      .tc-bottom-cta-btn:active {
+        transform: translateY(0);
+      }
+
       #tc-task-quiz-area {
         justify-content: flex-start;
         padding-top: 14px;
@@ -2254,21 +2367,6 @@ $sessionPayload = [
         color: #29416b;
         font-size: 1rem;
         font-weight: 700;
-      }
-
-      .tc-task-quiz-close {
-        border: 1px solid #d6e4fb;
-        background: #f3f8ff;
-        color: #2e4f85;
-        border-radius: 10px;
-        font-size: 0.82rem;
-        font-weight: 700;
-        padding: 8px 12px;
-        cursor: pointer;
-      }
-
-      .tc-task-quiz-close:hover {
-        background: #e7f1ff;
       }
 
       #tc-task-quiz-area .quiz-counter {
@@ -3266,6 +3364,15 @@ $sessionPayload = [
           width: min(296px, calc(100vw - 52px));
         }
 
+        .tc-bottom-cta {
+          padding-inline: 16px;
+          padding-bottom: 12px;
+        }
+
+        .tc-bottom-cta-btn {
+          width: min(296px, calc(100vw - 52px));
+        }
+
         .center-spin {
           width: 74px;
           height: 74px;
@@ -3391,10 +3498,12 @@ $sessionPayload = [
             <?php endif; ?>
           </div>
         </div>
+        <div id="tc-bottom-cta" class="tc-bottom-cta">
+          <a class="tc-bottom-cta-btn" href="TC%20Rewards.php">دریافت جوایز</a>
+        </div>
         <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
           <div class="tc-task-quiz-head">
             <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">Task Quiz</h3>
-            <button id="tc-task-quiz-close" class="tc-task-quiz-close" type="button">Back</button>
           </div>
           <div id="tc-task-quiz-counter" class="quiz-counter">1 / 1</div>
           <div id="tc-task-quiz-question" class="quiz-question-box">-</div>
@@ -3550,9 +3659,9 @@ $sessionPayload = [
         const statusEl = document.getElementById('tc-status');
         const userScoreEl = document.getElementById('tc-user-score');
         const timerAreaEl = document.getElementById('tc-timer-area');
+        const bottomCtaEl = document.getElementById('tc-bottom-cta');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
-        const quizCloseBtn = document.getElementById('tc-task-quiz-close');
         const quizTitleEl = document.getElementById('tc-task-quiz-title');
         const quizCounterEl = document.getElementById('tc-task-quiz-counter');
         const quizQuestionEl = document.getElementById('tc-task-quiz-question');
@@ -3872,6 +3981,9 @@ $sessionPayload = [
           if (timerAreaEl) {
             timerAreaEl.classList.add('quiz-hidden');
           }
+          if (bottomCtaEl) {
+            bottomCtaEl.classList.add('quiz-hidden');
+          }
           if (quizAreaEl) {
             quizAreaEl.classList.remove('quiz-hidden');
           }
@@ -3886,6 +3998,9 @@ $sessionPayload = [
           }
           if (timerAreaEl) {
             timerAreaEl.classList.remove('quiz-hidden');
+          }
+          if (bottomCtaEl) {
+            bottomCtaEl.classList.remove('quiz-hidden');
           }
           if (quizAnswersEl) {
             quizAnswersEl.classList.remove('quiz-answers-grid--single');
@@ -4241,11 +4356,6 @@ $sessionPayload = [
           }
         };
 
-        if (quizCloseBtn) {
-          quizCloseBtn.addEventListener('click', () => {
-            closeQuizOverlay();
-          });
-        }
         if (resultDialogEl) {
           resultDialogEl.addEventListener('click', (event) => {
             if (event.target === resultDialogEl) {

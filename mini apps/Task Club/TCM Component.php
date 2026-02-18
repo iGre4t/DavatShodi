@@ -13,6 +13,7 @@ const DEFAULT_PANEL_SETTINGS = [
 ];
 
 $prizeStorePath = __DIR__ . '/TC Prizes.json';
+$prizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
 $questionsStorePath = __DIR__ . '/TCQ list.json';
 $tcqSettingsPath = __DIR__ . '/TCQ settings.json';
 $inviteesFilePath = __DIR__ . '/TC Event/Invitees mapped.csv';
@@ -44,6 +45,59 @@ function writePrizeStore(string $path, array $payload): bool
     return false;
   }
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function normalizePrizeLevelScoreValue($value): int
+{
+  if (!is_scalar($value)) {
+    return 0;
+  }
+  $parsed = (int)$value;
+  return $parsed > 0 ? $parsed : 0;
+}
+
+function readPrizeLevels(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+  $levels = [];
+  foreach ($decoded as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $score = normalizePrizeLevelScoreValue($item['score'] ?? 0);
+    if ($score <= 0) {
+      continue;
+    }
+    $levels[] = $score;
+  }
+  sort($levels, SORT_NUMERIC);
+  return array_values($levels);
+}
+
+function resolveAllowedRollCountByScore(int $score, array $levels): ?int
+{
+  if (!$levels) {
+    return null;
+  }
+  $normalizedScore = max(0, $score);
+  $allowed = 0;
+  foreach ($levels as $threshold) {
+    $value = normalizePrizeLevelScoreValue($threshold);
+    if ($value > 0 && $normalizedScore >= $value) {
+      $allowed += 1;
+    }
+  }
+  return $allowed;
 }
 
 function readQuestionStore(string $path): array
@@ -885,6 +939,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $columns = $table['columns']['index'] ?? [];
     $rollIndex = $columns['count of rolls'] ?? -1;
     $prizeIndex = $columns['prize won'] ?? -1;
+    $scoreIndex = $columns['score'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $rollIndex < 0) {
       echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
@@ -897,7 +952,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
       }
     }
-    $rolls = (int)($rows[$rowIndex][$rollIndex] ?? 0);
+    $rolls = max(0, (int)($rows[$rowIndex][$rollIndex] ?? 0));
+    $userScore = $scoreIndex >= 0 ? max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0)) : 0;
+    $prizeLevels = readPrizeLevels($prizeLevelsPath);
+    $allowedRolls = resolveAllowedRollCountByScore($userScore, $prizeLevels);
+    if ($allowedRolls !== null) {
+      if ($allowedRolls <= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'Your score is not enough for a prize attempt yet.']);
+        exit;
+      }
+      if ($rolls >= $allowedRolls) {
+        echo json_encode(['status' => 'error', 'message' => 'No prize attempts left for your current score.']);
+        exit;
+      }
+    }
     $rows[$rowIndex][$rollIndex] = (string)($rolls + 1);
     if (($table['columns']['added'] ?? false) && $rows) {
       writeInviteesCsv($inviteesFilePath, $rows);
@@ -1019,6 +1087,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $isFake = (bool)($item['isFake'] ?? false);
       $quantity = (int)($item['quantity'] ?? 0);
       $last = (int)($item['last'] ?? $quantity);
+      $value = is_numeric($item['value'] ?? null) ? (float)$item['value'] : 0.0;
+      if ($value < 0) {
+        $value = 0.0;
+      }
       if ($itemName !== '' && $itemName === $name && !$isFake) {
         $last = max(0, $last - 1);
       }
@@ -1028,6 +1100,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           'onWheelName' => $onWheelName !== '' ? $onWheelName : $itemName,
           'quantity' => $quantity > 0 ? $quantity : 0,
           'last' => $last > 0 ? $last : 0,
+          'value' => $value,
           'isFake' => $isFake
         ];
       }

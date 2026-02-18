@@ -189,7 +189,18 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
           required
         />
       </label>
-      <div></div>
+      <label class="field standard-width">
+        <span>Value</span>
+        <input
+          id="tc-prize-value"
+          name="value"
+          type="text"
+          inputmode="decimal"
+          placeholder="0"
+          autocomplete="off"
+          required
+        />
+      </label>
     </div>
     <div class="field full tc-form-action">
       <button type="submit" class="btn primary standard-primary-button">Add</button>
@@ -209,13 +220,44 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
           <th>On Wheel Name</th>
           <th>Status</th>
           <th>Quantity</th>
+          <th>Value</th>
           <th>Count Control</th>
           <th>Action Bar</th>
         </tr>
       </thead>
       <tbody id="tc-prize-list"></tbody>
-    </table>
+</table>
 </div>
+</div>
+
+<div class="card">
+  <div class="section-header">
+    <h3>Prize Levels</h3>
+  </div>
+  <form id="tc-prize-level-form" class="form" style="gap:12px;">
+    <label class="field standard-width">
+      <span>Score</span>
+      <input id="tc-prize-level-score" name="score" type="number" min="1" step="1" inputmode="numeric" required />
+    </label>
+    <div class="field full">
+      <button type="submit" class="btn primary standard-primary-button">Add Level</button>
+    </div>
+    <p id="tc-prize-level-status" class="muted small" aria-live="polite"></p>
+  </form>
+  <div class="table-wrapper">
+    <table class="tc-prize-level-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Score</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="tc-prize-level-list">
+        <tr><td colspan="3" class="muted">No levels added yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 </div>
     </div>
