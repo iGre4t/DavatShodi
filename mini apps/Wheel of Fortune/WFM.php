@@ -7,7 +7,7 @@ header("Referrer-Policy: same-origin");
 if (empty($_SESSION['wf_csrf'])) {
   $_SESSION['wf_csrf'] = bin2hex(random_bytes(16));
 }
-const SETTINGS_STORE_PATH = __DIR__ . '/../data/store.json';
+const SETTINGS_STORE_PATH = __DIR__ . '/../../data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'siteIcon' => ''
 ];

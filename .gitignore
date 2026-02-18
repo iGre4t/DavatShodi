@@ -7,7 +7,13 @@
 /uploads/gallery/
 
 api/config.php
-/Wheel of Fortune/*.json
+/mini apps/Wheel of Fortune/*.json
+/mini apps/Wheel of Fortune/WF Event/*.json
+/mini apps/Wheel of Fortune/WF Event/*.csv
+/mini apps/Wheel of Fortune/WF Event/*.xls
+/mini apps/Wheel of Fortune/WF Event/*.xlsx
+/mini apps/Wheel of Fortune/*.log
+/mini apps/Wheel of Fortune/*.tmp
 /mini apps/**/*.json
 /bots/telegram bot/bot.json
 /bots/telegram bot/state.json
