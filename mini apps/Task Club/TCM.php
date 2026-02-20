@@ -5831,7 +5831,7 @@ $sessionPayload = [
               taskInfoContentEl.innerHTML = '<section class="info-task-section"><p>محتوایی برای این ماموریت ثبت نشده است.</p></section>';
             } else {
               taskInfoContentEl.innerHTML = sections.map((section) => {
-                const title = escapeHtml(section.title || 'Information');
+                const title = escapeHtml(section.title || '');
                 const body = escapeHtml((section.lines || []).join('\n').trim());
                 return `<section class="info-task-section">${title ? `<h3>${title}</h3>` : ''}<p>${body || '-'}</p></section>`;
               }).join('');
