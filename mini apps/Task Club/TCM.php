@@ -1972,7 +1972,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $scoreIndex = (int)($columns['score'] ?? -1);
     $flipCountIndex = (int)($columns['Card Flips Count'] ?? -1);
     $wonPrizeIndex = (int)($columns['Each Level Won Prize'] ?? -1);
-    $totalPrizeWonIndex = (int)($columns['مجموع جوایز برنده شده'] ?? -1);
+    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? -1);
     $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
 
     $userScore = $scoreIndex >= 0 ? max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0)) : 0;
@@ -1984,6 +1984,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $wonSet = [];
     foreach ($wonLevelIds as $token) {
       $wonSet[$token] = true;
+    }
+    $wonPrizeEntries = parseCommaSeparatedList($eachLevelWonPrizeRaw);
+    $wonPrizeNamesOrdered = [];
+    foreach ($wonPrizeEntries as $entry) {
+      $part = trim((string)$entry);
+      if ($part === '') {
+        continue;
+      }
+      $separatorIndex = strpos($part, ':');
+      if ($separatorIndex === false || $separatorIndex <= 0) {
+        continue;
+      }
+      $prizeName = trim((string)substr($part, $separatorIndex + 1));
+      if ($prizeName !== '') {
+        $wonPrizeNamesOrdered[] = $prizeName;
+      }
+    }
+    $wonPrizeByLevelId = [];
+    foreach ($wonLevelIds as $idx => $levelIdToken) {
+      $levelIdToken = trim((string)$levelIdToken);
+      if ($levelIdToken === '') {
+        continue;
+      }
+      $wonPrizeByLevelId[$levelIdToken] = (string)($wonPrizeNamesOrdered[$idx] ?? '');
     }
 
     $levels = readPrizeLevelRecords($prizeLevelsPath);
@@ -2005,6 +2029,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'score' => (int)($level['score'] ?? 0),
         'reached' => $reached,
         'won' => $won,
+        'wonPrize' => (string)($wonPrizeByLevelId[$levelId] ?? ''),
         'canFlip' => $canFlip
       ];
     }
@@ -2077,7 +2102,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $scoreIndex = (int)($columns['score'] ?? -1);
     $flipCountIndex = (int)($columns['Card Flips Count'] ?? -1);
     $wonPrizeIndex = (int)($columns['Each Level Won Prize'] ?? -1);
-    $totalPrizeWonIndex = (int)($columns['مجموع جوایز برنده شده'] ?? -1);
+    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? -1);
     $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
     if ($flipCountIndex < 0 || $wonPrizeIndex < 0 || $totalPrizeWonIndex < 0 || $wonLevelIdsIndex < 0) {
       echo json_encode(['status' => 'error', 'message' => 'ستون‌های جایزه آماده نیستند.']);
@@ -2175,6 +2200,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $updatedWonSet[$token] = true;
     }
     $levelPayload = [];
+    $wonPrizeByLevelId = [];
+    foreach ($wonLevelIds as $idx => $levelIdToken) {
+      $levelIdToken = trim((string)$levelIdToken);
+      if ($levelIdToken === '') {
+        continue;
+      }
+      $rawEntry = (string)($wonPrizeEntries[$idx] ?? '');
+      $rawEntry = trim($rawEntry);
+      $prizeName = '';
+      if ($rawEntry !== '') {
+        $separatorIndex = strpos($rawEntry, ':');
+        if ($separatorIndex !== false && $separatorIndex > 0) {
+          $prizeName = trim((string)substr($rawEntry, $separatorIndex + 1));
+        }
+      }
+      $wonPrizeByLevelId[$levelIdToken] = $prizeName;
+    }
     foreach ($levels as $level) {
       $levelId = (string)($level['id'] ?? '');
       $type = (string)($level['type'] ?? 'value_sum');
@@ -2188,6 +2230,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'score' => (int)($level['score'] ?? 0),
         'reached' => $reached,
         'won' => $won,
+        'wonPrize' => (string)($wonPrizeByLevelId[$levelId] ?? ''),
         'canFlip' => $canFlip
       ];
     }
@@ -2535,7 +2578,7 @@ $sessionPayload = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>باشگاه تعاملی</title>
+    <title>کمپین به نام‌خدا</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <link rel="stylesheet" href="../../style/remixicon.css" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
@@ -3043,15 +3086,15 @@ $sessionPayload = [
       @keyframes tcCtaPulse {
         0% {
           transform: translateY(0) scale(1);
-          box-shadow: 0 14px 26px rgba(255, 79, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+          box-shadow: 0 14px 26px rgba(37, 86, 146, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
         }
         50% {
           transform: translateY(-2px) scale(1.02);
-          box-shadow: 0 20px 34px rgba(255, 79, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+          box-shadow: 0 20px 34px rgba(37, 86, 146, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.4);
         }
         100% {
           transform: translateY(0) scale(1);
-          box-shadow: 0 14px 26px rgba(255, 79, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+          box-shadow: 0 14px 26px rgba(37, 86, 146, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
         }
       }
 
@@ -3075,8 +3118,12 @@ $sessionPayload = [
 
       #tc-reward-cards-view .result-label {
         display: block;
-        margin-bottom: 2px;
+        margin-bottom: 1px;
         text-align: center;
+        font-size: 0.66rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        opacity: 0.72;
       }
 
       #tc-rewards-view {
@@ -3130,6 +3177,10 @@ $sessionPayload = [
       #tc-reward-time-label {
         display: block;
         text-align: center;
+        font-size: 0.66rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        opacity: 0.72;
       }
 
       .roadmap-list {
@@ -3150,33 +3201,50 @@ $sessionPayload = [
       .roadmap-item {
         position: relative;
         padding: 0 22px 16px 0;
-        border-right: 2px solid #d9e6fb;
+      }
+
+      .roadmap-item::before {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        border-radius: 999px;
+        background: #d9e6fb;
       }
 
       .roadmap-item:last-child {
         padding-bottom: 0;
-        border-right-color: transparent;
+      }
+
+      .roadmap-item:last-child::before {
+        background: transparent;
       }
 
       .roadmap-item.reached {
-        border-right-color: #78a9ef;
         animation: roadmapLineFlow 1.5s ease-in-out infinite;
       }
 
       .roadmap-item.won {
-        border-right-color: #30a25d;
+      }
+
+      .roadmap-item.won::before {
+        background: #30a25d;
         animation: none;
       }
 
       .roadmap-node {
         position: absolute;
-        right: -10px;
-        top: 3px;
-        width: 16px;
-        height: 16px;
+        right: 0;
+        transform: translateX(50%);
+        top: 2px;
+        width: 18px;
+        height: 18px;
         border-radius: 50%;
-        border: 2px solid #7aa6e9;
+        border: 3px solid #7aa6e9;
         background: #fff;
+        animation: roadmapNodeIdle 2.1s ease-in-out infinite;
       }
 
       .roadmap-item.reached .roadmap-node {
@@ -3264,13 +3332,25 @@ $sessionPayload = [
 
       @keyframes roadmapLineFlow {
         0% {
-          border-right-color: #78a9ef;
+          background: #78a9ef;
         }
         50% {
-          border-right-color: #9dc0f6;
+          background: #9dc0f6;
         }
         100% {
-          border-right-color: #78a9ef;
+          background: #78a9ef;
+        }
+      }
+
+      @keyframes roadmapNodeIdle {
+        0% {
+          transform: translateX(50%) scale(1);
+        }
+        50% {
+          transform: translateX(50%) scale(1.05);
+        }
+        100% {
+          transform: translateX(50%) scale(1);
         }
       }
 
@@ -4568,6 +4648,7 @@ $sessionPayload = [
           <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
         </div>
         <div id="tc-reward-cards-view" class="main-area rewards-view hidden" aria-hidden="true">
+          <p id="tc-reward-cards-hint" class="tasks-empty"></p>
           <section id="tc-reward-cards-box" class="cards-box">
             <div id="tc-reward-cards" class="cards-grid"></div>
           </section>
@@ -4760,6 +4841,7 @@ $sessionPayload = [
         const rewardRoadmapEl = document.getElementById('tc-reward-roadmap');
         const rewardCardsBoxEl = document.getElementById('tc-reward-cards-box');
         const rewardCardsEl = document.getElementById('tc-reward-cards');
+        const rewardCardsHintEl = document.getElementById('tc-reward-cards-hint');
         const rewardStatusLineEl = document.getElementById('tc-reward-status-line');
         const rewardCardsTotalValueEl = document.getElementById('tc-reward-cards-total-value');
         const rewardWinDialogEl = document.getElementById('tc-reward-win-dialog');
@@ -5462,14 +5544,59 @@ $sessionPayload = [
           return shuffleArray(cards);
         };
 
+        const getCardsHintState = () => {
+          const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
+          const valueSumLevels = levels.filter((level) => String(level?.type || '') === 'value_sum');
+          if (!valueSumLevels.length) {
+            return { message: 'کارتی برای انتخاب باقی نمانده!', disableUnchosen: true };
+          }
+
+          const userScore = Number(rewardsState?.score ?? 0);
+          const wonCount = valueSumLevels.filter((level) => Boolean(level?.won)).length;
+          const remainingCount = Math.max(0, valueSumLevels.length - wonCount);
+          if (remainingCount <= 0) {
+            return { message: 'کارتی برای انتخاب باقی نمانده!', disableUnchosen: true };
+          }
+
+          const flippableCount = valueSumLevels.filter((level) => Boolean(level?.canFlip) && !level?.won).length;
+          if (flippableCount > 0) {
+            return {
+              message: `${formatRewardNumber(flippableCount)} شانس برای انتخاب کارت جدید`,
+              disableUnchosen: false
+            };
+          }
+
+          const nextLocked = valueSumLevels
+            .filter((level) => !level?.won)
+            .sort((a, b) => Number(a?.score || 0) - Number(b?.score || 0))[0] || null;
+          if (nextLocked) {
+            const needed = Math.max(0, Number(nextLocked?.score || 0) - userScore);
+            return {
+              message: `${formatRewardNumber(needed)} امتیاز دیگر برای انتخاب کارت`,
+              disableUnchosen: true
+            };
+          }
+
+          return { message: 'کارتی برای انتخاب باقی نمانده!', disableUnchosen: true };
+        };
+
         const updateLockedCardButtonsState = () => {
           if (!(rewardCardsEl instanceof HTMLElement)) return;
+          const hintState = getCardsHintState();
+          if (rewardCardsHintEl instanceof HTMLElement) {
+            rewardCardsHintEl.textContent = String(hintState.message || '').trim();
+            rewardCardsHintEl.classList.toggle('hidden', !rewardCardsHintEl.textContent);
+          }
+          if (rewardCardsBoxEl instanceof HTMLElement) {
+            rewardCardsBoxEl.classList.toggle('is-disabled', Boolean(hintState.disableUnchosen));
+          }
           const buttons = Array.from(rewardCardsEl.querySelectorAll('.flip-card'));
           buttons.forEach((button) => {
             if (!(button instanceof HTMLButtonElement)) return;
             const index = Number(button.dataset.cardIndex);
             const isLocked = rewardCardsLockedIndexes.has(index);
-            button.disabled = rewardsRoundBusy || isLocked;
+            const blockedForNoChance = Boolean(hintState.disableUnchosen) && !isLocked;
+            button.disabled = rewardsRoundBusy || isLocked || blockedForNoChance;
             button.classList.toggle('is-locked', isLocked);
             button.classList.toggle('is-revealed', isLocked);
             button.classList.toggle('is-picked', isLocked);
@@ -5498,25 +5625,6 @@ $sessionPayload = [
           }
         };
 
-        const buildWonPrizeByLevelName = () => {
-          const map = new Map();
-          const raw = String(rewardsState?.eachLevelWonPrize || '').trim();
-          if (!raw) return map;
-          raw.split(',').forEach((chunk) => {
-            const part = String(chunk || '').trim();
-            if (!part) return;
-            const separatorIndex = part.indexOf(':');
-            if (separatorIndex <= 0) return;
-            const levelName = part.slice(0, separatorIndex).trim();
-            const prizeName = part.slice(separatorIndex + 1).trim();
-            if (!levelName || !prizeName) return;
-            if (!map.has(levelName)) {
-              map.set(levelName, prizeName);
-            }
-          });
-          return map;
-        };
-
         const getWonPrizeNames = () => {
           const raw = String(rewardsState?.eachLevelWonPrize || '').trim();
           if (!raw) return [];
@@ -5536,7 +5644,6 @@ $sessionPayload = [
           if (!(rewardRoadmapEl instanceof HTMLElement)) return;
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const score = Number(rewardsState?.score ?? 0);
-          const wonByLevelName = buildWonPrizeByLevelName();
           if (!levels.length) {
             rewardRoadmapEl.innerHTML = '<div class="roadmap-item"><span class="roadmap-node"></span><div class="roadmap-content">هنوز سطح جایزه‌ای تعریف نشده است.</div></div>';
             return;
@@ -5545,13 +5652,14 @@ $sessionPayload = [
             const target = Number(level?.score ?? 0);
             const reached = score >= target;
             const left = Math.max(0, target - score);
+            const isOutOfValue = String(level?.type || '') === 'out_of_value';
             const rowClasses = ['roadmap-item'];
             if (reached) rowClasses.push('reached');
             let stateClass = 'locked';
             let stateText = 'قفل';
             const levelId = String(level?.id || '');
             const levelName = String(level?.name || 'سطح جایزه');
-            const wonPrize = wonByLevelName.get(levelName) || '';
+            const wonPrize = String(level?.wonPrize || '').trim();
             const isClickable = Boolean(level?.reached) && String(level?.type || '') === 'value_sum';
             if (level?.won) {
               stateClass = 'won';
@@ -5561,12 +5669,16 @@ $sessionPayload = [
               stateClass = 'can-flip';
               stateText = 'برای انتخاب کارت لمس کن';
               rowClasses.push('can-flip');
+            } else if (level?.reached && isOutOfValue) {
+              stateClass = 'won';
+              stateText = 'رسیده‌اید';
+              rowClasses.push('won');
             } else if (level?.reached) {
               stateClass = 'reached';
               stateText = 'رسیده‌اید';
             }
-            const pointsNeedText = level?.won
-              ? `امتیاز جمع‌آوری‌شده برای این برد: ${formatRewardNumber(target)}`
+            const pointsNeedText = (level?.won || (isOutOfValue && reached))
+              ? `امتیاز جمع‌آوری‌شده برای این سطح: ${formatRewardNumber(target)}`
               : reached
                 ? 'امتیاز موردنیاز: ۰'
                 : `امتیاز موردنیاز: ${formatRewardNumber(left)}`;
