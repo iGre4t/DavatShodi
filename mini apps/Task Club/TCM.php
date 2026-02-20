@@ -7,6 +7,20 @@ header("Referrer-Policy: same-origin");
 if (empty($_SESSION['tc_csrf'])) {
   $_SESSION['tc_csrf'] = bin2hex(random_bytes(16));
 }
+if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
+  $_SESSION = [];
+  if (ini_get('session.use_cookies')) {
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000, $params['path'] ?? '/', $params['domain'] ?? '', (bool)($params['secure'] ?? false), (bool)($params['httponly'] ?? true));
+  }
+  session_destroy();
+  $redirectUrl = strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?');
+  if (!is_string($redirectUrl) || $redirectUrl === '') {
+    $redirectUrl = basename(__FILE__);
+  }
+  header('Location: ' . $redirectUrl);
+  exit;
+}
 const SETTINGS_STORE_PATH = __DIR__ . '/../../data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'siteIcon' => ''
@@ -4827,6 +4841,25 @@ $sessionPayload = [
     <?php endif; ?>
 
     <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
+      (() => {
+        const watchdog = setTimeout(() => {
+          const body = document.body;
+          if (!body || !body.classList.contains('page-loading')) return;
+          try {
+            const url = new URL(window.location.href);
+            if (url.searchParams.get('force_logout') !== '1') {
+              url.searchParams.set('force_logout', '1');
+              window.location.replace(url.toString());
+            }
+          } catch {
+            window.location.replace(`${window.location.pathname}?force_logout=1`);
+          }
+        }, 9000);
+        window.__tcClearLoaderWatchdog = () => clearTimeout(watchdog);
+      })();
+    </script>
+
+    <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       const loaderEl = document.getElementById('tc-loader');
       const bodyEl = document.body;
       const loaderStart = performance.now();
@@ -4846,6 +4879,9 @@ $sessionPayload = [
       };
 
       const revealPage = () => {
+        if (typeof window.__tcClearLoaderWatchdog === 'function') {
+          window.__tcClearLoaderWatchdog();
+        }
         bodyEl.classList.remove('page-loading');
         if (loaderEl) {
           loaderEl.classList.add('loader-hidden');
@@ -4869,9 +4905,9 @@ $sessionPayload = [
 
       bootReady();
 
-      const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE); ?>;
-      const csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE); ?>;
-      const rewardCardLogoUrl = <?= json_encode($eventLogoUrl !== '' ? $eventLogoUrl : $fallbackSiteIconUrl, JSON_UNESCAPED_UNICODE); ?>;
+      const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+      const csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+      const rewardCardLogoUrl = <?= json_encode($eventLogoUrl !== '' ? $eventLogoUrl : $fallbackSiteIconUrl, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const loginForm = document.getElementById('tc-login-form');
       const logoutBtn = document.getElementById('tc-logout');
       const createRuntimeLoader = (primaryText, secondaryText = '') => {
@@ -5215,7 +5251,7 @@ $sessionPayload = [
           updateTimerByStatus(status, settings);
           applyEventGate(status);
           refreshTaskButtonsStatus();
-          if (rewardsViewOpen) {
+          if (rewardsViewOpen && !rewardsRoundBusy) {
             await refreshRewardState();
           }
         };
@@ -5915,7 +5951,10 @@ $sessionPayload = [
           }
         };
 
-        const refreshRewardState = async () => {
+        const refreshRewardState = async ({ force = false } = {}) => {
+          if (rewardsRoundBusy && !force) {
+            return;
+          }
           try {
             const payload = await postJson({ action: 'reward_state' });
             rewardsState = payload?.data || null;
@@ -6058,12 +6097,16 @@ $sessionPayload = [
           const otherButtons = shuffleArray(
             allButtons.filter((button) => button !== pickedButton && !rewardCardsLockedIndexes.has(Number(button.dataset.cardIndex)))
           );
-          const totalOthersRevealMs = 6000;
-          const staggerMs = otherButtons.length ? Math.max(420, Math.round(totalOthersRevealMs / otherButtons.length)) : 0;
-          for (let i = 0; i < otherButtons.length; i += 1) {
-            otherButtons[i].classList.add('is-revealed');
-            await new Promise((resolve) => setTimeout(resolve, staggerMs));
-          }
+          // Keep reveal smooth for any remaining-card count; avoid long pauses when only a few are left.
+          const staggerMs = 700;
+          try {
+            for (let i = 0; i < otherButtons.length; i += 1) {
+              otherButtons[i].classList.add('is-revealed');
+              await new Promise((resolve) => setTimeout(resolve, staggerMs));
+            }
+          } catch {}
+          // Ensure selected card reveal is painted before opening win dialog.
+          await new Promise((resolve) => requestAnimationFrame(resolve));
           pickedButton.classList.add('is-revealed');
           await new Promise((resolve) => setTimeout(resolve, 300));
         };
@@ -6108,7 +6151,7 @@ $sessionPayload = [
             });
             rewardCardsDeck = buildRewardCards();
             renderRewardCards();
-            await refreshRewardState();
+            await refreshRewardState({ force: true });
           } catch (error) {
             await openInfoDialog(error?.message || 'باز کردن کارت ناموفق بود.');
           } finally {
