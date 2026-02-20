@@ -102,6 +102,106 @@ function resolveAllowedRollCountByScore(int $score, array $levels): ?int
   return $allowed;
 }
 
+function normalizePrizeLevelTypeValue($value): string
+{
+  $token = strtolower(trim((string)$value));
+  if ($token === 'out_of_value') {
+    return 'out_of_value';
+  }
+  return 'value_sum';
+}
+
+function readPrizeLevelRecords(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+  $records = [];
+  foreach ($decoded as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $score = normalizePrizeLevelScoreValue($item['score'] ?? 0);
+    if ($score <= 0) {
+      continue;
+    }
+    $id = trim((string)($item['id'] ?? ''));
+    if ($id === '') {
+      $id = uniqid('lvl_', true);
+    }
+    $name = trim((string)($item['name'] ?? ''));
+    if ($name === '') {
+      $name = 'Level ' . $score;
+    }
+    $type = normalizePrizeLevelTypeValue($item['type'] ?? 'value_sum');
+    $records[] = [
+      'id' => $id,
+      'name' => $name,
+      'type' => $type,
+      'score' => $score
+    ];
+  }
+  usort($records, static function ($a, $b) {
+    return (int)($a['score'] ?? 0) <=> (int)($b['score'] ?? 0);
+  });
+  return array_values($records);
+}
+
+function parseCommaSeparatedList(string $raw): array
+{
+  $trimmed = trim($raw);
+  if ($trimmed === '') {
+    return [];
+  }
+  $parts = preg_split('/\s*,\s*/', $trimmed);
+  if (!is_array($parts)) {
+    return [];
+  }
+  $result = [];
+  foreach ($parts as $part) {
+    $token = trim((string)$part);
+    if ($token !== '') {
+      $result[] = $token;
+    }
+  }
+  return $result;
+}
+
+function serializeCommaSeparatedList(array $items): string
+{
+  $clean = [];
+  foreach ($items as $item) {
+    $token = trim((string)$item);
+    if ($token !== '') {
+      $clean[] = $token;
+    }
+  }
+  return implode(', ', $clean);
+}
+
+function normalizeFloatValue($value): float
+{
+  if (is_int($value) || is_float($value)) {
+    return (float)$value;
+  }
+  if (!is_scalar($value)) {
+    return 0.0;
+  }
+  $normalized = preg_replace('/[,\s]+/', '', (string)$value);
+  if (!is_string($normalized) || $normalized === '' || !is_numeric($normalized)) {
+    return 0.0;
+  }
+  return (float)$normalized;
+}
+
 function readQuestionStore(string $path): array
 {
   if (!is_file($path)) {
@@ -771,6 +871,67 @@ function compareTaskDates(string $left, string $right): ?int
   return $l > $r ? 1 : -1;
 }
 
+function parseEventTimeToSeconds(string $value): ?int
+{
+  return parseTaskTimeToSeconds($value);
+}
+
+function compareEventDates(string $left, string $right): ?int
+{
+  return compareTaskDates($left, $right);
+}
+
+function deriveGlobalEventStatus(array $settings): string
+{
+  $active = normalizeTaskBoolValue($settings['active'] ?? false);
+  $duration = normalizeTaskBoolValue($settings['duration'] ?? false);
+  if (!$duration) {
+    return $active ? 'active' : 'inactive';
+  }
+
+  $startDate = normalizeTaskDateValue((string)($settings['startDate'] ?? ''));
+  $endDate = normalizeTaskDateValue((string)($settings['endDate'] ?? ''));
+  $startTime = normalizeTaskTimeValue((string)($settings['startTime'] ?? ''));
+  $endTime = normalizeTaskTimeValue((string)($settings['endTime'] ?? ''));
+  $nowParts = getTehranDateTimeParts();
+  $today = (string)($nowParts['date'] ?? '');
+  if ($startDate === '' || $today === '') {
+    return 'inactive';
+  }
+
+  $startRelation = compareEventDates($startDate, $today);
+  $endRelation = compareEventDates($endDate, $today);
+  if ($startRelation === 1) {
+    return 'upcoming';
+  }
+  if ($endRelation !== null && $endRelation === -1) {
+    return 'ended';
+  }
+
+  if ($startRelation === 0 || $endRelation === 0) {
+    $nowSeconds = parseEventTimeToSeconds((string)($nowParts['time'] ?? '')) ?? 0;
+    $startSeconds = parseEventTimeToSeconds($startTime);
+    $endSeconds = parseEventTimeToSeconds($endTime);
+    if ($endSeconds !== null && $nowSeconds >= $endSeconds) {
+      return 'ended';
+    }
+    if ($startSeconds !== null && $nowSeconds >= $startSeconds) {
+      return 'active';
+    }
+    if ($startSeconds !== null && $nowSeconds < $startSeconds) {
+      return 'upcoming';
+    }
+  }
+
+  return 'active';
+}
+
+function loadGlobalEventStatus(): string
+{
+  $settings = loadJsonPayload(__DIR__ . '/Setting.json');
+  return deriveGlobalEventStatus($settings);
+}
+
 function deriveTaskAvailabilityStatus(array $task): string
 {
   $active = normalizeTaskBoolValue($task['active'] ?? false);
@@ -1181,7 +1342,11 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'answers',
     'score',
     'Answered',
-    'task completed ids'
+    'task completed ids',
+    'Card Flips Count',
+    'Each Level Won Prize',
+    'Total Prize Won',
+    'Reward Level Won IDs'
   ]);
   $header = $rows[0];
   $workIdIndex = (int)($mapping['workId'] ?? -1);
@@ -1497,6 +1662,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'Login required.']);
       exit;
     }
+    $eventStatus = loadGlobalEventStatus();
+    if ($eventStatus === 'inactive') {
+      echo json_encode(['status' => 'error', 'message' => 'oh sorry no events running']);
+      exit;
+    }
+    if ($eventStatus === 'ended') {
+      echo json_encode(['status' => 'error', 'message' => 'sorry, end reached']);
+      exit;
+    }
 
     $taskId = trim((string)($payload['taskId'] ?? ''));
     if ($taskId === '') {
@@ -1549,6 +1723,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'Login required.']);
       exit;
     }
+    $eventStatus = loadGlobalEventStatus();
+    if ($eventStatus === 'inactive') {
+      echo json_encode(['status' => 'error', 'message' => 'oh sorry no events running']);
+      exit;
+    }
+    if ($eventStatus === 'ended') {
+      echo json_encode(['status' => 'error', 'message' => 'sorry, end reached']);
+      exit;
+    }
     echo json_encode(['status' => 'ok']);
     exit;
   }
@@ -1557,6 +1740,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'Login required.']);
+      exit;
+    }
+    $eventStatus = loadGlobalEventStatus();
+    if ($eventStatus === 'inactive') {
+      echo json_encode(['status' => 'error', 'message' => 'oh sorry no events running']);
+      exit;
+    }
+    if ($eventStatus === 'ended') {
+      echo json_encode(['status' => 'error', 'message' => 'sorry, end reached']);
       exit;
     }
 
@@ -1637,6 +1829,261 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'userTaskScore' => $awardedScore,
       'totalScore' => $newTotalScore
     ]);
+    exit;
+  }
+
+  if ($action === 'reward_state') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'Login required.']);
+      exit;
+    }
+    $eventStatus = loadGlobalEventStatus();
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+    $rows = $table['rows'];
+    $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+    $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
+    $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    if ($rowIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'User row not found.']);
+      exit;
+    }
+    if (($table['columns']['added'] ?? false) && $rows) {
+      writeInviteesCsv($inviteesFilePath, $rows);
+    }
+
+    $scoreIndex = (int)($columns['score'] ?? -1);
+    $flipCountIndex = (int)($columns['Card Flips Count'] ?? -1);
+    $wonPrizeIndex = (int)($columns['Each Level Won Prize'] ?? -1);
+    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? -1);
+    $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
+
+    $userScore = $scoreIndex >= 0 ? max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0)) : 0;
+    $cardFlipsCount = $flipCountIndex >= 0 ? max(0, (int)($rows[$rowIndex][$flipCountIndex] ?? 0)) : 0;
+    $eachLevelWonPrizeRaw = $wonPrizeIndex >= 0 ? trim((string)($rows[$rowIndex][$wonPrizeIndex] ?? '')) : '';
+    $totalPrizeWon = $totalPrizeWonIndex >= 0 ? max(0, normalizeFloatValue($rows[$rowIndex][$totalPrizeWonIndex] ?? 0)) : 0.0;
+    $wonLevelIdsRaw = $wonLevelIdsIndex >= 0 ? trim((string)($rows[$rowIndex][$wonLevelIdsIndex] ?? '')) : '';
+    $wonLevelIds = parseCommaSeparatedList($wonLevelIdsRaw);
+    $wonSet = [];
+    foreach ($wonLevelIds as $token) {
+      $wonSet[$token] = true;
+    }
+
+    $levels = readPrizeLevelRecords($prizeLevelsPath);
+    $levelPayload = [];
+    foreach ($levels as $level) {
+      $levelId = (string)($level['id'] ?? '');
+      $type = (string)($level['type'] ?? 'value_sum');
+      $reached = $userScore >= (int)($level['score'] ?? 0);
+      $won = $levelId !== '' && isset($wonSet[$levelId]);
+      $canFlip = $eventStatus === 'active' && $reached && !$won && $type === 'value_sum';
+      $levelPayload[] = [
+        'id' => $levelId,
+        'name' => (string)($level['name'] ?? ''),
+        'type' => $type,
+        'score' => (int)($level['score'] ?? 0),
+        'reached' => $reached,
+        'won' => $won,
+        'canFlip' => $canFlip
+      ];
+    }
+
+    $prizes = readPrizeStore($prizeStorePath);
+    $availablePrizeNames = [];
+    foreach ($prizes as $item) {
+      if (!is_array($item)) {
+        continue;
+      }
+      if ((bool)($item['isFake'] ?? false)) {
+        continue;
+      }
+      $name = trim((string)($item['name'] ?? ''));
+      $last = max(0, (int)($item['last'] ?? 0));
+      if ($name === '' || $last <= 0) {
+        continue;
+      }
+      $availablePrizeNames[] = $name;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'data' => [
+        'score' => $userScore,
+        'cardFlipsCount' => $cardFlipsCount,
+        'eachLevelWonPrize' => $eachLevelWonPrizeRaw,
+        'totalPrizeWon' => $totalPrizeWon,
+        'eventStatus' => $eventStatus,
+        'levels' => $levelPayload,
+        'availablePrizeNames' => $availablePrizeNames
+      ]
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'reward_flip') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'Login required.']);
+      exit;
+    }
+    $eventStatus = loadGlobalEventStatus();
+    if ($eventStatus !== 'active') {
+      if ($eventStatus === 'inactive') {
+        echo json_encode(['status' => 'error', 'message' => 'oh sorry no events running']);
+      } elseif ($eventStatus === 'upcoming') {
+        echo json_encode(['status' => 'error', 'message' => 'Cards are available only when event status is Active.']);
+      } else {
+        echo json_encode(['status' => 'error', 'message' => 'sorry, end reached']);
+      }
+      exit;
+    }
+    $targetLevelId = trim((string)($payload['levelId'] ?? ''));
+    if ($targetLevelId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Level is required.']);
+      exit;
+    }
+
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+    $rows = $table['rows'];
+    $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+    $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
+    $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    if ($rowIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'User row not found.']);
+      exit;
+    }
+
+    $scoreIndex = (int)($columns['score'] ?? -1);
+    $flipCountIndex = (int)($columns['Card Flips Count'] ?? -1);
+    $wonPrizeIndex = (int)($columns['Each Level Won Prize'] ?? -1);
+    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? -1);
+    $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
+    if ($flipCountIndex < 0 || $wonPrizeIndex < 0 || $totalPrizeWonIndex < 0 || $wonLevelIdsIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Reward columns are not available.']);
+      exit;
+    }
+
+    $userScore = $scoreIndex >= 0 ? max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0)) : 0;
+    $wonLevelIds = parseCommaSeparatedList((string)($rows[$rowIndex][$wonLevelIdsIndex] ?? ''));
+    $wonSet = [];
+    foreach ($wonLevelIds as $token) {
+      $wonSet[$token] = true;
+    }
+
+    $levels = readPrizeLevelRecords($prizeLevelsPath);
+    $targetLevel = null;
+    foreach ($levels as $level) {
+      if ((string)($level['id'] ?? '') === $targetLevelId) {
+        $targetLevel = $level;
+        break;
+      }
+    }
+    if (!is_array($targetLevel)) {
+      echo json_encode(['status' => 'error', 'message' => 'Level not found.']);
+      exit;
+    }
+    if ((string)($targetLevel['type'] ?? 'value_sum') !== 'value_sum') {
+      echo json_encode(['status' => 'error', 'message' => 'This level type does not allow card flipping.']);
+      exit;
+    }
+    if ($userScore < (int)($targetLevel['score'] ?? 0)) {
+      echo json_encode(['status' => 'error', 'message' => 'Not enough score for this reward level.']);
+      exit;
+    }
+    if (isset($wonSet[$targetLevelId])) {
+      echo json_encode(['status' => 'error', 'message' => 'This level reward is already claimed.']);
+      exit;
+    }
+
+    $prizes = readPrizeStore($prizeStorePath);
+    $candidateIndexes = [];
+    foreach ($prizes as $index => $item) {
+      if (!is_array($item)) {
+        continue;
+      }
+      if ((bool)($item['isFake'] ?? false)) {
+        continue;
+      }
+      $name = trim((string)($item['name'] ?? ''));
+      $last = max(0, (int)($item['last'] ?? 0));
+      if ($name !== '' && $last > 0) {
+        $candidateIndexes[] = (int)$index;
+      }
+    }
+    if (!$candidateIndexes) {
+      echo json_encode(['status' => 'error', 'message' => 'No prize is available right now.']);
+      exit;
+    }
+
+    $selectedStoreIndex = $candidateIndexes[random_int(0, count($candidateIndexes) - 1)];
+    $selectedPrize = $prizes[$selectedStoreIndex];
+    $selectedPrizeName = trim((string)($selectedPrize['name'] ?? ''));
+    $selectedPrizeValue = max(0, normalizeFloatValue($selectedPrize['value'] ?? 0));
+    $selectedLast = max(0, (int)($selectedPrize['last'] ?? 0));
+    $prizes[$selectedStoreIndex]['last'] = max(0, $selectedLast - 1);
+    if (!writePrizeStore($prizeStorePath, $prizes)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to reserve prize.']);
+      exit;
+    }
+
+    $currentFlipCount = max(0, (int)($rows[$rowIndex][$flipCountIndex] ?? 0));
+    $currentTotalPrizeWon = max(0, normalizeFloatValue($rows[$rowIndex][$totalPrizeWonIndex] ?? 0));
+    $wonPrizeEntries = parseCommaSeparatedList((string)($rows[$rowIndex][$wonPrizeIndex] ?? ''));
+
+    $rows[$rowIndex][$flipCountIndex] = (string)($currentFlipCount + 1);
+    $wonPrizeEntries[] = trim((string)($targetLevel['name'] ?? 'Level')) . ': ' . $selectedPrizeName;
+    $rows[$rowIndex][$wonPrizeIndex] = serializeCommaSeparatedList($wonPrizeEntries);
+    $rows[$rowIndex][$totalPrizeWonIndex] = (string)($currentTotalPrizeWon + $selectedPrizeValue);
+    $wonLevelIds[] = $targetLevelId;
+    $rows[$rowIndex][$wonLevelIdsIndex] = serializeCommaSeparatedList($wonLevelIds);
+
+    if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+      // Best-effort rollback if CSV write fails after prize decrement.
+      $prizesRollback = readPrizeStore($prizeStorePath);
+      if (isset($prizesRollback[$selectedStoreIndex]) && is_array($prizesRollback[$selectedStoreIndex])) {
+        $rollbackLast = max(0, (int)($prizesRollback[$selectedStoreIndex]['last'] ?? 0));
+        $prizesRollback[$selectedStoreIndex]['last'] = $rollbackLast + 1;
+        writePrizeStore($prizeStorePath, $prizesRollback);
+      }
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save reward result.']);
+      exit;
+    }
+
+    $updatedWonSet = [];
+    foreach ($wonLevelIds as $token) {
+      $updatedWonSet[$token] = true;
+    }
+    $levelPayload = [];
+    foreach ($levels as $level) {
+      $levelId = (string)($level['id'] ?? '');
+      $type = (string)($level['type'] ?? 'value_sum');
+      $reached = $userScore >= (int)($level['score'] ?? 0);
+      $won = $levelId !== '' && isset($updatedWonSet[$levelId]);
+      $canFlip = $eventStatus === 'active' && $reached && !$won && $type === 'value_sum';
+      $levelPayload[] = [
+        'id' => $levelId,
+        'name' => (string)($level['name'] ?? ''),
+        'type' => $type,
+        'score' => (int)($level['score'] ?? 0),
+        'reached' => $reached,
+        'won' => $won,
+        'canFlip' => $canFlip
+      ];
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'data' => [
+        'levelId' => $targetLevelId,
+        'levelName' => (string)($targetLevel['name'] ?? ''),
+        'prizeName' => $selectedPrizeName,
+        'prizeValue' => $selectedPrizeValue,
+        'cardFlipsCount' => $currentFlipCount + 1,
+        'totalPrizeWon' => $currentTotalPrizeWon + $selectedPrizeValue,
+        'eachLevelWonPrize' => $rows[$rowIndex][$wonPrizeIndex],
+        'levels' => $levelPayload
+      ]
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -3054,19 +3501,6 @@ $sessionPayload = [
         display: none;
       }
 
-      .time-counter-result {
-        width: min(340px, calc(100vw - 84px));
-        min-height: 4.2em;
-        height: auto;
-        padding: 10px 12px;
-        order: 4;
-      }
-
-      .time-counter-result .result-label {
-        display: block;
-        font-size: 0.72rem;
-        color: #6b7a99;
-      }
 
       .result-value {
         margin: 0;
@@ -3132,6 +3566,10 @@ $sessionPayload = [
 
       .wheel-status.hidden {
         display: none;
+      }
+
+      .hidden {
+        display: none !important;
       }
 
       .wheel-status.top-left {
@@ -3360,10 +3798,6 @@ $sessionPayload = [
           padding: 6px 16px 2px;
         }
 
-        .time-counter-result {
-          width: min(296px, calc(100vw - 52px));
-        }
-
         .tc-bottom-cta {
           padding-inline: 16px;
           padding-bottom: 12px;
@@ -3449,12 +3883,9 @@ $sessionPayload = [
         </div>
       <?php else: ?>
         <div id="tc-timer-area" class="main-area">
-          <h2 class="tasks-title">تسک‌های باشگاه</h2>
-          <div class="result time-counter-result">
-            <span id="tc-time-counter-label" class="result-label">تا اتمام شگفتانه</span>
-            <p id="tc-time-counter" class="result-value">—</p>
-          </div>
-          <div class="tasks-list" aria-label="لیست تسک‌ها">
+          <h2 id="tc-tasks-title" class="tasks-title">تسک‌های باشگاه</h2>
+          <p id="tc-event-notice" class="tasks-empty hidden" aria-live="polite"></p>
+          <div id="tc-tasks-list" class="tasks-list" aria-label="لیست تسک‌ها">
             <?php if ($taskItemsForView): ?>
               <?php foreach ($taskItemsForView as $taskItem): ?>
                 <?php
@@ -3659,6 +4090,9 @@ $sessionPayload = [
         const statusEl = document.getElementById('tc-status');
         const userScoreEl = document.getElementById('tc-user-score');
         const timerAreaEl = document.getElementById('tc-timer-area');
+        const tasksTitleEl = document.getElementById('tc-tasks-title');
+        const tasksListEl = document.getElementById('tc-tasks-list');
+        const eventNoticeEl = document.getElementById('tc-event-notice');
         const bottomCtaEl = document.getElementById('tc-bottom-cta');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
@@ -3681,6 +4115,7 @@ $sessionPayload = [
         let currentQuestions = [];
         let currentQuestionIndex = 0;
         let answerTimeLimitEnabled = true;
+        let globalEventStatus = 'inactive';
 
         const QUIZ_TIME_LIMIT_MS = 14000;
 
@@ -3875,7 +4310,10 @@ $sessionPayload = [
         const refreshStatus = async () => {
           const settings = await loadWheelSettings();
           const status = describeStatus(settings);
+          globalEventStatus = status;
           updateTimerByStatus(status, settings);
+          applyEventGate(status);
+          refreshTaskButtonsStatus();
         };
 
         const readTaskBool = (value) => {
@@ -3940,7 +4378,8 @@ $sessionPayload = [
             return;
           }
 
-          const available = status === 'active';
+          const globallyBlocked = globalEventStatus === 'inactive' || globalEventStatus === 'ended';
+          const available = !globallyBlocked && status === 'active';
           button.disabled = !available;
           button.classList.toggle('is-disabled', !available);
           button.classList.remove('is-completed');
@@ -3955,6 +4394,46 @@ $sessionPayload = [
             const status = deriveTaskStatusFromButton(button);
             setTaskButtonState(button, status);
           });
+        };
+
+        const applyEventGate = (status) => {
+          if (eventNoticeEl) {
+            eventNoticeEl.classList.add('hidden');
+            eventNoticeEl.textContent = '';
+          }
+          if (tasksListEl) {
+            tasksListEl.classList.remove('hidden');
+          }
+          if (tasksTitleEl) {
+            tasksTitleEl.classList.remove('hidden');
+          }
+          if (bottomCtaEl) {
+            bottomCtaEl.classList.remove('hidden');
+          }
+          if (status === 'inactive') {
+            closeQuizOverlay();
+            if (tasksListEl) {
+              tasksListEl.classList.add('hidden');
+            }
+            if (tasksTitleEl) {
+              tasksTitleEl.classList.add('hidden');
+            }
+            if (bottomCtaEl) {
+              bottomCtaEl.classList.add('hidden');
+            }
+            if (eventNoticeEl) {
+              eventNoticeEl.textContent = 'oh sorry no events running';
+              eventNoticeEl.classList.remove('hidden');
+            }
+            return;
+          }
+          if (status === 'ended') {
+            closeQuizOverlay();
+            if (eventNoticeEl) {
+              eventNoticeEl.textContent = 'sorry, end reached';
+              eventNoticeEl.classList.remove('hidden');
+            }
+          }
         };
 
         const clearQuizTimer = () => {
@@ -4307,6 +4786,14 @@ $sessionPayload = [
         const startTaskQuiz = async (button) => {
           const taskId = String(button?.dataset?.taskId || '').trim();
           if (!taskId) return;
+          if (globalEventStatus === 'inactive') {
+            openTaskResultDialog(0, 'oh sorry no events running');
+            return;
+          }
+          if (globalEventStatus === 'ended') {
+            openTaskResultDialog(0, 'sorry, end reached');
+            return;
+          }
 
           try {
             const payload = await postJson({ action: 'task_fetch', taskId });
@@ -4399,7 +4886,7 @@ $sessionPayload = [
         refreshStatus();
         refreshTaskButtonsStatus();
         scheduleHourlyStatusCheck();
-        taskStatusTimer = setInterval(refreshTaskButtonsStatus, 30 * 1000);
+        taskStatusTimer = setInterval(refreshStatus, 30 * 1000);
       }
     </script>
   </body>

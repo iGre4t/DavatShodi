@@ -236,6 +236,17 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
   </div>
   <form id="tc-prize-level-form" class="form" style="gap:12px;">
     <label class="field standard-width">
+      <span>Name</span>
+      <input id="tc-prize-level-name" name="name" type="text" autocomplete="off" required />
+    </label>
+    <label class="field standard-width">
+      <span>Type</span>
+      <select id="tc-prize-level-type" name="type" required>
+        <option value="value_sum">Value Sum</option>
+        <option value="out_of_value">Out of Value</option>
+      </select>
+    </label>
+    <label class="field standard-width">
       <span>Score</span>
       <input id="tc-prize-level-score" name="score" type="number" min="1" step="1" inputmode="numeric" required />
     </label>
@@ -249,12 +260,14 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
       <thead>
         <tr>
           <th>#</th>
+          <th>Name</th>
+          <th>Type</th>
           <th>Score</th>
           <th>Action</th>
         </tr>
       </thead>
       <tbody id="tc-prize-level-list">
-        <tr><td colspan="3" class="muted">No levels added yet.</td></tr>
+        <tr><td colspan="5" class="muted">No levels added yet.</td></tr>
       </tbody>
     </table>
   </div>

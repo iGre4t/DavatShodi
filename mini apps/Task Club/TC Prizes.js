@@ -44,6 +44,19 @@
     return parsed;
   }
 
+  function normalizeLevelName(rawValue, fallback = "") {
+    const name = String(rawValue ?? "").trim();
+    return name || String(fallback ?? "").trim();
+  }
+
+  function normalizeLevelType(rawValue) {
+    const token = String(rawValue ?? "").trim().toLowerCase();
+    if (token === "out_of_value") {
+      return "out_of_value";
+    }
+    return "value_sum";
+  }
+
   function makeLevelId() {
     return `lvl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -95,9 +108,11 @@
           .map((item) => {
             const id = String(item?.id ?? "").trim() || makeLevelId();
             const score = normalizeLevelScore(item?.score ?? 0);
-            return { id, score };
+            const name = normalizeLevelName(item?.name ?? "", `Level ${score || ""}`.trim());
+            const type = normalizeLevelType(item?.type ?? "value_sum");
+            return { id, name, type, score };
           })
-          .filter((item) => item.score > 0)
+          .filter((item) => item.score > 0 && item.name !== "")
           .sort((a, b) => a.score - b.score);
       }
     } catch {}
@@ -523,13 +538,26 @@
       return;
     }
     if (!levels.length) {
-      listEl.innerHTML = '<tr><td colspan="3" class="muted">No levels added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="5" class="muted">No levels added yet.</td></tr>';
       return;
     }
     listEl.innerHTML = levels
       .map((level, index) => `
         <tr data-index="${index}" data-level-id="${escapeHtml(level.id)}">
           <td>${index + 1}</td>
+          <td>
+            <label class="field standard-width" style="margin:0;">
+              <input type="text" data-field="level-name" value="${escapeHtml(level.name)}" />
+            </label>
+          </td>
+          <td>
+            <label class="field standard-width" style="margin:0;">
+              <select data-field="level-type">
+                <option value="value_sum"${normalizeLevelType(level.type) === "value_sum" ? " selected" : ""}>Value Sum</option>
+                <option value="out_of_value"${normalizeLevelType(level.type) === "out_of_value" ? " selected" : ""}>Out of Value</option>
+              </select>
+            </label>
+          </td>
           <td>
             <label class="field standard-width" style="margin:0;">
               <input type="number" min="1" step="1" data-field="level-score" value="${escapeHtml(level.score)}" />
@@ -547,10 +575,12 @@
 
   async function initPrizeLevels() {
     const form = document.getElementById("tc-prize-level-form");
+    const nameInput = document.getElementById("tc-prize-level-name");
+    const typeInput = document.getElementById("tc-prize-level-type");
     const scoreInput = document.getElementById("tc-prize-level-score");
     const statusEl = document.getElementById("tc-prize-level-status");
     const listEl = document.getElementById("tc-prize-level-list");
-    if (!form || !scoreInput || !statusEl || !listEl) {
+    if (!form || !nameInput || !typeInput || !scoreInput || !statusEl || !listEl) {
       return;
     }
 
@@ -566,9 +596,11 @@
       const normalized = nextLevels
         .map((item) => ({
           id: String(item?.id ?? "").trim() || makeLevelId(),
+          name: normalizeLevelName(item?.name ?? ""),
+          type: normalizeLevelType(item?.type ?? "value_sum"),
           score: normalizeLevelScore(item?.score ?? 0)
         }))
-        .filter((item) => item.score > 0)
+        .filter((item) => item.score > 0 && item.name !== "")
         .sort((a, b) => a.score - b.score);
       const saved = await savePrizeLevels(normalized);
       if (!saved) {
@@ -583,17 +615,26 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const name = normalizeLevelName(nameInput.value);
+      if (!name) {
+        setStatus("Name is required.", true);
+        nameInput.focus();
+        return;
+      }
+      const type = normalizeLevelType(typeInput.value);
       const score = normalizeLevelScore(scoreInput.value);
       if (score <= 0) {
         setStatus("Score must be greater than zero.", true);
         scoreInput.focus();
         return;
       }
-      const nextLevels = [...levels, { id: makeLevelId(), score }];
+      const nextLevels = [...levels, { id: makeLevelId(), name, type, score }];
       const saved = await persistLevels(nextLevels, "Level added.");
       if (saved) {
+        nameInput.value = "";
+        typeInput.value = "value_sum";
         scoreInput.value = "";
-        scoreInput.focus();
+        nameInput.focus();
       }
     });
 
@@ -611,20 +652,37 @@
 
     listEl.addEventListener("change", async (event) => {
       const target = event.target;
-      if (!(target instanceof HTMLInputElement)) return;
-      if (target.getAttribute("data-field") !== "level-score") return;
+      if (!(target instanceof HTMLElement)) return;
+      const fieldName = target.getAttribute("data-field");
+      if (fieldName !== "level-score" && fieldName !== "level-name" && fieldName !== "level-type") return;
       const row = target.closest("tr[data-index]");
       const index = Number.parseInt(row?.dataset?.index ?? "", 10);
       if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
-      const nextScore = normalizeLevelScore(target.value);
+      const nameField = row?.querySelector('[data-field="level-name"]');
+      const typeField = row?.querySelector('[data-field="level-type"]');
+      const scoreField = row?.querySelector('[data-field="level-score"]');
+      const nextName = normalizeLevelName(nameField?.value ?? "");
+      const nextType = normalizeLevelType(typeField?.value ?? "value_sum");
+      const nextScore = normalizeLevelScore(scoreField?.value ?? 0);
+      if (!nextName) {
+        if (nameField) {
+          nameField.value = String(levels[index].name ?? "");
+          nameField.focus();
+        }
+        setStatus("Name is required.", true);
+        return;
+      }
       if (nextScore <= 0) {
-        target.value = String(levels[index].score);
+        if (scoreField) {
+          scoreField.value = String(levels[index].score);
+        }
         setStatus("Score must be greater than zero.", true);
         return;
       }
-      const nextLevels = levels.map((item, itemIndex) => (
-        itemIndex === index ? { ...item, score: nextScore } : item
-      ));
+      const nextLevels = levels.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        return { ...item, name: nextName, type: nextType, score: nextScore };
+      });
       await persistLevels(nextLevels, "Level updated.");
     });
   }

@@ -49,6 +49,22 @@ function normalizePositiveInt($value) {
   return $parsed > 0 ? $parsed : 0;
 }
 
+function normalizeLevelName($value, $fallback = '') {
+  $name = trim((string)$value);
+  if ($name === '') {
+    $name = trim((string)$fallback);
+  }
+  return $name;
+}
+
+function normalizeLevelType($value) {
+  $token = strtolower(trim((string)$value));
+  if ($token === 'out_of_value') {
+    return 'out_of_value';
+  }
+  return 'value_sum';
+}
+
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 if ($action === 'get_prizes') {
@@ -118,12 +134,19 @@ if ($action === 'get_prize_levels') {
     if ($score <= 0) {
       continue;
     }
+    $name = normalizeLevelName($item['name'] ?? '', 'Level ' . $score);
+    if ($name === '') {
+      continue;
+    }
+    $type = normalizeLevelType($item['type'] ?? 'value_sum');
     $id = trim((string)($item['id'] ?? ''));
     if ($id === '') {
       $id = uniqid('lvl_', true);
     }
     $normalized[] = [
       'id' => $id,
+      'name' => $name,
+      'type' => $type,
       'score' => $score
     ];
   }
@@ -151,12 +174,19 @@ if ($action === 'save_prize_levels') {
     if ($score <= 0) {
       continue;
     }
+    $name = normalizeLevelName($item['name'] ?? '', 'Level ' . $score);
+    if ($name === '') {
+      continue;
+    }
+    $type = normalizeLevelType($item['type'] ?? 'value_sum');
     $id = trim((string)($item['id'] ?? ''));
     if ($id === '') {
       $id = uniqid('lvl_', true);
     }
     $normalized[] = [
       'id' => $id,
+      'name' => $name,
+      'type' => $type,
       'score' => $score
     ];
   }
