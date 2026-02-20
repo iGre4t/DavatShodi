@@ -6,6 +6,7 @@ requireTabPermissionFromSession('task-club', false);
 
 $tcPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
 $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time());
+$tcPrizesJsVer = (string)(@filemtime(__DIR__ . '/TC Prizes.js') ?: time());
 $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time());
 ?>
 
@@ -344,7 +345,7 @@ $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time()
 </div>
 
 <script src="mini%20apps/Task%20Club/tc-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-<script src="mini%20apps/Task%20Club/TC%20Prizes.js" defer></script>
+<script src="mini%20apps/Task%20Club/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCSetting.js" defer></script>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 

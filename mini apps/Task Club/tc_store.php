@@ -141,15 +141,32 @@ if ($action === 'get_prize_levels') {
     if (!is_array($item)) {
       continue;
     }
-    $score = normalizePositiveInt($item['score'] ?? 0);
+    $score = normalizePositiveInt(
+      $item['score']
+      ?? $item['levelScore']
+      ?? $item['level_score']
+      ?? 0
+    );
     if ($score <= 0) {
       continue;
     }
-    $name = normalizeLevelName($item['name'] ?? '', 'Level ' . $score);
+    $name = normalizeLevelName(
+      $item['name']
+      ?? $item['levelName']
+      ?? $item['level_name']
+      ?? $item['label']
+      ?? '',
+      'Level ' . $score
+    );
     if ($name === '') {
       continue;
     }
-    $type = normalizeLevelType($item['type'] ?? 'value_sum');
+    $type = normalizeLevelType(
+      $item['type']
+      ?? $item['levelType']
+      ?? $item['level_type']
+      ?? 'value_sum'
+    );
     $id = trim((string)($item['id'] ?? ''));
     if ($id === '') {
       $id = uniqid('lvl_', true);
@@ -181,15 +198,32 @@ if ($action === 'save_prize_levels') {
     if (!is_array($item)) {
       continue;
     }
-    $score = normalizePositiveInt($item['score'] ?? 0);
+    $score = normalizePositiveInt(
+      $item['score']
+      ?? $item['levelScore']
+      ?? $item['level_score']
+      ?? 0
+    );
     if ($score <= 0) {
       continue;
     }
-    $name = normalizeLevelName($item['name'] ?? '', 'Level ' . $score);
+    $name = normalizeLevelName(
+      $item['name']
+      ?? $item['levelName']
+      ?? $item['level_name']
+      ?? $item['label']
+      ?? '',
+      'Level ' . $score
+    );
     if ($name === '') {
       continue;
     }
-    $type = normalizeLevelType($item['type'] ?? 'value_sum');
+    $type = normalizeLevelType(
+      $item['type']
+      ?? $item['levelType']
+      ?? $item['level_type']
+      ?? 'value_sum'
+    );
     $id = trim((string)($item['id'] ?? ''));
     if ($id === '') {
       $id = uniqid('lvl_', true);
