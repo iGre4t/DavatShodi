@@ -65,6 +65,17 @@ function normalizeLevelType($value) {
   return 'value_sum';
 }
 
+function normalizeHexColor($value, $fallback = '') {
+  $color = strtoupper(trim((string)$value));
+  if ($color === '' && is_string($fallback) && $fallback !== '') {
+    $color = strtoupper(trim($fallback));
+  }
+  if (preg_match('/^#[0-9A-F]{6}$/', $color)) {
+    return $color;
+  }
+  return '';
+}
+
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 if ($action === 'get_prizes') {
@@ -213,24 +224,46 @@ if ($action === 'get_settings') {
     'endTime' => '',
     'hint' => 'شانس خودت رو امتحان کن و جایزه ببر',
     'hintHtml' => '',
-    'hintAlign' => 'right'
+    'hintAlign' => 'right',
+    'eventLogo' => '',
+    'eventColors' => [
+      'secondary' => '#2F8FFF',
+      'highlight' => '#20C997',
+      'accentSoft' => '#FFB347'
+    ]
   ];
   $stored = readJsonFile($settingsFile, []);
   $settings = array_merge($defaults, is_array($stored) ? $stored : []);
+  $storedColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
+  $settings['eventLogo'] = trim((string)($settings['eventLogo'] ?? ''));
+  $settings['eventColors'] = [
+    'secondary' => normalizeHexColor($storedColors['secondary'] ?? '', $defaults['eventColors']['secondary']),
+    'highlight' => normalizeHexColor($storedColors['highlight'] ?? '', $defaults['eventColors']['highlight']),
+    'accentSoft' => normalizeHexColor($storedColors['accentSoft'] ?? '', $defaults['eventColors']['accentSoft'])
+  ];
   echo json_encode(['status' => 'ok', 'data' => $settings], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
 if ($action === 'save_settings') {
   $payload = json_decode(file_get_contents('php://input'), true);
-  $settings = $payload['settings'] ?? [];
-  if (!is_array($settings)) {
+  $incomingSettings = $payload['settings'] ?? [];
+  if (!is_array($incomingSettings)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid settings.']);
     exit;
   }
+  $storedSettings = readJsonFile($settingsFile, []);
+  $settings = array_merge(is_array($storedSettings) ? $storedSettings : [], $incomingSettings);
   $settings['hint'] = is_string($settings['hint'] ?? null) ? trim($settings['hint']) : '';
   $settings['hintHtml'] = is_string($settings['hintHtml'] ?? null) ? trim($settings['hintHtml']) : '';
   $settings['hintAlign'] = is_string($settings['hintAlign'] ?? null) ? trim($settings['hintAlign']) : 'right';
+  $incomingColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
+  $settings['eventLogo'] = is_string($settings['eventLogo'] ?? null) ? trim($settings['eventLogo']) : '';
+  $settings['eventColors'] = [
+    'secondary' => normalizeHexColor($incomingColors['secondary'] ?? '', '#2F8FFF') ?: '#2F8FFF',
+    'highlight' => normalizeHexColor($incomingColors['highlight'] ?? '', '#20C997') ?: '#20C997',
+    'accentSoft' => normalizeHexColor($incomingColors['accentSoft'] ?? '', '#FFB347') ?: '#FFB347'
+  ];
   if (!writeJsonFile($settingsFile, $settings)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save settings.']);
     exit;

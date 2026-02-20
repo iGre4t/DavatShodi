@@ -13,6 +13,54 @@ if (!(isset($_SESSION['tc_authed']) && $_SESSION['tc_authed'] === true)) {
 if (empty($_SESSION['tc_csrf'])) {
   $_SESSION['tc_csrf'] = bin2hex(random_bytes(16));
 }
+
+function loadJsonPayload(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function formatAssetUrl(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  if (preg_match('/^(?:data:|https?:\/\/|\/\/)/i', $trimmed)) {
+    return $trimmed;
+  }
+  if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
+    return $trimmed;
+  }
+  return "../../{$trimmed}";
+}
+
+function normalizeHexColorForTheme($value, string $fallback): string
+{
+  $color = strtoupper(trim((string)$value));
+  if (preg_match('/^#[0-9A-F]{6}$/', $color)) {
+    return $color;
+  }
+  return strtoupper($fallback);
+}
+
+$wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
+$panelStore = loadJsonPayload(__DIR__ . '/../../data/store.json');
+$panelSettings = is_array($panelStore['settings'] ?? null) ? $panelStore['settings'] : [];
+$eventLogoUrl = formatAssetUrl((string)($wheelSettings['eventLogo'] ?? ''));
+$panelIconUrl = formatAssetUrl((string)($panelSettings['siteIcon'] ?? ''));
+$faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $panelIconUrl;
+$eventColors = is_array($wheelSettings['eventColors'] ?? null) ? $wheelSettings['eventColors'] : [];
+$eventSecondary = normalizeHexColorForTheme($eventColors['secondary'] ?? '', '#2F8FFF');
+$eventHighlight = normalizeHexColorForTheme($eventColors['highlight'] ?? '', '#20C997');
+$eventAccentSoft = normalizeHexColorForTheme($eventColors['accentSoft'] ?? '', '#FFB347');
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -20,6 +68,7 @@ if (empty($_SESSION['tc_csrf'])) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>جوایز باشگاه</title>
+    <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       @font-face {
         font-family: 'Peyda Fa Num';
@@ -49,6 +98,9 @@ if (empty($_SESSION['tc_csrf'])) {
         --ink: #20365c;
         --muted: #6b7a99;
         --accent: #2f8fff;
+        --tc-secondary: <?= htmlspecialchars($eventSecondary, ENT_QUOTES, 'UTF-8') ?>;
+        --tc-highlight: <?= htmlspecialchars($eventHighlight, ENT_QUOTES, 'UTF-8') ?>;
+        --tc-accent-soft: <?= htmlspecialchars($eventAccentSoft, ENT_QUOTES, 'UTF-8') ?>;
       }
 
       * {
@@ -93,10 +145,23 @@ if (empty($_SESSION['tc_csrf'])) {
       }
 
       .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
         margin: 0;
         font-size: 0.96rem;
-        color: #506081;
+        color: var(--tc-secondary);
         letter-spacing: 0.04em;
+      }
+
+      .brand-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.85);
+        box-shadow: 0 6px 14px rgba(15, 40, 70, 0.15);
+        object-fit: cover;
+        background: #ffffff;
       }
 
       .back-btn {
@@ -123,7 +188,7 @@ if (empty($_SESSION['tc_csrf'])) {
       }
 
       .back-btn:hover {
-        color: #2f5aa6;
+        color: var(--tc-secondary);
       }
 
       .result {
@@ -307,8 +372,8 @@ if (empty($_SESSION['tc_csrf'])) {
       }
 
       .roadmap-item.reached .roadmap-node {
-        background: #2f8fff;
-        border-color: #2f8fff;
+        background: var(--tc-secondary);
+        border-color: var(--tc-secondary);
         animation: roadmap-node-reached 1.25s ease-in-out infinite;
       }
 
@@ -320,7 +385,12 @@ if (empty($_SESSION['tc_csrf'])) {
         bottom: -2px;
         width: 2px;
         opacity: 0;
-        background: linear-gradient(180deg, rgba(47, 143, 255, 0), rgba(47, 143, 255, 0.95), rgba(47, 143, 255, 0));
+        background: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--tc-secondary) 0%, transparent),
+          color-mix(in srgb, var(--tc-secondary) 95%, transparent),
+          color-mix(in srgb, var(--tc-secondary) 0%, transparent)
+        );
         background-size: 2px 36px;
       }
 
@@ -350,9 +420,9 @@ if (empty($_SESSION['tc_csrf'])) {
       }
 
       .roadmap-state.can-flip { color: #1f7f44; }
-      .roadmap-state.won { color: #2f8fff; }
+      .roadmap-state.won { color: var(--tc-secondary); }
       .roadmap-state.locked { color: #9aa8c4; }
-      .roadmap-state.reached { color: #cc7a00; }
+      .roadmap-state.reached { color: color-mix(in srgb, var(--tc-accent-soft) 85%, #8c4f00); }
 
       @keyframes roadmap-node-pulse {
         0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(122, 166, 233, 0.35); }
@@ -438,6 +508,7 @@ if (empty($_SESSION['tc_csrf'])) {
     <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       (() => {
         const API_URL = 'TCM.php';
+        const eventLogoUrl = <?= json_encode($faviconUrl, JSON_UNESCAPED_UNICODE); ?>;
         const csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE); ?>;
         const scoreEl = document.getElementById('reward-score');
         const flipsEl = document.getElementById('reward-flips');
@@ -468,12 +539,21 @@ if (empty($_SESSION['tc_csrf'])) {
             topbar.className = 'topbar';
             const brand = document.createElement('p');
             brand.className = 'brand';
-            brand.textContent = 'کمپین به نام خدا';
+            if (eventLogoUrl) {
+              const brandIcon = document.createElement('img');
+              brandIcon.className = 'brand-icon';
+              brandIcon.src = String(eventLogoUrl);
+              brandIcon.alt = 'لوگوی کمپین';
+              brand.appendChild(brandIcon);
+            }
+            const brandText = document.createElement('span');
+            brandText.textContent = 'کمپین به نام خدا';
+            brand.appendChild(brandText);
             const back = document.createElement('button');
             back.id = 'reward-back-btn';
             back.className = 'back-btn';
             back.type = 'button';
-            back.innerHTML = '<span aria-hidden=\"true\"></span>برگشت';
+            back.innerHTML = '<span aria-hidden="true"></span>برگشت';
             topbar.appendChild(brand);
             topbar.appendChild(back);
             phoneEl.insertBefore(topbar, phoneEl.firstChild);
@@ -983,3 +1063,4 @@ if (empty($_SESSION['tc_csrf'])) {
     </script>
   </body>
 </html>
+

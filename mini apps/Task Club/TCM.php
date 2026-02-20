@@ -557,6 +557,15 @@ function formatSiteIconUrlForHtml(string $value): string
   return "../../{$trimmed}";
 }
 
+function normalizeHexColorForTheme($value, string $fallback): string
+{
+  $color = strtoupper(trim((string)$value));
+  if (preg_match('/^#[0-9A-F]{6}$/', $color)) {
+    return $color;
+  }
+  return strtoupper($fallback);
+}
+
 function normalizeTaskTitle(string $value): string
 {
   $normalized = preg_replace('/\s+/u', ' ', trim($value));
@@ -2384,7 +2393,14 @@ $initialQuestions = readQuestionStore($questionsStorePath);
 $taskRecords = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
-$faviconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
+$eventLogoRaw = (string)($wheelSettings['eventLogo'] ?? '');
+$eventLogoUrl = formatSiteIconUrlForHtml($eventLogoRaw);
+$fallbackSiteIconUrl = formatSiteIconUrlForHtml((string)($panelSettings['siteIcon'] ?? ''));
+$faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $fallbackSiteIconUrl;
+$eventColors = is_array($wheelSettings['eventColors'] ?? null) ? $wheelSettings['eventColors'] : [];
+$eventSecondary = normalizeHexColorForTheme($eventColors['secondary'] ?? '', '#2F8FFF');
+$eventHighlight = normalizeHexColorForTheme($eventColors['highlight'] ?? '', '#20C997');
+$eventAccentSoft = normalizeHexColorForTheme($eventColors['accentSoft'] ?? '', '#FFB347');
 function sanitizeHintHtml(string $html): string
 {
   $allowed = '<br><b><strong><em><a><div><span><p>';
@@ -2533,6 +2549,9 @@ $sessionPayload = [
         --accent-ink: #ffffff;
         --soft-pink: #eef5ff;
         --soft-blue: #eef5ff;
+        --tc-secondary: <?= htmlspecialchars($eventSecondary, ENT_QUOTES, 'UTF-8') ?>;
+        --tc-highlight: <?= htmlspecialchars($eventHighlight, ENT_QUOTES, 'UTF-8') ?>;
+        --tc-accent-soft: <?= htmlspecialchars($eventAccentSoft, ENT_QUOTES, 'UTF-8') ?>;
         font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         color-scheme: light;
       }
@@ -2741,10 +2760,23 @@ $sessionPayload = [
       }
 
       .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
         margin: 0;
         font-size: 0.96rem;
-        color: #506081;
+        color: var(--tc-secondary);
         letter-spacing: 0.04em;
+      }
+
+      .brand-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.85);
+        box-shadow: 0 6px 14px rgba(15, 40, 70, 0.15);
+        object-fit: cover;
+        background: #ffffff;
       }
 
       .main-area {
@@ -2784,10 +2816,14 @@ $sessionPayload = [
         gap: 10px;
         padding: 10px 14px;
         border-radius: 14px;
-        border: 1px solid rgba(195, 219, 252, 0.9);
-        background: linear-gradient(140deg, rgba(255, 255, 255, 0.72), rgba(234, 244, 255, 0.84));
+        border: 1px solid color-mix(in srgb, var(--tc-secondary) 34%, #ffffff);
+        background: linear-gradient(
+          140deg,
+          color-mix(in srgb, var(--tc-accent-soft) 18%, #ffffff),
+          color-mix(in srgb, var(--tc-secondary) 14%, #ffffff)
+        );
         box-shadow: 0 16px 28px rgba(44, 86, 146, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-        color: #24406d;
+        color: color-mix(in srgb, var(--tc-secondary) 62%, #1b2f52);
         font-size: 0.86rem;
         font-weight: 700;
         overflow: hidden;
@@ -2865,6 +2901,11 @@ $sessionPayload = [
         color: #6f7f9f;
       }
 
+      .task-item-meta.is-multiline {
+        white-space: pre-line;
+        line-height: 1.55;
+      }
+
       .task-item-btn:hover {
         background: #edf5ff;
         border-color: #bfd7ff;
@@ -2899,6 +2940,25 @@ $sessionPayload = [
         color: #4d7a58;
       }
 
+      .task-item-btn.is-upcoming,
+      .task-item-btn.is-upcoming:disabled {
+        background: linear-gradient(
+          145deg,
+          color-mix(in srgb, var(--tc-secondary) 12%, #ffffff),
+          color-mix(in srgb, var(--tc-highlight) 10%, #ffffff)
+        );
+        border-color: color-mix(in srgb, var(--tc-secondary) 52%, #d8e7ff);
+        color: color-mix(in srgb, var(--tc-secondary) 74%, #1f3557);
+        cursor: not-allowed;
+        opacity: 1;
+      }
+
+      .task-item-btn.is-upcoming .task-item-meta,
+      .task-item-btn.is-upcoming:disabled .task-item-meta {
+        color: color-mix(in srgb, var(--tc-secondary) 82%, #2f67b2);
+        font-weight: 700;
+      }
+
       .task-item-btn.is-golden {
         border-color: #ffb247;
         background: linear-gradient(145deg, #fff8ec, #fff2d8);
@@ -2908,6 +2968,23 @@ $sessionPayload = [
       .task-item-btn.is-golden .task-item-meta {
         color: #9b5a00;
         font-weight: 700;
+      }
+
+      .task-item-btn.is-golden-live {
+        border-color: color-mix(in srgb, var(--tc-accent-soft) 85%, #d66c00);
+        background: linear-gradient(
+          145deg,
+          color-mix(in srgb, var(--tc-accent-soft) 34%, #ffffff),
+          color-mix(in srgb, var(--tc-highlight) 26%, #ffffff)
+        );
+        box-shadow: 0 12px 24px color-mix(in srgb, var(--tc-accent-soft) 40%, rgba(255, 157, 35, 0.24)), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+
+      .task-item-btn.is-golden-live .task-item-meta {
+        color: #9a4a00;
+        font-size: 0.84rem;
+        font-weight: 800;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
       }
 
       .tasks-empty {
@@ -2939,18 +3016,26 @@ $sessionPayload = [
         text-align: center;
         text-decoration: none;
         border-radius: 14px;
-        border: 1px solid #ff5b13;
-        background: #ff4f00;
+        border: 1px solid color-mix(in srgb, var(--tc-highlight) 74%, #22475c);
+        background: linear-gradient(
+          145deg,
+          color-mix(in srgb, var(--tc-secondary) 75%, #1f4f8f),
+          color-mix(in srgb, var(--tc-highlight) 72%, #1f7f44)
+        );
         color: #ffffff;
         font-size: 0.96rem;
         font-weight: 700;
         padding: 12px 14px;
-        box-shadow: 0 14px 26px rgba(255, 79, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        box-shadow: 0 14px 26px color-mix(in srgb, var(--tc-secondary) 36%, rgba(37, 86, 146, 0.2)), inset 0 1px 0 rgba(255, 255, 255, 0.35);
         transition: background-color 0.18s ease, transform 0.18s ease;
       }
 
       .tc-bottom-cta-btn:hover {
-        background: #ff5f1e;
+        background: linear-gradient(
+          145deg,
+          color-mix(in srgb, var(--tc-secondary) 86%, #1f5ea8),
+          color-mix(in srgb, var(--tc-highlight) 84%, #1f8f4f)
+        );
         transform: translateY(-1px);
       }
 
@@ -4032,7 +4117,12 @@ $sessionPayload = [
     <main class="app">
       <section class="phone">
     <div class="topbar">
-          <p class="brand">کمپین به نام خدا</p>
+          <p class="brand">
+            <?php if ($faviconUrl !== ''): ?>
+              <img class="brand-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی کمپین" />
+            <?php endif; ?>
+            <span>کمپین به نام خدا</span>
+          </p>
           <div class="topbar-actions">
             <?php if ($sessionPayload['authed']): ?>
               <button id="tc-logout" class="logout-btn" type="button">
@@ -4301,6 +4391,7 @@ $sessionPayload = [
 
         let statusTickTimer = null;
         let taskStatusTimer = null;
+        let taskCountdownTickTimer = null;
         let quizTimerHandle = null;
         let quizLocked = false;
         let currentTaskId = '';
@@ -4562,6 +4653,11 @@ $sessionPayload = [
           return normalized !== '' ? normalized : '00:00';
         };
 
+        const normalizeGoldenEndTime = (value) => {
+          const normalized = String(value || '').trim();
+          return normalized !== '' ? normalized : '23:59';
+        };
+
         const formatTaskCountdown = (targetDate, targetTime) => {
           const target = getTehranTargetDate(targetDate, normalizeUpcomingStartTime(targetTime));
           if (!target) {
@@ -4572,6 +4668,19 @@ $sessionPayload = [
           const hours = Math.floor((diffSeconds % 86400) / 3600);
           const minutes = Math.floor((diffSeconds % 3600) / 60);
           return `${days} روز و ${hours} ساعت و ${minutes} دقیقه تا شروع تسک بعدی`;
+        };
+
+        const formatGoldenTimeCountdown = (targetDate, targetTime) => {
+          const target = getTehranTargetDate(targetDate, normalizeGoldenEndTime(targetTime));
+          if (!target) {
+            return '';
+          }
+          const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
+          const days = Math.floor(diffSeconds / 86400);
+          const hours = Math.floor((diffSeconds % 86400) / 3600);
+          const minutes = Math.floor((diffSeconds % 3600) / 60);
+          const seconds = diffSeconds % 60;
+          return `تا پایان مهلت طلایی پاسخ به سوال\n${days} روز و ${hours} ساعت و ${minutes} دقیقه و ${seconds} ثانیه`;
         };
 
         const canOpenTaskByStatus = (status, taskType) => {
@@ -4594,8 +4703,10 @@ $sessionPayload = [
             button.classList.remove('is-disabled');
             button.classList.add('is-completed');
             button.classList.remove('is-golden');
+            button.classList.remove('is-golden-live');
             button.dataset.taskStatus = 'completed';
             if (metaEl) {
+              metaEl.classList.remove('is-multiline');
               const shownScore = Number.isFinite(taskScore) ? Math.max(0, taskScore) : 0;
               metaEl.textContent = shownScore > 0 ? `Completed (${shownScore})` : 'Completed';
             }
@@ -4604,12 +4715,16 @@ $sessionPayload = [
 
           const globallyBlocked = globalEventStatus === 'inactive';
           const available = !globallyBlocked && canOpenTaskByStatus(status, taskType);
+          const isUpcoming = status === 'upcoming';
           button.disabled = !available;
-          button.classList.toggle('is-disabled', !available);
+          button.classList.toggle('is-disabled', !available && !isUpcoming);
+          button.classList.toggle('is-upcoming', isUpcoming);
           button.classList.remove('is-completed');
           button.classList.toggle('is-golden', status === 'active' && taskType === 'quiz');
+          button.classList.toggle('is-golden-live', false);
           button.dataset.taskStatus = status;
           if (metaEl) {
+            metaEl.classList.remove('is-multiline');
             if (status === 'upcoming') {
               const startDate = String(button.dataset.taskStartDate || '').trim();
               const startTime = String(button.dataset.taskStartTime || '').trim();
@@ -4620,6 +4735,17 @@ $sessionPayload = [
                   ? `تا شروع: ${startDate} ${normalizeUpcomingStartTime(startTime)}`
                   : taskStatusLabel(status, false, taskType);
                 metaEl.textContent = countdown || fallbackText;
+              } else {
+                metaEl.textContent = taskStatusLabel(status, false, taskType);
+              }
+            } else if (status === 'active' && taskType === 'quiz') {
+              const endDate = String(button.dataset.taskEndDate || '').trim();
+              const endTime = String(button.dataset.taskEndTime || '').trim();
+              const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
+              if (goldenCountdown) {
+                metaEl.textContent = goldenCountdown;
+                metaEl.classList.add('is-multiline');
+                button.classList.add('is-golden-live');
               } else {
                 metaEl.textContent = taskStatusLabel(status, false, taskType);
               }
@@ -5157,6 +5283,7 @@ $sessionPayload = [
         refreshTaskButtonsStatus();
         scheduleHourlyStatusCheck();
         taskStatusTimer = setInterval(refreshStatus, 30 * 1000);
+        taskCountdownTickTimer = setInterval(refreshTaskButtonsStatus, 1000);
       }
     </script>
   </body>

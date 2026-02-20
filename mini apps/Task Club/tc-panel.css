@@ -493,6 +493,12 @@
   font: inherit;
 }
 
+.tc-shell .tc-prize-level-text {
+  display: inline-block;
+  color: #111111;
+  font-weight: 600;
+}
+
 .tc-shell .tct-drag-cell {
   width: 56px;
   text-align: center;
@@ -633,5 +639,29 @@
   .tc-shell .tc-task-quiz-frame {
     min-height: 520px;
   }
+}
+
+.tc-shell .tc-event-logo-uploader .photo-preview {
+  min-height: 170px;
+}
+
+.tc-shell .tc-event-logo-uploader img {
+  max-height: 160px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.tc-shell .appearance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tc-shell .appearance-label {
+  min-width: 128px;
+  color: var(--muted, #6b7280);
+  font-weight: 600;
 }
 

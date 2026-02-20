@@ -545,20 +545,8 @@
       .map((level, index) => `
         <tr data-index="${index}" data-level-id="${escapeHtml(level.id)}">
           <td>${index + 1}</td>
-          <td>
-            <input
-              type="text"
-              class="tc-prize-level-control"
-              data-field="level-name"
-              value="${escapeHtml(level.name || `Level ${level.score || ""}`)}"
-            />
-          </td>
-          <td>
-            <select class="tc-prize-level-control" data-field="level-type">
-              <option value="value_sum"${normalizeLevelType(level.type) === "value_sum" ? " selected" : ""}>Value Sum</option>
-              <option value="out_of_value"${normalizeLevelType(level.type) === "out_of_value" ? " selected" : ""}>Out of Value</option>
-            </select>
-          </td>
+          <td><span class="tc-prize-level-text">${escapeHtml(level.name || `Level ${level.score || ""}`)}</span></td>
+          <td><span class="tc-prize-level-text">${normalizeLevelType(level.type) === "out_of_value" ? "Out of Value" : "Value Sum"}</span></td>
           <td>
             <input
               type="number"
@@ -660,24 +648,12 @@
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       const fieldName = target.getAttribute("data-field");
-      if (fieldName !== "level-score" && fieldName !== "level-name" && fieldName !== "level-type") return;
+      if (fieldName !== "level-score") return;
       const row = target.closest("tr[data-index]");
       const index = Number.parseInt(row?.dataset?.index ?? "", 10);
       if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
-      const nameField = row?.querySelector('[data-field="level-name"]');
-      const typeField = row?.querySelector('[data-field="level-type"]');
       const scoreField = row?.querySelector('[data-field="level-score"]');
-      const nextName = normalizeLevelName(nameField?.value ?? "");
-      const nextType = normalizeLevelType(typeField?.value ?? "value_sum");
       const nextScore = normalizeLevelScore(scoreField?.value ?? 0);
-      if (!nextName) {
-        if (nameField) {
-          nameField.value = String(levels[index].name ?? "");
-          nameField.focus();
-        }
-        setStatus("Name is required.", true);
-        return;
-      }
       if (nextScore <= 0) {
         if (scoreField) {
           scoreField.value = String(levels[index].score);
@@ -687,7 +663,7 @@
       }
       const nextLevels = levels.map((item, itemIndex) => {
         if (itemIndex !== index) return item;
-        return { ...item, name: nextName, type: nextType, score: nextScore };
+        return { ...item, score: nextScore };
       });
       await persistLevels(nextLevels, "Level updated.");
     });

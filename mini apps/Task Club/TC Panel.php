@@ -6,6 +6,7 @@ requireTabPermissionFromSession('task-club', false);
 
 $tcPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
 $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time());
+$tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time());
 ?>
 
 <link rel="stylesheet" href="mini%20apps/Task%20Club/tc-panel.css?v=<?= htmlspecialchars($tcPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
@@ -17,6 +18,7 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
       <button type="button" class="sub-item active" data-pane="tc-main">Main Panel</button>
       <button type="button" class="sub-item" data-pane="tc-invitees">Invitees</button>
       <button type="button" class="sub-item" data-pane="tc-manage-tasks">Manage Tasks</button>
+      <button type="button" class="sub-item" data-pane="tc-event-style">Event Style</button>
       <div data-tc-task-subtab-nav></div>
     </div>
   </aside>
@@ -280,6 +282,62 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
     <div class="sub-pane" data-pane="tc-manage-tasks">
       <?php include __DIR__ . '/TCT.php'; ?>
     </div>
+    <div class="sub-pane" data-pane="tc-event-style">
+      <div class="card">
+        <div class="section-header">
+          <h3>Upload Logo</h3>
+        </div>
+        <div class="form">
+          <div class="photo-uploader tc-event-logo-uploader">
+            <div class="photo-preview" aria-live="polite">
+              <img id="tc-event-logo-image" class="hidden" alt="Event logo preview" />
+              <div id="tc-event-logo-placeholder" class="photo-placeholder">No image selected</div>
+            </div>
+            <div class="photo-actions">
+              <button type="button" class="btn" id="tc-event-logo-pick">Choose photo</button>
+              <button type="button" class="btn ghost" id="tc-event-logo-clear" disabled>Clear</button>
+            </div>
+            <p id="tc-event-style-logo-status" class="hint muted small" aria-live="polite"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <h3>Colors</h3>
+        </div>
+        <div class="form" style="gap:12px;">
+          <div class="appearance-row">
+            <span class="appearance-label">Secondary</span>
+            <div class="appearance-input-group">
+              <input id="tc-event-color-secondary" class="appearance-hex-field" type="text" maxlength="7" value="#2F8FFF" />
+              <button type="button" class="appearance-preview" id="tc-event-preview-secondary" aria-label="Choose secondary color"></button>
+              <button type="button" class="btn ghost" id="tc-event-picker-secondary">Choose</button>
+            </div>
+          </div>
+          <div class="appearance-row">
+            <span class="appearance-label">Highlight</span>
+            <div class="appearance-input-group">
+              <input id="tc-event-color-highlight" class="appearance-hex-field" type="text" maxlength="7" value="#20C997" />
+              <button type="button" class="appearance-preview" id="tc-event-preview-highlight" aria-label="Choose highlight color"></button>
+              <button type="button" class="btn ghost" id="tc-event-picker-highlight">Choose</button>
+            </div>
+          </div>
+          <div class="appearance-row">
+            <span class="appearance-label">Soft Accent</span>
+            <div class="appearance-input-group">
+              <input id="tc-event-color-accent-soft" class="appearance-hex-field" type="text" maxlength="7" value="#FFB347" />
+              <button type="button" class="appearance-preview" id="tc-event-preview-accent-soft" aria-label="Choose soft accent color"></button>
+              <button type="button" class="btn ghost" id="tc-event-picker-accent-soft">Choose</button>
+            </div>
+          </div>
+          <div class="field full">
+            <button type="button" class="btn primary standard-primary-button" id="tc-event-style-save">Save</button>
+          </div>
+          <p id="tc-event-style-save-status" class="hint muted small" aria-live="polite"></p>
+        </div>
+      </div>
+    </div>
     <div data-tc-task-subtab-panes></div>
   </div>
 </div>
@@ -288,6 +346,7 @@ $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time
 <script src="mini%20apps/Task%20Club/tc-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js" defer></script>
 <script src="mini%20apps/Task%20Club/TCSetting.js" defer></script>
+<script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 
 
 
