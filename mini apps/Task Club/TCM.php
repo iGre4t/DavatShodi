@@ -3065,6 +3065,19 @@ $sessionPayload = [
         gap: 10px;
       }
 
+      #tc-reward-cards-view {
+        flex: 1;
+        min-height: 0;
+        justify-content: center;
+        gap: 14px;
+      }
+
+      #tc-reward-cards-view .result-label {
+        display: block;
+        margin-bottom: 2px;
+        text-align: center;
+      }
+
       #tc-rewards-view {
         flex: 1;
         min-height: 0;
@@ -3095,8 +3108,8 @@ $sessionPayload = [
       }
 
       .rewards-total-bar {
-        width: 100%;
-        margin-top: auto;
+        width: min(360px, calc(100vw - 56px));
+        margin-top: 0;
         border: 1px solid #d9e7fb;
         border-radius: 14px;
         background: #f6faff;
@@ -3109,6 +3122,12 @@ $sessionPayload = [
         flex: 1;
         min-height: 0;
         padding: 6px 8px 0 2px;
+        margin-bottom: 0;
+      }
+
+      #tc-reward-time-label {
+        display: block;
+        text-align: center;
       }
 
       .roadmap-list {
@@ -3298,7 +3317,7 @@ $sessionPayload = [
         padding-top: 125%;
         transform-style: preserve-3d;
         transform: rotateY(0deg);
-        transition: transform 420ms ease;
+        transition: transform 620ms ease;
       }
 
       .flip-card.is-revealed .flip-card-inner {
@@ -3311,8 +3330,8 @@ $sessionPayload = [
       }
 
       .flip-card.is-picked .flip-back {
-        background: var(--tc-highlight);
-        color: #1c2a45;
+        background: #ffffff;
+        color: var(--tc-highlight);
       }
 
       .flip-card.is-locked {
@@ -3352,8 +3371,8 @@ $sessionPayload = [
 
       .flip-back {
         transform: rotateY(180deg);
-        background: var(--tc-secondary);
-        color: #fff;
+        background: #ffffff;
+        color: #1b1f2a;
         font-size: 0.75rem;
         font-weight: 700;
         line-height: 1.45;
@@ -4536,20 +4555,20 @@ $sessionPayload = [
           <section class="rewards-roadmap-main">
             <div id="tc-reward-roadmap" class="roadmap-list"></div>
           </section>
-          <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
           <div class="result rewards-total-bar">
             <span id="tc-reward-time-label" class="result-label">Total Prize Won</span>
             <p id="tc-reward-time-value" class="result-value">—</p>
           </div>
+          <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
         </div>
         <div id="tc-reward-cards-view" class="main-area rewards-view hidden" aria-hidden="true">
-          <div class="result rewards-time-box">
-            <span class="result-label">Your Total Reward Value</span>
-            <p id="tc-reward-cards-total-value" class="result-value">0 Toman</p>
-          </div>
           <section id="tc-reward-cards-box" class="cards-box">
             <div id="tc-reward-cards" class="cards-grid"></div>
           </section>
+          <div class="result rewards-time-box">
+            <span class="result-label">Total Prize Won</span>
+            <p id="tc-reward-cards-total-value" class="result-value">0 Toman</p>
+          </div>
         </div>
         <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
           <div class="tc-task-quiz-head">
@@ -4579,6 +4598,7 @@ $sessionPayload = [
       </div>
       <div id="tc-reward-win-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
         <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-reward-win-title">
+          <div id="tc-reward-win-confetti" class="confetti-layer" aria-hidden="true"></div>
           <h3 id="tc-reward-win-title" class="tc-result-dialog-title">You Won</h3>
           <div class="tc-result-dialog-content">
             <p id="tc-reward-win-message" class="hint hint-align-center">-</p>
@@ -4737,6 +4757,7 @@ $sessionPayload = [
         const rewardStatusLineEl = document.getElementById('tc-reward-status-line');
         const rewardCardsTotalValueEl = document.getElementById('tc-reward-cards-total-value');
         const rewardWinDialogEl = document.getElementById('tc-reward-win-dialog');
+        const rewardWinConfettiEl = document.getElementById('tc-reward-win-confetti');
         const rewardWinMessageEl = document.getElementById('tc-reward-win-message');
         const rewardWinConfirmEl = document.getElementById('tc-reward-win-confirm');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
@@ -4764,6 +4785,7 @@ $sessionPayload = [
         let selectedRewardLevelId = '';
         let rewardCardsDeck = [];
         const rewardCardsLockedIndexes = new Set();
+        const rewardCardsLockedPrizes = new Map();
         let currentTaskId = '';
         let currentTaskTitle = '';
         let currentQuestions = [];
@@ -5358,16 +5380,24 @@ $sessionPayload = [
           .replaceAll("'", '&#39;');
 
         const rewardCardLockStorageKey = `tc_reward_locked_cards_${String(sessionInfo?.workId || 'guest')}`;
+        const rewardCardLockPrizeStorageKey = `tc_reward_locked_card_prizes_${String(sessionInfo?.workId || 'guest')}`;
 
         const saveLockedRewardCards = () => {
           try {
             const indexes = Array.from(rewardCardsLockedIndexes).filter((index) => Number.isInteger(index) && index >= 0 && index < 9);
             localStorage.setItem(rewardCardLockStorageKey, JSON.stringify(indexes));
+            const prizeEntries = [];
+            rewardCardsLockedPrizes.forEach((prizeName, index) => {
+              if (!Number.isInteger(index) || index < 0 || index >= 9) return;
+              prizeEntries.push({ index, prizeName: String(prizeName || '').trim() });
+            });
+            localStorage.setItem(rewardCardLockPrizeStorageKey, JSON.stringify(prizeEntries));
           } catch {}
         };
 
         const loadLockedRewardCards = () => {
           rewardCardsLockedIndexes.clear();
+          rewardCardsLockedPrizes.clear();
           try {
             const raw = localStorage.getItem(rewardCardLockStorageKey);
             if (!raw) return;
@@ -5377,6 +5407,20 @@ $sessionPayload = [
               const parsed = Number(item);
               if (Number.isInteger(parsed) && parsed >= 0 && parsed < 9) {
                 rewardCardsLockedIndexes.add(parsed);
+              }
+            });
+          } catch {}
+          try {
+            const raw = localStorage.getItem(rewardCardLockPrizeStorageKey);
+            if (!raw) return;
+            const entries = JSON.parse(raw);
+            if (!Array.isArray(entries)) return;
+            entries.forEach((item) => {
+              if (!item || typeof item !== 'object') return;
+              const parsedIndex = Number(item.index);
+              const prizeName = String(item.prizeName || '').trim();
+              if (Number.isInteger(parsedIndex) && parsedIndex >= 0 && parsedIndex < 9 && prizeName !== '') {
+                rewardCardsLockedPrizes.set(parsedIndex, prizeName);
               }
             });
           } catch {}
@@ -5425,7 +5469,8 @@ $sessionPayload = [
             button.classList.toggle('is-picked', isLocked);
             const backLabelEl = button.querySelector('[data-back-label]');
             if (backLabelEl instanceof HTMLElement && isLocked) {
-              backLabelEl.innerHTML = '<span>Already picked</span>';
+              const wonPrizeName = String(rewardCardsLockedPrizes.get(index) || '').trim();
+              backLabelEl.innerHTML = `<span>${escapeHtml(wonPrizeName || 'Won reward')}</span>`;
             }
           });
         };
@@ -5464,6 +5509,21 @@ $sessionPayload = [
             }
           });
           return map;
+        };
+
+        const getWonPrizeNames = () => {
+          const raw = String(rewardsState?.eachLevelWonPrize || '').trim();
+          if (!raw) return [];
+          const names = [];
+          raw.split(',').forEach((chunk) => {
+            const part = String(chunk || '').trim();
+            if (!part) return;
+            const separatorIndex = part.indexOf(':');
+            if (separatorIndex <= 0) return;
+            const prizeName = part.slice(separatorIndex + 1).trim();
+            if (prizeName) names.push(prizeName);
+          });
+          return names;
         };
 
         const renderRewardRoadmap = () => {
@@ -5554,7 +5614,7 @@ $sessionPayload = [
           const updateEventStateText = () => {
             if (eventStatus === 'upcoming') {
               const countdown = formatEventCountdown(startDate, startTime);
-              setRewardTimeBox('Time Left to Win Prizes', countdown || 'Starts soon');
+              setRewardTimeBox('Time last to win prizes', countdown || 'Starts soon');
               return;
             }
 
@@ -5584,6 +5644,17 @@ $sessionPayload = [
             const serverFlips = Math.max(0, Number(rewardsState?.cardFlipsCount || 0));
             if (rewardCardsLockedIndexes.size > serverFlips) {
               rewardCardsLockedIndexes.clear();
+              rewardCardsLockedPrizes.clear();
+              saveLockedRewardCards();
+            }
+            if (rewardCardsLockedIndexes.size && rewardCardsLockedPrizes.size < rewardCardsLockedIndexes.size) {
+              const wonPrizeNames = getWonPrizeNames();
+              const sortedLockedIndexes = Array.from(rewardCardsLockedIndexes).sort((a, b) => a - b);
+              sortedLockedIndexes.forEach((index, idx) => {
+                if (!rewardCardsLockedPrizes.has(index) && wonPrizeNames[idx]) {
+                  rewardCardsLockedPrizes.set(index, wonPrizeNames[idx]);
+                }
+              });
               saveLockedRewardCards();
             }
             renderRewardSummary();
@@ -5601,6 +5672,33 @@ $sessionPayload = [
           }
         };
 
+        const runRewardWinConfetti = () => {
+          if (!(rewardWinConfettiEl instanceof HTMLElement)) return;
+          const colors = ['var(--tc-secondary)', 'var(--tc-highlight)'];
+          const bounds = rewardWinConfettiEl.getBoundingClientRect();
+          const width = Math.max(260, bounds.width || 360);
+          const height = Math.max(220, bounds.height || 420);
+          const count = Math.max(82, Math.min(148, Math.round(width / 4.3)));
+          rewardWinConfettiEl.innerHTML = '';
+          for (let i = 0; i < count; i += 1) {
+            const piece = document.createElement('span');
+            piece.className = 'confetti-piece';
+            const fromLeft = Math.random() < 0.5;
+            const sideOffset = Math.random() * 40 + 2;
+            piece.style[fromLeft ? 'left' : 'right'] = `${sideOffset}px`;
+            piece.style.top = `${Math.random() * (height * 0.8)}px`;
+            piece.style.background = colors[i % colors.length];
+            piece.style.animationDelay = `${Math.random() * 0.22}s`;
+            const drift = fromLeft ? (Math.random() * 120 + 40) : -(Math.random() * 120 + 40);
+            piece.style.setProperty('--drift', `${drift}px`);
+            piece.style.transform = `translate3d(0, 0, 0) rotate(${Math.random() * 180}deg)`;
+            rewardWinConfettiEl.appendChild(piece);
+          }
+          setTimeout(() => {
+            rewardWinConfettiEl.innerHTML = '';
+          }, 3400);
+        };
+
         const openRewardWinDialog = (prizeName) => new Promise((resolve) => {
           if (!(rewardWinDialogEl instanceof HTMLElement) || !(rewardWinMessageEl instanceof HTMLElement) || !(rewardWinConfirmEl instanceof HTMLElement)) {
             window.alert(`You won ${String(prizeName || 'a reward')}.`);
@@ -5608,6 +5706,7 @@ $sessionPayload = [
             return;
           }
           rewardWinMessageEl.textContent = `You won ${String(prizeName || 'a reward')}.`;
+          runRewardWinConfetti();
           rewardWinDialogEl.classList.add('open');
           rewardWinDialogEl.setAttribute('aria-hidden', 'false');
 
@@ -5651,14 +5750,14 @@ $sessionPayload = [
           });
 
           pickedButton.classList.add('is-picked');
-          allButtons.forEach((button) => {
-            if (button !== pickedButton) {
-              button.classList.add('is-revealed');
-            }
-          });
-          await new Promise((resolve) => setTimeout(resolve, 340));
+          const otherButtons = allButtons.filter((button) => button !== pickedButton && !rewardCardsLockedIndexes.has(Number(button.dataset.cardIndex)));
+          for (let i = 0; i < otherButtons.length; i += 1) {
+            otherButtons[i].classList.add('is-revealed');
+            await new Promise((resolve) => setTimeout(resolve, 130));
+          }
+          await new Promise((resolve) => setTimeout(resolve, 260));
           pickedButton.classList.add('is-revealed');
-          await new Promise((resolve) => setTimeout(resolve, 900));
+          await new Promise((resolve) => setTimeout(resolve, 1100));
         };
 
         const performRewardFlip = async (cardButton) => {
@@ -5688,6 +5787,7 @@ $sessionPayload = [
             const prizeName = String(data.prizeName || 'Special Reward').trim();
             await animateRewardCardsRound(cardButton, prizeName);
             rewardCardsLockedIndexes.add(cardIndex);
+            rewardCardsLockedPrizes.set(cardIndex, prizeName);
             saveLockedRewardCards();
             await openRewardWinDialog(prizeName);
             const allButtons = Array.from((rewardCardsEl?.querySelectorAll('.flip-card')) || []);
