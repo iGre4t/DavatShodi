@@ -3143,6 +3143,19 @@ $sessionPayload = [
         color: #9aa6bb;
       }
 
+      .task-item-btn.is-info-ended,
+      .task-item-btn.is-info-ended:disabled {
+        background: #fff1f3;
+        border-color: #f4c2cb;
+        color: #a52d3f;
+        cursor: not-allowed;
+      }
+
+      .task-item-btn.is-info-ended .task-item-meta,
+      .task-item-btn.is-info-ended:disabled .task-item-meta {
+        color: #bf4a5d;
+      }
+
       .task-item-btn.is-completed {
         background: #eef9f1;
         border-color: #c7e9d0;
@@ -4047,13 +4060,6 @@ $sessionPayload = [
       .info-task-head {
         display: grid;
         gap: 6px;
-      }
-
-      .info-task-title {
-        margin: 0;
-        font-size: 1.02rem;
-        font-weight: 700;
-        color: #253f68;
       }
 
       .info-task-content {
@@ -4975,9 +4981,6 @@ $sessionPayload = [
           <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
         </div>
         <div id="tc-task-info-area" class="info-task-area quiz-hidden">
-          <div class="info-task-head">
-            <h3 id="tc-task-info-title" class="info-task-title">اطلاعات ماموریت</h3>
-          </div>
           <div id="tc-task-info-content" class="info-task-content"></div>
           <button id="tc-task-info-ack" class="login-btn info-task-ack" type="button">متوجه شدم</button>
         </div>
@@ -5575,6 +5578,7 @@ $sessionPayload = [
           const completed = String(button.dataset.taskCompleted || '') === '1';
           const taskScore = Number.parseInt(button.dataset.taskUserScore || '0', 10);
           const taskType = String(button.dataset.taskType || 'quiz').trim().toLowerCase() || 'quiz';
+          const infoEndedNoScore = taskType === 'info' && status === 'ended' && !completed;
 
           if (completed) {
             button.disabled = true;
@@ -5582,6 +5586,7 @@ $sessionPayload = [
             button.classList.add('is-completed');
             button.classList.remove('is-golden');
             button.classList.remove('is-golden-live');
+            button.classList.remove('is-info-ended');
             button.dataset.taskStatus = 'completed';
             if (metaEl) {
               metaEl.classList.remove('is-multiline');
@@ -5599,6 +5604,7 @@ $sessionPayload = [
           button.classList.toggle('is-disabled', !available && !isUpcoming);
           button.classList.toggle('is-upcoming', isUpcoming);
           button.classList.remove('is-completed');
+          button.classList.toggle('is-info-ended', infoEndedNoScore);
           button.classList.toggle('is-golden', status === 'active' && taskType === 'quiz');
           button.classList.toggle('is-golden-live', false);
           button.dataset.taskStatus = status;
