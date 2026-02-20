@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 session_start();
 $cspNonce = base64_encode(random_bytes(16));
 header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$cspNonce}'; style-src 'self' 'nonce-{$cspNonce}'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
@@ -1043,15 +1043,15 @@ function deriveTaskAvailabilityStatus(array $task): string
 function resolveTaskStatusLabel(string $status): string
 {
   if ($status === 'active') {
-    return 'فعال';
+    return 'ÙØ¹Ø§Ù„';
   }
   if ($status === 'upcoming') {
-    return 'به‌زودی';
+    return 'Ø¨Ù‡â€ŒØ²ÙˆØ¯ÛŒ';
   }
   if ($status === 'ended') {
-    return 'پایان یافته';
+    return 'Ù¾Ø§ÛŒØ§Ù† ÛŒØ§ÙØªÙ‡';
   }
-  return 'غیرفعال';
+  return 'ØºÛŒØ±ÙØ¹Ø§Ù„';
 }
 
 function findTaskById(array $tasks, string $taskId): ?array
@@ -1230,7 +1230,7 @@ function buildTaskPayloadForView(array $tasks, string $inviteesPath, string $inv
     $isEndedQuiz = $taskType === 'quiz' && $status === 'ended';
     $progress = readTaskUserProgress($task, $inviteesPath, $inviteesMapPath, $workId);
     $completed = (bool)($progress['completed'] ?? false);
-    $statusLabel = $completed ? 'انجام شد' : resolveTaskStatusLabel($status);
+    $statusLabel = $completed ? 'Ø§Ù†Ø¬Ø§Ù… Ø´Ø¯' : resolveTaskStatusLabel($status);
     $items[] = [
       'id' => (string)($task['id'] ?? ''),
       'title' => (string)($task['title'] ?? ''),
@@ -1375,10 +1375,10 @@ function resolveInviteeFullName(array $header, array $mapping, array $row, strin
     'first name',
     'last name',
     'first name last name',
-    'نام و نام خانوادگی',
-    'نام‌و‌نام خانوادگی',
-    'نام کامل',
-    'نام'
+    'Ù†Ø§Ù… Ùˆ Ù†Ø§Ù… Ø®Ø§Ù†ÙˆØ§Ø¯Ú¯ÛŒ',
+    'Ù†Ø§Ù…â€ŒÙˆâ€ŒÙ†Ø§Ù… Ø®Ø§Ù†ÙˆØ§Ø¯Ú¯ÛŒ',
+    'Ù†Ø§Ù… Ú©Ø§Ù…Ù„',
+    'Ù†Ø§Ù…'
   ]);
   if ($nameIndex >= 0) {
     $value = trim((string)($row[$nameIndex] ?? ''));
@@ -1648,7 +1648,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
   $csrfToken = is_array($payload) ? (string)($payload['csrf'] ?? '') : '';
   if ($csrfToken === '' || !hash_equals((string)($_SESSION['tc_csrf'] ?? ''), $csrfToken)) {
-    echo json_encode(['status' => 'error', 'message' => 'درخواست نامعتبر است.']);
+    echo json_encode(['status' => 'error', 'message' => 'Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù†Ø§Ù…Ø¹ØªØ¨Ø± Ø§Ø³Øª.']);
     exit;
   }
 
@@ -1668,7 +1668,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       return is_numeric($ts) && ($now - (int)$ts) <= $windowSeconds;
     }));
     if (count($fails) >= $maxAttempts) {
-      echo json_encode(['status' => 'error', 'message' => 'تعداد تلاش ناموفق زیاد است. کمی بعد دوباره امتحان کنید.']);
+      echo json_encode(['status' => 'error', 'message' => 'ØªØ¹Ø¯Ø§Ø¯ ØªÙ„Ø§Ø´ Ù†Ø§Ù…ÙˆÙÙ‚ Ø²ÛŒØ§Ø¯ Ø§Ø³Øª. Ú©Ù…ÛŒ Ø¨Ø¹Ø¯ Ø¯ÙˆØ¨Ø§Ø±Ù‡ Ø§Ù…ØªØ­Ø§Ù† Ú©Ù†ÛŒØ¯.']);
       exit;
     }
     $recordFail = function () use (&$attempts, $attemptKey, $now, &$fails, $loginAttemptsPath) {
@@ -1678,39 +1678,39 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     };
     if ($username === '' || $password === '') {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'اطلاعات ورود کامل نیست.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§Ø·Ù„Ø§Ø¹Ø§Øª ÙˆØ±ÙˆØ¯ Ú©Ø§Ù…Ù„ Ù†ÛŒØ³Øª.']);
       exit;
     }
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
     $rows = $table['rows'];
     if (!$rows) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'لیست کاربران موجود نیست.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ù„ÛŒØ³Øª Ú©Ø§Ø±Ø¨Ø±Ø§Ù† Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛŒØ³Øª.']);
       exit;
     }
     $workIdIndex = $table['workIdIndex'];
     if ($workIdIndex < 0) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'ستون نام کاربری مشخص نشده است.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø³ØªÙˆÙ† Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ Ù…Ø´Ø®Øµ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
     $columns = $table['columns']['index'] ?? [];
     $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
     if ($passwordIndex < 0) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'ستون گذرواژه موجود نیست.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø³ØªÙˆÙ† Ú¯Ø°Ø±ÙˆØ§Ú˜Ù‡ Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛŒØ³Øª.']);
       exit;
     }
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $username);
     if ($rowIndex < 0) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'نام کاربری یا گذرواژه اشتباه است.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ ÛŒØ§ Ú¯Ø°Ø±ÙˆØ§Ú˜Ù‡ Ø§Ø´ØªØ¨Ø§Ù‡ Ø§Ø³Øª.']);
       exit;
     }
     $rowPassword = trim((string)($rows[$rowIndex][$passwordIndex] ?? ''));
     if ($rowPassword === '' || $rowPassword !== $password) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'نام کاربری یا گذرواژه اشتباه است.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ ÛŒØ§ Ú¯Ø°Ø±ÙˆØ§Ú˜Ù‡ Ø§Ø´ØªØ¨Ø§Ù‡ Ø§Ø³Øª.']);
       exit;
     }
     $loginCountIndex = $columns['logins counts'] ?? -1;
@@ -1728,7 +1728,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'ذخیره اطلاعات ورود انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ Ø§Ø·Ù„Ø§Ø¹Ø§Øª ÙˆØ±ÙˆØ¯ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
     if (isset($attempts[$attemptKey])) {
@@ -1779,25 +1779,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'task_fetch') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'اول باید وارد باشگاه بشی.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§ÙˆÙ„ Ø¨Ø§ÛŒØ¯ ÙˆØ§Ø±Ø¯ Ø¨Ø§Ø´Ú¯Ø§Ù‡ Ø¨Ø´ÛŒ.']);
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
     if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی نداریم.']);
+      echo json_encode(['status' => 'error', 'message' => 'ÙØ¹Ù„Ø§ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ÛŒ Ù†Ø¯Ø§Ø±ÛŒÙ….']);
       exit;
     }
 
     $taskId = trim((string)($payload['taskId'] ?? ''));
     if ($taskId === '') {
-      echo json_encode(['status' => 'error', 'message' => 'لطفا یک تسک انتخاب کن.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ù„Ø·ÙØ§ ÛŒÚ© ØªØ³Ú© Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†.']);
       exit;
     }
 
     $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
     $task = findTaskById($tasks, $taskId);
     if (!is_array($task)) {
-      echo json_encode(['status' => 'error', 'message' => 'تسک پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'ØªØ³Ú© Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
 
@@ -1838,12 +1838,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'task_log_answer') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'اول باید وارد باشگاه بشی.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§ÙˆÙ„ Ø¨Ø§ÛŒØ¯ ÙˆØ§Ø±Ø¯ Ø¨Ø§Ø´Ú¯Ø§Ù‡ Ø¨Ø´ÛŒ.']);
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
     if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی نداریم.']);
+      echo json_encode(['status' => 'error', 'message' => 'ÙØ¹Ù„Ø§ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ÛŒ Ù†Ø¯Ø§Ø±ÛŒÙ….']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -1853,25 +1853,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'task_complete') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'اول باید وارد باشگاه بشی.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§ÙˆÙ„ Ø¨Ø§ÛŒØ¯ ÙˆØ§Ø±Ø¯ Ø¨Ø§Ø´Ú¯Ø§Ù‡ Ø¨Ø´ÛŒ.']);
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
     if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی نداریم.']);
+      echo json_encode(['status' => 'error', 'message' => 'ÙØ¹Ù„Ø§ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ÛŒ Ù†Ø¯Ø§Ø±ÛŒÙ….']);
       exit;
     }
 
     $taskId = trim((string)($payload['taskId'] ?? ''));
     if ($taskId === '') {
-      echo json_encode(['status' => 'error', 'message' => 'لطفا یک تسک انتخاب کن.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ù„Ø·ÙØ§ ÛŒÚ© ØªØ³Ú© Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†.']);
       exit;
     }
 
     $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
     $task = findTaskById($tasks, $taskId);
     if (!is_array($task)) {
-      echo json_encode(['status' => 'error', 'message' => 'تسک پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'ØªØ³Ú© Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
 
@@ -1879,7 +1879,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
     $canComplete = $status === 'active' || ($taskType === 'quiz' && $status === 'ended');
     if (!$canComplete) {
-      echo json_encode(['status' => 'error', 'message' => 'این تسک در این لحظه قابل انجام نیست.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§ÛŒÙ† ØªØ³Ú© Ø¯Ø± Ø§ÛŒÙ† Ù„Ø­Ø¸Ù‡ Ù‚Ø§Ø¨Ù„ Ø§Ù†Ø¬Ø§Ù… Ù†ÛŒØ³Øª.']);
       exit;
     }
 
@@ -1889,7 +1889,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $workIdIndex = (int)($table['workIdIndex'] ?? -1);
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'اطلاعات کاربر پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§Ø·Ù„Ø§Ø¹Ø§Øª Ú©Ø§Ø±Ø¨Ø± Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
 
@@ -1906,7 +1906,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $taskCompletedIndex = (int)($columns['task completed ids'] ?? -1);
     $taskScoreMapIndex = (int)($columns['task score map'] ?? -1);
     if ($scoreIndex < 0 || $taskCompletedIndex < 0 || $taskScoreMapIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'ستون‌های امتیاز آماده نیستند.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø³ØªÙˆÙ†â€ŒÙ‡Ø§ÛŒ Ø§Ù…ØªÛŒØ§Ø² Ø¢Ù…Ø§Ø¯Ù‡ Ù†ÛŒØ³ØªÙ†Ø¯.']);
       exit;
     }
 
@@ -1938,7 +1938,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     syncOutOfValueRewardsForUser($rows, $rowIndex, $columns, $outOfValueLevels, $newTotalScore);
 
     if (!writeInviteesCsv($inviteesFilePath, $rows)) {
-      echo json_encode(['status' => 'error', 'message' => 'ذخیره امتیاز انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ Ø§Ù…ØªÛŒØ§Ø² Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
 
@@ -1956,7 +1956,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'reward_state') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'اول باید وارد باشگاه بشی.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§ÙˆÙ„ Ø¨Ø§ÛŒØ¯ ÙˆØ§Ø±Ø¯ Ø¨Ø§Ø´Ú¯Ø§Ù‡ Ø¨Ø´ÛŒ.']);
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
@@ -1966,7 +1966,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'اطلاعات کاربر پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§Ø·Ù„Ø§Ø¹Ø§Øª Ú©Ø§Ø±Ø¨Ø± Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
     $scoreIndex = (int)($columns['score'] ?? -1);
@@ -2044,23 +2044,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'reward_flip') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'اول باید وارد باشگاه بشی.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§ÙˆÙ„ Ø¨Ø§ÛŒØ¯ ÙˆØ§Ø±Ø¯ Ø¨Ø§Ø´Ú¯Ø§Ù‡ Ø¨Ø´ÛŒ.']);
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
     if ($eventStatus !== 'active') {
       if ($eventStatus === 'inactive') {
-        echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی نداریم.']);
+        echo json_encode(['status' => 'error', 'message' => 'ÙØ¹Ù„Ø§ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ÛŒ Ù†Ø¯Ø§Ø±ÛŒÙ….']);
       } elseif ($eventStatus === 'upcoming') {
-        echo json_encode(['status' => 'error', 'message' => 'کارت‌ها فقط وقتی رویداد فعال باشه قابل انتخاب‌اند.']);
+        echo json_encode(['status' => 'error', 'message' => 'Ú©Ø§Ø±Øªâ€ŒÙ‡Ø§ ÙÙ‚Ø· ÙˆÙ‚ØªÛŒ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ Ø¨Ø§Ø´Ù‡ Ù‚Ø§Ø¨Ù„ Ø§Ù†ØªØ®Ø§Ø¨â€ŒØ§Ù†Ø¯.']);
       } else {
-        echo json_encode(['status' => 'error', 'message' => 'مهلت رویداد به پایان رسیده.']);
+        echo json_encode(['status' => 'error', 'message' => 'Ù…Ù‡Ù„Øª Ø±ÙˆÛŒØ¯Ø§Ø¯ Ø¨Ù‡ Ù¾Ø§ÛŒØ§Ù† Ø±Ø³ÛŒØ¯Ù‡.']);
       }
       exit;
     }
     $targetLevelId = trim((string)($payload['levelId'] ?? ''));
     if ($targetLevelId === '') {
-      echo json_encode(['status' => 'error', 'message' => 'سطح جایزه انتخاب نشده است.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø³Ø·Ø­ Ø¬Ø§ÛŒØ²Ù‡ Ø§Ù†ØªØ®Ø§Ø¨ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
 
@@ -2070,7 +2070,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'اطلاعات کاربر پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§Ø·Ù„Ø§Ø¹Ø§Øª Ú©Ø§Ø±Ø¨Ø± Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
 
@@ -2080,7 +2080,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? -1);
     $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
     if ($flipCountIndex < 0 || $wonPrizeIndex < 0 || $totalPrizeWonIndex < 0 || $wonLevelIdsIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'ستون‌های جوایز آماده نیستند.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø³ØªÙˆÙ†â€ŒÙ‡Ø§ÛŒ Ø¬ÙˆØ§ÛŒØ² Ø¢Ù…Ø§Ø¯Ù‡ Ù†ÛŒØ³ØªÙ†Ø¯.']);
       exit;
     }
 
@@ -2100,19 +2100,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     if (!is_array($targetLevel)) {
-      echo json_encode(['status' => 'error', 'message' => 'سطح جایزه پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø³Ø·Ø­ Ø¬Ø§ÛŒØ²Ù‡ Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
     if ((string)($targetLevel['type'] ?? 'value_sum') !== 'value_sum') {
-      echo json_encode(['status' => 'error', 'message' => 'این نوع سطح فقط دستاوردی است و کارت ندارد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§ÛŒÙ† Ù†ÙˆØ¹ Ø³Ø·Ø­ ÙÙ‚Ø· Ø¯Ø³ØªØ§ÙˆØ±Ø¯ÛŒ Ø§Ø³Øª Ùˆ Ú©Ø§Ø±Øª Ù†Ø¯Ø§Ø±Ø¯.']);
       exit;
     }
     if ($userScore < (int)($targetLevel['score'] ?? 0)) {
-      echo json_encode(['status' => 'error', 'message' => 'برای این سطح هنوز امتیاز کافی نداری.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø¨Ø±Ø§ÛŒ Ø§ÛŒÙ† Ø³Ø·Ø­ Ù‡Ù†ÙˆØ² Ø§Ù…ØªÛŒØ§Ø² Ú©Ø§ÙÛŒ Ù†Ø¯Ø§Ø±ÛŒ.']);
       exit;
     }
     if (isset($wonSet[$targetLevelId])) {
-      echo json_encode(['status' => 'error', 'message' => 'جایزه این سطح قبلا دریافت شده است.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø¬Ø§ÛŒØ²Ù‡ Ø§ÛŒÙ† Ø³Ø·Ø­ Ù‚Ø¨Ù„Ø§ Ø¯Ø±ÛŒØ§ÙØª Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
 
@@ -2132,7 +2132,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     if (!$candidateIndexes) {
-      echo json_encode(['status' => 'error', 'message' => 'الان جایزه‌ای برای انتخاب موجود نیست.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø§Ù„Ø§Ù† Ø¬Ø§ÛŒØ²Ù‡â€ŒØ§ÛŒ Ø¨Ø±Ø§ÛŒ Ø§Ù†ØªØ®Ø§Ø¨ Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛŒØ³Øª.']);
       exit;
     }
 
@@ -2143,7 +2143,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $selectedLast = max(0, (int)($selectedPrize['last'] ?? 0));
     $prizes[$selectedStoreIndex]['last'] = max(0, $selectedLast - 1);
     if (!writePrizeStore($prizeStorePath, $prizes)) {
-      echo json_encode(['status' => 'error', 'message' => 'رزرو جایزه انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø±Ø²Ø±Ùˆ Ø¬Ø§ÛŒØ²Ù‡ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
 
@@ -2166,7 +2166,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $prizesRollback[$selectedStoreIndex]['last'] = $rollbackLast + 1;
         writePrizeStore($prizeStorePath, $prizesRollback);
       }
-      echo json_encode(['status' => 'error', 'message' => 'ثبت نتیجه جایزه انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø«Ø¨Øª Ù†ØªÛŒØ¬Ù‡ Ø¬Ø§ÛŒØ²Ù‡ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
 
@@ -2212,7 +2212,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'log_roll') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'ورود انجام نشده است.']);
+      echo json_encode(['status' => 'error', 'message' => 'ÙˆØ±ÙˆØ¯ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
@@ -2224,13 +2224,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $scoreIndex = $columns['score'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $rollIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø±Ø¯ÛŒÙ Ú©Ø§Ø±Ø¨Ø± Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
     if ($prizeIndex >= 0) {
       $already = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
       if ($already !== '') {
-        echo json_encode(['status' => 'error', 'message' => 'جایزه قبلاً ثبت شده است.']);
+        echo json_encode(['status' => 'error', 'message' => 'Ø¬Ø§ÛŒØ²Ù‡ Ù‚Ø¨Ù„Ø§Ù‹ Ø«Ø¨Øª Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
         exit;
       }
     }
@@ -2252,7 +2252,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (($table['columns']['added'] ?? false) && $rows) {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
-      echo json_encode(['status' => 'error', 'message' => 'ذخیره تعداد چرخش انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ ØªØ¹Ø¯Ø§Ø¯ Ú†Ø±Ø®Ø´ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -2272,7 +2272,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'update_answered') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'ورود انجام نشده است.']);
+      echo json_encode(['status' => 'error', 'message' => 'ÙˆØ±ÙˆØ¯ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
     $answeredRaw = $payload['answered'] ?? 0;
@@ -2283,7 +2283,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $answeredIndex = $columns['Answered'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $answeredIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø±Ø¯ÛŒÙ Ú©Ø§Ø±Ø¨Ø± Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
     $questionCount = count(readQuestionStore($questionsStorePath));
@@ -2292,7 +2292,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (($table['columns']['added'] ?? false) && $rows) {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
-      echo json_encode(['status' => 'error', 'message' => 'ذخیره وضعیت پاسخ انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ ÙˆØ¶Ø¹ÛŒØª Ù¾Ø§Ø³Ø® Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -2302,12 +2302,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'log_prize') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
-      echo json_encode(['status' => 'error', 'message' => 'ورود انجام نشده است.']);
+      echo json_encode(['status' => 'error', 'message' => 'ÙˆØ±ÙˆØ¯ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
     $prizeName = trim((string)($payload['prize'] ?? ''));
     if ($prizeName === '') {
-      echo json_encode(['status' => 'error', 'message' => 'جایزه مشخص نیست.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø¬Ø§ÛŒØ²Ù‡ Ù…Ø´Ø®Øµ Ù†ÛŒØ³Øª.']);
       exit;
     }
     $angleValue = $payload['wheelAngle'] ?? null;
@@ -2321,7 +2321,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $angleIndex = $columns['wheel angle'] ?? -1;
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0 || $prizeIndex < 0) {
-      echo json_encode(['status' => 'error', 'message' => 'ردیف کاربر پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø±Ø¯ÛŒÙ Ú©Ø§Ø±Ø¨Ø± Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.']);
       exit;
     }
     $rows[$rowIndex][$prizeIndex] = $prizeName;
@@ -2334,7 +2334,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (($table['columns']['added'] ?? false) && $rows) {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
-      echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ Ø¬Ø§ÛŒØ²Ù‡ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
     echo json_encode(['status' => 'ok']);
@@ -2344,7 +2344,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'decrement_prize') {
     $name = trim((string)($payload['name'] ?? ''));
     if ($name === '') {
-      echo json_encode(['status' => 'error', 'message' => 'نام جایزه ارسال نشده است.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ù†Ø§Ù… Ø¬Ø§ÛŒØ²Ù‡ Ø§Ø±Ø³Ø§Ù„ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª.']);
       exit;
     }
     $prizes = readPrizeStore($prizeStorePath);
@@ -2377,14 +2377,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     if (!writePrizeStore($prizeStorePath, $updated)) {
-      echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه‌ها انجام نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'Ø°Ø®ÛŒØ±Ù‡ Ø¬Ø§ÛŒØ²Ù‡â€ŒÙ‡Ø§ Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.']);
       exit;
     }
     echo json_encode(['status' => 'ok', 'data' => $updated]);
     exit;
   }
 
-  echo json_encode(['status' => 'error', 'message' => 'درخواست پشتیبانی نمی‌شود.']);
+  echo json_encode(['status' => 'error', 'message' => 'Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù¾Ø´ØªÛŒØ¨Ø§Ù†ÛŒ Ù†Ù…ÛŒâ€ŒØ´ÙˆØ¯.']);
   exit;
 }
 
@@ -2451,7 +2451,7 @@ if ($rawHintHtml === '' && $hintTextFallback !== '') {
   $rawHintHtml = htmlspecialchars($hintTextFallback, ENT_QUOTES, 'UTF-8');
 }
 if ($rawHintHtml === '') {
-  $rawHintHtml = htmlspecialchars('شانس خودت رو امتحان کن و جایزه ببر', ENT_QUOTES, 'UTF-8');
+  $rawHintHtml = htmlspecialchars('Ø´Ø§Ù†Ø³ Ø®ÙˆØ¯Øª Ø±Ùˆ Ø§Ù…ØªØ­Ø§Ù† Ú©Ù† Ùˆ Ø¬Ø§ÛŒØ²Ù‡ Ø¨Ø¨Ø±', ENT_QUOTES, 'UTF-8');
 }
 $hintHtml = sanitizeHintHtml($rawHintHtml);
 $hintAlign = trim((string)($wheelSettings['hintAlign'] ?? 'right'));
@@ -2535,7 +2535,7 @@ $sessionPayload = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>چرخ شانس شگفتانه</title>
+    <title>Ú†Ø±Ø® Ø´Ø§Ù†Ø³ Ø´Ú¯ÙØªØ§Ù†Ù‡</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <link rel="stylesheet" href="../../style/remixicon.css" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
@@ -3060,10 +3060,18 @@ $sessionPayload = [
 
       .rewards-view {
         width: 100%;
-        padding-top: 14px;
         align-items: center;
         justify-content: flex-start;
         gap: 10px;
+      }
+
+      #tc-rewards-view {
+        flex: 1;
+        min-height: 0;
+        justify-content: flex-start;
+        gap: 12px;
+        padding-top: 20px;
+        padding-bottom: 8px;
       }
 
       .rewards-head {
@@ -3082,43 +3090,30 @@ $sessionPayload = [
       }
 
       .rewards-time-box,
-      .summary-grid,
-      .rewards-roadmap-box,
       #tc-reward-cards-box {
         width: min(360px, calc(100vw - 56px));
       }
 
-      .summary-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
+      .rewards-roadmap-main {
+        width: min(360px, calc(100vw - 56px));
+        flex: 1;
+        min-height: 0;
+        padding: 2px 2px 0;
       }
 
-      .summary-item {
-        border: 1px solid #dce7f9;
-        border-radius: 12px;
-        background: #f8fbff;
-        padding: 8px;
-      }
-
-      .summary-item .k {
-        font-size: 0.72rem;
-        color: var(--muted);
-      }
-
-      .summary-item .v {
-        margin-top: 3px;
-        font-size: 0.95rem;
-        font-weight: 700;
-      }
-
-      .rewards-roadmap-box .roadmap-title {
+      .rewards-roadmap-main .roadmap-title {
         margin: 0 0 8px;
         font-size: 0.88rem;
       }
 
+      .roadmap-hint {
+        margin: 0 0 6px;
+        color: #66799d;
+        font-size: 0.76rem;
+      }
+
       .roadmap-time-hint {
-        margin: -4px 0 10px;
+        margin: 0 0 10px;
         color: #7c8aa7;
         font-size: 0.74rem;
       }
@@ -3126,6 +3121,15 @@ $sessionPayload = [
       .roadmap-list {
         display: grid;
         gap: 0;
+        max-height: 100%;
+        min-height: 0;
+        overflow: auto;
+        padding: 0 4px 16px 2px;
+        scrollbar-width: none;
+      }
+
+      .roadmap-list::-webkit-scrollbar {
+        display: none;
       }
 
       .roadmap-item {
@@ -3204,11 +3208,6 @@ $sessionPayload = [
       #tc-reward-cards-box.is-disabled {
         opacity: 0.58;
         filter: grayscale(0.4);
-      }
-
-      .rewards-view.hidden + .rewards-view.hidden + .quiz-area,
-      .rewards-view.hidden + .quiz-area {
-        display: flex;
       }
 
       .cards-grid {
@@ -4318,8 +4317,8 @@ $sessionPayload = [
             <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
           </svg>
         </div>
-        <p class="loader-text">در حال آماده سازی</p>
-        <p class="loader-subtext">لطفاً چند لحظه صبر کنید</p>
+        <p class="loader-text">Ø¯Ø± Ø­Ø§Ù„ Ø¢Ù…Ø§Ø¯Ù‡ Ø³Ø§Ø²ÛŒ</p>
+        <p class="loader-subtext">Ù„Ø·ÙØ§Ù‹ Ú†Ù†Ø¯ Ù„Ø­Ø¸Ù‡ ØµØ¨Ø± Ú©Ù†ÛŒØ¯</p>
       </div>
     </div>
     <main class="app">
@@ -4327,19 +4326,19 @@ $sessionPayload = [
     <div class="topbar">
           <p class="brand">
             <?php if ($fallbackSiteIconUrl !== ''): ?>
-              <img class="brand-icon" src="<?= htmlspecialchars($fallbackSiteIconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
+              <img class="brand-icon" src="<?= htmlspecialchars($fallbackSiteIconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Ø¢ÛŒÚ©ÙˆÙ† Ø³Ø§ÛŒØª" />
             <?php endif; ?>
-            <span>کمپین به نام خدا</span>
+            <span>Ú©Ù…Ù¾ÛŒÙ† Ø¨Ù‡ Ù†Ø§Ù… Ø®Ø¯Ø§</span>
           </p>
           <div class="topbar-actions">
             <?php if ($sessionPayload['authed']): ?>
               <button id="tc-topbar-back" class="logout-btn hidden" type="button">
                 <span aria-hidden="true"></span>
-                برگشت
+                Ø¨Ø±Ú¯Ø´Øª
               </button>
               <button id="tc-logout" class="logout-btn" type="button">
                 <span aria-hidden="true"></span>
-                خروج
+                Ø®Ø±ÙˆØ¬
               </button>
             <?php endif; ?>
           </div>
@@ -4349,39 +4348,39 @@ $sessionPayload = [
         <div class="login-area">
           <div class="login-hero">
             <?php if ($faviconUrl !== ''): ?>
-              <img class="login-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
+              <img class="login-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Ø¢ÛŒÚ©ÙˆÙ† Ø³Ø§ÛŒØª" />
             <?php else: ?>
               <div class="question">
                 <span>?</span>
               </div>
             <?php endif; ?>
-            <h2 class="login-title">چرخونه شگفتانه</h2>
+            <h2 class="login-title">Ú†Ø±Ø®ÙˆÙ†Ù‡ Ø´Ú¯ÙØªØ§Ù†Ù‡</h2>
           </div>
           <form id="tc-login-form" class="login-form" autocomplete="on">
             <label class="login-field">
-              <span>نام کاربری</span>
+              <span>Ù†Ø§Ù… Ú©Ø§Ø±Ø¨Ø±ÛŒ</span>
               <input id="tc-login-user" class="login-input" type="text" autocomplete="username" required />
             </label>
             <label class="login-field">
-              <span>گذرواژه</span>
+              <span>Ú¯Ø°Ø±ÙˆØ§Ú˜Ù‡</span>
               <input id="tc-login-pass" class="login-input" type="password" autocomplete="current-password" required />
             </label>
-            <button type="submit" class="login-btn">ورود</button>
+            <button type="submit" class="login-btn">ÙˆØ±ÙˆØ¯</button>
             <p id="tc-login-msg" class="login-hint" aria-live="polite"></p>
           </form>
         </div>
       <?php else: ?>
         <div id="tc-timer-area" class="main-area">
           <?php if ($eventLogoUrl !== ''): ?>
-            <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
+            <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Ù„ÙˆÚ¯ÙˆÛŒ Ø±ÙˆÛŒØ¯Ø§Ø¯" />
           <?php endif; ?>
-          <h2 id="tc-tasks-title" class="tasks-title">امتیازات رو جمع کن، جایزه ببر!</h2>
+          <h2 id="tc-tasks-title" class="tasks-title">Ø§Ù…ØªÛŒØ§Ø²Ø§Øª Ø±Ùˆ Ø¬Ù…Ø¹ Ú©Ù†ØŒ Ø¬Ø§ÛŒØ²Ù‡ Ø¨Ø¨Ø±!</h2>
           <div class="user-score-chip">
-            <span>امتیاز شما</span>
+            <span>Ø§Ù…ØªÛŒØ§Ø² Ø´Ù…Ø§</span>
             <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
           <p id="tc-event-notice" class="tasks-empty hidden" aria-live="polite"></p>
-          <div id="tc-tasks-list" class="tasks-list" aria-label="لیست تسک‌ها">
+          <div id="tc-tasks-list" class="tasks-list" aria-label="Ù„ÛŒØ³Øª ØªØ³Ú©â€ŒÙ‡Ø§">
             <?php if ($taskItemsForView): ?>
               <?php foreach ($taskItemsForView as $taskItem): ?>
                 <?php
@@ -4422,40 +4421,29 @@ $sessionPayload = [
                 </button>
               <?php endforeach; ?>
             <?php else: ?>
-              <p class="tasks-empty">تسکی برای نمایش پیدا نشد.</p>
+              <p class="tasks-empty">ØªØ³Ú©ÛŒ Ø¨Ø±Ø§ÛŒ Ù†Ù…Ø§ÛŒØ´ Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.</p>
             <?php endif; ?>
           </div>
         </div>
         <div id="tc-bottom-cta" class="tc-bottom-cta">
-          <button id="tc-open-rewards-btn" class="tc-bottom-cta-btn" type="button">دریافت جایزه</button>
+          <button id="tc-open-rewards-btn" class="tc-bottom-cta-btn" type="button">Ø¯Ø±ÛŒØ§ÙØª Ø¬Ø§ÛŒØ²Ù‡</button>
         </div>
         <div id="tc-rewards-view" class="main-area rewards-view hidden" aria-hidden="true">
-          <div class="rewards-head">
-            <button id="tc-rewards-back-btn" class="logout-btn" type="button">
-              <span aria-hidden="true"></span>
-              برگشت به تسک‌ها
-            </button>
+          <?php if ($eventLogoUrl !== ''): ?>
+            <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
+          <?php endif; ?>
+          <h2 id="tc-rewards-title" class="tasks-title">امتیازات رو جمع کن، جایزه ببر!</h2>
+          <div class="user-score-chip">
+            <span>امتیاز شما</span>
+            <strong id="tc-reward-user-score-chip-value"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
           <div class="result rewards-time-box">
             <span id="tc-reward-time-label" class="result-label">مجموع جوایز</span>
             <p id="tc-reward-time-value" class="result-value">—</p>
           </div>
-          <div id="tc-reward-summary" class="summary-grid">
-            <div class="summary-item">
-              <div class="k">امتیاز شما</div>
-              <div id="tc-reward-score" class="v">0</div>
-            </div>
-            <div class="summary-item">
-              <div class="k">تعداد کارت‌های بازشده</div>
-              <div id="tc-reward-flips" class="v">0</div>
-            </div>
-            <div class="summary-item">
-              <div class="k">ارزش کل برد</div>
-              <div id="tc-reward-total" class="v">0</div>
-            </div>
-          </div>
-          <section class="result rewards-roadmap-box">
+          <section class="rewards-roadmap-main">
             <h4 class="roadmap-title">مسیر جوایز</h4>
+            <p id="tc-reward-roadmap-hint" class="roadmap-hint"></p>
             <p id="tc-reward-roadmap-time" class="roadmap-time-hint"></p>
             <div id="tc-reward-roadmap" class="roadmap-list"></div>
           </section>
@@ -4465,13 +4453,13 @@ $sessionPayload = [
           <div class="rewards-head">
             <button id="tc-reward-cards-back-btn" class="logout-btn" type="button">
               <span aria-hidden="true"></span>
-              برگشت به مسیر جوایز
+              Ø¨Ø±Ú¯Ø´Øª Ø¨Ù‡ Ù…Ø³ÛŒØ± Ø¬ÙˆØ§ÛŒØ²
             </button>
-            <h3 id="tc-reward-cards-level-title" class="rewards-title">انتخاب کارت جایزه</h3>
+            <h3 id="tc-reward-cards-level-title" class="rewards-title">Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø§Ø±Øª Ø¬Ø§ÛŒØ²Ù‡</h3>
           </div>
           <div class="result rewards-time-box">
-            <span class="result-label">ارزش کل برد شما</span>
-            <p id="tc-reward-cards-total-value" class="result-value">0 تومان</p>
+            <span class="result-label">Ø§Ø±Ø²Ø´ Ú©Ù„ Ø¨Ø±Ø¯ Ø´Ù…Ø§</span>
+            <p id="tc-reward-cards-total-value" class="result-value">0 ØªÙˆÙ…Ø§Ù†</p>
           </div>
           <section id="tc-reward-cards-box" class="cards-box">
             <div id="tc-reward-cards" class="cards-grid"></div>
@@ -4480,7 +4468,7 @@ $sessionPayload = [
         </div>
         <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
           <div class="tc-task-quiz-head">
-            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">ماموریت سوالی</h3>
+            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">Ù…Ø§Ù…ÙˆØ±ÛŒØª Ø³ÙˆØ§Ù„ÛŒ</h3>
           </div>
           <div id="tc-task-quiz-counter" class="quiz-counter">1 / 1</div>
           <div id="tc-task-quiz-question" class="quiz-question-box">-</div>
@@ -4493,15 +4481,15 @@ $sessionPayload = [
     <?php if ($sessionPayload['authed']): ?>
       <div id="tc-task-result-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
         <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-task-result-title">
-          <h3 id="tc-task-result-title" class="tc-result-dialog-title">نتیجه ماموریت</h3>
+          <h3 id="tc-task-result-title" class="tc-result-dialog-title">Ù†ØªÛŒØ¬Ù‡ Ù…Ø§Ù…ÙˆØ±ÛŒØª</h3>
           <div class="tc-result-dialog-content">
             <div class="result">
-              <span class="result-label">امتیاز</span>
+              <span class="result-label">Ø§Ù…ØªÛŒØ§Ø²</span>
               <p id="tc-task-result-value" class="result-value">0</p>
             </div>
-            <p id="tc-task-result-message" class="hint hint-align-center">—</p>
+            <p id="tc-task-result-message" class="hint hint-align-center">â€”</p>
           </div>
-          <button id="tc-task-result-confirm" class="tc-result-dialog-confirm" type="button">باشه</button>
+          <button id="tc-task-result-confirm" class="tc-result-dialog-confirm" type="button">Ø¨Ø§Ø´Ù‡</button>
         </section>
       </div>
     <?php endif; ?>
@@ -4570,7 +4558,7 @@ $sessionPayload = [
           '<p class="loader-subtext"></p>',
           '</div>'
         ].join('');
-        overlay.querySelector('.loader-text').textContent = String(primaryText || '').trim() || 'در حال پردازش';
+        overlay.querySelector('.loader-text').textContent = String(primaryText || '').trim() || 'Ø¯Ø± Ø­Ø§Ù„ Ù¾Ø±Ø¯Ø§Ø²Ø´';
         overlay.querySelector('.loader-subtext').textContent = String(secondaryText || '').trim();
         document.body.appendChild(overlay);
       };
@@ -4611,11 +4599,11 @@ $sessionPayload = [
                 return;
               }
               if (loginMsg) {
-                loginMsg.textContent = payload?.message || 'خطا در ورود.';
+                loginMsg.textContent = payload?.message || 'Ø®Ø·Ø§ Ø¯Ø± ÙˆØ±ÙˆØ¯.';
               }
             } catch {
               if (loginMsg) {
-                loginMsg.textContent = 'خطا در ورود.';
+                loginMsg.textContent = 'Ø®Ø·Ø§ Ø¯Ø± ÙˆØ±ÙˆØ¯.';
               }
             } finally {
               if (loginBtn) loginBtn.disabled = false;
@@ -4644,14 +4632,12 @@ $sessionPayload = [
         const rewardsViewEl = document.getElementById('tc-rewards-view');
         const rewardCardsViewEl = document.getElementById('tc-reward-cards-view');
         const openRewardsBtnEl = document.getElementById('tc-open-rewards-btn');
-        const rewardsBackBtnEl = document.getElementById('tc-rewards-back-btn');
         const topbarBackBtnEl = document.getElementById('tc-topbar-back');
         const rewardTimeLabelEl = document.getElementById('tc-reward-time-label');
         const rewardTimeValueEl = document.getElementById('tc-reward-time-value');
+        const rewardScoreChipEl = document.getElementById('tc-reward-user-score-chip-value');
+        const rewardRoadmapHintEl = document.getElementById('tc-reward-roadmap-hint');
         const rewardRoadmapTimeEl = document.getElementById('tc-reward-roadmap-time');
-        const rewardScoreEl = document.getElementById('tc-reward-score');
-        const rewardFlipsEl = document.getElementById('tc-reward-flips');
-        const rewardTotalEl = document.getElementById('tc-reward-total');
         const rewardRoadmapEl = document.getElementById('tc-reward-roadmap');
         const rewardCardsBoxEl = document.getElementById('tc-reward-cards-box');
         const rewardCardsEl = document.getElementById('tc-reward-cards');
@@ -4809,37 +4795,37 @@ $sessionPayload = [
 
         const setFallbackCounter = (status) => {
           if (status === 'upcoming') {
-            setTimeCounter('تا شروع شگفتانه', 'در انتظار شروع');
+            setTimeCounter('ØªØ§ Ø´Ø±ÙˆØ¹ Ø´Ú¯ÙØªØ§Ù†Ù‡', 'Ø¯Ø± Ø§Ù†ØªØ¸Ø§Ø± Ø´Ø±ÙˆØ¹');
             return;
           }
           if (status === 'active') {
-            setTimeCounter('تا اتمام شگفتانه', '-');
+            setTimeCounter('ØªØ§ Ø§ØªÙ…Ø§Ù… Ø´Ú¯ÙØªØ§Ù†Ù‡', '-');
             return;
           }
           if (status === 'inactive') {
-            setTimeCounter('وضعیت', 'غیرفعال');
+            setTimeCounter('ÙˆØ¶Ø¹ÛŒØª', 'ØºÛŒØ±ÙØ¹Ø§Ù„');
             return;
           }
-          setTimeCounter('وضعیت', 'تمام شده');
+          setTimeCounter('ÙˆØ¶Ø¹ÛŒØª', 'ØªÙ…Ø§Ù… Ø´Ø¯Ù‡');
         };
 
         const updateTimerByStatus = (status, settings) => {
           clearStatusTimer();
           if (status === 'inactive') {
-            showStatus(status, 'غیرفعال');
-            setTimeCounter('وضعیت', 'غیرفعال');
+            showStatus(status, 'ØºÛŒØ±ÙØ¹Ø§Ù„');
+            setTimeCounter('ÙˆØ¶Ø¹ÛŒØª', 'ØºÛŒØ±ÙØ¹Ø§Ù„');
             return;
           }
           if (status === 'ended') {
-            showStatus(status, 'به پایان رسیده');
-            setTimeCounter('وضعیت', 'تمام شده');
+            showStatus(status, 'Ø¨Ù‡ Ù¾Ø§ÛŒØ§Ù† Ø±Ø³ÛŒØ¯Ù‡');
+            setTimeCounter('ÙˆØ¶Ø¹ÛŒØª', 'ØªÙ…Ø§Ù… Ø´Ø¯Ù‡');
             return;
           }
 
           if (status === 'upcoming') {
-            showStatus(status, 'در انتظار شروع');
+            showStatus(status, 'Ø¯Ø± Ø§Ù†ØªØ¸Ø§Ø± Ø´Ø±ÙˆØ¹');
           } else {
-            showStatus(status, 'فعال');
+            showStatus(status, 'ÙØ¹Ø§Ù„');
           }
 
           const durationOn = Boolean(settings?.duration);
@@ -4854,7 +4840,7 @@ $sessionPayload = [
           const endTime = String(settings?.endTime ?? '').trim();
           const targetDate = status === 'upcoming' ? startDate : endDate;
           const targetTime = status === 'upcoming' ? startTime : endTime;
-          const label = status === 'upcoming' ? 'تا شروع شگفتانه' : 'تا اتمام شگفتانه';
+          const label = status === 'upcoming' ? 'ØªØ§ Ø´Ø±ÙˆØ¹ Ø´Ú¯ÙØªØ§Ù†Ù‡' : 'ØªØ§ Ø§ØªÙ…Ø§Ù… Ø´Ú¯ÙØªØ§Ù†Ù‡';
 
           const updateCountdown = () => {
             if (!targetDate || !targetTime) {
@@ -4897,17 +4883,17 @@ $sessionPayload = [
         };
 
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
-          if (completed) return 'انجام شد';
+          if (completed) return 'Ø§Ù†Ø¬Ø§Ù… Ø´Ø¯';
           if (status === 'active') {
-            return taskType === 'quiz' ? 'زمان طلایی' : 'فعال';
+            return taskType === 'quiz' ? 'Ø²Ù…Ø§Ù† Ø·Ù„Ø§ÛŒÛŒ' : 'ÙØ¹Ø§Ù„';
           }
-          if (status === 'upcoming') return 'به‌زودی';
+          if (status === 'upcoming') return 'Ø¨Ù‡â€ŒØ²ÙˆØ¯ÛŒ';
           if (status === 'ended') {
             return taskType === 'quiz'
-              ? 'زمان طلایی تموم شد؛ هنوز می‌تونی با امتیاز کمتر جواب بدی'
-              : 'پایان یافته';
+              ? 'Ø²Ù…Ø§Ù† Ø·Ù„Ø§ÛŒÛŒ ØªÙ…ÙˆÙ… Ø´Ø¯Ø› Ù‡Ù†ÙˆØ² Ù…ÛŒâ€ŒØªÙˆÙ†ÛŒ Ø¨Ø§ Ø§Ù…ØªÛŒØ§Ø² Ú©Ù…ØªØ± Ø¬ÙˆØ§Ø¨ Ø¨Ø¯ÛŒ'
+              : 'Ù¾Ø§ÛŒØ§Ù† ÛŒØ§ÙØªÙ‡';
           }
-          return 'غیرفعال';
+          return 'ØºÛŒØ±ÙØ¹Ø§Ù„';
         };
 
         const taskAvailableScoreNow = (button, status, taskType) => {
@@ -4921,7 +4907,7 @@ $sessionPayload = [
 
         const withScoreHint = (baseText, scoreValue) => {
           const text = String(baseText || '').trim();
-          return `${text} | امتیاز این تسک: ${Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0)}`;
+          return `${text} | Ø§Ù…ØªÛŒØ§Ø² Ø§ÛŒÙ† ØªØ³Ú©: ${Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0)}`;
         };
 
         const deriveTaskStatusFromButton = (button) => {
@@ -4972,7 +4958,7 @@ $sessionPayload = [
           const days = Math.floor(diffSeconds / 86400);
           const hours = Math.floor((diffSeconds % 86400) / 3600);
           const minutes = Math.floor((diffSeconds % 3600) / 60);
-          return `${days} روز و ${hours} ساعت و ${minutes} دقیقه تا شروع تسک بعدی`;
+          return `${days} Ø±ÙˆØ² Ùˆ ${hours} Ø³Ø§Ø¹Øª Ùˆ ${minutes} Ø¯Ù‚ÛŒÙ‚Ù‡ ØªØ§ Ø´Ø±ÙˆØ¹ ØªØ³Ú© Ø¨Ø¹Ø¯ÛŒ`;
         };
 
         const formatGoldenTimeCountdown = (targetDate, targetTime) => {
@@ -4985,7 +4971,7 @@ $sessionPayload = [
           const hours = Math.floor((diffSeconds % 86400) / 3600);
           const minutes = Math.floor((diffSeconds % 3600) / 60);
           const seconds = diffSeconds % 60;
-          return `تا پایان مهلت طلایی پاسخ به سوال\n${days} روز و ${hours} ساعت و ${minutes} دقیقه و ${seconds} ثانیه`;
+          return `ØªØ§ Ù¾Ø§ÛŒØ§Ù† Ù…Ù‡Ù„Øª Ø·Ù„Ø§ÛŒÛŒ Ù¾Ø§Ø³Ø® Ø¨Ù‡ Ø³ÙˆØ§Ù„\n${days} Ø±ÙˆØ² Ùˆ ${hours} Ø³Ø§Ø¹Øª Ùˆ ${minutes} Ø¯Ù‚ÛŒÙ‚Ù‡ Ùˆ ${seconds} Ø«Ø§Ù†ÛŒÙ‡`;
         };
 
         const canOpenTaskByStatus = (status, taskType) => {
@@ -5013,7 +4999,7 @@ $sessionPayload = [
             if (metaEl) {
               metaEl.classList.remove('is-multiline');
               const shownScore = Number.isFinite(taskScore) ? Math.max(0, taskScore) : 0;
-              metaEl.textContent = shownScore > 0 ? `انجام شد (امتیاز ${shownScore})` : 'انجام شد';
+              metaEl.textContent = shownScore > 0 ? `Ø§Ù†Ø¬Ø§Ù… Ø´Ø¯ (Ø§Ù…ØªÛŒØ§Ø² ${shownScore})` : 'Ø§Ù†Ø¬Ø§Ù… Ø´Ø¯';
             }
             return;
           }
@@ -5038,7 +5024,7 @@ $sessionPayload = [
               if (taskId !== '' && taskId === closestUpcomingTaskId) {
                 const countdown = formatTaskCountdown(startDate, startTime);
                 const fallbackText = startDate
-                  ? `تا شروع: ${startDate} ${normalizeUpcomingStartTime(startTime)}`
+                  ? `ØªØ§ Ø´Ø±ÙˆØ¹: ${startDate} ${normalizeUpcomingStartTime(startTime)}`
                   : taskStatusLabel(status, false, taskType);
                 metaEl.textContent = withScoreHint(countdown || fallbackText, scoreNow);
               } else {
@@ -5049,7 +5035,7 @@ $sessionPayload = [
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
               if (goldenCountdown) {
-                metaEl.textContent = `${goldenCountdown}\nامتیاز این تسک: ${scoreNow}`;
+                metaEl.textContent = `${goldenCountdown}\nØ§Ù…ØªÛŒØ§Ø² Ø§ÛŒÙ† ØªØ³Ú©: ${scoreNow}`;
                 metaEl.classList.add('is-multiline');
                 button.classList.add('is-golden-live');
               } else {
@@ -5131,7 +5117,7 @@ $sessionPayload = [
             }
             updateBottomCtaAttention('inactive');
             if (eventNoticeEl) {
-              eventNoticeEl.textContent = 'فعلا رویداد فعالی نداریم. یه کم دیگه برگرد و شانس‌تو امتحان کن!';
+              eventNoticeEl.textContent = 'ÙØ¹Ù„Ø§ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ÛŒ Ù†Ø¯Ø§Ø±ÛŒÙ…. ÛŒÙ‡ Ú©Ù… Ø¯ÛŒÚ¯Ù‡ Ø¨Ø±Ú¯Ø±Ø¯ Ùˆ Ø´Ø§Ù†Ø³â€ŒØªÙˆ Ø§Ù…ØªØ­Ø§Ù† Ú©Ù†!';
               eventNoticeEl.classList.remove('hidden');
             }
             return;
@@ -5205,7 +5191,7 @@ $sessionPayload = [
             resultValueEl.textContent = String(Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0));
           }
           if (resultMessageEl) {
-            resultMessageEl.textContent = String(messageText || '').trim() || 'عالیه! ماموریت ثبت شد.';
+            resultMessageEl.textContent = String(messageText || '').trim() || 'Ø¹Ø§Ù„ÛŒÙ‡! Ù…Ø§Ù…ÙˆØ±ÛŒØª Ø«Ø¨Øª Ø´Ø¯.';
           }
           if (resultDialogEl) {
             resultDialogEl.classList.add('open');
@@ -5230,10 +5216,10 @@ $sessionPayload = [
           try {
             payload = await response.json();
           } catch {
-            payload = { status: 'error', message: 'پاسخ نامعتبر از سرور دریافت شد.' };
+            payload = { status: 'error', message: 'Ù¾Ø§Ø³Ø® Ù†Ø§Ù…Ø¹ØªØ¨Ø± Ø§Ø² Ø³Ø±ÙˆØ± Ø¯Ø±ÛŒØ§ÙØª Ø´Ø¯.' };
           }
           if (!response.ok || payload?.status !== 'ok') {
-            throw new Error(payload?.message || 'درخواست با خطا روبه‌رو شد.');
+            throw new Error(payload?.message || 'Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ø¨Ø§ Ø®Ø·Ø§ Ø±ÙˆØ¨Ù‡â€ŒØ±Ùˆ Ø´Ø¯.');
           }
           return payload;
         };
@@ -5244,7 +5230,7 @@ $sessionPayload = [
           return new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 2 }).format(n);
         };
 
-        const formatToman = (value) => `${formatRewardNumber(value)} تومان`;
+        const formatToman = (value) => `${formatRewardNumber(value)} ØªÙˆÙ…Ø§Ù†`;
 
         const shuffleArray = (list) => {
           const arr = Array.isArray(list) ? list.slice() : [];
@@ -5282,12 +5268,12 @@ $sessionPayload = [
 
         const buildRewardCards = () => {
           const names = Array.isArray(rewardsState?.availablePrizeNames) ? rewardsState.availablePrizeNames : [];
-          const safeNames = names.length ? names : ['شانس دوباره'];
+          const safeNames = names.length ? names : ['Ø´Ø§Ù†Ø³ Ø¯ÙˆØ¨Ø§Ø±Ù‡'];
           const cards = [];
           for (let i = 0; i < 9; i += 1) {
             cards.push({
               id: `tc_reward_card_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
-              label: String(safeNames[Math.floor(Math.random() * safeNames.length)] || 'جایزه ویژه')
+              label: String(safeNames[Math.floor(Math.random() * safeNames.length)] || 'Ø¬Ø§ÛŒØ²Ù‡ ÙˆÛŒÚ˜Ù‡')
             });
           }
           return shuffleArray(cards);
@@ -5303,9 +5289,10 @@ $sessionPayload = [
 
         const renderRewardSummary = () => {
           if (!rewardsState) return;
-          if (rewardScoreEl) rewardScoreEl.textContent = formatRewardNumber(rewardsState.score || 0);
-          if (rewardFlipsEl) rewardFlipsEl.textContent = formatRewardNumber(rewardsState.cardFlipsCount || 0);
-          if (rewardTotalEl) rewardTotalEl.textContent = formatToman(rewardsState.totalPrizeWon || 0);
+          if (rewardScoreChipEl) rewardScoreChipEl.textContent = formatRewardNumber(rewardsState.score || 0);
+          if (rewardRoadmapHintEl) {
+            rewardRoadmapHintEl.textContent = `تعداد جایزه‌های برنده شده: ${formatRewardNumber(rewardsState.cardFlipsCount || 0)}`;
+          }
           setRewardTimeBox('مجموع جوایز', formatToman(rewardsState.totalPrizeWon || 0));
           if (rewardCardsTotalValueEl) {
             rewardCardsTotalValueEl.textContent = formatToman(rewardsState.totalPrizeWon || 0);
@@ -5317,7 +5304,7 @@ $sessionPayload = [
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const score = Number(rewardsState?.score ?? 0);
           if (!levels.length) {
-            rewardRoadmapEl.innerHTML = '<div class="roadmap-item"><span class="roadmap-node"></span><div class="roadmap-content">هنوز سطح جایزه‌ای تعریف نشده.</div></div>';
+            rewardRoadmapEl.innerHTML = '<div class="roadmap-item"><span class="roadmap-node"></span><div class="roadmap-content">Ù‡Ù†ÙˆØ² Ø³Ø·Ø­ Ø¬Ø§ÛŒØ²Ù‡â€ŒØ§ÛŒ ØªØ¹Ø±ÛŒÙ Ù†Ø´Ø¯Ù‡.</div></div>';
             return;
           }
           rewardRoadmapEl.innerHTML = levels.map((level) => {
@@ -5326,25 +5313,25 @@ $sessionPayload = [
             const left = Math.max(0, target - score);
             const rowClass = reached ? 'roadmap-item reached' : 'roadmap-item';
             let stateClass = 'locked';
-            let stateText = 'قفل';
+            let stateText = 'Ù‚ÙÙ„';
             const levelId = String(level?.id || '');
             const isClickable = Boolean(level?.reached) && String(level?.type || '') === 'value_sum';
             if (level?.won) {
               stateClass = 'won';
-              stateText = 'برداشته شد';
+              stateText = 'Ø¨Ø±Ø¯Ø§Ø´ØªÙ‡ Ø´Ø¯';
             } else if (level?.canFlip) {
               stateClass = 'can-flip';
-              stateText = 'قابل انتخاب';
+              stateText = 'Ù‚Ø§Ø¨Ù„ Ø§Ù†ØªØ®Ø§Ø¨';
             } else if (level?.reached) {
               stateClass = 'reached';
-              stateText = 'به این سطح رسیدی';
+              stateText = 'Ø¨Ù‡ Ø§ÛŒÙ† Ø³Ø·Ø­ Ø±Ø³ÛŒØ¯ÛŒ';
             }
             return `<div class="${rowClass}">
               <span class="roadmap-node" aria-hidden="true"></span>
               <button class="roadmap-level-btn" type="button" data-level-id="${levelId}" ${isClickable ? '' : 'disabled'}>
               <div class="roadmap-content">
-                <div>${String(level?.name || 'سطح جایزه')} | ${formatRewardNumber(target)} امتیاز</div>
-                <div class="roadmap-left">${reached ? 'آماده دریافت جایزه' : `${formatRewardNumber(left)} امتیاز تا سطح بعدی`}</div>
+                <div>${String(level?.name || 'Ø³Ø·Ø­ Ø¬Ø§ÛŒØ²Ù‡')} | ${formatRewardNumber(target)} Ø§Ù…ØªÛŒØ§Ø²</div>
+                <div class="roadmap-left">${reached ? 'Ø¢Ù…Ø§Ø¯Ù‡ Ø¯Ø±ÛŒØ§ÙØª Ø¬Ø§ÛŒØ²Ù‡' : `${formatRewardNumber(left)} Ø§Ù…ØªÛŒØ§Ø² ØªØ§ Ø³Ø·Ø­ Ø¨Ø¹Ø¯ÛŒ`}</div>
                 <div class="roadmap-state ${stateClass}">${stateText}</div>
               </div>
               </button>
@@ -5358,8 +5345,8 @@ $sessionPayload = [
           rewardCardsEl.innerHTML = cards.map((card, index) => `
             <button class="flip-card" type="button" data-card-index="${index}">
               <div class="flip-card-inner">
-                <div class="flip-face flip-front">انتخاب کارت</div>
-                <div class="flip-face flip-back" data-back-label>${String(card.label || 'جایزه ویژه')}</div>
+                <div class="flip-face flip-front">Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø§Ø±Øª</div>
+                <div class="flip-face flip-back" data-back-label>${String(card.label || 'Ø¬Ø§ÛŒØ²Ù‡ ÙˆÛŒÚ˜Ù‡')}</div>
               </div>
             </button>
           `).join('');
@@ -5369,21 +5356,21 @@ $sessionPayload = [
           const settings = await loadWheelSettings();
           if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = '';
           if (eventStatus === 'active') {
-            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'رویداد فعاله؛ روی سطح‌های قابل انتخاب بزن و کارتت رو باز کن.';
+            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„Ù‡Ø› Ø±ÙˆÛŒ Ø³Ø·Ø­â€ŒÙ‡Ø§ÛŒ Ù‚Ø§Ø¨Ù„ Ø§Ù†ØªØ®Ø§Ø¨ Ø¨Ø²Ù† Ùˆ Ú©Ø§Ø±ØªØª Ø±Ùˆ Ø¨Ø§Ø² Ú©Ù†.';
             return;
           }
           if (eventStatus === 'upcoming') {
             const startDate = String(settings?.startDate ?? '').trim();
             const startTime = String(settings?.startTime ?? '').trim();
             const countdown = formatTaskCountdown(startDate, startTime);
-            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = countdown || 'به‌زودی شروع می‌شه.';
+            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = countdown || 'Ø¨Ù‡â€ŒØ²ÙˆØ¯ÛŒ Ø´Ø±ÙˆØ¹ Ù…ÛŒâ€ŒØ´Ù‡.';
             return;
           }
           if (eventStatus === 'ended') {
-            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'مهلت رویداد تموم شده و کارت‌ها غیرفعال شدن.';
+            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'Ù…Ù‡Ù„Øª Ø±ÙˆÛŒØ¯Ø§Ø¯ ØªÙ…ÙˆÙ… Ø´Ø¯Ù‡ Ùˆ Ú©Ø§Ø±Øªâ€ŒÙ‡Ø§ ØºÛŒØ±ÙØ¹Ø§Ù„ Ø´Ø¯Ù†.';
             return;
           }
-          if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'فعلا رویداد فعالی نداریم.';
+          if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'ÙØ¹Ù„Ø§ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ÛŒ Ù†Ø¯Ø§Ø±ÛŒÙ….';
         };
 
         const refreshRewardState = async () => {
@@ -5396,12 +5383,12 @@ $sessionPayload = [
             await applyRewardEventState(String(rewardsState?.eventStatus || globalEventStatus || 'inactive'));
             const level = getCurrentFlippableLevel();
             if (!level) {
-              setRewardStatusLine('امتیازت رو بیشتر کن تا قفل کارت‌های جدید باز بشه.');
+              setRewardStatusLine('Ø§Ù…ØªÛŒØ§Ø²Øª Ø±Ùˆ Ø¨ÛŒØ´ØªØ± Ú©Ù† ØªØ§ Ù‚ÙÙ„ Ú©Ø§Ø±Øªâ€ŒÙ‡Ø§ÛŒ Ø¬Ø¯ÛŒØ¯ Ø¨Ø§Ø² Ø¨Ø´Ù‡.');
             } else {
-              setRewardStatusLine(`الان می‌تونی جایزه سطح «${String(level.name || 'بدون نام')}» رو انتخاب کنی.`);
+              setRewardStatusLine(`Ø§Ù„Ø§Ù† Ù…ÛŒâ€ŒØªÙˆÙ†ÛŒ Ø¬Ø§ÛŒØ²Ù‡ Ø³Ø·Ø­ Â«${String(level.name || 'Ø¨Ø¯ÙˆÙ† Ù†Ø§Ù…')}Â» Ø±Ùˆ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†ÛŒ.`);
             }
           } catch (error) {
-            setRewardStatusLine(error?.message || 'دریافت وضعیت جوایز انجام نشد.', true);
+            setRewardStatusLine(error?.message || 'Ø¯Ø±ÛŒØ§ÙØª ÙˆØ¶Ø¹ÛŒØª Ø¬ÙˆØ§ÛŒØ² Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.', true);
           }
         };
 
@@ -5426,26 +5413,26 @@ $sessionPayload = [
           if (rewardsRoundBusy) return;
           const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
           if (eventStatus !== 'active') {
-            setRewardCardsStatusLine('فعلا امکان انتخاب کارت نیست. اول رویداد باید فعال باشه.', true);
+            setRewardCardsStatusLine('ÙØ¹Ù„Ø§ Ø§Ù…Ú©Ø§Ù† Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø§Ø±Øª Ù†ÛŒØ³Øª. Ø§ÙˆÙ„ Ø±ÙˆÛŒØ¯Ø§Ø¯ Ø¨Ø§ÛŒØ¯ ÙØ¹Ø§Ù„ Ø¨Ø§Ø´Ù‡.', true);
             return;
           }
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const level = levels.find((lvl) => String(lvl?.id || '') === selectedRewardLevelId) || null;
           if (!level || !level.id || !level.canFlip) {
-            setRewardCardsStatusLine('این سطح فعلا آماده دریافت کارت نیست. امتیاز جمع کن!', true);
+            setRewardCardsStatusLine('Ø§ÛŒÙ† Ø³Ø·Ø­ ÙØ¹Ù„Ø§ Ø¢Ù…Ø§Ø¯Ù‡ Ø¯Ø±ÛŒØ§ÙØª Ú©Ø§Ø±Øª Ù†ÛŒØ³Øª. Ø§Ù…ØªÛŒØ§Ø² Ø¬Ù…Ø¹ Ú©Ù†!', true);
             return;
           }
           rewardsRoundBusy = true;
-          setRewardCardsStatusLine('در حال باز کردن کارت... آماده سورپرایز باش!');
+          setRewardCardsStatusLine('Ø¯Ø± Ø­Ø§Ù„ Ø¨Ø§Ø² Ú©Ø±Ø¯Ù† Ú©Ø§Ø±Øª... Ø¢Ù…Ø§Ø¯Ù‡ Ø³ÙˆØ±Ù¾Ø±Ø§ÛŒØ² Ø¨Ø§Ø´!');
           try {
             const payload = await postJson({ action: 'reward_flip', levelId: level.id });
             const data = payload?.data || {};
-            const prizeName = String(data.prizeName || 'جایزه ویژه').trim();
+            const prizeName = String(data.prizeName || 'Ø¬Ø§ÛŒØ²Ù‡ ÙˆÛŒÚ˜Ù‡').trim();
             revealRewardCardsRound(cardButton, prizeName);
-            setRewardCardsStatusLine(`تبریک! «${prizeName}» برنده شدی 🎉`);
+            setRewardCardsStatusLine(`ØªØ¨Ø±ÛŒÚ©! Â«${prizeName}Â» Ø¨Ø±Ù†Ø¯Ù‡ Ø´Ø¯ÛŒ ðŸŽ‰`);
             await refreshRewardState();
           } catch (error) {
-            setRewardCardsStatusLine(error?.message || 'باز کردن کارت ناموفق بود.', true);
+            setRewardCardsStatusLine(error?.message || 'Ø¨Ø§Ø² Ú©Ø±Ø¯Ù† Ú©Ø§Ø±Øª Ù†Ø§Ù…ÙˆÙÙ‚ Ø¨ÙˆØ¯.', true);
           } finally {
             rewardsRoundBusy = false;
           }
@@ -5457,15 +5444,15 @@ $sessionPayload = [
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const level = levels.find((lvl) => String(lvl?.id || '') === String(levelId || '')) || null;
           if (!level || String(level.type || '') !== 'value_sum') {
-            setRewardStatusLine('این سطح کارت نداره و فقط دستاوردیه.');
+            setRewardStatusLine('Ø§ÛŒÙ† Ø³Ø·Ø­ Ú©Ø§Ø±Øª Ù†Ø¯Ø§Ø±Ù‡ Ùˆ ÙÙ‚Ø· Ø¯Ø³ØªØ§ÙˆØ±Ø¯ÛŒÙ‡.');
             return;
           }
           if (eventStatus !== 'active') {
-            setRewardStatusLine('کارت‌ها فقط وقتی رویداد فعال باشه باز می‌شن.');
+            setRewardStatusLine('Ú©Ø§Ø±Øªâ€ŒÙ‡Ø§ ÙÙ‚Ø· ÙˆÙ‚ØªÛŒ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ Ø¨Ø§Ø´Ù‡ Ø¨Ø§Ø² Ù…ÛŒâ€ŒØ´Ù†.');
             return;
           }
           if (!level.reached) {
-            setRewardStatusLine('هنوز به امتیاز این سطح نرسیدی.');
+            setRewardStatusLine('Ù‡Ù†ÙˆØ² Ø¨Ù‡ Ø§Ù…ØªÛŒØ§Ø² Ø§ÛŒÙ† Ø³Ø·Ø­ Ù†Ø±Ø³ÛŒØ¯ÛŒ.');
             return;
           }
           selectedRewardLevelId = String(level.id || '');
@@ -5473,8 +5460,8 @@ $sessionPayload = [
           if (rewardsViewEl) rewardsViewEl.classList.add('hidden');
           rewardCardsViewEl.classList.remove('hidden');
           rewardCardsViewEl.setAttribute('aria-hidden', 'false');
-          if (rewardCardsLevelTitleEl) rewardCardsLevelTitleEl.textContent = `کارت‌های سطح «${String(level.name || 'جایزه')}»`;
-          setRewardCardsStatusLine(level.canFlip ? 'یکی از کارت‌ها رو انتخاب کن ✨' : 'جایزه این سطح قبلا دریافت شده.');
+          if (rewardCardsLevelTitleEl) rewardCardsLevelTitleEl.textContent = `Ú©Ø§Ø±Øªâ€ŒÙ‡Ø§ÛŒ Ø³Ø·Ø­ Â«${String(level.name || 'Ø¬Ø§ÛŒØ²Ù‡')}Â»`;
+          setRewardCardsStatusLine(level.canFlip ? 'ÛŒÚ©ÛŒ Ø§Ø² Ú©Ø§Ø±Øªâ€ŒÙ‡Ø§ Ø±Ùˆ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù† âœ¨' : 'Ø¬Ø§ÛŒØ²Ù‡ Ø§ÛŒÙ† Ø³Ø·Ø­ Ù‚Ø¨Ù„Ø§ Ø¯Ø±ÛŒØ§ÙØª Ø´Ø¯Ù‡.');
           setTopbarMode('rewards');
         };
 
@@ -5551,7 +5538,7 @@ $sessionPayload = [
             });
           } catch (error) {
             closeQuizOverlay();
-            openTaskResultDialog(0, error?.message || 'ثبت امتیاز این ماموریت انجام نشد.');
+            openTaskResultDialog(0, error?.message || 'Ø«Ø¨Øª Ø§Ù…ØªÛŒØ§Ø² Ø§ÛŒÙ† Ù…Ø§Ù…ÙˆØ±ÛŒØª Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.');
             return;
           }
 
@@ -5570,10 +5557,10 @@ $sessionPayload = [
 
           closeQuizOverlay();
           if (payload?.alreadyCompleted) {
-            openTaskResultDialog(payload?.userTaskScore ?? 0, 'این ماموریت قبلا انجام شده و امتیازش ثبت شده.');
+            openTaskResultDialog(payload?.userTaskScore ?? 0, 'Ø§ÛŒÙ† Ù…Ø§Ù…ÙˆØ±ÛŒØª Ù‚Ø¨Ù„Ø§ Ø§Ù†Ø¬Ø§Ù… Ø´Ø¯Ù‡ Ùˆ Ø§Ù…ØªÛŒØ§Ø²Ø´ Ø«Ø¨Øª Ø´Ø¯Ù‡.');
             return;
           }
-          openTaskResultDialog(payload?.awardedScore ?? 0, 'آفرین! ماموریت کامل شد و امتیازش ثبت شد.');
+          openTaskResultDialog(payload?.awardedScore ?? 0, 'Ø¢ÙØ±ÛŒÙ†! Ù…Ø§Ù…ÙˆØ±ÛŒØª Ú©Ø§Ù…Ù„ Ø´Ø¯ Ùˆ Ø§Ù…ØªÛŒØ§Ø²Ø´ Ø«Ø¨Øª Ø´Ø¯.');
         };
 
         const continueQuiz = () => {
@@ -5582,7 +5569,7 @@ $sessionPayload = [
           quizLocked = false;
           if (currentQuestionIndex >= currentQuestions.length) {
             closeQuizOverlay();
-            openTaskResultDialog(0, 'این مرحله بدون پاسخ درست تموم شد. دوباره تلاش کن!');
+            openTaskResultDialog(0, 'Ø§ÛŒÙ† Ù…Ø±Ø­Ù„Ù‡ Ø¨Ø¯ÙˆÙ† Ù¾Ø§Ø³Ø® Ø¯Ø±Ø³Øª ØªÙ…ÙˆÙ… Ø´Ø¯. Ø¯ÙˆØ¨Ø§Ø±Ù‡ ØªÙ„Ø§Ø´ Ú©Ù†!');
             return;
           }
           renderQuizQuestion();
@@ -5675,7 +5662,7 @@ $sessionPayload = [
           }
 
           if (quizTitleEl) {
-            quizTitleEl.textContent = currentTaskTitle || 'ماموریت سوالی';
+            quizTitleEl.textContent = currentTaskTitle || 'Ù…Ø§Ù…ÙˆØ±ÛŒØª Ø³ÙˆØ§Ù„ÛŒ';
           }
 
           const total = currentQuestions.length;
@@ -5779,7 +5766,7 @@ $sessionPayload = [
           const taskId = String(button?.dataset?.taskId || '').trim();
           if (!taskId) return;
           if (globalEventStatus === 'inactive') {
-            openTaskResultDialog(0, 'فعلا رویداد فعالی نداریم.');
+            openTaskResultDialog(0, 'ÙØ¹Ù„Ø§ Ø±ÙˆÛŒØ¯Ø§Ø¯ ÙØ¹Ø§Ù„ÛŒ Ù†Ø¯Ø§Ø±ÛŒÙ….');
             return;
           }
 
@@ -5790,7 +5777,7 @@ $sessionPayload = [
               button.dataset.taskCompleted = '1';
               button.dataset.taskUserScore = String(Number.parseInt(progress?.score ?? 0, 10) || 0);
               setTaskButtonState(button, 'completed');
-              openTaskResultDialog(progress?.score ?? 0, 'این ماموریت قبلا انجام شده و امتیازش ثبت شده.');
+              openTaskResultDialog(progress?.score ?? 0, 'Ø§ÛŒÙ† Ù…Ø§Ù…ÙˆØ±ÛŒØª Ù‚Ø¨Ù„Ø§ Ø§Ù†Ø¬Ø§Ù… Ø´Ø¯Ù‡ Ùˆ Ø§Ù…ØªÛŒØ§Ø²Ø´ Ø«Ø¨Øª Ø´Ø¯Ù‡.');
               return;
             }
 
@@ -5819,7 +5806,7 @@ $sessionPayload = [
 
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
             currentTaskId = taskId;
-            currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت سوالی').trim();
+            currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'Ù…Ø§Ù…ÙˆØ±ÛŒØª Ø³ÙˆØ§Ù„ÛŒ').trim();
             currentQuestions = nextQuestions;
             currentQuestionIndex = 0;
             quizLocked = false;
@@ -5827,7 +5814,7 @@ $sessionPayload = [
             openQuizOverlay();
             renderQuizQuestion();
           } catch (error) {
-            openTaskResultDialog(0, error?.message || 'بارگذاری سوالات این ماموریت انجام نشد.');
+            openTaskResultDialog(0, error?.message || 'Ø¨Ø§Ø±Ú¯Ø°Ø§Ø±ÛŒ Ø³ÙˆØ§Ù„Ø§Øª Ø§ÛŒÙ† Ù…Ø§Ù…ÙˆØ±ÛŒØª Ø§Ù†Ø¬Ø§Ù… Ù†Ø´Ø¯.');
           }
         };
 
@@ -5847,12 +5834,6 @@ $sessionPayload = [
         if (openRewardsBtnEl) {
           openRewardsBtnEl.addEventListener('click', () => {
             void openRewardsView();
-          });
-        }
-
-        if (rewardsBackBtnEl) {
-          rewardsBackBtnEl.addEventListener('click', () => {
-            closeRewardsView();
           });
         }
 
@@ -5933,5 +5914,6 @@ $sessionPayload = [
     </script>
   </body>
 </html>
+
 
 
