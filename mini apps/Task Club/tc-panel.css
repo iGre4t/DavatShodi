@@ -601,6 +601,34 @@
   background: #ffffff;
 }
 
+.tc-shell .tc-info-rate-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.tc-shell .tc-info-rate-table-wrap {
+  max-height: 460px;
+  overflow: auto;
+}
+
+.tc-shell .tc-info-rate-table td,
+.tc-shell .tc-info-rate-table th {
+  white-space: nowrap;
+}
+
+.tc-shell .tc-info-rate-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tc-shell .tc-info-rate-row-actions input[type="number"] {
+  width: 88px;
+  min-width: 88px;
+}
+
 @media (max-width: 900px) {
   .tc-shell .sub-layout {
     grid-template-columns: 1fr;
@@ -624,6 +652,10 @@
 
   .tc-shell .tc-task-quiz-frame {
     min-height: 620px;
+  }
+
+  .tc-shell .tc-info-rate-bulk {
+    align-items: stretch;
   }
 }
 

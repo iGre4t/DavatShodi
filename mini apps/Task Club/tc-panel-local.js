@@ -15,6 +15,9 @@
     if (token === 'quiz' || token === 'quiz-task' || token === 'quiz task') {
       return 'quiz';
     }
+    if (token === 'info' || token === 'info-task' || token === 'info task') {
+      return 'info';
+    }
     return 'quiz';
   }
 
@@ -64,6 +67,8 @@
       endTime: normalizeTime(raw.endTime ?? raw.end_time ?? ''),
       score: normalizeScoreValue(raw.score ?? raw.taskScore ?? 0),
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
+      infoTitle: String(raw.infoTitle ?? raw.info_title ?? '').trim(),
+      infoText: String(raw.infoText ?? raw.info_text ?? '').trim(),
       order: Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : (index + 1)
     };
   }
@@ -322,15 +327,14 @@
     const afterEndtimeScoreInput = pane.querySelector('[data-task-field="afterEndtimeScore"]');
     const saveStatusEl = pane.querySelector('[data-task-score-save-status]');
     const saveButton = pane.querySelector('[data-action="save-task-score-system"]');
-    if (
-      !(scoreInput instanceof HTMLInputElement) ||
-      !(afterEndtimeScoreInput instanceof HTMLInputElement)
-    ) {
+    if (!(scoreInput instanceof HTMLInputElement)) {
       return null;
     }
+    const taskType = normalizeTaskType(pane.dataset.taskType || 'quiz');
     return {
       scoreInput,
-      afterEndtimeScoreInput,
+      afterEndtimeScoreInput: afterEndtimeScoreInput instanceof HTMLInputElement ? afterEndtimeScoreInput : null,
+      taskType,
       saveStatusEl: saveStatusEl instanceof HTMLElement ? saveStatusEl : null,
       saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null
     };
@@ -348,6 +352,187 @@
     if (!controls?.saveStatusEl) return;
     controls.saveStatusEl.textContent = message || '';
     controls.saveStatusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function getTaskInfoContentControls(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    const titleInput = pane.querySelector('[data-task-field="infoTitle"]');
+    const textInput = pane.querySelector('[data-task-field="infoText"]');
+    const saveButton = pane.querySelector('[data-action="save-task-information"]');
+    const statusEl = pane.querySelector('[data-task-info-save-status]');
+    if (!(titleInput instanceof HTMLInputElement) || !(textInput instanceof HTMLTextAreaElement)) {
+      return null;
+    }
+    return {
+      titleInput,
+      textInput,
+      saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null,
+      statusEl: statusEl instanceof HTMLElement ? statusEl : null
+    };
+  }
+
+  function setTaskInfoContentSaveStatus(pane, message, isError = false) {
+    const controls = getTaskInfoContentControls(pane);
+    if (!controls?.statusEl) return;
+    controls.statusEl.textContent = message || '';
+    controls.statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function collectTaskInfoContentFromPane(pane) {
+    const controls = getTaskInfoContentControls(pane);
+    if (!controls) return null;
+    return {
+      info_title: String(controls.titleInput.value || '').trim(),
+      info_text: String(controls.textInput.value || '').trim()
+    };
+  }
+
+  const infoRateStateByTaskId = new Map();
+
+  function getInfoRateElements(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    const body = pane.querySelector('[data-task-info-rate-body]');
+    const searchInput = pane.querySelector('[data-task-info-search]');
+    const selectAll = pane.querySelector('[data-task-info-select-all]');
+    const bulkScoreInput = pane.querySelector('[data-task-info-bulk-score]');
+    const statusEl = pane.querySelector('[data-task-info-rate-status]');
+    if (!(body instanceof HTMLElement) || !(searchInput instanceof HTMLInputElement) || !(selectAll instanceof HTMLInputElement)) {
+      return null;
+    }
+    return {
+      body,
+      searchInput,
+      selectAll,
+      bulkScoreInput: bulkScoreInput instanceof HTMLInputElement ? bulkScoreInput : null,
+      statusEl: statusEl instanceof HTMLElement ? statusEl : null
+    };
+  }
+
+  function setInfoRateStatus(pane, message, isError = false) {
+    const controls = getInfoRateElements(pane);
+    if (!controls?.statusEl) return;
+    controls.statusEl.textContent = message || '';
+    controls.statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function getInfoRateState(taskId) {
+    const key = String(taskId || '').trim();
+    if (!key) return null;
+    if (!infoRateStateByTaskId.has(key)) {
+      infoRateStateByTaskId.set(key, {
+        maxScore: 0,
+        invitees: [],
+        selected: new Set(),
+        query: ''
+      });
+    }
+    return infoRateStateByTaskId.get(key);
+  }
+
+  async function loadInfoRateDataIntoPane(pane, { silent = false } = {}) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    if (!taskId) return;
+    const controls = getInfoRateElements(pane);
+    if (!controls) return;
+    if (!silent) {
+      controls.body.innerHTML = '<tr><td colspan="7" class="muted">Loading invitees...</td></tr>';
+    }
+    try {
+      const data = await postTaskAction('get_info_task_rate_data', { id: taskId });
+      const state = getInfoRateState(taskId);
+      if (!state) return;
+      state.maxScore = normalizeScoreValue(data.maxScore ?? 0);
+      state.invitees = Array.isArray(data.invitees) ? data.invitees.map((row) => ({
+        workId: String(row.workId || '').trim(),
+        firstName: String(row.firstName || '').trim(),
+        lastName: String(row.lastName || '').trim(),
+        phone: String(row.phone || '').trim(),
+        customScore: normalizeScoreValue(row.customScore ?? 0)
+      })) : [];
+      state.selected = new Set();
+      renderInfoRateTable(pane);
+      setInfoRateStatus(pane, '');
+    } catch (error) {
+      controls.body.innerHTML = '<tr><td colspan="7" class="muted">Failed to load invitees.</td></tr>';
+      setInfoRateStatus(pane, error?.message || 'Failed to load invitees.', true);
+    }
+  }
+
+  function renderInfoRateTable(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const state = getInfoRateState(taskId);
+    const controls = getInfoRateElements(pane);
+    if (!state || !controls) return;
+    const query = String(state.query || '').trim().toLowerCase();
+    const visibleRows = state.invitees.filter((row) => {
+      if (!query) return true;
+      const haystack = `${row.firstName} ${row.lastName} ${row.phone} ${row.workId}`.toLowerCase();
+      return haystack.includes(query);
+    });
+    if (!visibleRows.length) {
+      controls.body.innerHTML = '<tr><td colspan="7" class="muted">No invitee found.</td></tr>';
+      controls.selectAll.checked = false;
+      controls.selectAll.indeterminate = false;
+      return;
+    }
+    const selectedCount = state.selected.size;
+    const disableRowActions = selectedCount > 0;
+    controls.body.innerHTML = visibleRows.map((row) => {
+      const isChecked = state.selected.has(row.workId);
+      return `
+        <tr data-work-id="${escapeHtml(row.workId)}">
+          <td><input type="checkbox" data-info-row-check value="${escapeHtml(row.workId)}" ${isChecked ? 'checked' : ''} /></td>
+          <td>${escapeHtml(row.firstName)}</td>
+          <td>${escapeHtml(row.lastName)}</td>
+          <td>${escapeHtml(row.phone)}</td>
+          <td><code>${escapeHtml(row.workId)}</code></td>
+          <td>
+            <div class="tc-info-rate-row-actions">
+              <input type="number" min="0" step="1" data-info-row-score value="${escapeHtml(String(normalizeScoreValue(row.customScore)))}" ${disableRowActions ? 'disabled' : ''} />
+              <button type="button" class="btn ghost" data-action="info-row-apply" ${disableRowActions ? 'disabled' : ''}>Save</button>
+            </div>
+          </td>
+          <td><button type="button" class="btn primary standard-primary-button" data-action="info-row-max" ${disableRowActions ? 'disabled' : ''}>Max Score</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    const visibleIds = visibleRows.map((row) => row.workId);
+    const visibleSelected = visibleIds.filter((id) => state.selected.has(id)).length;
+    controls.selectAll.checked = visibleIds.length > 0 && visibleSelected === visibleIds.length;
+    controls.selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visibleIds.length;
+  }
+
+  async function assignInfoScores(pane, workIds, mode, customScoreValue = 0) {
+    if (!(pane instanceof HTMLElement)) return false;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    if (!taskId || !Array.isArray(workIds) || !workIds.length) return false;
+    const state = getInfoRateState(taskId);
+    if (!state) return false;
+    const payload = {
+      id: taskId,
+      mode: mode === 'max' ? 'max' : 'custom',
+      work_ids: JSON.stringify(workIds)
+    };
+    if (mode !== 'max') {
+      payload.custom_score = String(Math.max(0, Math.min(state.maxScore, normalizeScoreValue(customScoreValue))));
+    }
+    try {
+      const data = await postTaskAction('save_info_task_scores', payload);
+      const assigned = normalizeScoreValue(data.assignedScore ?? (mode === 'max' ? state.maxScore : customScoreValue));
+      state.invitees = state.invitees.map((row) => {
+        if (!workIds.includes(row.workId)) return row;
+        return { ...row, customScore: assigned };
+      });
+      renderInfoRateTable(pane);
+      setInfoRateStatus(pane, data.message || 'Scores updated.');
+      return true;
+    } catch (error) {
+      setInfoRateStatus(pane, error?.message || 'Failed to save invitees score.', true);
+      return false;
+    }
   }
 
   function setTaskPaneStatus(pane, label, tone) {
@@ -390,9 +575,10 @@
   function collectTaskScoreFromPane(pane) {
     const controls = getTaskScoreControls(pane);
     if (!controls) return null;
+    const isInfoTask = controls.taskType === 'info';
     return {
       score: String(normalizeScoreValue(controls.scoreInput.value)),
-      after_endtime_score: String(normalizeScoreValue(controls.afterEndtimeScoreInput.value))
+      after_endtime_score: isInfoTask ? '0' : String(normalizeScoreValue(controls.afterEndtimeScoreInput?.value))
     };
   }
 
@@ -434,7 +620,15 @@
     const scoreControls = getTaskScoreControls(pane);
     if (scoreControls) {
       scoreControls.scoreInput.value = String(normalizeScoreValue(task?.score));
-      scoreControls.afterEndtimeScoreInput.value = String(normalizeScoreValue(task?.afterEndtimeScore));
+      if (scoreControls.afterEndtimeScoreInput instanceof HTMLInputElement) {
+        scoreControls.afterEndtimeScoreInput.value = String(normalizeScoreValue(task?.afterEndtimeScore));
+      }
+    }
+    const infoControls = getTaskInfoContentControls(pane);
+    if (infoControls) {
+      infoControls.titleInput.value = String(task?.infoTitle || '');
+      infoControls.textInput.value = String(task?.infoText || '');
+      setTaskInfoContentSaveStatus(pane, '');
     }
     syncTaskPaneToggleState(pane);
     setTaskSaveStatus(pane, '');
@@ -443,13 +637,18 @@
 
   function buildTaskControlCardMarkup(task) {
     const titleText = task.title || task.tagCode;
-    const typeLabel = task.taskType === 'quiz' ? 'Quiz Task' : 'Quiz Task';
+    const isInfoTask = task.taskType === 'info';
+    const typeLabel = isInfoTask ? 'Info Task' : 'Quiz Task';
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
+    const infoTitle = task.infoTitle || '';
+    const infoText = task.infoText || '';
     return `
       <div class="tc-task-top-shell" data-task-top-shell>
         <div class="tc-task-top-nav" role="tablist" aria-label="Task Tabs">
           <button type="button" class="tc-task-top-item active" aria-selected="true" data-task-top-trigger="control">Control Pane</button>
-          <button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>
+          ${isInfoTask
+            ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
+            : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'}
         </div>
 
         <div class="tc-task-top-section active" data-task-top-section="control">
@@ -513,13 +712,15 @@
             </div>
             <div class="form" style="gap:12px;">
               <label class="field standard-width">
-                <span>Active Duration (Golden Time)</span>
+                <span>${isInfoTask ? 'Total Score' : 'Active Duration (Golden Time)'}</span>
                 <input type="number" min="0" step="1" data-task-field="score" />
               </label>
-              <label class="field standard-width">
-                <span>Golden Time Ended, you can answer with lower score</span>
-                <input type="number" min="0" step="1" data-task-field="afterEndtimeScore" />
-              </label>
+              ${isInfoTask ? '' : `
+                <label class="field standard-width">
+                  <span>Golden Time Ended, you can answer with lower score</span>
+                  <input type="number" min="0" step="1" data-task-field="afterEndtimeScore" />
+                </label>
+              `}
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-score-system">Save</button>
               </div>
@@ -527,18 +728,77 @@
             </div>
           </div>
         </div>
-
-        <div class="tc-task-top-section" data-task-top-section="quiz" hidden>
-          <div class="card tc-task-quiz-card">
-            <iframe
-              class="tc-task-quiz-frame"
-              src="${escapeHtml(quizSrc)}"
-              loading="lazy"
-              referrerpolicy="same-origin"
-              title="Task Quiz"
-            ></iframe>
+        ${isInfoTask ? `
+          <div class="tc-task-top-section" data-task-top-section="information" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Information Card</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field standard-width">
+                  <span>Title</span>
+                  <input type="text" data-task-field="infoTitle" value="${escapeHtml(infoTitle)}" />
+                </label>
+                <label class="field full">
+                  <span>Text</span>
+                  <textarea data-task-field="infoText" rows="8">${escapeHtml(infoText)}</textarea>
+                </label>
+                <div class="field full">
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
+                </div>
+                <p class="muted small" data-task-info-save-status aria-live="polite"></p>
+              </div>
+            </div>
           </div>
-        </div>
+          <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Invitees List Card</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field standard-width">
+                  <span>Search Invitees</span>
+                  <input type="text" data-task-info-search placeholder="Search by name, phone, Work ID" autocomplete="off" />
+                </label>
+                <div class="tc-info-rate-bulk">
+                  <label class="field standard-width">
+                    <span>Custom Score (Selected)</span>
+                    <input type="number" min="0" step="1" data-task-info-bulk-score />
+                  </label>
+                  <button type="button" class="btn secondary" data-action="info-bulk-apply">Apply Custom Score</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="info-bulk-max">Max Score</button>
+                </div>
+                <div class="table-wrapper tc-info-rate-table-wrap">
+                  <table class="tct-list-table tc-info-rate-table">
+                    <thead>
+                      <tr>
+                        <th><input type="checkbox" data-task-info-select-all /></th>
+                        <th>First Name</th>
+                        <th>Last Name</th>
+                        <th>Phone</th>
+                        <th>Work ID</th>
+                        <th>Custom Score</th>
+                        <th>Fast Score</th>
+                      </tr>
+                    </thead>
+                    <tbody data-task-info-rate-body>
+                      <tr><td colspan="7" class="muted">Loading invitees...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="muted small" data-task-info-rate-status aria-live="polite"></p>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <div class="tc-task-top-section" data-task-top-section="quiz" hidden>
+            <div class="card tc-task-quiz-card">
+              <iframe
+                class="tc-task-quiz-frame"
+                src="${escapeHtml(quizSrc)}"
+                loading="lazy"
+                referrerpolicy="same-origin"
+                title="Task Quiz"
+              ></iframe>
+            </div>
+          </div>
+        `}
       </div>
     `;
   }
@@ -590,6 +850,7 @@
       pane.dataset.pane = paneKey;
       pane.dataset.taskPane = '1';
       pane.dataset.taskId = task.id;
+      pane.dataset.taskType = task.taskType;
       pane.innerHTML = buildTaskControlCardMarkup(task);
       paneFragment.appendChild(pane);
     });
@@ -671,10 +932,69 @@
         setTaskScoreSaveStatus(pane, '');
         return;
       }
+      if (fieldName === 'infoTitle' || fieldName === 'infoText') {
+        setTaskInfoContentSaveStatus(pane, '');
+      }
     };
 
     layout.addEventListener('change', handleTaskFieldUpdate);
     layout.addEventListener('input', handleTaskFieldUpdate);
+
+    layout.addEventListener('input', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const searchInput = target.closest('[data-task-info-search]');
+      if (!(searchInput instanceof HTMLInputElement)) return;
+      const pane = searchInput.closest('.sub-pane[data-task-pane="1"]');
+      if (!(pane instanceof HTMLElement)) return;
+      const taskId = String(pane.dataset.taskId || '').trim();
+      const state = getInfoRateState(taskId);
+      if (!state) return;
+      state.query = String(searchInput.value || '').trim();
+      renderInfoRateTable(pane);
+    });
+
+    layout.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const pane = target.closest('.sub-pane[data-task-pane="1"]');
+      if (!(pane instanceof HTMLElement)) return;
+      const taskId = String(pane.dataset.taskId || '').trim();
+      const state = getInfoRateState(taskId);
+      if (!state) return;
+
+      if (target.matches('[data-task-info-select-all]')) {
+        const controls = getInfoRateElements(pane);
+        if (!controls) return;
+        const shouldSelect = controls.selectAll.checked;
+        const visibleRows = Array.from(pane.querySelectorAll('tbody[data-task-info-rate-body] tr[data-work-id]'));
+        visibleRows.forEach((row) => {
+          if (!(row instanceof HTMLTableRowElement)) return;
+          const workId = String(row.dataset.workId || '').trim();
+          if (!workId) return;
+          if (shouldSelect) {
+            state.selected.add(workId);
+          } else {
+            state.selected.delete(workId);
+          }
+        });
+        renderInfoRateTable(pane);
+        return;
+      }
+
+      if (target.matches('[data-info-row-check]')) {
+        const checkbox = target;
+        if (!(checkbox instanceof HTMLInputElement)) return;
+        const workId = String(checkbox.value || '').trim();
+        if (!workId) return;
+        if (checkbox.checked) {
+          state.selected.add(workId);
+        } else {
+          state.selected.delete(workId);
+        }
+        renderInfoRateTable(pane);
+      }
+    });
 
     layout.addEventListener('click', async (event) => {
       const target = event.target;
@@ -688,6 +1008,95 @@
         if (!sectionKey) return;
         event.preventDefault();
         activateTaskTopPane(pane, sectionKey);
+        if (sectionKey === 'invitees-rate' && normalizeTaskType(pane.dataset.taskType || 'quiz') === 'info') {
+          void loadInfoRateDataIntoPane(pane);
+        }
+        return;
+      }
+
+      const saveInfoButton = target.closest('[data-action="save-task-information"]');
+      if (saveInfoButton instanceof HTMLButtonElement) {
+        const pane = saveInfoButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = pane.dataset.taskId || '';
+        if (!taskId) return;
+        const payload = collectTaskInfoContentFromPane(pane);
+        if (!payload) return;
+        saveInfoButton.disabled = true;
+        setTaskInfoContentSaveStatus(pane, 'Saving...');
+        try {
+          const data = await postTaskAction('save_info_task_content', {
+            id: taskId,
+            ...payload
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'information');
+            setTaskInfoContentSaveStatus(activePane, data.message || 'Information saved.');
+          }
+        } catch (error) {
+          setTaskInfoContentSaveStatus(pane, error?.message || 'Failed to save information.', true);
+        } finally {
+          saveInfoButton.disabled = false;
+        }
+        return;
+      }
+
+      const rowApplyButton = target.closest('[data-action="info-row-apply"]');
+      if (rowApplyButton instanceof HTMLButtonElement) {
+        const pane = rowApplyButton.closest('.sub-pane[data-task-pane="1"]');
+        const row = rowApplyButton.closest('tr[data-work-id]');
+        if (!(pane instanceof HTMLElement) || !(row instanceof HTMLTableRowElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const workId = String(row.dataset.workId || '').trim();
+        if (!taskId || !workId) return;
+        const scoreInput = row.querySelector('[data-info-row-score]');
+        if (!(scoreInput instanceof HTMLInputElement)) return;
+        const scoreValue = normalizeScoreValue(scoreInput.value);
+        await assignInfoScores(pane, [workId], 'custom', scoreValue);
+        return;
+      }
+
+      const rowMaxButton = target.closest('[data-action="info-row-max"]');
+      if (rowMaxButton instanceof HTMLButtonElement) {
+        const pane = rowMaxButton.closest('.sub-pane[data-task-pane="1"]');
+        const row = rowMaxButton.closest('tr[data-work-id]');
+        if (!(pane instanceof HTMLElement) || !(row instanceof HTMLTableRowElement)) return;
+        const workId = String(row.dataset.workId || '').trim();
+        if (!workId) return;
+        await assignInfoScores(pane, [workId], 'max');
+        return;
+      }
+
+      const bulkApplyButton = target.closest('[data-action="info-bulk-apply"]');
+      if (bulkApplyButton instanceof HTMLButtonElement) {
+        const pane = bulkApplyButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const state = getInfoRateState(taskId);
+        const controls = getInfoRateElements(pane);
+        if (!state || !controls || !state.selected.size) return;
+        const scoreValue = normalizeScoreValue(controls.bulkScoreInput?.value);
+        await assignInfoScores(pane, Array.from(state.selected), 'custom', scoreValue);
+        return;
+      }
+
+      const bulkMaxButton = target.closest('[data-action="info-bulk-max"]');
+      if (bulkMaxButton instanceof HTMLButtonElement) {
+        const pane = bulkMaxButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const state = getInfoRateState(taskId);
+        if (!state || !state.selected.size) return;
+        await assignInfoScores(pane, Array.from(state.selected), 'max');
         return;
       }
 
