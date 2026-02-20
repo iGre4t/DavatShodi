@@ -4557,8 +4557,13 @@ $sessionPayload = [
           return 'active';
         };
 
+        const normalizeUpcomingStartTime = (value) => {
+          const normalized = String(value || '').trim();
+          return normalized !== '' ? normalized : '00:00';
+        };
+
         const formatTaskCountdown = (targetDate, targetTime) => {
-          const target = getTehranTargetDate(targetDate, targetTime);
+          const target = getTehranTargetDate(targetDate, normalizeUpcomingStartTime(targetTime));
           if (!target) {
             return '';
           }
@@ -4611,7 +4616,10 @@ $sessionPayload = [
               const taskId = String(button.dataset.taskId || '').trim();
               if (taskId !== '' && taskId === closestUpcomingTaskId) {
                 const countdown = formatTaskCountdown(startDate, startTime);
-                metaEl.textContent = countdown || taskStatusLabel(status, false, taskType);
+                const fallbackText = startDate
+                  ? `تا شروع: ${startDate} ${normalizeUpcomingStartTime(startTime)}`
+                  : taskStatusLabel(status, false, taskType);
+                metaEl.textContent = countdown || fallbackText;
               } else {
                 metaEl.textContent = taskStatusLabel(status, false, taskType);
               }
@@ -4629,11 +4637,15 @@ $sessionPayload = [
 
           let closestUpcomingTaskId = '';
           let closestUpcomingTs = Number.POSITIVE_INFINITY;
+          let firstUpcomingTaskId = '';
           statusRows.forEach(({ button, status }) => {
             if (status !== 'upcoming') return;
             const taskId = String(button.dataset.taskId || '').trim();
+            if (firstUpcomingTaskId === '' && taskId !== '') {
+              firstUpcomingTaskId = taskId;
+            }
             const startDate = String(button.dataset.taskStartDate || '').trim();
-            const startTime = String(button.dataset.taskStartTime || '').trim();
+            const startTime = normalizeUpcomingStartTime(button.dataset.taskStartTime);
             const target = getTehranTargetDate(startDate, startTime);
             if (!target || !taskId) return;
             const ts = target.getTime();
@@ -4642,6 +4654,9 @@ $sessionPayload = [
               closestUpcomingTaskId = taskId;
             }
           });
+          if (closestUpcomingTaskId === '' && firstUpcomingTaskId !== '') {
+            closestUpcomingTaskId = firstUpcomingTaskId;
+          }
 
           statusRows.forEach(({ button, status }) => {
             setTaskButtonState(button, status, closestUpcomingTaskId);
