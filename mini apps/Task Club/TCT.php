@@ -8,6 +8,7 @@ requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
 $tctTasksDir = __DIR__ . '/tasks';
 $tctStorePath = $tctTasksDir . '/tasks.js';
 $tctEventInviteesPath = __DIR__ . '/TC Event/Invitees mapped.csv';
+$tctEventInviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
 const TCT_SCORE_SETTINGS_FILE = 'task-score.json';
 const TCT_INFO_SETTINGS_FILE = 'info-task.json';
 const TCT_INFO_SCORES_FILE = 'info-task-scores.json';
@@ -528,7 +529,8 @@ function tctWriteCsvRows(string $path, array $rows): bool
 
 function tctNormalizeHeaderName(string $value): string
 {
-  $normalized = strtolower(trim($value));
+  $clean = str_replace("\xEF\xBB\xBF", '', $value);
+  $normalized = strtolower(trim($clean));
   $normalized = preg_replace('/\s+/', ' ', $normalized);
   return is_string($normalized) ? $normalized : '';
 }
@@ -555,20 +557,42 @@ function tctFindFirstHeaderIndex(array $header, array $names): int
   return -1;
 }
 
-function tctResolveInviteesForRateTable(string $inviteesPath): array
+function tctReadJsonArrayFromFile(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function tctResolveInviteesForRateTable(string $inviteesPath, string $mapPath = ''): array
 {
   $rows = tctReadCsvRows($inviteesPath);
   if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
     return [];
   }
   $header = $rows[0];
-  $workIdIndex = tctFindFirstHeaderIndex($header, ['Work ID', 'work id', 'workid', 'کد پرسنلی']);
+  $mapping = tctReadJsonArrayFromFile($mapPath);
+  $workIdIndex = isset($mapping['workId']) && is_numeric($mapping['workId'])
+    ? (int)$mapping['workId']
+    : tctFindFirstHeaderIndex($header, ['Work ID', 'work id', 'workid', 'کد پرسنلی']);
   if ($workIdIndex < 0) {
     return [];
   }
-  $firstNameIndex = tctFindFirstHeaderIndex($header, ['first name', 'firstname', 'نام']);
-  $lastNameIndex = tctFindFirstHeaderIndex($header, ['last name', 'lastname', 'نام خانوادگی']);
-  $phoneIndex = tctFindFirstHeaderIndex($header, ['phone', 'phone number', 'mobile', 'cell', 'شماره موبایل', 'موبایل']);
+  $firstNameIndex = isset($mapping['firstName']) && is_numeric($mapping['firstName'])
+    ? (int)$mapping['firstName']
+    : tctFindFirstHeaderIndex($header, ['first name', 'firstname', 'نام']);
+  $lastNameIndex = isset($mapping['lastName']) && is_numeric($mapping['lastName'])
+    ? (int)$mapping['lastName']
+    : tctFindFirstHeaderIndex($header, ['last name', 'lastname', 'نام خانوادگی']);
+  $phoneIndex = isset($mapping['phoneNumber']) && is_numeric($mapping['phoneNumber'])
+    ? (int)$mapping['phoneNumber']
+    : tctFindFirstHeaderIndex($header, ['phone', 'phone number', 'mobile', 'cell', 'شماره موبایل', 'موبایل']);
   $nameIndex = tctFindFirstHeaderIndex($header, ['full name', 'fullname', 'name', 'نام و نام خانوادگی']);
 
   $invitees = [];
@@ -1060,10 +1084,14 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
+    if (!is_file($tctEventInviteesPath)) {
+      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
     $maxScore = max(0, (int)($scoreSettings['score'] ?? 0));
     $scoreMap = tctLoadTaskInfoScores($tctTasksDir, $tagCode);
-    $invitees = tctResolveInviteesForRateTable($tctEventInviteesPath);
+    $invitees = tctResolveInviteesForRateTable($tctEventInviteesPath, $tctEventInviteesMapPath);
     foreach ($invitees as $index => $invitee) {
       $workId = trim((string)($invitee['workId'] ?? ''));
       $invitees[$index]['customScore'] = max(0, min($maxScore, (int)($scoreMap[$workId] ?? 0)));
