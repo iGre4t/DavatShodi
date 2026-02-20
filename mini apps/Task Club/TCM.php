@@ -5055,6 +5055,7 @@ $sessionPayload = [
         let globalEventStatus = 'inactive';
 
         const QUIZ_TIME_LIMIT_MS = 14000;
+        const QUIZ_FEEDBACK_DELAY_MS = 1000;
 
         const setTimeCounter = (label, value) => {
           if (timeCounterLabelEl) {
@@ -6312,7 +6313,7 @@ $sessionPayload = [
           await sendTaskAnswer(item, '');
           setTimeout(() => {
             continueQuiz();
-          }, 500);
+          }, QUIZ_FEEDBACK_DELAY_MS);
         };
 
         const startQuizTimer = () => {
@@ -6352,7 +6353,7 @@ $sessionPayload = [
             }
             setTimeout(() => {
               void completeCurrentTask(item, answerText);
-            }, 420);
+            }, QUIZ_FEEDBACK_DELAY_MS);
             return;
           }
 
@@ -6367,7 +6368,7 @@ $sessionPayload = [
           }
           setTimeout(() => {
             continueQuiz();
-          }, 700);
+          }, QUIZ_FEEDBACK_DELAY_MS);
         };
 
         const handlePercentageAnswer = async (submitButton, slider, item) => {
@@ -6383,7 +6384,7 @@ $sessionPayload = [
           }
           setTimeout(() => {
             void completeCurrentTask(item, String(value));
-          }, 420);
+          }, QUIZ_FEEDBACK_DELAY_MS);
         };
 
         const renderQuizQuestion = () => {
