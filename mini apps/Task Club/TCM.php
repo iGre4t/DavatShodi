@@ -2869,6 +2869,12 @@ $sessionPayload = [
         letter-spacing: 0.04em;
       }
 
+      .brand-greeting {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+
       .brand-name {
         color: var(--tc-secondary);
         font-weight: 700;
@@ -4607,8 +4613,10 @@ $sessionPayload = [
             <?php if ($fallbackSiteIconUrl !== ''): ?>
               <img class="brand-icon" src="<?= htmlspecialchars($fallbackSiteIconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکن سایت" />
             <?php endif; ?>
-            <span class="brand-name"><?= htmlspecialchars($sessionFirstName, ENT_QUOTES, 'UTF-8') ?></span>
-            <span class="brand-text">عزیز، خوش آمدید</span>
+            <span class="brand-greeting">
+              <span class="brand-name"><?= htmlspecialchars($sessionFirstName, ENT_QUOTES, 'UTF-8') ?></span>
+              <span class="brand-text">عزیز، خوش آمدید</span>
+            </span>
           </p>
           <div class="topbar-actions">
             <?php if ($sessionPayload['authed']): ?>
