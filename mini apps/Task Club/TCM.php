@@ -1389,6 +1389,51 @@ function resolveInviteeFullName(array $header, array $mapping, array $row, strin
   return $fallbackWorkId;
 }
 
+function resolveInviteeFirstName(array $header, array $mapping, array $row, string $fallback = ''): string
+{
+  $mappingKeys = ['firstName', 'first_name', 'first name', 'name'];
+  foreach ($mappingKeys as $key) {
+    $mappedIndex = $mapping[$key] ?? null;
+    if (is_numeric($mappedIndex) && (int)$mappedIndex >= 0) {
+      $index = (int)$mappedIndex;
+      $value = trim((string)($row[$index] ?? ''));
+      if ($value !== '') {
+        return $value;
+      }
+    }
+  }
+
+  $nameIndex = findFirstHeaderIndex($header, [
+    'نام',
+    'first name',
+    'name',
+    'fullname',
+    'full name'
+  ]);
+  if ($nameIndex >= 0) {
+    $value = trim((string)($row[$nameIndex] ?? ''));
+    if ($value !== '') {
+      $parts = preg_split('/\s+/u', $value) ?: [];
+      $first = trim((string)($parts[0] ?? ''));
+      if ($first !== '') {
+        return $first;
+      }
+      return $value;
+    }
+  }
+
+  $fallbackText = trim($fallback);
+  if ($fallbackText !== '') {
+    $parts = preg_split('/\s+/u', $fallbackText) ?: [];
+    $first = trim((string)($parts[0] ?? ''));
+    if ($first !== '') {
+      return $first;
+    }
+    return $fallbackText;
+  }
+  return '';
+}
+
 function parseEpochValue($raw): ?int
 {
   if (is_int($raw) || is_float($raw) || (is_string($raw) && preg_match('/^\d+$/', trim($raw)))) {
@@ -2512,6 +2557,7 @@ if ($sessionAuthed && ($inviteesMtime === null || ($inviteesMtime !== ($_SESSION
 }
 $sessionWorkId = $sessionAuthed ? trim((string)($_SESSION['tc_work_id'] ?? '')) : '';
 $sessionFullName = $sessionWorkId;
+$sessionFirstName = 'کاربر';
 $sessionPrizeWon = '';
 $sessionPrizeWonAt = null;
 $sessionWheelAngle = null;
@@ -2538,6 +2584,10 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     $sessionWorkId = '';
   } else {
     $sessionFullName = resolveInviteeFullName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $sessionWorkId);
+    $resolvedFirstName = resolveInviteeFirstName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $sessionFullName);
+    if ($resolvedFirstName !== '') {
+      $sessionFirstName = $resolvedFirstName;
+    }
     $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes, (bool)$tcqSettings['randomOrder']);
     $sessionQuizOrder = $quizState['order'];
     $sessionAnswered = $quizState['answered'];
@@ -2562,17 +2612,6 @@ $taskItemsForView = buildTaskPayloadForView($taskRecords, $inviteesFilePath, $in
 $sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
   ? computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)
   : 0;
-$sessionFirstName = 'کاربر';
-if ($sessionAuthed) {
-  $fullNameForTopbar = trim((string)$sessionFullName);
-  if ($fullNameForTopbar !== '') {
-    $nameParts = preg_split('/\s+/u', $fullNameForTopbar) ?: [];
-    $sessionFirstName = trim((string)($nameParts[0] ?? ''));
-  }
-  if ($sessionFirstName === '' && $sessionWorkId !== '') {
-    $sessionFirstName = trim((string)$sessionWorkId);
-  }
-}
 if ($sessionFirstName === '') {
   $sessionFirstName = 'کاربر';
 }
