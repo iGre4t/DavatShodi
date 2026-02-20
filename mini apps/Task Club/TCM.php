@@ -2702,8 +2702,8 @@ $sessionPayload = [
         align-items: center;
         justify-content: center;
         background:
-          linear-gradient(160deg, rgba(206, 227, 255, 0.5), rgba(244, 247, 251, 0) 40%),
-          linear-gradient(330deg, rgba(215, 230, 255, 0.5), rgba(244, 247, 251, 0) 42%),
+          radial-gradient(circle at top right, color-mix(in srgb, var(--tc-highlight) 20%, transparent), transparent 46%),
+          radial-gradient(circle at bottom left, color-mix(in srgb, var(--tc-secondary) 18%, transparent), transparent 45%),
           var(--bg);
         color: var(--ink);
         padding: 18px;
@@ -4692,7 +4692,7 @@ $sessionPayload = [
                 <span>?</span>
               </div>
             <?php endif; ?>
-            <h2 class="login-title">باشگاه تعاملی</h2>
+            <h2 class="login-title">کمپین «به نام خدا»</h2>
           </div>
           <form id="tc-login-form" class="login-form" autocomplete="on">
             <label class="login-field">
@@ -4712,7 +4712,7 @@ $sessionPayload = [
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-tasks-title" class="tasks-title">امتیاز جمع کن، جایزه ببر!</h2>
+          <h2 id="tc-tasks-title" class="tasks-title">چالش‌های کمپین «به نام خدا»</h2>
           <div class="user-score-chip">
             <span>امتیاز شما</span>
             <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
@@ -4770,7 +4770,7 @@ $sessionPayload = [
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-rewards-title" class="tasks-title">امتیاز جمع کن، جایزه ببر!</h2>
+          <h2 id="tc-rewards-title" class="tasks-title">خوان‌های جوایز</h2>
           <div class="user-score-chip">
             <span>امتیاز شما</span>
             <strong id="tc-reward-user-score-chip-value"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
@@ -5765,7 +5765,7 @@ $sessionPayload = [
           if (nextLocked) {
             const needed = Math.max(0, Number(nextLocked?.score || 0) - userScore);
             return {
-              message: `${formatRewardNumber(needed)} امتیاز دیگر برای انتخاب کارت`,
+              message: `${formatRewardNumber(needed)} امتیاز دیگر نیاز است تا بتوانید یک کارت دیگر انتخاب کنید`,
               disableUnchosen: true
             };
           }
