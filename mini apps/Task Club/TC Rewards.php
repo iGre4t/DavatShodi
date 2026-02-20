@@ -385,12 +385,7 @@ $eventAccentSoft = normalizeHexColorForTheme($eventColors['accentSoft'] ?? '', '
         bottom: -2px;
         width: 2px;
         opacity: 0;
-        background: linear-gradient(
-          180deg,
-          color-mix(in srgb, var(--tc-secondary) 0%, transparent),
-          color-mix(in srgb, var(--tc-secondary) 95%, transparent),
-          color-mix(in srgb, var(--tc-secondary) 0%, transparent)
-        );
+        background: var(--tc-secondary);
         background-size: 2px 36px;
       }
 
@@ -422,7 +417,7 @@ $eventAccentSoft = normalizeHexColorForTheme($eventColors['accentSoft'] ?? '', '
       .roadmap-state.can-flip { color: #1f7f44; }
       .roadmap-state.won { color: var(--tc-secondary); }
       .roadmap-state.locked { color: #9aa8c4; }
-      .roadmap-state.reached { color: color-mix(in srgb, var(--tc-accent-soft) 85%, #8c4f00); }
+      .roadmap-state.reached { color: #cc7a00; }
 
       @keyframes roadmap-node-pulse {
         0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(122, 166, 233, 0.35); }

@@ -40,10 +40,18 @@
     return String(value || '').trim();
   }
 
+  function normalizeLogoStoredValue(value) {
+    const token = normalizeLogoPath(value);
+    if (!token) return '';
+    if (/^(?:https?:|data:|\/)/i.test(token)) return token;
+    if (token.includes('/')) return token;
+    return `uploads/gallery/${token}`;
+  }
+
   function buildLogoUrl(value) {
     const token = normalizeLogoPath(value);
     if (!token) return '';
-    if (/^(?:https?:|data:|\/)/i.test(token)) {
+    if (/^(?:https?:|data:|\/)/i.test(token) || token.includes('/')) {
       return token;
     }
     return `uploads/gallery/${encodeURIComponent(token)}`;
@@ -159,6 +167,7 @@
         }
         state.logo = filename;
         updateLogoPreview();
+        void persistLogoOnly('Logo saved.');
       }
     });
   }
@@ -193,7 +202,7 @@
       const current = await getSettings();
       const merged = {
         ...current,
-        eventLogo: normalizeLogoPath(state.logo),
+        eventLogo: normalizeLogoStoredValue(state.logo),
         eventColors: {
           secondary: normalizeHex(state.colors.secondary, DEFAULT_COLORS.secondary),
           highlight: normalizeHex(state.colors.highlight, DEFAULT_COLORS.highlight),
@@ -209,6 +218,20 @@
       setStatus(error?.message || 'Failed to save settings.', true);
     } finally {
       refs.saveBtn.disabled = false;
+    }
+  }
+
+  async function persistLogoOnly(successMessage = 'Logo saved.') {
+    try {
+      const current = await getSettings();
+      const merged = {
+        ...current,
+        eventLogo: normalizeLogoStoredValue(state.logo)
+      };
+      await saveSettings(merged);
+      setLogoStatus(successMessage);
+    } catch (error) {
+      setLogoStatus(error?.message || 'Failed to save logo.', true);
     }
   }
 
@@ -230,7 +253,7 @@
     refs.logoClearBtn?.addEventListener('click', () => {
       state.logo = '';
       updateLogoPreview();
-      setLogoStatus('');
+      void persistLogoOnly('Logo removed.');
     });
 
     refs.colorPickers.secondary?.addEventListener('click', () => openColorPicker('secondary', 'Choose secondary color'));
