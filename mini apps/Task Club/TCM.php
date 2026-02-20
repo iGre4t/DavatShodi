@@ -2044,11 +2044,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         continue;
       }
       $name = trim((string)($item['name'] ?? ''));
+      $displayName = trim((string)($item['onWheelName'] ?? $name));
       $last = max(0, (int)($item['last'] ?? 0));
-      if ($name === '' || $last <= 0) {
+      if (($displayName === '' && $name === '') || $last <= 0) {
         continue;
       }
-      $availablePrizeNames[] = $name;
+      $availablePrizeNames[] = $displayName !== '' ? $displayName : $name;
     }
 
     echo json_encode([
@@ -2151,8 +2152,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         continue;
       }
       $name = trim((string)($item['name'] ?? ''));
+      $displayName = trim((string)($item['onWheelName'] ?? $name));
       $last = max(0, (int)($item['last'] ?? 0));
-      if ($name !== '' && $last > 0) {
+      if (($displayName !== '' || $name !== '') && $last > 0) {
         $candidateIndexes[] = (int)$index;
       }
     }
@@ -2163,7 +2165,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $selectedStoreIndex = $candidateIndexes[random_int(0, count($candidateIndexes) - 1)];
     $selectedPrize = $prizes[$selectedStoreIndex];
-    $selectedPrizeName = trim((string)($selectedPrize['name'] ?? ''));
+    $selectedPrizeNameRaw = trim((string)($selectedPrize['name'] ?? ''));
+    $selectedPrizeOnWheelName = trim((string)($selectedPrize['onWheelName'] ?? $selectedPrizeNameRaw));
+    $selectedPrizeName = $selectedPrizeOnWheelName !== '' ? $selectedPrizeOnWheelName : $selectedPrizeNameRaw;
     $selectedPrizeValue = max(0, normalizeFloatValue($selectedPrize['value'] ?? 0));
     $selectedLast = max(0, (int)($selectedPrize['last'] ?? 0));
     $prizes[$selectedStoreIndex]['last'] = max(0, $selectedLast - 1);
@@ -3166,6 +3170,14 @@ $sessionPayload = [
         padding: 10px 14px;
       }
 
+      .rewards-total-bar.is-sticky {
+        position: sticky;
+        bottom: 10px;
+        z-index: 6;
+        margin-top: 0;
+        margin-bottom: 10px;
+      }
+
       .rewards-roadmap-main {
         width: min(360px, calc(100vw - 56px));
         flex: 1;
@@ -3418,8 +3430,8 @@ $sessionPayload = [
       }
 
       .flip-card.is-picked .flip-back {
-        background: #ffffff;
-        color: var(--tc-highlight);
+        background: var(--tc-highlight);
+        color: #ffffff;
       }
 
       .flip-card.is-locked {
@@ -4841,6 +4853,7 @@ $sessionPayload = [
         const topbarBackBtnEl = document.getElementById('tc-topbar-back');
         const rewardTimeLabelEl = document.getElementById('tc-reward-time-label');
         const rewardTimeValueEl = document.getElementById('tc-reward-time-value');
+        const rewardsTotalBarEl = rewardsViewEl ? rewardsViewEl.querySelector('.rewards-total-bar') : null;
         const rewardScoreChipEl = document.getElementById('tc-reward-user-score-chip-value');
         const rewardRoadmapEl = document.getElementById('tc-reward-roadmap');
         const rewardCardsBoxEl = document.getElementById('tc-reward-cards-box');
@@ -5535,6 +5548,12 @@ $sessionPayload = [
           if (rewardTimeValueEl) rewardTimeValueEl.textContent = value;
         };
 
+        const updateRewardsTotalBarPlacement = () => {
+          if (!(rewardRoadmapEl instanceof HTMLElement) || !(rewardsTotalBarEl instanceof HTMLElement)) return;
+          const isScrollable = rewardRoadmapEl.scrollHeight > (rewardRoadmapEl.clientHeight + 2);
+          rewardsTotalBarEl.classList.toggle('is-sticky', isScrollable);
+        };
+
         const buildRewardCards = () => {
           const names = Array.isArray(rewardsState?.availablePrizeNames) ? rewardsState.availablePrizeNames : [];
           const safeNames = names.length ? names : ['دوباره تلاش کن'];
@@ -5784,6 +5803,7 @@ $sessionPayload = [
             renderRewardSummary();
             renderRewardRoadmap();
             renderRewardCards();
+            updateRewardsTotalBarPlacement();
             await applyRewardEventState(String(rewardsState?.eventStatus || globalEventStatus || 'inactive'));
             const level = getCurrentFlippableLevel();
             if (!level) {
@@ -5869,7 +5889,7 @@ $sessionPayload = [
               const preview = candidateNames.length
                 ? candidateNames[Math.floor(Math.random() * candidateNames.length)]
                 : safeNames[Math.floor(Math.random() * safeNames.length)];
-              backEl.innerHTML = `<span>${escapeHtml(String(preview || 'جایزه ویژه'))}</span><small>جایزه احتمالی</small>`;
+              backEl.innerHTML = `<span>${escapeHtml(String(preview || 'جایزه ویژه'))}</span>`;
             }
           });
 
@@ -6356,6 +6376,9 @@ $sessionPayload = [
         }
 
         if (rewardRoadmapEl) {
+          rewardRoadmapEl.addEventListener('scroll', () => {
+            updateRewardsTotalBarPlacement();
+          });
           rewardRoadmapEl.addEventListener('click', (event) => {
             const target = event.target;
             if (!(target instanceof Element)) return;
@@ -6390,6 +6413,10 @@ $sessionPayload = [
           if (event.key === 'tcSettingsUpdated') {
             refreshStatus();
           }
+        });
+
+        window.addEventListener('resize', () => {
+          updateRewardsTotalBarPlacement();
         });
 
         const scheduleHourlyStatusCheck = () => {
