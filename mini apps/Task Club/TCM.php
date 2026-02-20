@@ -2562,6 +2562,20 @@ $taskItemsForView = buildTaskPayloadForView($taskRecords, $inviteesFilePath, $in
 $sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
   ? computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)
   : 0;
+$sessionFirstName = 'کاربر';
+if ($sessionAuthed) {
+  $fullNameForTopbar = trim((string)$sessionFullName);
+  if ($fullNameForTopbar !== '') {
+    $nameParts = preg_split('/\s+/u', $fullNameForTopbar) ?: [];
+    $sessionFirstName = trim((string)($nameParts[0] ?? ''));
+  }
+  if ($sessionFirstName === '' && $sessionWorkId !== '') {
+    $sessionFirstName = trim((string)$sessionWorkId);
+  }
+}
+if ($sessionFirstName === '') {
+  $sessionFirstName = 'کاربر';
+}
 $tcqSettingsForPayload = loadWfqSettings($tcqSettingsPath);
 $sessionPayload = [
   'authed' => $sessionAuthed,
@@ -2812,8 +2826,17 @@ $sessionPayload = [
         gap: 8px;
         margin: 0;
         font-size: 0.96rem;
-        color: var(--tc-secondary);
+        color: #111111;
         letter-spacing: 0.04em;
+      }
+
+      .brand-name {
+        color: var(--tc-secondary);
+        font-weight: 700;
+      }
+
+      .brand-text {
+        color: #111111;
       }
 
       .brand-icon {
@@ -4545,7 +4568,8 @@ $sessionPayload = [
             <?php if ($fallbackSiteIconUrl !== ''): ?>
               <img class="brand-icon" src="<?= htmlspecialchars($fallbackSiteIconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکن سایت" />
             <?php endif; ?>
-            <span>کمپین باشگاه تعاملی</span>
+            <span class="brand-name"><?= htmlspecialchars($sessionFirstName, ENT_QUOTES, 'UTF-8') ?></span>
+            <span class="brand-text">عزیز، خوش آمدید</span>
           </p>
           <div class="topbar-actions">
             <?php if ($sessionPayload['authed']): ?>
