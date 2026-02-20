@@ -5858,14 +5858,14 @@ $sessionPayload = [
               rowClasses.push('can-flip');
             } else if (level?.reached && !level?.won && isOutOfValue) {
               stateClass = 'won';
-              stateText = 'رسیده‌اید';
+              stateText = 'این جایزه به شما تعلق گرفته';
               rowClasses.push('won');
             } else if (level?.reached && !level?.won && String(level?.type || '') === 'value_sum' && eventStatus === 'upcoming') {
               stateClass = 'reached';
               stateText = 'لطفا تا شروع زمان دریافت جوایز صبر کنید';
             } else if (level?.reached && isOutOfValue) {
               stateClass = 'won';
-              stateText = 'رسیده‌اید';
+              stateText = 'این جایزه به شما تعلق گرفته';
               rowClasses.push('won');
             } else if (level?.reached) {
               stateClass = 'reached';
