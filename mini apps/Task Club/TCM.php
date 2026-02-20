@@ -1560,6 +1560,7 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'Answered',
     'task completed ids',
     'task score map',
+    'info tasks',
     'Card Flips Count',
     'Each Level Won Prize',
     'Total Prize Won',
