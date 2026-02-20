@@ -4052,9 +4052,9 @@ $sessionPayload = [
 
       .tc-result-gift {
         font-size: 7.2rem;
-        color: #ff4f00;
+        color: var(--tc-highlight);
         line-height: 1;
-        text-shadow: 0 8px 18px rgba(255, 79, 0, 0.28);
+        text-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
         animation: result-gift-shake 1.1s ease-in-out infinite;
         transform-origin: 50% 72%;
       }
@@ -4704,9 +4704,23 @@ $sessionPayload = [
           <div id="tc-reward-win-confetti" class="confetti-layer" aria-hidden="true"></div>
           <h3 id="tc-reward-win-title" class="tc-result-dialog-title">شما برنده شدید</h3>
           <div class="tc-result-dialog-content">
-            <p id="tc-reward-win-message" class="hint hint-align-center">-</p>
+            <span class="tc-result-gift" aria-hidden="true">🎁</span>
+            <div class="result">
+              <span class="result-label">جایزه شما</span>
+              <p id="tc-reward-win-value" class="result-value">-</p>
+            </div>
+            <p id="tc-reward-win-message" class="hint hint-align-center">تبریک! جایزه شما ثبت شد.</p>
           </div>
           <button id="tc-reward-win-confirm" class="tc-result-dialog-confirm" type="button">عالیه</button>
+        </section>
+      </div>
+      <div id="tc-info-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
+        <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-info-dialog-title">
+          <h3 id="tc-info-dialog-title" class="tc-result-dialog-title">پیام</h3>
+          <div class="tc-result-dialog-content">
+            <p id="tc-info-dialog-message" class="hint hint-align-center">-</p>
+          </div>
+          <button id="tc-info-dialog-confirm" class="tc-result-dialog-confirm" type="button">متوجه شدم</button>
         </section>
       </div>
     <?php endif; ?>
@@ -4863,8 +4877,13 @@ $sessionPayload = [
         const rewardCardsTotalValueEl = document.getElementById('tc-reward-cards-total-value');
         const rewardWinDialogEl = document.getElementById('tc-reward-win-dialog');
         const rewardWinConfettiEl = document.getElementById('tc-reward-win-confetti');
+        const rewardWinValueEl = document.getElementById('tc-reward-win-value');
         const rewardWinMessageEl = document.getElementById('tc-reward-win-message');
         const rewardWinConfirmEl = document.getElementById('tc-reward-win-confirm');
+        const infoDialogEl = document.getElementById('tc-info-dialog');
+        const infoDialogTitleEl = document.getElementById('tc-info-dialog-title');
+        const infoDialogMessageEl = document.getElementById('tc-info-dialog-message');
+        const infoDialogConfirmEl = document.getElementById('tc-info-dialog-confirm');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
         const quizTitleEl = document.getElementById('tc-task-quiz-title');
@@ -5178,21 +5197,32 @@ $sessionPayload = [
             return '';
           }
           const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
-          const days = Math.floor(diffSeconds / 86400);
-          const hours = Math.floor((diffSeconds % 86400) / 3600);
-          const minutes = Math.floor((diffSeconds % 3600) / 60);
-          return `${days} روز ${hours} ساعت ${minutes} دقیقه تا شروع تسک بعدی`;
+          const human = formatFaDuration(diffSeconds, { includeSeconds: false });
+          return `${human} تا شروع تسک بعدی`;
+        };
+
+        const formatFaDuration = (secondsValue, { includeSeconds = false } = {}) => {
+          const total = Math.max(0, Math.floor(Number(secondsValue) || 0));
+          const days = Math.floor(total / 86400);
+          const hours = Math.floor((total % 86400) / 3600);
+          const minutes = Math.floor((total % 3600) / 60);
+          const seconds = total % 60;
+          const parts = [];
+          if (days > 0) parts.push(`${days} روز`);
+          if (hours > 0) parts.push(`${hours} ساعت`);
+          if (minutes > 0) parts.push(`${minutes} دقیقه`);
+          if (includeSeconds && seconds > 0) parts.push(`${seconds} ثانیه`);
+          if (!parts.length) {
+            return includeSeconds ? '0 ثانیه' : '0 دقیقه';
+          }
+          return parts.join(' و ');
         };
 
         const formatEventCountdown = (targetDate, targetTime) => {
           const target = getTehranTargetDate(targetDate, targetTime);
           if (!target) return '';
           const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
-          const days = Math.floor(diffSeconds / 86400);
-          const hours = Math.floor((diffSeconds % 86400) / 3600);
-          const minutes = Math.floor((diffSeconds % 3600) / 60);
-          const seconds = diffSeconds % 60;
-          return `${days} روز ${hours} ساعت ${minutes} دقیقه ${seconds} ثانیه`;
+          return formatFaDuration(diffSeconds, { includeSeconds: true });
         };
 
         const formatGoldenTimeCountdown = (targetDate, targetTime) => {
@@ -5201,11 +5231,7 @@ $sessionPayload = [
             return '';
           }
           const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
-          const days = Math.floor(diffSeconds / 86400);
-          const hours = Math.floor((diffSeconds % 86400) / 3600);
-          const minutes = Math.floor((diffSeconds % 3600) / 60);
-          const seconds = diffSeconds % 60;
-          return `تا پایان مهلت طلایی پاسخ به سوال\n${days} روز ${hours} ساعت ${minutes} دقیقه ${seconds} ثانیه`;
+          return `تا پایان مهلت طلایی پاسخ به سوال\n${formatFaDuration(diffSeconds, { includeSeconds: true })}`;
         };
 
         const canOpenTaskByStatus = (status, taskType) => {
@@ -5843,13 +5869,39 @@ $sessionPayload = [
           }, 3400);
         };
 
-        const openRewardWinDialog = (prizeName) => new Promise((resolve) => {
-          if (!(rewardWinDialogEl instanceof HTMLElement) || !(rewardWinMessageEl instanceof HTMLElement) || !(rewardWinConfirmEl instanceof HTMLElement)) {
-            window.alert(`شما برنده ${String(prizeName || 'یک جایزه')} شدید.`);
+        const openInfoDialog = (message, title = 'پیام') => new Promise((resolve) => {
+          if (!(infoDialogEl instanceof HTMLElement) || !(infoDialogTitleEl instanceof HTMLElement) || !(infoDialogMessageEl instanceof HTMLElement) || !(infoDialogConfirmEl instanceof HTMLElement)) {
             resolve();
             return;
           }
-          rewardWinMessageEl.textContent = `شما برنده ${String(prizeName || 'یک جایزه')} شدید.`;
+          infoDialogTitleEl.textContent = String(title || 'پیام').trim() || 'پیام';
+          infoDialogMessageEl.textContent = String(message || '').trim() || '—';
+          infoDialogEl.classList.add('open');
+          infoDialogEl.setAttribute('aria-hidden', 'false');
+
+          const close = () => {
+            infoDialogEl.classList.remove('open');
+            infoDialogEl.setAttribute('aria-hidden', 'true');
+            infoDialogConfirmEl.removeEventListener('click', onConfirm);
+            infoDialogEl.removeEventListener('click', onOverlay);
+            resolve();
+          };
+          const onConfirm = () => close();
+          const onOverlay = (event) => {
+            if (event.target === infoDialogEl) close();
+          };
+          infoDialogConfirmEl.addEventListener('click', onConfirm);
+          infoDialogEl.addEventListener('click', onOverlay);
+        });
+
+        const openRewardWinDialog = (prizeName) => new Promise((resolve) => {
+          if (!(rewardWinDialogEl instanceof HTMLElement) || !(rewardWinMessageEl instanceof HTMLElement) || !(rewardWinConfirmEl instanceof HTMLElement) || !(rewardWinValueEl instanceof HTMLElement)) {
+            resolve();
+            return;
+          }
+          const safePrize = String(prizeName || 'یک جایزه').trim() || 'یک جایزه';
+          rewardWinValueEl.textContent = safePrize;
+          rewardWinMessageEl.textContent = 'تبریک! جایزه شما ثبت شد.';
           runRewardWinConfetti();
           rewardWinDialogEl.classList.add('open');
           rewardWinDialogEl.setAttribute('aria-hidden', 'false');
@@ -5912,17 +5964,17 @@ $sessionPayload = [
           if (!(cardButton instanceof HTMLButtonElement)) return;
           const cardIndex = Number(cardButton.dataset.cardIndex);
           if (rewardCardsLockedIndexes.has(cardIndex)) {
-            window.alert('این کارت قبلا انتخاب شده است. کارت دیگری را انتخاب کنید.');
+            await openInfoDialog('این کارت قبلا انتخاب شده است. کارت دیگری را انتخاب کنید.');
             return;
           }
           const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
           if (eventStatus !== 'active') {
-            window.alert('کارت‌ها فقط هنگام فعال بودن رویداد قابل انتخاب هستند.');
+            await openInfoDialog('کارت‌ها فقط هنگام فعال بودن رویداد قابل انتخاب هستند.');
             return;
           }
           const level = getCurrentFlippableLevel();
           if (!level || !level.id || !level.canFlip) {
-            window.alert('این سطح هنوز آماده نیست. امتیاز بیشتری جمع کنید.');
+            await openInfoDialog('این سطح هنوز آماده نیست. امتیاز بیشتری جمع کنید.');
             return;
           }
           rewardsRoundBusy = true;
@@ -5949,7 +6001,7 @@ $sessionPayload = [
             renderRewardCards();
             await refreshRewardState();
           } catch (error) {
-            window.alert(error?.message || 'باز کردن کارت ناموفق بود.');
+            await openInfoDialog(error?.message || 'باز کردن کارت ناموفق بود.');
           } finally {
             rewardsRoundBusy = false;
             updateLockedCardButtonsState();
@@ -5962,7 +6014,7 @@ $sessionPayload = [
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const level = levels.find((lvl) => String(lvl?.id || '') === String(levelId || '')) || null;
           if (!level || String(level.type || '') !== 'value_sum') {
-            window.alert('این سطح کارت ندارد و فقط امتیازی است.');
+            await openInfoDialog('این سطح کارت ندارد و فقط امتیازی است.');
             return;
           }
           if (eventStatus === 'upcoming') {
@@ -5970,15 +6022,15 @@ $sessionPayload = [
             const startDate = String(settings?.startDate ?? '').trim();
             const startTime = String(settings?.startTime ?? '').trim();
             const countdown = formatEventCountdown(startDate, startTime);
-            window.alert(`اول امتیاز جمع کنید، سپس در ${countdown || 'بازه شروع رویداد'} می‌توانید جایزه ببرید.`);
+            await openInfoDialog(`اول امتیاز جمع کنید، سپس در ${countdown || 'بازه شروع رویداد'} می‌توانید جایزه ببرید.`);
             return;
           }
           if (eventStatus !== 'active') {
-            window.alert('کارت‌ها فقط در حالت فعال رویداد باز می‌شوند.');
+            await openInfoDialog('کارت‌ها فقط در حالت فعال رویداد باز می‌شوند.');
             return;
           }
           if (!level.reached) {
-            window.alert('هنوز به این سطح نرسیده‌اید.');
+            await openInfoDialog('هنوز به این سطح نرسیده‌اید.');
             return;
           }
           selectedRewardLevelId = String(level.id || '');
