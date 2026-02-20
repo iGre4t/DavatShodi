@@ -455,18 +455,24 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
 
   <script>
     (() => {
+      const startedAt = Date.now();
+      const minimumVisibleMs = 1500;
       const watchdog = setTimeout(() => {
         if (!document.body.classList.contains('page-loading')) return;
         window.location.replace(`${window.location.pathname}?t=${Date.now()}`);
       }, 9000);
 
       window.addEventListener('load', () => {
-        clearTimeout(watchdog);
-        const loader = document.getElementById('tc-loader');
-        document.body.classList.remove('page-loading');
-        if (!loader) return;
-        loader.classList.add('loader-hidden');
-        setTimeout(() => loader.remove(), 360);
+        const elapsed = Date.now() - startedAt;
+        const delay = Math.max(0, minimumVisibleMs - elapsed);
+        setTimeout(() => {
+          clearTimeout(watchdog);
+          const loader = document.getElementById('tc-loader');
+          document.body.classList.remove('page-loading');
+          if (!loader) return;
+          loader.classList.add('loader-hidden');
+          setTimeout(() => loader.remove(), 360);
+        }, delay);
       }, { once: true });
     })();
   </script>
