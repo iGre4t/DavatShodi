@@ -3108,7 +3108,7 @@ $sessionPayload = [
         width: min(360px, calc(100vw - 56px));
         flex: 1;
         min-height: 0;
-        padding: 6px 2px 0;
+        padding: 6px 8px 0 2px;
       }
 
       .roadmap-time-hint {
@@ -3130,8 +3130,9 @@ $sessionPayload = [
         gap: 0;
         max-height: 100%;
         min-height: 0;
-        overflow: auto;
-        padding: 0 4px 16px 2px;
+        overflow-y: auto;
+        overflow-x: visible;
+        padding: 0 14px 16px 2px;
         scrollbar-width: none;
       }
 
@@ -3141,7 +3142,7 @@ $sessionPayload = [
 
       .roadmap-item {
         position: relative;
-        padding: 0 14px 16px 0;
+        padding: 0 22px 16px 0;
         border-right: 2px solid #d9e6fb;
       }
 
@@ -3152,6 +3153,7 @@ $sessionPayload = [
 
       .roadmap-item.reached {
         border-right-color: #78a9ef;
+        animation: roadmapLineFlow 1.5s ease-in-out infinite;
       }
 
       .roadmap-item.won {
@@ -3160,10 +3162,10 @@ $sessionPayload = [
 
       .roadmap-node {
         position: absolute;
-        right: -8px;
+        right: -10px;
         top: 3px;
-        width: 14px;
-        height: 14px;
+        width: 16px;
+        height: 16px;
         border-radius: 50%;
         border: 2px solid #7aa6e9;
         background: #fff;
@@ -3186,24 +3188,25 @@ $sessionPayload = [
       }
 
       .roadmap-content {
-        border: 1px dashed rgba(158, 182, 221, 0.65);
+        border: 0;
         border-radius: 12px;
-        background: rgba(247, 251, 255, 0.72);
-        backdrop-filter: blur(4px);
-        padding: 8px 10px;
+        background: transparent;
+        backdrop-filter: none;
+        padding: 8px 10px 8px 0;
         font-size: 0.78rem;
-        margin-right: 10px;
+        margin-right: 14px;
       }
 
       .roadmap-item.can-flip .roadmap-content {
-        border: 1px solid #ffc145;
+        border: 1px solid #ffbd3a;
         background: linear-gradient(145deg, #fff9e8, #ffefc2);
         box-shadow: 0 14px 24px rgba(255, 174, 57, 0.22);
+        padding: 10px 12px;
       }
 
       .roadmap-item.won .roadmap-content {
-        border: 1px solid #9cd7b0;
-        background: linear-gradient(145deg, #f3fff7, #e6f9ee);
+        border: 0;
+        background: transparent;
       }
 
       .roadmap-level-btn {
@@ -3223,14 +3226,19 @@ $sessionPayload = [
         font-size: 0.74rem;
       }
 
+      .roadmap-level-name {
+        font-weight: 800;
+        font-size: 0.84rem;
+      }
+
       .roadmap-state {
         margin-top: 4px;
         font-size: 0.73rem;
         font-weight: 700;
       }
 
-      .roadmap-state.can-flip { color: #1f7f44; }
-      .roadmap-state.won { color: var(--tc-secondary); }
+      .roadmap-state.can-flip { color: #b36a00; }
+      .roadmap-state.won { color: #227346; }
       .roadmap-state.locked { color: #9aa8c4; }
       .roadmap-state.reached { color: #cc7a00; }
 
@@ -3251,6 +3259,22 @@ $sessionPayload = [
         100% {
           box-shadow: 0 0 0 0 rgba(241, 165, 0, 0);
         }
+      }
+
+      @keyframes roadmapLineFlow {
+        0% {
+          border-right-color: #78a9ef;
+        }
+        50% {
+          border-right-color: #9dc0f6;
+        }
+        100% {
+          border-right-color: #78a9ef;
+        }
+      }
+
+      #tc-reward-status-line {
+        display: none;
       }
 
       #tc-reward-cards-box {
@@ -4720,6 +4744,7 @@ $sessionPayload = [
         let rewardsCardsViewOpen = false;
         let rewardsRoundBusy = false;
         let rewardsState = null;
+        let rewardEventTickTimer = null;
         let selectedRewardLevelId = '';
         let currentTaskId = '';
         let currentTaskTitle = '';
@@ -5012,6 +5037,17 @@ $sessionPayload = [
           const hours = Math.floor((diffSeconds % 86400) / 3600);
           const minutes = Math.floor((diffSeconds % 3600) / 60);
           return `${days}d ${hours}h ${minutes}m until next task starts`;
+        };
+
+        const formatEventCountdown = (targetDate, targetTime) => {
+          const target = getTehranTargetDate(targetDate, targetTime);
+          if (!target) return '';
+          const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
+          const days = Math.floor(diffSeconds / 86400);
+          const hours = Math.floor((diffSeconds % 86400) / 3600);
+          const minutes = Math.floor((diffSeconds % 3600) / 60);
+          const seconds = diffSeconds % 60;
+          return `${days}d ${hours}h ${minutes}m ${seconds}s`;
         };
 
         const formatGoldenTimeCountdown = (targetDate, targetTime) => {
@@ -5401,14 +5437,19 @@ $sessionPayload = [
               stateText = 'Reached';
             }
             const wonPrize = wonByLevelName.get(levelName) || '';
+            const pointsNeedText = level?.won
+              ? 'Points Needed: 0'
+              : reached
+                ? 'Points Needed: 0'
+                : `Points Needed: ${formatRewardNumber(left)}`;
             return `<div class="${rowClasses.join(' ')}">
               <span class="roadmap-node" aria-hidden="true"></span>
               <button class="roadmap-level-btn" type="button" data-level-id="${levelId}" ${isClickable ? '' : 'disabled'}>
               <div class="roadmap-content">
-                <div>${levelName} | ${formatRewardNumber(target)} points</div>
-                <div class="roadmap-left">${reached ? 'Ready to claim' : `${formatRewardNumber(left)} points to next level`}</div>
+                <div class="roadmap-level-name">${levelName}</div>
+                <div class="roadmap-left">${pointsNeedText}</div>
                 <div class="roadmap-state ${stateClass}">${stateText}</div>
-                ${wonPrize ? `<div class="roadmap-won-prize">Won: ${wonPrize}</div>` : ''}
+                ${wonPrize ? `<div class="roadmap-won-prize">Won ${wonPrize}</div>` : ''}
               </div>
               </button>
             </div>`;
@@ -5428,25 +5469,62 @@ $sessionPayload = [
           `).join('');
         };
 
+        const clearRewardEventTick = () => {
+          if (rewardEventTickTimer) {
+            clearInterval(rewardEventTickTimer);
+            rewardEventTickTimer = null;
+          }
+        };
+
         const applyRewardEventState = async (eventStatus) => {
+          clearRewardEventTick();
           const settings = await loadWheelSettings();
-          if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = '';
-          if (eventStatus === 'active') {
-            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'Event is active. Tap an available level to open cards.';
-            return;
+          const startDate = String(settings?.startDate ?? '').trim();
+          const startTime = String(settings?.startTime ?? '').trim();
+          const endDate = String(settings?.endDate ?? '').trim();
+          const endTime = String(settings?.endTime ?? '').trim();
+
+          const updateEventStateText = () => {
+            if (eventStatus === 'upcoming') {
+              const countdown = formatEventCountdown(startDate, startTime);
+              if (rewardRoadmapTimeEl) {
+                rewardRoadmapTimeEl.textContent = countdown
+                  ? `Collect points now.\nAfter ${countdown} you can win prizes based on your points.`
+                  : 'Collect points now. After the event starts, you can win prizes based on your points.';
+              }
+              setRewardTimeBox('Time Left to Win Prizes', countdown || 'Starts soon');
+              return;
+            }
+
+            if (eventStatus === 'active') {
+              const countdown = formatEventCountdown(endDate, endTime);
+              if (rewardRoadmapTimeEl) {
+                rewardRoadmapTimeEl.textContent = countdown
+                  ? `Time left to win rewards: ${countdown}`
+                  : 'Event is active. Time left to win rewards is running.';
+              }
+              setRewardTimeBox('Total Prize Won', formatToman(rewardsState?.totalPrizeWon || 0));
+              return;
+            }
+
+            if (eventStatus === 'ended') {
+              if (rewardRoadmapTimeEl) {
+                rewardRoadmapTimeEl.textContent = 'Event ended. Rewards are disabled.';
+              }
+              setRewardTimeBox('Total Prize Won', formatToman(rewardsState?.totalPrizeWon || 0));
+              return;
+            }
+
+            if (rewardRoadmapTimeEl) {
+              rewardRoadmapTimeEl.textContent = 'No active event right now.';
+            }
+            setRewardTimeBox('Total Prize Won', formatToman(rewardsState?.totalPrizeWon || 0));
+          };
+
+          updateEventStateText();
+          if (eventStatus === 'upcoming' || eventStatus === 'active') {
+            rewardEventTickTimer = setInterval(updateEventStateText, 1000);
           }
-          if (eventStatus === 'upcoming') {
-            const startDate = String(settings?.startDate ?? '').trim();
-            const startTime = String(settings?.startTime ?? '').trim();
-            const countdown = formatTaskCountdown(startDate, startTime);
-            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = countdown || 'Starts soon.';
-            return;
-          }
-          if (eventStatus === 'ended') {
-            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'Event ended and cards are disabled.';
-            return;
-          }
-          if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'No active event right now.';
         };
 
         const refreshRewardState = async () => {
@@ -5514,21 +5592,29 @@ $sessionPayload = [
           }
         };
 
-        const openRewardCardsSlide = (levelId) => {
+        const openRewardCardsSlide = async (levelId) => {
           if (!(rewardCardsViewEl instanceof HTMLElement)) return;
           const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const level = levels.find((lvl) => String(lvl?.id || '') === String(levelId || '')) || null;
           if (!level || String(level.type || '') !== 'value_sum') {
-            setRewardStatusLine('This level has no card and is achievement-only.');
+            window.alert('This level has no card and is achievement-only.');
+            return;
+          }
+          if (eventStatus === 'upcoming') {
+            const settings = await loadWheelSettings();
+            const startDate = String(settings?.startDate ?? '').trim();
+            const startTime = String(settings?.startTime ?? '').trim();
+            const countdown = formatEventCountdown(startDate, startTime);
+            window.alert(`First collect points, then in ${countdown || 'the upcoming event window'} you can win prizes.`);
             return;
           }
           if (eventStatus !== 'active') {
-            setRewardStatusLine('Cards can only be opened while the event is active.');
+            window.alert('Cards can only be opened while the event is active.');
             return;
           }
           if (!level.reached) {
-            setRewardStatusLine('You have not reached this level yet.');
+            window.alert('You have not reached this level yet.');
             return;
           }
           selectedRewardLevelId = String(level.id || '');
@@ -5572,6 +5658,7 @@ $sessionPayload = [
         const closeRewardsView = () => {
           rewardsViewOpen = false;
           rewardsCardsViewOpen = false;
+          clearRewardEventTick();
           if (rewardsViewEl) {
             rewardsViewEl.classList.add('hidden');
             rewardsViewEl.setAttribute('aria-hidden', 'true');
@@ -5939,7 +6026,7 @@ $sessionPayload = [
             if (!(button instanceof HTMLButtonElement) || button.disabled) return;
             const levelId = String(button.dataset.levelId || '').trim();
             if (!levelId) return;
-            openRewardCardsSlide(levelId);
+            void openRewardCardsSlide(levelId);
           });
         }
 
