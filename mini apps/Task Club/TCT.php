@@ -627,6 +627,19 @@ function tctResolveInviteesForRateTable(string $inviteesPath, string $mapPath = 
   return $invitees;
 }
 
+function tctResolveWorkIdIndexFromHeaderAndMap(array $header, string $mapPath = ''): int
+{
+  $mapping = tctReadJsonArrayFromFile($mapPath);
+  $mappedIndex = $mapping['workId'] ?? null;
+  if (is_numeric($mappedIndex)) {
+    $index = (int)$mappedIndex;
+    if ($index >= 0) {
+      return $index;
+    }
+  }
+  return tctFindFirstHeaderIndex($header, ['Work ID', 'work id', 'workid', 'کد پرسنلی']);
+}
+
 function tctEnsureInviteesMappedColumns(string $filePath): bool
 {
   $required = ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
@@ -1174,7 +1187,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     $invitees = tctResolveInviteesForRateTable($tctEventInviteesPath, $tctEventInviteesMapPath);
     $eventRows = tctReadCsvRows($tctEventInviteesPath);
     $eventHeader = (isset($eventRows[0]) && is_array($eventRows[0])) ? $eventRows[0] : [];
-    $workIdIndex = tctFindFirstHeaderIndex($eventHeader, ['Work ID', 'work id', 'workid', 'کد پرسنلی']);
+    $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($eventHeader, $tctEventInviteesMapPath);
     $infoTasksIndex = tctFindHeaderIndex($eventHeader, 'Info Tasks');
     $infoTaskScoreByWorkId = [];
     if ($workIdIndex >= 0 && $infoTasksIndex >= 0) {
@@ -1259,7 +1272,11 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
 
     $rows = tctReadCsvRows($tctEventInviteesPath);
     $columnIndexByName = tctEnsureInviteesColumns($rows, ['Work ID', 'score', 'Info Tasks']);
-    $workIdIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Work ID')] ?? -1);
+    $header = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : [];
+    $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $tctEventInviteesMapPath);
+    if ($workIdIndex < 0) {
+      $workIdIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Work ID')] ?? -1);
+    }
     $scoreIndex = (int)($columnIndexByName[tctNormalizeHeaderName('score')] ?? -1);
     $infoTasksIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Info Tasks')] ?? -1);
     if ($workIdIndex < 0 || $scoreIndex < 0 || $infoTasksIndex < 0) {
