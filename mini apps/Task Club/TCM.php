@@ -5457,7 +5457,7 @@ $sessionPayload = [
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
           if (completed) return 'تکمیل شده';
           if (status === 'active') {
-            return taskType === 'quiz' ? 'مهلت طلایی' : 'فعال';
+            return (taskType === 'quiz' || taskType === 'info') ? 'مهلت طلایی' : 'فعال';
           }
           if (status === 'upcoming') return 'به‌زودی';
           if (status === 'ended') {
@@ -5605,7 +5605,7 @@ $sessionPayload = [
           button.classList.toggle('is-upcoming', isUpcoming);
           button.classList.remove('is-completed');
           button.classList.toggle('is-info-ended', infoEndedNoScore);
-          button.classList.toggle('is-golden', status === 'active' && taskType === 'quiz');
+          button.classList.toggle('is-golden', status === 'active' && (taskType === 'quiz' || taskType === 'info'));
           button.classList.toggle('is-golden-live', false);
           button.dataset.taskStatus = status;
           if (metaEl) {
@@ -5623,7 +5623,7 @@ $sessionPayload = [
               } else {
                 metaEl.textContent = withScoreHint(taskStatusLabel(status, false, taskType), scoreNow);
               }
-            } else if (status === 'active' && taskType === 'quiz') {
+            } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
