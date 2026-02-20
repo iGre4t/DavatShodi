@@ -1,0 +1,322 @@
+<?php
+function loadJsonPayload(string $path): array
+{
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function formatAssetUrl(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  if (preg_match('/^(?:data:|https?:\/\/|\/\/)/i', $trimmed)) {
+    return $trimmed;
+  }
+  if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
+    return $trimmed;
+  }
+  return "../../{$trimmed}";
+}
+
+function normalizeHexColor($value, string $fallback): string
+{
+  $color = strtoupper(trim((string)$value));
+  if (preg_match('/^#[0-9A-F]{6}$/', $color)) {
+    return $color;
+  }
+  return strtoupper($fallback);
+}
+
+$settings = loadJsonPayload(__DIR__ . '/Setting.json');
+$eventColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
+$eventSecondary = normalizeHexColor($eventColors['secondary'] ?? '', '#2F8FFF');
+$eventHighlight = normalizeHexColor($eventColors['highlight'] ?? '', '#20C997');
+$eventAccentSoft = normalizeHexColor($eventColors['accentSoft'] ?? '', '#FFB347');
+$eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
+?>
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>کمپین به نام خدا</title>
+  <link rel="icon" href="<?= htmlspecialchars($eventLogoUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --phone: #ffffff;
+      --ink: #1f2a44;
+      --muted: #6f7d9a;
+      --line: #e5ecf7;
+      --tc-secondary: <?= htmlspecialchars($eventSecondary, ENT_QUOTES, 'UTF-8') ?>;
+      --tc-highlight: <?= htmlspecialchars($eventHighlight, ENT_QUOTES, 'UTF-8') ?>;
+      --tc-accent-soft: <?= htmlspecialchars($eventAccentSoft, ENT_QUOTES, 'UTF-8') ?>;
+      font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
+      color-scheme: light;
+    }
+
+    @font-face {
+      font-family: 'Peyda Fa Num';
+      src: url('../../style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Peyda Fa Num';
+      src: url('../../style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, color-mix(in srgb, var(--tc-highlight) 20%, transparent), transparent 46%),
+        radial-gradient(circle at bottom left, color-mix(in srgb, var(--tc-secondary) 18%, transparent), transparent 45%),
+        var(--bg);
+    }
+
+    .app {
+      width: min(460px, 100%);
+    }
+
+    .phone {
+      width: 100%;
+      min-height: calc(100vh - 28px);
+      background: var(--phone);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 24px 52px rgba(29, 55, 96, 0.16), inset 0 1px 0 #fff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      padding: 16px 16px 10px;
+      border-bottom: 1px solid #eef3fb;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    }
+
+    .brand {
+      margin: 0;
+      color: #24395f;
+      font-size: .9rem;
+      font-weight: 600;
+    }
+
+    .hero {
+      padding: 18px 18px 8px;
+      text-align: center;
+    }
+
+    .event-logo {
+      height: 88px;
+      width: auto;
+      max-width: min(240px, 72vw);
+      object-fit: contain;
+      margin-bottom: 10px;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 1.2rem;
+      color: var(--tc-secondary);
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: .9rem;
+      line-height: 1.9;
+    }
+
+    .badge {
+      margin: 12px auto 0;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: .8rem;
+      font-weight: 700;
+      color: #0f3f6e;
+      background: color-mix(in srgb, var(--tc-accent-soft) 36%, #fff);
+      border: 1px solid color-mix(in srgb, var(--tc-accent-soft) 55%, #fff);
+    }
+
+    .content {
+      padding: 8px 16px 18px;
+      overflow-y: auto;
+    }
+
+    .section {
+      border: 1px solid #e9eff9;
+      border-radius: 16px;
+      background: #fdfefe;
+      padding: 12px 12px 10px;
+      margin-bottom: 10px;
+    }
+
+    .section h3 {
+      margin: 0 0 8px;
+      color: var(--tc-highlight);
+      font-size: .95rem;
+      font-weight: 700;
+    }
+
+    .section p {
+      margin: 0;
+      color: #334b74;
+      font-size: .87rem;
+      line-height: 1.95;
+    }
+
+    .list {
+      margin: 0;
+      padding-right: 18px;
+      color: #334b74;
+      font-size: .87rem;
+      line-height: 1.95;
+    }
+
+    .list li { margin-bottom: 6px; }
+
+    .cta-wrap {
+      padding: 4px 16px 16px;
+    }
+
+    .cta {
+      width: 100%;
+      border: 0;
+      border-radius: 14px;
+      font-family: inherit;
+      font-size: .95rem;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, var(--tc-secondary), var(--tc-highlight));
+      padding: 13px 16px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 14px 30px color-mix(in srgb, var(--tc-secondary) 40%, transparent);
+    }
+
+    .support {
+      text-align: center;
+      font-size: .8rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .support b { color: var(--tc-secondary); }
+
+    @media (min-width: 680px) {
+      body { padding: 24px; }
+      .phone { min-height: min(860px, calc(100vh - 48px)); }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="phone">
+      <header class="topbar">
+        <p class="brand">باشگاه تعاملی | کمپین به نام خدا</p>
+      </header>
+
+      <section class="hero">
+        <?php if ($eventLogoUrl !== ''): ?>
+          <img class="event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
+        <?php endif; ?>
+        <h1 class="title">با ما در مسیر «به نام خدا» همراه شوید</h1>
+        <p class="subtitle">
+          از ۳ اسفند تا ۱۸ فروردین، چالش‌ها به‌صورت مرحله‌ای فعال می‌شوند و با مشارکت مستمر می‌توانید امتیاز جمع کنید و شانس دریافت جایزه داشته باشید.
+        </p>
+        <div class="badge">مجموع امتیازات کمپین: ۳۳۰ امتیاز</div>
+      </section>
+
+      <div class="content">
+        <section class="section">
+          <h3>این کمپین چه هدفی دارد؟</h3>
+          <p>
+            کمپین «به نام خدا» برای ایجاد تجربه‌ای پویا، مشارکتی و متفاوت طراحی شده است تا با افزایش تعامل، یادگیری و حضور مستمر همکاران، مسیر کسب امتیاز و دریافت کارت شانس فراهم شود.
+          </p>
+        </section>
+
+        <section class="section">
+          <h3>انواع چالش‌ها</h3>
+          <ul class="list">
+            <li><b>چالش‌های سوالی:</b> پاسخ به سوالات محتوایی کمپین و دریافت امتیاز.</li>
+            <li><b>چالش فردی «الهی‌نامه»:</b> فعالیتی فردی با تمرکز بر تفکر و خلاقیت.</li>
+            <li><b>چالش جمعی «به نقش ایران»:</b> فعالیت تیمی با محور همکاری و خلاقیت جمعی.</li>
+          </ul>
+        </section>
+
+        <section class="section">
+          <h3>نحوه شرکت</h3>
+          <p>
+            هر چالش به‌صورت جداگانه در صفحه نمایش داده می‌شود و شامل زمان شروع، پایان، توضیحات و امتیاز است. کافی است در بازه اعلام‌شده وارد شوید و طبق راهنما، مرحله مربوطه را انجام دهید.
+          </p>
+        </section>
+
+        <section class="section">
+          <h3>قوانین امتیازدهی</h3>
+          <ul class="list">
+            <li>هر چالش سوالی در زمان مقرر: <b>۳۰ امتیاز</b></li>
+            <li>چالش سوالی بعد از زمان مقرر: <b>۱۵ امتیاز</b></li>
+            <li>چالش فردی «الهی‌نامه»: <b>۵۰ امتیاز</b> (فقط در بازه زمانی مشخص)</li>
+            <li>چالش جمعی «به نقش ایران»: <b>۱۰۰ امتیاز</b> (ثبت پس از ارزیابی نهایی)</li>
+            <li>در چالش‌های غیرسوالی، بعد از پایان زمان، امکان شرکت وجود ندارد.</li>
+          </ul>
+        </section>
+
+        <section class="section">
+          <h3>کارت شانس و جوایز</h3>
+          <p>
+            در پایان کمپین، امتیازها به کارت شانس تبدیل می‌شوند. به ازای هر <b>۱۰۰ امتیاز</b> یک کارت شانس دریافت می‌کنید و جایزه هر کارت همان لحظه مشخص می‌شود. همچنین افرادی که امتیاز کامل <b>۳۳۰</b> را کسب کنند، در قرعه‌کشی ویژه نیز حضور خواهند داشت.
+          </p>
+        </section>
+
+        <section class="section">
+          <h3>ورود و اطلاعات حساب</h3>
+          <p>
+            نام کاربری و رمز عبور اختصاصی هر نفر از طریق پیامک ارسال می‌شود. اطلاعات ورود شخصی است و امکان استفاده مشترک از حساب وجود ندارد.
+          </p>
+        </section>
+
+        <section class="section">
+          <h3>پشتیبانی</h3>
+          <p>
+            در صورت وجود سوال یا ابهام، از طریق روبیکا با آیدی <b>@ero_mci</b> در ارتباط باشید.
+          </p>
+        </section>
+
+        <div class="cta-wrap">
+          <a class="cta" href="TCM.php">شرکت در چالش</a>
+          <p class="support">برای ادامه، روی دکمه بالا بزنید و وارد صفحه چالش شوید.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
