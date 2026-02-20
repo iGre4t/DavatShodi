@@ -776,6 +776,9 @@ function normalizeTaskTypeValue($value): string
   if ($token === 'quiz' || $token === 'quiz-task' || $token === 'quiz task') {
     return 'quiz';
   }
+  if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
+    return 'info';
+  }
   return 'quiz';
 }
 
