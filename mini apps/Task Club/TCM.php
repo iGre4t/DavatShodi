@@ -5898,8 +5898,7 @@ $sessionPayload = [
             window.alert('کارت‌ها فقط هنگام فعال بودن رویداد قابل انتخاب هستند.');
             return;
           }
-          const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
-          const level = levels.find((lvl) => String(lvl?.id || '') === selectedRewardLevelId) || null;
+          const level = getCurrentFlippableLevel();
           if (!level || !level.id || !level.canFlip) {
             window.alert('این سطح هنوز آماده نیست. امتیاز بیشتری جمع کنید.');
             return;
