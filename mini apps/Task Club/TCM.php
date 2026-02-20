@@ -5746,7 +5746,9 @@ $sessionPayload = [
             }
 
             if (eventStatus === 'ended') {
-              setRewardTimeBox('مجموع جوایز برنده شده', formatToman(rewardsState?.totalPrizeWon || 0));
+              const finalScore = formatRewardNumber(rewardsState?.score || 0);
+              const finalWon = formatToman(rewardsState?.totalPrizeWon || 0);
+              setRewardTimeBox('رویداد به اتمام رسیده', `امتیاز: ${finalScore} | مجموع جوایز: ${finalWon}`);
               return;
             }
 
