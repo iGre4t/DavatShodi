@@ -3071,7 +3071,7 @@ $sessionPayload = [
         justify-content: flex-start;
         gap: 12px;
         padding-top: 20px;
-        padding-bottom: 8px;
+        padding-bottom: 12px;
       }
 
       .rewards-head {
@@ -3094,28 +3094,35 @@ $sessionPayload = [
         width: min(360px, calc(100vw - 56px));
       }
 
+      .rewards-total-bar {
+        width: 100%;
+        margin-top: auto;
+        border: 1px solid #d9e7fb;
+        border-radius: 14px;
+        background: #f6faff;
+        box-shadow: 0 10px 20px rgba(44, 86, 146, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        padding: 10px 14px;
+      }
+
       .rewards-roadmap-main {
         width: min(360px, calc(100vw - 56px));
         flex: 1;
         min-height: 0;
-        padding: 2px 2px 0;
-      }
-
-      .rewards-roadmap-main .roadmap-title {
-        margin: 0 0 8px;
-        font-size: 0.88rem;
-      }
-
-      .roadmap-hint {
-        margin: 0 0 6px;
-        color: #66799d;
-        font-size: 0.76rem;
+        padding: 6px 2px 0;
       }
 
       .roadmap-time-hint {
-        margin: 0 0 10px;
-        color: #7c8aa7;
-        font-size: 0.74rem;
+        margin: 0 0 12px;
+        color: #1f4f9a;
+        background: #eaf3ff;
+        border: 1px solid #c9defa;
+        border-radius: 12px;
+        text-align: center;
+        font-size: 0.92rem;
+        line-height: 1.6;
+        font-weight: 700;
+        padding: 10px 12px;
+        box-shadow: 0 10px 22px rgba(31, 79, 154, 0.16);
       }
 
       .roadmap-list {
@@ -3134,13 +3141,21 @@ $sessionPayload = [
 
       .roadmap-item {
         position: relative;
-        padding: 0 14px 14px 0;
-        border-right: 2px solid #bfd2f4;
+        padding: 0 14px 16px 0;
+        border-right: 2px solid #d9e6fb;
       }
 
       .roadmap-item:last-child {
         padding-bottom: 0;
         border-right-color: transparent;
+      }
+
+      .roadmap-item.reached {
+        border-right-color: #78a9ef;
+      }
+
+      .roadmap-item.won {
+        border-right-color: #30a25d;
       }
 
       .roadmap-node {
@@ -3155,8 +3170,19 @@ $sessionPayload = [
       }
 
       .roadmap-item.reached .roadmap-node {
-        background: var(--tc-secondary);
-        border-color: var(--tc-secondary);
+        background: #74a9f1;
+        border-color: #74a9f1;
+      }
+
+      .roadmap-item.can-flip .roadmap-node {
+        background: #ffcc52;
+        border-color: #f1a500;
+        animation: roadmapNodePulse 1.2s ease-in-out infinite;
+      }
+
+      .roadmap-item.won .roadmap-node {
+        background: #30a25d;
+        border-color: #30a25d;
       }
 
       .roadmap-content {
@@ -3167,6 +3193,17 @@ $sessionPayload = [
         padding: 8px 10px;
         font-size: 0.78rem;
         margin-right: 10px;
+      }
+
+      .roadmap-item.can-flip .roadmap-content {
+        border: 1px solid #ffc145;
+        background: linear-gradient(145deg, #fff9e8, #ffefc2);
+        box-shadow: 0 14px 24px rgba(255, 174, 57, 0.22);
+      }
+
+      .roadmap-item.won .roadmap-content {
+        border: 1px solid #9cd7b0;
+        background: linear-gradient(145deg, #f3fff7, #e6f9ee);
       }
 
       .roadmap-level-btn {
@@ -3196,6 +3233,25 @@ $sessionPayload = [
       .roadmap-state.won { color: var(--tc-secondary); }
       .roadmap-state.locked { color: #9aa8c4; }
       .roadmap-state.reached { color: #cc7a00; }
+
+      .roadmap-won-prize {
+        margin-top: 4px;
+        color: #227346;
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+
+      @keyframes roadmapNodePulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(241, 165, 0, 0.34);
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(241, 165, 0, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(241, 165, 0, 0);
+        }
+      }
 
       #tc-reward-cards-box {
         border-radius: 18px;
@@ -4437,17 +4493,15 @@ $sessionPayload = [
             <span>Your score</span>
             <strong id="tc-reward-user-score-chip-value"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
-          <div class="result rewards-time-box">
-            <span id="tc-reward-time-label" class="result-label">Total rewards</span>
-            <p id="tc-reward-time-value" class="result-value">—</p>
-          </div>
           <section class="rewards-roadmap-main">
-            <h4 class="roadmap-title">Reward Roadmap</h4>
-            <p id="tc-reward-roadmap-hint" class="roadmap-hint"></p>
             <p id="tc-reward-roadmap-time" class="roadmap-time-hint"></p>
             <div id="tc-reward-roadmap" class="roadmap-list"></div>
           </section>
           <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
+          <div class="result rewards-total-bar">
+            <span id="tc-reward-time-label" class="result-label">Total Prize Won</span>
+            <p id="tc-reward-time-value" class="result-value">—</p>
+          </div>
         </div>
         <div id="tc-reward-cards-view" class="main-area rewards-view hidden" aria-hidden="true">
           <div class="rewards-head">
@@ -4636,7 +4690,6 @@ $sessionPayload = [
         const rewardTimeLabelEl = document.getElementById('tc-reward-time-label');
         const rewardTimeValueEl = document.getElementById('tc-reward-time-value');
         const rewardScoreChipEl = document.getElementById('tc-reward-user-score-chip-value');
-        const rewardRoadmapHintEl = document.getElementById('tc-reward-roadmap-hint');
         const rewardRoadmapTimeEl = document.getElementById('tc-reward-roadmap-time');
         const rewardRoadmapEl = document.getElementById('tc-reward-roadmap');
         const rewardCardsBoxEl = document.getElementById('tc-reward-cards-box');
@@ -5290,19 +5343,36 @@ $sessionPayload = [
         const renderRewardSummary = () => {
           if (!rewardsState) return;
           if (rewardScoreChipEl) rewardScoreChipEl.textContent = formatRewardNumber(rewardsState.score || 0);
-          if (rewardRoadmapHintEl) {
-            rewardRoadmapHintEl.textContent = `Rewards won: ${formatRewardNumber(rewardsState.cardFlipsCount || 0)}`;
-          }
-          setRewardTimeBox('Total rewards', formatToman(rewardsState.totalPrizeWon || 0));
+          setRewardTimeBox('Total Prize Won', formatToman(rewardsState.totalPrizeWon || 0));
           if (rewardCardsTotalValueEl) {
             rewardCardsTotalValueEl.textContent = formatToman(rewardsState.totalPrizeWon || 0);
           }
+        };
+
+        const buildWonPrizeByLevelName = () => {
+          const map = new Map();
+          const raw = String(rewardsState?.eachLevelWonPrize || '').trim();
+          if (!raw) return map;
+          raw.split(',').forEach((chunk) => {
+            const part = String(chunk || '').trim();
+            if (!part) return;
+            const separatorIndex = part.indexOf(':');
+            if (separatorIndex <= 0) return;
+            const levelName = part.slice(0, separatorIndex).trim();
+            const prizeName = part.slice(separatorIndex + 1).trim();
+            if (!levelName || !prizeName) return;
+            if (!map.has(levelName)) {
+              map.set(levelName, prizeName);
+            }
+          });
+          return map;
         };
 
         const renderRewardRoadmap = () => {
           if (!(rewardRoadmapEl instanceof HTMLElement)) return;
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const score = Number(rewardsState?.score ?? 0);
+          const wonByLevelName = buildWonPrizeByLevelName();
           if (!levels.length) {
             rewardRoadmapEl.innerHTML = '<div class="roadmap-item"><span class="roadmap-node"></span><div class="roadmap-content">No reward levels defined yet.</div></div>';
             return;
@@ -5311,28 +5381,34 @@ $sessionPayload = [
             const target = Number(level?.score ?? 0);
             const reached = score >= target;
             const left = Math.max(0, target - score);
-            const rowClass = reached ? 'roadmap-item reached' : 'roadmap-item';
+            const rowClasses = ['roadmap-item'];
+            if (reached) rowClasses.push('reached');
             let stateClass = 'locked';
             let stateText = 'Locked';
             const levelId = String(level?.id || '');
+            const levelName = String(level?.name || 'Reward Level');
             const isClickable = Boolean(level?.reached) && String(level?.type || '') === 'value_sum';
             if (level?.won) {
               stateClass = 'won';
               stateText = 'Claimed';
+              rowClasses.push('won');
             } else if (level?.canFlip) {
               stateClass = 'can-flip';
-              stateText = 'Available';
+              stateText = 'Tap to choose a card';
+              rowClasses.push('can-flip');
             } else if (level?.reached) {
               stateClass = 'reached';
               stateText = 'Reached';
             }
-            return `<div class="${rowClass}">
+            const wonPrize = wonByLevelName.get(levelName) || '';
+            return `<div class="${rowClasses.join(' ')}">
               <span class="roadmap-node" aria-hidden="true"></span>
               <button class="roadmap-level-btn" type="button" data-level-id="${levelId}" ${isClickable ? '' : 'disabled'}>
               <div class="roadmap-content">
-                <div>${String(level?.name || 'Reward Level')} | ${formatRewardNumber(target)} points</div>
+                <div>${levelName} | ${formatRewardNumber(target)} points</div>
                 <div class="roadmap-left">${reached ? 'Ready to claim' : `${formatRewardNumber(left)} points to next level`}</div>
                 <div class="roadmap-state ${stateClass}">${stateText}</div>
+                ${wonPrize ? `<div class="roadmap-won-prize">Won: ${wonPrize}</div>` : ''}
               </div>
               </button>
             </div>`;
