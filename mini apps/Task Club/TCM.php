@@ -4044,6 +4044,18 @@ $sessionPayload = [
         overflow: hidden;
       }
 
+      .info-task-head {
+        display: grid;
+        gap: 6px;
+      }
+
+      .info-task-title {
+        margin: 0;
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: #253f68;
+      }
+
       .info-task-content {
         flex: 1;
         overflow: auto;
@@ -4963,6 +4975,9 @@ $sessionPayload = [
           <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
         </div>
         <div id="tc-task-info-area" class="info-task-area quiz-hidden">
+          <div class="info-task-head">
+            <h3 id="tc-task-info-title" class="info-task-title">اطلاعات ماموریت</h3>
+          </div>
           <div id="tc-task-info-content" class="info-task-content"></div>
           <button id="tc-task-info-ack" class="login-btn info-task-ack" type="button">متوجه شدم</button>
         </div>
@@ -5192,6 +5207,7 @@ $sessionPayload = [
         const infoDialogConfirmEl = document.getElementById('tc-info-dialog-confirm');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
         const taskInfoAreaEl = document.getElementById('tc-task-info-area');
+        const taskInfoTitleEl = document.getElementById('tc-task-info-title');
         const taskInfoContentEl = document.getElementById('tc-task-info-content');
         const taskInfoAckBtnEl = document.getElementById('tc-task-info-ack');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
@@ -5806,6 +5822,9 @@ $sessionPayload = [
           if (bottomCtaEl) bottomCtaEl.classList.add('quiz-hidden');
           if (quizAreaEl) quizAreaEl.classList.add('quiz-hidden');
           if (taskInfoAreaEl) taskInfoAreaEl.classList.remove('quiz-hidden');
+          if (taskInfoTitleEl) {
+            taskInfoTitleEl.textContent = String(infoTitle || taskTitle || 'اطلاعات ماموریت').trim() || 'اطلاعات ماموریت';
+          }
           if (taskInfoContentEl) {
             const sections = parseInfoTaskSections(infoText);
             if (!sections.length) {
