@@ -1464,7 +1464,7 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'task score map',
     'Card Flips Count',
     'Each Level Won Prize',
-    'مجموع جوایز برنده شده',
+    'Total Prize Won',
     'Reward Level Won IDs',
     'Out of Value Rewards'
   ]);
@@ -1972,7 +1972,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $scoreIndex = (int)($columns['score'] ?? -1);
     $flipCountIndex = (int)($columns['Card Flips Count'] ?? -1);
     $wonPrizeIndex = (int)($columns['Each Level Won Prize'] ?? -1);
-    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? -1);
+    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? ($columns['مجموع جوایز برنده شده'] ?? -1));
     $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
 
     $userScore = $scoreIndex >= 0 ? max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0)) : 0;
@@ -2102,7 +2102,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $scoreIndex = (int)($columns['score'] ?? -1);
     $flipCountIndex = (int)($columns['Card Flips Count'] ?? -1);
     $wonPrizeIndex = (int)($columns['Each Level Won Prize'] ?? -1);
-    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? -1);
+    $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? ($columns['مجموع جوایز برنده شده'] ?? -1));
     $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
     if ($flipCountIndex < 0 || $wonPrizeIndex < 0 || $totalPrizeWonIndex < 0 || $wonLevelIdsIndex < 0) {
       echo json_encode(['status' => 'error', 'message' => 'ستون‌های جایزه آماده نیستند.']);
