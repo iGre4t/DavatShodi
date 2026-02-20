@@ -1797,7 +1797,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
     $task = findTaskById($tasks, $taskId);
     if (!is_array($task)) {
-      echo json_encode(['status' => 'error', 'message' => 'تسک پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
       exit;
     }
 
@@ -1871,7 +1871,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
     $task = findTaskById($tasks, $taskId);
     if (!is_array($task)) {
-      echo json_encode(['status' => 'error', 'message' => 'تسک پیدا نشد.']);
+      echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
       exit;
     }
 
@@ -4597,7 +4597,7 @@ $sessionPayload = [
             <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
           <p id="tc-event-notice" class="tasks-empty hidden" aria-live="polite"></p>
-          <div id="tc-tasks-list" class="tasks-list" aria-label="فهرست تسک‌ها">
+          <div id="tc-tasks-list" class="tasks-list" aria-label="فهرست ماموریت‌ها">
             <?php if ($taskItemsForView): ?>
               <?php foreach ($taskItemsForView as $taskItem): ?>
                 <?php
@@ -4638,7 +4638,7 @@ $sessionPayload = [
                 </button>
               <?php endforeach; ?>
             <?php else: ?>
-              <p class="tasks-empty">تسکی برای نمایش وجود ندارد.</p>
+              <p class="tasks-empty">ماموریتی برای نمایش وجود ندارد.</p>
             <?php endif; ?>
           </div>
         </div>
@@ -4675,7 +4675,7 @@ $sessionPayload = [
         </div>
         <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
           <div class="tc-task-quiz-head">
-            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">تسک کوییز</h3>
+            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">ماموریت کوییز</h3>
           </div>
           <div id="tc-task-quiz-counter" class="quiz-counter">1 / 1</div>
           <div id="tc-task-quiz-question" class="quiz-question-box">-</div>
@@ -4688,7 +4688,7 @@ $sessionPayload = [
     <?php if ($sessionPayload['authed']): ?>
       <div id="tc-task-result-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
         <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-task-result-title">
-          <h3 id="tc-task-result-title" class="tc-result-dialog-title">نتیجه تسک</h3>
+          <h3 id="tc-task-result-title" class="tc-result-dialog-title">نتیجه ماموریت</h3>
           <div class="tc-result-dialog-content">
             <div class="result">
               <span class="result-label">امتیاز</span>
@@ -5149,7 +5149,7 @@ $sessionPayload = [
 
         const withScoreHint = (baseText, scoreValue) => {
           const text = String(baseText || '').trim();
-          return `${text} | امتیاز تسک: ${Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0)}`;
+          return `${text} | امتیاز ماموریت: ${Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0)}`;
         };
 
         const deriveTaskStatusFromButton = (button) => {
@@ -5198,7 +5198,7 @@ $sessionPayload = [
           }
           const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
           const human = formatFaDuration(diffSeconds, { includeSeconds: false });
-          return `${human} تا شروع تسک بعدی`;
+          return `${human} تا شروع ماموریت بعدی`;
         };
 
         const formatFaDuration = (secondsValue, { includeSeconds = false } = {}) => {
@@ -5295,7 +5295,7 @@ $sessionPayload = [
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
               if (goldenCountdown) {
-                metaEl.textContent = `${goldenCountdown}\nامتیاز تسک: ${scoreNow}`;
+                metaEl.textContent = `${goldenCountdown}\nامتیاز ماموریت: ${scoreNow}`;
                 metaEl.classList.add('is-multiline');
                 button.classList.add('is-golden-live');
               } else {
@@ -5451,7 +5451,7 @@ $sessionPayload = [
             resultValueEl.textContent = String(Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0));
           }
           if (resultMessageEl) {
-            resultMessageEl.textContent = String(messageText || '').trim() || 'عالی! نتیجه تسک ذخیره شد.';
+            resultMessageEl.textContent = String(messageText || '').trim() || 'عالی! نتیجه ماموریت ذخیره شد.';
           }
           if (resultDialogEl) {
             resultDialogEl.classList.add('open');
@@ -6116,7 +6116,7 @@ $sessionPayload = [
             });
           } catch (error) {
             closeQuizOverlay();
-            openTaskResultDialog(0, error?.message || 'ذخیره امتیاز این تسک ناموفق بود.');
+            openTaskResultDialog(0, error?.message || 'ذخیره امتیاز این ماموریت ناموفق بود.');
             return;
           }
 
@@ -6135,10 +6135,10 @@ $sessionPayload = [
 
           closeQuizOverlay();
           if (payload?.alreadyCompleted) {
-            openTaskResultDialog(payload?.userTaskScore ?? 0, 'این تسک قبلا انجام شده و امتیاز گرفته است.');
+            openTaskResultDialog(payload?.userTaskScore ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
             return;
           }
-          openTaskResultDialog(payload?.awardedScore ?? 0, 'عالی! تسک کامل شد و امتیاز ثبت شد.');
+          openTaskResultDialog(payload?.awardedScore ?? 0, 'عالی! ماموریت کامل شد و امتیاز ثبت شد.');
         };
 
         const continueQuiz = () => {
@@ -6240,7 +6240,7 @@ $sessionPayload = [
           }
 
           if (quizTitleEl) {
-            quizTitleEl.textContent = currentTaskTitle || 'تسک کوییز';
+            quizTitleEl.textContent = currentTaskTitle || 'ماموریت کوییز';
           }
 
           const total = currentQuestions.length;
@@ -6355,19 +6355,19 @@ $sessionPayload = [
               button.dataset.taskCompleted = '1';
               button.dataset.taskUserScore = String(Number.parseInt(progress?.score ?? 0, 10) || 0);
               setTaskButtonState(button, 'completed');
-              openTaskResultDialog(progress?.score ?? 0, 'این تسک قبلا انجام شده و امتیاز گرفته است.');
+              openTaskResultDialog(progress?.score ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
               return;
             }
 
             if (!payload?.task?.available) {
               setTaskButtonState(button, String(payload?.task?.status || 'inactive'));
-              openTaskResultDialog(0, 'این تسک در حال حاضر فعال نیست.');
+              openTaskResultDialog(0, 'این ماموریت در حال حاضر فعال نیست.');
               return;
             }
 
             const normalizedQuestions = normalizeQuestions(payload?.questions || []);
             if (!normalizedQuestions.length) {
-              openTaskResultDialog(0, 'برای این تسک سوالی تنظیم نشده است.');
+              openTaskResultDialog(0, 'برای این ماموریت سوالی تنظیم نشده است.');
               return;
             }
 
@@ -6384,7 +6384,7 @@ $sessionPayload = [
 
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
             currentTaskId = taskId;
-            currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'تسک کوییز').trim();
+            currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
             currentQuestions = nextQuestions;
             currentQuestionIndex = 0;
             quizLocked = false;
@@ -6392,7 +6392,7 @@ $sessionPayload = [
             openQuizOverlay();
             renderQuizQuestion();
           } catch (error) {
-            openTaskResultDialog(0, error?.message || 'دریافت سوالات تسک ناموفق بود.');
+            openTaskResultDialog(0, error?.message || 'دریافت سوالات ماموریت ناموفق بود.');
           }
         };
 
