@@ -2857,6 +2857,7 @@ $sessionPayload = [
         color: #6b7a99;
         cursor: pointer;
         padding: 4px 6px;
+        text-decoration: none;
       }
 
       .logout-btn span {
@@ -4672,6 +4673,11 @@ $sessionPayload = [
                 <span aria-hidden="true"></span>
                 خروج
               </button>
+            <?php else: ?>
+              <a class="logout-btn" href="index.php">
+                <span aria-hidden="true"></span>
+                توضیحات
+              </a>
             <?php endif; ?>
           </div>
         </div>
