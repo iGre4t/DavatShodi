@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 function loadJsonPayload(string $path): array
 {
   if (!is_file($path)) {
@@ -36,12 +36,23 @@ function normalizeHexColor($value, string $fallback): string
   return strtoupper($fallback);
 }
 
+function loadPanelSettings(): array
+{
+  $defaults = ['siteIcon' => ''];
+  $payload = loadJsonPayload(__DIR__ . '/../../data/store.json');
+  $settings = is_array($payload['settings'] ?? null) ? $payload['settings'] : [];
+  return array_merge($defaults, $settings);
+}
+
 $settings = loadJsonPayload(__DIR__ . '/Setting.json');
+$panelSettings = loadPanelSettings();
 $eventColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
 $eventSecondary = normalizeHexColor($eventColors['secondary'] ?? '', '#2F8FFF');
 $eventHighlight = normalizeHexColor($eventColors['highlight'] ?? '', '#20C997');
 $eventAccentSoft = normalizeHexColor($eventColors['accentSoft'] ?? '', '#FFB347');
 $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
+$siteIconUrl = formatAssetUrl((string)($panelSettings['siteIcon'] ?? ''));
+$faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -49,7 +60,7 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>کمپین به نام خدا</title>
-  <link rel="icon" href="<?= htmlspecialchars($eventLogoUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
+  <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
   <style>
     :root {
       --bg: #f4f7fb;
@@ -96,6 +107,99 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
         var(--bg);
     }
 
+    .page-loading {
+      overflow: hidden;
+    }
+
+    .page-loading .app {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loader-overlay {
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(circle at top, rgba(223, 236, 255, 0.9), rgba(244, 247, 251, 0.92) 50%, rgba(255, 255, 255, 0.95));
+      display: grid;
+      place-items: center;
+      z-index: 9999;
+      transition: opacity 0.35s ease;
+    }
+
+    .loader-card {
+      width: min(280px, 80vw);
+      padding: 10px 8px;
+      text-align: center;
+      display: grid;
+      gap: 12px;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+
+    .loader-icon-wrap {
+      width: 96px;
+      height: 96px;
+      margin: 0 auto;
+      position: relative;
+      display: grid;
+      place-items: center;
+    }
+
+    .loader-icon-svg {
+      width: 72px;
+      height: 48px;
+      display: block;
+    }
+
+    .loader-icon-fill {
+      fill: rgba(47, 143, 255, 0.16);
+    }
+
+    .loader-icon-path {
+      fill: none;
+      stroke: #2f8fff;
+      stroke-width: 22;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 950 1250;
+      stroke-dashoffset: 0;
+      animation: tc-icon-stroke 2.4s linear infinite;
+    }
+
+    .loader-text {
+      margin: 0;
+      font-size: 0.9rem;
+      color: #516089;
+      font-weight: 600;
+    }
+
+    .loader-subtext {
+      margin: 0;
+      font-size: 0.78rem;
+      color: #8a97b2;
+    }
+
+    .loader-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @keyframes tc-icon-stroke {
+      0% {
+        stroke-dashoffset: 0;
+        opacity: 0.85;
+      }
+      50% {
+        opacity: 1;
+      }
+      100% {
+        stroke-dashoffset: -2200;
+        opacity: 0.85;
+      }
+    }
+
     .app {
       width: min(460px, 100%);
     }
@@ -116,6 +220,9 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
       padding: 16px 16px 10px;
       border-bottom: 1px solid #eef3fb;
       background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .brand {
@@ -123,6 +230,17 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
       color: #24395f;
       font-size: .9rem;
       font-weight: 600;
+    }
+
+    .brand-icon {
+      width: auto;
+      height: 24px;
+      max-width: 72px;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      object-fit: contain;
+      background: transparent;
     }
 
     .hero {
@@ -141,7 +259,7 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
     .title {
       margin: 0;
       font-size: 1.2rem;
-      color: var(--tc-secondary);
+      color: var(--tc-highlight);
       font-weight: 700;
     }
 
@@ -213,7 +331,7 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
       font-size: .95rem;
       font-weight: 700;
       color: #fff;
-      background: linear-gradient(135deg, var(--tc-secondary), var(--tc-highlight));
+      background: var(--tc-secondary);
       padding: 13px 16px;
       text-decoration: none;
       display: inline-flex;
@@ -237,11 +355,27 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
     }
   </style>
 </head>
-<body>
+<body class="page-loading">
+  <div id="tc-loader" class="loader-overlay" role="status" aria-live="polite">
+    <div class="loader-card">
+      <div class="loader-icon-wrap" aria-hidden="true">
+        <svg class="loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">
+          <path class="loader-icon-fill" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
+          <path class="loader-icon-path" d="M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z" />
+        </svg>
+      </div>
+      <p class="loader-text">در حال آماده سازی</p>
+      <p class="loader-subtext">لطفا چند لحظه صبر کنید</p>
+    </div>
+  </div>
+
   <main class="app">
     <section class="phone">
       <header class="topbar">
-        <p class="brand">باشگاه تعاملی | کمپین به نام خدا</p>
+        <?php if ($siteIconUrl !== ''): ?>
+          <img class="brand-icon" src="<?= htmlspecialchars($siteIconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکن سایت" />
+        <?php endif; ?>
+        <p class="brand">شرکت ارتباطات سیار ایران</p>
       </header>
 
       <section class="hero">
@@ -318,5 +452,23 @@ $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
       </div>
     </section>
   </main>
+
+  <script>
+    (() => {
+      const watchdog = setTimeout(() => {
+        if (!document.body.classList.contains('page-loading')) return;
+        window.location.replace(`${window.location.pathname}?t=${Date.now()}`);
+      }, 9000);
+
+      window.addEventListener('load', () => {
+        clearTimeout(watchdog);
+        const loader = document.getElementById('tc-loader');
+        document.body.classList.remove('page-loading');
+        if (!loader) return;
+        loader.classList.add('loader-hidden');
+        setTimeout(() => loader.remove(), 360);
+      }, { once: true });
+    })();
+  </script>
 </body>
 </html>
