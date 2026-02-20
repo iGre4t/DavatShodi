@@ -3270,7 +3270,7 @@ $sessionPayload = [
         min-height: 0;
         overflow-y: auto;
         overflow-x: visible;
-        padding: 0 14px 16px 2px;
+        padding: 6px 14px 16px 2px;
         scrollbar-width: none;
       }
 
@@ -3281,6 +3281,7 @@ $sessionPayload = [
       .roadmap-item {
         position: relative;
         padding: 0 22px 16px 0;
+        overflow: visible;
       }
 
       .roadmap-item::before {
@@ -3362,7 +3363,8 @@ $sessionPayload = [
         background: linear-gradient(145deg, #fff9e8, #ffefc2);
         box-shadow: 0 14px 24px rgba(255, 174, 57, 0.22);
         padding: 10px 12px;
-        animation: roadmapClaimPulse 1.35s ease-in-out infinite;
+        animation: roadmapClaimPulse 1.9s cubic-bezier(0.33, 0, 0.2, 1) infinite;
+        will-change: transform, box-shadow;
       }
 
       .roadmap-item.won .roadmap-content {
@@ -3441,16 +3443,16 @@ $sessionPayload = [
 
       @keyframes roadmapClaimPulse {
         0% {
-          box-shadow: 0 10px 18px rgba(255, 174, 57, 0.2);
-          transform: translateY(0);
+          box-shadow: 0 11px 20px rgba(255, 174, 57, 0.2);
+          transform: scale(1);
         }
         50% {
-          box-shadow: 0 16px 28px rgba(255, 174, 57, 0.32);
-          transform: translateY(-1px);
+          box-shadow: 0 13px 23px rgba(255, 174, 57, 0.25);
+          transform: scale(1.006);
         }
         100% {
-          box-shadow: 0 10px 18px rgba(255, 174, 57, 0.2);
-          transform: translateY(0);
+          box-shadow: 0 11px 20px rgba(255, 174, 57, 0.2);
+          transform: scale(1);
         }
       }
 
@@ -6063,7 +6065,7 @@ $sessionPayload = [
             await new Promise((resolve) => setTimeout(resolve, staggerMs));
           }
           pickedButton.classList.add('is-revealed');
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await new Promise((resolve) => setTimeout(resolve, 300));
         };
 
         const performRewardFlip = async (cardButton) => {
