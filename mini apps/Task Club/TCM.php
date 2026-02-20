@@ -1130,6 +1130,32 @@ function parseTaskScoreMap(string $raw): array
   return $map;
 }
 
+function parseInfoTasksScoreMap(string $raw): array
+{
+  $entries = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($entries)) {
+    return [];
+  }
+  $map = [];
+  foreach ($entries as $entry) {
+    $token = trim((string)$entry);
+    if ($token === '') {
+      continue;
+    }
+    $parts = explode('::', $token, 2);
+    if (count($parts) !== 2) {
+      continue;
+    }
+    $taskId = trim((string)($parts[0] ?? ''));
+    $score = normalizeTaskScoreValue($parts[1] ?? 0);
+    if ($taskId === '') {
+      continue;
+    }
+    $map[$taskId] = $score;
+  }
+  return $map;
+}
+
 function serializeTaskScoreMap(array $map): string
 {
   $items = [];
@@ -1183,6 +1209,8 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
 
   $taskCompletedIndex = (int)($columns['task completed ids'] ?? -1);
   $taskScoreMapIndex = (int)($columns['task score map'] ?? -1);
+  $infoTasksIndex = (int)($columns['info tasks'] ?? -1);
+  $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
   $completedIds = [];
   if ($taskCompletedIndex >= 0) {
     $completedIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
@@ -1193,8 +1221,19 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
   }
   $taskScore = 0;
+  if ($taskType === 'info') {
+    $infoMap = $infoTasksIndex >= 0
+      ? parseInfoTasksScoreMap((string)($rows[$rowIndex][$infoTasksIndex] ?? ''))
+      : [];
+    if (array_key_exists($taskId, $infoMap)) {
+      $isCompleted = true;
+      $taskScore = max(0, (int)($infoMap[$taskId] ?? 0));
+    }
+  }
   if ($isCompleted) {
-    if (isset($taskScoreMap[$taskId])) {
+    if ($taskType === 'info') {
+      $taskScore = max(0, $taskScore);
+    } elseif (isset($taskScoreMap[$taskId])) {
       $taskScore = max(0, (int)$taskScoreMap[$taskId]);
     } else {
       $taskScore = max(0, (int)($task['score'] ?? 0));

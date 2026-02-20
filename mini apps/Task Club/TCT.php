@@ -659,6 +659,82 @@ function tctEnsureInviteesMappedColumns(string $filePath): bool
   return tctWriteCsvRows($filePath, $rows);
 }
 
+function tctEnsureInviteesColumns(array &$rows, array $requiredColumns): array
+{
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    $rows = [$requiredColumns];
+    $indexMap = [];
+    foreach ($requiredColumns as $i => $name) {
+      $indexMap[tctNormalizeHeaderName($name)] = (int)$i;
+    }
+    return $indexMap;
+  }
+  $header = $rows[0];
+  $changed = false;
+  foreach ($requiredColumns as $columnName) {
+    $normalized = tctNormalizeHeaderName($columnName);
+    if (tctFindHeaderIndex($header, $columnName) >= 0) {
+      continue;
+    }
+    $header[] = $columnName;
+    $newIndex = count($header) - 1;
+    for ($i = 1; $i < count($rows); $i += 1) {
+      if (!is_array($rows[$i])) {
+        $rows[$i] = [];
+      }
+      $rows[$i][$newIndex] = '';
+    }
+    $changed = true;
+  }
+  if ($changed) {
+    $rows[0] = $header;
+  }
+  $indexMap = [];
+  foreach ($header as $i => $name) {
+    $indexMap[tctNormalizeHeaderName((string)$name)] = (int)$i;
+  }
+  return $indexMap;
+}
+
+function tctParseInfoTasksMap(string $value): array
+{
+  $map = [];
+  $parts = preg_split('/\s*,\s*/', trim($value));
+  if (!is_array($parts)) {
+    return $map;
+  }
+  foreach ($parts as $part) {
+    $chunk = trim((string)$part);
+    if ($chunk === '') {
+      continue;
+    }
+    $sepPos = strpos($chunk, '::');
+    if ($sepPos === false) {
+      continue;
+    }
+    $taskId = trim(substr($chunk, 0, $sepPos));
+    $scoreRaw = trim(substr($chunk, $sepPos + 2));
+    if ($taskId === '') {
+      continue;
+    }
+    $map[$taskId] = tctNormalizeScoreValue($scoreRaw);
+  }
+  return $map;
+}
+
+function tctSerializeInfoTasksMap(array $map): string
+{
+  $pairs = [];
+  foreach ($map as $taskId => $score) {
+    $normalizedTaskId = trim((string)$taskId);
+    if ($normalizedTaskId === '') {
+      continue;
+    }
+    $pairs[] = $normalizedTaskId . '::' . (string)tctNormalizeScoreValue($score);
+  }
+  return implode(', ', $pairs);
+}
+
 function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
 {
   $normalizedTagCode = tctNormalizeTagCode($tagCode);
@@ -1090,11 +1166,27 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
     $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
     $maxScore = max(0, (int)($scoreSettings['score'] ?? 0));
-    $scoreMap = tctLoadTaskInfoScores($tctTasksDir, $tagCode);
+    $taskId = trim((string)($targetTask['id'] ?? ''));
     $invitees = tctResolveInviteesForRateTable($tctEventInviteesPath, $tctEventInviteesMapPath);
+    $eventRows = tctReadCsvRows($tctEventInviteesPath);
+    $eventHeader = (isset($eventRows[0]) && is_array($eventRows[0])) ? $eventRows[0] : [];
+    $workIdIndex = tctFindFirstHeaderIndex($eventHeader, ['Work ID', 'work id', 'workid', 'کد پرسنلی']);
+    $infoTasksIndex = tctFindHeaderIndex($eventHeader, 'Info Tasks');
+    $infoTaskScoreByWorkId = [];
+    if ($workIdIndex >= 0 && $infoTasksIndex >= 0) {
+      for ($rowIndex = 1; $rowIndex < count($eventRows); $rowIndex += 1) {
+        $row = is_array($eventRows[$rowIndex] ?? null) ? $eventRows[$rowIndex] : [];
+        $workId = trim((string)($row[$workIdIndex] ?? ''));
+        if ($workId === '') {
+          continue;
+        }
+        $infoMap = tctParseInfoTasksMap((string)($row[$infoTasksIndex] ?? ''));
+        $infoTaskScoreByWorkId[$workId] = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
+      }
+    }
     foreach ($invitees as $index => $invitee) {
       $workId = trim((string)($invitee['workId'] ?? ''));
-      $invitees[$index]['customScore'] = max(0, min($maxScore, (int)($scoreMap[$workId] ?? 0)));
+      $invitees[$index]['customScore'] = max(0, min($maxScore, (int)($infoTaskScoreByWorkId[$workId] ?? 0)));
     }
     echo json_encode([
       'status' => 'ok',
@@ -1130,8 +1222,13 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
+    if (!is_file($tctEventInviteesPath)) {
+      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
     $maxScore = max(0, (int)($scoreSettings['score'] ?? 0));
+    $taskId = trim((string)($targetTask['id'] ?? ''));
     $mode = strtolower(trim((string)($_POST['mode'] ?? 'custom')));
     $rawWorkIds = (string)($_POST['work_ids'] ?? '[]');
     $decodedWorkIds = json_decode($rawWorkIds, true);
@@ -1155,9 +1252,50 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     $assignedScore = $mode === 'max'
       ? $maxScore
       : max(0, min($maxScore, tctNormalizeScoreValue($_POST['custom_score'] ?? 0)));
+
+    $rows = tctReadCsvRows($tctEventInviteesPath);
+    $columnIndexByName = tctEnsureInviteesColumns($rows, ['Work ID', 'score', 'Info Tasks']);
+    $workIdIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Work ID')] ?? -1);
+    $scoreIndex = (int)($columnIndexByName[tctNormalizeHeaderName('score')] ?? -1);
+    $infoTasksIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Info Tasks')] ?? -1);
+    if ($workIdIndex < 0 || $scoreIndex < 0 || $infoTasksIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Required invitees columns are missing.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $workIdLookup = [];
+    for ($rowIndex = 1; $rowIndex < count($rows); $rowIndex += 1) {
+      $row = is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [];
+      $rowWorkId = trim((string)($row[$workIdIndex] ?? ''));
+      if ($rowWorkId !== '' && !isset($workIdLookup[$rowWorkId])) {
+        $workIdLookup[$rowWorkId] = $rowIndex;
+      }
+    }
+
     $scoreMap = tctLoadTaskInfoScores($tctTasksDir, $tagCode);
     foreach ($workIds as $workId) {
+      $rowIndex = $workIdLookup[$workId] ?? null;
+      if (!is_int($rowIndex) || $rowIndex < 1) {
+        continue;
+      }
+      if (!is_array($rows[$rowIndex])) {
+        $rows[$rowIndex] = [];
+      }
+      $row = &$rows[$rowIndex];
+      $infoMap = tctParseInfoTasksMap((string)($row[$infoTasksIndex] ?? ''));
+      $previousScore = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
+      $delta = $assignedScore - $previousScore;
+      $currentTotal = tctNormalizeScoreValue($row[$scoreIndex] ?? 0);
+      $row[$scoreIndex] = (string)max(0, $currentTotal + $delta);
+      $infoMap[$taskId] = $assignedScore;
+      $row[$infoTasksIndex] = tctSerializeInfoTasksMap($infoMap);
       $scoreMap[$workId] = $assignedScore;
+      unset($row);
+    }
+
+    if (!tctWriteCsvRows($tctEventInviteesPath, $rows)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update invitees mapped CSV.'], JSON_UNESCAPED_UNICODE);
+      exit;
     }
     if (!tctSaveTaskInfoScores($tctTasksDir, $tagCode, $scoreMap)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save invitees scores.'], JSON_UNESCAPED_UNICODE);
