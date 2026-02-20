@@ -4017,6 +4017,37 @@ $sessionPayload = [
         text-align: center;
       }
 
+      .login-help-card {
+        border: 1px solid #e3ecfa;
+        border-radius: 14px;
+        background: #f8fbff;
+        padding: 10px 12px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .login-help-title {
+        margin: 0;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #2c446f;
+      }
+
+      .login-help-text {
+        margin: 0;
+        font-size: 0.78rem;
+        line-height: 1.9;
+        color: #5a6f95;
+      }
+
+      .login-help-id {
+        color: var(--tc-secondary);
+        font-weight: 700;
+        direction: ltr;
+        unicode-bidi: plaintext;
+        display: inline-block;
+      }
+
       .no-auth .wheel-shell {
         display: none;
       }
@@ -4706,6 +4737,15 @@ $sessionPayload = [
             <button type="submit" class="login-btn">ورود</button>
             <p id="tc-login-msg" class="login-hint" aria-live="polite"></p>
           </form>
+          <section class="login-help-card" aria-label="راهنمای ورود و پشتیبانی">
+            <p class="login-help-title">راهنمای ورود و پشتیبانی</p>
+            <p class="login-help-text">
+              نام کاربری و رمز عبور اختصاصی هر شخص از طریق پیامک ارسال شده است و امکان استفاده مشترک وجود ندارد.
+            </p>
+            <p class="login-help-text">
+              اگر در ورود مشکل دارید، در روبیکا به آیدی <span class="login-help-id">@ero_mci</span> پیام دهید.
+            </p>
+          </section>
         </div>
       <?php else: ?>
         <div id="tc-timer-area" class="main-area">
