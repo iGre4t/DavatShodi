@@ -3223,6 +3223,10 @@ $sessionPayload = [
       }
 
       .roadmap-item.reached {
+      }
+
+      .roadmap-item.reached::before {
+        background: #78a9ef;
         animation: roadmapLineFlow 1.5s ease-in-out infinite;
       }
 
