@@ -28,6 +28,7 @@ const DEFAULT_PANEL_SETTINGS = [
 const TASKS_DIR_PATH = __DIR__ . '/tasks';
 const TASKS_JS_STORE_PATH = TASKS_DIR_PATH . '/tasks.js';
 const TASK_SCORE_SETTINGS_FILE = 'task-score.json';
+const TASK_INFO_SETTINGS_FILE = 'info-task.json';
 
 $prizeStorePath = __DIR__ . '/TC Prizes.json';
 $prizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
@@ -836,6 +837,34 @@ function readTaskScoreSettings(string $tasksDir, string $tagCode): array
   ];
 }
 
+function readTaskInfoSettings(string $tasksDir, string $tagCode): array
+{
+  $defaults = [
+    'title' => '',
+    'text' => ''
+  ];
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return $defaults;
+  }
+  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_INFO_SETTINGS_FILE;
+  if (!is_file($path)) {
+    return $defaults;
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return $defaults;
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return $defaults;
+  }
+  return [
+    'title' => trim((string)($decoded['title'] ?? '')),
+    'text' => trim((string)($decoded['text'] ?? ''))
+  ];
+}
+
 function normalizeTaskRecord(array $task, int $fallbackOrder): array
 {
   $id = trim((string)($task['id'] ?? ''));
@@ -902,6 +931,9 @@ function loadTaskRecords(string $storePath, string $tasksDir): array
     $task['order'] = $nextOrder;
     $task['score'] = (int)$scoreSettings['score'];
     $task['afterEndtimeScore'] = (int)$scoreSettings['afterEndtimeScore'];
+    $infoSettings = readTaskInfoSettings($tasksDir, $tagCode);
+    $task['infoTitle'] = (string)($infoSettings['title'] ?? '');
+    $task['infoText'] = (string)($infoSettings['text'] ?? '');
     $result[] = $task;
     $seenIds[$idKey] = true;
     $seenTagCodes[$tagKey] = true;
@@ -1928,7 +1960,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'afterEndtimeScore' => (int)($task['afterEndtimeScore'] ?? 0),
         'status' => $status,
         'available' => $available,
-        'statusLabel' => resolveTaskStatusLabel($status)
+        'statusLabel' => resolveTaskStatusLabel($status),
+        'infoTitle' => (string)($task['infoTitle'] ?? ''),
+        'infoText' => (string)($task['infoText'] ?? '')
       ],
       'questions' => $questions,
       'settings' => $settings,
@@ -4000,6 +4034,60 @@ $sessionPayload = [
         color: var(--tc-highlight);
       }
 
+      .info-task-area {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 16px 22px;
+        overflow: hidden;
+      }
+
+      .info-task-head {
+        display: grid;
+        gap: 6px;
+      }
+
+      .info-task-title {
+        margin: 0;
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: #253f68;
+      }
+
+      .info-task-content {
+        flex: 1;
+        overflow: auto;
+        display: grid;
+        gap: 10px;
+        padding-inline: 2px;
+      }
+
+      .info-task-section {
+        border: 1px solid #dbe7fb;
+        border-radius: 14px;
+        background: #f8fbff;
+        padding: 12px;
+      }
+
+      .info-task-section h3 {
+        margin: 0 0 6px;
+        font-size: 0.95rem;
+        color: #1f3560;
+      }
+
+      .info-task-section p {
+        margin: 0;
+        color: #4a5e86;
+        line-height: 1.8;
+        white-space: pre-wrap;
+      }
+
+      .info-task-ack {
+        width: 100%;
+      }
+
       .login-form {
         display: flex;
         flex-direction: column;
@@ -4886,6 +4974,13 @@ $sessionPayload = [
           <div id="tc-task-quiz-answers" class="quiz-answers-grid"></div>
           <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
         </div>
+        <div id="tc-task-info-area" class="info-task-area quiz-hidden">
+          <div class="info-task-head">
+            <h3 id="tc-task-info-title" class="info-task-title">اطلاعات ماموریت</h3>
+          </div>
+          <div id="tc-task-info-content" class="info-task-content"></div>
+          <button id="tc-task-info-ack" class="login-btn info-task-ack" type="button">متوجه شدم</button>
+        </div>
       <?php endif; ?>
       </section>
     </main>
@@ -5111,6 +5206,10 @@ $sessionPayload = [
         const infoDialogMessageEl = document.getElementById('tc-info-dialog-message');
         const infoDialogConfirmEl = document.getElementById('tc-info-dialog-confirm');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
+        const taskInfoAreaEl = document.getElementById('tc-task-info-area');
+        const taskInfoTitleEl = document.getElementById('tc-task-info-title');
+        const taskInfoContentEl = document.getElementById('tc-task-info-content');
+        const taskInfoAckBtnEl = document.getElementById('tc-task-info-ack');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
         const quizTitleEl = document.getElementById('tc-task-quiz-title');
         const quizCounterEl = document.getElementById('tc-task-quiz-counter');
@@ -5140,6 +5239,7 @@ $sessionPayload = [
         let currentTaskTitle = '';
         let currentQuestions = [];
         let currentQuestionIndex = 0;
+        let infoTaskViewOpen = false;
         let answerTimeLimitEnabled = true;
         let globalEventStatus = 'inactive';
 
@@ -5647,6 +5747,9 @@ $sessionPayload = [
           if (quizAreaEl) {
             quizAreaEl.classList.remove('quiz-hidden');
           }
+          if (taskInfoAreaEl) {
+            taskInfoAreaEl.classList.add('quiz-hidden');
+          }
         };
 
         const closeQuizOverlay = () => {
@@ -5666,11 +5769,75 @@ $sessionPayload = [
             quizAnswersEl.classList.remove('quiz-answers-grid--single');
             quizAnswersEl.innerHTML = '';
           }
+          if (taskInfoAreaEl) {
+            taskInfoAreaEl.classList.add('quiz-hidden');
+          }
+          if (taskInfoContentEl) {
+            taskInfoContentEl.innerHTML = '';
+          }
+          infoTaskViewOpen = false;
           quizLocked = false;
           currentTaskId = '';
           currentTaskTitle = '';
           currentQuestions = [];
           currentQuestionIndex = 0;
+        };
+
+        const escapeHtml = (value) => String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+
+        const parseInfoTaskSections = (text) => {
+          const source = String(text || '').replace(/\r/g, '');
+          const lines = source.split('\n');
+          const sections = [];
+          let current = null;
+          lines.forEach((rawLine) => {
+            const line = String(rawLine || '');
+            const match = line.match(/^\s*A(\d+)\s*[:\-]?\s*(.*)$/i);
+            if (match) {
+              if (current) sections.push(current);
+              const titleText = String(match[2] || '').trim();
+              current = {
+                title: titleText !== '' ? titleText : `Section A${match[1]}`,
+                lines: []
+              };
+              return;
+            }
+            if (!current) {
+              if (line.trim() === '') return;
+              current = { title: 'Information', lines: [] };
+            }
+            current.lines.push(line);
+          });
+          if (current) sections.push(current);
+          return sections.filter((sec) => String(sec.title || '').trim() !== '' || (Array.isArray(sec.lines) && sec.lines.join('').trim() !== ''));
+        };
+
+        const openInfoTaskView = (taskTitle, infoTitle, infoText) => {
+          if (timerAreaEl) timerAreaEl.classList.add('quiz-hidden');
+          if (bottomCtaEl) bottomCtaEl.classList.add('quiz-hidden');
+          if (quizAreaEl) quizAreaEl.classList.add('quiz-hidden');
+          if (taskInfoAreaEl) taskInfoAreaEl.classList.remove('quiz-hidden');
+          if (taskInfoTitleEl) {
+            taskInfoTitleEl.textContent = String(infoTitle || taskTitle || 'اطلاعات ماموریت').trim() || 'اطلاعات ماموریت';
+          }
+          if (taskInfoContentEl) {
+            const sections = parseInfoTaskSections(infoText);
+            if (!sections.length) {
+              taskInfoContentEl.innerHTML = '<section class="info-task-section"><p>محتوایی برای این ماموریت ثبت نشده است.</p></section>';
+            } else {
+              taskInfoContentEl.innerHTML = sections.map((section) => {
+                const title = escapeHtml(section.title || 'Information');
+                const body = escapeHtml((section.lines || []).join('\n').trim());
+                return `<section class="info-task-section"><h3>${title}</h3><p>${body || '-'}</p></section>`;
+              }).join('');
+            }
+          }
+          infoTaskViewOpen = true;
         };
 
         const openTaskResultDialog = (scoreValue, messageText) => {
@@ -5729,13 +5896,6 @@ $sessionPayload = [
           }
           return arr;
         };
-
-        const escapeHtml = (value) => String(value ?? '')
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#39;');
 
         const rewardCardLockStorageKey = `tc_reward_locked_cards_${String(sessionInfo?.workId || 'guest')}`;
         const rewardCardLockPrizeStorageKey = `tc_reward_locked_card_prizes_${String(sessionInfo?.workId || 'guest')}`;
@@ -6607,6 +6767,18 @@ $sessionPayload = [
               return;
             }
 
+            const fetchedTaskType = String(payload?.task?.taskType || button?.dataset?.taskType || 'quiz').trim().toLowerCase();
+            if (fetchedTaskType === 'info') {
+              currentTaskId = taskId;
+              currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
+              openInfoTaskView(
+                currentTaskTitle,
+                String(payload?.task?.infoTitle ?? '').trim(),
+                String(payload?.task?.infoText ?? '').trim()
+              );
+              return;
+            }
+
             const normalizedQuestions = normalizeQuestions(payload?.questions || []);
             if (!normalizedQuestions.length) {
               openTaskResultDialog(0, 'برای این ماموریت سوالی تنظیم نشده است.');
@@ -6648,6 +6820,11 @@ $sessionPayload = [
         if (resultConfirmBtn) {
           resultConfirmBtn.addEventListener('click', () => {
             closeTaskResultDialog();
+          });
+        }
+        if (taskInfoAckBtnEl) {
+          taskInfoAckBtnEl.addEventListener('click', () => {
+            closeQuizOverlay();
           });
         }
 
