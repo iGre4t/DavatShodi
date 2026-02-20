@@ -3362,6 +3362,7 @@ $sessionPayload = [
         background: linear-gradient(145deg, #fff9e8, #ffefc2);
         box-shadow: 0 14px 24px rgba(255, 174, 57, 0.22);
         padding: 10px 12px;
+        animation: roadmapClaimPulse 1.35s ease-in-out infinite;
       }
 
       .roadmap-item.won .roadmap-content {
@@ -3435,6 +3436,21 @@ $sessionPayload = [
         }
         100% {
           transform: translateX(50%) scale(1);
+        }
+      }
+
+      @keyframes roadmapClaimPulse {
+        0% {
+          box-shadow: 0 10px 18px rgba(255, 174, 57, 0.2);
+          transform: translateY(0);
+        }
+        50% {
+          box-shadow: 0 16px 28px rgba(255, 174, 57, 0.32);
+          transform: translateY(-1px);
+        }
+        100% {
+          box-shadow: 0 10px 18px rgba(255, 174, 57, 0.2);
+          transform: translateY(0);
         }
       }
 
@@ -4116,6 +4132,18 @@ $sessionPayload = [
         gap: 12px;
         position: relative;
         z-index: 2;
+      }
+
+      .tc-result-dialog .hint {
+        font-size: 1rem;
+        line-height: 1.7;
+        color: #243a63;
+      }
+
+      #tc-info-dialog-message {
+        white-space: pre-line;
+        font-size: 1.04rem;
+        font-weight: 600;
       }
 
       .tc-result-gift {
@@ -5764,6 +5792,7 @@ $sessionPayload = [
           if (!(rewardRoadmapEl instanceof HTMLElement)) return;
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
           const score = Number(rewardsState?.score ?? 0);
+          const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
           if (!levels.length) {
             rewardRoadmapEl.innerHTML = '<div class="roadmap-item"><span class="roadmap-node"></span><div class="roadmap-content">هنوز سطح جایزه‌ای تعریف نشده است.</div></div>';
             return;
@@ -5787,8 +5816,15 @@ $sessionPayload = [
               rowClasses.push('won');
             } else if (level?.canFlip) {
               stateClass = 'can-flip';
-              stateText = 'برای انتخاب کارت لمس کن';
+              stateText = 'برای دریافت جایزه کلیک کنید';
               rowClasses.push('can-flip');
+            } else if (level?.reached && !level?.won && isOutOfValue) {
+              stateClass = 'won';
+              stateText = 'رسیده‌اید';
+              rowClasses.push('won');
+            } else if (level?.reached && !level?.won && String(level?.type || '') === 'value_sum' && eventStatus === 'upcoming') {
+              stateClass = 'reached';
+              stateText = 'لطفا تا شروع زمان دریافت جوایز صبر کنید';
             } else if (level?.reached && isOutOfValue) {
               stateClass = 'won';
               stateText = 'رسیده‌اید';
@@ -5800,7 +5836,7 @@ $sessionPayload = [
             const pointsNeedText = (level?.won || (isOutOfValue && reached))
               ? `امتیاز جمع‌آوری‌شده برای این سطح: ${formatRewardNumber(target)}`
               : reached
-                ? 'امتیاز موردنیاز: ۰'
+                ? 'امتیاز مورد نظر کسب شد'
                 : `امتیاز موردنیاز: ${formatRewardNumber(left)}`;
             return `<div class="${rowClasses.join(' ')}">
               <span class="roadmap-node" aria-hidden="true"></span>
@@ -6093,7 +6129,7 @@ $sessionPayload = [
             const startDate = String(settings?.startDate ?? '').trim();
             const startTime = String(settings?.startTime ?? '').trim();
             const countdown = formatEventCountdown(startDate, startTime);
-            await openInfoDialog(`اول امتیاز جمع کنید، سپس در ${countdown || 'بازه شروع رویداد'} می‌توانید جایزه ببرید.`);
+            await openInfoDialog(`زمان دریافت جوایز فرا نرسیده، لطفا صبر کنید.\n${countdown || 'به‌زودی'}`);
             return;
           }
           if (eventStatus !== 'active') {
