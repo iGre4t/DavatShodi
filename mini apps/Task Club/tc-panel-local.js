@@ -387,6 +387,29 @@
     };
   }
 
+  function applyHeaderShortcutToTextarea(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || '');
+    const start = Math.max(0, textarea.selectionStart ?? 0);
+    const end = Math.max(start, textarea.selectionEnd ?? start);
+
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const lineEndIndex = value.indexOf('\n', end);
+    const lineEnd = lineEndIndex >= 0 ? lineEndIndex : value.length;
+    const line = value.slice(lineStart, lineEnd);
+    const lineTrimmedLeft = line.replace(/^\s+/, '');
+    const leftPaddingLength = line.length - lineTrimmedLeft.length;
+    const leftPadding = line.slice(0, leftPaddingLength);
+    const raw = lineTrimmedLeft.replace(/^#\s+/, '');
+    const nextLine = `${leftPadding}# ${raw}`;
+
+    textarea.value = `${value.slice(0, lineStart)}${nextLine}${value.slice(lineEnd)}`;
+    const caret = lineStart + nextLine.length;
+    textarea.selectionStart = caret;
+    textarea.selectionEnd = caret;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   const infoRateStateByTaskId = new Map();
 
   function getInfoRateElements(pane) {
@@ -939,6 +962,16 @@
 
     layout.addEventListener('change', handleTaskFieldUpdate);
     layout.addEventListener('input', handleTaskFieldUpdate);
+    layout.addEventListener('keydown', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      if (!target.matches('[data-task-field="infoText"]')) return;
+      const isOneKey = event.key === '1' || event.code === 'Digit1' || event.code === 'Numpad1';
+      if (event.ctrlKey && event.altKey && isOneKey) {
+        event.preventDefault();
+        applyHeaderShortcutToTextarea(target);
+      }
+    });
 
     layout.addEventListener('input', (event) => {
       const target = event.target;
