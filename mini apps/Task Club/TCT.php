@@ -691,7 +691,11 @@ function tctEnsureInviteesColumns(array &$rows, array $requiredColumns): array
   }
   $indexMap = [];
   foreach ($header as $i => $name) {
-    $indexMap[tctNormalizeHeaderName((string)$name)] = (int)$i;
+    $normalized = tctNormalizeHeaderName((string)$name);
+    if ($normalized === '' || array_key_exists($normalized, $indexMap)) {
+      continue;
+    }
+    $indexMap[$normalized] = (int)$i;
   }
   return $indexMap;
 }
@@ -1273,6 +1277,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
 
     $scoreMap = tctLoadTaskInfoScores($tctTasksDir, $tagCode);
+    $updatedCount = 0;
     foreach ($workIds as $workId) {
       $rowIndex = $workIdLookup[$workId] ?? null;
       if (!is_int($rowIndex) || $rowIndex < 1) {
@@ -1290,7 +1295,13 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       $infoMap[$taskId] = $assignedScore;
       $row[$infoTasksIndex] = tctSerializeInfoTasksMap($infoMap);
       $scoreMap[$workId] = $assignedScore;
+      $updatedCount += 1;
       unset($row);
+    }
+
+    if ($updatedCount === 0) {
+      echo json_encode(['status' => 'error', 'message' => 'No matching Work ID was found in Invitees mapped CSV.'], JSON_UNESCAPED_UNICODE);
+      exit;
     }
 
     if (!tctWriteCsvRows($tctEventInviteesPath, $rows)) {
