@@ -546,22 +546,28 @@
         <tr data-index="${index}" data-level-id="${escapeHtml(level.id)}">
           <td>${index + 1}</td>
           <td>
-            <label class="field standard-width" style="margin:0;">
-              <input type="text" data-field="level-name" value="${escapeHtml(level.name)}" />
-            </label>
+            <input
+              type="text"
+              class="tc-prize-level-control"
+              data-field="level-name"
+              value="${escapeHtml(level.name || `Level ${level.score || ""}`)}"
+            />
           </td>
           <td>
-            <label class="field standard-width" style="margin:0;">
-              <select data-field="level-type">
-                <option value="value_sum"${normalizeLevelType(level.type) === "value_sum" ? " selected" : ""}>Value Sum</option>
-                <option value="out_of_value"${normalizeLevelType(level.type) === "out_of_value" ? " selected" : ""}>Out of Value</option>
-              </select>
-            </label>
+            <select class="tc-prize-level-control" data-field="level-type">
+              <option value="value_sum"${normalizeLevelType(level.type) === "value_sum" ? " selected" : ""}>Value Sum</option>
+              <option value="out_of_value"${normalizeLevelType(level.type) === "out_of_value" ? " selected" : ""}>Out of Value</option>
+            </select>
           </td>
           <td>
-            <label class="field standard-width" style="margin:0;">
-              <input type="number" min="1" step="1" data-field="level-score" value="${escapeHtml(level.score)}" />
-            </label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              class="tc-prize-level-control"
+              data-field="level-score"
+              value="${escapeHtml(level.score)}"
+            />
           </td>
           <td>
             <div class="tct-action-wrap">

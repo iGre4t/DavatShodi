@@ -513,11 +513,11 @@
             </div>
             <div class="form" style="gap:12px;">
               <label class="field standard-width">
-                <span>Score</span>
+                <span>Active Duration (Golden Time)</span>
                 <input type="number" min="0" step="1" data-task-field="score" />
               </label>
               <label class="field standard-width">
-                <span>After Endtime Score</span>
+                <span>Golden Time Ended, you can answer with lower score</span>
                 <input type="number" min="0" step="1" data-task-field="afterEndtimeScore" />
               </label>
               <div class="field full">

@@ -84,11 +84,46 @@ if (empty($_SESSION['tc_csrf'])) {
         padding: 16px;
       }
 
-      .title {
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 2px 2px 10px;
+      }
+
+      .brand {
         margin: 0;
-        text-align: center;
-        font-size: 1.1rem;
-        color: #2b4370;
+        font-size: 0.96rem;
+        color: #506081;
+        letter-spacing: 0.04em;
+      }
+
+      .back-btn {
+        border: none;
+        background: transparent;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: inherit;
+        font-size: 0.82rem;
+        color: #6b7a99;
+        cursor: pointer;
+        padding: 4px 6px;
+      }
+
+      .back-btn span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #c7d2e5;
+      }
+
+      .back-btn:hover {
+        color: #2f5aa6;
       }
 
       .result {
@@ -150,41 +185,6 @@ if (empty($_SESSION['tc_csrf'])) {
         font-size: 0.95rem;
         font-weight: 700;
       }
-
-      .levels-box {
-        margin-top: 12px;
-      }
-
-      .levels-title {
-        margin: 0 0 8px;
-        font-size: 0.88rem;
-      }
-
-      .levels-list {
-        display: grid;
-        gap: 6px;
-      }
-
-      .level-row {
-        border: 1px solid #dce7f9;
-        border-radius: 10px;
-        padding: 7px 9px;
-        background: #f8fbff;
-        font-size: 0.78rem;
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-        align-items: center;
-      }
-
-      .level-state {
-        font-weight: 700;
-      }
-
-      .level-state.can-flip { color: #1f7f44; }
-      .level-state.won { color: #2f8fff; }
-      .level-state.locked { color: #9aa8c4; }
-      .level-state.reached { color: #cc7a00; }
 
       .cards-box {
         margin-top: 12px;
@@ -260,12 +260,8 @@ if (empty($_SESSION['tc_csrf'])) {
         line-height: 1.45;
       }
 
-      .status-box {
-        margin-top: 12px;
-      }
-
       .status-line {
-        margin: 0;
+        margin: 6px 0 0;
         min-height: 1.2em;
         font-size: 0.8rem;
       }
@@ -307,11 +303,30 @@ if (empty($_SESSION['tc_csrf'])) {
         border-radius: 50%;
         border: 2px solid #7aa6e9;
         background: #fff;
+        animation: roadmap-node-pulse 1.8s ease-in-out infinite;
       }
 
       .roadmap-item.reached .roadmap-node {
         background: #2f8fff;
         border-color: #2f8fff;
+        animation: roadmap-node-reached 1.25s ease-in-out infinite;
+      }
+
+      .roadmap-item::after {
+        content: '';
+        position: absolute;
+        right: -2px;
+        top: 18px;
+        bottom: -2px;
+        width: 2px;
+        opacity: 0;
+        background: linear-gradient(180deg, rgba(47, 143, 255, 0), rgba(47, 143, 255, 0.95), rgba(47, 143, 255, 0));
+        background-size: 2px 36px;
+      }
+
+      .roadmap-item.reached::after {
+        opacity: 1;
+        animation: roadmap-line-flow 1.7s linear infinite;
       }
 
       .roadmap-content {
@@ -326,6 +341,32 @@ if (empty($_SESSION['tc_csrf'])) {
       .roadmap-left {
         color: var(--muted);
         font-size: 0.74rem;
+      }
+
+      .roadmap-state {
+        margin-top: 4px;
+        font-size: 0.73rem;
+        font-weight: 700;
+      }
+
+      .roadmap-state.can-flip { color: #1f7f44; }
+      .roadmap-state.won { color: #2f8fff; }
+      .roadmap-state.locked { color: #9aa8c4; }
+      .roadmap-state.reached { color: #cc7a00; }
+
+      @keyframes roadmap-node-pulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(122, 166, 233, 0.35); }
+        50% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(122, 166, 233, 0); }
+      }
+
+      @keyframes roadmap-node-reached {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(47, 143, 255, 0.4); }
+        50% { transform: scale(1.1); box-shadow: 0 0 0 7px rgba(47, 143, 255, 0); }
+      }
+
+      @keyframes roadmap-line-flow {
+        0% { background-position: 0 0; }
+        100% { background-position: 0 36px; }
       }
 
       @media (max-width: 440px) {
@@ -401,20 +442,85 @@ if (empty($_SESSION['tc_csrf'])) {
         const scoreEl = document.getElementById('reward-score');
         const flipsEl = document.getElementById('reward-flips');
         const totalWonEl = document.getElementById('reward-total-won');
+        let backBtnEl = document.getElementById('reward-back-btn');
         const eventNoticeEl = document.getElementById('reward-event-notice');
         const timeBoxEl = document.getElementById('reward-time-box');
         const summaryEl = document.getElementById('reward-summary');
-        const levelsBoxEl = document.getElementById('reward-levels-box');
+        let summaryFlipsItemEl = document.getElementById('reward-summary-flips-item');
+        let summaryTotalItemEl = document.getElementById('reward-summary-total-item');
         const roadmapBoxEl = document.getElementById('reward-roadmap-box');
         const roadmapEl = document.getElementById('reward-roadmap');
         const cardsBoxEl = document.getElementById('reward-cards-box');
-        const statusBoxEl = document.getElementById('reward-status-box');
-        const levelsEl = document.getElementById('reward-levels');
         const cardsEl = document.getElementById('reward-cards');
         const statusEl = document.getElementById('reward-status');
         const levelPrizesEl = document.getElementById('reward-level-prizes');
         const timeCounterLabelEl = document.getElementById('tc-time-counter-label');
         const timeCounterEl = document.getElementById('tc-time-counter');
+
+        const initRewardsLayout = () => {
+          const phoneEl = document.querySelector('.phone');
+          if (!(phoneEl instanceof HTMLElement)) return;
+
+          const titleEl = phoneEl.querySelector('.title');
+          const existingTopbar = phoneEl.querySelector('.topbar');
+          if (!(existingTopbar instanceof HTMLElement)) {
+            const topbar = document.createElement('div');
+            topbar.className = 'topbar';
+            const brand = document.createElement('p');
+            brand.className = 'brand';
+            brand.textContent = 'کمپین به نام خدا';
+            const back = document.createElement('button');
+            back.id = 'reward-back-btn';
+            back.className = 'back-btn';
+            back.type = 'button';
+            back.innerHTML = '<span aria-hidden=\"true\"></span>برگشت';
+            topbar.appendChild(brand);
+            topbar.appendChild(back);
+            phoneEl.insertBefore(topbar, phoneEl.firstChild);
+            backBtnEl = back;
+          }
+          if (titleEl instanceof HTMLElement) {
+            titleEl.remove();
+          }
+
+          if (summaryEl instanceof HTMLElement) {
+            const summaryItems = Array.from(summaryEl.querySelectorAll('.summary-item'));
+            if (summaryItems[1] instanceof HTMLElement) {
+              summaryItems[1].id = 'reward-summary-flips-item';
+              summaryFlipsItemEl = summaryItems[1];
+            }
+            if (summaryItems[2] instanceof HTMLElement) {
+              summaryItems[2].id = 'reward-summary-total-item';
+              summaryTotalItemEl = summaryItems[2];
+            }
+          }
+
+          const levelsBox = document.getElementById('reward-levels-box');
+          if (levelsBox instanceof HTMLElement) {
+            levelsBox.remove();
+          }
+
+          if (roadmapBoxEl instanceof HTMLElement) {
+            roadmapBoxEl.classList.remove('hidden');
+            const roadmapTitleEl = roadmapBoxEl.querySelector('.roadmap-title');
+            if (roadmapTitleEl instanceof HTMLElement) {
+              roadmapTitleEl.textContent = 'Prize Levels';
+            }
+          }
+
+          const statusBox = document.getElementById('reward-status-box');
+          if (timeBoxEl instanceof HTMLElement) {
+            if (statusEl instanceof HTMLElement && statusEl.parentElement !== timeBoxEl) {
+              timeBoxEl.appendChild(statusEl);
+            }
+            if (levelPrizesEl instanceof HTMLElement && levelPrizesEl.parentElement !== timeBoxEl) {
+              timeBoxEl.appendChild(levelPrizesEl);
+            }
+          }
+          if (statusBox instanceof HTMLElement) {
+            statusBox.remove();
+          }
+        };
 
         let rewardState = null;
         let currentLevel = null;
@@ -422,6 +528,8 @@ if (empty($_SESSION['tc_csrf'])) {
         let roundLockUntil = 0;
         let counterTickHandle = null;
         let globalEventStatus = 'inactive';
+
+        initRewardsLayout();
 
         const formatNumber = (value) => {
           const n = Number(value || 0);
@@ -470,8 +578,6 @@ if (empty($_SESSION['tc_csrf'])) {
           statusEl.classList.toggle('status-ok', !isError && statusEl.textContent !== '');
         };
 
-        const levelTypeLabel = (type) => (String(type || '').toLowerCase() === 'out_of_value' ? 'Out of Value' : 'Value Sum');
-
         const renderSummary = () => {
           if (!rewardState) return;
           if (scoreEl) scoreEl.textContent = formatNumber(rewardState.score || 0);
@@ -481,39 +587,6 @@ if (empty($_SESSION['tc_csrf'])) {
             const prizesText = String(rewardState.eachLevelWonPrize || '').trim();
             levelPrizesEl.textContent = prizesText ? `Each Level Won Prize: ${prizesText}` : 'Each Level Won Prize: -';
           }
-        };
-
-        const renderLevels = () => {
-          if (!levelsEl) return;
-          const levels = Array.isArray(rewardState?.levels) ? rewardState.levels : [];
-          if (!levels.length) {
-            levelsEl.innerHTML = '<div class="level-row"><span>No prize level is configured.</span><span class="level-state locked">Locked</span></div>';
-            return;
-          }
-          levelsEl.innerHTML = levels.map((level) => {
-            const name = String(level?.name || '-');
-            const type = levelTypeLabel(level?.type);
-            const score = formatNumber(level?.score || 0);
-            let stateClass = 'locked';
-            let stateText = 'Locked';
-            if (level?.won) {
-              stateClass = 'won';
-              stateText = 'Claimed';
-            } else if (level?.canFlip) {
-              stateClass = 'can-flip';
-              stateText = 'Can Flip';
-            } else if (level?.reached && String(level?.type || '') === 'out_of_value') {
-              stateClass = 'reached';
-              stateText = 'Reached (No Flip)';
-            } else if (level?.reached) {
-              stateClass = 'reached';
-              stateText = 'Reached';
-            }
-            return `<div class="level-row">
-              <span>${name} | ${type} | ${score}</span>
-              <span class="level-state ${stateClass}">${stateText}</span>
-            </div>`;
-          }).join('');
         };
 
         const renderRoadmap = () => {
@@ -529,12 +602,27 @@ if (empty($_SESSION['tc_csrf'])) {
             const reached = score >= target;
             const left = Math.max(0, target - score);
             const nodeClass = reached ? 'roadmap-item reached' : 'roadmap-item';
-            const typeLabel = levelTypeLabel(level?.type);
+            let stateClass = 'locked';
+            let stateText = 'Locked';
+            if (level?.won) {
+              stateClass = 'won';
+              stateText = 'Claimed';
+            } else if (level?.canFlip) {
+              stateClass = 'can-flip';
+              stateText = 'Can Flip';
+            } else if (level?.reached && String(level?.type || '') === 'out_of_value') {
+              stateClass = 'reached';
+              stateText = 'Reached';
+            } else if (level?.reached) {
+              stateClass = 'reached';
+              stateText = 'Reached';
+            }
             return `<div class="${nodeClass}">
               <span class="roadmap-node" aria-hidden="true"></span>
               <div class="roadmap-content">
-                <div>${String(level?.name || '-')} | ${typeLabel} | ${formatNumber(target)}</div>
+                <div>${String(level?.name || '-')} | ${formatNumber(target)}</div>
                 <div class="roadmap-left">${reached ? 'Reached' : `${formatNumber(score)} collected | ${formatNumber(left)} left`}</div>
+                <div class="roadmap-state ${stateClass}">${stateText}</div>
               </div>
             </div>`;
           }).join('');
@@ -548,18 +636,19 @@ if (empty($_SESSION['tc_csrf'])) {
           }
           if (summaryEl) summaryEl.classList.remove('hidden');
           if (timeBoxEl) timeBoxEl.classList.remove('hidden');
-          if (levelsBoxEl) levelsBoxEl.classList.remove('hidden');
+          if (summaryFlipsItemEl) summaryFlipsItemEl.classList.remove('hidden');
+          if (summaryTotalItemEl) summaryTotalItemEl.classList.remove('hidden');
           if (cardsBoxEl) cardsBoxEl.classList.remove('hidden');
-          if (statusBoxEl) statusBoxEl.classList.remove('hidden');
-          if (roadmapBoxEl) roadmapBoxEl.classList.add('hidden');
+          if (roadmapBoxEl) roadmapBoxEl.classList.remove('hidden');
           if (cardsBoxEl) cardsBoxEl.classList.remove('is-disabled');
+          renderRoadmap();
 
           if (status === 'inactive') {
             if (summaryEl) summaryEl.classList.add('hidden');
             if (timeBoxEl) timeBoxEl.classList.add('hidden');
-            if (levelsBoxEl) levelsBoxEl.classList.add('hidden');
+            if (summaryFlipsItemEl) summaryFlipsItemEl.classList.add('hidden');
+            if (summaryTotalItemEl) summaryTotalItemEl.classList.add('hidden');
             if (cardsBoxEl) cardsBoxEl.classList.add('hidden');
-            if (statusBoxEl) statusBoxEl.classList.add('hidden');
             if (roadmapBoxEl) roadmapBoxEl.classList.add('hidden');
             if (eventNoticeEl) {
               eventNoticeEl.textContent = 'oh sorry no events running';
@@ -569,15 +658,14 @@ if (empty($_SESSION['tc_csrf'])) {
           }
 
           if (status === 'upcoming') {
+            if (summaryFlipsItemEl) summaryFlipsItemEl.classList.add('hidden');
+            if (summaryTotalItemEl) summaryTotalItemEl.classList.add('hidden');
             if (cardsBoxEl) cardsBoxEl.classList.add('hidden');
-            if (roadmapBoxEl) roadmapBoxEl.classList.remove('hidden');
-            renderRoadmap();
             setStatus('Cards will be available when event status becomes Active.', false);
             return;
           }
 
           if (status === 'ended') {
-            if (roadmapBoxEl) roadmapBoxEl.classList.add('hidden');
             if (cardsBoxEl) cardsBoxEl.classList.remove('hidden');
             if (cardsBoxEl) cardsBoxEl.classList.add('is-disabled');
             setStatus('sorry, end reached', true);
@@ -773,7 +861,6 @@ if (empty($_SESSION['tc_csrf'])) {
             globalEventStatus = String(rewardState.eventStatus);
           }
           renderSummary();
-          renderLevels();
           renderRoadmap();
           applyRewardsMode(globalEventStatus);
           if (globalEventStatus === 'inactive') {
@@ -810,7 +897,7 @@ if (empty($_SESSION['tc_csrf'])) {
           roundBusy = false;
           renderCards(createDeck());
           setCardsEnabled(true);
-          setStatus(`Ready for ${currentLevel.name} (${levelTypeLabel(currentLevel.type)})`, false);
+          setStatus(`Ready for ${currentLevel.name}`, false);
         };
 
         const revealCards = (clickedButton, winningPrize) => {
@@ -861,7 +948,6 @@ if (empty($_SESSION['tc_csrf'])) {
               rewardState.levels = Array.isArray(data.levels) ? data.levels : rewardState.levels;
             }
             renderSummary();
-            renderLevels();
             revealCards(button, prizeName);
             setStatus(`You won "${prizeName}" in ${String(data.levelName || currentLevel.name || 'level')}.`, false);
             await flipBackAndShuffle();
@@ -872,6 +958,12 @@ if (empty($_SESSION['tc_csrf'])) {
             roundBusy = false;
           }
         });
+
+        if (backBtnEl) {
+          backBtnEl.addEventListener('click', () => {
+            window.location.href = 'TCM.php';
+          });
+        }
 
         (async () => {
           try {
