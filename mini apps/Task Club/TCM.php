@@ -2770,13 +2770,14 @@ $sessionPayload = [
       }
 
       .brand-icon {
-        width: 24px;
+        width: auto;
         height: 24px;
-        border-radius: 7px;
-        border: 1px solid rgba(255, 255, 255, 0.85);
-        box-shadow: 0 6px 14px rgba(15, 40, 70, 0.15);
-        object-fit: cover;
-        background: #ffffff;
+        max-width: 72px;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        object-fit: contain;
+        background: transparent;
       }
 
       .main-area {
@@ -2800,10 +2801,19 @@ $sessionPayload = [
 
       .tasks-title {
         margin: 4px 0 2px;
-        color: #2a3f68;
+        color: var(--tc-highlight);
         font-size: 1.08rem;
         font-weight: 700;
         letter-spacing: 0.02em;
+      }
+
+      .task-event-logo {
+        width: auto;
+        height: 46px;
+        max-width: min(240px, 80vw);
+        object-fit: contain;
+        display: block;
+        margin: 0 auto 4px;
       }
 
       .user-score-chip {
@@ -3107,6 +3117,12 @@ $sessionPayload = [
         font-size: 0.88rem;
       }
 
+      .roadmap-time-hint {
+        margin: -4px 0 10px;
+        color: #7c8aa7;
+        font-size: 0.74rem;
+      }
+
       .roadmap-list {
         display: grid;
         gap: 0;
@@ -3140,12 +3156,25 @@ $sessionPayload = [
       }
 
       .roadmap-content {
-        border: 1px solid #dce7f9;
-        border-radius: 10px;
-        background: #f8fbff;
-        padding: 7px 9px;
+        border: 1px dashed rgba(158, 182, 221, 0.65);
+        border-radius: 12px;
+        background: rgba(247, 251, 255, 0.72);
+        backdrop-filter: blur(4px);
+        padding: 8px 10px;
         font-size: 0.78rem;
         margin-right: 10px;
+      }
+
+      .roadmap-level-btn {
+        all: unset;
+        display: block;
+        width: 100%;
+        cursor: pointer;
+      }
+
+      .roadmap-level-btn[disabled] {
+        cursor: not-allowed;
+        opacity: 0.8;
       }
 
       .roadmap-left {
@@ -3175,6 +3204,11 @@ $sessionPayload = [
       #tc-reward-cards-box.is-disabled {
         opacity: 0.58;
         filter: grayscale(0.4);
+      }
+
+      .rewards-view.hidden + .rewards-view.hidden + .quiz-area,
+      .rewards-view.hidden + .quiz-area {
+        display: flex;
       }
 
       .cards-grid {
@@ -4292,13 +4326,17 @@ $sessionPayload = [
       <section class="phone">
     <div class="topbar">
           <p class="brand">
-            <?php if ($faviconUrl !== ''): ?>
-              <img class="brand-icon" src="<?= htmlspecialchars($faviconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی کمپین" />
+            <?php if ($fallbackSiteIconUrl !== ''): ?>
+              <img class="brand-icon" src="<?= htmlspecialchars($fallbackSiteIconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکون سایت" />
             <?php endif; ?>
             <span>کمپین به نام خدا</span>
           </p>
           <div class="topbar-actions">
             <?php if ($sessionPayload['authed']): ?>
+              <button id="tc-topbar-back" class="logout-btn hidden" type="button">
+                <span aria-hidden="true"></span>
+                برگشت
+              </button>
               <button id="tc-logout" class="logout-btn" type="button">
                 <span aria-hidden="true"></span>
                 خروج
@@ -4334,6 +4372,9 @@ $sessionPayload = [
         </div>
       <?php else: ?>
         <div id="tc-timer-area" class="main-area">
+          <?php if ($eventLogoUrl !== ''): ?>
+            <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
+          <?php endif; ?>
           <h2 id="tc-tasks-title" class="tasks-title">امتیازات رو جمع کن، جایزه ببر!</h2>
           <div class="user-score-chip">
             <span>امتیاز شما</span>
@@ -4394,10 +4435,9 @@ $sessionPayload = [
               <span aria-hidden="true"></span>
               برگشت به تسک‌ها
             </button>
-            <h3 class="rewards-title">جایزه‌بارون باشگاه!</h3>
           </div>
           <div class="result rewards-time-box">
-            <span id="tc-reward-time-label" class="result-label">وضعیت رویداد</span>
+            <span id="tc-reward-time-label" class="result-label">مجموع جوایز</span>
             <p id="tc-reward-time-value" class="result-value">—</p>
           </div>
           <div id="tc-reward-summary" class="summary-grid">
@@ -4416,12 +4456,27 @@ $sessionPayload = [
           </div>
           <section class="result rewards-roadmap-box">
             <h4 class="roadmap-title">مسیر جوایز</h4>
+            <p id="tc-reward-roadmap-time" class="roadmap-time-hint"></p>
             <div id="tc-reward-roadmap" class="roadmap-list"></div>
           </section>
+          <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
+        </div>
+        <div id="tc-reward-cards-view" class="main-area rewards-view hidden" aria-hidden="true">
+          <div class="rewards-head">
+            <button id="tc-reward-cards-back-btn" class="logout-btn" type="button">
+              <span aria-hidden="true"></span>
+              برگشت به مسیر جوایز
+            </button>
+            <h3 id="tc-reward-cards-level-title" class="rewards-title">انتخاب کارت جایزه</h3>
+          </div>
+          <div class="result rewards-time-box">
+            <span class="result-label">ارزش کل برد شما</span>
+            <p id="tc-reward-cards-total-value" class="result-value">0 تومان</p>
+          </div>
           <section id="tc-reward-cards-box" class="cards-box">
             <div id="tc-reward-cards" class="cards-grid"></div>
           </section>
-          <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
+          <p id="tc-reward-cards-status-line" class="tasks-empty" aria-live="polite"></p>
         </div>
         <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
           <div class="tc-task-quiz-head">
@@ -4587,10 +4642,13 @@ $sessionPayload = [
         const bottomCtaEl = document.getElementById('tc-bottom-cta');
         const bottomCtaBtnEl = bottomCtaEl ? bottomCtaEl.querySelector('.tc-bottom-cta-btn') : null;
         const rewardsViewEl = document.getElementById('tc-rewards-view');
+        const rewardCardsViewEl = document.getElementById('tc-reward-cards-view');
         const openRewardsBtnEl = document.getElementById('tc-open-rewards-btn');
         const rewardsBackBtnEl = document.getElementById('tc-rewards-back-btn');
+        const topbarBackBtnEl = document.getElementById('tc-topbar-back');
         const rewardTimeLabelEl = document.getElementById('tc-reward-time-label');
         const rewardTimeValueEl = document.getElementById('tc-reward-time-value');
+        const rewardRoadmapTimeEl = document.getElementById('tc-reward-roadmap-time');
         const rewardScoreEl = document.getElementById('tc-reward-score');
         const rewardFlipsEl = document.getElementById('tc-reward-flips');
         const rewardTotalEl = document.getElementById('tc-reward-total');
@@ -4598,6 +4656,10 @@ $sessionPayload = [
         const rewardCardsBoxEl = document.getElementById('tc-reward-cards-box');
         const rewardCardsEl = document.getElementById('tc-reward-cards');
         const rewardStatusLineEl = document.getElementById('tc-reward-status-line');
+        const rewardCardsBackBtnEl = document.getElementById('tc-reward-cards-back-btn');
+        const rewardCardsLevelTitleEl = document.getElementById('tc-reward-cards-level-title');
+        const rewardCardsTotalValueEl = document.getElementById('tc-reward-cards-total-value');
+        const rewardCardsStatusLineEl = document.getElementById('tc-reward-cards-status-line');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
         const quizTitleEl = document.getElementById('tc-task-quiz-title');
@@ -4616,8 +4678,10 @@ $sessionPayload = [
         let quizTimerHandle = null;
         let quizLocked = false;
         let rewardsViewOpen = false;
+        let rewardsCardsViewOpen = false;
         let rewardsRoundBusy = false;
         let rewardsState = null;
+        let selectedRewardLevelId = '';
         let currentTaskId = '';
         let currentTaskTitle = '';
         let currentQuestions = [];
@@ -5038,23 +5102,20 @@ $sessionPayload = [
         };
 
         const applyEventGate = (status) => {
-          if (rewardsViewOpen) {
+          if (rewardsViewOpen || rewardsCardsViewOpen) {
             if (timerAreaEl) timerAreaEl.classList.add('hidden');
             if (bottomCtaEl) bottomCtaEl.classList.add('hidden');
-            if (rewardsViewEl) rewardsViewEl.classList.remove('hidden');
+            if (rewardsViewEl && rewardsViewOpen && !rewardsCardsViewOpen) rewardsViewEl.classList.remove('hidden');
+            if (rewardCardsViewEl && rewardsCardsViewOpen) rewardCardsViewEl.classList.remove('hidden');
           }
           if (eventNoticeEl) {
             eventNoticeEl.classList.add('hidden');
             eventNoticeEl.textContent = '';
           }
-          if (tasksListEl) {
-            tasksListEl.classList.remove('hidden');
-          }
-          if (tasksTitleEl) {
-            tasksTitleEl.classList.remove('hidden');
-          }
-          if (bottomCtaEl) {
-            bottomCtaEl.classList.remove('hidden');
+          if (!rewardsViewOpen && !rewardsCardsViewOpen) {
+            if (tasksListEl) tasksListEl.classList.remove('hidden');
+            if (tasksTitleEl) tasksTitleEl.classList.remove('hidden');
+            if (bottomCtaEl) bottomCtaEl.classList.remove('hidden');
           }
           updateBottomCtaAttention(status);
           if (status === 'inactive') {
@@ -5183,6 +5244,8 @@ $sessionPayload = [
           return new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 2 }).format(n);
         };
 
+        const formatToman = (value) => `${formatRewardNumber(value)} تومان`;
+
         const shuffleArray = (list) => {
           const arr = Array.isArray(list) ? list.slice() : [];
           for (let i = arr.length - 1; i > 0; i -= 1) {
@@ -5198,6 +5261,18 @@ $sessionPayload = [
           if (!(rewardStatusLineEl instanceof HTMLElement)) return;
           rewardStatusLineEl.textContent = String(message || '').trim();
           rewardStatusLineEl.style.color = isError ? '#c0262d' : '';
+        };
+
+        const setRewardCardsStatusLine = (message, isError = false) => {
+          if (!(rewardCardsStatusLineEl instanceof HTMLElement)) return;
+          rewardCardsStatusLineEl.textContent = String(message || '').trim();
+          rewardCardsStatusLineEl.style.color = isError ? '#c0262d' : '';
+        };
+
+        const setTopbarMode = (mode) => {
+          const isRewardsMode = mode === 'rewards';
+          if (logoutBtn) logoutBtn.classList.toggle('hidden', isRewardsMode);
+          if (topbarBackBtnEl) topbarBackBtnEl.classList.toggle('hidden', !isRewardsMode);
         };
 
         const setRewardTimeBox = (label, value) => {
@@ -5230,7 +5305,11 @@ $sessionPayload = [
           if (!rewardsState) return;
           if (rewardScoreEl) rewardScoreEl.textContent = formatRewardNumber(rewardsState.score || 0);
           if (rewardFlipsEl) rewardFlipsEl.textContent = formatRewardNumber(rewardsState.cardFlipsCount || 0);
-          if (rewardTotalEl) rewardTotalEl.textContent = formatRewardNumber(rewardsState.totalPrizeWon || 0);
+          if (rewardTotalEl) rewardTotalEl.textContent = formatToman(rewardsState.totalPrizeWon || 0);
+          setRewardTimeBox('مجموع جوایز', formatToman(rewardsState.totalPrizeWon || 0));
+          if (rewardCardsTotalValueEl) {
+            rewardCardsTotalValueEl.textContent = formatToman(rewardsState.totalPrizeWon || 0);
+          }
         };
 
         const renderRewardRoadmap = () => {
@@ -5248,6 +5327,8 @@ $sessionPayload = [
             const rowClass = reached ? 'roadmap-item reached' : 'roadmap-item';
             let stateClass = 'locked';
             let stateText = 'قفل';
+            const levelId = String(level?.id || '');
+            const isClickable = Boolean(level?.reached) && String(level?.type || '') === 'value_sum';
             if (level?.won) {
               stateClass = 'won';
               stateText = 'برداشته شد';
@@ -5260,11 +5341,13 @@ $sessionPayload = [
             }
             return `<div class="${rowClass}">
               <span class="roadmap-node" aria-hidden="true"></span>
+              <button class="roadmap-level-btn" type="button" data-level-id="${levelId}" ${isClickable ? '' : 'disabled'}>
               <div class="roadmap-content">
                 <div>${String(level?.name || 'سطح جایزه')} | ${formatRewardNumber(target)} امتیاز</div>
                 <div class="roadmap-left">${reached ? 'آماده دریافت جایزه' : `${formatRewardNumber(left)} امتیاز تا سطح بعدی`}</div>
                 <div class="roadmap-state ${stateClass}">${stateText}</div>
               </div>
+              </button>
             </div>`;
           }).join('');
         };
@@ -5283,27 +5366,24 @@ $sessionPayload = [
         };
 
         const applyRewardEventState = async (eventStatus) => {
-          if (!(rewardCardsBoxEl instanceof HTMLElement)) return;
-          rewardCardsBoxEl.classList.remove('is-disabled');
           const settings = await loadWheelSettings();
+          if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = '';
           if (eventStatus === 'active') {
-            setRewardTimeBox('زمان دریافت جایزه', 'رویداد فعاله، کارتت رو انتخاب کن!');
+            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'رویداد فعاله؛ روی سطح‌های قابل انتخاب بزن و کارتت رو باز کن.';
             return;
           }
           if (eventStatus === 'upcoming') {
             const startDate = String(settings?.startDate ?? '').trim();
             const startTime = String(settings?.startTime ?? '').trim();
             const countdown = formatTaskCountdown(startDate, startTime);
-            setRewardTimeBox('تا شروع دریافت جایزه', countdown || 'به‌زودی شروع می‌شه');
+            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = countdown || 'به‌زودی شروع می‌شه.';
             return;
           }
           if (eventStatus === 'ended') {
-            setRewardTimeBox('وضعیت رویداد', 'مهلت رویداد به پایان رسیده');
-            rewardCardsBoxEl.classList.add('is-disabled');
+            if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'مهلت رویداد تموم شده و کارت‌ها غیرفعال شدن.';
             return;
           }
-          setRewardTimeBox('وضعیت رویداد', 'متاسفیم، رویداد فعالی نداریم');
-          rewardCardsBoxEl.classList.add('is-disabled');
+          if (rewardRoadmapTimeEl) rewardRoadmapTimeEl.textContent = 'فعلا رویداد فعالی نداریم.';
         };
 
         const refreshRewardState = async () => {
@@ -5346,32 +5426,71 @@ $sessionPayload = [
           if (rewardsRoundBusy) return;
           const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
           if (eventStatus !== 'active') {
-            setRewardStatusLine('فعلا امکان انتخاب کارت نیست. اول رویداد باید فعال باشه.', true);
+            setRewardCardsStatusLine('فعلا امکان انتخاب کارت نیست. اول رویداد باید فعال باشه.', true);
             return;
           }
-          const level = getCurrentFlippableLevel();
-          if (!level || !level.id) {
-            setRewardStatusLine('هنوز به سطح قابل دریافت کارت نرسیدی. تسک‌ها رو ادامه بده.', true);
+          const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
+          const level = levels.find((lvl) => String(lvl?.id || '') === selectedRewardLevelId) || null;
+          if (!level || !level.id || !level.canFlip) {
+            setRewardCardsStatusLine('این سطح فعلا آماده دریافت کارت نیست. امتیاز جمع کن!', true);
             return;
           }
           rewardsRoundBusy = true;
-          setRewardStatusLine('در حال باز کردن کارت... آماده سورپرایز باش!');
+          setRewardCardsStatusLine('در حال باز کردن کارت... آماده سورپرایز باش!');
           try {
             const payload = await postJson({ action: 'reward_flip', levelId: level.id });
             const data = payload?.data || {};
             const prizeName = String(data.prizeName || 'جایزه ویژه').trim();
             revealRewardCardsRound(cardButton, prizeName);
-            setRewardStatusLine(`تبریک! «${prizeName}» برنده شدی 🎉`);
+            setRewardCardsStatusLine(`تبریک! «${prizeName}» برنده شدی 🎉`);
             await refreshRewardState();
           } catch (error) {
-            setRewardStatusLine(error?.message || 'باز کردن کارت ناموفق بود.', true);
+            setRewardCardsStatusLine(error?.message || 'باز کردن کارت ناموفق بود.', true);
           } finally {
             rewardsRoundBusy = false;
           }
         };
 
+        const openRewardCardsSlide = (levelId) => {
+          if (!(rewardCardsViewEl instanceof HTMLElement)) return;
+          const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
+          const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
+          const level = levels.find((lvl) => String(lvl?.id || '') === String(levelId || '')) || null;
+          if (!level || String(level.type || '') !== 'value_sum') {
+            setRewardStatusLine('این سطح کارت نداره و فقط دستاوردیه.');
+            return;
+          }
+          if (eventStatus !== 'active') {
+            setRewardStatusLine('کارت‌ها فقط وقتی رویداد فعال باشه باز می‌شن.');
+            return;
+          }
+          if (!level.reached) {
+            setRewardStatusLine('هنوز به امتیاز این سطح نرسیدی.');
+            return;
+          }
+          selectedRewardLevelId = String(level.id || '');
+          rewardsCardsViewOpen = true;
+          if (rewardsViewEl) rewardsViewEl.classList.add('hidden');
+          rewardCardsViewEl.classList.remove('hidden');
+          rewardCardsViewEl.setAttribute('aria-hidden', 'false');
+          if (rewardCardsLevelTitleEl) rewardCardsLevelTitleEl.textContent = `کارت‌های سطح «${String(level.name || 'جایزه')}»`;
+          setRewardCardsStatusLine(level.canFlip ? 'یکی از کارت‌ها رو انتخاب کن ✨' : 'جایزه این سطح قبلا دریافت شده.');
+          setTopbarMode('rewards');
+        };
+
+        const closeRewardCardsSlide = () => {
+          rewardsCardsViewOpen = false;
+          selectedRewardLevelId = '';
+          if (rewardCardsViewEl) {
+            rewardCardsViewEl.classList.add('hidden');
+            rewardCardsViewEl.setAttribute('aria-hidden', 'true');
+          }
+          if (rewardsViewEl) rewardsViewEl.classList.remove('hidden');
+        };
+
         const openRewardsView = async () => {
           rewardsViewOpen = true;
+          rewardsCardsViewOpen = false;
           if (timerAreaEl) timerAreaEl.classList.add('hidden');
           if (bottomCtaEl) bottomCtaEl.classList.add('hidden');
           if (quizAreaEl) quizAreaEl.classList.add('hidden');
@@ -5379,17 +5498,28 @@ $sessionPayload = [
             rewardsViewEl.classList.remove('hidden');
             rewardsViewEl.setAttribute('aria-hidden', 'false');
           }
+          if (rewardCardsViewEl) {
+            rewardCardsViewEl.classList.add('hidden');
+            rewardCardsViewEl.setAttribute('aria-hidden', 'true');
+          }
+          setTopbarMode('rewards');
           await refreshRewardState();
         };
 
         const closeRewardsView = () => {
           rewardsViewOpen = false;
+          rewardsCardsViewOpen = false;
           if (rewardsViewEl) {
             rewardsViewEl.classList.add('hidden');
             rewardsViewEl.setAttribute('aria-hidden', 'true');
           }
+          if (rewardCardsViewEl) {
+            rewardCardsViewEl.classList.add('hidden');
+            rewardCardsViewEl.setAttribute('aria-hidden', 'true');
+          }
           if (timerAreaEl) timerAreaEl.classList.remove('hidden');
           if (bottomCtaEl) bottomCtaEl.classList.remove('hidden');
+          setTopbarMode('tasks');
         };
 
         const sendTaskAnswer = async (item, answerText) => {
@@ -5726,6 +5856,36 @@ $sessionPayload = [
           });
         }
 
+        if (rewardCardsBackBtnEl) {
+          rewardCardsBackBtnEl.addEventListener('click', () => {
+            closeRewardCardsSlide();
+          });
+        }
+
+        if (topbarBackBtnEl) {
+          topbarBackBtnEl.addEventListener('click', () => {
+            if (rewardsCardsViewOpen) {
+              closeRewardCardsSlide();
+              return;
+            }
+            if (rewardsViewOpen) {
+              closeRewardsView();
+            }
+          });
+        }
+
+        if (rewardRoadmapEl) {
+          rewardRoadmapEl.addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const button = target.closest('.roadmap-level-btn');
+            if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+            const levelId = String(button.dataset.levelId || '').trim();
+            if (!levelId) return;
+            openRewardCardsSlide(levelId);
+          });
+        }
+
         if (rewardCardsEl) {
           rewardCardsEl.addEventListener('click', (event) => {
             const target = event.target;
@@ -5763,6 +5923,7 @@ $sessionPayload = [
           }, delay);
         };
 
+        setTopbarMode('tasks');
         refreshStatus();
         refreshTaskButtonsStatus();
         scheduleHourlyStatusCheck();
