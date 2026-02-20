@@ -2809,7 +2809,7 @@ $sessionPayload = [
 
       .task-event-logo {
         width: auto;
-        height: 46px;
+        height: 92px;
         max-width: min(240px, 80vw);
         object-fit: contain;
         display: block;
@@ -3016,6 +3016,7 @@ $sessionPayload = [
         width: min(360px, calc(100vw - 56px));
         margin: 0 auto;
         display: block;
+        font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         text-align: center;
         text-decoration: none;
         border-radius: 14px;
@@ -3109,7 +3110,8 @@ $sessionPayload = [
 
       .rewards-total-bar {
         width: min(360px, calc(100vw - 56px));
-        margin-top: 0;
+        margin-top: 8px;
+        margin-bottom: 22px;
         border: 1px solid #d9e7fb;
         border-radius: 14px;
         background: #f6faff;
@@ -3163,6 +3165,7 @@ $sessionPayload = [
 
       .roadmap-item.won {
         border-right-color: #30a25d;
+        animation: none;
       }
 
       .roadmap-node {
@@ -3301,6 +3304,7 @@ $sessionPayload = [
         padding: 0;
         cursor: pointer;
         transition: transform 180ms ease;
+        font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
       }
 
       .flip-card:disabled {
@@ -3348,6 +3352,7 @@ $sessionPayload = [
         place-items: center;
         text-align: center;
         padding: 8px;
+        font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
       }
 
       .flip-front {
@@ -3382,6 +3387,7 @@ $sessionPayload = [
       .flip-back small {
         font-size: 0.67rem;
         opacity: 0.88;
+        font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
       }
 
       @keyframes tcGlassShine {
@@ -3751,7 +3757,7 @@ $sessionPayload = [
       .login-title {
         margin: 0;
         font-size: 1.08rem;
-        color: #33466f;
+        color: var(--tc-highlight);
       }
 
       .login-form {
@@ -5750,14 +5756,17 @@ $sessionPayload = [
           });
 
           pickedButton.classList.add('is-picked');
-          const otherButtons = allButtons.filter((button) => button !== pickedButton && !rewardCardsLockedIndexes.has(Number(button.dataset.cardIndex)));
+          const otherButtons = shuffleArray(
+            allButtons.filter((button) => button !== pickedButton && !rewardCardsLockedIndexes.has(Number(button.dataset.cardIndex)))
+          );
+          const totalOthersRevealMs = 6000;
+          const staggerMs = otherButtons.length ? Math.max(420, Math.round(totalOthersRevealMs / otherButtons.length)) : 0;
           for (let i = 0; i < otherButtons.length; i += 1) {
             otherButtons[i].classList.add('is-revealed');
-            await new Promise((resolve) => setTimeout(resolve, 130));
+            await new Promise((resolve) => setTimeout(resolve, staggerMs));
           }
-          await new Promise((resolve) => setTimeout(resolve, 260));
           pickedButton.classList.add('is-revealed');
-          await new Promise((resolve) => setTimeout(resolve, 1100));
+          await new Promise((resolve) => setTimeout(resolve, 2500));
         };
 
         const performRewardFlip = async (cardButton) => {
