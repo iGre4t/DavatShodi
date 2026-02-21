@@ -1270,6 +1270,74 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       ];
     }
 
+    // Also maintain a photos.json inside the photos folder with richer metadata
+    $photosDir = $tctTasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'photos';
+    $photosJsonPath = $photosDir . DIRECTORY_SEPARATOR . 'photos.json';
+    $photosJson = [];
+    if (is_file($photosJsonPath)) {
+      $raw = file_get_contents($photosJsonPath);
+      if ($raw !== false) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+          $photosJson = $decoded;
+        }
+      }
+    }
+    // Determine next numeric index for codes (find max existing)
+    $maxCode = 0;
+    foreach ($photosJson as $pj) {
+      if (!is_array($pj)) continue;
+      $codeStr = preg_replace('/[^0-9]/', '', (string)($pj['code'] ?? ''));
+      $num = $codeStr === '' ? 0 : (int)$codeStr;
+      if ($num > $maxCode) $maxCode = $num;
+    }
+    $nextCode = $maxCode + 1;
+    // Append newly saved files to photos.json with code and file address
+    foreach ($savedPhotoObjs as $sobj) {
+      $filePath = (string)($sobj['path'] ?? '');
+      $name = (string)($sobj['name'] ?? '');
+      $code = str_pad((string)$nextCode, 3, '0', STR_PAD_LEFT);
+      $photosJson[] = [
+        'name' => $name,
+        'code' => $code,
+        'file' => $filePath
+      ];
+      $nextCode += 1;
+    }
+    // If client provided explicit photos metadata (edited names), update photos.json entries accordingly
+    if (isset($_POST['photos'])) {
+      $raw = trim((string)($_POST['photos'] ?? ''));
+      $decoded = json_decode($raw, true);
+      if (is_array($decoded) && $decoded) {
+        // Build map by path -> name
+        $metaMap = [];
+        foreach ($decoded as $p) {
+          if (is_array($p) && isset($p['path'])) {
+            $path = trim((string)$p['path']);
+            if ($path === '') continue;
+            $metaMap[$path] = trim((string)($p['name'] ?? $p['title'] ?? ''));
+          }
+        }
+        if ($metaMap) {
+          foreach ($photosJson as $idx => $entry) {
+            if (!is_array($entry)) continue;
+            $f = (string)($entry['file'] ?? '');
+            if ($f === '') continue;
+            if (isset($metaMap[$f]) && $metaMap[$f] !== '') {
+              $photosJson[$idx]['name'] = $metaMap[$f];
+            }
+          }
+        }
+      }
+    }
+    // Persist photos.json if we have a photos directory
+    if (!empty($photosJson) && is_dir($photosDir)) {
+      $encoded = json_encode(array_values($photosJson), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+      if ($encoded !== false) {
+        @file_put_contents($photosJsonPath, $encoded . PHP_EOL, LOCK_EX);
+      }
+    }
+
     // Merge existing photos (objects) with newly saved ones unless client provided explicit photos list
     $existing = tctLoadTaskInfoSettings($tctTasksDir, $tagCode);
     $existingPhotos = is_array($existing['photos'] ?? null) ? $existing['photos'] : [];
@@ -1358,6 +1426,26 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
         if (!is_array($p)) continue;
         if (trim((string)($p['path'] ?? '')) === trim((string)$photoPath)) continue;
         $filtered[] = $p;
+      }
+      // Also remove from photos/photos.json if present
+      $photosDir = $tctTasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'photos';
+      $photosJsonPath = $photosDir . DIRECTORY_SEPARATOR . 'photos.json';
+      if (is_file($photosJsonPath)) {
+        $raw = file_get_contents($photosJsonPath);
+        if ($raw !== false) {
+          $decoded = json_decode($raw, true);
+          if (is_array($decoded)) {
+            $new = [];
+            foreach ($decoded as $entry) {
+              if (!is_array($entry)) continue;
+              $file = (string)($entry['file'] ?? '');
+              if ($file === '') continue;
+              if (trim($file) === trim($photoPath)) continue;
+              $new[] = $entry;
+            }
+            @file_put_contents($photosJsonPath, json_encode(array_values($new), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . PHP_EOL, LOCK_EX);
+          }
+        }
       }
       if (!tctSaveTaskInfoSettings($tctTasksDir, $tagCode, [
         'title' => $settings['title'] ?? '',
