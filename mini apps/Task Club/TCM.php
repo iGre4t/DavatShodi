@@ -2272,12 +2272,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ورودی نامعتبر است.']);
       exit;
     }
-    // validate word count (600-800 words)
+    // validate word count: no minimum, maximum 300 words
     $words = preg_split('/\s+/u', trim($content));
     $words = is_array($words) ? array_values(array_filter($words, static fn($w) => trim((string)$w) !== '')) : [];
     $count = count($words);
-    if ($count < 600 || $count > 800) {
-      echo json_encode(['status' => 'error', 'message' => 'تعداد کلمات باید بین 600 تا 800 باشد.']);
+    if ($count > 300) {
+      echo json_encode(['status' => 'error', 'message' => 'تعداد کلمات باید حداکثر 300 کلمه باشد.']);
       exit;
     }
 
@@ -7116,7 +7116,7 @@ $sessionPayload = [
             <section class="info-task-section" style="display:flex;flex-direction:column;gap:12px;padding:12px;">
               <div style="text-align:center"><img src="./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(photoCode)}" alt="" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"/></div>
               <div style="flex:1;display:flex;flex-direction:column;min-height:360px;">
-                <textarea id="describe-photo-textarea" placeholder="متن خود را اینجا وارد کنید (حداکثر 300 کلمه)" style="width:100%;height:100%;min-height:220px;max-height:80vh;padding:12px;font-family:inherit;font-size:0.95rem;line-height:1.4;resize:none;overflow:auto;border:1px solid #e6e9ef;border-radius:6px;background:#fff;box-sizing:border-box;">${escapeHtml(existingText || '')}</textarea>
+                <textarea id="describe-photo-textarea" placeholder="متن خود را اینجا وارد کنید (حداکثر 300 کلمه)" style="width:100%;height:100%;min-height:220px;max-height:80vh;padding:12px;font-family:'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;font-size:0.95rem;line-height:1.6;resize:none;overflow-y:auto;border:1px solid #e6e9ef;border-radius:6px;background:#fff;box-sizing:border-box;">${escapeHtml(existingText || '')}</textarea>
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداکثر 300 کلمه</div></div>
               </div>
             </section>
@@ -7165,8 +7165,8 @@ $sessionPayload = [
               const ta = document.getElementById('describe-photo-textarea');
               const content = ta ? String(ta.value || '') : '';
               const words = content.trim() === '' ? 0 : (content.split(/\s+/).filter(Boolean).length);
-              if (words < 600 || words > 800) {
-                openTaskResultDialog(0, 'تعداد کلمات باید بین 600 تا 800 باشد.');
+              if (words > 300) {
+                openTaskResultDialog(0, 'تعداد کلمات باید حداکثر 300 کلمه باشد.');
                 return;
               }
               try {
