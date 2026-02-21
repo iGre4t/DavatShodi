@@ -389,10 +389,19 @@
   function collectTaskInfoContentFromPane(pane) {
     const controls = getTaskInfoContentControls(pane);
     if (!controls) return null;
-    return {
+    const info = {
       info_title: String(controls.titleInput.value || '').trim(),
       info_text: String(controls.textInput.value || '').trim()
     };
+
+    // Collect selected photo previews (data URLs) if any
+    try {
+      const imgs = Array.from(pane.querySelectorAll('img[data-task-photo-item]'));
+      const photos = imgs.map((img) => String(img.src || '').trim()).filter(Boolean);
+      info.info_photos = photos;
+    } catch {}
+
+    return info;
   }
 
   function applyHeaderShortcutToTextarea(textarea) {
@@ -660,6 +669,33 @@
       infoControls.titleInput.value = String(task?.infoTitle || '');
       infoControls.textInput.value = String(task?.infoText || '');
       setTaskInfoContentSaveStatus(pane, '');
+      // Render any existing info photos (task.info_photos or task.infoPhotos)
+      try {
+        const photos = Array.isArray(task?.info_photos) ? task.info_photos : (Array.isArray(task?.infoPhotos) ? task.infoPhotos : []);
+        const list = pane.querySelector('.task-photo-list');
+        const placeholder = pane.querySelector('[data-task-photo-placeholder]');
+        const clearBtn = pane.querySelector('[data-action="clear-task-photos"]');
+        if (list instanceof HTMLElement) list.innerHTML = '';
+        if (photos && photos.length) {
+          photos.forEach((src) => {
+            try {
+              const wrap = document.createElement('div');
+              wrap.className = 'task-photo-thumb';
+              const img = document.createElement('img');
+              img.setAttribute('data-task-photo-item', '1');
+              img.alt = '';
+              img.src = String(src || '');
+              wrap.appendChild(img);
+              list.appendChild(wrap);
+            } catch {}
+          });
+          if (placeholder instanceof HTMLElement) placeholder.classList.add('hidden');
+          if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = false;
+        } else if (placeholder instanceof HTMLElement) {
+          placeholder.classList.remove('hidden');
+          if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = true;
+        }
+      } catch {}
     }
     syncTaskPaneToggleState(pane);
     setTaskSaveStatus(pane, '');
@@ -774,6 +810,22 @@
                   <span>Text</span>
                   <textarea data-task-field="infoText" rows="8">${escapeHtml(infoText)}</textarea>
                 </label>
+                <div class="card">
+                  <div class="section-header"><h3>Photos</h3></div>
+                  <div class="form">
+                    <div class="photo-uploader task-photo-uploader" data-task-photo-uploader>
+                      <div class="photo-preview" data-task-photo-preview aria-live="polite">
+                        <div class="task-photo-list"></div>
+                        <div class="photo-placeholder" data-task-photo-placeholder>No photos selected</div>
+                      </div>
+                      <div class="photo-actions">
+                        <button type="button" class="btn" data-action="open-task-photos">Choose photos</button>
+                        <button type="button" class="btn ghost" data-action="clear-task-photos" disabled>Clear</button>
+                        <input type="file" accept="image/*" multiple hidden data-task-photo-input />
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div class="field full">
                   <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
                 </div>
@@ -972,6 +1024,45 @@
 
     layout.addEventListener('change', handleTaskFieldUpdate);
     layout.addEventListener('input', handleTaskFieldUpdate);
+    // Handle photo input changes for multi-photo selection in Information pane
+    layout.addEventListener('change', (event) => {
+      const tgt = event.target;
+      if (!(tgt instanceof HTMLInputElement)) return;
+      if (!tgt.matches('[data-task-photo-input]')) return;
+      const input = tgt;
+      const pane = input.closest('.sub-pane[data-task-pane="1"]');
+      if (!(pane instanceof HTMLElement)) return;
+      const list = pane.querySelector('.task-photo-list');
+      const placeholder = pane.querySelector('[data-task-photo-placeholder]');
+      const clearBtn = pane.querySelector('[data-action="clear-task-photos"]');
+      if (!(list instanceof HTMLElement)) return;
+      list.innerHTML = '';
+      const files = Array.from(input.files || []);
+      if (!files.length) {
+        if (placeholder instanceof HTMLElement) placeholder.classList.remove('hidden');
+        if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = true;
+        return;
+      }
+      if (placeholder instanceof HTMLElement) placeholder.classList.add('hidden');
+      if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = false;
+
+      files.forEach((file) => {
+        if (!file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+          const src = String(reader.result || '');
+          const wrap = document.createElement('div');
+          wrap.className = 'task-photo-thumb';
+          const img = document.createElement('img');
+          img.setAttribute('data-task-photo-item', '1');
+          img.alt = file.name || 'photo';
+          img.src = src;
+          wrap.appendChild(img);
+          list.appendChild(wrap);
+        });
+        try { reader.readAsDataURL(file); } catch {}
+      });
+    });
     layout.addEventListener('keydown', (event) => {
       const target = event.target;
       if (!(target instanceof HTMLTextAreaElement)) return;
@@ -1042,6 +1133,37 @@
     layout.addEventListener('click', async (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
+
+      // Photo chooser / preview handlers for Information pane
+      const openPhotosBtn = target.closest('[data-action="open-task-photos"]');
+      if (openPhotosBtn instanceof HTMLElement) {
+        const pane = openPhotosBtn.closest('.sub-pane[data-task-pane="1"]');
+        if (pane instanceof HTMLElement) {
+          const input = pane.querySelector('[data-task-photo-input]');
+          if (input instanceof HTMLInputElement) {
+            input.click();
+          }
+        }
+        return;
+      }
+
+      const clearPhotosBtn = target.closest('[data-action="clear-task-photos"]');
+      if (clearPhotosBtn instanceof HTMLElement) {
+        const pane = clearPhotosBtn.closest('.sub-pane[data-task-pane="1"]');
+        if (pane instanceof HTMLElement) {
+          const input = pane.querySelector('[data-task-photo-input]');
+          const list = pane.querySelector('.task-photo-list');
+          const placeholder = pane.querySelector('[data-task-photo-placeholder]');
+          if (input instanceof HTMLInputElement) {
+            try { input.value = ''; } catch {}
+          }
+          if (list instanceof HTMLElement) list.innerHTML = '';
+          if (placeholder instanceof HTMLElement) placeholder.classList.remove('hidden');
+          // disable clear button
+          clearPhotosBtn.disabled = true;
+        }
+        return;
+      }
 
       const topTrigger = target.closest('[data-task-top-trigger]');
       if (topTrigger instanceof HTMLElement) {
