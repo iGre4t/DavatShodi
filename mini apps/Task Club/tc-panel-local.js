@@ -379,6 +379,34 @@
     };
   }
 
+  // Photo-specific controls in the Information pane
+  function getTaskPhotosControls(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    const input = pane.querySelector('[data-task-photo-input]');
+    const openBtn = pane.querySelector('[data-action="open-task-photos"]');
+    const clearBtn = pane.querySelector('[data-action="clear-task-photos"]');
+    const list = pane.querySelector('.task-photo-list');
+    const tableBody = pane.querySelector('[data-task-photos-table-body]');
+    const saveButton = pane.querySelector('[data-action="save-task-photos"]');
+    const statusEl = pane.querySelector('[data-task-photos-save-status]');
+    return {
+      input: input instanceof HTMLInputElement ? input : null,
+      openBtn: openBtn instanceof HTMLButtonElement ? openBtn : null,
+      clearBtn: clearBtn instanceof HTMLButtonElement ? clearBtn : null,
+      list: list instanceof HTMLElement ? list : null,
+      tableBody: tableBody instanceof HTMLElement ? tableBody : null,
+      saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null,
+      statusEl: statusEl instanceof HTMLElement ? statusEl : null
+    };
+  }
+
+  function setTaskPhotosSaveStatus(pane, message, isError = false) {
+    const controls = getTaskPhotosControls(pane);
+    if (!controls?.statusEl) return;
+    controls.statusEl.textContent = message || '';
+    controls.statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
   function setTaskInfoContentSaveStatus(pane, message, isError = false) {
     const controls = getTaskInfoContentControls(pane);
     if (!controls?.statusEl) return;
@@ -393,14 +421,6 @@
       info_title: String(controls.titleInput.value || '').trim(),
       info_text: String(controls.textInput.value || '').trim()
     };
-
-    // Collect selected photo previews (data URLs) if any
-    try {
-      const imgs = Array.from(pane.querySelectorAll('img[data-task-photo-item]'));
-      const photos = imgs.map((img) => String(img.src || '').trim()).filter(Boolean);
-      info.info_photos = photos;
-    } catch {}
-
     return info;
   }
 
@@ -665,7 +685,7 @@
       }
     }
     const infoControls = getTaskInfoContentControls(pane);
-    if (infoControls) {
+        if (infoControls) {
       infoControls.titleInput.value = String(task?.infoTitle || '');
       infoControls.textInput.value = String(task?.infoText || '');
       setTaskInfoContentSaveStatus(pane, '');
@@ -682,10 +702,11 @@
           return null;
         }).filter(Boolean);
 
-        const list = pane.querySelector('.task-photo-list');
-        const placeholder = pane.querySelector('[data-task-photo-placeholder]');
-        const clearBtn = pane.querySelector('[data-action="clear-task-photos"]');
-        const tableBody = pane.querySelector('[data-task-photos-table-body]');
+  const list = pane.querySelector('.task-photo-list');
+  const placeholder = pane.querySelector('[data-task-photo-placeholder]');
+  const clearBtn = pane.querySelector('[data-action="clear-task-photos"]');
+  const tableBody = pane.querySelector('[data-task-photos-table-body]');
+  const photosSaveBtn = pane.querySelector('[data-action="save-task-photos"]');
         if (list instanceof HTMLElement) list.innerHTML = '';
         if (tableBody instanceof HTMLElement) tableBody.innerHTML = '';
 
@@ -724,6 +745,7 @@
           });
           if (placeholder instanceof HTMLElement) placeholder.classList.add('hidden');
           if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = false;
+          if (photosSaveBtn instanceof HTMLButtonElement) photosSaveBtn.disabled = true;
         } else {
           if (placeholder instanceof HTMLElement) {
             placeholder.classList.remove('hidden');
@@ -848,44 +870,49 @@
                   <span>Text</span>
                   <textarea data-task-field="infoText" rows="8">${escapeHtml(infoText)}</textarea>
                 </label>
-                <div class="card">
-                  <div class="section-header"><h3>Photos</h3></div>
-                  <div class="form">
-                    <div class="photo-uploader task-photo-uploader" data-task-photo-uploader>
-                      <div class="photo-preview" data-task-photo-preview aria-live="polite">
-                        <div class="task-photo-list"></div>
-                        <div class="photo-placeholder" data-task-photo-placeholder>No photos selected</div>
-                      </div>
-                      <div class="photo-actions">
-                        <button type="button" class="btn" data-action="open-task-photos">Choose photos</button>
-                        <button type="button" class="btn ghost" data-action="clear-task-photos" disabled>Clear</button>
-                        <input type="file" accept="image/*" multiple hidden data-task-photo-input />
-                      </div>
-                    </div>
-                  </div>
-                  <div class="card">
-                    <div class="section-header"><h3>Photos List</h3></div>
-                    <div class="table-wrapper">
-                      <table class="tc-photo-table">
-                        <thead>
-                          <tr>
-                            <th>Preview</th>
-                            <th>Name</th>
-                            <th>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody data-task-photos-table-body>
-                          <tr><td colspan="3" class="muted">No photos uploaded.</td></tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
                 <div class="field full">
                   <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
                 </div>
                 <p class="muted small" data-task-info-save-status aria-live="polite"></p>
               </div>
+            </div>
+
+            <div class="card">
+              <div class="section-header"><h3>Photos</h3></div>
+              <div class="form">
+                <div class="photo-uploader task-photo-uploader" data-task-photo-uploader>
+                  <div class="photo-preview" data-task-photo-preview aria-live="polite">
+                    <div class="task-photo-list"></div>
+                    <div class="photo-placeholder" data-task-photo-placeholder>No photos selected</div>
+                  </div>
+                  <div class="photo-actions">
+                    <button type="button" class="btn" data-action="open-task-photos">Choose photos</button>
+                    <button type="button" class="btn ghost" data-action="clear-task-photos" disabled>Clear</button>
+                    <input type="file" accept="image/*" multiple hidden data-task-photo-input />
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="section-header"><h3>Photos List</h3></div>
+                <div class="table-wrapper">
+                  <table class="tc-photo-table">
+                    <thead>
+                      <tr>
+                        <th>Preview</th>
+                        <th>Name</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody data-task-photos-table-body>
+                      <tr><td colspan="3" class="muted">No photos uploaded.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="field full">
+                <button type="button" class="btn primary standard-primary-button" data-action="save-task-photos">Save Photos</button>
+              </div>
+              <p class="muted small" data-task-photos-save-status aria-live="polite"></p>
             </div>
           </div>
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
@@ -1122,47 +1149,15 @@
         return;
       }
 
-      // Photo name edited in table
+      // Photo name edited in table: enable the Photos save button (no auto-save)
       if (tgt.matches('.task-photo-name')) {
         const input = tgt;
         const pane = input.closest('.sub-pane[data-task-pane="1"]');
         if (!(pane instanceof HTMLElement)) return;
-        const taskId = String(pane.dataset.taskId || '').trim();
-        if (!taskId) return;
-        // gather current photos list from table
-        const rows = Array.from(pane.querySelectorAll('[data-task-photos-table-body] tr'));
-        const photos = [];
-        rows.forEach((row) => {
-          if (!(row instanceof HTMLTableRowElement)) return;
-          const path = String(row.dataset.photoPath || '').trim();
-          if (!path) return;
-          const nameInput = row.querySelector('.task-photo-name');
-          const name = nameInput instanceof HTMLInputElement ? String(nameInput.value || '').trim() : '';
-          photos.push({ path, name });
-        });
-        // send updated photos list to server
-        (async () => {
-          try {
-            const data = await postTaskAction('save_info_task_content', {
-              id: taskId,
-              info_title: pane.querySelector('[data-task-field="infoTitle"]')?.value || '',
-              info_text: pane.querySelector('[data-task-field="infoText"]')?.value || '',
-              photos: JSON.stringify(photos)
-            });
-            const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
-            const keepPane = pane.dataset.pane || '';
-            if (returnedTasks.length) {
-              renderTaskSubtabs(layout, returnedTasks, keepPane);
-              try { window.TC_TASKS = returnedTasks; } catch {}
-            }
-            const activePane = findPaneByKey(layout, keepPane);
-            if (activePane instanceof HTMLElement) {
-              setTaskInfoContentSaveStatus(activePane, data.message || 'Photo names saved.');
-            }
-          } catch (err) {
-            setTaskInfoContentSaveStatus(pane, err?.message || 'Failed to save photo names.', true);
-          }
-        })();
+        const photosControls = getTaskPhotosControls(pane);
+        if (photosControls?.saveButton) photosControls.saveButton.disabled = false;
+        // Clear any previous status
+        setTaskPhotosSaveStatus(pane, '');
         return;
       }
     });
@@ -1264,6 +1259,12 @@
           if (placeholder instanceof HTMLElement) placeholder.classList.remove('hidden');
           // disable clear button
           clearPhotosBtn.disabled = true;
+          // disable photos save button and clear photos status
+          try {
+            const photosControls = getTaskPhotosControls(pane);
+            if (photosControls?.saveButton) photosControls.saveButton.disabled = true;
+            if (photosControls?.statusEl) photosControls.statusEl.textContent = '';
+          } catch {}
         }
         return;
       }
@@ -1288,42 +1289,22 @@
         if (!(pane instanceof HTMLElement)) return;
         const taskId = pane.dataset.taskId || '';
         if (!taskId) return;
+        // Save only title/text (no files) via the standard action
         const payload = collectTaskInfoContentFromPane(pane);
         if (!payload) return;
         saveInfoButton.disabled = true;
         setTaskInfoContentSaveStatus(pane, 'Saving...');
         try {
-          // Use FormData to include file uploads (photos[])
-          const input = pane.querySelector('[data-task-photo-input]');
-          const files = input instanceof HTMLInputElement ? input.files : null;
-          const formData = new FormData();
-          formData.append('tct_action', 'save_info_task_content');
-          formData.append('id', taskId);
-          formData.append('info_title', payload.info_title || '');
-          formData.append('info_text', payload.info_text || '');
-          if (files && files.length) {
-            for (let i = 0; i < files.length; i += 1) {
-              try {
-                formData.append('photos[]', files[i], files[i].name || `photo_${i}`);
-              } catch {}
-            }
-          }
-          const resp = await fetch(TASKS_ENDPOINT, {
-            method: 'POST',
-            body: formData,
-            credentials: 'same-origin'
+          const data = await postTaskAction('save_info_task_content', {
+            id: taskId,
+            info_title: payload.info_title || '',
+            info_text: payload.info_text || ''
           });
-          const data = await resp.json();
-          if (!resp.ok || data?.status !== 'ok') {
-            throw new Error(data?.message || 'Request failed.');
-          }
           const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
           const keepPane = pane.dataset.pane || '';
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
-            try {
-              window.TC_TASKS = returnedTasks;
-            } catch {}
+            try { window.TC_TASKS = returnedTasks; } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
@@ -1378,6 +1359,82 @@
         }
         return;
       }
+
+        // Save photos (upload files and persist names)
+        const savePhotosBtn = target.closest('[data-action="save-task-photos"]');
+        if (savePhotosBtn instanceof HTMLButtonElement) {
+          const pane = savePhotosBtn.closest('.sub-pane[data-task-pane="1"]');
+          if (!(pane instanceof HTMLElement)) return;
+          const taskId = String(pane.dataset.taskId || '').trim();
+          if (!taskId) return;
+          const photosControls = getTaskPhotosControls(pane);
+          if (!photosControls) return;
+          // gather current photos list from table (names)
+          const rows = Array.from(pane.querySelectorAll('[data-task-photos-table-body] tr'));
+          const photosMeta = [];
+          rows.forEach((row) => {
+            if (!(row instanceof HTMLTableRowElement)) return;
+            const path = String(row.dataset.photoPath || '').trim();
+            if (!path) return;
+            const nameInput = row.querySelector('.task-photo-name');
+            const name = nameInput instanceof HTMLInputElement ? String(nameInput.value || '').trim() : '';
+            photosMeta.push({ path, name });
+          });
+
+          savePhotosBtn.disabled = true;
+          setTaskPhotosSaveStatus(pane, 'Saving photos...');
+          try {
+            const formData = new FormData();
+            formData.append('tct_action', 'save_info_task_content');
+            formData.append('id', taskId);
+            formData.append('info_title', pane.querySelector('[data-task-field="infoTitle"]')?.value || '');
+            formData.append('info_text', pane.querySelector('[data-task-field="infoText"]')?.value || '');
+            // attach files if any
+            const hasFiles = photosControls.input && photosControls.input.files && photosControls.input.files.length;
+            if (hasFiles) {
+              for (let i = 0; i < photosControls.input.files.length; i += 1) {
+                try { formData.append('photos[]', photosControls.input.files[i], photosControls.input.files[i].name || `photo_${i}`); } catch {}
+              }
+            }
+            // Attach metadata only when user provided explicit list (e.g. edited names) OR when there are no files being uploaded
+            // If files are uploaded and user didn't provide any explicit metadata, don't send an empty photos array because server
+            // will treat that as an explicit override and discard newly saved files.
+            if (photosMeta && photosMeta.length) {
+              formData.append('photos', JSON.stringify(photosMeta));
+            } else if (!hasFiles) {
+              // no files and no explicit metadata -> send empty array to clear
+              formData.append('photos', JSON.stringify([]));
+            }
+
+            const resp = await fetch(TASKS_ENDPOINT, {
+              method: 'POST',
+              body: formData,
+              credentials: 'same-origin'
+            });
+            const data = await resp.json();
+            if (!resp.ok || data?.status !== 'ok') {
+              throw new Error(data?.message || 'Request failed.');
+            }
+            const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+            const keepPane = pane.dataset.pane || '';
+            if (returnedTasks.length) {
+              renderTaskSubtabs(layout, returnedTasks, keepPane);
+              try { window.TC_TASKS = returnedTasks; } catch {}
+            }
+            const activePane = findPaneByKey(layout, keepPane);
+            if (activePane instanceof HTMLElement) {
+              setTaskPhotosSaveStatus(activePane, data.message || 'Photos saved.');
+            }
+          } catch (err) {
+            setTaskPhotosSaveStatus(pane, err?.message || 'Failed to save photos.', true);
+          } finally {
+            const refreshedPane = pane.dataset.pane ? findPaneByKey(layout, pane.dataset.pane) : null;
+            const refreshedBtn = refreshedPane instanceof HTMLElement ? refreshedPane.querySelector('[data-action="save-task-photos"]') : null;
+            if (refreshedBtn instanceof HTMLButtonElement) refreshedBtn.disabled = false;
+            else savePhotosBtn.disabled = false;
+          }
+          return;
+        }
 
       const rowMaxButton = target.closest('[data-action="info-row-max"]');
       if (rowMaxButton instanceof HTMLButtonElement) {
