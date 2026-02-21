@@ -2099,6 +2099,96 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     exit;
   }
 
+  if ($action === 'describe_photo_select') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
+      exit;
+    }
+    $tagCode = normalizeTaskTagCode((string)($payload['tagCode'] ?? ''));
+    $selected = is_array($payload['photos'] ?? null) ? array_values($payload['photos']) : [];
+    if ($tagCode === '' || !$selected) {
+      echo json_encode(['status' => 'error', 'message' => 'ورودی نامعتبر است.']);
+      exit;
+    }
+    $photosDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'photos';
+    $articlesDir = $photosDir . DIRECTORY_SEPARATOR . 'articles';
+    if (!is_dir($photosDir)) {
+      echo json_encode(['status' => 'error', 'message' => 'No photos available for this task.']);
+      exit;
+    }
+    if (!is_dir($articlesDir)) {
+      mkdir($articlesDir, 0777, true);
+    }
+
+    $savedNames = [];
+    foreach ($selected as $code) {
+      $codeSafe = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$code);
+      if ($codeSafe === '') continue;
+      $name = $sessionWorkId . '-' . $codeSafe;
+      $filePath = $articlesDir . DIRECTORY_SEPARATOR . $name . '.txt';
+      if (!is_file($filePath)) {
+        @file_put_contents($filePath, "photo: {$codeSafe}\ncreated_at: " . time() . "\n", LOCK_EX);
+      }
+      $savedNames[] = $name;
+    }
+
+    if (!$savedNames) {
+      echo json_encode(['status' => 'error', 'message' => 'No valid photos selected.']);
+      exit;
+    }
+
+    $csvPath = $photosDir . DIRECTORY_SEPARATOR . 'photos for each user.csv';
+    $rows = [];
+    if (is_file($csvPath)) {
+      if (($h = fopen($csvPath, 'r')) !== false) {
+        while (($r = fgetcsv($h)) !== false) {
+          $rows[] = $r;
+        }
+        fclose($h);
+      }
+    }
+    if (!$rows) {
+      $rows[] = ['Work ID', 'Photos'];
+    }
+    $photosCell = implode(' , ', $savedNames);
+    $found = false;
+    for ($i = 1; $i < count($rows); $i += 1) {
+      if (trim((string)($rows[$i][0] ?? '')) === $sessionWorkId) {
+        $rows[$i][1] = $photosCell;
+        $found = true;
+        break;
+      }
+    }
+    if (!$found) {
+      $rows[] = [$sessionWorkId, $photosCell];
+    }
+
+    $dir = dirname($csvPath);
+    if (!is_dir($dir)) mkdir($dir, 0777, true);
+    $handle = fopen($csvPath, 'c+');
+    if ($handle === false) {
+      echo json_encode(['status' => 'error', 'message' => 'Cannot open CSV file for writing.']);
+      exit;
+    }
+    if (!flock($handle, LOCK_EX)) {
+      fclose($handle);
+      echo json_encode(['status' => 'error', 'message' => 'Cannot lock CSV file.']);
+      exit;
+    }
+    ftruncate($handle, 0);
+    rewind($handle);
+    foreach ($rows as $row) {
+      fputcsv($handle, $row);
+    }
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+
+    echo json_encode(['status' => 'ok', 'saved' => $savedNames], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
   if ($action === 'reward_state') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
@@ -5248,8 +5338,12 @@ $sessionPayload = [
         let rewardCardsDeck = [];
         const rewardCardsLockedIndexes = new Set();
         const rewardCardsLockedPrizes = new Map();
-        let currentTaskId = '';
-        let currentTaskTitle = '';
+  let currentTaskId = '';
+  let currentTaskTitle = '';
+  let currentTaskType = '';
+  let currentTaskTagCode = '';
+  let describePhotoStep = 0; // 0 = not started, 1 = preview shown, 2 = saved
+  let describePhotoChosen = [];
         let currentQuestions = [];
         let currentQuestionIndex = 0;
         let infoTaskViewOpen = false;
@@ -5863,6 +5957,12 @@ $sessionPayload = [
                 return `<section class="info-task-section">${title ? `<h3>${title}</h3>` : ''}<p>${body || '-'}</p></section>`;
               }).join('');
             }
+          }
+          // If this is a describe_photo task, change ack button to "ادامه"
+          if (taskInfoAckBtnEl) {
+            try {
+              taskInfoAckBtnEl.textContent = currentTaskType === 'describe_photo' ? 'ادامه' : 'متوجه شدم';
+            } catch (e) {}
           }
           infoTaskViewOpen = true;
         };
@@ -6797,6 +6897,10 @@ $sessionPayload = [
             const fetchedTaskType = String(payload?.task?.taskType || button?.dataset?.taskType || 'quiz').trim().toLowerCase();
             if (fetchedTaskType === 'info' || fetchedTaskType === 'describe_photo') {
               currentTaskId = taskId;
+              currentTaskType = fetchedTaskType;
+              currentTaskTagCode = String(payload?.task?.tagCode ?? '').trim();
+              describePhotoStep = 0;
+              describePhotoChosen = [];
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
               openInfoTaskView(
                 currentTaskTitle,
@@ -6849,8 +6953,79 @@ $sessionPayload = [
             closeTaskResultDialog();
           });
         }
+        const renderDescribePhotosPreview = (photos) => {
+          if (!taskInfoContentEl) return;
+          if (!Array.isArray(photos) || photos.length === 0) {
+            taskInfoContentEl.innerHTML = '<p>عکسی برای نمایش موجود نیست.</p>';
+            return;
+          }
+          const grid = photos.map((p) => {
+            const file = String(p.file || '').trim();
+            const url = `./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(file)}`;
+            return `<div class="describe-photo-thumb"><img src="${url}" alt="" style="max-width:100%;height:auto;border-radius:8px;"/></div>`;
+          }).join('');
+          taskInfoContentEl.innerHTML = `<div class="describe-photo-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${grid}</div>`;
+        };
+
         if (taskInfoAckBtnEl) {
-          taskInfoAckBtnEl.addEventListener('click', () => {
+          taskInfoAckBtnEl.addEventListener('click', async () => {
+            // If this is a describe_photo task, run the special flow
+            if (currentTaskType === 'describe_photo') {
+              // Step 0: fetch photos and show 3 random previews
+              if (describePhotoStep === 0) {
+                try {
+                  const photosUrl = `./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/photos.json`;
+                  const resp = await fetch(photosUrl, { cache: 'no-store' });
+                  const list = await (resp.ok ? resp.json() : []);
+                  const arr = Array.isArray(list) ? list.filter(Boolean) : [];
+                  if (!arr.length) {
+                    openTaskResultDialog(0, 'عکسی برای این ماموریت موجود نیست.');
+                    return;
+                  }
+                  // pick up to 3 random unique
+                  const chosen = [];
+                  const copy = arr.slice();
+                  while (chosen.length < 3 && copy.length) {
+                    const i = Math.floor(Math.random() * copy.length);
+                    chosen.push(copy.splice(i, 1)[0]);
+                  }
+                  describePhotoChosen = chosen.map((it) => String(it.code || it.name || it.file || '').trim()).filter(Boolean);
+                  renderDescribePhotosPreview(chosen);
+                  describePhotoStep = 1;
+                  // keep button as ادامه (user will click to save)
+                  return;
+                } catch (err) {
+                  openTaskResultDialog(0, 'بارگذاری عکس‌ها ناموفق بود.');
+                  return;
+                }
+              }
+
+              // Step 1: send chosen photos to server to create article files and CSV
+              if (describePhotoStep === 1) {
+                try {
+                  const payload = await postJson({ action: 'describe_photo_select', tagCode: currentTaskTagCode, photos: describePhotoChosen });
+                  // mark task button completed if present
+                  const targetBtn = taskButtons.find((b) => String(b.dataset.taskId || '') === String(currentTaskId || ''));
+                  if (targetBtn) {
+                    targetBtn.dataset.taskCompleted = '1';
+                    targetBtn.dataset.taskUserScore = String(Number.parseInt(targetBtn.dataset.taskUserScore || '0', 10) || 0);
+                    setTaskButtonState(targetBtn, 'completed');
+                  }
+                  openTaskResultDialog(0, 'عکس‌ها ثبت شد.');
+                  // reset state and close overlay after short delay
+                  describePhotoStep = 2;
+                  currentTaskType = '';
+                  currentTaskTagCode = '';
+                  setTimeout(() => closeQuizOverlay(), 1000);
+                  return;
+                } catch (err) {
+                  openTaskResultDialog(0, err?.message || 'ثبت عکس‌ها ناموفق بود.');
+                  return;
+                }
+              }
+            }
+
+            // Default behavior for non-describe tasks: close
             closeQuizOverlay();
           });
         }
