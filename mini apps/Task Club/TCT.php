@@ -403,28 +403,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
-      // Prefer richer photos metadata from photos/photos.json if it exists; otherwise fall back to info-task.json photos
-      $photosJsonPath = $tasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'photos' . DIRECTORY_SEPARATOR . 'photos.json';
-      $photosList = [];
-      if (is_file($photosJsonPath)) {
-        $raw = file_get_contents($photosJsonPath);
-        if ($raw !== false) {
-          $decoded = json_decode($raw, true);
-          if (is_array($decoded)) {
-            foreach ($decoded as $entry) {
-              if (!is_array($entry)) continue;
-              $file = trim((string)($entry['file'] ?? ''));
-              if ($file === '') continue;
-              $name = trim((string)($entry['name'] ?? ($entry['title'] ?? pathinfo($file, PATHINFO_BASENAME))));
-              $photosList[] = ['path' => $file, 'name' => $name];
-            }
-          }
-        }
-      }
-      if (empty($photosList) && is_array($info['photos'] ?? null)) {
-        $photosList = $info['photos'];
-      }
-      $task['infoPhotos'] = $photosList;
+      $task['infoPhotos'] = is_array($info['photos'] ?? null) ? $info['photos'] : [];
     } else {
       $task['infoTitle'] = '';
       $task['infoText'] = '';
