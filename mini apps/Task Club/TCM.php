@@ -7111,24 +7111,50 @@ $sessionPayload = [
           currentEditingPhoto = String(photoCode || '').trim();
           // set ack button to ذخیره while editing
           if (taskInfoAckBtnEl) taskInfoAckBtnEl.textContent = 'ذخیره';
+          // Render editor styled like .info-task-section with photo preview above a full-size textarea
           taskInfoContentEl.innerHTML = `
-            <div style="display:grid;gap:12px">
-              <div style="text-align:center"><img src="./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(photoCode)}" alt="" style="max-width:100%;height:auto;border-radius:8px;"/></div>
-              <textarea id="describe-photo-textarea" placeholder="حداقل 600 کلمه و حداکثر 800 کلمه" style="min-height:320px;width:100%;padding:8px;font-family:inherit;font-size:0.95rem;">${escapeHtml(existingText || '')}</textarea>
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداقل 600 و حداکثر 800 کلمه</div></div>
-            </div>
+            <section class="info-task-section" style="display:flex;flex-direction:column;gap:12px;padding:12px;">
+              <div style="text-align:center"><img src="./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(photoCode)}" alt="" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"/></div>
+              <div style="flex:1;display:flex;flex-direction:column;min-height:360px;">
+                <textarea id="describe-photo-textarea" placeholder="متن خود را اینجا وارد کنید (حداکثر 300 کلمه)" style="width:100%;height:100%;min-height:220px;max-height:80vh;padding:12px;font-family:inherit;font-size:0.95rem;line-height:1.4;resize:none;overflow:auto;border:1px solid #e6e9ef;border-radius:6px;background:#fff;box-sizing:border-box;">${escapeHtml(existingText || '')}</textarea>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداکثر 300 کلمه</div></div>
+              </div>
+            </section>
           `;
+
           const ta = document.getElementById('describe-photo-textarea');
           const wc = document.getElementById('describe-word-count');
+
+          const autoResize = () => {
+            if (!ta) return;
+            try {
+              ta.style.height = 'auto';
+              const newHeight = Math.min(ta.scrollHeight, Math.round(window.innerHeight * 0.8));
+              ta.style.height = `${newHeight}px`;
+            } catch (e) {}
+          };
+
           const updateWordCount = () => {
             if (!ta) return;
             const txt = String(ta.value || '').trim();
             const words = txt === '' ? 0 : (txt.split(/\s+/).filter(Boolean).length);
             if (wc) wc.textContent = `${words} کلمه`;
+            autoResize();
+            // keep textarea in view when it grows
+            try {
+              const rect = ta.getBoundingClientRect();
+              if (rect.bottom > window.innerHeight - 20) {
+                window.scrollBy({ top: rect.bottom - (window.innerHeight - 20), left: 0, behavior: 'smooth' });
+              }
+            } catch (e) {}
           };
+
           if (ta) {
             ta.addEventListener('input', updateWordCount);
+            // initialize sizes and word count
             updateWordCount();
+            // when focusing, ensure it's visible
+            ta.addEventListener('focus', () => { try { ta.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} });
           }
         };
 
