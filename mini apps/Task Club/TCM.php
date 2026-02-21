@@ -7092,7 +7092,6 @@ $sessionPayload = [
             const snippet = String(articlesMap[code] || '').slice(0, 140);
             return `<button type="button" data-photo-code="${escapeHtml(code)}" class="describe-photo-thumb" style="border:0;background:transparent;padding:0;cursor:pointer;text-align:left">` +
               `<img src="${url}" alt="" style="max-width:100%;height:auto;border-radius:8px;display:block;margin-bottom:6px;"/>` +
-              (snippet ? `<div class="describe-photo-snippet" style="font-size:0.78rem;color:#445;">${escapeHtml(snippet)}</div>` : '') +
               `</button>`;
           }).join('');
           taskInfoContentEl.innerHTML = `<div class="describe-photo-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${grid}</div>`;
