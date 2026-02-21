@@ -265,10 +265,31 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
   if (!is_array($decoded)) {
     return $defaults;
   }
+  $rawPhotos = is_array($decoded['photos'] ?? null) ? $decoded['photos'] : [];
+  $photos = [];
+  foreach ($rawPhotos as $p) {
+    if (is_string($p)) {
+      $pathOnly = trim($p);
+      if ($pathOnly === '') continue;
+      $photos[] = [
+        'path' => $pathOnly,
+        'name' => (string)pathinfo($pathOnly, PATHINFO_BASENAME)
+      ];
+      continue;
+    }
+    if (is_array($p)) {
+      $ppath = trim((string)($p['path'] ?? ($p['src'] ?? '')));
+      if ($ppath === '') continue;
+      $photos[] = [
+        'path' => $ppath,
+        'name' => trim((string)($p['name'] ?? $p['title'] ?? pathinfo($ppath, PATHINFO_BASENAME)))
+      ];
+    }
+  }
   return [
     'title' => trim((string)($decoded['title'] ?? '')),
     'text' => trim((string)($decoded['text'] ?? '')),
-    'photos' => is_array($decoded['photos'] ?? null) ? array_values($decoded['photos']) : []
+    'photos' => array_values($photos)
   ];
 }
 
@@ -281,6 +302,7 @@ function tctSaveTaskInfoSettings(string $tasksDir, string $tagCode, array $paylo
   if ($path === '') {
     return false;
   }
+  // Normalize photos to array of objects with 'path' and 'name'
   $safePayload = [
     'title' => trim((string)($payload['title'] ?? '')),
     'text' => trim((string)($payload['text'] ?? '')),
@@ -289,8 +311,23 @@ function tctSaveTaskInfoSettings(string $tasksDir, string $tagCode, array $paylo
   if (isset($payload['photos']) && is_array($payload['photos'])) {
     $photos = [];
     foreach ($payload['photos'] as $p) {
-      $pstr = trim((string)$p);
-      if ($pstr !== '') $photos[] = $pstr;
+      if (is_string($p)) {
+        $pp = trim($p);
+        if ($pp === '') continue;
+        $photos[] = [
+          'path' => $pp,
+          'name' => (string)pathinfo($pp, PATHINFO_BASENAME)
+        ];
+        continue;
+      }
+      if (is_array($p)) {
+        $pp = trim((string)($p['path'] ?? ($p['src'] ?? '')));
+        if ($pp === '') continue;
+        $photos[] = [
+          'path' => $pp,
+          'name' => trim((string)($p['name'] ?? $p['title'] ?? pathinfo($pp, PATHINFO_BASENAME)))
+        ];
+      }
     }
     $safePayload['photos'] = array_values($photos);
   }
@@ -1222,10 +1259,45 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       if ($finfo) @finfo_close($finfo);
     }
 
-    // Merge existing photos (if any) with newly saved ones and persist
+    // Normalize saved photos into objects
+    $savedPhotoObjs = [];
+    foreach ($savedPhotos as $sp) {
+      $spath = trim((string)$sp);
+      if ($spath === '') continue;
+      $savedPhotoObjs[] = [
+        'path' => $spath,
+        'name' => (string)pathinfo($spath, PATHINFO_BASENAME)
+      ];
+    }
+
+    // Merge existing photos (objects) with newly saved ones unless client provided explicit photos list
     $existing = tctLoadTaskInfoSettings($tctTasksDir, $tagCode);
     $existingPhotos = is_array($existing['photos'] ?? null) ? $existing['photos'] : [];
-    $allPhotos = array_values(array_merge($existingPhotos, $savedPhotos));
+
+    $allPhotos = [];
+    if (isset($_POST['photos'])) {
+      $raw = trim((string)($_POST['photos'] ?? ''));
+      $decoded = json_decode($raw, true);
+      if (is_array($decoded)) {
+        // normalize decoded list to objects
+        foreach ($decoded as $p) {
+          if (is_string($p)) {
+            $pp = trim($p);
+            if ($pp === '') continue;
+            $allPhotos[] = ['path' => $pp, 'name' => (string)pathinfo($pp, PATHINFO_BASENAME)];
+            continue;
+          }
+          if (is_array($p)) {
+            $pp = trim((string)($p['path'] ?? ($p['src'] ?? '')));
+            if ($pp === '') continue;
+            $allPhotos[] = ['path' => $pp, 'name' => trim((string)($p['name'] ?? $p['title'] ?? pathinfo($pp, PATHINFO_BASENAME)))];
+          }
+        }
+      }
+    } else {
+      // Merge existing and new
+      $allPhotos = array_values(array_merge($existingPhotos, $savedPhotoObjs));
+    }
 
     if (!tctSaveTaskInfoSettings($tctTasksDir, $tagCode, [
       'title' => $title,
@@ -1242,6 +1314,63 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
+
+    if ($action === 'remove_info_photo') {
+      $id = trim((string)($_POST['id'] ?? ''));
+      $photoPath = trim((string)($_POST['photo_path'] ?? ''));
+      if ($id === '' || $photoPath === '') {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid parameters.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $targetTask = null;
+      foreach ($tasks as $task) {
+        if ((string)($task['id'] ?? '') === $id) {
+          $targetTask = $task;
+          break;
+        }
+      }
+      if (!is_array($targetTask)) {
+        echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+      if ($tagCode === '') {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+
+      // Prevent directory traversal
+      if (strpos($photoPath, '..') !== false) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid photo path.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $safeRel = str_replace(['\\', '/'], DIRECTORY_SEPARATOR, ltrim($photoPath, '\/'));
+      $full = $tctTasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . $safeRel;
+      if (is_file($full)) {
+        @unlink($full);
+      }
+
+      // Remove from settings
+      $settings = tctLoadTaskInfoSettings($tctTasksDir, $tagCode);
+      $photos = is_array($settings['photos'] ?? null) ? $settings['photos'] : [];
+      $filtered = [];
+      foreach ($photos as $p) {
+        if (!is_array($p)) continue;
+        if (trim((string)($p['path'] ?? '')) === trim((string)$photoPath)) continue;
+        $filtered[] = $p;
+      }
+      if (!tctSaveTaskInfoSettings($tctTasksDir, $tagCode, [
+        'title' => $settings['title'] ?? '',
+        'text' => $settings['text'] ?? '',
+        'photos' => $filtered
+      ])) {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to update settings.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+
+      echo json_encode(['status' => 'ok', 'message' => 'Photo removed.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
 
   if ($action === 'get_info_task_rate_data') {
     $id = trim((string)($_POST['id'] ?? ''));
