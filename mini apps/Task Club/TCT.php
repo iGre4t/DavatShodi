@@ -22,6 +22,9 @@ function tctNormalizeTaskType(string $value): string
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
+  if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
+    return 'describe_photo';
+  }
   return 'quiz';
 }
 
@@ -348,7 +351,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
     $task['score'] = $scoreSettings['score'];
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
-    if ($taskType === 'info') {
+    if ($taskType === 'info' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
@@ -752,6 +755,11 @@ function tctSerializeInfoTasksMap(array $map): string
   return implode(', ', $pairs);
 }
 
+function tctResolveTaskScoreColumnByType(string $taskType): string
+{
+  return $taskType === 'describe_photo' ? 'Describe Photo Task' : 'Info Tasks';
+}
+
 function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
 {
   $normalizedTagCode = tctNormalizeTagCode($tagCode);
@@ -1091,7 +1099,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
 
-    if ($targetTaskType === 'info') {
+    if ($targetTaskType === 'info' || $targetTaskType === 'describe_photo') {
       $afterEndtimeScore = 0;
     }
 
@@ -1124,7 +1132,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz')) !== 'info') {
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -1168,7 +1177,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz')) !== 'info') {
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -1188,7 +1198,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     $eventRows = tctReadCsvRows($tctEventInviteesPath);
     $eventHeader = (isset($eventRows[0]) && is_array($eventRows[0])) ? $eventRows[0] : [];
     $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($eventHeader, $tctEventInviteesMapPath);
-    $infoTasksIndex = tctFindHeaderIndex($eventHeader, 'Info Tasks');
+    $taskScoreColumn = tctResolveTaskScoreColumnByType($targetTaskType);
+    $infoTasksIndex = tctFindHeaderIndex($eventHeader, $taskScoreColumn);
     $infoTaskScoreByWorkId = [];
     if ($workIdIndex >= 0 && $infoTasksIndex >= 0) {
       for ($rowIndex = 1; $rowIndex < count($eventRows); $rowIndex += 1) {
@@ -1230,7 +1241,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz')) !== 'info') {
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -1271,14 +1283,15 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       : max(0, min($maxScore, tctNormalizeScoreValue($_POST['custom_score'] ?? 0)));
 
     $rows = tctReadCsvRows($tctEventInviteesPath);
-    $columnIndexByName = tctEnsureInviteesColumns($rows, ['Work ID', 'score', 'Info Tasks']);
+    $taskScoreColumn = tctResolveTaskScoreColumnByType($targetTaskType);
+    $columnIndexByName = tctEnsureInviteesColumns($rows, ['Work ID', 'score', $taskScoreColumn]);
     $header = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : [];
     $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $tctEventInviteesMapPath);
     if ($workIdIndex < 0) {
       $workIdIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Work ID')] ?? -1);
     }
     $scoreIndex = (int)($columnIndexByName[tctNormalizeHeaderName('score')] ?? -1);
-    $infoTasksIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Info Tasks')] ?? -1);
+    $infoTasksIndex = (int)($columnIndexByName[tctNormalizeHeaderName($taskScoreColumn)] ?? -1);
     if ($workIdIndex < 0 || $scoreIndex < 0 || $infoTasksIndex < 0) {
       echo json_encode(['status' => 'error', 'message' => 'Required invitees columns are missing.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -1399,6 +1412,7 @@ if (TCT_INCLUDE_ONLY) {
       <select id="tct-task-type" name="task_type" required>
         <option value="quiz">Quiz Task</option>
         <option value="info">Info Task</option>
+        <option value="describe_photo">Describe Photo Task</option>
       </select>
     </label>
     <div class="field full">
@@ -1457,6 +1471,9 @@ if (TCT_INCLUDE_ONLY) {
     }
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
+    }
+    if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
+      return 'describe_photo';
     }
     return 'quiz';
   };
