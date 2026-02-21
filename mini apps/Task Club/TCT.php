@@ -250,7 +250,8 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = [
     'title' => '',
-    'text' => ''
+    'text' => '',
+    'photos' => []
   ];
   $path = tctBuildTaskInfoSettingsPath($tasksDir, $tagCode);
   if ($path === '' || !is_file($path)) {
@@ -266,7 +267,8 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
   }
   return [
     'title' => trim((string)($decoded['title'] ?? '')),
-    'text' => trim((string)($decoded['text'] ?? ''))
+    'text' => trim((string)($decoded['text'] ?? '')),
+    'photos' => is_array($decoded['photos'] ?? null) ? array_values($decoded['photos']) : []
   ];
 }
 
@@ -281,8 +283,17 @@ function tctSaveTaskInfoSettings(string $tasksDir, string $tagCode, array $paylo
   }
   $safePayload = [
     'title' => trim((string)($payload['title'] ?? '')),
-    'text' => trim((string)($payload['text'] ?? ''))
+    'text' => trim((string)($payload['text'] ?? '')),
+    'photos' => []
   ];
+  if (isset($payload['photos']) && is_array($payload['photos'])) {
+    $photos = [];
+    foreach ($payload['photos'] as $p) {
+      $pstr = trim((string)$p);
+      if ($pstr !== '') $photos[] = $pstr;
+    }
+    $safePayload['photos'] = array_values($photos);
+  }
   $json = json_encode($safePayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
     return false;
@@ -355,9 +366,11 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
+      $task['infoPhotos'] = is_array($info['photos'] ?? null) ? $info['photos'] : [];
     } else {
       $task['infoTitle'] = '';
       $task['infoText'] = '';
+      $task['infoPhotos'] = [];
     }
     $merged[] = $task;
   }
@@ -784,7 +797,8 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
     ],
     TCT_INFO_SETTINGS_FILE => [
       'title' => '',
-      'text' => ''
+      'text' => '',
+      'photos' => []
     ],
     TCT_INFO_SCORES_FILE => []
   ];
@@ -1145,9 +1159,78 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
     $title = trim((string)($_POST['info_title'] ?? ''));
     $text = trim((string)($_POST['info_text'] ?? ''));
+    // Handle uploaded photos (multipart/form-data upload with field name "photos[]")
+    $savedPhotos = [];
+    $maxFiles = 10;
+    $maxFileSize = 5 * 1024 * 1024; // 5 MB
+    $allowedMime = [
+      'image/jpeg' => '.jpg',
+      'image/png' => '.png',
+      'image/gif' => '.gif',
+      'image/webp' => '.webp'
+    ];
+
+    if (isset($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
+      $count = count($_FILES['photos']['name']);
+      $count = min($count, $maxFiles);
+      $photosDir = $tctTasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'photos';
+      if (!is_dir($photosDir) && !(mkdir($photosDir, 0777, true) || is_dir($photosDir))) {
+        // directory creation failed; continue without saving photos
+        $photosDir = '';
+      }
+      $finfo = finfo_open(FILEINFO_MIME_TYPE);
+      for ($i = 0; $i < $count; $i += 1) {
+        $error = $_FILES['photos']['error'][$i] ?? UPLOAD_ERR_NO_FILE;
+        if ($error !== UPLOAD_ERR_OK) {
+          continue;
+        }
+        $tmp = $_FILES['photos']['tmp_name'][$i] ?? '';
+        $orig = $_FILES['photos']['name'][$i] ?? '';
+        $size = (int)($_FILES['photos']['size'][$i] ?? 0);
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+          continue;
+        }
+        if ($size <= 0 || $size > $maxFileSize) {
+          continue;
+        }
+        $mime = $finfo ? finfo_file($finfo, $tmp) : ($_FILES['photos']['type'][$i] ?? '');
+        $ext = $allowedMime[$mime] ?? '';
+        if ($ext === '') {
+          // try to infer from original extension
+          $p = pathinfo($orig);
+          $cand = isset($p['extension']) ? strtolower('.' . $p['extension']) : '';
+          if (in_array($cand, $allowedMime, true)) {
+            $ext = $cand;
+          } else {
+            continue;
+          }
+        }
+        if ($photosDir === '') continue;
+        try {
+          $basename = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)pathinfo($orig, PATHINFO_FILENAME));
+          if ($basename === '') $basename = 'photo';
+          $filename = $basename . '_' . bin2hex(random_bytes(6)) . $ext;
+        } catch (Throwable $e) {
+          $filename = time() . '_' . bin2hex(random_bytes(4)) . $ext;
+        }
+        $dest = $photosDir . DIRECTORY_SEPARATOR . $filename;
+        if (@move_uploaded_file($tmp, $dest)) {
+          // store relative path (web-friendly forward slashes) to task folder
+          $savedPhotos[] = 'photos/' . $filename;
+        }
+      }
+      if ($finfo) @finfo_close($finfo);
+    }
+
+    // Merge existing photos (if any) with newly saved ones and persist
+    $existing = tctLoadTaskInfoSettings($tctTasksDir, $tagCode);
+    $existingPhotos = is_array($existing['photos'] ?? null) ? $existing['photos'] : [];
+    $allPhotos = array_values(array_merge($existingPhotos, $savedPhotos));
+
     if (!tctSaveTaskInfoSettings($tctTasksDir, $tagCode, [
       'title' => $title,
-      'text' => $text
+      'text' => $text,
+      'photos' => $allPhotos
     ])) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save information content.'], JSON_UNESCAPED_UNICODE);
       exit;

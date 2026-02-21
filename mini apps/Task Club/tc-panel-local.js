@@ -684,7 +684,11 @@
               const img = document.createElement('img');
               img.setAttribute('data-task-photo-item', '1');
               img.alt = '';
-              img.src = String(src || '');
+              // Build a web-friendly URL pointing to the task's photos folder
+              const base = 'mini%20apps/Task%20Club/tasks/';
+              const tag = encodeURIComponent(String(task?.tagCode || ''));
+              const parts = String(src || '').split('/').map((p) => encodeURIComponent(p));
+              img.src = `${base}${tag}/${parts.join('/')}`;
               wrap.appendChild(img);
               list.appendChild(wrap);
             } catch {}
@@ -1190,10 +1194,30 @@
         saveInfoButton.disabled = true;
         setTaskInfoContentSaveStatus(pane, 'Saving...');
         try {
-          const data = await postTaskAction('save_info_task_content', {
-            id: taskId,
-            ...payload
+          // Use FormData to include file uploads (photos[])
+          const input = pane.querySelector('[data-task-photo-input]');
+          const files = input instanceof HTMLInputElement ? input.files : null;
+          const formData = new FormData();
+          formData.append('tct_action', 'save_info_task_content');
+          formData.append('id', taskId);
+          formData.append('info_title', payload.info_title || '');
+          formData.append('info_text', payload.info_text || '');
+          if (files && files.length) {
+            for (let i = 0; i < files.length; i += 1) {
+              try {
+                formData.append('photos[]', files[i], files[i].name || `photo_${i}`);
+              } catch {}
+            }
+          }
+          const resp = await fetch(TASKS_ENDPOINT, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
           });
+          const data = await resp.json();
+          if (!resp.ok || data?.status !== 'ok') {
+            throw new Error(data?.message || 'Request failed.');
+          }
           const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
           const keepPane = pane.dataset.pane || '';
           if (returnedTasks.length) {
