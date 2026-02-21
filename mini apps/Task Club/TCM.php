@@ -5303,6 +5303,54 @@ $sessionPayload = [
 
       bootReady();
 
+      // Lightweight runtime diagnostics: surface uncaught JS errors and unhandled rejections
+      const createJsErrorOverlay = (text) => {
+        try {
+          let existing = document.getElementById('tc-js-error-overlay');
+          if (!existing) {
+            existing = document.createElement('div');
+            existing.id = 'tc-js-error-overlay';
+            existing.style.position = 'fixed';
+            existing.style.left = '12px';
+            existing.style.right = '12px';
+            existing.style.bottom = '12px';
+            existing.style.zIndex = 999999;
+            existing.style.background = 'rgba(255,240,240,0.98)';
+            existing.style.border = '1px solid #d33';
+            existing.style.padding = '12px';
+            existing.style.borderRadius = '8px';
+            existing.style.boxShadow = '0 6px 18px rgba(0,0,0,0.12)';
+            existing.style.fontFamily = 'inherit';
+            existing.style.color = '#600';
+            existing.style.maxHeight = '40vh';
+            existing.style.overflow = 'auto';
+            existing.style.whiteSpace = 'pre-wrap';
+            document.body.appendChild(existing);
+          }
+          existing.textContent = String(text || 'JavaScript error');
+        } catch (e) {
+          try { console.error(e); } catch {}
+        }
+      };
+
+      window.addEventListener('error', (ev) => {
+        try {
+          const msg = (ev && ev.message) ? ev.message : String(ev || 'Unknown error');
+          const file = ev && ev.filename ? ev.filename : (ev && ev.srcElement && ev.srcElement.src ? ev.srcElement.src : '');
+          const line = ev && ev.lineno ? ev.lineno : '';
+          createJsErrorOverlay(`JS Error: ${msg}\n${file}:${line}`);
+          console.error('JS Error:', ev);
+        } catch (e) {}
+      });
+
+      window.addEventListener('unhandledrejection', (ev) => {
+        try {
+          const reason = ev && ev.reason ? ev.reason : ev;
+          createJsErrorOverlay(`UnhandledRejection: ${typeof reason === 'string' ? reason : (reason && reason.message) || JSON.stringify(reason)}`);
+          console.error('UnhandledRejection:', ev);
+        } catch (e) {}
+      });
+
       const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const rewardCardLogoUrl = <?= json_encode($eventLogoUrl !== '' ? $eventLogoUrl : $fallbackSiteIconUrl, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
@@ -7138,13 +7186,40 @@ $sessionPayload = [
           // set ack button to ذخیره while editing
           if (taskInfoAckBtnEl) taskInfoAckBtnEl.textContent = 'ذخیره';
           taskInfoContentEl.innerHTML = `
-            <div style="display:grid;gap:12px">
-              <div style="text-align:center"><img src="./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(photoCode)}" alt="" style="max-width:100%;height:auto;border-radius:8px;"/></div>
-          <textarea id="describe-photo-textarea" placeholder="حداکثر 300 کلمه" style="min-height:320px;width:100%;padding:8px;font-family:inherit;font-size:0.95rem;">${escapeHtml(existingText || '')}</textarea>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداکثر 300 کلمه</div></div>
+            <div class="info-task-section" style="display:flex;flex-direction:column;gap:10px;">
+              <div style="text-align:center"><img src="./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(photoCode)}" alt="" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"/></div>
+              <div style="display:flex;flex-direction:column;flex:1;min-height:220px;">
+                <textarea id="describe-photo-textarea" placeholder="حداکثر 300 کلمه" class="describe-photo-textarea">${escapeHtml(existingText || '')}</textarea>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداکثر 300 کلمه</div></div>
             </div>
           `;
+          // apply textarea behaviour
           const ta = document.getElementById('describe-photo-textarea');
+          if (ta) {
+            ta.style.width = '100%';
+            ta.style.boxSizing = 'border-box';
+            ta.style.resize = 'none';
+            ta.style.border = 'none';
+            ta.style.outline = 'none';
+            ta.style.background = 'transparent';
+            ta.style.fontFamily = 'inherit';
+            ta.style.fontSize = '0.95rem';
+            ta.style.lineHeight = '1.6';
+            ta.style.padding = '6px 8px';
+            ta.style.minHeight = '180px';
+            ta.style.maxHeight = '70vh';
+            const autoResize = () => {
+              try {
+                ta.style.height = 'auto';
+                const h = Math.min(ta.scrollHeight, Math.max(180, window.innerHeight * 0.7));
+                ta.style.height = h + 'px';
+              } catch (e) {}
+            };
+            ta.addEventListener('input', autoResize, { passive: true });
+            // run once to size to content
+            setTimeout(autoResize, 20);
+          }
           const wc = document.getElementById('describe-word-count');
           const updateWordCount = () => {
             if (!ta) return;
