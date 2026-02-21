@@ -5342,8 +5342,9 @@ $sessionPayload = [
   let currentTaskTitle = '';
   let currentTaskType = '';
   let currentTaskTagCode = '';
-  let describePhotoStep = 0; // 0 = not started, 1 = preview shown, 2 = saved
+  let describePhotoStep = 0; // 0 = not started, 1 = preview shown (random), 2 = user assigned
   let describePhotoChosen = [];
+  let currentEditingPhoto = '';
         let currentQuestions = [];
         let currentQuestionIndex = 0;
         let infoTaskViewOpen = false;
@@ -6953,27 +6954,111 @@ $sessionPayload = [
             closeTaskResultDialog();
           });
         }
-        const renderDescribePhotosPreview = (photos) => {
+        const renderDescribePhotosPreview = (photos, articlesMap = {}) => {
           if (!taskInfoContentEl) return;
           if (!Array.isArray(photos) || photos.length === 0) {
             taskInfoContentEl.innerHTML = '<p>عکسی برای نمایش موجود نیست.</p>';
             return;
           }
           const grid = photos.map((p) => {
-            const file = String(p.file || '').trim();
+            const file = String(p.file || p.fileName || p.name || '').trim();
+            const code = String(p.code || p.name || p.file || '').trim();
             const url = `./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(file)}`;
-            return `<div class="describe-photo-thumb"><img src="${url}" alt="" style="max-width:100%;height:auto;border-radius:8px;"/></div>`;
+            const snippet = String(articlesMap[code] || '').slice(0, 140);
+            return `<button type="button" data-photo-code="${escapeHtml(code)}" class="describe-photo-thumb" style="border:0;background:transparent;padding:0;cursor:pointer;text-align:left">` +
+              `<img src="${url}" alt="" style="max-width:100%;height:auto;border-radius:8px;display:block;margin-bottom:6px;"/>` +
+              (snippet ? `<div class="describe-photo-snippet" style="font-size:0.78rem;color:#445;">${escapeHtml(snippet)}</div>` : '') +
+              `</button>`;
           }).join('');
           taskInfoContentEl.innerHTML = `<div class="describe-photo-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${grid}</div>`;
+          // attach handlers
+          Array.from(taskInfoContentEl.querySelectorAll('.describe-photo-thumb')).forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const code = String(btn.getAttribute('data-photo-code') || '').trim();
+              const articles = (window.__describeArticlesMap || {});
+              openDescribePhotoEditor(code, String(articles[code] || '').trim());
+            });
+          });
+        };
+
+        const openDescribePhotoEditor = (photoCode, existingText = '') => {
+          if (!taskInfoContentEl) return;
+          currentEditingPhoto = String(photoCode || '').trim();
+          // set ack button to ذخیره while editing
+          if (taskInfoAckBtnEl) taskInfoAckBtnEl.textContent = 'ذخیره';
+          taskInfoContentEl.innerHTML = `
+            <div style="display:grid;gap:12px">
+              <div style="text-align:center"><img src="./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(photoCode)}" alt="" style="max-width:100%;height:auto;border-radius:8px;"/></div>
+              <textarea id="describe-photo-textarea" placeholder="حداقل 600 کلمه و حداکثر 800 کلمه" style="min-height:320px;width:100%;padding:8px;font-family:inherit;font-size:0.95rem;">${escapeHtml(existingText || '')}</textarea>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداقل 600 و حداکثر 800 کلمه</div></div>
+            </div>
+          `;
+          const ta = document.getElementById('describe-photo-textarea');
+          const wc = document.getElementById('describe-word-count');
+          const updateWordCount = () => {
+            if (!ta) return;
+            const txt = String(ta.value || '').trim();
+            const words = txt === '' ? 0 : (txt.split(/\s+/).filter(Boolean).length);
+            if (wc) wc.textContent = `${words} کلمه`;
+          };
+          if (ta) {
+            ta.addEventListener('input', updateWordCount);
+            updateWordCount();
+          }
         };
 
         if (taskInfoAckBtnEl) {
           taskInfoAckBtnEl.addEventListener('click', async () => {
+            // If we're editing a photo, save it
+            if (currentTaskType === 'describe_photo' && currentEditingPhoto) {
+              const ta = document.getElementById('describe-photo-textarea');
+              const content = ta ? String(ta.value || '') : '';
+              const words = content.trim() === '' ? 0 : (content.split(/\s+/).filter(Boolean).length);
+              if (words < 600 || words > 800) {
+                openTaskResultDialog(0, 'تعداد کلمات باید بین 600 تا 800 باشد.');
+                return;
+              }
+              try {
+                await postJson({ action: 'describe_photo_save', tagCode: currentTaskTagCode, photoCode: currentEditingPhoto, content });
+                openTaskResultDialog(0, 'توضیحات ذخیره شد.');
+                // reset editing state and show updated previews (user can still edit later)
+                currentEditingPhoto = '';
+                if (taskInfoAckBtnEl) taskInfoAckBtnEl.textContent = 'ادامه';
+                describePhotoStep = 2;
+                // reload user's assigned photos/articles
+                try {
+                  const resp = await postJson({ action: 'describe_photo_get_user', tagCode: currentTaskTagCode });
+                  const assigned = Array.isArray(resp.assigned) ? resp.assigned : [];
+                  const articles = (resp.articles && typeof resp.articles === 'object') ? resp.articles : {};
+                  window.__describeArticlesMap = articles;
+                  const photos = (assigned || []).map((code) => ({ code, file: code }));
+                  renderDescribePhotosPreview(photos, articles);
+                } catch (e) {}
+                return;
+              } catch (err) {
+                openTaskResultDialog(0, err?.message || 'ذخیره توضیحات ناموفق بود.');
+                return;
+              }
+            }
             // If this is a describe_photo task, run the special flow
             if (currentTaskType === 'describe_photo') {
               // Step 0: fetch photos and show 3 random previews
               if (describePhotoStep === 0) {
                 try {
+                  // first try to load user's assigned photos
+                  const userResp = await postJson({ action: 'describe_photo_get_user', tagCode: currentTaskTagCode });
+                  const assigned = Array.isArray(userResp.assigned) ? userResp.assigned : [];
+                  const articles = (userResp.articles && typeof userResp.articles === 'object') ? userResp.articles : {};
+                  window.__describeArticlesMap = articles;
+                  if (assigned.length) {
+                    describePhotoChosen = assigned.slice(0, 3);
+                    describePhotoStep = 2;
+                    const photos = describePhotoChosen.map((code) => ({ code, file: code }));
+                    renderDescribePhotosPreview(photos, articles);
+                    return;
+                  }
+
+                  // fallback: fetch photos.json and pick random set (not yet assigned)
                   const photosUrl = `./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/photos.json`;
                   const resp = await fetch(photosUrl, { cache: 'no-store' });
                   const list = await (resp.ok ? resp.json() : []);
@@ -7004,19 +7089,18 @@ $sessionPayload = [
               if (describePhotoStep === 1) {
                 try {
                   const payload = await postJson({ action: 'describe_photo_select', tagCode: currentTaskTagCode, photos: describePhotoChosen });
-                  // mark task button completed if present
-                  const targetBtn = taskButtons.find((b) => String(b.dataset.taskId || '') === String(currentTaskId || ''));
-                  if (targetBtn) {
-                    targetBtn.dataset.taskCompleted = '1';
-                    targetBtn.dataset.taskUserScore = String(Number.parseInt(targetBtn.dataset.taskUserScore || '0', 10) || 0);
-                    setTaskButtonState(targetBtn, 'completed');
-                  }
-                  openTaskResultDialog(0, 'عکس‌ها ثبت شد.');
-                  // reset state and close overlay after short delay
+                  // do NOT mark task completed; instead load assigned data and allow editing
                   describePhotoStep = 2;
-                  currentTaskType = '';
-                  currentTaskTagCode = '';
-                  setTimeout(() => closeQuizOverlay(), 1000);
+                  try {
+                    const resp = await postJson({ action: 'describe_photo_get_user', tagCode: currentTaskTagCode });
+                    const assigned = Array.isArray(resp.assigned) ? resp.assigned : [];
+                    const articles = (resp.articles && typeof resp.articles === 'object') ? resp.articles : {};
+                    window.__describeArticlesMap = articles;
+                    const photos = (assigned || []).map((code) => ({ code, file: code }));
+                    renderDescribePhotosPreview(photos, articles);
+                  } catch (e) {
+                    openTaskResultDialog(0, 'ثبت شد اما بارگذاری مجدد اطلاعات ناموفق بود.');
+                  }
                   return;
                 } catch (err) {
                   openTaskResultDialog(0, err?.message || 'ثبت عکس‌ها ناموفق بود.');
