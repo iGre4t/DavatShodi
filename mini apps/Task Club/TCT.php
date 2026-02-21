@@ -250,7 +250,8 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = [
     'title' => '',
-    'text' => ''
+    'text' => '',
+    'photos' => []
   ];
   $path = tctBuildTaskInfoSettingsPath($tasksDir, $tagCode);
   if ($path === '' || !is_file($path)) {
@@ -266,7 +267,8 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
   }
   return [
     'title' => trim((string)($decoded['title'] ?? '')),
-    'text' => trim((string)($decoded['text'] ?? ''))
+    'text' => trim((string)($decoded['text'] ?? '')),
+    'photos' => array_values(array_filter(array_map(static fn($item) => trim((string)$item), is_array($decoded['photos'] ?? null) ? $decoded['photos'] : []), static fn($item) => $item !== ''))
   ];
 }
 
@@ -281,7 +283,8 @@ function tctSaveTaskInfoSettings(string $tasksDir, string $tagCode, array $paylo
   }
   $safePayload = [
     'title' => trim((string)($payload['title'] ?? '')),
-    'text' => trim((string)($payload['text'] ?? ''))
+    'text' => trim((string)($payload['text'] ?? '')),
+    'photos' => array_values(array_filter(array_map(static fn($item) => trim((string)$item), is_array($payload['photos'] ?? null) ? $payload['photos'] : []), static fn($item) => $item !== ''))
   ];
   $json = json_encode($safePayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
@@ -355,9 +358,11 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
+      $task['infoPhotos'] = array_values(array_filter(array_map(static fn($item) => trim((string)$item), is_array($info['photos'] ?? null) ? $info['photos'] : []), static fn($item) => $item !== ''));
     } else {
       $task['infoTitle'] = '';
       $task['infoText'] = '';
+      $task['infoPhotos'] = [];
     }
     $merged[] = $task;
   }
@@ -1155,6 +1160,65 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Information content saved.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_describe_photo_photos') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Describe Photo Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $rawPhotos = (string)($_POST['photos_json'] ?? '[]');
+    $decodedPhotos = json_decode($rawPhotos, true);
+    if (!is_array($decodedPhotos)) {
+      $decodedPhotos = [];
+    }
+    $safePhotos = [];
+    $seenPhotos = [];
+    foreach ($decodedPhotos as $rawPhoto) {
+      $photo = trim((string)$rawPhoto);
+      if ($photo === '' || isset($seenPhotos[$photo])) {
+        continue;
+      }
+      $seenPhotos[$photo] = true;
+      $safePhotos[] = $photo;
+    }
+    $current = tctLoadTaskInfoSettings($tctTasksDir, $tagCode);
+    if (!tctSaveTaskInfoSettings($tctTasksDir, $tagCode, [
+      'title' => (string)($current['title'] ?? ''),
+      'text' => (string)($current['text'] ?? ''),
+      'photos' => $safePhotos
+    ])) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save photos.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Photos saved.',
       'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
     ], JSON_UNESCAPED_UNICODE);
     exit;
