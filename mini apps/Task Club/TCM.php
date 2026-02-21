@@ -6008,6 +6008,11 @@ $sessionPayload = [
             taskInfoContentEl.innerHTML = '';
           }
           infoTaskViewOpen = false;
+          try {
+            // Ensure topbar is restored to show logout when closing info/quiz overlays
+            if (topbarBackBtnEl) topbarBackBtnEl.classList.add('hidden');
+            if (logoutBtn) logoutBtn.classList.remove('hidden');
+          } catch (e) {}
           quizLocked = false;
           currentTaskId = '';
           currentTaskTitle = '';
@@ -6075,7 +6080,17 @@ $sessionPayload = [
               taskInfoAckBtnEl.textContent = currentTaskType === 'describe_photo' ? 'ادامه' : 'متوجه شدم';
             } catch (e) {}
           }
+          // Show topbar "برگشت" instead of "خروج" when viewing describe_photo slides
           infoTaskViewOpen = true;
+          try {
+            if (currentTaskType === 'describe_photo') {
+              if (topbarBackBtnEl) topbarBackBtnEl.classList.remove('hidden');
+              if (logoutBtn) logoutBtn.classList.add('hidden');
+            } else {
+              if (topbarBackBtnEl) topbarBackBtnEl.classList.add('hidden');
+              if (logoutBtn) logoutBtn.classList.remove('hidden');
+            }
+          } catch (e) {}
         };
 
         const openTaskResultDialog = (scoreValue, messageText) => {
@@ -7232,6 +7247,31 @@ $sessionPayload = [
 
         if (topbarBackBtnEl) {
           topbarBackBtnEl.addEventListener('click', () => {
+            // If we're inside a describe_photo info slide, treat this as a "back" navigation
+            try {
+              if (infoTaskViewOpen && currentTaskType === 'describe_photo') {
+                // If currently editing a single photo, go back to previews
+                if (currentEditingPhoto) {
+                  currentEditingPhoto = '';
+                  if (taskInfoAckBtnEl) taskInfoAckBtnEl.textContent = 'ادامه';
+                  try {
+                    const articles = (window.__describeArticlesMap || {});
+                    const photos = (Array.isArray(describePhotoChosen) ? describePhotoChosen : []).map((code) => ({ code, file: code }));
+                    renderDescribePhotosPreview(photos, articles);
+                  } catch (e) {}
+                  return;
+                }
+                // Otherwise close the info overlay and return to task list
+                try { closeQuizOverlay(); } catch (e) {}
+                // restore topbar buttons
+                try {
+                  if (topbarBackBtnEl) topbarBackBtnEl.classList.add('hidden');
+                  if (logoutBtn) logoutBtn.classList.remove('hidden');
+                } catch (e) {}
+                return;
+              }
+            } catch (e) {}
+
             if (rewardsCardsViewOpen) {
               closeRewardCardsSlide();
               return;
