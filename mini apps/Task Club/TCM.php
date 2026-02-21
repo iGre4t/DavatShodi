@@ -2128,7 +2128,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $name = $sessionWorkId . '-' . $codeSafe;
       $filePath = $articlesDir . DIRECTORY_SEPARATOR . $name . '.txt';
       if (!is_file($filePath)) {
-        @file_put_contents($filePath, "photo: {$codeSafe}\ncreated_at: " . time() . "\n", LOCK_EX);
+        // create an empty placeholder file by default
+        @file_put_contents($filePath, "", LOCK_EX);
       }
       $savedNames[] = $name;
     }
@@ -2272,12 +2273,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ورودی نامعتبر است.']);
       exit;
     }
-    // validate word count (600-800 words)
+    // validate word count (no minimum, max 300 words)
     $words = preg_split('/\s+/u', trim($content));
     $words = is_array($words) ? array_values(array_filter($words, static fn($w) => trim((string)$w) !== '')) : [];
     $count = count($words);
-    if ($count < 600 || $count > 800) {
-      echo json_encode(['status' => 'error', 'message' => 'تعداد کلمات باید بین 600 تا 800 باشد.']);
+    if ($count > 300) {
+      echo json_encode(['status' => 'error', 'message' => 'تعداد کلمات باید حداکثر 300 باشد.']);
       exit;
     }
 
@@ -5385,6 +5386,31 @@ $sessionPayload = [
           });
         }
 
+        if (topbarBackBtnEl) {
+          topbarBackBtnEl.addEventListener('click', async () => {
+            try {
+              // if editing a photo, go back to the preview/list inside the info view
+              if (currentTaskType === 'describe_photo' && currentEditingPhoto) {
+                currentEditingPhoto = '';
+                try {
+                  const resp = await postJson({ action: 'describe_photo_get_user', tagCode: currentTaskTagCode });
+                  const assigned = Array.isArray(resp.assigned) ? resp.assigned : [];
+                  const articles = (resp.articles && typeof resp.articles === 'object') ? resp.articles : {};
+                  window.__describeArticlesMap = articles;
+                  const photos = (assigned || []).map((code) => ({ code, file: code }));
+                  renderDescribePhotosPreview(photos, articles);
+                } catch (e) {
+                  // fallback: just close the overlay
+                  closeQuizOverlay();
+                }
+                return;
+              }
+            } catch {}
+            // otherwise close the overlay and return to task list
+            closeQuizOverlay();
+          });
+        }
+
         const timeCounterLabelEl = document.getElementById('tc-time-counter-label');
         const timeCounterEl = document.getElementById('tc-time-counter');
         const statusEl = document.getElementById('tc-status');
@@ -5982,6 +6008,11 @@ $sessionPayload = [
           if (taskInfoAreaEl) {
             taskInfoAreaEl.classList.add('quiz-hidden');
           }
+          // show back button and hide logout when overlay open
+          try {
+            if (topbarBackBtnEl) topbarBackBtnEl.classList.remove('hidden');
+            if (logoutBtn) logoutBtn.classList.add('hidden');
+          } catch (e) {}
         };
 
         const closeQuizOverlay = () => {
@@ -6013,6 +6044,11 @@ $sessionPayload = [
           currentTaskTitle = '';
           currentQuestions = [];
           currentQuestionIndex = 0;
+          // hide back button and show logout when overlay closed
+          try {
+            if (topbarBackBtnEl) topbarBackBtnEl.classList.add('hidden');
+            if (logoutBtn) logoutBtn.classList.remove('hidden');
+          } catch (e) {}
         };
 
         const escapeHtml = (value) => String(value ?? '')
@@ -6075,6 +6111,11 @@ $sessionPayload = [
               taskInfoAckBtnEl.textContent = currentTaskType === 'describe_photo' ? 'ادامه' : 'متوجه شدم';
             } catch (e) {}
           }
+          // show back button in topbar and hide logout while inside task slides
+          try {
+            if (topbarBackBtnEl) topbarBackBtnEl.classList.remove('hidden');
+            if (logoutBtn) logoutBtn.classList.add('hidden');
+          } catch (e) {}
           infoTaskViewOpen = true;
         };
 
@@ -7099,8 +7140,8 @@ $sessionPayload = [
           taskInfoContentEl.innerHTML = `
             <div style="display:grid;gap:12px">
               <div style="text-align:center"><img src="./tasks/${encodeURIComponent(currentTaskTagCode)}/photos/${encodeURIComponent(photoCode)}" alt="" style="max-width:100%;height:auto;border-radius:8px;"/></div>
-              <textarea id="describe-photo-textarea" placeholder="حداقل 600 کلمه و حداکثر 800 کلمه" style="min-height:320px;width:100%;padding:8px;font-family:inherit;font-size:0.95rem;">${escapeHtml(existingText || '')}</textarea>
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداقل 600 و حداکثر 800 کلمه</div></div>
+          <textarea id="describe-photo-textarea" placeholder="حداکثر 300 کلمه" style="min-height:320px;width:100%;padding:8px;font-family:inherit;font-size:0.95rem;">${escapeHtml(existingText || '')}</textarea>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div id="describe-word-count">0 کلمه</div><div style="color:#6b7a99;font-size:0.86rem">حداکثر 300 کلمه</div></div>
             </div>
           `;
           const ta = document.getElementById('describe-photo-textarea');
@@ -7124,26 +7165,21 @@ $sessionPayload = [
               const ta = document.getElementById('describe-photo-textarea');
               const content = ta ? String(ta.value || '') : '';
               const words = content.trim() === '' ? 0 : (content.split(/\s+/).filter(Boolean).length);
-              if (words < 600 || words > 800) {
-                openTaskResultDialog(0, 'تعداد کلمات باید بین 600 تا 800 باشد.');
+              if (words > 300) {
+                openTaskResultDialog(0, 'تعداد کلمات باید حداکثر 300 باشد.');
                 return;
               }
               try {
                 await postJson({ action: 'describe_photo_save', tagCode: currentTaskTagCode, photoCode: currentEditingPhoto, content });
+                // After successful save, return to task list (close overlay)
+                closeQuizOverlay();
+                // show a brief confirmation dialog then close it
                 openTaskResultDialog(0, 'توضیحات ذخیره شد.');
-                // reset editing state and show updated previews (user can still edit later)
+                setTimeout(() => {
+                  try { closeTaskResultDialog(); } catch (e) {}
+                }, 900);
                 currentEditingPhoto = '';
-                if (taskInfoAckBtnEl) taskInfoAckBtnEl.textContent = 'ادامه';
                 describePhotoStep = 2;
-                // reload user's assigned photos/articles
-                try {
-                  const resp = await postJson({ action: 'describe_photo_get_user', tagCode: currentTaskTagCode });
-                  const assigned = Array.isArray(resp.assigned) ? resp.assigned : [];
-                  const articles = (resp.articles && typeof resp.articles === 'object') ? resp.articles : {};
-                  window.__describeArticlesMap = articles;
-                  const photos = (assigned || []).map((code) => ({ code, file: code }));
-                  renderDescribePhotosPreview(photos, articles);
-                } catch (e) {}
                 return;
               } catch (err) {
                 openTaskResultDialog(0, err?.message || 'ذخیره توضیحات ناموفق بود.');
