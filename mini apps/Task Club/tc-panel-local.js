@@ -1119,16 +1119,19 @@
         const list = pane.querySelector('.task-photo-list');
         const placeholder = pane.querySelector('[data-task-photo-placeholder]');
         const clearBtn = pane.querySelector('[data-action="clear-task-photos"]');
+        const photosSaveBtn = pane.querySelector('[data-action="save-task-photos"]');
         if (!(list instanceof HTMLElement)) return;
         list.innerHTML = '';
         const files = Array.from(input.files || []);
         if (!files.length) {
           if (placeholder instanceof HTMLElement) placeholder.classList.remove('hidden');
           if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = true;
+          if (photosSaveBtn instanceof HTMLButtonElement) photosSaveBtn.disabled = true;
           return;
         }
         if (placeholder instanceof HTMLElement) placeholder.classList.add('hidden');
         if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = false;
+        if (photosSaveBtn instanceof HTMLButtonElement) photosSaveBtn.disabled = false;
 
         files.forEach((file) => {
           if (!file.type.startsWith('image/')) return;
