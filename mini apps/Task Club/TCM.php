@@ -2189,6 +2189,116 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     exit;
   }
 
+  // Return assigned photos and any existing article text for the calling user
+  if ($action === 'describe_photo_get_user') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
+      exit;
+    }
+    $tagCode = normalizeTaskTagCode((string)($payload['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'ورودی نامعتبر است.']);
+      exit;
+    }
+    $photosDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'photos';
+    $articlesDir = $photosDir . DIRECTORY_SEPARATOR . 'articles';
+    $csvPath = $photosDir . DIRECTORY_SEPARATOR . 'photos for each user.csv';
+
+    $assigned = [];
+    $articles = [];
+    if (is_file($csvPath)) {
+      if (($h = fopen($csvPath, 'r')) !== false) {
+        while (($r = fgetcsv($h)) !== false) {
+          if (!is_array($r) || count($r) < 2) continue;
+          $workId = trim((string)($r[0] ?? ''));
+          $photosCell = trim((string)($r[1] ?? ''));
+          if ($workId === $sessionWorkId) {
+            // photosCell format: "WorkID-codeA , WorkID-codeB , WorkID-codeC"
+            $parts = preg_split('/\s*,\s*/', $photosCell);
+            foreach ($parts as $part) {
+              $p = trim((string)$part);
+              if ($p === '') continue;
+              // strip work id prefix if present
+              if (strpos($p, $sessionWorkId . '-') === 0) {
+                $code = substr($p, strlen($sessionWorkId) + 1);
+              } else {
+                // strip possible .txt extension and any leading workid-like token
+                $code = preg_replace('/\.txt$/i', '', $p);
+                // if code contains '-', and looks like WORKID-code, try to take last segment
+                if (strpos($code, '-') !== false) {
+                  $parts2 = explode('-', $code);
+                  $candidate = end($parts2);
+                  if ($candidate !== '') $code = $candidate;
+                }
+              }
+              $codeSafe = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$code);
+              if ($codeSafe === '') continue;
+              $assigned[] = $codeSafe;
+            }
+            break;
+          }
+        }
+        fclose($h);
+      }
+    }
+
+    // read existing article texts if present
+    if ($assigned && is_dir($articlesDir)) {
+      foreach ($assigned as $code) {
+        $file = $articlesDir . DIRECTORY_SEPARATOR . $sessionWorkId . '-' . $code . '.txt';
+        if (is_file($file)) {
+          $text = @file_get_contents($file);
+          if ($text !== false) $articles[$code] = (string)$text;
+        }
+      }
+    }
+
+    echo json_encode(['status' => 'ok', 'assigned' => array_values(array_unique($assigned)), 'articles' => $articles], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  // Save per-photo article content for the user
+  if ($action === 'describe_photo_save') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
+      exit;
+    }
+    $tagCode = normalizeTaskTagCode((string)($payload['tagCode'] ?? ''));
+    $photoCode = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($payload['photoCode'] ?? ''));
+    $content = (string)($payload['content'] ?? '');
+    if ($tagCode === '' || $photoCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'ورودی نامعتبر است.']);
+      exit;
+    }
+    // validate word count (600-800 words)
+    $words = preg_split('/\s+/u', trim($content));
+    $words = is_array($words) ? array_values(array_filter($words, static fn($w) => trim((string)$w) !== '')) : [];
+    $count = count($words);
+    if ($count < 600 || $count > 800) {
+      echo json_encode(['status' => 'error', 'message' => 'تعداد کلمات باید بین 600 تا 800 باشد.']);
+      exit;
+    }
+
+    $photosDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . 'photos';
+    $articlesDir = $photosDir . DIRECTORY_SEPARATOR . 'articles';
+    if (!is_dir($photosDir)) {
+      echo json_encode(['status' => 'error', 'message' => 'No photos folder for this task.']);
+      exit;
+    }
+    if (!is_dir($articlesDir)) @mkdir($articlesDir, 0777, true);
+
+    $filePath = $articlesDir . DIRECTORY_SEPARATOR . $sessionWorkId . '-' . $photoCode . '.txt';
+    $ok = @file_put_contents($filePath, $content, LOCK_EX);
+    if ($ok === false) {
+      echo json_encode(['status' => 'error', 'message' => 'خطا هنگام ذخیره فایل.']);
+      exit;
+    }
+    echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
   if ($action === 'reward_state') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
