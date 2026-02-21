@@ -47,69 +47,97 @@
     if (!matched) return '';
     return `${matched[1]}:${matched[2]}`;
   }
+        const raw = Array.isArray(task?.info_photos) ? task.info_photos : (Array.isArray(task?.infoPhotos) ? task.infoPhotos : []);
+        const photos = raw.map((p) => {
+          if (typeof p === 'string') {
+            return { path: String(p || ''), name: String((p || '').split('/').pop() || '') };
+          }
+          if (p && typeof p === 'object') {
+            return { path: String(p.path || p.src || p.file || ''), name: String(p.name || p.title || (p.path || '').split('/').pop() || '') };
+          }
+          return null;
+        }).filter(Boolean);
 
-  function normalizeScoreValue(value) {
-    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return 0;
-    }
-    return parsed;
-  }
+        // Helper to render photos into the pane
+        const renderPhotosIntoPane = (paneEl, photosArr, tagCode) => {
+          try {
+            const listEl = paneEl.querySelector('.task-photo-list');
+            const placeholderEl = paneEl.querySelector('[data-task-photo-placeholder]');
+            const clearBtnEl = paneEl.querySelector('[data-action="clear-task-photos"]');
+            const tableBodyEl = paneEl.querySelector('[data-task-photos-table-body]');
+            if (listEl instanceof HTMLElement) listEl.innerHTML = '';
+            if (tableBodyEl instanceof HTMLElement) tableBodyEl.innerHTML = '';
+            if (photosArr.length) {
+              const base = 'mini%20apps/Task%20Club/tasks/';
+              const tag = encodeURIComponent(String(tagCode || ''));
+              photosArr.forEach((ph) => {
+                try {
+                  const parts = String(ph.path || '').split('/').map((p) => encodeURIComponent(p));
+                  const srcUrl = `${base}${tag}/${parts.join('/')}`;
+                  if (listEl instanceof HTMLElement) {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'task-photo-thumb';
+                    const img = document.createElement('img');
+                    img.setAttribute('data-task-photo-item', '1');
+                    img.alt = ph.name || '';
+                    img.src = srcUrl;
+                    wrap.appendChild(img);
+                    listEl.appendChild(wrap);
+                  }
+                  if (tableBodyEl instanceof HTMLElement) {
+                    const tr = document.createElement('tr');
+                    tr.dataset.photoPath = ph.path || '';
+                    tr.innerHTML = `
+                      <td><img src="${srcUrl}" alt="" style="max-width:64px;max-height:48px;object-fit:cover"/></td>
+                      <td><input type="text" class="task-photo-name" value="${escapeHtml(ph.name || '')}" data-photo-path="${escapeHtml(ph.path || '')}" /></td>
+                      <td><button type="button" class="btn ghost" data-action="remove-photo" data-photo-path="${escapeHtml(ph.path || '')}">Remove</button></td>
+                    `;
+                    tableBodyEl.appendChild(tr);
+                  }
+                } catch {}
+              });
+              if (placeholderEl instanceof HTMLElement) placeholderEl.classList.add('hidden');
+              if (clearBtnEl instanceof HTMLButtonElement) clearBtnEl.disabled = false;
+              if (photosSaveBtn instanceof HTMLButtonElement) photosSaveBtn.disabled = true;
+            } else {
+              if (placeholderEl instanceof HTMLElement) {
+                placeholderEl.classList.remove('hidden');
+                if (clearBtnEl instanceof HTMLButtonElement) clearBtnEl.disabled = true;
+              }
+              if (tableBodyEl instanceof HTMLElement) {
+                tableBodyEl.innerHTML = '<tr><td colspan="3" class="muted">No photos uploaded.</td></tr>';
+              }
+            }
+          } catch {}
+        };
 
-  function normalizeTask(task, index) {
-    const raw = task && typeof task === 'object' ? task : {};
-    const id = String(raw.id ?? '').trim();
-    const title = String(raw.title ?? '').trim();
-    const tagCode = String(raw.tagCode ?? raw.tag_code ?? '').trim().toUpperCase();
-    const parsedOrder = Number.parseInt(raw.order, 10);
-    return {
-      id,
-      title,
-      tagCode,
-      taskType: normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz'),
-      active: normalizeBool(raw.active),
-      duration: normalizeBool(raw.duration),
-      startDate: normalizeDate(raw.startDate ?? raw.start_date ?? ''),
-      startTime: normalizeTime(raw.startTime ?? raw.start_time ?? ''),
-      endDate: normalizeDate(raw.endDate ?? raw.end_date ?? ''),
-      endTime: normalizeTime(raw.endTime ?? raw.end_time ?? ''),
-      score: normalizeScoreValue(raw.score ?? raw.taskScore ?? 0),
-      afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
-      infoTitle: String(raw.infoTitle ?? raw.info_title ?? '').trim(),
-      infoText: String(raw.infoText ?? raw.info_text ?? '').trim(),
-      order: Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : (index + 1)
-    };
-  }
+        console.debug('applyTaskSettingsToPane', { tagCode: task?.tagCode, photos });
 
-  function buildTimeOptions(selected = '') {
-    const selectedValue = normalizeTime(selected);
-    const options = ['<option value="">Select time</option>'];
-    for (let hour = 0; hour <= 23; hour += 1) {
-      const value = `${String(hour).padStart(2, '0')}:00`;
-      const isSelected = value === selectedValue ? ' selected' : '';
-      options.push(`<option value="${value}"${isSelected}>${value}</option>`);
-    }
-    return options.join('');
-  }
-
-  function parseTimeToSeconds(value) {
-    if (!value) return null;
-    const normalized = String(value).trim();
-    const parts = normalized.split(':').map((part) => Number(part));
-    if (parts.length < 2 || parts.length > 3 || parts.some((n) => !Number.isFinite(n))) {
-      return null;
-    }
-    const [hours, minutes, seconds = 0] = parts;
-    return hours * 3600 + minutes * 60 + seconds;
-  }
-
-  function compareGregorianDates(a = '', b = '') {
-    const left = normalizeDate(a);
-    const right = normalizeDate(b);
-    if (!left || !right) return null;
-    if (left === right) return 0;
-    return left > right ? 1 : -1;
-  }
+        // Render if we have photos
+        if (photos.length) {
+          renderPhotosIntoPane(pane, photos, task?.tagCode);
+        } else {
+          // Fallback: try fetching photos/photos.json from task folder
+          (async () => {
+            try {
+              const tag = encodeURIComponent(String(task?.tagCode || ''));
+              const url = `mini%20apps/Task%20Club/tasks/${tag}/photos/photos.json`;
+              const resp = await fetch(url, { credentials: 'same-origin' });
+              if (!resp.ok) throw new Error('not found');
+              const json = await resp.json();
+              if (Array.isArray(json) && json.length) {
+                const mapped = json.map((e) => ({ path: String(e.file || e.path || ''), name: String(e.name || '') }));
+                renderPhotosIntoPane(pane, mapped, task?.tagCode);
+                console.debug('loaded photos.json fallback', { tag: task?.tagCode, mapped });
+                return;
+              }
+            } catch (err) {
+              // ignore
+            }
+            // nothing found, render empty
+            renderPhotosIntoPane(pane, [], task?.tagCode);
+          })();
+        }
 
   function getCurrentLocalSeconds() {
     const now = new Date();
