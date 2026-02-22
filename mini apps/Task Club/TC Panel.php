@@ -10,6 +10,7 @@ $tcPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
 $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time());
 $tcPrizesJsVer = (string)(@filemtime(__DIR__ . '/TC Prizes.js') ?: time());
 $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time());
+$tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time());
 ?>
 
 <link rel="stylesheet" href="mini%20apps/Task%20Club/tc-panel.css?v=<?= htmlspecialchars($tcPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
@@ -21,6 +22,7 @@ $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time()
       <button type="button" class="sub-item active" data-pane="tc-main">Main Panel</button>
       <button type="button" class="sub-item" data-pane="tc-invitees">Invitees</button>
       <button type="button" class="sub-item" data-pane="tc-manage-tasks">Manage Tasks</button>
+      <button type="button" class="sub-item" data-pane="tc-monitoring">Monitoring</button>
       <button type="button" class="sub-item" data-pane="tc-export">Export</button>
       <button type="button" class="sub-item" data-pane="tc-event-style">Event Style</button>
       <div data-tc-task-subtab-nav></div>
@@ -286,6 +288,9 @@ $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time()
     <div class="sub-pane" data-pane="tc-manage-tasks">
       <?php include __DIR__ . '/TCT.php'; ?>
     </div>
+    <div class="sub-pane" data-pane="tc-monitoring">
+      <?php include __DIR__ . '/TCMonitoring.php'; ?>
+    </div>
     <div class="sub-pane" data-pane="tc-export">
       <div class="card">
         <div class="section-header">
@@ -366,7 +371,7 @@ $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time()
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCSetting.js" defer></script>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-
+<script src="mini%20apps/Task%20Club/TCMonitoring.js?v=<?= htmlspecialchars($tcMonitoringJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 
 
 
