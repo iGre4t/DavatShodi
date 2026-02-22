@@ -9,6 +9,7 @@ $tcPanelCsrfToken = tcSecurityGetCsrfToken();
 $tcPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
 $tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time());
 $tcPrizesJsVer = (string)(@filemtime(__DIR__ . '/TC Prizes.js') ?: time());
+$tcSettingJsVer = (string)(@filemtime(__DIR__ . '/TCSetting.js') ?: time());
 $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time());
 $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time());
 ?>
@@ -376,10 +377,9 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
 
 <script src="mini%20apps/Task%20Club/tc-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-<script src="mini%20apps/Task%20Club/TCSetting.js" defer></script>
+<script src="mini%20apps/Task%20Club/TCSetting.js?v=<?= htmlspecialchars($tcSettingJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCMonitoring.js?v=<?= htmlspecialchars($tcMonitoringJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-
 
 
 
