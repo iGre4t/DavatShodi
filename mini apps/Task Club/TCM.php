@@ -1256,8 +1256,6 @@ function buildDescribePhotoImageUrl(string $tagCode, string $fileName): string
     return '';
   }
   $segments = [
-    'mini apps',
-    'Task Club',
     'tasks',
     $safeTagCode,
     TASK_DESCRIBE_PHOTO_DIR,
@@ -4747,6 +4745,18 @@ $sessionPayload = [
         display: block;
       }
 
+      .describe-photo-image.is-hidden {
+        display: none;
+      }
+
+      .describe-photo-editor-preview {
+        min-height: 140px;
+      }
+
+      .describe-photo-editor-preview .describe-photo-image {
+        max-height: 180px;
+      }
+
       .describe-photo-name,
       .describe-photo-index {
         margin: 0;
@@ -5718,6 +5728,10 @@ $sessionPayload = [
           </section>
           <section id="tc-describe-photo-editor-step" class="describe-photo-editor hidden">
             <p id="tc-describe-photo-editor-title" class="describe-photo-editor-title">متن تصویر</p>
+            <div class="describe-photo-preview describe-photo-editor-preview">
+              <img id="tc-describe-photo-editor-image" class="describe-photo-image" alt="تصویر انتخاب شده" />
+            </div>
+            <p id="tc-describe-photo-editor-name" class="describe-photo-index">-</p>
             <textarea
               id="tc-describe-photo-text"
               class="describe-photo-textarea"
@@ -5967,6 +5981,8 @@ $sessionPayload = [
         const describePhotoSelectBtnEl = document.getElementById('tc-describe-photo-select');
         const describePhotoEditorStepEl = document.getElementById('tc-describe-photo-editor-step');
         const describePhotoEditorTitleEl = document.getElementById('tc-describe-photo-editor-title');
+        const describePhotoEditorImageEl = document.getElementById('tc-describe-photo-editor-image');
+        const describePhotoEditorNameEl = document.getElementById('tc-describe-photo-editor-name');
         const describePhotoTextareaEl = document.getElementById('tc-describe-photo-text');
         const describePhotoWordCountEl = document.getElementById('tc-describe-photo-word-count');
         const describePhotoSaveBtnEl = document.getElementById('tc-describe-photo-save');
@@ -6001,6 +6017,7 @@ $sessionPayload = [
         let currentQuestions = [];
         let currentQuestionIndex = 0;
         let infoTaskViewOpen = false;
+        let infoTaskCurrentStep = 'info';
         let describePhotoChoices = [];
         let describePhotoCurrentIndex = 0;
         let describePhotoSelected = null;
@@ -6578,6 +6595,7 @@ $sessionPayload = [
           }
           if (describePhotoImageEl) {
             describePhotoImageEl.removeAttribute('src');
+            describePhotoImageEl.classList.add('is-hidden');
           }
           if (describePhotoNameEl) {
             describePhotoNameEl.textContent = '-';
@@ -6587,6 +6605,13 @@ $sessionPayload = [
           }
           if (describePhotoEditorTitleEl) {
             describePhotoEditorTitleEl.textContent = 'متن تصویر';
+          }
+          if (describePhotoEditorImageEl) {
+            describePhotoEditorImageEl.removeAttribute('src');
+            describePhotoEditorImageEl.classList.add('is-hidden');
+          }
+          if (describePhotoEditorNameEl) {
+            describePhotoEditorNameEl.textContent = '-';
           }
           if (describePhotoTextareaEl instanceof HTMLTextAreaElement) {
             describePhotoTextareaEl.value = '';
@@ -6599,6 +6624,7 @@ $sessionPayload = [
             describePhotoSaveBtnEl.disabled = false;
           }
           infoTaskViewOpen = false;
+          infoTaskCurrentStep = 'info';
           quizLocked = false;
           describePhotoBusy = false;
           currentTaskId = '';
@@ -6677,11 +6703,49 @@ $sessionPayload = [
           return describePhotoChoices[describePhotoCurrentIndex] || null;
         };
 
+        const normalizeDescribePhotoUrl = (value) => {
+          const raw = String(value || '').trim();
+          if (raw === '') return '';
+          if (/^mini%20apps\/Task%20Club\//i.test(raw)) {
+            return raw.replace(/^mini%20apps\/Task%20Club\//i, '');
+          }
+          if (/^mini apps\/Task Club\//i.test(raw)) {
+            return raw.replace(/^mini apps\/Task Club\//i, '');
+          }
+          return raw;
+        };
+
+        const setDescribePhotoImage = (element, value, altText = '') => {
+          if (!(element instanceof HTMLImageElement)) return;
+          const src = normalizeDescribePhotoUrl(value);
+          if (src === '') {
+            element.removeAttribute('src');
+            element.classList.add('is-hidden');
+            return;
+          }
+          element.classList.remove('is-hidden');
+          element.alt = String(altText || element.alt || '').trim() || 'تصویر ماموریت';
+          element.src = src;
+        };
+
+        const bindDescribePhotoImageState = (element) => {
+          if (!(element instanceof HTMLImageElement)) return;
+          element.addEventListener('load', () => {
+            element.classList.remove('is-hidden');
+          });
+          element.addEventListener('error', () => {
+            element.classList.add('is-hidden');
+          });
+        };
+        bindDescribePhotoImageState(describePhotoImageEl);
+        bindDescribePhotoImageState(describePhotoEditorImageEl);
+
         const setInfoTaskStep = (step) => {
           const next = String(step || 'info').trim().toLowerCase();
           const isInfoStep = next === 'info';
           const isPhotoStep = next === 'photo';
           const isEditorStep = next === 'editor';
+          infoTaskCurrentStep = isPhotoStep ? 'photo' : (isEditorStep ? 'editor' : 'info');
           if (taskInfoContentEl) {
             taskInfoContentEl.classList.toggle('hidden', !isInfoStep);
           }
@@ -6701,16 +6765,14 @@ $sessionPayload = [
           const current = getCurrentDescribePhotoChoice();
           const total = describePhotoChoices.length;
           if (!(current && total > 0)) {
-            if (describePhotoImageEl) describePhotoImageEl.removeAttribute('src');
+            setDescribePhotoImage(describePhotoImageEl, '');
             if (describePhotoNameEl) describePhotoNameEl.textContent = 'برای این ماموریت تصویری ثبت نشده است.';
             if (describePhotoIndexEl) describePhotoIndexEl.textContent = '0 / 0';
             if (describePhotoChangeBtnEl instanceof HTMLButtonElement) describePhotoChangeBtnEl.disabled = true;
             if (describePhotoSelectBtnEl instanceof HTMLButtonElement) describePhotoSelectBtnEl.disabled = true;
             return;
           }
-          if (describePhotoImageEl) {
-            describePhotoImageEl.src = current.url;
-          }
+          setDescribePhotoImage(describePhotoImageEl, current.url, current.name || 'تصویر ماموریت');
           if (describePhotoNameEl) {
             describePhotoNameEl.textContent = current.name || 'تصویر ماموریت';
           }
@@ -6758,11 +6820,16 @@ $sessionPayload = [
             const data = payload?.data || {};
             describePhotoSelected = {
               ...current,
+              url: String(data?.photo?.url || current.url || '').trim(),
               articleFile: String(data?.photo?.articleFile || current.articleFile || '').trim()
             };
             const title = describePhotoSelected.name || 'تصویر ماموریت';
             if (describePhotoEditorTitleEl) {
               describePhotoEditorTitleEl.textContent = `توضیح تصویر: ${title}`;
+            }
+            setDescribePhotoImage(describePhotoEditorImageEl, describePhotoSelected.url, title);
+            if (describePhotoEditorNameEl) {
+              describePhotoEditorNameEl.textContent = title;
             }
             if (describePhotoTextareaEl instanceof HTMLTextAreaElement) {
               describePhotoTextareaEl.value = String(data?.text || '');
@@ -7896,6 +7963,16 @@ $sessionPayload = [
               return;
             }
             if (infoTaskViewOpen) {
+              if (currentTaskType === 'describe_photo') {
+                if (infoTaskCurrentStep === 'editor') {
+                  setInfoTaskStep('photo');
+                  return;
+                }
+                if (infoTaskCurrentStep === 'photo') {
+                  setInfoTaskStep('info');
+                  return;
+                }
+              }
               closeQuizOverlay();
             }
           });
