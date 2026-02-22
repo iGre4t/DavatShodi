@@ -4372,6 +4372,7 @@ $sessionPayload = [
       .quiz-area {
         flex: 1;
         width: 100%;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -4379,6 +4380,9 @@ $sessionPayload = [
         gap: 14px;
         padding: 16px 18px;
         position: relative;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
       }
 
       .quiz-area::before {
@@ -4643,11 +4647,15 @@ $sessionPayload = [
 
       .login-area {
         flex: 1;
+        min-height: 0;
         display: flex;
         flex-direction: column;
-        justify-content: center;
+        justify-content: flex-start;
         gap: 20px;
-        padding: 26px 22px;
+        padding: 22px 22px calc(24px + env(safe-area-inset-bottom, 0px));
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
       }
 
       .login-hero {
@@ -4674,16 +4682,27 @@ $sessionPayload = [
       .info-task-area {
         flex: 1;
         width: 100%;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 12px;
-        padding: 16px 16px 22px;
-        overflow: hidden;
+        padding: 16px 16px calc(22px + env(safe-area-inset-bottom, 0px));
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
       }
 
       .info-task-head {
         display: grid;
         gap: 6px;
+      }
+
+      .tc-task-info-title {
+        margin: 0;
+        text-align: center;
+        color: #1f3560;
+        font-size: 1.02rem;
+        font-weight: 700;
       }
 
       .info-task-content {
@@ -4721,9 +4740,13 @@ $sessionPayload = [
       .describe-photo-step,
       .describe-photo-editor {
         flex: 1;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 10px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
       }
 
       .describe-photo-preview {
@@ -5509,6 +5532,11 @@ $sessionPayload = [
           padding: 6px 16px 2px;
         }
 
+        .login-area {
+          padding: 18px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+          gap: 14px;
+        }
+
         .tc-bottom-cta {
           padding-inline: 16px;
           padding-bottom: 12px;
@@ -5714,6 +5742,9 @@ $sessionPayload = [
           <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
         </div>
         <div id="tc-task-info-area" class="info-task-area quiz-hidden">
+          <div id="tc-task-info-head" class="info-task-head">
+            <h3 id="tc-task-info-title" class="tc-task-info-title">اطلاعات ماموریت</h3>
+          </div>
           <div id="tc-task-info-content" class="info-task-content"></div>
           <section id="tc-describe-photo-step" class="describe-photo-step hidden">
             <div class="describe-photo-preview">
@@ -5727,17 +5758,17 @@ $sessionPayload = [
             </div>
           </section>
           <section id="tc-describe-photo-editor-step" class="describe-photo-editor hidden">
-            <p id="tc-describe-photo-editor-title" class="describe-photo-editor-title">متن تصویر</p>
+            <p id="tc-describe-photo-editor-title" class="describe-photo-editor-title">-</p>
             <div class="describe-photo-preview describe-photo-editor-preview">
               <img id="tc-describe-photo-editor-image" class="describe-photo-image" alt="تصویر انتخاب شده" />
             </div>
-            <p id="tc-describe-photo-editor-name" class="describe-photo-index">-</p>
+            <p id="tc-describe-photo-editor-name" class="describe-photo-index">الهی‌نامه شما بر اساس تصویر:</p>
             <textarea
               id="tc-describe-photo-text"
               class="describe-photo-textarea"
               rows="10"
               maxlength="8000"
-              placeholder="متن خود را درباره تصویر بنویسید (حداکثر 300 کلمه)"
+              placeholder="الهی‌نامه خود را بر اساس تصویر بنویسید (حداکثر 300 کلمه)"
             ></textarea>
             <p id="tc-describe-photo-word-count" class="describe-photo-word-count">0 / 300 کلمه</p>
             <button id="tc-describe-photo-save" class="login-btn describe-photo-save-btn" type="button">ذخیره</button>
@@ -5992,6 +6023,7 @@ $sessionPayload = [
         const quizQuestionEl = document.getElementById('tc-task-quiz-question');
         const quizAnswersEl = document.getElementById('tc-task-quiz-answers');
         const quizTimerFillEl = document.getElementById('tc-task-quiz-timer-fill');
+        const taskInfoHeadEl = document.getElementById('tc-task-info-head');
         const resultDialogEl = document.getElementById('tc-task-result-dialog');
         const resultValueEl = document.getElementById('tc-task-result-value');
         const resultMessageEl = document.getElementById('tc-task-result-message');
@@ -6391,13 +6423,16 @@ $sessionPayload = [
           const available = !globallyBlocked && canOpenTaskByStatus(status, taskType);
           const isUpcoming = status === 'upcoming';
           const scoreNow = taskAvailableScoreNow(button, status, taskType);
+          const isGoldenAppearance = status === 'active'
+            && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo')
+            && !describeEditableDone;
           button.disabled = !available;
           button.classList.toggle('is-disabled', !available && !isUpcoming);
           button.classList.toggle('is-upcoming', isUpcoming);
           button.classList.remove('is-completed');
           button.classList.toggle('is-describe-submitted', describeEditableDone);
           button.classList.toggle('is-info-ended', infoEndedNoScore);
-          button.classList.toggle('is-golden', status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo'));
+          button.classList.toggle('is-golden', isGoldenAppearance);
           button.classList.toggle('is-golden-live', false);
           button.dataset.taskStatus = status;
           if (metaEl) {
@@ -6604,14 +6639,14 @@ $sessionPayload = [
             describePhotoIndexEl.textContent = '1 / 3';
           }
           if (describePhotoEditorTitleEl) {
-            describePhotoEditorTitleEl.textContent = 'متن تصویر';
+            describePhotoEditorTitleEl.textContent = '-';
           }
           if (describePhotoEditorImageEl) {
             describePhotoEditorImageEl.removeAttribute('src');
             describePhotoEditorImageEl.classList.add('is-hidden');
           }
           if (describePhotoEditorNameEl) {
-            describePhotoEditorNameEl.textContent = '-';
+            describePhotoEditorNameEl.textContent = 'الهی‌نامه شما بر اساس تصویر:';
           }
           if (describePhotoTextareaEl instanceof HTMLTextAreaElement) {
             describePhotoTextareaEl.value = '';
@@ -6746,6 +6781,9 @@ $sessionPayload = [
           const isPhotoStep = next === 'photo';
           const isEditorStep = next === 'editor';
           infoTaskCurrentStep = isPhotoStep ? 'photo' : (isEditorStep ? 'editor' : 'info');
+          if (taskInfoHeadEl) {
+            taskInfoHeadEl.classList.toggle('hidden', !isInfoStep);
+          }
           if (taskInfoContentEl) {
             taskInfoContentEl.classList.toggle('hidden', !isInfoStep);
           }
@@ -6825,11 +6863,11 @@ $sessionPayload = [
             };
             const title = describePhotoSelected.name || 'تصویر ماموریت';
             if (describePhotoEditorTitleEl) {
-              describePhotoEditorTitleEl.textContent = `توضیح تصویر: ${title}`;
+              describePhotoEditorTitleEl.textContent = title;
             }
             setDescribePhotoImage(describePhotoEditorImageEl, describePhotoSelected.url, title);
             if (describePhotoEditorNameEl) {
-              describePhotoEditorNameEl.textContent = title;
+              describePhotoEditorNameEl.textContent = 'الهی‌نامه شما بر اساس تصویر:';
             }
             if (describePhotoTextareaEl instanceof HTMLTextAreaElement) {
               describePhotoTextareaEl.value = String(data?.text || '');
