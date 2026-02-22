@@ -55,13 +55,18 @@ $eventAccentSoft = normalizeHexColor($eventColors['accentSoft'] ?? '', '#FFB347'
 $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
 $siteIconUrl = formatAssetUrl((string)($panelSettings['siteIcon'] ?? ''));
 $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
+$maintenanceMode = (bool)($settings['maintenanceMode'] ?? false);
+if (!$maintenanceMode) {
+  header('Location: index.php');
+  exit;
+}
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>کمپین به نام خدا - در حال تعمیر</title>
+  <title>کمپین به نام خدا - در حال بروزرسانی</title>
   <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
   <style>
     :root {
@@ -164,28 +169,6 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
       margin-bottom: 8px;
     }
 
-    .maintenance-icon {
-      width: 76px;
-      height: 76px;
-      margin: 8px auto 12px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      color: var(--tc-secondary);
-      border: 1px solid color-mix(in srgb, var(--tc-secondary) 32%, #ffffff);
-      background: color-mix(in srgb, var(--tc-secondary) 10%, #ffffff);
-      box-shadow: 0 12px 24px color-mix(in srgb, var(--tc-secondary) 20%, transparent);
-      font-size: 34px;
-      font-weight: 700;
-      line-height: 1;
-    }
-
-    .maintenance-icon svg {
-      width: 34px;
-      height: 34px;
-      display: block;
-    }
-
     .title {
       margin: 0;
       font-size: 1.22rem;
@@ -267,34 +250,29 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
         <?php if ($eventLogoUrl !== ''): ?>
           <img class="event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
         <?php endif; ?>
-        <div class="maintenance-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M14.8 3.2l-1.1 1.1 1.9 1.9 1.1-1.1a3.2 3.2 0 0 1 2.2.8l-2.4 2.4a2 2 0 0 0 0 2.8l.5.5-8.1 8.1a2 2 0 0 1-2.8 0L4.2 18a2 2 0 0 1 0-2.8l8.1-8.1.5.5a2 2 0 0 0 2.8 0L18 5.2a3.2 3.2 0 0 1 .8 2.2l-1.1 1.1 1.9 1.9 1.1-1.1a5.8 5.8 0 0 0-5.9-6.1z" fill="currentColor"/>
-          </svg>
-        </div>
-        <h1 class="title">در حال تعمیر</h1>
+        <h1 class="title">در حال بروزرسانی</h1>
         <p class="subtitle">
-          سامانه باشگاه تعاملی موقتا برای به‌روزرسانی و بهبود تجربه کاربران در دسترس نیست.
+          سامانه باشگاه تعاملی در حال بروزرسانی است تا قابلیت‌های جدید، پایداری بهتر و تجربه روان‌تری ارائه شود.
           <br>
-          لطفا کمی بعد دوباره تلاش کنید.
+          پس از تکمیل بروزرسانی، دسترسی مجدد به‌صورت خودکار برقرار خواهد شد.
         </p>
-        <div class="badge">به‌زودی باز می‌گردیم</div>
+        <div class="badge">بروزرسانی در حال انجام است</div>
       </section>
 
       <div class="content">
         <section class="section">
           <h3>علت عدم دسترسی</h3>
           <p>
-            در حال انجام تنظیمات فنی و بهینه‌سازی سرویس هستیم تا کیفیت، سرعت و پایداری بالاتری ارائه شود.
+            در این بازه، تغییرات فنی و بهینه‌سازی‌های ساختاری روی سامانه انجام می‌شود تا عملکرد و امنیت سرویس ارتقا پیدا کند.
           </p>
         </section>
         <section class="section">
           <h3>راهنمای پیگیری</h3>
           <p>
-            اگر نیاز فوری دارید، از مسیرهای اطلاع‌رسانی داخلی سازمان وضعیت دسترسی را بررسی کنید.
+            لطفا کمی بعد دوباره وارد شوید. در صورت نیاز فوری، وضعیت دسترسی را از مسیرهای اطلاع‌رسانی داخلی سازمان پیگیری کنید.
           </p>
         </section>
-        <p class="hint">از شکیبایی شما سپاسگزاریم.</p>
+        <p class="hint">سپاس از همراهی شما در زمان بروزرسانی.</p>
       </div>
     </section>
   </main>
