@@ -256,12 +256,21 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
       margin-bottom: 10px;
     }
 
+
     .title {
       margin: 0;
       font-size: 1.2rem;
       color: var(--tc-highlight);
       font-weight: 700;
     }
+
+    .title .highlight {
+      color: var(--tc-highlight);
+    }
+
+    .title .ohterparts {
+      color: #444;
+}
 
     .subtitle {
       margin: 8px 0 0;
@@ -382,7 +391,11 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
         <?php if ($eventLogoUrl !== ''): ?>
           <img class="event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
         <?php endif; ?>
-        <h1 class="title">با ما در مسیر «به نام خدا» همراه شوید</h1>
+        <h1 class="title">
+  <span class="ohterparts">با ما در مسیر </span>
+  <span class="highlight">«به نام خدا»</span>
+  <span class="ohterparts"> همراه شوید</span>
+</h1>
         <p class="subtitle">
           از ۳ اسفند تا ۱۸ فروردین، چالش‌ها به‌صورت مرحله‌ای فعال می‌شوند و با مشارکت مستمر می‌توانید امتیاز جمع کنید و شانس دریافت جایزه داشته باشید.
         </p>
