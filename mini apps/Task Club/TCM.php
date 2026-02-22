@@ -4880,7 +4880,7 @@ $sessionPayload = [
               نام کاربری و رمز عبور اختصاصی هر شخص از طریق پیامک ارسال شده است و امکان استفاده مشترک وجود ندارد.
             </p>
             <p class="login-help-text">
-              اگر در ورود مشکل دارید، در روبیکا به آیدی <span class="login-help-id">@ero_mci</span> پیام دهید.
+              اگر در ورود مشکل دارید، در روبیکا به آیدی <span class="login-help-id">@ero_admin</span> پیام دهید.
             </p>
           </section>
         </div>
