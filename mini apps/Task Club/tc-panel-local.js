@@ -29,6 +29,10 @@
     return type === 'info' || type === 'describe_photo';
   }
 
+  function isDescribePhotoTaskType(taskType) {
+    return normalizeTaskType(taskType) === 'describe_photo';
+  }
+
   function normalizeBool(value) {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'number') return value === 1;
@@ -620,6 +624,24 @@
 
   const infoRateStateByTaskId = new Map();
 
+  function getInfoRateTableColspanForPane(pane) {
+    if (!(pane instanceof HTMLElement)) return 7;
+    return isDescribePhotoTaskType(pane.dataset.taskType || 'quiz') ? 8 : 7;
+  }
+
+  function normalizeDescribeResultItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    const photoId = String(item.photoId ?? item.photo_id ?? '').trim();
+    if (!photoId) return null;
+    return {
+      photoId,
+      photoName: String(item.photoName ?? item.photo_name ?? '').trim() || 'Photo',
+      photoUrl: String(item.photoUrl ?? item.photo_url ?? '').trim(),
+      articleFile: String(item.articleFile ?? item.article_file ?? '').trim(),
+      wordCount: normalizeScoreValue(item.wordCount ?? item.word_count ?? 0)
+    };
+  }
+
   function getInfoRateElements(pane) {
     if (!(pane instanceof HTMLElement)) return null;
     const body = pane.querySelector('[data-task-info-rate-body]');
@@ -666,8 +688,9 @@
     if (!taskId) return;
     const controls = getInfoRateElements(pane);
     if (!controls) return;
+    const colspan = getInfoRateTableColspanForPane(pane);
     if (!silent) {
-      controls.body.innerHTML = '<tr><td colspan="7" class="muted">Loading invitees...</td></tr>';
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">Loading invitees...</td></tr>`;
     }
     try {
       const data = await postTaskAction('get_info_task_rate_data', { id: taskId });
@@ -679,13 +702,18 @@
         firstName: String(row.firstName || '').trim(),
         lastName: String(row.lastName || '').trim(),
         phone: String(row.phone || '').trim(),
-        customScore: normalizeScoreValue(row.customScore ?? 0)
+        customScore: normalizeScoreValue(row.customScore ?? 0),
+        describeResults: Array.isArray(row.describeResults ?? row.describe_results)
+          ? (row.describeResults ?? row.describe_results)
+            .map((item) => normalizeDescribeResultItem(item))
+            .filter(Boolean)
+          : []
       })) : [];
       state.selected = new Set();
       renderInfoRateTable(pane);
       setInfoRateStatus(pane, '');
     } catch (error) {
-      controls.body.innerHTML = '<tr><td colspan="7" class="muted">Failed to load invitees.</td></tr>';
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">Failed to load invitees.</td></tr>`;
       setInfoRateStatus(pane, error?.message || 'Failed to load invitees.', true);
     }
   }
@@ -696,6 +724,8 @@
     const state = getInfoRateState(taskId);
     const controls = getInfoRateElements(pane);
     if (!state || !controls) return;
+    const isDescribeTask = isDescribePhotoTaskType(pane.dataset.taskType || 'quiz');
+    const colspan = getInfoRateTableColspanForPane(pane);
     const query = String(state.query || '').trim().toLowerCase();
     const visibleRows = state.invitees.filter((row) => {
       if (!query) return true;
@@ -703,7 +733,7 @@
       return haystack.includes(query);
     });
     if (!visibleRows.length) {
-      controls.body.innerHTML = '<tr><td colspan="7" class="muted">No invitee found.</td></tr>';
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">No invitee found.</td></tr>`;
       controls.selectAll.checked = false;
       controls.selectAll.indeterminate = false;
       return;
@@ -726,6 +756,7 @@
             </div>
           </td>
           <td><button type="button" class="btn primary standard-primary-button" data-action="info-row-max" ${disableRowActions ? 'disabled' : ''}>Max Score</button></td>
+          ${isDescribeTask ? `<td><button type="button" class="btn ghost" data-action="info-row-results" ${Array.isArray(row.describeResults) && row.describeResults.length ? '' : 'disabled'}>Results</button></td>` : ''}
         </tr>
       `;
     }).join('');
@@ -765,6 +796,282 @@
       return false;
     }
   }
+
+  function getInfoRateInviteeByWorkId(taskId, workId) {
+    const state = getInfoRateState(taskId);
+    if (!state) return null;
+    const normalizedWorkId = String(workId || '').trim();
+    if (!normalizedWorkId) return null;
+    return state.invitees.find((row) => String(row.workId || '').trim() === normalizedWorkId) || null;
+  }
+
+  let describeResultsModalEl = null;
+  let describeArticleModalEl = null;
+  let describeResultsContext = null;
+  let describeArticleContext = null;
+
+  function closeDescribeResultsModal() {
+    if (!(describeResultsModalEl instanceof HTMLElement)) return;
+    describeResultsModalEl.hidden = true;
+    describeResultsContext = null;
+  }
+
+  function closeDescribeArticleModal() {
+    if (!(describeArticleModalEl instanceof HTMLElement)) return;
+    describeArticleModalEl.hidden = true;
+    describeArticleContext = null;
+  }
+
+  function ensureDescribeResultsModal() {
+    if (describeResultsModalEl instanceof HTMLElement) {
+      return describeResultsModalEl;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tc-describe-results-modal';
+    wrapper.hidden = true;
+    wrapper.innerHTML = `
+      <div class="tc-describe-results-dialog" role="dialog" aria-modal="true" aria-label="Describe Photo Results">
+        <div class="tc-describe-results-head">
+          <h3 data-describe-results-title>Results</h3>
+          <button type="button" class="btn ghost" data-action="close-describe-results-modal">Close</button>
+        </div>
+        <p class="muted small" data-describe-results-hint></p>
+        <div class="tc-describe-results-grid" data-describe-results-grid></div>
+      </div>
+    `;
+    wrapper.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target === wrapper || target.closest('[data-action="close-describe-results-modal"]')) {
+        closeDescribeResultsModal();
+        return;
+      }
+      const photoButton = target.closest('[data-action="open-describe-result-photo"]');
+      if (!(photoButton instanceof HTMLButtonElement)) return;
+      const context = describeResultsContext;
+      if (!context || !(context.pane instanceof HTMLElement) || !context.invitee) return;
+      const photoId = String(photoButton.getAttribute('data-photo-id') || '').trim();
+      if (!photoId) return;
+      const selectedResult = (context.invitee.describeResults || []).find((item) => String(item?.photoId || '').trim() === photoId) || null;
+      if (!selectedResult) return;
+      void openDescribeArticleModal(context.pane, context.invitee, selectedResult);
+    });
+    const modalHost = document.querySelector('.tc-shell');
+    (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
+    describeResultsModalEl = wrapper;
+    return wrapper;
+  }
+
+  function ensureDescribeArticleModal() {
+    if (describeArticleModalEl instanceof HTMLElement) {
+      return describeArticleModalEl;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tc-describe-article-modal';
+    wrapper.hidden = true;
+    wrapper.innerHTML = `
+      <div class="tc-describe-article-dialog" role="dialog" aria-modal="true" aria-label="Describe Photo Text Result">
+        <div class="tc-describe-article-head">
+          <h3 data-describe-article-title>Result Text</h3>
+          <button type="button" class="btn ghost" data-action="close-describe-article-modal">Close</button>
+        </div>
+        <p class="muted small" data-describe-article-meta></p>
+        <div class="tc-describe-article-content" data-describe-article-text></div>
+        <div class="tc-describe-article-score-box">
+          <label class="field standard-width">
+            <span>Custom Score</span>
+            <input type="number" min="0" step="1" data-describe-article-score />
+          </label>
+          <div class="tc-describe-article-score-actions">
+            <button type="button" class="btn secondary" data-action="describe-article-save-score">Save</button>
+            <button type="button" class="btn primary standard-primary-button" data-action="describe-article-max-score">Max Score</button>
+          </div>
+        </div>
+        <p class="muted small" data-describe-article-status></p>
+      </div>
+    `;
+    wrapper.addEventListener('click', async (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target === wrapper || target.closest('[data-action="close-describe-article-modal"]')) {
+        closeDescribeArticleModal();
+        return;
+      }
+      const context = describeArticleContext;
+      if (!context || !(context.pane instanceof HTMLElement) || !context.workId || !context.taskId) return;
+
+      const saveButton = target.closest('[data-action="describe-article-save-score"]');
+      if (saveButton instanceof HTMLButtonElement) {
+        if (context.saving) return;
+        const scoreInput = wrapper.querySelector('[data-describe-article-score]');
+        if (!(scoreInput instanceof HTMLInputElement)) return;
+        const scoreValue = normalizeScoreValue(scoreInput.value);
+        context.saving = true;
+        setDescribeArticleStatus('Saving...', false);
+        const ok = await assignInfoScores(context.pane, [context.workId], 'custom', scoreValue);
+        context.saving = false;
+        if (ok) {
+          const refreshed = getInfoRateInviteeByWorkId(context.taskId, context.workId);
+          if (refreshed) {
+            context.invitee = refreshed;
+            scoreInput.value = String(normalizeScoreValue(refreshed.customScore));
+          }
+          setDescribeArticleStatus('Score saved.', false);
+        } else {
+          setDescribeArticleStatus('Failed to save score.', true);
+        }
+        return;
+      }
+
+      const maxButton = target.closest('[data-action="describe-article-max-score"]');
+      if (maxButton instanceof HTMLButtonElement) {
+        if (context.saving) return;
+        context.saving = true;
+        setDescribeArticleStatus('Saving...', false);
+        const ok = await assignInfoScores(context.pane, [context.workId], 'max');
+        context.saving = false;
+        const scoreInput = wrapper.querySelector('[data-describe-article-score]');
+        if (ok) {
+          const refreshed = getInfoRateInviteeByWorkId(context.taskId, context.workId);
+          if (refreshed) {
+            context.invitee = refreshed;
+            if (scoreInput instanceof HTMLInputElement) {
+              scoreInput.value = String(normalizeScoreValue(refreshed.customScore));
+            }
+          }
+          setDescribeArticleStatus('Max score applied.', false);
+        } else {
+          setDescribeArticleStatus('Failed to save score.', true);
+        }
+      }
+    });
+    const modalHost = document.querySelector('.tc-shell');
+    (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
+    describeArticleModalEl = wrapper;
+    return wrapper;
+  }
+
+  function setDescribeArticleStatus(message, isError = false) {
+    const modal = ensureDescribeArticleModal();
+    const status = modal.querySelector('[data-describe-article-status]');
+    if (!(status instanceof HTMLElement)) return;
+    status.textContent = String(message || '');
+    status.style.color = isError ? '#d1434a' : '';
+  }
+
+  function openDescribeResultsModal(pane, invitee) {
+    const modal = ensureDescribeResultsModal();
+    const title = modal.querySelector('[data-describe-results-title]');
+    const hint = modal.querySelector('[data-describe-results-hint]');
+    const grid = modal.querySelector('[data-describe-results-grid]');
+    if (!(title instanceof HTMLElement) || !(hint instanceof HTMLElement) || !(grid instanceof HTMLElement)) return;
+
+    const firstName = String(invitee?.firstName || '').trim();
+    const lastName = String(invitee?.lastName || '').trim();
+    const fullName = `${firstName} ${lastName}`.trim() || String(invitee?.workId || 'Invitee');
+    title.textContent = `Results - ${fullName}`;
+    hint.textContent = 'Click a photo to open the submitted text.';
+
+    const results = Array.isArray(invitee?.describeResults) ? invitee.describeResults : [];
+    if (!results.length) {
+      grid.innerHTML = '<div class="muted">No saved results found for this user.</div>';
+    } else {
+      grid.innerHTML = results.map((result) => {
+        const photoName = escapeHtml(String(result?.photoName || 'Photo'));
+        const photoId = escapeHtml(String(result?.photoId || ''));
+        const wordCount = normalizeScoreValue(result?.wordCount ?? 0);
+        const photoUrl = String(result?.photoUrl || '').trim();
+        return `
+          <button type="button" class="tc-describe-result-photo-btn" data-action="open-describe-result-photo" data-photo-id="${photoId}">
+            ${photoUrl ? `<img src="${escapeHtml(photoUrl)}" alt="${photoName}" loading="lazy" />` : '<div class="tc-describe-result-photo-fallback">No Preview</div>'}
+            <div class="tc-describe-result-photo-name">${photoName}</div>
+            <div class="tc-describe-result-photo-words">Words: ${escapeHtml(String(wordCount))}</div>
+          </button>
+        `;
+      }).join('');
+    }
+
+    describeResultsContext = {
+      pane,
+      invitee
+    };
+    modal.hidden = false;
+  }
+
+  async function openDescribeArticleModal(pane, invitee, resultItem) {
+    const modal = ensureDescribeArticleModal();
+    const title = modal.querySelector('[data-describe-article-title]');
+    const meta = modal.querySelector('[data-describe-article-meta]');
+    const textArea = modal.querySelector('[data-describe-article-text]');
+    const scoreInput = modal.querySelector('[data-describe-article-score]');
+    if (
+      !(title instanceof HTMLElement) ||
+      !(meta instanceof HTMLElement) ||
+      !(textArea instanceof HTMLElement) ||
+      !(scoreInput instanceof HTMLInputElement)
+    ) {
+      return;
+    }
+
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const workId = String(invitee?.workId || '').trim();
+    const photoId = String(resultItem?.photoId || '').trim();
+    if (!taskId || !workId || !photoId) return;
+
+    const state = getInfoRateState(taskId);
+    const maxScore = state ? normalizeScoreValue(state.maxScore) : 0;
+    const currentScore = normalizeScoreValue(invitee?.customScore ?? 0);
+
+    const firstName = String(invitee?.firstName || '').trim();
+    const lastName = String(invitee?.lastName || '').trim();
+    const fullName = `${firstName} ${lastName}`.trim() || workId;
+
+    title.textContent = `${resultItem?.photoName || 'Photo'} - ${fullName}`;
+    meta.textContent = 'Loading result text...';
+    textArea.textContent = '';
+    scoreInput.max = String(maxScore);
+    scoreInput.value = String(currentScore);
+    setDescribeArticleStatus('', false);
+
+    describeArticleContext = {
+      pane,
+      taskId,
+      workId,
+      photoId,
+      invitee,
+      resultItem,
+      saving: false
+    };
+    modal.hidden = false;
+
+    try {
+      const data = await postTaskAction('get_describe_task_result_text', {
+        id: taskId,
+        work_id: workId,
+        photo_id: photoId
+      });
+      const result = normalizeDescribeResultItem(data.result) || resultItem;
+      const text = String(data.text || '');
+      const wordCount = normalizeScoreValue(result?.wordCount ?? 0);
+      meta.textContent = `Photo ID: ${String(result?.photoId || photoId)} - Words: ${wordCount}`;
+      textArea.textContent = text;
+    } catch (error) {
+      meta.textContent = 'Failed to load result text.';
+      textArea.textContent = String(error?.message || 'Result text is not available.');
+      setDescribeArticleStatus(String(error?.message || 'Failed to load result text.'), true);
+    }
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (describeArticleModalEl instanceof HTMLElement && !describeArticleModalEl.hidden) {
+      closeDescribeArticleModal();
+      return;
+    }
+    if (describeResultsModalEl instanceof HTMLElement && !describeResultsModalEl.hidden) {
+      closeDescribeResultsModal();
+    }
+  });
 
   function setTaskPaneStatus(pane, label, tone) {
     const controls = getTaskPaneControls(pane);
@@ -929,6 +1236,8 @@
           </div>
         `
       : '';
+    const inviteesRateColspan = isDescribePhotoTask ? 8 : 7;
+    const inviteesRateResultHeader = isDescribePhotoTask ? '<th>Results</th>' : '';
     return `
       <div class="tc-task-top-shell" data-task-top-shell>
         <div class="tc-task-top-nav" role="tablist" aria-label="Task Tabs">
@@ -1067,10 +1376,11 @@
                         <th>Work ID</th>
                         <th>Custom Score</th>
                         <th>Fast Score</th>
+                        ${inviteesRateResultHeader}
                       </tr>
                     </thead>
                     <tbody data-task-info-rate-body>
-                      <tr><td colspan="7" class="muted">Loading invitees...</td></tr>
+                      <tr><td colspan="${inviteesRateColspan}" class="muted">Loading invitees...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -1549,6 +1859,23 @@
         const workId = String(row.dataset.workId || '').trim();
         if (!workId) return;
         await assignInfoScores(pane, [workId], 'max');
+        return;
+      }
+
+      const rowResultsButton = target.closest('[data-action="info-row-results"]');
+      if (rowResultsButton instanceof HTMLButtonElement) {
+        const pane = rowResultsButton.closest('.sub-pane[data-task-pane="1"]');
+        const row = rowResultsButton.closest('tr[data-work-id]');
+        if (!(pane instanceof HTMLElement) || !(row instanceof HTMLTableRowElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const workId = String(row.dataset.workId || '').trim();
+        if (!taskId || !workId) return;
+        const invitee = getInfoRateInviteeByWorkId(taskId, workId);
+        if (!invitee || !Array.isArray(invitee.describeResults) || !invitee.describeResults.length) {
+          setInfoRateStatus(pane, 'No saved describe result for this invitee.', true);
+          return;
+        }
+        openDescribeResultsModal(pane, invitee);
         return;
       }
 

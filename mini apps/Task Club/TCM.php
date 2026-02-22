@@ -1659,12 +1659,58 @@ function serializeTaskCompletedIds(array $ids): string
   return implode(',', $normalized);
 }
 
+function hasDescribePhotoSubmissionForUserTask(array $task, array $row, array $columns): bool
+{
+  $taskId = trim((string)($task['id'] ?? ''));
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+  if ($taskId === '' || $tagCode === '') {
+    return false;
+  }
+
+  $picksColumnIndex = (int)($columns['describe photo picks'] ?? -1);
+  if ($picksColumnIndex < 0) {
+    return false;
+  }
+
+  $pickMap = parseDescribePhotoPicksMap((string)($row[$picksColumnIndex] ?? ''));
+  $taskPickMap = is_array($pickMap[$taskId] ?? null) ? $pickMap[$taskId] : [];
+  if (!$taskPickMap) {
+    return false;
+  }
+
+  $articlesDirPath = buildTaskDescribePhotoArticlesPath(TASKS_DIR_PATH, $tagCode);
+  if ($articlesDirPath === '' || !is_dir($articlesDirPath)) {
+    return false;
+  }
+
+  foreach ($taskPickMap as $fileName) {
+    $safeFileName = basename(trim((string)$fileName));
+    if ($safeFileName === '') {
+      continue;
+    }
+    $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $safeFileName;
+    if (!is_file($articlePath)) {
+      continue;
+    }
+    $content = file_get_contents($articlePath);
+    if (!is_string($content)) {
+      continue;
+    }
+    if (countWordsInText($content) > 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function readTaskUserProgress(array $task, string $inviteesPath, string $inviteesMapPath, string $workId): array
 {
   $defaults = [
     'score' => 0,
     'answered' => 0,
-    'completed' => false
+    'completed' => false,
+    'describeSubmitted' => false
   ];
   $normalizedWorkId = trim($workId);
   $taskId = trim((string)($task['id'] ?? ''));
@@ -1686,19 +1732,23 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
   $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
   $taskScoreColumn = $taskType === 'describe_photo' ? 'describe photo task' : 'info tasks';
   $infoTasksIndex = (int)($columns[$taskScoreColumn] ?? -1);
+  $row = is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [];
+  $describeSubmitted = $taskType === 'describe_photo'
+    ? hasDescribePhotoSubmissionForUserTask($task, $row, $columns)
+    : false;
   $completedIds = [];
   if ($taskCompletedIndex >= 0) {
-    $completedIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
+    $completedIds = parseTaskCompletedIds((string)($row[$taskCompletedIndex] ?? ''));
   }
   $isCompleted = in_array($taskId, $completedIds, true);
   $taskScoreMap = [];
   if ($taskScoreMapIndex >= 0) {
-    $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
+    $taskScoreMap = parseTaskScoreMap((string)($row[$taskScoreMapIndex] ?? ''));
   }
   $taskScore = 0;
   if ($taskType === 'info' || $taskType === 'describe_photo') {
     $infoMap = $infoTasksIndex >= 0
-      ? parseInfoTasksScoreMap((string)($rows[$rowIndex][$infoTasksIndex] ?? ''))
+      ? parseInfoTasksScoreMap((string)($row[$infoTasksIndex] ?? ''))
       : [];
     if (array_key_exists($taskId, $infoMap)) {
       $isCompleted = true;
@@ -1718,7 +1768,8 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
   return [
     'score' => $isCompleted ? $taskScore : 0,
     'answered' => $isCompleted ? 1 : 0,
-    'completed' => $isCompleted
+    'completed' => $isCompleted,
+    'describeSubmitted' => $describeSubmitted
   ];
 }
 
@@ -1758,7 +1809,12 @@ function buildTaskPayloadForView(array $tasks, string $inviteesPath, string $inv
     $isEndedQuiz = $taskType === 'quiz' && $status === 'ended';
     $progress = readTaskUserProgress($task, $inviteesPath, $inviteesMapPath, $workId);
     $completed = (bool)($progress['completed'] ?? false);
-    $statusLabel = $completed ? 'تکمیل شده' : resolveTaskStatusLabel($status);
+    $describeSubmitted = (bool)($progress['describeSubmitted'] ?? false);
+    $statusLabel = $completed
+      ? 'تکمیل شده'
+      : (($taskType === 'describe_photo' && $status === 'active' && $describeSubmitted)
+        ? 'تکمیل شده'
+        : resolveTaskStatusLabel($status));
     $items[] = [
       'id' => (string)($task['id'] ?? ''),
       'title' => (string)($task['title'] ?? ''),
@@ -1775,6 +1831,7 @@ function buildTaskPayloadForView(array $tasks, string $inviteesPath, string $inv
       'status' => $status,
       'statusLabel' => $statusLabel,
       'completed' => $completed,
+      'describeSubmitted' => $describeSubmitted,
       'available' => ($isActive || $isEndedQuiz) && !$completed,
       'userScore' => (int)($progress['score'] ?? 0)
     ];
@@ -3724,6 +3781,17 @@ $sessionPayload = [
         color: #4d7a58;
       }
 
+      .task-item-btn.is-describe-submitted {
+        background: linear-gradient(145deg, #eef6ff, #e6f0ff);
+        border-color: #a7c7ff;
+        color: #1f4d91;
+      }
+
+      .task-item-btn.is-describe-submitted .task-item-meta {
+        color: #2f5b9f;
+        font-weight: 700;
+      }
+
       .task-item-btn.is-upcoming,
       .task-item-btn.is-upcoming:disabled {
         background: #f2f4f8;
@@ -5552,12 +5620,17 @@ $sessionPayload = [
                   $taskTitle = (string)($taskItem['title'] ?? '');
                   $isAvailable = (bool)($taskItem['available'] ?? false);
                   $isCompleted = (bool)($taskItem['completed'] ?? false);
+                  $isDescribeSubmitted = (bool)($taskItem['describeSubmitted'] ?? false);
+                  $taskTypeToken = (string)($taskItem['taskType'] ?? 'quiz');
+                  $taskStatusToken = (string)($taskItem['status'] ?? 'inactive');
                   $buttonClass = 'task-item-btn';
                   if (!$isAvailable) {
                     $buttonClass .= ' is-disabled';
                   }
                   if ($isCompleted) {
                     $buttonClass .= ' is-completed';
+                  } elseif ($taskTypeToken === 'describe_photo' && $taskStatusToken === 'active' && $isDescribeSubmitted) {
+                    $buttonClass .= ' is-describe-submitted';
                   }
                   $disabledAttr = $isAvailable ? '' : 'disabled';
                 ?>
@@ -5566,7 +5639,7 @@ $sessionPayload = [
                   type="button"
                   data-task-id="<?= htmlspecialchars($taskId, ENT_QUOTES, 'UTF-8') ?>"
                   data-task-title="<?= htmlspecialchars($taskTitle, ENT_QUOTES, 'UTF-8') ?>"
-                  data-task-type="<?= htmlspecialchars((string)($taskItem['taskType'] ?? 'quiz'), ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-type="<?= htmlspecialchars($taskTypeToken, ENT_QUOTES, 'UTF-8') ?>"
                   data-task-active="<?= !empty($taskItem['active']) ? '1' : '0' ?>"
                   data-task-duration="<?= !empty($taskItem['duration']) ? '1' : '0' ?>"
                   data-task-start-date="<?= htmlspecialchars((string)($taskItem['startDate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
@@ -5575,8 +5648,9 @@ $sessionPayload = [
                   data-task-end-time="<?= htmlspecialchars((string)($taskItem['endTime'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                   data-task-score="<?= (int)($taskItem['score'] ?? 0) ?>"
                   data-task-after-end-score="<?= (int)($taskItem['afterEndtimeScore'] ?? 0) ?>"
-                  data-task-status="<?= htmlspecialchars((string)($taskItem['status'] ?? 'inactive'), ENT_QUOTES, 'UTF-8') ?>"
+                  data-task-status="<?= htmlspecialchars($taskStatusToken, ENT_QUOTES, 'UTF-8') ?>"
                   data-task-completed="<?= $isCompleted ? '1' : '0' ?>"
+                  data-task-describe-submitted="<?= $isDescribeSubmitted ? '1' : '0' ?>"
                   data-task-user-score="<?= (int)($taskItem['userScore'] ?? 0) ?>"
                   <?= $disabledAttr ?>
                 >
@@ -6252,6 +6326,15 @@ $sessionPayload = [
           return `تا پایان مهلت طلایی پاسخ به سوال\n${formatFaDuration(diffSeconds, { includeSeconds: true })}`;
         };
 
+        const formatDescribeEditCountdown = (targetDate, targetTime) => {
+          const target = getTehranTargetDate(targetDate, normalizeGoldenEndTime(targetTime));
+          if (!target) {
+            return '';
+          }
+          const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
+          return `تا پایان مهلت ویرایش\n${formatFaDuration(diffSeconds, { includeSeconds: true })}`;
+        };
+
         const canOpenTaskByStatus = (status, taskType) => {
           if (status === 'active') return true;
           if (taskType === 'quiz' && status === 'ended') return true;
@@ -6266,12 +6349,15 @@ $sessionPayload = [
           const completed = String(button.dataset.taskCompleted || '') === '1';
           const taskScore = Number.parseInt(button.dataset.taskUserScore || '0', 10);
           const taskType = String(button.dataset.taskType || 'quiz').trim().toLowerCase() || 'quiz';
+          const describeSubmitted = String(button.dataset.taskDescribeSubmitted || '') === '1';
           const infoEndedNoScore = (taskType === 'info' || taskType === 'describe_photo') && status === 'ended' && !completed;
+          const describeEditableDone = taskType === 'describe_photo' && status === 'active' && describeSubmitted && !completed;
 
           if (completed) {
             button.disabled = true;
             button.classList.remove('is-disabled');
             button.classList.add('is-completed');
+            button.classList.remove('is-describe-submitted');
             button.classList.remove('is-golden');
             button.classList.remove('is-golden-live');
             button.classList.remove('is-info-ended');
@@ -6292,6 +6378,7 @@ $sessionPayload = [
           button.classList.toggle('is-disabled', !available && !isUpcoming);
           button.classList.toggle('is-upcoming', isUpcoming);
           button.classList.remove('is-completed');
+          button.classList.toggle('is-describe-submitted', describeEditableDone);
           button.classList.toggle('is-info-ended', infoEndedNoScore);
           button.classList.toggle('is-golden', status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo'));
           button.classList.toggle('is-golden-live', false);
@@ -6310,6 +6397,16 @@ $sessionPayload = [
                 metaEl.textContent = withScoreHint(countdown || fallbackText, scoreNow);
               } else {
                 metaEl.textContent = withScoreHint(taskStatusLabel(status, false, taskType), scoreNow);
+              }
+            } else if (describeEditableDone) {
+              const endDate = String(button.dataset.taskEndDate || '').trim();
+              const endTime = String(button.dataset.taskEndTime || '').trim();
+              const editCountdown = formatDescribeEditCountdown(endDate, endTime);
+              if (editCountdown) {
+                metaEl.textContent = `تکمیل شده\n${editCountdown}\nامتیاز ماموریت: ${scoreNow}`;
+                metaEl.classList.add('is-multiline');
+              } else {
+                metaEl.textContent = withScoreHint('تکمیل شده | تا پایان مهلت ویرایش', scoreNow);
               }
             } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
@@ -6512,6 +6609,11 @@ $sessionPayload = [
           describePhotoChoices = [];
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
+          if (rewardsViewOpen || rewardsCardsViewOpen) {
+            setTopbarMode('rewards');
+          } else {
+            setTopbarMode('tasks');
+          }
         };
 
         const escapeHtml = (value) => String(value ?? '')
@@ -6696,6 +6798,13 @@ $sessionPayload = [
               photoId: describePhotoSelected.id,
               text: String(describePhotoTextareaEl.value || '')
             });
+            const targetButton = taskButtons.find(
+              (button) => String(button?.dataset?.taskId || '').trim() === String(currentTaskId || '').trim()
+            );
+            if (targetButton) {
+              targetButton.dataset.taskDescribeSubmitted = '1';
+              setTaskButtonState(targetButton, deriveTaskStatusFromButton(targetButton));
+            }
             closeQuizOverlay();
           } catch (error) {
             await openInfoDialog(error?.message || 'ذخیره توضیح تصویر ناموفق بود.', 'خطا');
@@ -6715,6 +6824,7 @@ $sessionPayload = [
           if (bottomCtaEl) bottomCtaEl.classList.add('quiz-hidden');
           if (quizAreaEl) quizAreaEl.classList.add('quiz-hidden');
           if (taskInfoAreaEl) taskInfoAreaEl.classList.remove('quiz-hidden');
+          setTopbarMode('task');
           if (taskInfoTitleEl) {
             taskInfoTitleEl.textContent = String(infoTitle || taskTitle || 'اطلاعات ماموریت').trim() || 'اطلاعات ماموریت';
           }
@@ -6848,9 +6958,9 @@ $sessionPayload = [
         };
 
         const setTopbarMode = (mode) => {
-          const isRewardsMode = mode === 'rewards';
-          if (logoutBtn) logoutBtn.classList.toggle('hidden', isRewardsMode);
-          if (topbarBackBtnEl) topbarBackBtnEl.classList.toggle('hidden', !isRewardsMode);
+          const isBackMode = mode === 'rewards' || mode === 'task';
+          if (logoutBtn) logoutBtn.classList.toggle('hidden', isBackMode);
+          if (topbarBackBtnEl) topbarBackBtnEl.classList.toggle('hidden', !isBackMode);
         };
 
         const setRewardTimeBox = (label, value) => {
@@ -7650,6 +7760,9 @@ $sessionPayload = [
           try {
             const payload = await postJson({ action: 'task_fetch', taskId });
             const progress = payload?.progress || {};
+            const describeSubmitted = Boolean(progress?.describeSubmitted);
+            button.dataset.taskDescribeSubmitted = describeSubmitted ? '1' : '0';
+            setTaskButtonState(button, deriveTaskStatusFromButton(button));
             if (progress?.completed) {
               button.dataset.taskCompleted = '1';
               button.dataset.taskUserScore = String(Number.parseInt(progress?.score ?? 0, 10) || 0);
@@ -7780,6 +7893,10 @@ $sessionPayload = [
             }
             if (rewardsViewOpen) {
               closeRewardsView();
+              return;
+            }
+            if (infoTaskViewOpen) {
+              closeQuizOverlay();
             }
           });
         }

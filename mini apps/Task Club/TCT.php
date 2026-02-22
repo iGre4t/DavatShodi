@@ -14,6 +14,7 @@ const TCT_INFO_SETTINGS_FILE = 'info-task.json';
 const TCT_INFO_SCORES_FILE = 'info-task-scores.json';
 const TCT_DESCRIBE_PHOTO_DIR = 'photos';
 const TCT_DESCRIBE_PHOTO_META_FILE = 'photos.json';
+const TCT_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 
 function tctNormalizeTaskType(string $value): string
 {
@@ -369,6 +370,15 @@ function tctBuildTaskDescribePhotoMetaPath(string $tasksDir, string $tagCode): s
   return $photoDir . DIRECTORY_SEPARATOR . TCT_DESCRIBE_PHOTO_META_FILE;
 }
 
+function tctBuildTaskDescribePhotoArticlesPath(string $tasksDir, string $tagCode): string
+{
+  $photoDir = tctBuildTaskDescribePhotoDirPath($tasksDir, $tagCode);
+  if ($photoDir === '') {
+    return '';
+  }
+  return $photoDir . DIRECTORY_SEPARATOR . TCT_DESCRIBE_PHOTO_ARTICLES_DIR;
+}
+
 function tctProjectRootPath(): string
 {
   static $cached = null;
@@ -578,6 +588,252 @@ function tctSaveTaskDescribePhotos(string $tasksDir, string $tagCode, array $pho
     return false;
   }
   return file_put_contents($metaPath, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tctParseDescribePhotoPicksMap(string $raw): array
+{
+  $entries = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($entries)) {
+    return [];
+  }
+  $map = [];
+  foreach ($entries as $entry) {
+    $token = trim((string)$entry);
+    if ($token === '') {
+      continue;
+    }
+    $parts = explode('::', $token, 3);
+    if (count($parts) !== 3) {
+      continue;
+    }
+    $taskId = trim((string)($parts[0] ?? ''));
+    $photoId = trim((string)($parts[1] ?? ''));
+    $articleFile = basename(trim((string)($parts[2] ?? '')));
+    if ($taskId === '' || $photoId === '' || $articleFile === '') {
+      continue;
+    }
+    if (!isset($map[$taskId]) || !is_array($map[$taskId])) {
+      $map[$taskId] = [];
+    }
+    $map[$taskId][$photoId] = $articleFile;
+  }
+  return $map;
+}
+
+function tctCountWordsInText(string $text): int
+{
+  $trimmed = trim($text);
+  if ($trimmed === '') {
+    return 0;
+  }
+  $matched = preg_match_all('/\S+/u', $trimmed, $parts);
+  if (!is_int($matched) || $matched <= 0) {
+    return 0;
+  }
+  return $matched;
+}
+
+function tctCollectDescribePhotoSubmissionsByWorkId(
+  string $tasksDir,
+  string $tagCode,
+  string $taskId,
+  string $inviteesPath,
+  string $mapPath = ''
+): array {
+  $normalizedTagCode = tctNormalizeTagCode($tagCode);
+  $normalizedTaskId = trim($taskId);
+  if ($normalizedTagCode === '' || $normalizedTaskId === '') {
+    return [];
+  }
+
+  $rows = tctReadCsvRows($inviteesPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return [];
+  }
+  $header = $rows[0];
+  $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $mapPath);
+  $picksIndex = tctFindHeaderIndex($header, 'describe photo picks');
+  if ($workIdIndex < 0 || $picksIndex < 0) {
+    return [];
+  }
+
+  $articlesDirPath = tctBuildTaskDescribePhotoArticlesPath($tasksDir, $normalizedTagCode);
+  if ($articlesDirPath === '' || !is_dir($articlesDirPath)) {
+    return [];
+  }
+
+  $photos = tctLoadTaskDescribePhotos($tasksDir, $normalizedTagCode);
+  $photoById = [];
+  foreach ($photos as $photo) {
+    if (!is_array($photo)) {
+      continue;
+    }
+    $photoId = trim((string)($photo['id'] ?? ''));
+    if ($photoId === '') {
+      continue;
+    }
+    $photoById[$photoId] = $photo;
+  }
+
+  $submissionsByWorkId = [];
+  for ($rowIndex = 1; $rowIndex < count($rows); $rowIndex += 1) {
+    $row = is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $pickMap = tctParseDescribePhotoPicksMap((string)($row[$picksIndex] ?? ''));
+    $taskPicks = is_array($pickMap[$normalizedTaskId] ?? null) ? $pickMap[$normalizedTaskId] : [];
+    if (!$taskPicks) {
+      continue;
+    }
+
+    $submittedItems = [];
+    foreach ($taskPicks as $photoId => $articleFileRaw) {
+      $normalizedPhotoId = trim((string)$photoId);
+      $articleFile = basename(trim((string)$articleFileRaw));
+      if ($normalizedPhotoId === '' || $articleFile === '') {
+        continue;
+      }
+      $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $articleFile;
+      if (!is_file($articlePath)) {
+        continue;
+      }
+      $content = file_get_contents($articlePath);
+      if (!is_string($content)) {
+        continue;
+      }
+      $wordCount = tctCountWordsInText($content);
+      if ($wordCount < 1) {
+        continue;
+      }
+
+      $photoMeta = is_array($photoById[$normalizedPhotoId] ?? null) ? $photoById[$normalizedPhotoId] : [];
+      $photoName = trim((string)($photoMeta['name'] ?? ''));
+      if ($photoName === '') {
+        $photoName = trim((string)pathinfo($articleFile, PATHINFO_FILENAME));
+      }
+      if ($photoName === '') {
+        $photoName = 'Photo';
+      }
+      $submittedItems[] = [
+        'photoId' => $normalizedPhotoId,
+        'photoName' => $photoName,
+        'photoUrl' => trim((string)($photoMeta['url'] ?? '')),
+        'articleFile' => $articleFile,
+        'wordCount' => $wordCount
+      ];
+    }
+
+    if ($submittedItems) {
+      $submissionsByWorkId[$workId] = $submittedItems;
+    }
+  }
+
+  return $submissionsByWorkId;
+}
+
+function tctReadDescribePhotoSubmissionArticle(
+  string $tasksDir,
+  string $tagCode,
+  string $taskId,
+  string $workId,
+  string $photoId,
+  string $inviteesPath,
+  string $mapPath = ''
+): array {
+  $normalizedTagCode = tctNormalizeTagCode($tagCode);
+  $normalizedTaskId = trim($taskId);
+  $normalizedWorkId = trim($workId);
+  $normalizedPhotoId = trim($photoId);
+  if (
+    $normalizedTagCode === '' ||
+    $normalizedTaskId === '' ||
+    $normalizedWorkId === '' ||
+    $normalizedPhotoId === ''
+  ) {
+    return ['ok' => false, 'message' => 'Invalid result payload.'];
+  }
+
+  $rows = tctReadCsvRows($inviteesPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return ['ok' => false, 'message' => 'Invitees mapped file is not available.'];
+  }
+  $header = $rows[0];
+  $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $mapPath);
+  $picksIndex = tctFindHeaderIndex($header, 'describe photo picks');
+  if ($workIdIndex < 0 || $picksIndex < 0) {
+    return ['ok' => false, 'message' => 'Describe Photo picks are not configured.'];
+  }
+
+  $targetRow = null;
+  for ($rowIndex = 1; $rowIndex < count($rows); $rowIndex += 1) {
+    $row = is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [];
+    $rowWorkId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($rowWorkId !== '' && $rowWorkId === $normalizedWorkId) {
+      $targetRow = $row;
+      break;
+    }
+  }
+  if (!is_array($targetRow)) {
+    return ['ok' => false, 'message' => 'Invitee not found.'];
+  }
+
+  $pickMap = tctParseDescribePhotoPicksMap((string)($targetRow[$picksIndex] ?? ''));
+  $taskPicks = is_array($pickMap[$normalizedTaskId] ?? null) ? $pickMap[$normalizedTaskId] : [];
+  $articleFile = basename(trim((string)($taskPicks[$normalizedPhotoId] ?? '')));
+  if ($articleFile === '') {
+    return ['ok' => false, 'message' => 'No result was submitted for this photo.'];
+  }
+
+  $articlesDirPath = tctBuildTaskDescribePhotoArticlesPath($tasksDir, $normalizedTagCode);
+  if ($articlesDirPath === '') {
+    return ['ok' => false, 'message' => 'Invalid article directory.'];
+  }
+  $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $articleFile;
+  if (!is_file($articlePath)) {
+    return ['ok' => false, 'message' => 'Result file not found.'];
+  }
+
+  $content = file_get_contents($articlePath);
+  if (!is_string($content)) {
+    return ['ok' => false, 'message' => 'Failed to read result file.'];
+  }
+  $wordCount = tctCountWordsInText($content);
+  if ($wordCount < 1) {
+    return ['ok' => false, 'message' => 'This result has no saved text.'];
+  }
+
+  $photoMeta = [];
+  foreach (tctLoadTaskDescribePhotos($tasksDir, $normalizedTagCode) as $photo) {
+    if (!is_array($photo)) {
+      continue;
+    }
+    if (trim((string)($photo['id'] ?? '')) === $normalizedPhotoId) {
+      $photoMeta = $photo;
+      break;
+    }
+  }
+
+  $photoName = trim((string)($photoMeta['name'] ?? ''));
+  if ($photoName === '') {
+    $photoName = trim((string)pathinfo($articleFile, PATHINFO_FILENAME));
+  }
+  if ($photoName === '') {
+    $photoName = 'Photo';
+  }
+
+  return [
+    'ok' => true,
+    'result' => [
+      'photoId' => $normalizedPhotoId,
+      'photoName' => $photoName,
+      'photoUrl' => trim((string)($photoMeta['url'] ?? '')),
+      'articleFile' => $articleFile,
+      'wordCount' => $wordCount
+    ],
+    'text' => $content
+  ];
 }
 
 function tctMergeTaskScores(array $tasks, string $tasksDir): array
@@ -1732,14 +1988,91 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
         $infoTaskScoreByWorkId[$workId] = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
       }
     }
-    foreach ($invitees as $index => $invitee) {
-      $workId = trim((string)($invitee['workId'] ?? ''));
-      $invitees[$index]['customScore'] = max(0, min($maxScore, (int)($infoTaskScoreByWorkId[$workId] ?? 0)));
+    $describeSubmissionsByWorkId = [];
+    if ($targetTaskType === 'describe_photo') {
+      $describeSubmissionsByWorkId = tctCollectDescribePhotoSubmissionsByWorkId(
+        $tctTasksDir,
+        $tagCode,
+        $taskId,
+        $tctEventInviteesPath,
+        $tctEventInviteesMapPath
+      );
     }
+    $filteredInvitees = [];
+    foreach ($invitees as $invitee) {
+      $workId = trim((string)($invitee['workId'] ?? ''));
+      $invitee['customScore'] = max(0, min($maxScore, (int)($infoTaskScoreByWorkId[$workId] ?? 0)));
+      if ($targetTaskType === 'describe_photo') {
+        $describeResults = is_array($describeSubmissionsByWorkId[$workId] ?? null)
+          ? $describeSubmissionsByWorkId[$workId]
+          : [];
+        if (!$describeResults) {
+          continue;
+        }
+        $invitee['describeResults'] = array_values($describeResults);
+      }
+      $filteredInvitees[] = $invitee;
+    }
+    $invitees = $filteredInvitees;
     echo json_encode([
       'status' => 'ok',
+      'taskType' => $targetTaskType,
       'maxScore' => $maxScore,
       'invitees' => $invitees
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'get_describe_task_result_text') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $workId = trim((string)($_POST['work_id'] ?? ''));
+    $photoId = trim((string)($_POST['photo_id'] ?? ''));
+    if ($id === '' || $workId === '' || $photoId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid result payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Describe Photo Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $result = tctReadDescribePhotoSubmissionArticle(
+      $tctTasksDir,
+      $tagCode,
+      $id,
+      $workId,
+      $photoId,
+      $tctEventInviteesPath,
+      $tctEventInviteesMapPath
+    );
+    if (!($result['ok'] ?? false)) {
+      echo json_encode(['status' => 'error', 'message' => (string)($result['message'] ?? 'Failed to load result text.')], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'result' => $result['result'] ?? [],
+      'text' => (string)($result['text'] ?? '')
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
