@@ -6456,7 +6456,7 @@ $sessionPayload = [
           return false;
         };
 
-        const setTaskButtonState = (button, status, closestUpcomingTaskId = '') => {
+        const setTaskButtonState = (button, status, closestUpcomingTaskId = '', secondUpcomingTaskId = '') => {
           if (!(button instanceof HTMLButtonElement)) {
             return;
           }
@@ -6511,8 +6511,10 @@ $sessionPayload = [
                   ? `شروع از: ${startDate} ${normalizeUpcomingStartTime(startTime)}`
                   : taskStatusLabel(status, false, taskType);
                 setMetaText(metaEl, withScoreHint(countdown || fallbackText, button, taskType, scoreNow), false);
+              } else if (taskId !== '' && taskId === secondUpcomingTaskId) {
+                setMetaText(metaEl, withScoreHint('به‌زودی', button, taskType, scoreNow), false);
               } else {
-                setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType), button, taskType, scoreNow), false);
+                setMetaText(metaEl, resolveTaskScoreText(button, taskType, scoreNow), false);
               }
             } else if (describeEditableDone) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
@@ -6545,31 +6547,32 @@ $sessionPayload = [
             status: deriveTaskStatusFromButton(button)
           }));
 
-          let closestUpcomingTaskId = '';
-          let closestUpcomingTs = Number.POSITIVE_INFINITY;
-          let firstUpcomingTaskId = '';
-          statusRows.forEach(({ button, status }) => {
+          const upcomingItems = [];
+          statusRows.forEach(({ button, status }, rowIndex) => {
             if (status !== 'upcoming') return;
             const taskId = String(button.dataset.taskId || '').trim();
-            if (firstUpcomingTaskId === '' && taskId !== '') {
-              firstUpcomingTaskId = taskId;
-            }
+            if (!taskId) return;
             const startDate = String(button.dataset.taskStartDate || '').trim();
             const startTime = normalizeUpcomingStartTime(button.dataset.taskStartTime);
             const target = getTehranTargetDate(startDate, startTime);
-            if (!target || !taskId) return;
-            const ts = target.getTime();
-            if (Number.isFinite(ts) && ts < closestUpcomingTs) {
-              closestUpcomingTs = ts;
-              closestUpcomingTaskId = taskId;
-            }
+            const ts = target ? target.getTime() : Number.POSITIVE_INFINITY;
+            upcomingItems.push({
+              taskId,
+              ts: Number.isFinite(ts) ? ts : Number.POSITIVE_INFINITY,
+              rowIndex
+            });
           });
-          if (closestUpcomingTaskId === '' && firstUpcomingTaskId !== '') {
-            closestUpcomingTaskId = firstUpcomingTaskId;
-          }
+          upcomingItems.sort((left, right) => {
+            if (left.ts === right.ts) {
+              return left.rowIndex - right.rowIndex;
+            }
+            return left.ts - right.ts;
+          });
+          const closestUpcomingTaskId = upcomingItems[0]?.taskId || '';
+          const secondUpcomingTaskId = upcomingItems[1]?.taskId || '';
 
           statusRows.forEach(({ button, status }) => {
-            setTaskButtonState(button, status, closestUpcomingTaskId);
+            setTaskButtonState(button, status, closestUpcomingTaskId, secondUpcomingTaskId);
           });
         };
 
