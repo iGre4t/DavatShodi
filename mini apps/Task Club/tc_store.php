@@ -289,6 +289,7 @@ if ($action === 'get_settings') {
   $defaults = [
     'active' => false,
     'duration' => false,
+    'maintenanceMode' => false,
     'startDate' => '',
     'startTime' => '',
     'endDate' => '',
@@ -305,6 +306,7 @@ if ($action === 'get_settings') {
   ];
   $stored = readJsonFile($settingsFile, []);
   $settings = array_merge($defaults, is_array($stored) ? $stored : []);
+  $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
   $storedColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
   $settings['eventLogo'] = trim((string)($settings['eventLogo'] ?? ''));
   $settings['eventColors'] = [
@@ -338,6 +340,7 @@ if ($action === 'save_settings') {
   $settings['hint'] = is_string($settings['hint'] ?? null) ? trim($settings['hint']) : '';
   $settings['hintHtml'] = is_string($settings['hintHtml'] ?? null) ? trim($settings['hintHtml']) : '';
   $settings['hintAlign'] = is_string($settings['hintAlign'] ?? null) ? trim($settings['hintAlign']) : 'right';
+  $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
   $incomingColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
   $settings['eventLogo'] = is_string($settings['eventLogo'] ?? null) ? trim($settings['eventLogo']) : '';
   $settings['eventColors'] = [

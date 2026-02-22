@@ -60,6 +60,13 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </span>
       </label>
+      <label class="switch tc-switch">
+        <span class="switch-label">Maintenance Mode</span>
+        <span class="switch-toggle">
+          <input type="checkbox" id="tc-maintenance-toggle" aria-label="Maintenance Mode" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
+      </label>
     </div>
     <div class="form grid two-column-fields tc-datetime-grid">
       <div class="tc-datetime-title tc-datetime-title--start">Start</div>
@@ -372,7 +379,6 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
 <script src="mini%20apps/Task%20Club/TCSetting.js" defer></script>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCMonitoring.js?v=<?= htmlspecialchars($tcMonitoringJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-
 
 
 

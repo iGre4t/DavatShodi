@@ -21,6 +21,32 @@ if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
   header('Location: ' . $redirectUrl);
   exit;
 }
+
+$tcMaintenanceSettingsPath = __DIR__ . '/Setting.json';
+$tcMaintenanceEnabled = false;
+if (is_file($tcMaintenanceSettingsPath)) {
+  $tcMaintenanceRaw = file_get_contents($tcMaintenanceSettingsPath);
+  $tcMaintenanceDecoded = is_string($tcMaintenanceRaw) ? json_decode($tcMaintenanceRaw, true) : null;
+  if (is_array($tcMaintenanceDecoded)) {
+    $tcMaintenanceEnabled = (bool)($tcMaintenanceDecoded['maintenanceMode'] ?? false);
+  }
+}
+$tcPanelSessionBypass = !empty($_SESSION['authenticated']) && is_array($_SESSION['user'] ?? null);
+if ($tcMaintenanceEnabled && !$tcPanelSessionBypass) {
+  $maintenanceUrl = 'TCM-maintenance.php';
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode([
+      'status' => 'maintenance',
+      'message' => 'سامانه در حال تعمیر است.',
+      'redirect' => $maintenanceUrl
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  header('Location: ' . $maintenanceUrl);
+  exit;
+}
+
 const SETTINGS_STORE_PATH = __DIR__ . '/../../data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'siteIcon' => ''
@@ -2447,6 +2473,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'data' => [
         'active' => (bool)($settings['active'] ?? false),
         'duration' => (bool)($settings['duration'] ?? false),
+        'maintenanceMode' => (bool)($settings['maintenanceMode'] ?? false),
         'startDate' => trim((string)($settings['startDate'] ?? '')),
         'startTime' => trim((string)($settings['startTime'] ?? '')),
         'endDate' => trim((string)($settings['endDate'] ?? '')),

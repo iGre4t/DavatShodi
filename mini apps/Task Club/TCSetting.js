@@ -250,6 +250,7 @@
   function applySettings(settings) {
     const activeToggle = getEl("tc-active-toggle");
     const durationToggle = getEl("tc-duration-toggle");
+    const maintenanceToggle = getEl("tc-maintenance-toggle");
     const startDate = getEl("tc-duration-start");
     const startTime = getEl("tc-duration-start-time");
     const endDate = getEl("tc-duration-end");
@@ -258,6 +259,7 @@
     Object.assign(settingsCache, settings);
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
+    if (maintenanceToggle) maintenanceToggle.checked = Boolean(settings.maintenanceMode);
     if (startDate && typeof settings.startDate === "string") startDate.value = settings.startDate;
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
@@ -268,6 +270,7 @@
   function collectSettings() {
     const activeToggle = getEl("tc-active-toggle");
     const durationToggle = getEl("tc-duration-toggle");
+    const maintenanceToggle = getEl("tc-maintenance-toggle");
     const startDate = getEl("tc-duration-start");
     const startTime = getEl("tc-duration-start-time");
     const endDate = getEl("tc-duration-end");
@@ -276,6 +279,7 @@
     return {
       active: Boolean(activeToggle?.checked),
       duration: Boolean(durationToggle?.checked),
+      maintenanceMode: Boolean(maintenanceToggle?.checked),
       startDate: startDate?.value ?? "",
       startTime: startTime?.value ?? "",
       endDate: endDate?.value ?? "",
