@@ -5951,6 +5951,7 @@ $sessionPayload = [
       const createRuntimeLoader = (primaryText, secondaryText = '') => {
         const overlay = document.createElement('div');
         overlay.className = 'loader-overlay';
+        overlay.dataset.runtimeLoader = '1';
         overlay.setAttribute('role', 'status');
         overlay.setAttribute('aria-live', 'polite');
         overlay.innerHTML = [
@@ -5968,6 +5969,86 @@ $sessionPayload = [
         overlay.querySelector('.loader-text').textContent = String(primaryText || '').trim() || 'در حال پردازش';
         overlay.querySelector('.loader-subtext').textContent = String(secondaryText || '').trim();
         document.body.appendChild(overlay);
+        return overlay;
+      };
+      const TRANSITION_LOADER_DELAY_MS = 180;
+      const TRANSITION_LOADER_MIN_VISIBLE_MS = 280;
+      let transitionLoaderDepth = 0;
+      let transitionLoaderEl = null;
+      let transitionLoaderVisibleSince = 0;
+
+      const waitForNextPaint = () => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      });
+
+      const setLoaderText = (overlay, primaryText, secondaryText = '') => {
+        if (!(overlay instanceof HTMLElement)) return;
+        const loaderTextEl = overlay.querySelector('.loader-text');
+        const loaderSubtextEl = overlay.querySelector('.loader-subtext');
+        if (loaderTextEl) loaderTextEl.textContent = String(primaryText || '').trim() || 'در حال پردازش';
+        if (loaderSubtextEl) loaderSubtextEl.textContent = String(secondaryText || '').trim();
+      };
+
+      const ensureTransitionLoader = (primaryText, secondaryText = '') => {
+        if (!(transitionLoaderEl instanceof HTMLElement) || !transitionLoaderEl.isConnected) {
+          transitionLoaderEl = createRuntimeLoader(primaryText, secondaryText);
+        } else {
+          setLoaderText(transitionLoaderEl, primaryText, secondaryText);
+          transitionLoaderEl.classList.remove('loader-hidden');
+        }
+        transitionLoaderVisibleSince = performance.now();
+      };
+
+      const removeTransitionLoader = () => {
+        if (!(transitionLoaderEl instanceof HTMLElement)) return;
+        const target = transitionLoaderEl;
+        transitionLoaderEl = null;
+        transitionLoaderVisibleSince = 0;
+        target.remove();
+      };
+
+      const withTransitionLoader = async (work, {
+        primaryText = 'در حال آماده‌سازی',
+        secondaryText = 'لطفا چند لحظه صبر کنید',
+        delayMs = TRANSITION_LOADER_DELAY_MS,
+        minVisibleMs = TRANSITION_LOADER_MIN_VISIBLE_MS,
+        waitForPaint = true
+      } = {}) => {
+        const task = typeof work === 'function' ? work : async () => undefined;
+        transitionLoaderDepth += 1;
+        let shown = false;
+        const safeDelay = Math.max(0, Number(delayMs) || 0);
+        const showTimer = setTimeout(() => {
+          shown = true;
+          ensureTransitionLoader(primaryText, secondaryText);
+        }, safeDelay);
+
+        try {
+          const result = await task();
+          if (waitForPaint) {
+            await waitForNextPaint();
+          }
+          return result;
+        } finally {
+          clearTimeout(showTimer);
+          transitionLoaderDepth = Math.max(0, transitionLoaderDepth - 1);
+
+          if (!shown) {
+            if (transitionLoaderDepth === 0) {
+              removeTransitionLoader();
+            }
+            return;
+          }
+
+          const elapsed = Math.max(0, performance.now() - transitionLoaderVisibleSince);
+          const safeMinVisible = Math.max(0, Number(minVisibleMs) || 0);
+          if (elapsed < safeMinVisible) {
+            await new Promise((resolve) => setTimeout(resolve, safeMinVisible - elapsed));
+          }
+          if (transitionLoaderDepth === 0) {
+            removeTransitionLoader();
+          }
+        }
       };
       const performLogout = async ({ loaderText = '', loaderSubtext = '' } = {}) => {
         if (loaderText) {
@@ -7563,6 +7644,7 @@ $sessionPayload = [
         };
 
         const openInfoDialog = (message, title = 'پیام') => new Promise((resolve) => {
+          removeTransitionLoader();
           if (!(infoDialogEl instanceof HTMLElement) || !(infoDialogTitleEl instanceof HTMLElement) || !(infoDialogMessageEl instanceof HTMLElement) || !(infoDialogConfirmEl instanceof HTMLElement)) {
             resolve();
             return;
@@ -8133,8 +8215,14 @@ $sessionPayload = [
                 closeQuizOverlay();
                 return;
               }
-              renderDescribePhotoChoice();
-              setInfoTaskStep('photo');
+              await withTransitionLoader(async () => {
+                renderDescribePhotoChoice();
+                setInfoTaskStep('photo');
+              }, {
+                primaryText: 'در حال آماده‌سازی مرحله بعد',
+                secondaryText: 'در حال بارگذاری تصاویر ماموریت',
+                delayMs: 120
+              });
               return;
             }
             closeQuizOverlay();
@@ -8151,7 +8239,14 @@ $sessionPayload = [
 
         if (describePhotoSelectBtnEl) {
           describePhotoSelectBtnEl.addEventListener('click', () => {
-            void openDescribePhotoEditor();
+            void withTransitionLoader(
+              () => openDescribePhotoEditor(),
+              {
+                primaryText: 'در حال آماده‌سازی ویرایش تصویر',
+                secondaryText: 'در حال دریافت محتوای ذخیره‌شده',
+                delayMs: 120
+              }
+            );
           });
         }
 
@@ -8163,13 +8258,27 @@ $sessionPayload = [
 
         if (describePhotoSaveBtnEl) {
           describePhotoSaveBtnEl.addEventListener('click', () => {
-            void saveDescribePhotoEditor();
+            void withTransitionLoader(
+              () => saveDescribePhotoEditor(),
+              {
+                primaryText: 'در حال ذخیره پاسخ',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 120
+              }
+            );
           });
         }
 
         if (openRewardsBtnEl) {
           openRewardsBtnEl.addEventListener('click', () => {
-            void openRewardsView();
+            void withTransitionLoader(
+              () => openRewardsView(),
+              {
+                primaryText: 'در حال آماده‌سازی بخش جوایز',
+                secondaryText: 'در حال بارگذاری اطلاعات جوایز',
+                delayMs: 120
+              }
+            );
           });
         }
 
@@ -8210,7 +8319,14 @@ $sessionPayload = [
             if (!(button instanceof HTMLButtonElement) || button.disabled) return;
             const levelId = String(button.dataset.levelId || '').trim();
             if (!levelId) return;
-            void openRewardCardsSlide(levelId);
+            void withTransitionLoader(
+              () => openRewardCardsSlide(levelId),
+              {
+                primaryText: 'در حال آماده‌سازی کارت‌ها',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 120
+              }
+            );
           });
         }
 
@@ -8229,7 +8345,14 @@ $sessionPayload = [
             if (button.disabled) {
               return;
             }
-            void startTaskQuiz(button);
+            void withTransitionLoader(
+              () => startTaskQuiz(button),
+              {
+                primaryText: 'در حال آماده‌سازی ماموریت',
+                secondaryText: 'در حال بارگذاری محتوای ماموریت',
+                delayMs: 120
+              }
+            );
           });
         });
 
