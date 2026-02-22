@@ -18,7 +18,15 @@
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
+    if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
+      return 'describe_photo';
+    }
     return 'quiz';
+  }
+
+  function isInfoLikeTaskType(taskType) {
+    const type = normalizeTaskType(taskType);
+    return type === 'info' || type === 'describe_photo';
   }
 
   function normalizeBool(value) {
@@ -598,7 +606,7 @@
   function collectTaskScoreFromPane(pane) {
     const controls = getTaskScoreControls(pane);
     if (!controls) return null;
-    const isInfoTask = controls.taskType === 'info';
+    const isInfoTask = isInfoLikeTaskType(controls.taskType);
     return {
       score: String(normalizeScoreValue(controls.scoreInput.value)),
       after_endtime_score: isInfoTask ? '0' : String(normalizeScoreValue(controls.afterEndtimeScoreInput?.value))
@@ -660,8 +668,9 @@
 
   function buildTaskControlCardMarkup(task) {
     const titleText = task.title || task.tagCode;
-    const isInfoTask = task.taskType === 'info';
-    const typeLabel = isInfoTask ? 'Info Task' : 'Quiz Task';
+    const isInfoTask = isInfoLikeTaskType(task.taskType);
+    const taskTypeToken = normalizeTaskType(task.taskType);
+    const typeLabel = taskTypeToken === 'describe_photo' ? 'Describe Photo Task' : (isInfoTask ? 'Info Task' : 'Quiz Task');
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
@@ -1041,7 +1050,7 @@
         if (!sectionKey) return;
         event.preventDefault();
         activateTaskTopPane(pane, sectionKey);
-        if (sectionKey === 'invitees-rate' && normalizeTaskType(pane.dataset.taskType || 'quiz') === 'info') {
+        if (sectionKey === 'invitees-rate' && isInfoLikeTaskType(pane.dataset.taskType || 'quiz')) {
           void loadInfoRateDataIntoPane(pane);
         }
         return;

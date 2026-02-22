@@ -780,6 +780,9 @@ function normalizeTaskTypeValue($value): string
   if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
     return 'info';
   }
+  if ($token === 'describe_photo' || $token === 'describe-photo' || $token === 'describe photo' || $token === 'describe-photo-task' || $token === 'describe photo task') {
+    return 'describe_photo';
+  }
   return 'quiz';
 }
 
@@ -1244,8 +1247,9 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
 
   $taskCompletedIndex = (int)($columns['task completed ids'] ?? -1);
   $taskScoreMapIndex = (int)($columns['task score map'] ?? -1);
-  $infoTasksIndex = (int)($columns['info tasks'] ?? -1);
   $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+  $taskScoreColumn = $taskType === 'describe_photo' ? 'describe photo task' : 'info tasks';
+  $infoTasksIndex = (int)($columns[$taskScoreColumn] ?? -1);
   $completedIds = [];
   if ($taskCompletedIndex >= 0) {
     $completedIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
@@ -1256,7 +1260,7 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
   }
   $taskScore = 0;
-  if ($taskType === 'info') {
+  if ($taskType === 'info' || $taskType === 'describe_photo') {
     $infoMap = $infoTasksIndex >= 0
       ? parseInfoTasksScoreMap((string)($rows[$rowIndex][$infoTasksIndex] ?? ''))
       : [];
@@ -1266,7 +1270,7 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     }
   }
   if ($isCompleted) {
-    if ($taskType === 'info') {
+    if ($taskType === 'info' || $taskType === 'describe_photo') {
       $taskScore = max(0, $taskScore);
     } elseif (isset($taskScoreMap[$taskId])) {
       $taskScore = max(0, (int)$taskScoreMap[$taskId]);
@@ -1596,6 +1600,7 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'task completed ids',
     'task score map',
     'info tasks',
+    'describe photo task',
     'Card Flips Count',
     'Each Level Won Prize',
     'Total Prize Won',
@@ -5457,7 +5462,7 @@ $sessionPayload = [
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
           if (completed) return 'تکمیل شده';
           if (status === 'active') {
-            return (taskType === 'quiz' || taskType === 'info') ? 'مهلت طلایی' : 'فعال';
+            return (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
           }
           if (status === 'upcoming') return 'به‌زودی';
           if (status === 'ended') {
@@ -5578,7 +5583,7 @@ $sessionPayload = [
           const completed = String(button.dataset.taskCompleted || '') === '1';
           const taskScore = Number.parseInt(button.dataset.taskUserScore || '0', 10);
           const taskType = String(button.dataset.taskType || 'quiz').trim().toLowerCase() || 'quiz';
-          const infoEndedNoScore = taskType === 'info' && status === 'ended' && !completed;
+          const infoEndedNoScore = (taskType === 'info' || taskType === 'describe_photo') && status === 'ended' && !completed;
 
           if (completed) {
             button.disabled = true;
@@ -5605,7 +5610,7 @@ $sessionPayload = [
           button.classList.toggle('is-upcoming', isUpcoming);
           button.classList.remove('is-completed');
           button.classList.toggle('is-info-ended', infoEndedNoScore);
-          button.classList.toggle('is-golden', status === 'active' && (taskType === 'quiz' || taskType === 'info'));
+          button.classList.toggle('is-golden', status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo'));
           button.classList.toggle('is-golden-live', false);
           button.dataset.taskStatus = status;
           if (metaEl) {
@@ -5623,7 +5628,7 @@ $sessionPayload = [
               } else {
                 metaEl.textContent = withScoreHint(taskStatusLabel(status, false, taskType), scoreNow);
               }
-            } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info')) {
+            } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
@@ -6774,7 +6779,7 @@ $sessionPayload = [
             }
 
             const fetchedTaskType = String(payload?.task?.taskType || button?.dataset?.taskType || 'quiz').trim().toLowerCase();
-            if (fetchedTaskType === 'info') {
+            if (fetchedTaskType === 'info' || fetchedTaskType === 'describe_photo') {
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
               openInfoTaskView(
