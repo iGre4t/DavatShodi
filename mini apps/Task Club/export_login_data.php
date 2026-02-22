@@ -107,6 +107,18 @@ $workIdIndex = tcExportResolveMappedIndex(
   'workId',
   ['Work ID', 'work id', 'workid', 'username', 'user name', 'نام کاربری', 'کد پرسنلی']
 );
+$firstNameIndex = tcExportResolveMappedIndex(
+  $header,
+  $mapping,
+  'firstName',
+  ['First Name', 'first name', 'firstname', 'name', 'نام']
+);
+$lastNameIndex = tcExportResolveMappedIndex(
+  $header,
+  $mapping,
+  'lastName',
+  ['Last Name', 'last name', 'lastname', 'family', 'surname', 'نام خانوادگی']
+);
 $nationalIdIndex = tcExportResolveMappedIndex(
   $header,
   $mapping,
@@ -132,13 +144,15 @@ $exportRows = [];
 for ($i = 1; $i < count($rows); $i += 1) {
   $row = is_array($rows[$i]) ? $rows[$i] : [];
   $workId = tcExportCellValue($row, $workIdIndex);
+  $firstName = tcExportCellValue($row, $firstNameIndex);
+  $lastName = tcExportCellValue($row, $lastNameIndex);
   $password = tcExportCellValue($row, $passwordIndex);
   $phone = tcExportCellValue($row, $phoneIndex);
   $nationalId = tcExportCellValue($row, $nationalIdIndex);
-  if ($workId === '' && $password === '' && $phone === '' && $nationalId === '') {
+  if ($workId === '' && $firstName === '' && $lastName === '' && $password === '' && $phone === '' && $nationalId === '') {
     continue;
   }
-  $exportRows[] = [$workId, $password, $phone, $nationalId];
+  $exportRows[] = [$workId, $firstName, $lastName, $password, $phone, $nationalId];
 }
 
 $filename = 'tc-login-data-' . date('Ymd-His') . '.xls';
@@ -168,6 +182,8 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
   <Table>
    <Row ss:StyleID="sHeader">
     <Cell><Data ss:Type="String">نام کاربری</Data></Cell>
+    <Cell><Data ss:Type="String">نام</Data></Cell>
+    <Cell><Data ss:Type="String">نام خانوادگی</Data></Cell>
     <Cell><Data ss:Type="String">رمز عبور</Data></Cell>
     <Cell><Data ss:Type="String">شماره موبایل</Data></Cell>
     <Cell><Data ss:Type="String">کد ملی</Data></Cell>
@@ -178,6 +194,8 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
     <Cell><Data ss:Type="String"><?= tcExportXmlEscape((string)$dataRow[1]) ?></Data></Cell>
     <Cell><Data ss:Type="String"><?= tcExportXmlEscape((string)$dataRow[2]) ?></Data></Cell>
     <Cell><Data ss:Type="String"><?= tcExportXmlEscape((string)$dataRow[3]) ?></Data></Cell>
+    <Cell><Data ss:Type="String"><?= tcExportXmlEscape((string)$dataRow[4]) ?></Data></Cell>
+    <Cell><Data ss:Type="String"><?= tcExportXmlEscape((string)$dataRow[5]) ?></Data></Cell>
    </Row>
 <?php endforeach; ?>
   </Table>
