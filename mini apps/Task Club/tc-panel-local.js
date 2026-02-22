@@ -1,5 +1,9 @@
 (() => {
   const TASKS_ENDPOINT = 'mini%20apps/Task%20Club/TCT.php';
+  const tcShellEl = document.querySelector('.tc-shell');
+  const TASK_CLUB_CSRF = tcShellEl instanceof HTMLElement
+    ? String(tcShellEl.dataset.tcCsrf || '').trim()
+    : '';
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -1478,6 +1482,9 @@
   async function postTaskAction(action, payload = {}) {
     const formData = new FormData();
     formData.append('tct_action', action);
+    if (TASK_CLUB_CSRF !== '') {
+      formData.append('csrf', TASK_CLUB_CSRF);
+    }
     Object.entries(payload).forEach(([key, value]) => {
       formData.append(key, String(value ?? ''));
     });

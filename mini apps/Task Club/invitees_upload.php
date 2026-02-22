@@ -1,9 +1,28 @@
 <?php
+declare(strict_types=1);
+
 header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/tc-security.php';
+requireTabPermissionFromSession('task-club', true);
+tcSecurityGetCsrfToken();
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+  http_response_code(405);
+  echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+  exit;
+}
 
 $input = json_decode(file_get_contents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+  exit;
+}
+
+$csrfToken = tcSecurityReadCsrfFromRequest($input, 'csrf');
+if (!tcSecurityIsValidCsrfToken($csrfToken)) {
+  http_response_code(403);
+  echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.']);
   exit;
 }
 

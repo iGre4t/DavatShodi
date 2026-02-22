@@ -1,4 +1,11 @@
 <?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/tc-security.php';
+requireTabPermissionFromSession('task-club', true);
+tcSecurityGetCsrfToken();
+
 header('Content-Type: application/json; charset=utf-8');
 
 $baseDir = __DIR__;
@@ -76,6 +83,16 @@ function normalizeHexColor($value, $fallback = '') {
   return '';
 }
 
+function requireTcStoreCsrf(?array $payload = null): void
+{
+  $csrfToken = tcSecurityReadCsrfFromRequest($payload, 'csrf');
+  if (!tcSecurityIsValidCsrfToken($csrfToken)) {
+    http_response_code(403);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.']);
+    exit;
+  }
+}
+
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 if ($action === 'get_prizes') {
@@ -85,7 +102,17 @@ if ($action === 'get_prizes') {
 }
 
 if ($action === 'save_prizes') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
   $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
   $prizes = $payload['prizes'] ?? [];
   if (!is_array($prizes)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid prizes.']);
@@ -186,7 +213,17 @@ if ($action === 'get_prize_levels') {
 }
 
 if ($action === 'save_prize_levels') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
   $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
   $levels = $payload['levels'] ?? [];
   if (!is_array($levels)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid levels.']);
@@ -280,7 +317,17 @@ if ($action === 'get_settings') {
 }
 
 if ($action === 'save_settings') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
   $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
   $incomingSettings = $payload['settings'] ?? [];
   if (!is_array($incomingSettings)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid settings.']);

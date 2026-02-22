@@ -4,6 +4,10 @@
   }
 
   const API_URL = "mini%20apps/Task%20Club/tc_store.php";
+  const tcShellEl = document.querySelector(".tc-shell");
+  const csrfToken = tcShellEl instanceof HTMLElement
+    ? String(tcShellEl.dataset.tcCsrf || "").trim()
+    : "";
 
   async function loadSettings() {
     try {
@@ -22,7 +26,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ settings })
+        body: JSON.stringify({ settings, csrf: csrfToken })
       });
     } catch {}
   }

@@ -1,4 +1,9 @@
 <?php
+require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/tc-security.php';
+requireTabPermissionFromSession('task-club', false);
+$tcInviteesCsrfToken = tcSecurityGetCsrfToken();
+
 $baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';
 $mappedFile = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $mapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Mapped.json';
@@ -219,6 +224,7 @@ if ($rows) {
 <script src="mini%20apps/Task%20Club/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
+  const csrfToken = <?= json_encode($tcInviteesCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const pickBtn = document.getElementById('tc-invite-pick');
   const fileInput = document.getElementById('tc-invite-file');
   const fileNameEl = document.getElementById('tc-invite-file-name');
@@ -384,6 +390,7 @@ if ($rows) {
     const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
 
     const payload = {
+      csrf: csrfToken,
       csv,
       mapping: {
         workId: workIdx,

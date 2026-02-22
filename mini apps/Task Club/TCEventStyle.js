@@ -1,5 +1,9 @@
 (() => {
   const API_URL = 'mini%20apps/Task%20Club/tc_store.php';
+  const tcShellEl = document.querySelector('.tc-shell');
+  const csrfToken = tcShellEl instanceof HTMLElement
+    ? String(tcShellEl.dataset.tcCsrf || '').trim()
+    : '';
 
   const DEFAULT_COLORS = {
     secondary: '#2F8FFF',
@@ -137,7 +141,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ settings: mergedSettings })
+      body: JSON.stringify({ settings: mergedSettings, csrf: csrfToken })
     });
     const payload = await response.json();
     if (!response.ok || payload?.status !== 'ok') {

@@ -1,6 +1,10 @@
 (() => {
   const API_URL = "mini%20apps/Task%20Club/tc_store.php";
   const TC_PRIZE_STATUS_INTERVAL_KEY = "__tcPrizeStatusInterval";
+  const tcShellEl = document.querySelector(".tc-shell");
+  const csrfToken = tcShellEl instanceof HTMLElement
+    ? String(tcShellEl.dataset.tcCsrf || "").trim()
+    : "";
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -94,7 +98,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ prizes })
+        body: JSON.stringify({ prizes, csrf: csrfToken })
       });
     } catch {}
   }
@@ -130,7 +134,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ levels })
+        body: JSON.stringify({ levels, csrf: csrfToken })
       });
       const payload = await response.json();
       return response.ok && payload?.status === "ok";
@@ -318,9 +322,13 @@
 
     async function refreshStatus() {
       try {
-        const response = await fetch("mini%20apps/Task%20Club/TC%20Prizes.json", { cache: "no-store" });
-        const payload = await response.json();
-        if (!Array.isArray(payload)) {
+        const response = await fetch(`${API_URL}?action=get_prizes`, {
+          cache: "no-store",
+          credentials: "same-origin"
+        });
+        const result = await response.json();
+        const payload = result?.status === "ok" && Array.isArray(result.data) ? result.data : [];
+        if (!Array.isArray(payload) || !payload.length) {
           return;
         }
         const byName = new Map();

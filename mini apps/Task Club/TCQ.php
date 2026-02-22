@@ -2,8 +2,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/tc-security.php';
 $tcqIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tcq_action']);
 requireTabPermissionFromSession('task-club', $tcqIsJsonRequest);
+$tcqCsrfToken = tcSecurityGetCsrfToken();
 
 $tcqStorePath = __DIR__ . '/TCQ list.json';
 $tcqInviteesCsvPath = __DIR__ . '/TC Event/Invitees mapped.csv';
@@ -501,6 +503,12 @@ if ($tcqTaskLookupFailed) {
 }
 
 if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['tcq_action']))) {
+  $csrfToken = tcSecurityReadCsrfFromRequest($_POST, 'csrf');
+  if (!tcSecurityIsValidCsrfToken($csrfToken)) {
+    http_response_code(403);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   header('Content-Type: application/json; charset=utf-8');
   $action = trim((string)($_POST['tcq_action'] ?? ''));
 
@@ -732,6 +740,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     $tcqEndpointBase . ($tcqTaskId !== '' ? ('?task_id=' . rawurlencode($tcqTaskId)) : ''),
     JSON_UNESCAPED_UNICODE
   ); ?>;
+  const csrfToken = <?= json_encode($tcqCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const form = document.getElementById('tcq-form');
   const input = document.getElementById('tcq-question-input');
   const body = document.getElementById('tcq-list-body');
@@ -890,6 +899,9 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const postAction = async (action, payload = {}) => {
     const formData = new FormData();
     formData.append('tcq_action', action);
+    if (csrfToken) {
+      formData.append('csrf', csrfToken);
+    }
     Object.entries(payload).forEach(([key, value]) => {
       formData.append(key, String(value ?? ''));
     });

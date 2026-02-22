@@ -2,8 +2,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/tc-security.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
 requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
+$tctCsrfToken = tcSecurityGetCsrfToken();
 
 $tctTasksDir = __DIR__ . '/tasks';
 $tctStorePath = $tctTasksDir . '/tasks.js';
@@ -1442,6 +1444,12 @@ if (!defined('TCT_INCLUDE_ONLY')) {
 
 if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action'])) {
   header('Content-Type: application/json; charset=utf-8');
+  $csrfToken = tcSecurityReadCsrfFromRequest($_POST, 'csrf');
+  if (!tcSecurityIsValidCsrfToken($csrfToken)) {
+    http_response_code(403);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
 
   if (!tctEnsureTasksStorage($tctTasksDir, $tctStorePath)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to prepare task storage.'], JSON_UNESCAPED_UNICODE);
@@ -2307,6 +2315,7 @@ if (TCT_INCLUDE_ONLY) {
 <script>
 (() => {
   const endpoint = 'mini%20apps/Task%20Club/TCT.php';
+  const csrfToken = <?= json_encode($tctCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const form = document.getElementById('tct-form');
   const titleInput = document.getElementById('tct-title');
   const taskTypeInput = document.getElementById('tct-task-type');
@@ -2455,6 +2464,9 @@ if (TCT_INCLUDE_ONLY) {
   const postAction = async (action, payload = {}) => {
     const formData = new FormData();
     formData.append('tct_action', action);
+    if (csrfToken) {
+      formData.append('csrf', csrfToken);
+    }
     Object.entries(payload).forEach(([key, value]) => {
       formData.append(key, String(value ?? ''));
     });

@@ -2287,24 +2287,40 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   if ($action === 'login') {
     $tcqSettings = loadWfqSettings($tcqSettingsPath);
     $maxAttempts = 5;
+    $maxAttemptsPerIp = 30;
     $windowSeconds = 10 * 60;
     $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
     $username = trim((string)($payload['username'] ?? ''));
     $password = trim((string)($payload['password'] ?? ''));
     $attemptKey = $ip . '|' . $username;
+    $ipAttemptKey = '__ip__' . $ip;
     $attempts = readLoginAttempts($loginAttemptsPath);
     $now = time();
+    $collectRecentFails = static function ($rawFails) use ($now, $windowSeconds): array {
+      if (!is_array($rawFails)) {
+        return [];
+      }
+      return array_values(array_filter($rawFails, static function ($ts) use ($now, $windowSeconds) {
+        return is_numeric($ts) && ($now - (int)$ts) <= $windowSeconds;
+      }));
+    };
     $entry = is_array($attempts[$attemptKey] ?? null) ? $attempts[$attemptKey] : ['fails' => []];
-    $fails = array_values(array_filter($entry['fails'] ?? [], function ($ts) use ($now, $windowSeconds) {
-      return is_numeric($ts) && ($now - (int)$ts) <= $windowSeconds;
-    }));
+    $fails = $collectRecentFails($entry['fails'] ?? []);
+    $ipEntry = is_array($attempts[$ipAttemptKey] ?? null) ? $attempts[$ipAttemptKey] : ['fails' => []];
+    $ipFails = $collectRecentFails($ipEntry['fails'] ?? []);
+    if (count($ipFails) >= $maxAttemptsPerIp) {
+      echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts from this IP. Please try again later.']);
+      exit;
+    }
     if (count($fails) >= $maxAttempts) {
       echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts. Please try again later.']);
       exit;
     }
-    $recordFail = function () use (&$attempts, $attemptKey, $now, &$fails, $loginAttemptsPath) {
+    $recordFail = function () use (&$attempts, $attemptKey, $ipAttemptKey, $now, &$fails, &$ipFails, $loginAttemptsPath) {
       $fails[] = $now;
+      $ipFails[] = $now;
       $attempts[$attemptKey] = ['fails' => $fails];
+      $attempts[$ipAttemptKey] = ['fails' => $ipFails];
       writeLoginAttempts($loginAttemptsPath, $attempts);
     };
     if ($username === '' || $password === '') {
@@ -2362,8 +2378,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ذخیره اطلاعات ورود ناموفق بود.']);
       exit;
     }
+    $attemptsUpdated = false;
     if (isset($attempts[$attemptKey])) {
       unset($attempts[$attemptKey]);
+      $attemptsUpdated = true;
+    }
+    if (isset($attempts[$ipAttemptKey])) {
+      $attempts[$ipAttemptKey] = ['fails' => $ipFails];
+      if (!$ipFails) {
+        unset($attempts[$ipAttemptKey]);
+      }
+      $attemptsUpdated = true;
+    }
+    if ($attemptsUpdated) {
       writeLoginAttempts($loginAttemptsPath, $attempts);
     }
     $_SESSION['tc_authed'] = true;
@@ -2404,6 +2431,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     session_unset();
     session_destroy();
     echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
+  if ($action === 'settings_get') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
+      exit;
+    }
+    $settings = loadJsonPayload(__DIR__ . '/Setting.json');
+    $eventColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
+    echo json_encode([
+      'status' => 'ok',
+      'data' => [
+        'active' => (bool)($settings['active'] ?? false),
+        'duration' => (bool)($settings['duration'] ?? false),
+        'startDate' => trim((string)($settings['startDate'] ?? '')),
+        'startTime' => trim((string)($settings['startTime'] ?? '')),
+        'endDate' => trim((string)($settings['endDate'] ?? '')),
+        'endTime' => trim((string)($settings['endTime'] ?? '')),
+        'eventLogo' => trim((string)($settings['eventLogo'] ?? '')),
+        'eventColors' => [
+          'secondary' => trim((string)($eventColors['secondary'] ?? '')),
+          'highlight' => trim((string)($eventColors['highlight'] ?? '')),
+          'accentSoft' => trim((string)($eventColors['accentSoft'] ?? ''))
+        ]
+      ]
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -6221,8 +6276,7 @@ $sessionPayload = [
 
         const loadWheelSettings = async () => {
           try {
-            const response = await fetch('tc_store.php?action=get_settings', { cache: 'no-store' });
-            const payload = await response.json();
+            const payload = await postJson({ action: 'settings_get' });
             if (payload?.status === 'ok' && payload.data && typeof payload.data === 'object') {
               return payload.data;
             }
@@ -7497,18 +7551,25 @@ $sessionPayload = [
               stateClass = 'reached';
               stateText = 'رسیده‌اید';
             }
+            const safeStateClass = ['locked', 'won', 'can-flip', 'reached'].includes(stateClass)
+              ? stateClass
+              : 'locked';
             const pointsNeedText = (level?.won || (isOutOfValue && reached))
               ? `امتیاز جمع‌آوری‌شده برای این سطح: ${formatRewardNumber(target)}`
               : reached
                 ? 'امتیاز مورد نظر کسب شد'
                 : `امتیاز موردنیاز: ${formatRewardNumber(left)}`;
+            const safeLevelId = escapeHtml(levelId);
+            const safeLevelName = escapeHtml(levelName);
+            const safePointsNeedText = escapeHtml(pointsNeedText);
+            const safeStateText = escapeHtml(stateText);
             return `<div class="${rowClasses.join(' ')}">
               <span class="roadmap-node" aria-hidden="true"></span>
-              <button class="roadmap-level-btn" type="button" data-level-id="${levelId}" ${isClickable ? '' : 'disabled'}>
+              <button class="roadmap-level-btn" type="button" data-level-id="${safeLevelId}" ${isClickable ? '' : 'disabled'}>
               <div class="roadmap-content">
-                <div class="roadmap-level-name">${levelName}</div>
-                <div class="roadmap-left">${pointsNeedText}</div>
-                <div class="roadmap-state ${stateClass}">${stateText}</div>
+                <div class="roadmap-level-name">${safeLevelName}</div>
+                <div class="roadmap-left">${safePointsNeedText}</div>
+                <div class="roadmap-state ${safeStateClass}">${safeStateText}</div>
               </div>
               </button>
             </div>`;
