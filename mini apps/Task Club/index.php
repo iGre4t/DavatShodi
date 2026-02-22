@@ -384,7 +384,7 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
         <?php if ($siteIconUrl !== ''): ?>
           <img class="brand-icon" src="<?= htmlspecialchars($siteIconUrl, ENT_QUOTES, 'UTF-8') ?>" alt="آیکن سایت" />
         <?php endif; ?>
-        <p class="brand">شرکت ارتباطات سیار ایران</p>
+        <p class="brand">همراه‌اول</p>
       </header>
 
       <section class="hero">
