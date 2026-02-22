@@ -394,6 +394,7 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
         <h1 class="title">
   <span class="ohterparts">در مسیر کمپین</span>
   <span class="highlight">«به نام خدا»</span>
+  <br>
   <span class="ohterparts">همراه ما باشید</span>
 </h1>
         <p class="subtitle">
