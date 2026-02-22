@@ -2228,6 +2228,13 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Incomplete reorder list.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
+    foreach ($reordered as $index => $task) {
+      if (!is_array($task)) {
+        continue;
+      }
+      $task['order'] = $index + 1;
+      $reordered[$index] = $task;
+    }
     $tasks = tctReindexTasks($reordered);
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save task order.'], JSON_UNESCAPED_UNICODE);
