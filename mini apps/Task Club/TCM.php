@@ -3732,6 +3732,30 @@ $sessionPayload = [
         line-height: 1.55;
       }
 
+      .task-item-meta.has-score-block {
+        white-space: normal;
+      }
+
+      .task-item-meta .task-meta-main {
+        display: block;
+        white-space: pre-line;
+        line-height: 1.55;
+      }
+
+      .task-item-meta .task-meta-score {
+        display: block;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px dashed rgba(111, 127, 159, 0.48);
+        font-weight: 800;
+        color: #1f4d91;
+      }
+
+      .task-item-meta.is-score-pending .task-meta-score {
+        color: #6d5a2a;
+        font-weight: 700;
+      }
+
       .task-item-btn:hover {
         background: #edf5ff;
         border-color: #bfd7ff;
@@ -3819,6 +3843,12 @@ $sessionPayload = [
       .task-item-btn.is-golden .task-item-meta {
         color: #9b5a00;
         font-weight: 700;
+      }
+
+      .task-item-btn.is-golden .task-item-meta .task-meta-score,
+      .task-item-btn.is-golden-live .task-item-meta .task-meta-score {
+        color: #9b5a00;
+        border-top-color: rgba(155, 90, 0, 0.35);
       }
 
       .task-item-btn.is-golden-live {
@@ -6288,9 +6318,45 @@ $sessionPayload = [
           return activeScore;
         };
 
-        const withScoreHint = (baseText, scoreValue) => {
+        const escapeTaskMetaHtml = (value) => String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+
+        const isNonQuizPendingScore = (button, taskType) => {
+          if (taskType === 'quiz') return false;
+          const configuredScore = Math.max(0, Number.parseInt(button?.dataset?.taskScore || '0', 10) || 0);
+          return configuredScore <= 0;
+        };
+
+        const resolveTaskScoreText = (button, taskType, scoreValue) => {
+          if (isNonQuizPendingScore(button, taskType)) {
+            return 'امتیاز شما پس از ارزیابی مشخص می‌شود';
+          }
+          return `امتیاز ماموریت: ${Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0)}`;
+        };
+
+        const withScoreHint = (baseText, button, taskType, scoreValue) => {
           const text = String(baseText || '').trim();
-          return `${text} | امتیاز ماموریت: ${Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0)}`;
+          return `${text} | ${resolveTaskScoreText(button, taskType, scoreValue)}`;
+        };
+
+        const setMetaText = (metaEl, text, multiline = false) => {
+          if (!metaEl) return;
+          metaEl.classList.toggle('is-multiline', Boolean(multiline));
+          metaEl.classList.remove('has-score-block', 'is-score-pending');
+          metaEl.textContent = String(text || '');
+        };
+
+        const setMetaWithScoreBlock = (metaEl, topText, button, taskType, scoreValue) => {
+          if (!metaEl) return;
+          const top = String(topText || '').trim();
+          const scoreText = resolveTaskScoreText(button, taskType, scoreValue);
+          metaEl.classList.add('is-multiline', 'has-score-block');
+          metaEl.classList.toggle('is-score-pending', isNonQuizPendingScore(button, taskType));
+          metaEl.innerHTML = `<span class="task-meta-main">${escapeTaskMetaHtml(top).replace(/\n/g, '<br>')}</span><span class="task-meta-score">${escapeTaskMetaHtml(scoreText)}</span>`;
         };
 
         const deriveTaskStatusFromButton = (button) => {
@@ -6412,9 +6478,8 @@ $sessionPayload = [
             button.classList.remove('is-info-ended');
             button.dataset.taskStatus = 'completed';
             if (metaEl) {
-              metaEl.classList.remove('is-multiline');
               const shownScore = Number.isFinite(taskScore) ? Math.max(0, taskScore) : 0;
-              metaEl.textContent = shownScore > 0 ? `تکمیل شده (امتیاز ${shownScore})` : 'تکمیل شده';
+              setMetaText(metaEl, shownScore > 0 ? `تکمیل شده (امتیاز ${shownScore})` : 'تکمیل شده', false);
             }
             return;
           }
@@ -6436,7 +6501,6 @@ $sessionPayload = [
           button.classList.toggle('is-golden-live', false);
           button.dataset.taskStatus = status;
           if (metaEl) {
-            metaEl.classList.remove('is-multiline');
             if (status === 'upcoming') {
               const startDate = String(button.dataset.taskStartDate || '').trim();
               const startTime = String(button.dataset.taskStartTime || '').trim();
@@ -6446,33 +6510,31 @@ $sessionPayload = [
                 const fallbackText = startDate
                   ? `شروع از: ${startDate} ${normalizeUpcomingStartTime(startTime)}`
                   : taskStatusLabel(status, false, taskType);
-                metaEl.textContent = withScoreHint(countdown || fallbackText, scoreNow);
+                setMetaText(metaEl, withScoreHint(countdown || fallbackText, button, taskType, scoreNow), false);
               } else {
-                metaEl.textContent = withScoreHint(taskStatusLabel(status, false, taskType), scoreNow);
+                setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType), button, taskType, scoreNow), false);
               }
             } else if (describeEditableDone) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const editCountdown = formatDescribeEditCountdown(endDate, endTime);
               if (editCountdown) {
-                metaEl.textContent = `تکمیل شده\n${editCountdown}\nامتیاز ماموریت: ${scoreNow}`;
-                metaEl.classList.add('is-multiline');
+                setMetaWithScoreBlock(metaEl, `تکمیل شده\n${editCountdown}`, button, taskType, scoreNow);
               } else {
-                metaEl.textContent = withScoreHint('تکمیل شده | تا پایان مهلت ویرایش', scoreNow);
+                setMetaWithScoreBlock(metaEl, 'تکمیل شده | تا پایان مهلت ویرایش', button, taskType, scoreNow);
               }
             } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
               if (goldenCountdown) {
-                metaEl.textContent = `${goldenCountdown}\nامتیاز ماموریت: ${scoreNow}`;
-                metaEl.classList.add('is-multiline');
+                setMetaWithScoreBlock(metaEl, goldenCountdown, button, taskType, scoreNow);
                 button.classList.add('is-golden-live');
               } else {
-                metaEl.textContent = withScoreHint(taskStatusLabel(status, false, taskType), scoreNow);
+                setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType), button, taskType, scoreNow), false);
               }
             } else {
-              metaEl.textContent = withScoreHint(taskStatusLabel(status, false, taskType), scoreNow);
+              setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType), button, taskType, scoreNow), false);
             }
           }
         };
