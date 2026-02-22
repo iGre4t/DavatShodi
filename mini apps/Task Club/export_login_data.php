@@ -84,6 +84,21 @@ function tcExportResolveMappedIndex(array $header, array $mapping, string $mappi
   return tcExportFindHeaderIndex($header, $fallbackHeaderNames);
 }
 
+function tcExportResolveMappedIndexByKeys(array $header, array $mapping, array $mappingKeys, array $fallbackHeaderNames): int
+{
+  foreach ($mappingKeys as $mappingKey) {
+    $mappedIndex = $mapping[(string)$mappingKey] ?? null;
+    if (!is_numeric($mappedIndex)) {
+      continue;
+    }
+    $index = (int)$mappedIndex;
+    if ($index >= 0 && $index < count($header)) {
+      return $index;
+    }
+  }
+  return tcExportFindHeaderIndex($header, $fallbackHeaderNames);
+}
+
 function tcExportCellValue(array $row, int $index): string
 {
   if ($index < 0) {
@@ -119,6 +134,12 @@ $lastNameIndex = tcExportResolveMappedIndex(
   'lastName',
   ['Last Name', 'last name', 'lastname', 'family', 'surname', 'نام خانوادگی']
 );
+$fullNameIndex = tcExportResolveMappedIndexByKeys(
+  $header,
+  $mapping,
+  ['fullName', 'fullname', 'name', 'full_name'],
+  ['Full Name', 'full name', 'name']
+);
 $nationalIdIndex = tcExportResolveMappedIndex(
   $header,
   $mapping,
@@ -146,6 +167,18 @@ for ($i = 1; $i < count($rows); $i += 1) {
   $workId = tcExportCellValue($row, $workIdIndex);
   $firstName = tcExportCellValue($row, $firstNameIndex);
   $lastName = tcExportCellValue($row, $lastNameIndex);
+  $fullName = tcExportCellValue($row, $fullNameIndex);
+  if (($firstName === '' || $lastName === '') && $fullName !== '') {
+    $parts = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+    if (is_array($parts) && $parts) {
+      if ($firstName === '') {
+        $firstName = (string)($parts[0] ?? '');
+      }
+      if ($lastName === '' && count($parts) > 1) {
+        $lastName = trim((string)implode(' ', array_slice($parts, 1)));
+      }
+    }
+  }
   $password = tcExportCellValue($row, $passwordIndex);
   $phone = tcExportCellValue($row, $phoneIndex);
   $nationalId = tcExportCellValue($row, $nationalIdIndex);

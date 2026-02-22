@@ -29,6 +29,9 @@ const TASKS_DIR_PATH = __DIR__ . '/tasks';
 const TASKS_JS_STORE_PATH = TASKS_DIR_PATH . '/tasks.js';
 const TASK_SCORE_SETTINGS_FILE = 'task-score.json';
 const TASK_INFO_SETTINGS_FILE = 'info-task.json';
+const TASK_DESCRIBE_PHOTO_DIR = 'photos';
+const TASK_DESCRIBE_PHOTO_META_FILE = 'photos.json';
+const TASK_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 
 $prizeStorePath = __DIR__ . '/TC Prizes.json';
 $prizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
@@ -1194,6 +1197,439 @@ function parseInfoTasksScoreMap(string $raw): array
   return $map;
 }
 
+function buildTaskDescribePhotoDirPath(string $tasksDir, string $tagCode): string
+{
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return '';
+  }
+  return $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_DESCRIBE_PHOTO_DIR;
+}
+
+function buildTaskDescribePhotoMetaPath(string $tasksDir, string $tagCode): string
+{
+  $photoDir = buildTaskDescribePhotoDirPath($tasksDir, $tagCode);
+  if ($photoDir === '') {
+    return '';
+  }
+  return $photoDir . DIRECTORY_SEPARATOR . TASK_DESCRIBE_PHOTO_META_FILE;
+}
+
+function buildTaskDescribePhotoArticlesPath(string $tasksDir, string $tagCode): string
+{
+  $photoDir = buildTaskDescribePhotoDirPath($tasksDir, $tagCode);
+  if ($photoDir === '') {
+    return '';
+  }
+  return $photoDir . DIRECTORY_SEPARATOR . TASK_DESCRIBE_PHOTO_ARTICLES_DIR;
+}
+
+function normalizeDescribePhotoFileToken(string $value, string $fallback = 'file'): string
+{
+  $token = trim($value);
+  if ($token === '') {
+    $token = $fallback;
+  }
+  $normalized = preg_replace('/[^A-Za-z0-9._-]+/', '_', $token);
+  if (!is_string($normalized) || $normalized === '') {
+    $normalized = $fallback;
+  }
+  $normalized = trim($normalized, '_');
+  if ($normalized === '') {
+    $normalized = $fallback;
+  }
+  return $normalized;
+}
+
+function buildDescribePhotoArticleFileName(string $workId, string $photoId): string
+{
+  $safeWorkId = normalizeDescribePhotoFileToken($workId, 'user');
+  $safePhotoId = normalizeDescribePhotoFileToken($photoId, 'photo');
+  return $safeWorkId . '---' . $safePhotoId . '.txt';
+}
+
+function buildDescribePhotoImageUrl(string $tagCode, string $fileName): string
+{
+  $safeTagCode = normalizeTaskTagCode($tagCode);
+  $safeFileName = basename(trim($fileName));
+  if ($safeTagCode === '' || $safeFileName === '') {
+    return '';
+  }
+  $segments = [
+    'mini apps',
+    'Task Club',
+    'tasks',
+    $safeTagCode,
+    TASK_DESCRIBE_PHOTO_DIR,
+    $safeFileName
+  ];
+  return implode('/', array_map(static fn(string $segment): string => rawurlencode($segment), $segments));
+}
+
+function readTaskDescribePhotoEntries(string $tasksDir, string $tagCode): array
+{
+  $metaPath = buildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
+  if ($metaPath === '' || !is_file($metaPath)) {
+    return [];
+  }
+  $content = file_get_contents($metaPath);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+
+  $entries = [];
+  $seen = [];
+  foreach ($decoded as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $id = trim((string)($item['id'] ?? ''));
+    $name = trim((string)($item['name'] ?? ''));
+    $fileName = basename(trim((string)($item['fileName'] ?? ($item['filename'] ?? ''))));
+    if ($id === '' || $fileName === '' || isset($seen[$id])) {
+      continue;
+    }
+    $seen[$id] = true;
+    if ($name === '') {
+      $name = trim((string)pathinfo($fileName, PATHINFO_FILENAME));
+    }
+    if ($name === '') {
+      $name = 'تصویر';
+    }
+    $url = buildDescribePhotoImageUrl($tagCode, $fileName);
+    if ($url === '') {
+      continue;
+    }
+    $entries[] = [
+      'id' => $id,
+      'name' => $name,
+      'fileName' => $fileName,
+      'url' => $url
+    ];
+  }
+  return $entries;
+}
+
+function parseDescribePhotoPicksMap(string $raw): array
+{
+  $entries = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($entries)) {
+    return [];
+  }
+  $map = [];
+  foreach ($entries as $entry) {
+    $token = trim((string)$entry);
+    if ($token === '') {
+      continue;
+    }
+    $parts = explode('::', $token, 3);
+    if (count($parts) !== 3) {
+      continue;
+    }
+    $taskId = trim((string)($parts[0] ?? ''));
+    $photoId = trim((string)($parts[1] ?? ''));
+    $fileName = basename(trim((string)($parts[2] ?? '')));
+    if ($taskId === '' || $photoId === '' || $fileName === '') {
+      continue;
+    }
+    if (!isset($map[$taskId]) || !is_array($map[$taskId])) {
+      $map[$taskId] = [];
+    }
+    $map[$taskId][$photoId] = $fileName;
+  }
+  return $map;
+}
+
+function serializeDescribePhotoPicksMap(array $map): string
+{
+  $tokens = [];
+  foreach ($map as $taskId => $photoMap) {
+    $normalizedTaskId = trim((string)$taskId);
+    if ($normalizedTaskId === '' || !is_array($photoMap)) {
+      continue;
+    }
+    foreach ($photoMap as $photoId => $fileName) {
+      $normalizedPhotoId = trim((string)$photoId);
+      $normalizedFileName = basename(trim((string)$fileName));
+      if ($normalizedPhotoId === '' || $normalizedFileName === '') {
+        continue;
+      }
+      $tokens[] = $normalizedTaskId . '::' . $normalizedPhotoId . '::' . $normalizedFileName;
+    }
+  }
+  return implode(', ', $tokens);
+}
+
+function countWordsInText(string $text): int
+{
+  $trimmed = trim($text);
+  if ($trimmed === '') {
+    return 0;
+  }
+  $matched = preg_match_all('/\S+/u', $trimmed, $parts);
+  if (!is_int($matched) || $matched <= 0) {
+    return 0;
+  }
+  return $matched;
+}
+
+function resolveDescribePhotoPicksForUser(array $task, string $workId, string $inviteesPath, string $inviteesMapPath): array
+{
+  $taskId = trim((string)($task['id'] ?? ''));
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+  $normalizedWorkId = trim($workId);
+  if ($taskId === '' || $tagCode === '' || $normalizedWorkId === '') {
+    return ['ok' => false, 'message' => 'شناسه ماموریت نامعتبر است.'];
+  }
+
+  $availablePhotos = readTaskDescribePhotoEntries(TASKS_DIR_PATH, $tagCode);
+  if (count($availablePhotos) < 3) {
+    return ['ok' => false, 'message' => 'برای این ماموریت حداقل ۳ تصویر لازم است.'];
+  }
+
+  $table = loadInviteesTable($inviteesPath, $inviteesMapPath);
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
+  $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $normalizedWorkId);
+  if ($rowIndex < 0) {
+    return ['ok' => false, 'message' => 'رکورد کاربر پیدا نشد.'];
+  }
+
+  $header = is_array($rows[0] ?? null) ? $rows[0] : [];
+  $rowLength = count($header);
+  if (!isset($rows[$rowIndex]) || !is_array($rows[$rowIndex])) {
+    $rows[$rowIndex] = [];
+  }
+  if (count($rows[$rowIndex]) < $rowLength) {
+    $rows[$rowIndex] = array_pad($rows[$rowIndex], $rowLength, '');
+  }
+
+  $picksColumnIndex = (int)($columns['describe photo picks'] ?? -1);
+  if ($picksColumnIndex < 0) {
+    return ['ok' => false, 'message' => 'ستون تصاویر ماموریت آماده نیست.'];
+  }
+
+  $rawPicks = trim((string)($rows[$rowIndex][$picksColumnIndex] ?? ''));
+  $pickMap = parseDescribePhotoPicksMap($rawPicks);
+  $taskPickMap = is_array($pickMap[$taskId] ?? null) ? $pickMap[$taskId] : [];
+
+  $photoById = [];
+  foreach ($availablePhotos as $photo) {
+    if (!is_array($photo)) {
+      continue;
+    }
+    $photoId = trim((string)($photo['id'] ?? ''));
+    if ($photoId === '') {
+      continue;
+    }
+    $photoById[$photoId] = $photo;
+  }
+
+  $desiredCount = min(3, count($photoById));
+  $changed = false;
+  $selectedMap = [];
+  foreach ($taskPickMap as $photoId => $fileName) {
+    $normalizedPhotoId = trim((string)$photoId);
+    if ($normalizedPhotoId === '' || !isset($photoById[$normalizedPhotoId])) {
+      $changed = true;
+      continue;
+    }
+    $safeFileName = basename(trim((string)$fileName));
+    if ($safeFileName === '') {
+      $safeFileName = buildDescribePhotoArticleFileName($normalizedWorkId, $normalizedPhotoId);
+      $changed = true;
+    }
+    $selectedMap[$normalizedPhotoId] = $safeFileName;
+  }
+
+  if (count($selectedMap) > $desiredCount) {
+    $selectedMap = array_slice($selectedMap, 0, $desiredCount, true);
+    $changed = true;
+  }
+
+  if (count($selectedMap) < $desiredCount) {
+    $remainingPhotoIds = [];
+    foreach (array_keys($photoById) as $photoId) {
+      if (!isset($selectedMap[$photoId])) {
+        $remainingPhotoIds[] = $photoId;
+      }
+    }
+    shuffle($remainingPhotoIds);
+    while (count($selectedMap) < $desiredCount && $remainingPhotoIds) {
+      $nextPhotoId = array_shift($remainingPhotoIds);
+      if (!is_string($nextPhotoId) || $nextPhotoId === '') {
+        continue;
+      }
+      $selectedMap[$nextPhotoId] = buildDescribePhotoArticleFileName($normalizedWorkId, $nextPhotoId);
+      $changed = true;
+    }
+  }
+
+  $articlesDirPath = buildTaskDescribePhotoArticlesPath(TASKS_DIR_PATH, $tagCode);
+  if ($articlesDirPath === '') {
+    return ['ok' => false, 'message' => 'مسیر فایل‌های ماموریت نامعتبر است.'];
+  }
+  if (!is_dir($articlesDirPath) && !(mkdir($articlesDirPath, 0777, true) || is_dir($articlesDirPath))) {
+    return ['ok' => false, 'message' => 'ساخت پوشه مقاله تصاویر ناموفق بود.'];
+  }
+
+  foreach ($selectedMap as $photoId => $fileName) {
+    $safeFileName = basename(trim((string)$fileName));
+    if ($safeFileName === '') {
+      $safeFileName = buildDescribePhotoArticleFileName($normalizedWorkId, (string)$photoId);
+      $selectedMap[$photoId] = $safeFileName;
+      $changed = true;
+    }
+    $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $safeFileName;
+    if (!is_file($filePath)) {
+      if (file_put_contents($filePath, '', LOCK_EX) === false) {
+        return ['ok' => false, 'message' => 'ساخت فایل متن تصویر ناموفق بود.'];
+      }
+      $changed = true;
+    }
+  }
+
+  $pickMap[$taskId] = $selectedMap;
+  if ($changed || (($table['columns']['added'] ?? false) && $rows)) {
+    $rows[$rowIndex][$picksColumnIndex] = serializeDescribePhotoPicksMap($pickMap);
+    if (!writeInviteesCsv($inviteesPath, $rows)) {
+      return ['ok' => false, 'message' => 'ذخیره انتخاب تصاویر ناموفق بود.'];
+    }
+  }
+
+  $selectedPhotos = [];
+  foreach ($selectedMap as $photoId => $fileName) {
+    if (!isset($photoById[$photoId]) || !is_array($photoById[$photoId])) {
+      continue;
+    }
+    $photo = $photoById[$photoId];
+    $selectedPhotos[] = [
+      'id' => (string)$photoId,
+      'name' => (string)($photo['name'] ?? ''),
+      'url' => (string)($photo['url'] ?? ''),
+      'articleFile' => basename(trim((string)$fileName))
+    ];
+  }
+
+  return [
+    'ok' => true,
+    'taskId' => $taskId,
+    'tagCode' => $tagCode,
+    'photos' => $selectedPhotos
+  ];
+}
+
+function readDescribePhotoUserArticle(array $task, string $workId, string $photoId, string $inviteesPath, string $inviteesMapPath): array
+{
+  $resolved = resolveDescribePhotoPicksForUser($task, $workId, $inviteesPath, $inviteesMapPath);
+  if (!($resolved['ok'] ?? false)) {
+    return $resolved;
+  }
+  $targetPhotoId = trim($photoId);
+  if ($targetPhotoId === '') {
+    return ['ok' => false, 'message' => 'تصویر انتخاب نشده است.'];
+  }
+  $photoItems = is_array($resolved['photos'] ?? null) ? $resolved['photos'] : [];
+  $target = null;
+  foreach ($photoItems as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    if (trim((string)($item['id'] ?? '')) === $targetPhotoId) {
+      $target = $item;
+      break;
+    }
+  }
+  if (!is_array($target)) {
+    return ['ok' => false, 'message' => 'این تصویر برای کاربر انتخاب نشده است.'];
+  }
+  $tagCode = (string)($resolved['tagCode'] ?? '');
+  $articlesDirPath = buildTaskDescribePhotoArticlesPath(TASKS_DIR_PATH, $tagCode);
+  if ($articlesDirPath === '') {
+    return ['ok' => false, 'message' => 'مسیر فایل متن تصویر نامعتبر است.'];
+  }
+  $fileName = basename(trim((string)($target['articleFile'] ?? '')));
+  if ($fileName === '') {
+    return ['ok' => false, 'message' => 'فایل متن تصویر نامعتبر است.'];
+  }
+  $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $fileName;
+  if (!is_file($filePath)) {
+    if (file_put_contents($filePath, '', LOCK_EX) === false) {
+      return ['ok' => false, 'message' => 'ساخت فایل متن تصویر ناموفق بود.'];
+    }
+  }
+  $content = file_get_contents($filePath);
+  if (!is_string($content)) {
+    $content = '';
+  }
+  return [
+    'ok' => true,
+    'photo' => $target,
+    'text' => $content,
+    'wordCount' => countWordsInText($content)
+  ];
+}
+
+function saveDescribePhotoUserArticle(array $task, string $workId, string $photoId, string $text, string $inviteesPath, string $inviteesMapPath): array
+{
+  $normalizedText = str_replace(["\r\n", "\r"], "\n", $text);
+  $wordCount = countWordsInText($normalizedText);
+  if ($wordCount > 300) {
+    return ['ok' => false, 'message' => 'حداکثر ۳۰۰ کلمه مجاز است.'];
+  }
+
+  $resolved = resolveDescribePhotoPicksForUser($task, $workId, $inviteesPath, $inviteesMapPath);
+  if (!($resolved['ok'] ?? false)) {
+    return $resolved;
+  }
+
+  $targetPhotoId = trim($photoId);
+  if ($targetPhotoId === '') {
+    return ['ok' => false, 'message' => 'تصویر انتخاب نشده است.'];
+  }
+  $photoItems = is_array($resolved['photos'] ?? null) ? $resolved['photos'] : [];
+  $target = null;
+  foreach ($photoItems as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    if (trim((string)($item['id'] ?? '')) === $targetPhotoId) {
+      $target = $item;
+      break;
+    }
+  }
+  if (!is_array($target)) {
+    return ['ok' => false, 'message' => 'این تصویر برای کاربر انتخاب نشده است.'];
+  }
+
+  $tagCode = (string)($resolved['tagCode'] ?? '');
+  $articlesDirPath = buildTaskDescribePhotoArticlesPath(TASKS_DIR_PATH, $tagCode);
+  if ($articlesDirPath === '') {
+    return ['ok' => false, 'message' => 'مسیر فایل متن تصویر نامعتبر است.'];
+  }
+  if (!is_dir($articlesDirPath) && !(mkdir($articlesDirPath, 0777, true) || is_dir($articlesDirPath))) {
+    return ['ok' => false, 'message' => 'ساخت پوشه متن تصاویر ناموفق بود.'];
+  }
+  $fileName = basename(trim((string)($target['articleFile'] ?? '')));
+  if ($fileName === '') {
+    return ['ok' => false, 'message' => 'فایل متن تصویر نامعتبر است.'];
+  }
+  $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $fileName;
+  if (file_put_contents($filePath, $normalizedText, LOCK_EX) === false) {
+    return ['ok' => false, 'message' => 'ذخیره متن تصویر ناموفق بود.'];
+  }
+  return [
+    'ok' => true,
+    'photo' => $target,
+    'wordCount' => $wordCount
+  ];
+}
+
 function serializeTaskScoreMap(array $map): string
 {
   $items = [];
@@ -1601,6 +2037,7 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'task score map',
     'info tasks',
     'describe photo task',
+    'describe photo picks',
     'Card Flips Count',
     'Each Level Won Prize',
     'Total Prize Won',
@@ -1954,6 +2391,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
     $settings = loadWfqSettings($settingsPath);
     $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    $describePhotos = [];
+    if ($taskType === 'describe_photo' && $available) {
+      $resolvedPicks = resolveDescribePhotoPicksForUser($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath);
+      if (!($resolvedPicks['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => (string)($resolvedPicks['message'] ?? 'دریافت تصاویر ماموریت ناموفق بود.')]);
+        exit;
+      }
+      $describePhotos = is_array($resolvedPicks['photos'] ?? null) ? $resolvedPicks['photos'] : [];
+    }
     echo json_encode([
       'status' => 'ok',
       'task' => [
@@ -1967,7 +2413,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'available' => $available,
         'statusLabel' => resolveTaskStatusLabel($status),
         'infoTitle' => (string)($task['infoTitle'] ?? ''),
-        'infoText' => (string)($task['infoText'] ?? '')
+        'infoText' => (string)($task['infoText'] ?? ''),
+        'describePhotos' => $describePhotos
       ],
       'questions' => $questions,
       'settings' => $settings,
@@ -1988,6 +2435,112 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     echo json_encode(['status' => 'ok']);
+    exit;
+  }
+
+  if ($action === 'describe_photo_load_article') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
+      exit;
+    }
+    $eventStatus = loadGlobalEventStatus();
+    if ($eventStatus === 'inactive') {
+      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+      exit;
+    }
+
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    $photoId = trim((string)($payload['photoId'] ?? ''));
+    if ($taskId === '' || $photoId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'اطلاعات تصویر کامل نیست.']);
+      exit;
+    }
+
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task)) {
+      echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
+      exit;
+    }
+    $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+    if ($taskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع توصیف تصویر نیست.']);
+      exit;
+    }
+    $taskStatus = deriveTaskAvailabilityStatus($task);
+    if ($taskStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در حال حاضر فعال نیست.']);
+      exit;
+    }
+
+    $article = readDescribePhotoUserArticle($task, $sessionWorkId, $photoId, $inviteesFilePath, $inviteesMapPath);
+    if (!($article['ok'] ?? false)) {
+      echo json_encode(['status' => 'error', 'message' => (string)($article['message'] ?? 'بارگذاری متن تصویر ناموفق بود.')]);
+      exit;
+    }
+    echo json_encode([
+      'status' => 'ok',
+      'data' => [
+        'photo' => $article['photo'] ?? null,
+        'text' => (string)($article['text'] ?? ''),
+        'wordCount' => (int)($article['wordCount'] ?? 0),
+        'maxWords' => 300
+      ]
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'describe_photo_save_article') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
+      exit;
+    }
+    $eventStatus = loadGlobalEventStatus();
+    if ($eventStatus === 'inactive') {
+      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+      exit;
+    }
+
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    $photoId = trim((string)($payload['photoId'] ?? ''));
+    $text = (string)($payload['text'] ?? '');
+    if ($taskId === '' || $photoId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'اطلاعات تصویر کامل نیست.']);
+      exit;
+    }
+
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task)) {
+      echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
+      exit;
+    }
+    $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+    if ($taskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع توصیف تصویر نیست.']);
+      exit;
+    }
+    $taskStatus = deriveTaskAvailabilityStatus($task);
+    if ($taskStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در حال حاضر فعال نیست.']);
+      exit;
+    }
+
+    $saved = saveDescribePhotoUserArticle($task, $sessionWorkId, $photoId, $text, $inviteesFilePath, $inviteesMapPath);
+    if (!($saved['ok'] ?? false)) {
+      echo json_encode(['status' => 'error', 'message' => (string)($saved['message'] ?? 'ذخیره متن تصویر ناموفق بود.')]);
+      exit;
+    }
+    echo json_encode([
+      'status' => 'ok',
+      'data' => [
+        'photo' => $saved['photo'] ?? null,
+        'wordCount' => (int)($saved['wordCount'] ?? 0),
+        'maxWords' => 300
+      ]
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -4099,6 +4652,97 @@ $sessionPayload = [
         width: 100%;
       }
 
+      .describe-photo-step,
+      .describe-photo-editor {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .describe-photo-preview {
+        border: 1px solid #dbe7fb;
+        border-radius: 16px;
+        background: #f8fbff;
+        min-height: 190px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      .describe-photo-image {
+        width: 100%;
+        height: 100%;
+        max-height: 260px;
+        object-fit: contain;
+        display: block;
+      }
+
+      .describe-photo-name,
+      .describe-photo-index {
+        margin: 0;
+        text-align: center;
+        color: #435c86;
+        font-size: 0.88rem;
+      }
+
+      .describe-photo-index {
+        color: #5e7399;
+      }
+
+      .describe-photo-actions {
+        margin-top: auto;
+        display: grid;
+        gap: 8px;
+      }
+
+      .describe-photo-btn {
+        width: 100%;
+      }
+
+      .describe-photo-btn.secondary {
+        background: #eef4ff;
+        color: #2f4f88;
+        border: 1px solid #c6d7fb;
+      }
+
+      .describe-photo-editor-title {
+        margin: 0;
+        text-align: center;
+        color: #2a3f69;
+        font-weight: 700;
+      }
+
+      .describe-photo-textarea {
+        flex: 1;
+        min-height: 180px;
+        border: 1px solid #d8e2f4;
+        border-radius: 14px;
+        padding: 10px 12px;
+        resize: vertical;
+        font: inherit;
+        background: #f8fbff;
+        color: #263b62;
+        line-height: 1.8;
+      }
+
+      .describe-photo-word-count {
+        margin: 0;
+        text-align: left;
+        color: #5e7399;
+        font-size: 0.82rem;
+      }
+
+      .describe-photo-word-count.is-error {
+        color: #c03a43;
+        font-weight: 700;
+      }
+
+      .describe-photo-save-btn {
+        width: 100%;
+      }
+
       .login-form {
         display: flex;
         flex-direction: column;
@@ -4987,6 +5631,29 @@ $sessionPayload = [
         </div>
         <div id="tc-task-info-area" class="info-task-area quiz-hidden">
           <div id="tc-task-info-content" class="info-task-content"></div>
+          <section id="tc-describe-photo-step" class="describe-photo-step hidden">
+            <div class="describe-photo-preview">
+              <img id="tc-describe-photo-image" class="describe-photo-image" alt="تصویر ماموریت" />
+            </div>
+            <p id="tc-describe-photo-name" class="describe-photo-name">-</p>
+            <p id="tc-describe-photo-index" class="describe-photo-index">1 / 3</p>
+            <div class="describe-photo-actions">
+              <button id="tc-describe-photo-change" class="login-btn describe-photo-btn secondary" type="button">تغییر عکس 1/3</button>
+              <button id="tc-describe-photo-select" class="login-btn describe-photo-btn" type="button">انتخاب این تصویر</button>
+            </div>
+          </section>
+          <section id="tc-describe-photo-editor-step" class="describe-photo-editor hidden">
+            <p id="tc-describe-photo-editor-title" class="describe-photo-editor-title">متن تصویر</p>
+            <textarea
+              id="tc-describe-photo-text"
+              class="describe-photo-textarea"
+              rows="10"
+              maxlength="8000"
+              placeholder="متن خود را درباره تصویر بنویسید (حداکثر 300 کلمه)"
+            ></textarea>
+            <p id="tc-describe-photo-word-count" class="describe-photo-word-count">0 / 300 کلمه</p>
+            <button id="tc-describe-photo-save" class="login-btn describe-photo-save-btn" type="button">ذخیره</button>
+          </section>
           <button id="tc-task-info-ack" class="login-btn info-task-ack" type="button">متوجه شدم</button>
         </div>
       <?php endif; ?>
@@ -5218,6 +5885,17 @@ $sessionPayload = [
         const taskInfoTitleEl = document.getElementById('tc-task-info-title');
         const taskInfoContentEl = document.getElementById('tc-task-info-content');
         const taskInfoAckBtnEl = document.getElementById('tc-task-info-ack');
+        const describePhotoStepEl = document.getElementById('tc-describe-photo-step');
+        const describePhotoImageEl = document.getElementById('tc-describe-photo-image');
+        const describePhotoNameEl = document.getElementById('tc-describe-photo-name');
+        const describePhotoIndexEl = document.getElementById('tc-describe-photo-index');
+        const describePhotoChangeBtnEl = document.getElementById('tc-describe-photo-change');
+        const describePhotoSelectBtnEl = document.getElementById('tc-describe-photo-select');
+        const describePhotoEditorStepEl = document.getElementById('tc-describe-photo-editor-step');
+        const describePhotoEditorTitleEl = document.getElementById('tc-describe-photo-editor-title');
+        const describePhotoTextareaEl = document.getElementById('tc-describe-photo-text');
+        const describePhotoWordCountEl = document.getElementById('tc-describe-photo-word-count');
+        const describePhotoSaveBtnEl = document.getElementById('tc-describe-photo-save');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
         const quizTitleEl = document.getElementById('tc-task-quiz-title');
         const quizCounterEl = document.getElementById('tc-task-quiz-counter');
@@ -5245,9 +5923,14 @@ $sessionPayload = [
         const rewardCardsLockedPrizes = new Map();
         let currentTaskId = '';
         let currentTaskTitle = '';
+        let currentTaskType = 'quiz';
         let currentQuestions = [];
         let currentQuestionIndex = 0;
         let infoTaskViewOpen = false;
+        let describePhotoChoices = [];
+        let describePhotoCurrentIndex = 0;
+        let describePhotoSelected = null;
+        let describePhotoBusy = false;
         let answerTimeLimitEnabled = true;
         let globalEventStatus = 'inactive';
 
@@ -5786,12 +6469,49 @@ $sessionPayload = [
           if (taskInfoContentEl) {
             taskInfoContentEl.innerHTML = '';
           }
+          if (describePhotoStepEl) {
+            describePhotoStepEl.classList.add('hidden');
+          }
+          if (describePhotoEditorStepEl) {
+            describePhotoEditorStepEl.classList.add('hidden');
+          }
+          if (taskInfoAckBtnEl) {
+            taskInfoAckBtnEl.classList.remove('hidden');
+            taskInfoAckBtnEl.textContent = 'متوجه شدم';
+          }
+          if (describePhotoImageEl) {
+            describePhotoImageEl.removeAttribute('src');
+          }
+          if (describePhotoNameEl) {
+            describePhotoNameEl.textContent = '-';
+          }
+          if (describePhotoIndexEl) {
+            describePhotoIndexEl.textContent = '1 / 3';
+          }
+          if (describePhotoEditorTitleEl) {
+            describePhotoEditorTitleEl.textContent = 'متن تصویر';
+          }
+          if (describePhotoTextareaEl instanceof HTMLTextAreaElement) {
+            describePhotoTextareaEl.value = '';
+          }
+          if (describePhotoWordCountEl) {
+            describePhotoWordCountEl.textContent = '0 / 300 کلمه';
+            describePhotoWordCountEl.classList.remove('is-error');
+          }
+          if (describePhotoSaveBtnEl instanceof HTMLButtonElement) {
+            describePhotoSaveBtnEl.disabled = false;
+          }
           infoTaskViewOpen = false;
           quizLocked = false;
+          describePhotoBusy = false;
           currentTaskId = '';
           currentTaskTitle = '';
+          currentTaskType = 'quiz';
           currentQuestions = [];
           currentQuestionIndex = 0;
+          describePhotoChoices = [];
+          describePhotoCurrentIndex = 0;
+          describePhotoSelected = null;
         };
 
         const escapeHtml = (value) => String(value ?? '')
@@ -5828,7 +6548,169 @@ $sessionPayload = [
           return sections.filter((sec) => String(sec.title || '').trim() !== '' || (Array.isArray(sec.lines) && sec.lines.join('').trim() !== ''));
         };
 
-        const openInfoTaskView = (taskTitle, infoTitle, infoText) => {
+        const countWords = (text) => {
+          const source = String(text || '').trim();
+          if (source === '') return 0;
+          const matched = source.match(/\S+/gu);
+          return Array.isArray(matched) ? matched.length : 0;
+        };
+
+        const normalizeDescribePhotoChoices = (list) => {
+          if (!Array.isArray(list)) return [];
+          return list
+            .map((item) => ({
+              id: String(item?.id || '').trim(),
+              name: String(item?.name || '').trim(),
+              url: String(item?.url || '').trim(),
+              articleFile: String(item?.articleFile || '').trim()
+            }))
+            .filter((item) => item.id !== '' && item.url !== '');
+        };
+
+        const getCurrentDescribePhotoChoice = () => {
+          if (!describePhotoChoices.length) return null;
+          if (describePhotoCurrentIndex < 0 || describePhotoCurrentIndex >= describePhotoChoices.length) {
+            describePhotoCurrentIndex = 0;
+          }
+          return describePhotoChoices[describePhotoCurrentIndex] || null;
+        };
+
+        const setInfoTaskStep = (step) => {
+          const next = String(step || 'info').trim().toLowerCase();
+          const isInfoStep = next === 'info';
+          const isPhotoStep = next === 'photo';
+          const isEditorStep = next === 'editor';
+          if (taskInfoContentEl) {
+            taskInfoContentEl.classList.toggle('hidden', !isInfoStep);
+          }
+          if (describePhotoStepEl) {
+            describePhotoStepEl.classList.toggle('hidden', !isPhotoStep);
+          }
+          if (describePhotoEditorStepEl) {
+            describePhotoEditorStepEl.classList.toggle('hidden', !isEditorStep);
+          }
+          if (taskInfoAckBtnEl) {
+            taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
+            taskInfoAckBtnEl.textContent = currentTaskType === 'describe_photo' ? 'ادامه' : 'متوجه شدم';
+          }
+        };
+
+        const renderDescribePhotoChoice = () => {
+          const current = getCurrentDescribePhotoChoice();
+          const total = describePhotoChoices.length;
+          if (!(current && total > 0)) {
+            if (describePhotoImageEl) describePhotoImageEl.removeAttribute('src');
+            if (describePhotoNameEl) describePhotoNameEl.textContent = 'برای این ماموریت تصویری ثبت نشده است.';
+            if (describePhotoIndexEl) describePhotoIndexEl.textContent = '0 / 0';
+            if (describePhotoChangeBtnEl instanceof HTMLButtonElement) describePhotoChangeBtnEl.disabled = true;
+            if (describePhotoSelectBtnEl instanceof HTMLButtonElement) describePhotoSelectBtnEl.disabled = true;
+            return;
+          }
+          if (describePhotoImageEl) {
+            describePhotoImageEl.src = current.url;
+          }
+          if (describePhotoNameEl) {
+            describePhotoNameEl.textContent = current.name || 'تصویر ماموریت';
+          }
+          if (describePhotoIndexEl) {
+            describePhotoIndexEl.textContent = `${describePhotoCurrentIndex + 1} / ${total}`;
+          }
+          if (describePhotoChangeBtnEl instanceof HTMLButtonElement) {
+            describePhotoChangeBtnEl.textContent = `تغییر عکس ${describePhotoCurrentIndex + 1}/${total}`;
+            describePhotoChangeBtnEl.disabled = total <= 1;
+          }
+          if (describePhotoSelectBtnEl instanceof HTMLButtonElement) {
+            describePhotoSelectBtnEl.disabled = false;
+          }
+        };
+
+        const updateDescribePhotoWordCount = () => {
+          const text = describePhotoTextareaEl instanceof HTMLTextAreaElement
+            ? String(describePhotoTextareaEl.value || '')
+            : '';
+          const words = countWords(text);
+          const isValid = words <= 300;
+          if (describePhotoWordCountEl) {
+            describePhotoWordCountEl.textContent = `${words} / 300 کلمه`;
+            describePhotoWordCountEl.classList.toggle('is-error', !isValid);
+          }
+          if (describePhotoSaveBtnEl instanceof HTMLButtonElement) {
+            describePhotoSaveBtnEl.disabled = !isValid || describePhotoBusy;
+          }
+          return { words, isValid };
+        };
+
+        const openDescribePhotoEditor = async () => {
+          const current = getCurrentDescribePhotoChoice();
+          if (!current || !currentTaskId || describePhotoBusy) return;
+          describePhotoBusy = true;
+          if (describePhotoSelectBtnEl instanceof HTMLButtonElement) {
+            describePhotoSelectBtnEl.disabled = true;
+          }
+          try {
+            const payload = await postJson({
+              action: 'describe_photo_load_article',
+              taskId: currentTaskId,
+              photoId: current.id
+            });
+            const data = payload?.data || {};
+            describePhotoSelected = {
+              ...current,
+              articleFile: String(data?.photo?.articleFile || current.articleFile || '').trim()
+            };
+            const title = describePhotoSelected.name || 'تصویر ماموریت';
+            if (describePhotoEditorTitleEl) {
+              describePhotoEditorTitleEl.textContent = `توضیح تصویر: ${title}`;
+            }
+            if (describePhotoTextareaEl instanceof HTMLTextAreaElement) {
+              describePhotoTextareaEl.value = String(data?.text || '');
+            }
+            updateDescribePhotoWordCount();
+            setInfoTaskStep('editor');
+          } catch (error) {
+            await openInfoDialog(error?.message || 'بارگذاری متن تصویر ناموفق بود.', 'خطا');
+          } finally {
+            describePhotoBusy = false;
+            if (describePhotoSelectBtnEl instanceof HTMLButtonElement) {
+              describePhotoSelectBtnEl.disabled = false;
+            }
+            updateDescribePhotoWordCount();
+          }
+        };
+
+        const saveDescribePhotoEditor = async () => {
+          if (!describePhotoSelected || !currentTaskId || !(describePhotoTextareaEl instanceof HTMLTextAreaElement) || describePhotoBusy) return;
+          const validation = updateDescribePhotoWordCount();
+          if (!validation.isValid) {
+            await openInfoDialog('حداکثر ۳۰۰ کلمه مجاز است.', 'خطا');
+            return;
+          }
+          describePhotoBusy = true;
+          if (describePhotoSaveBtnEl instanceof HTMLButtonElement) {
+            describePhotoSaveBtnEl.disabled = true;
+          }
+          try {
+            await postJson({
+              action: 'describe_photo_save_article',
+              taskId: currentTaskId,
+              photoId: describePhotoSelected.id,
+              text: String(describePhotoTextareaEl.value || '')
+            });
+            closeQuizOverlay();
+          } catch (error) {
+            await openInfoDialog(error?.message || 'ذخیره توضیح تصویر ناموفق بود.', 'خطا');
+          } finally {
+            describePhotoBusy = false;
+            updateDescribePhotoWordCount();
+          }
+        };
+
+        const openInfoTaskView = (taskTitle, infoTitle, infoText, options = {}) => {
+          currentTaskType = String(options?.taskType || 'info').trim().toLowerCase() || 'info';
+          describePhotoChoices = normalizeDescribePhotoChoices(options?.describePhotos || []);
+          describePhotoCurrentIndex = 0;
+          describePhotoSelected = null;
+          describePhotoBusy = false;
           if (timerAreaEl) timerAreaEl.classList.add('quiz-hidden');
           if (bottomCtaEl) bottomCtaEl.classList.add('quiz-hidden');
           if (quizAreaEl) quizAreaEl.classList.add('quiz-hidden');
@@ -5848,6 +6730,10 @@ $sessionPayload = [
               }).join('');
             }
           }
+          if (currentTaskType === 'describe_photo') {
+            renderDescribePhotoChoice();
+          }
+          setInfoTaskStep('info');
           infoTaskViewOpen = true;
         };
 
@@ -6782,10 +7668,15 @@ $sessionPayload = [
             if (fetchedTaskType === 'info' || fetchedTaskType === 'describe_photo') {
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
+              const describePhotos = Array.isArray(payload?.task?.describePhotos) ? payload.task.describePhotos : [];
               openInfoTaskView(
                 currentTaskTitle,
                 String(payload?.task?.infoTitle ?? '').trim(),
-                String(payload?.task?.infoText ?? '').trim()
+                String(payload?.task?.infoText ?? '').trim(),
+                {
+                  taskType: fetchedTaskType,
+                  describePhotos
+                }
               );
               return;
             }
@@ -6834,8 +7725,44 @@ $sessionPayload = [
           });
         }
         if (taskInfoAckBtnEl) {
-          taskInfoAckBtnEl.addEventListener('click', () => {
+          taskInfoAckBtnEl.addEventListener('click', async () => {
+            if (currentTaskType === 'describe_photo') {
+              if (!describePhotoChoices.length) {
+                await openInfoDialog('برای این ماموریت تصویری ثبت نشده است.', 'ماموریت تصویر');
+                closeQuizOverlay();
+                return;
+              }
+              renderDescribePhotoChoice();
+              setInfoTaskStep('photo');
+              return;
+            }
             closeQuizOverlay();
+          });
+        }
+
+        if (describePhotoChangeBtnEl) {
+          describePhotoChangeBtnEl.addEventListener('click', () => {
+            if (!describePhotoChoices.length) return;
+            describePhotoCurrentIndex = (describePhotoCurrentIndex + 1) % describePhotoChoices.length;
+            renderDescribePhotoChoice();
+          });
+        }
+
+        if (describePhotoSelectBtnEl) {
+          describePhotoSelectBtnEl.addEventListener('click', () => {
+            void openDescribePhotoEditor();
+          });
+        }
+
+        if (describePhotoTextareaEl) {
+          describePhotoTextareaEl.addEventListener('input', () => {
+            updateDescribePhotoWordCount();
+          });
+        }
+
+        if (describePhotoSaveBtnEl) {
+          describePhotoSaveBtnEl.addEventListener('click', () => {
+            void saveDescribePhotoEditor();
           });
         }
 
