@@ -7552,7 +7552,7 @@ $sessionPayload = [
           const updateEventStateText = () => {
             if (eventStatus === 'upcoming') {
               const countdown = formatEventCountdown(startDate, startTime);
-              setRewardTimeBox('زمان باقی‌مانده تا برد جوایز', countdown || 'به‌زودی شروع می‌شود');
+              setRewardTimeBox('زمان باقی‌مانده تا دریافت جوایز', countdown || 'به‌زودی شروع می‌شود');
               return;
             }
 
