@@ -4763,6 +4763,36 @@ $sessionPayload = [
         white-space: pre-wrap;
       }
 
+      .info-task-section.info-task-rich p {
+        margin: 0;
+        white-space: normal;
+      }
+
+      .info-task-section.info-task-rich p + p {
+        margin-top: 10px;
+      }
+
+      .info-task-section.info-task-rich ul,
+      .info-task-section.info-task-rich ol {
+        margin: 8px 0 0;
+        padding-inline-start: 20px;
+        color: #4a5e86;
+      }
+
+      .info-task-section.info-task-rich li + li {
+        margin-top: 4px;
+      }
+
+      .info-task-section.info-task-rich h1,
+      .info-task-section.info-task-rich h2,
+      .info-task-section.info-task-rich h3,
+      .info-task-section.info-task-rich h4,
+      .info-task-section.info-task-rich h5,
+      .info-task-section.info-task-rich h6 {
+        margin: 0 0 8px;
+        color: #1f3560;
+      }
+
       .info-task-ack {
         width: 100%;
       }
@@ -6776,6 +6806,103 @@ $sessionPayload = [
           return sections.filter((sec) => String(sec.title || '').trim() !== '' || (Array.isArray(sec.lines) && sec.lines.join('').trim() !== ''));
         };
 
+        const hasInfoHtmlTag = (text) => /<\s*\/?\s*[a-zA-Z][^>]*>/.test(String(text || ''));
+
+        const INFO_HTML_ALLOWED_TAGS = new Set([
+          'P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S',
+          'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+          'UL', 'OL', 'LI', 'SPAN', 'DIV', 'BLOCKQUOTE', 'A'
+        ]);
+
+        const sanitizeInfoTaskHtml = (htmlText) => {
+          const template = document.createElement('template');
+          template.innerHTML = String(htmlText || '');
+
+          const sanitizeNode = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              return document.createTextNode(String(node.textContent || ''));
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE) {
+              return null;
+            }
+            const element = node;
+            const tagName = String(element.tagName || '').toUpperCase();
+            if (!INFO_HTML_ALLOWED_TAGS.has(tagName)) {
+              const fragment = document.createDocumentFragment();
+              Array.from(element.childNodes).forEach((child) => {
+                const safeChild = sanitizeNode(child);
+                if (safeChild) fragment.appendChild(safeChild);
+              });
+              return fragment;
+            }
+
+            const safeElement = document.createElement(tagName.toLowerCase());
+            if (tagName === 'A') {
+              const rawHref = String(element.getAttribute('href') || '').trim();
+              const loweredHref = rawHref.toLowerCase();
+              const isUnsafe = loweredHref.startsWith('javascript:') || loweredHref.startsWith('data:') || loweredHref.startsWith('vbscript:');
+              if (rawHref !== '' && !isUnsafe) {
+                safeElement.setAttribute('href', rawHref);
+                safeElement.setAttribute('target', '_blank');
+                safeElement.setAttribute('rel', 'noopener noreferrer');
+              }
+            }
+
+            Array.from(element.childNodes).forEach((child) => {
+              const safeChild = sanitizeNode(child);
+              if (safeChild) safeElement.appendChild(safeChild);
+            });
+            return safeElement;
+          };
+
+          const container = document.createElement('div');
+          Array.from(template.content.childNodes).forEach((child) => {
+            const safeChild = sanitizeNode(child);
+            if (safeChild) container.appendChild(safeChild);
+          });
+          return container.innerHTML.trim();
+        };
+
+        const buildInfoTaskContentHtml = (text) => {
+          const source = String(text || '').replace(/\r/g, '').trim();
+          if (source === '') {
+            return '<section class="info-task-section"><p>محتوایی برای این ماموریت ثبت نشده است.</p></section>';
+          }
+
+          if (hasInfoHtmlTag(source)) {
+            const safeHtml = sanitizeInfoTaskHtml(source);
+            if (safeHtml === '') {
+              return '<section class="info-task-section"><p>محتوایی برای این ماموریت ثبت نشده است.</p></section>';
+            }
+            return `<section class="info-task-section info-task-rich">${safeHtml}</section>`;
+          }
+
+          const hasLegacySections = /^\s*A\d+\s*[:\-]?/im.test(source);
+          if (hasLegacySections) {
+            const sections = parseInfoTaskSections(source);
+            if (!sections.length) {
+              return '<section class="info-task-section"><p>محتوایی برای این ماموریت ثبت نشده است.</p></section>';
+            }
+            return sections.map((section) => {
+              const title = escapeHtml(section.title || '');
+              const body = escapeHtml((section.lines || []).join('\n').trim());
+              return `<section class="info-task-section">${title ? `<h3>${title}</h3>` : ''}<p>${body || '-'}</p></section>`;
+            }).join('');
+          }
+
+          const paragraphs = source
+            .split(/\n{2,}/)
+            .map((part) => String(part || '').trim())
+            .filter((part) => part !== '');
+          if (!paragraphs.length) {
+            return '<section class="info-task-section"><p>محتوایی برای این ماموریت ثبت نشده است.</p></section>';
+          }
+          const content = paragraphs
+            .map((part) => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`)
+            .join('');
+          return `<section class="info-task-section info-task-rich">${content}</section>`;
+        };
+
         const countWords = (text) => {
           const source = String(text || '').trim();
           if (source === '') return 0;
@@ -6999,16 +7126,7 @@ $sessionPayload = [
             taskInfoTitleEl.textContent = String(infoTitle || taskTitle || 'اطلاعات ماموریت').trim() || 'اطلاعات ماموریت';
           }
           if (taskInfoContentEl) {
-            const sections = parseInfoTaskSections(infoText);
-            if (!sections.length) {
-              taskInfoContentEl.innerHTML = '<section class="info-task-section"><p>محتوایی برای این ماموریت ثبت نشده است.</p></section>';
-            } else {
-              taskInfoContentEl.innerHTML = sections.map((section) => {
-                const title = escapeHtml(section.title || '');
-                const body = escapeHtml((section.lines || []).join('\n').trim());
-                return `<section class="info-task-section">${title ? `<h3>${title}</h3>` : ''}<p>${body || '-'}</p></section>`;
-              }).join('');
-            }
+            taskInfoContentEl.innerHTML = buildInfoTaskContentHtml(infoText);
           }
           if (currentTaskType === 'describe_photo') {
             renderDescribePhotoChoice();

@@ -409,7 +409,7 @@
     if (!controls) return null;
     return {
       info_title: String(controls.titleInput.value || '').trim(),
-      info_text: String(controls.textInput.value || '').trim()
+      info_text: String(controls.textInput.value || '').replace(/\r\n?/g, '\n')
     };
   }
 
@@ -840,7 +840,10 @@
       </div>
     `;
     wrapper.addEventListener('click', (event) => {
-      const target = event.target;
+      const rawTarget = event.target;
+      const target = rawTarget instanceof Element
+        ? rawTarget
+        : (rawTarget instanceof Node ? rawTarget.parentElement : null);
       if (!(target instanceof Element)) return;
       if (target === wrapper || target.closest('[data-action="close-describe-results-modal"]')) {
         closeDescribeResultsModal();
@@ -891,7 +894,10 @@
       </div>
     `;
     wrapper.addEventListener('click', async (event) => {
-      const target = event.target;
+      const rawTarget = event.target;
+      const target = rawTarget instanceof Element
+        ? rawTarget
+        : (rawTarget instanceof Node ? rawTarget.parentElement : null);
       if (!(target instanceof Element)) return;
       if (target === wrapper || target.closest('[data-action="close-describe-article-modal"]')) {
         closeDescribeArticleModal();

@@ -641,6 +641,11 @@
   padding: 18px;
 }
 
+.tc-shell .tc-describe-results-modal[hidden],
+.tc-shell .tc-describe-article-modal[hidden] {
+  display: none !important;
+}
+
 .tc-shell .tc-describe-results-dialog,
 .tc-shell .tc-describe-article-dialog {
   width: min(960px, 100%);

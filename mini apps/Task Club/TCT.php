@@ -1690,7 +1690,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $title = trim((string)($_POST['info_title'] ?? ''));
-    $text = trim((string)($_POST['info_text'] ?? ''));
+    $text = str_replace(["\r\n", "\r"], "\n", (string)($_POST['info_text'] ?? ''));
     if (!tctSaveTaskInfoSettings($tctTasksDir, $tagCode, [
       'title' => $title,
       'text' => $text
