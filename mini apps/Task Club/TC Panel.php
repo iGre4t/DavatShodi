@@ -19,6 +19,7 @@ $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time()
       <button type="button" class="sub-item active" data-pane="tc-main">Main Panel</button>
       <button type="button" class="sub-item" data-pane="tc-invitees">Invitees</button>
       <button type="button" class="sub-item" data-pane="tc-manage-tasks">Manage Tasks</button>
+      <button type="button" class="sub-item" data-pane="tc-export">Export</button>
       <button type="button" class="sub-item" data-pane="tc-event-style">Event Style</button>
       <div data-tc-task-subtab-nav></div>
     </div>
@@ -283,6 +284,21 @@ $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time()
     <div class="sub-pane" data-pane="tc-manage-tasks">
       <?php include __DIR__ . '/TCT.php'; ?>
     </div>
+    <div class="sub-pane" data-pane="tc-export">
+      <div class="card">
+        <div class="section-header">
+          <h3>Export</h3>
+        </div>
+        <div class="field">
+          <a
+            class="btn primary standard-primary-button"
+            href="mini%20apps/Task%20Club/export_login_data.php"
+            target="_blank"
+            rel="noopener"
+          >Export Login Data</a>
+        </div>
+      </div>
+    </div>
     <div class="sub-pane" data-pane="tc-event-style">
       <div class="card">
         <div class="section-header">
@@ -348,7 +364,6 @@ $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time()
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCSetting.js" defer></script>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-
 
 
 
