@@ -77,6 +77,17 @@
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
       infoTitle: String(raw.infoTitle ?? raw.info_title ?? '').trim(),
       infoText: String(raw.infoText ?? raw.info_text ?? '').trim(),
+      taskPhotos: Array.isArray(raw.taskPhotos ?? raw.task_photos)
+        ? (raw.taskPhotos ?? raw.task_photos).map((item) => ({
+          id: String(item?.id ?? '').trim(),
+          name: String(item?.name ?? '').trim(),
+          fileName: String(item?.fileName ?? item?.filename ?? '').trim(),
+          sourceFilename: String(item?.sourceFilename ?? item?.source_filename ?? '').trim(),
+          sourcePhotoId: Number.parseInt(String(item?.sourcePhotoId ?? item?.source_photo_id ?? '0'), 10) || 0,
+          url: String(item?.url ?? '').trim(),
+          createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
+        })).filter((item) => item.id && item.fileName)
+        : [],
       order: Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : (index + 1)
     };
   }
@@ -297,6 +308,7 @@
 
   function getTaskPaneControls(pane) {
     if (!(pane instanceof HTMLElement)) return null;
+    const titleInput = pane.querySelector('[data-task-field="taskTitle"]');
     const activeToggle = pane.querySelector('[data-task-field="active"]');
     const durationToggle = pane.querySelector('[data-task-field="duration"]');
     const startDate = pane.querySelector('[data-task-field="startDate"]');
@@ -307,6 +319,7 @@
     const saveStatusEl = pane.querySelector('[data-task-save-status]');
     const saveButton = pane.querySelector('[data-action="save-task-settings"]');
     if (
+      !(titleInput instanceof HTMLInputElement) ||
       !(activeToggle instanceof HTMLInputElement) ||
       !(durationToggle instanceof HTMLInputElement) ||
       !(startDate instanceof HTMLInputElement) ||
@@ -317,6 +330,7 @@
       return null;
     }
     return {
+      titleInput,
       activeToggle,
       durationToggle,
       startDate,
@@ -393,6 +407,192 @@
       info_title: String(controls.titleInput.value || '').trim(),
       info_text: String(controls.textInput.value || '').trim()
     };
+  }
+
+  const describePhotoStateByTaskId = new Map();
+
+  function getDescribePhotoState(taskId) {
+    const key = String(taskId || '').trim();
+    if (!key) return null;
+    if (!describePhotoStateByTaskId.has(key)) {
+      describePhotoStateByTaskId.set(key, {
+        selectedPhoto: null,
+        photos: []
+      });
+    }
+    return describePhotoStateByTaskId.get(key);
+  }
+
+  function normalizeDescribePhotoList(items) {
+    if (!Array.isArray(items)) return [];
+    return items.map((item) => ({
+      id: String(item?.id ?? '').trim(),
+      name: String(item?.name ?? '').trim(),
+      fileName: String(item?.fileName ?? item?.filename ?? '').trim(),
+      sourceFilename: String(item?.sourceFilename ?? item?.source_filename ?? '').trim(),
+      sourcePhotoId: normalizeScoreValue(item?.sourcePhotoId ?? item?.source_photo_id ?? 0),
+      url: String(item?.url ?? '').trim(),
+      createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
+    })).filter((item) => item.id !== '' && item.fileName !== '');
+  }
+
+  function toPhotoChooserPayload(photo) {
+    if (!photo || typeof photo !== 'object') return null;
+    const id = Number.parseInt(String(photo.id ?? 0), 10);
+    const title = String(photo.title ?? '').trim();
+    const filename = String(photo.filename ?? '').trim();
+    if (!filename) return null;
+    return {
+      id: Number.isFinite(id) && id > 0 ? id : 0,
+      title,
+      filename
+    };
+  }
+
+  function buildDescribePhotoPreviewUrl(photoLike) {
+    const directUrl = String(photoLike?.url ?? '').trim();
+    if (directUrl) {
+      return directUrl;
+    }
+    const sourcePath = String(photoLike?.filename ?? photoLike?.sourceFilename ?? '').trim();
+    if (!sourcePath) {
+      return '';
+    }
+    if (/^(?:https?:|data:|\/)/i.test(sourcePath)) {
+      return sourcePath;
+    }
+    return encodeURI(sourcePath);
+  }
+
+  function getDescribePhotoPaneControls(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    const nameInput = pane.querySelector('[data-task-photo-name]');
+    const previewImage = pane.querySelector('[data-task-photo-preview-image]');
+    const previewPlaceholder = pane.querySelector('[data-task-photo-preview-placeholder]');
+    const uploadStatus = pane.querySelector('[data-task-photo-upload-status]');
+    const listBody = pane.querySelector('[data-task-photo-list-body]');
+    const listStatus = pane.querySelector('[data-task-photo-list-status]');
+    if (
+      !(nameInput instanceof HTMLInputElement) ||
+      !(previewImage instanceof HTMLImageElement) ||
+      !(previewPlaceholder instanceof HTMLElement) ||
+      !(uploadStatus instanceof HTMLElement) ||
+      !(listBody instanceof HTMLElement) ||
+      !(listStatus instanceof HTMLElement)
+    ) {
+      return null;
+    }
+    return {
+      nameInput,
+      previewImage,
+      previewPlaceholder,
+      uploadStatus,
+      listBody,
+      listStatus
+    };
+  }
+
+  function setDescribePhotoUploadStatus(pane, message, isError = false) {
+    const controls = getDescribePhotoPaneControls(pane);
+    if (!controls) return;
+    controls.uploadStatus.textContent = String(message || '').trim();
+    controls.uploadStatus.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setDescribePhotoListStatus(pane, message, isError = false) {
+    const controls = getDescribePhotoPaneControls(pane);
+    if (!controls) return;
+    controls.listStatus.textContent = String(message || '').trim();
+    controls.listStatus.style.color = isError ? '#d1434a' : '';
+  }
+
+  function renderDescribePhotoUploadCard(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const state = getDescribePhotoState(taskId);
+    const controls = getDescribePhotoPaneControls(pane);
+    if (!state || !controls) return;
+
+    const selected = state.selectedPhoto;
+    const previewUrl = buildDescribePhotoPreviewUrl(selected);
+    const hasSelected = Boolean(selected && previewUrl);
+    if (hasSelected) {
+      controls.previewImage.src = previewUrl;
+      controls.previewImage.alt = String(selected?.title || selected?.filename || 'Selected photo');
+      controls.previewImage.classList.remove('hidden');
+      controls.previewPlaceholder.classList.add('hidden');
+    } else {
+      controls.previewImage.classList.add('hidden');
+      controls.previewImage.removeAttribute('src');
+      controls.previewPlaceholder.classList.remove('hidden');
+    }
+
+    const clearBtn = pane.querySelector('[data-action="clear-task-photo"]');
+    const addBtn = pane.querySelector('[data-action="add-task-photo"]');
+    if (clearBtn instanceof HTMLButtonElement) {
+      clearBtn.disabled = !state.selectedPhoto;
+    }
+    if (addBtn instanceof HTMLButtonElement) {
+      addBtn.disabled = !state.selectedPhoto;
+    }
+  }
+
+  function renderDescribePhotoList(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const state = getDescribePhotoState(taskId);
+    const controls = getDescribePhotoPaneControls(pane);
+    if (!state || !controls) return;
+
+    if (!Array.isArray(state.photos) || !state.photos.length) {
+      controls.listBody.innerHTML = '<tr><td colspan="3" class="muted">No photos added yet.</td></tr>';
+      return;
+    }
+
+    controls.listBody.innerHTML = state.photos.map((photo) => {
+      const thumbUrl = buildDescribePhotoPreviewUrl(photo);
+      const escapedName = escapeHtml(photo.name || '');
+      const escapedPhotoId = escapeHtml(photo.id || '');
+      return `
+        <tr data-task-photo-row="${escapedPhotoId}">
+          <td>
+            ${thumbUrl ? `<img class="tc-task-photo-thumb" src="${escapeHtml(thumbUrl)}" alt="${escapedName || 'Task photo'}" loading="lazy" />` : '<span class="muted">No Preview</span>'}
+          </td>
+          <td>
+            <input
+              type="text"
+              class="tc-task-photo-name-input"
+              data-task-photo-row-name
+              value="${escapedName}"
+            />
+          </td>
+          <td>
+            <div class="tc-task-photo-row-actions">
+              <button type="button" class="btn ghost" data-action="save-task-photo-name" data-photo-id="${escapedPhotoId}">Save</button>
+              <button type="button" class="btn ghost tc-btn-danger" data-action="remove-task-photo" data-photo-id="${escapedPhotoId}">Remove</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function applyDescribePhotoTaskStateFromTask(pane, task) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    if (!taskId) return;
+    const state = getDescribePhotoState(taskId);
+    if (!state) return;
+    state.photos = normalizeDescribePhotoList(task?.taskPhotos);
+    state.selectedPhoto = null;
+    const controls = getDescribePhotoPaneControls(pane);
+    if (controls) {
+      controls.nameInput.value = '';
+    }
+    renderDescribePhotoUploadCard(pane);
+    renderDescribePhotoList(pane);
+    setDescribePhotoUploadStatus(pane, '');
+    setDescribePhotoListStatus(pane, '');
   }
 
   function applyHeaderShortcutToTextarea(textarea) {
@@ -594,6 +794,7 @@
     const controls = getTaskPaneControls(pane);
     if (!controls) return null;
     return {
+      title: String(controls.titleInput.value || '').trim(),
       active: controls.activeToggle.checked ? '1' : '0',
       duration: controls.durationToggle.checked ? '1' : '0',
       start_date: normalizeDate(controls.startDate.value),
@@ -642,6 +843,7 @@
   function applyTaskSettingsToPane(pane, task) {
     const controls = getTaskPaneControls(pane);
     if (!controls) return;
+    controls.titleInput.value = String(task?.title || task?.tagCode || '');
     controls.activeToggle.checked = normalizeBool(task?.active);
     controls.durationToggle.checked = normalizeBool(task?.duration);
     controls.startDate.value = normalizeDate(task?.startDate);
@@ -661,6 +863,9 @@
       infoControls.textInput.value = String(task?.infoText || '');
       setTaskInfoContentSaveStatus(pane, '');
     }
+    if (normalizeTaskType(task?.taskType || pane.dataset.taskType || 'quiz') === 'describe_photo') {
+      applyDescribePhotoTaskStateFromTask(pane, task);
+    }
     syncTaskPaneToggleState(pane);
     setTaskSaveStatus(pane, '');
     setTaskScoreSaveStatus(pane, '');
@@ -670,16 +875,66 @@
     const titleText = task.title || task.tagCode;
     const isInfoTask = isInfoLikeTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
+    const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const typeLabel = taskTypeToken === 'describe_photo' ? 'Describe Photo Task' : (isInfoTask ? 'Info Task' : 'Quiz Task');
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
+    const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
+    const infoTaskTopTabs = isDescribePhotoTask
+      ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">Photo</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
+      : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>';
+    const describePhotoSection = isDescribePhotoTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="photo" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Upload Photo</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field standard-width">
+                  <span>Name</span>
+                  <input type="text" data-task-photo-name placeholder="Photo name" />
+                </label>
+                <div class="photo-uploader tc-task-photo-uploader">
+                  <div class="photo-preview" aria-live="polite">
+                    <img data-task-photo-preview-image class="hidden" alt="Selected task photo" />
+                    <div data-task-photo-preview-placeholder class="photo-placeholder">No photo selected</div>
+                  </div>
+                  <div class="photo-actions">
+                    <button type="button" class="btn" data-action="pick-task-photo">Choose photo</button>
+                    <button type="button" class="btn ghost" data-action="clear-task-photo" disabled>Clear</button>
+                    <button type="button" class="btn primary standard-primary-button" data-action="add-task-photo" disabled>Add Photo</button>
+                  </div>
+                </div>
+                <p class="muted small" data-task-photo-upload-status aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="section-header"><h3>Photo List</h3></div>
+              <div class="table-wrapper tc-task-photo-table-wrap">
+                <table class="tct-list-table tc-task-photo-table">
+                  <thead>
+                    <tr>
+                      <th>Photo</th>
+                      <th>Name</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody data-task-photo-list-body>
+                    ${taskPhotos.length ? '' : '<tr><td colspan="3" class="muted">No photos added yet.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted small" data-task-photo-list-status aria-live="polite"></p>
+            </div>
+          </div>
+        `
+      : '';
     return `
       <div class="tc-task-top-shell" data-task-top-shell>
         <div class="tc-task-top-nav" role="tablist" aria-label="Task Tabs">
           <button type="button" class="tc-task-top-item active" aria-selected="true" data-task-top-trigger="control">Control Pane</button>
           ${isInfoTask
-            ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
+            ? infoTaskTopTabs
             : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'}
         </div>
 
@@ -690,6 +945,10 @@
             </div>
             <p class="muted small">Tag Code: <code>${escapeHtml(task.tagCode)}</code> - Type: ${escapeHtml(typeLabel)}</p>
             <div class="form" style="gap:12px;">
+              <label class="field standard-width">
+                <span>Task Name</span>
+                <input type="text" data-task-field="taskTitle" value="${escapeHtml(titleText)}" autocomplete="off" />
+              </label>
               <div class="tc-status tc-status--inactive" data-task-status>Not Active</div>
               <div class="tc-switch-grid">
                 <label class="switch tc-switch">
@@ -780,6 +1039,7 @@
               </div>
             </div>
           </div>
+          ${describePhotoSection}
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
               <div class="section-header"><h3>Invitees List Card</h3></div>
@@ -951,6 +1211,7 @@
         return;
       }
       if (
+        fieldName === 'taskTitle' ||
         fieldName === 'startDate' ||
         fieldName === 'startTime' ||
         fieldName === 'endDate' ||
@@ -1052,6 +1313,179 @@
         activateTaskTopPane(pane, sectionKey);
         if (sectionKey === 'invitees-rate' && isInfoLikeTaskType(pane.dataset.taskType || 'quiz')) {
           void loadInfoRateDataIntoPane(pane);
+        }
+        if (sectionKey === 'photo') {
+          renderDescribePhotoUploadCard(pane);
+          renderDescribePhotoList(pane);
+        }
+        return;
+      }
+
+      const pickTaskPhotoButton = target.closest('[data-action="pick-task-photo"]');
+      if (pickTaskPhotoButton instanceof HTMLButtonElement) {
+        const pane = pickTaskPhotoButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        if (normalizeTaskType(pane.dataset.taskType || 'quiz') !== 'describe_photo') return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const state = getDescribePhotoState(taskId);
+        const controls = getDescribePhotoPaneControls(pane);
+        if (!state || !controls) return;
+        if (typeof window.openPhotoChooserModal !== 'function') {
+          setDescribePhotoUploadStatus(pane, 'Photo chooser is not available.', true);
+          return;
+        }
+        window.openPhotoChooserModal({
+          allowMultiple: false,
+          onChoose: (selectedPhotos = []) => {
+            const selected = toPhotoChooserPayload(selectedPhotos[0]);
+            if (!selected) {
+              setDescribePhotoUploadStatus(pane, 'No photo selected.', true);
+              return;
+            }
+            state.selectedPhoto = selected;
+            if (String(controls.nameInput.value || '').trim() === '') {
+              controls.nameInput.value = selected.title || '';
+            }
+            renderDescribePhotoUploadCard(pane);
+            setDescribePhotoUploadStatus(pane, 'Photo selected. Click Add Photo to save.');
+          }
+        });
+        return;
+      }
+
+      const clearTaskPhotoButton = target.closest('[data-action="clear-task-photo"]');
+      if (clearTaskPhotoButton instanceof HTMLButtonElement) {
+        const pane = clearTaskPhotoButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const state = getDescribePhotoState(taskId);
+        const controls = getDescribePhotoPaneControls(pane);
+        if (!state || !controls) return;
+        state.selectedPhoto = null;
+        controls.nameInput.value = '';
+        renderDescribePhotoUploadCard(pane);
+        setDescribePhotoUploadStatus(pane, '');
+        return;
+      }
+
+      const addTaskPhotoButton = target.closest('[data-action="add-task-photo"]');
+      if (addTaskPhotoButton instanceof HTMLButtonElement) {
+        const pane = addTaskPhotoButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        if (!taskId) return;
+        const state = getDescribePhotoState(taskId);
+        const controls = getDescribePhotoPaneControls(pane);
+        if (!state || !controls || !state.selectedPhoto) return;
+
+        addTaskPhotoButton.disabled = true;
+        setDescribePhotoUploadStatus(pane, 'Saving...');
+        try {
+          const data = await postTaskAction('add_describe_task_photo', {
+            id: taskId,
+            photo_name: String(controls.nameInput.value || '').trim(),
+            photo_json: JSON.stringify(state.selectedPhoto)
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'photo');
+            setDescribePhotoUploadStatus(activePane, data.message || 'Photo added.');
+            setDescribePhotoListStatus(activePane, '');
+          }
+        } catch (error) {
+          setDescribePhotoUploadStatus(pane, error?.message || 'Failed to add photo.', true);
+        } finally {
+          addTaskPhotoButton.disabled = false;
+        }
+        return;
+      }
+
+      const saveTaskPhotoNameButton = target.closest('[data-action="save-task-photo-name"]');
+      if (saveTaskPhotoNameButton instanceof HTMLButtonElement) {
+        const pane = saveTaskPhotoNameButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const photoId = String(saveTaskPhotoNameButton.getAttribute('data-photo-id') || '').trim();
+        if (!taskId || !photoId) return;
+        const row = saveTaskPhotoNameButton.closest('tr[data-task-photo-row]');
+        const nameInput = row?.querySelector('[data-task-photo-row-name]');
+        if (!(nameInput instanceof HTMLInputElement)) return;
+        const nextName = String(nameInput.value || '').trim();
+        if (!nextName) {
+          setDescribePhotoListStatus(pane, 'Photo name is required.', true);
+          nameInput.focus();
+          return;
+        }
+
+        saveTaskPhotoNameButton.disabled = true;
+        setDescribePhotoListStatus(pane, 'Saving...');
+        try {
+          const data = await postTaskAction('rename_describe_task_photo', {
+            id: taskId,
+            photo_id: photoId,
+            photo_name: nextName
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'photo');
+            setDescribePhotoListStatus(activePane, data.message || 'Photo name updated.');
+          }
+        } catch (error) {
+          setDescribePhotoListStatus(pane, error?.message || 'Failed to update photo name.', true);
+        } finally {
+          saveTaskPhotoNameButton.disabled = false;
+        }
+        return;
+      }
+
+      const removeTaskPhotoButton = target.closest('[data-action="remove-task-photo"]');
+      if (removeTaskPhotoButton instanceof HTMLButtonElement) {
+        const pane = removeTaskPhotoButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const photoId = String(removeTaskPhotoButton.getAttribute('data-photo-id') || '').trim();
+        if (!taskId || !photoId) return;
+
+        removeTaskPhotoButton.disabled = true;
+        setDescribePhotoListStatus(pane, 'Removing...');
+        try {
+          const data = await postTaskAction('remove_describe_task_photo', {
+            id: taskId,
+            photo_id: photoId
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'photo');
+            setDescribePhotoListStatus(activePane, data.message || 'Photo removed.');
+          }
+        } catch (error) {
+          setDescribePhotoListStatus(pane, error?.message || 'Failed to remove photo.', true);
+        } finally {
+          removeTaskPhotoButton.disabled = false;
         }
         return;
       }

@@ -12,6 +12,8 @@ $tctEventInviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
 const TCT_SCORE_SETTINGS_FILE = 'task-score.json';
 const TCT_INFO_SETTINGS_FILE = 'info-task.json';
 const TCT_INFO_SCORES_FILE = 'info-task-scores.json';
+const TCT_DESCRIBE_PHOTO_DIR = 'photos';
+const TCT_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 
 function tctNormalizeTaskType(string $value): string
 {
@@ -86,6 +88,16 @@ function tctNormalizeTagCode(string $value): string
   $upper = strtoupper(trim($value));
   $clean = preg_replace('/[^A-Z0-9_-]+/', '', $upper);
   return is_string($clean) ? $clean : '';
+}
+
+function tctNormalizeTaskTitle(string $value): string
+{
+  $title = trim($value);
+  $title = preg_replace('/\s+/u', ' ', $title);
+  if (!is_string($title)) {
+    return '';
+  }
+  return trim($title);
 }
 
 function tctParseTaskCompletedIds(string $value): array
@@ -339,6 +351,235 @@ function tctSaveTaskInfoScores(string $tasksDir, string $tagCode, array $scoreMa
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
+function tctBuildTaskDescribePhotoDirPath(string $tasksDir, string $tagCode): string
+{
+  $taskDir = tctBuildTaskDirPath($tasksDir, $tagCode);
+  if ($taskDir === '') {
+    return '';
+  }
+  return $taskDir . DIRECTORY_SEPARATOR . TCT_DESCRIBE_PHOTO_DIR;
+}
+
+function tctBuildTaskDescribePhotoMetaPath(string $tasksDir, string $tagCode): string
+{
+  $photoDir = tctBuildTaskDescribePhotoDirPath($tasksDir, $tagCode);
+  if ($photoDir === '') {
+    return '';
+  }
+  return $photoDir . DIRECTORY_SEPARATOR . TCT_DESCRIBE_PHOTO_META_FILE;
+}
+
+function tctProjectRootPath(): string
+{
+  static $cached = null;
+  if (is_string($cached) && $cached !== '') {
+    return $cached;
+  }
+  $resolved = realpath(__DIR__ . '/../../');
+  if (!is_string($resolved) || $resolved === '') {
+    $resolved = dirname(__DIR__, 2);
+  }
+  $cached = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $resolved);
+  return $cached;
+}
+
+function tctNormalizeRelativePath(string $value): string
+{
+  $trimmed = trim($value);
+  if ($trimmed === '') {
+    return '';
+  }
+  $normalized = str_replace('\\', '/', $trimmed);
+  $normalized = preg_replace('#/+#', '/', $normalized);
+  if (!is_string($normalized)) {
+    return '';
+  }
+  $normalized = ltrim($normalized, '/');
+  if ($normalized === '' || strpos($normalized, '..') !== false) {
+    return '';
+  }
+  return $normalized;
+}
+
+function tctResolveAbsolutePathFromRelative(string $relativePath): string
+{
+  $normalizedRelative = tctNormalizeRelativePath($relativePath);
+  if ($normalizedRelative === '') {
+    return '';
+  }
+  $root = tctProjectRootPath();
+  if ($root === '') {
+    return '';
+  }
+  $candidate = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normalizedRelative);
+  $real = realpath($candidate);
+  if (!is_string($real) || $real === '' || !is_file($real)) {
+    return '';
+  }
+  $rootNormalized = str_replace('\\', '/', rtrim($root, DIRECTORY_SEPARATOR));
+  $realNormalized = str_replace('\\', '/', $real);
+  if ($realNormalized !== $rootNormalized && strpos($realNormalized, $rootNormalized . '/') !== 0) {
+    return '';
+  }
+  return $real;
+}
+
+function tctBuildTaskDescribePhotoUrl(string $tagCode, string $fileName): string
+{
+  $normalizedTagCode = tctNormalizeTagCode($tagCode);
+  $safeFileName = basename(trim($fileName));
+  if ($normalizedTagCode === '' || $safeFileName === '') {
+    return '';
+  }
+  $segments = [
+    'mini apps',
+    'Task Club',
+    'tasks',
+    $normalizedTagCode,
+    TCT_DESCRIBE_PHOTO_DIR,
+    $safeFileName
+  ];
+  return implode('/', array_map(static fn(string $segment): string => rawurlencode($segment), $segments));
+}
+
+function tctMakeTaskDescribePhotoId(): string
+{
+  try {
+    return 'tp_' . bin2hex(random_bytes(6));
+  } catch (Throwable $e) {
+    return 'tp_' . str_replace('.', '', uniqid('', true));
+  }
+}
+
+function tctBuildTaskDescribePhotoDisplayName(string $inputName, string $fallbackTitle, string $sourceFilename): string
+{
+  $name = trim($inputName);
+  if ($name !== '') {
+    return $name;
+  }
+  $title = trim($fallbackTitle);
+  if ($title !== '') {
+    return $title;
+  }
+  $base = trim(pathinfo(basename($sourceFilename), PATHINFO_FILENAME));
+  return $base !== '' ? $base : 'Photo';
+}
+
+function tctEnsureTaskDescribePhotoStore(string $tasksDir, string $tagCode): bool
+{
+  $photoDir = tctBuildTaskDescribePhotoDirPath($tasksDir, $tagCode);
+  if ($photoDir === '') {
+    return false;
+  }
+  if (!is_dir($photoDir) && !(mkdir($photoDir, 0777, true) || is_dir($photoDir))) {
+    return false;
+  }
+  $metaPath = tctBuildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
+  if ($metaPath === '') {
+    return false;
+  }
+  if (!is_file($metaPath)) {
+    $json = json_encode([], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+      return false;
+    }
+    if (file_put_contents($metaPath, $json . PHP_EOL, LOCK_EX) === false) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function tctLoadTaskDescribePhotos(string $tasksDir, string $tagCode): array
+{
+  $metaPath = tctBuildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
+  if ($metaPath === '' || !is_file($metaPath)) {
+    return [];
+  }
+  $content = file_get_contents($metaPath);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+
+  $photos = [];
+  foreach ($decoded as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $id = trim((string)($item['id'] ?? ''));
+    $name = trim((string)($item['name'] ?? ''));
+    $fileName = basename(trim((string)($item['fileName'] ?? ($item['filename'] ?? ''))));
+    if ($id === '' || $fileName === '') {
+      continue;
+    }
+    if ($name === '') {
+      $name = trim(pathinfo($fileName, PATHINFO_FILENAME));
+    }
+    if ($name === '') {
+      $name = 'Photo';
+    }
+    $photo = [
+      'id' => $id,
+      'name' => $name,
+      'fileName' => $fileName,
+      'sourcePhotoId' => max(0, (int)($item['sourcePhotoId'] ?? ($item['source_photo_id'] ?? 0))),
+      'sourceFilename' => trim((string)($item['sourceFilename'] ?? ($item['source_filename'] ?? ''))),
+      'createdAt' => trim((string)($item['createdAt'] ?? ($item['created_at'] ?? '')))
+    ];
+    $photo['url'] = tctBuildTaskDescribePhotoUrl($tagCode, $fileName);
+    $photos[] = $photo;
+  }
+  return $photos;
+}
+
+function tctSaveTaskDescribePhotos(string $tasksDir, string $tagCode, array $photos): bool
+{
+  if (!tctEnsureTaskDescribePhotoStore($tasksDir, $tagCode)) {
+    return false;
+  }
+  $metaPath = tctBuildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
+  if ($metaPath === '') {
+    return false;
+  }
+  $safe = [];
+  $seen = [];
+  foreach ($photos as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $id = trim((string)($item['id'] ?? ''));
+    $fileName = basename(trim((string)($item['fileName'] ?? ($item['filename'] ?? ''))));
+    if ($id === '' || $fileName === '' || isset($seen[$id])) {
+      continue;
+    }
+    $seen[$id] = true;
+    $name = trim((string)($item['name'] ?? ''));
+    if ($name === '') {
+      $name = trim(pathinfo($fileName, PATHINFO_FILENAME));
+    }
+    if ($name === '') {
+      $name = 'Photo';
+    }
+    $safe[] = [
+      'id' => $id,
+      'name' => $name,
+      'fileName' => $fileName,
+      'sourcePhotoId' => max(0, (int)($item['sourcePhotoId'] ?? ($item['source_photo_id'] ?? 0))),
+      'sourceFilename' => trim((string)($item['sourceFilename'] ?? ($item['source_filename'] ?? ''))),
+      'createdAt' => trim((string)($item['createdAt'] ?? ($item['created_at'] ?? '')))
+    ];
+  }
+  $json = json_encode($safe, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($metaPath, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
 function tctMergeTaskScores(array $tasks, string $tasksDir): array
 {
   $merged = [];
@@ -355,9 +596,13 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
+      $task['taskPhotos'] = $taskType === 'describe_photo'
+        ? tctLoadTaskDescribePhotos($tasksDir, $tagCode)
+        : [];
     } else {
       $task['infoTitle'] = '';
       $task['infoText'] = '';
+      $task['taskPhotos'] = [];
     }
     $merged[] = $task;
   }
@@ -831,6 +1076,10 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
     return false;
   }
 
+  if (!tctEnsureTaskDescribePhotoStore($tasksDir, $normalizedTagCode)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -956,7 +1205,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
   }
 
   if ($action === 'add') {
-    $title = trim((string)($_POST['title'] ?? ''));
+    $title = tctNormalizeTaskTitle((string)($_POST['title'] ?? ''));
     $taskType = tctNormalizeTaskType((string)($_POST['task_type'] ?? 'quiz'));
     if ($title === '') {
       echo json_encode(['status' => 'error', 'message' => 'Task title is required.'], JSON_UNESCAPED_UNICODE);
@@ -1033,10 +1282,50 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     exit;
   }
 
-  if ($action === 'save_task_settings') {
+  if ($action === 'save_task_title') {
     $id = trim((string)($_POST['id'] ?? ''));
+    $title = tctNormalizeTaskTitle((string)($_POST['title'] ?? ''));
     if ($id === '') {
       echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($title === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Task title is required.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $found = false;
+    foreach ($tasks as $index => $task) {
+      if ((string)($task['id'] ?? '') !== $id) {
+        continue;
+      }
+      $tasks[$index]['title'] = $title;
+      $found = true;
+      break;
+    }
+    if (!$found) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $tasks = tctReindexTasks($tasks);
+    if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save task title.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo json_encode(['status' => 'ok', 'message' => 'Task title saved.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_task_settings') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $title = tctNormalizeTaskTitle((string)($_POST['title'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($title === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Task title is required.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -1052,6 +1341,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       if ((string)($task['id'] ?? '') !== $id) {
         continue;
       }
+      $tasks[$index]['title'] = $title;
       $tasks[$index]['active'] = $active;
       $tasks[$index]['duration'] = $duration;
       $tasks[$index]['startDate'] = $startDate;
@@ -1155,6 +1445,236 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Information content saved.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'add_describe_task_photo') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Describe Photo Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $rawPhotoJson = (string)($_POST['photo_json'] ?? '');
+    $photoPayload = json_decode($rawPhotoJson, true);
+    if (!is_array($photoPayload)) {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid photo payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $sourceFilename = trim((string)($photoPayload['filename'] ?? ''));
+    $sourceAbsolutePath = tctResolveAbsolutePathFromRelative($sourceFilename);
+    if ($sourceAbsolutePath === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Selected photo file was not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    if (!tctEnsureTaskFolder($tctTasksDir, $tagCode)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to prepare task folder.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $photosDirPath = tctBuildTaskDescribePhotoDirPath($tctTasksDir, $tagCode);
+    if ($photosDirPath === '' || (!is_dir($photosDirPath) && !(mkdir($photosDirPath, 0777, true) || is_dir($photosDirPath)))) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to prepare photos directory.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $extension = strtolower(trim((string)pathinfo($sourceAbsolutePath, PATHINFO_EXTENSION)));
+    if ($extension === '') {
+      $extension = 'jpg';
+    }
+    try {
+      $token = bin2hex(random_bytes(4));
+    } catch (Throwable $e) {
+      $token = str_replace('.', '', uniqid('', true));
+    }
+    $destinationFileName = 'task-photo-' . date('YmdHis') . '-' . $token . '.' . $extension;
+    $destinationAbsolutePath = $photosDirPath . DIRECTORY_SEPARATOR . $destinationFileName;
+    if (!@copy($sourceAbsolutePath, $destinationAbsolutePath)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to copy selected photo.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $customName = trim((string)($_POST['photo_name'] ?? ''));
+    $titleFallback = trim((string)($photoPayload['title'] ?? ''));
+    $displayName = tctBuildTaskDescribePhotoDisplayName($customName, $titleFallback, $sourceFilename);
+
+    $photos = tctLoadTaskDescribePhotos($tctTasksDir, $tagCode);
+    $photos[] = [
+      'id' => tctMakeTaskDescribePhotoId(),
+      'name' => $displayName,
+      'fileName' => $destinationFileName,
+      'sourcePhotoId' => max(0, (int)($photoPayload['id'] ?? 0)),
+      'sourceFilename' => $sourceFilename,
+      'createdAt' => date('Y-m-d H:i:s')
+    ];
+    if (!tctSaveTaskDescribePhotos($tctTasksDir, $tagCode, $photos)) {
+      @unlink($destinationAbsolutePath);
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save photo metadata.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Photo added.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'rename_describe_task_photo') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $photoId = trim((string)($_POST['photo_id'] ?? ''));
+    if ($id === '' || $photoId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid photo payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Describe Photo Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $newName = trim((string)($_POST['photo_name'] ?? ''));
+    if ($newName === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Photo name is required.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $photos = tctLoadTaskDescribePhotos($tctTasksDir, $tagCode);
+    $found = false;
+    foreach ($photos as $index => $photo) {
+      if (!is_array($photo) || trim((string)($photo['id'] ?? '')) !== $photoId) {
+        continue;
+      }
+      $photos[$index]['name'] = $newName;
+      $found = true;
+      break;
+    }
+    if (!$found) {
+      echo json_encode(['status' => 'error', 'message' => 'Photo not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!tctSaveTaskDescribePhotos($tctTasksDir, $tagCode, $photos)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update photo name.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Photo name updated.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'remove_describe_task_photo') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $photoId = trim((string)($_POST['photo_id'] ?? ''));
+    if ($id === '' || $photoId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid photo payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Describe Photo Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $photos = tctLoadTaskDescribePhotos($tctTasksDir, $tagCode);
+    $nextPhotos = [];
+    $removedPhoto = null;
+    foreach ($photos as $photo) {
+      if (!is_array($photo)) {
+        continue;
+      }
+      if ($removedPhoto === null && trim((string)($photo['id'] ?? '')) === $photoId) {
+        $removedPhoto = $photo;
+        continue;
+      }
+      $nextPhotos[] = $photo;
+    }
+    if (!is_array($removedPhoto)) {
+      echo json_encode(['status' => 'error', 'message' => 'Photo not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $photosDirPath = tctBuildTaskDescribePhotoDirPath($tctTasksDir, $tagCode);
+    $removedFileName = basename(trim((string)($removedPhoto['fileName'] ?? '')));
+    if ($photosDirPath !== '' && $removedFileName !== '') {
+      $removedAbsolutePath = $photosDirPath . DIRECTORY_SEPARATOR . $removedFileName;
+      if (is_file($removedAbsolutePath)) {
+        @unlink($removedAbsolutePath);
+      }
+    }
+
+    if (!tctSaveTaskDescribePhotos($tctTasksDir, $tagCode, $nextPhotos)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update photo list.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Photo removed.',
       'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
     ], JSON_UNESCAPED_UNICODE);
     exit;
@@ -1434,7 +1954,7 @@ if (TCT_INCLUDE_ONLY) {
           <th>Task</th>
           <th>Tag Code</th>
           <th>Action</th>
-          <th class="tct-drag-cell">Sort</th>
+          <th>Move</th>
         </tr>
       </thead>
       <tbody id="tct-list-body">
@@ -1455,7 +1975,6 @@ if (TCT_INCLUDE_ONLY) {
   if (!form || !titleInput || !taskTypeInput || !statusEl || !listBody) return;
 
   let tasks = [];
-  let draggedTaskId = '';
 
   const esc = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -1516,28 +2035,43 @@ if (TCT_INCLUDE_ONLY) {
     } catch {}
   };
 
-  const clearDragVisuals = () => {
-    Array.from(listBody.querySelectorAll('.tct-row-drop-target')).forEach((node) => {
-      node.classList.remove('tct-row-drop-target');
-    });
-    Array.from(listBody.querySelectorAll('.tct-row-dragging')).forEach((node) => {
-      node.classList.remove('tct-row-dragging');
-    });
+  const normalizeTasksPayload = (payloadTasks) => {
+    const loaded = Array.isArray(payloadTasks) ? payloadTasks : [];
+    const normalized = loaded.map((task, index) => ({
+      id: String(task.id || ''),
+      title: String(task.title || ''),
+      tagCode: String(task.tagCode || '').trim(),
+      taskType: normalizeTaskType(task.taskType || 'quiz'),
+      active: Boolean(task.active),
+      duration: Boolean(task.duration),
+      startDate: String(task.startDate || ''),
+      startTime: String(task.startTime || ''),
+      endDate: String(task.endDate || ''),
+      endTime: String(task.endTime || ''),
+      score: normalizeScore(task.score),
+      afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
+      order: Number.parseInt(task.order, 10) || (index + 1),
+      createdAt: String(task.createdAt || '')
+    }));
+    normalized.sort((a, b) => a.order - b.order);
+    return normalized;
   };
 
-  const reorderById = (dragId, targetId, placeAfter) => {
-    const fromIndex = tasks.findIndex((item) => item.id === dragId);
-    const toIndex = tasks.findIndex((item) => item.id === targetId);
-    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return false;
-    const [moved] = tasks.splice(fromIndex, 1);
-    let insertIndex = toIndex;
-    if (fromIndex < toIndex) {
-      insertIndex = placeAfter ? toIndex : toIndex - 1;
-    } else {
-      insertIndex = placeAfter ? toIndex + 1 : toIndex;
+  const setTasks = (payloadTasks) => {
+    tasks = normalizeTasksPayload(payloadTasks);
+  };
+
+  const moveTaskByOffset = (id, offset) => {
+    const fromIndex = tasks.findIndex((item) => item.id === id);
+    if (fromIndex < 0) {
+      return false;
     }
-    insertIndex = Math.max(0, Math.min(tasks.length, insertIndex));
-    tasks.splice(insertIndex, 0, moved);
+    const toIndex = fromIndex + offset;
+    if (toIndex < 0 || toIndex >= tasks.length) {
+      return false;
+    }
+    const [moved] = tasks.splice(fromIndex, 1);
+    tasks.splice(toIndex, 0, moved);
     tasks = tasks.map((task, index) => ({ ...task, order: index + 1 }));
     return true;
   };
@@ -1548,17 +2082,31 @@ if (TCT_INCLUDE_ONLY) {
       return;
     }
     listBody.innerHTML = tasks.map((task, index) => `
-      <tr data-task-id="${esc(task.id)}" draggable="true">
+      <tr data-task-id="${esc(task.id)}">
         <td>${index + 1}</td>
-        <td>${esc(task.title)}</td>
+        <td>
+          <div class="tct-task-title-editor">
+            <input
+              type="text"
+              class="tct-task-title-input"
+              data-task-title-id="${esc(task.id)}"
+              value="${esc(task.title)}"
+              autocomplete="off"
+            />
+            <button type="button" class="btn ghost" data-save-title-id="${esc(task.id)}">Save</button>
+          </div>
+        </td>
         <td><code>${esc(task.tagCode)}</code></td>
         <td>
           <div class="tct-action-wrap">
             <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}">Remove</button>
           </div>
         </td>
-        <td class="tct-drag-cell">
-          <button type="button" class="tct-drag-handle" data-drag-handle="1" title="Drag to reorder" aria-label="Drag to reorder">&#9776;</button>
+        <td>
+          <div class="tct-order-actions">
+            <button type="button" class="btn ghost" data-move-up-id="${esc(task.id)}" ${index === 0 ? 'disabled' : ''}>Up</button>
+            <button type="button" class="btn ghost" data-move-down-id="${esc(task.id)}" ${index === (tasks.length - 1) ? 'disabled' : ''}>Down</button>
+          </div>
         </td>
       </tr>
     `).join('');
@@ -1580,24 +2128,7 @@ if (TCT_INCLUDE_ONLY) {
 
   const syncTasks = async () => {
     const data = await postAction('list');
-    const loaded = Array.isArray(data.tasks) ? data.tasks : [];
-    tasks = loaded.map((task, index) => ({
-      id: String(task.id || ''),
-      title: String(task.title || ''),
-      tagCode: String(task.tagCode || '').trim(),
-      taskType: normalizeTaskType(task.taskType || 'quiz'),
-      active: Boolean(task.active),
-      duration: Boolean(task.duration),
-      startDate: String(task.startDate || ''),
-      startTime: String(task.startTime || ''),
-      endDate: String(task.endDate || ''),
-      endTime: String(task.endTime || ''),
-      score: normalizeScore(task.score),
-      afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
-      order: Number.parseInt(task.order, 10) || (index + 1),
-      createdAt: String(task.createdAt || '')
-    }));
-    tasks.sort((a, b) => a.order - b.order);
+    setTasks(data.tasks);
     renderTasks();
     emitTasksChanged();
   };
@@ -1605,27 +2136,25 @@ if (TCT_INCLUDE_ONLY) {
   const persistOrder = async () => {
     const orderedIds = tasks.map((task) => task.id);
     const data = await postAction('reorder', { ordered_ids: JSON.stringify(orderedIds) });
-    const loaded = Array.isArray(data.tasks) ? data.tasks : [];
-    tasks = loaded.map((task, index) => ({
-      id: String(task.id || ''),
-      title: String(task.title || ''),
-      tagCode: String(task.tagCode || '').trim(),
-      taskType: normalizeTaskType(task.taskType || 'quiz'),
-      active: Boolean(task.active),
-      duration: Boolean(task.duration),
-      startDate: String(task.startDate || ''),
-      startTime: String(task.startTime || ''),
-      endDate: String(task.endDate || ''),
-      endTime: String(task.endTime || ''),
-      score: normalizeScore(task.score),
-      afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
-      order: Number.parseInt(task.order, 10) || (index + 1),
-      createdAt: String(task.createdAt || '')
-    }));
-    tasks.sort((a, b) => a.order - b.order);
+    setTasks(data.tasks);
     renderTasks();
     emitTasksChanged();
     setStatus(data.message || 'Task order updated.');
+  };
+
+  const saveTaskTitle = async (id, nextTitle) => {
+    const title = String(nextTitle || '').trim();
+    if (!id) {
+      throw new Error('Invalid task id.');
+    }
+    if (!title) {
+      throw new Error('Task title is required.');
+    }
+    const data = await postAction('save_task_title', { id, title });
+    setTasks(data.tasks);
+    renderTasks();
+    emitTasksChanged();
+    setStatus(data.message || 'Task title saved.');
   };
 
   form.addEventListener('submit', async (event) => {
@@ -1643,8 +2172,7 @@ if (TCT_INCLUDE_ONLY) {
     }
     try {
       const data = await postAction('add', { title, task_type: taskType });
-      tasks = Array.isArray(data.tasks) ? data.tasks : tasks;
-      tasks.sort((a, b) => Number(a.order) - Number(b.order));
+      setTasks(Array.isArray(data.tasks) ? data.tasks : tasks);
       renderTasks();
       emitTasksChanged();
       setStatus(data.message || 'Task added.');
@@ -1663,89 +2191,72 @@ if (TCT_INCLUDE_ONLY) {
   listBody.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+    const titleSaveBtn = target.closest('[data-save-title-id]');
+    if (titleSaveBtn instanceof HTMLButtonElement) {
+      const id = titleSaveBtn.getAttribute('data-save-title-id') || '';
+      const row = titleSaveBtn.closest('tr[data-task-id]');
+      const titleField = row?.querySelector('[data-task-title-id]');
+      if (!id || !(titleField instanceof HTMLInputElement)) return;
+      titleSaveBtn.disabled = true;
+      try {
+        await saveTaskTitle(id, titleField.value);
+      } catch (error) {
+        setStatus(error?.message || 'Failed to save task title.', true);
+      } finally {
+        titleSaveBtn.disabled = false;
+      }
+      return;
+    }
+
+    const moveUpBtn = target.closest('[data-move-up-id]');
+    if (moveUpBtn instanceof HTMLButtonElement) {
+      const id = moveUpBtn.getAttribute('data-move-up-id') || '';
+      if (!id) return;
+      const moved = moveTaskByOffset(id, -1);
+      if (!moved) return;
+      renderTasks();
+      try {
+        await persistOrder();
+      } catch (error) {
+        setStatus(error?.message || 'Failed to save task order.', true);
+        await syncTasks();
+      }
+      return;
+    }
+
+    const moveDownBtn = target.closest('[data-move-down-id]');
+    if (moveDownBtn instanceof HTMLButtonElement) {
+      const id = moveDownBtn.getAttribute('data-move-down-id') || '';
+      if (!id) return;
+      const moved = moveTaskByOffset(id, 1);
+      if (!moved) return;
+      renderTasks();
+      try {
+        await persistOrder();
+      } catch (error) {
+        setStatus(error?.message || 'Failed to save task order.', true);
+        await syncTasks();
+      }
+      return;
+    }
+
     const removeBtn = target.closest('[data-remove-id]');
-    if (!removeBtn) return;
+    if (!(removeBtn instanceof HTMLButtonElement)) return;
     const id = removeBtn.getAttribute('data-remove-id') || '';
     if (!id) return;
     if (!window.confirm('Remove this task?')) return;
+    removeBtn.disabled = true;
     try {
       const data = await postAction('remove', { id });
-      tasks = Array.isArray(data.tasks) ? data.tasks : [];
-      tasks.sort((a, b) => Number(a.order) - Number(b.order));
+      setTasks(Array.isArray(data.tasks) ? data.tasks : []);
       renderTasks();
       emitTasksChanged();
       setStatus(data.message || 'Task removed.');
     } catch (error) {
       setStatus(error?.message || 'Failed to remove task.', true);
-    }
-  });
-
-  listBody.addEventListener('dragstart', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const handle = target.closest('[data-drag-handle]');
-    if (!handle) {
-      event.preventDefault();
-      return;
-    }
-    const row = handle.closest('tr[data-task-id]');
-    if (!(row instanceof HTMLTableRowElement)) {
-      event.preventDefault();
-      return;
-    }
-    draggedTaskId = row.getAttribute('data-task-id') || '';
-    if (!draggedTaskId) {
-      event.preventDefault();
-      return;
-    }
-    row.classList.add('tct-row-dragging');
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', draggedTaskId);
-    }
-  });
-
-  listBody.addEventListener('dragover', (event) => {
-    if (!draggedTaskId) return;
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const row = target.closest('tr[data-task-id]');
-    if (!(row instanceof HTMLTableRowElement)) return;
-    const targetId = row.getAttribute('data-task-id') || '';
-    if (!targetId || targetId === draggedTaskId) return;
-    event.preventDefault();
-    clearDragVisuals();
-    row.classList.add('tct-row-drop-target');
-  });
-
-  listBody.addEventListener('drop', async (event) => {
-    if (!draggedTaskId) return;
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const row = target.closest('tr[data-task-id]');
-    if (!(row instanceof HTMLTableRowElement)) return;
-    const targetId = row.getAttribute('data-task-id') || '';
-    if (!targetId || targetId === draggedTaskId) return;
-    event.preventDefault();
-    const rect = row.getBoundingClientRect();
-    const placeAfter = event.clientY > (rect.top + rect.height / 2);
-    try {
-      if (reorderById(draggedTaskId, targetId, placeAfter)) {
-        renderTasks();
-        await persistOrder();
-      }
-    } catch (error) {
-      setStatus(error?.message || 'Failed to save task order.', true);
-      await syncTasks();
     } finally {
-      draggedTaskId = '';
-      clearDragVisuals();
+      removeBtn.disabled = false;
     }
-  });
-
-  listBody.addEventListener('dragend', () => {
-    draggedTaskId = '';
-    clearDragVisuals();
   });
 
   syncTasks()
