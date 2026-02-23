@@ -58,6 +58,9 @@ const TASKS_DIR_PATH = __DIR__ . '/tasks';
 const TASKS_JS_STORE_PATH = TASKS_DIR_PATH . '/tasks.js';
 const TASK_SCORE_SETTINGS_FILE = 'task-score.json';
 const TASK_INFO_SETTINGS_FILE = 'info-task.json';
+const TASK_TEAM_SETTINGS_FILE = 'team-settings.json';
+const TASK_TEAM_CHALLENGES_FILE = 'team-challenges.json';
+const TASK_TEAM_RUNTIME_FILE = 'team-runtime.json';
 const TASK_DESCRIBE_PHOTO_DIR = 'photos';
 const TASK_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 const TASK_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
@@ -879,7 +882,9 @@ function readTaskInfoSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = [
     'title' => '',
-    'text' => ''
+    'text' => '',
+    'guidePrefix' => '',
+    'guideSuffix' => ''
   ];
   $normalizedTag = normalizeTaskTagCode($tagCode);
   if ($normalizedTag === '') {
@@ -899,8 +904,842 @@ function readTaskInfoSettings(string $tasksDir, string $tagCode): array
   }
   return [
     'title' => trim((string)($decoded['title'] ?? '')),
-    'text' => trim((string)($decoded['text'] ?? ''))
+    'text' => trim((string)($decoded['text'] ?? '')),
+    'guidePrefix' => trim((string)($decoded['guidePrefix'] ?? ($decoded['guide_prefix'] ?? ''))),
+    'guideSuffix' => trim((string)($decoded['guideSuffix'] ?? ($decoded['guide_suffix'] ?? '')))
   ];
+}
+
+function readTaskTeamSettings(string $tasksDir, string $tagCode): array
+{
+  $defaults = [
+    'teamMin' => 1,
+    'teamMax' => 1,
+    'teamAdditionalNote' => ''
+  ];
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return $defaults;
+  }
+  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_SETTINGS_FILE;
+  if (!is_file($path)) {
+    return $defaults;
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return $defaults;
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return $defaults;
+  }
+  $teamMin = normalizeTaskScoreValue($decoded['teamMin'] ?? ($decoded['team_min'] ?? 1));
+  $teamMax = normalizeTaskScoreValue($decoded['teamMax'] ?? ($decoded['team_max'] ?? 1));
+  $teamAdditionalNote = trim((string)($decoded['teamAdditionalNote'] ?? ($decoded['team_additional_note'] ?? '')));
+  if ($teamMin < 1) {
+    $teamMin = 1;
+  }
+  if ($teamMax < $teamMin) {
+    $teamMax = $teamMin;
+  }
+  return [
+    'teamMin' => $teamMin,
+    'teamMax' => $teamMax,
+    'teamAdditionalNote' => $teamAdditionalNote
+  ];
+}
+
+function readTaskTeamChallenges(string $tasksDir, string $tagCode): array
+{
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return [];
+  }
+  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_CHALLENGES_FILE;
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+
+  $result = [];
+  $seen = [];
+  foreach ($decoded as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $challengeId = trim((string)($item['id'] ?? ''));
+    if ($challengeId === '' || isset($seen[$challengeId])) {
+      continue;
+    }
+    $seen[$challengeId] = true;
+    $name = trim((string)($item['name'] ?? ''));
+    if ($name === '') {
+      $name = 'Challenge';
+    }
+    $guide = trim((string)($item['guide'] ?? ($item['challengeGuide'] ?? ($item['challenge_guide'] ?? ''))));
+    $quantity = max(0, normalizeTaskScoreValue($item['quantity'] ?? 0));
+    $last = max(0, normalizeTaskScoreValue($item['last'] ?? $quantity));
+    if ($quantity === 0 && $last > 0) {
+      $quantity = $last;
+    }
+    if ($last > $quantity) {
+      $last = $quantity;
+    }
+    $result[] = [
+      'id' => $challengeId,
+      'name' => $name,
+      'guide' => $guide,
+      'quantity' => $quantity,
+      'last' => $last,
+      'createdAt' => trim((string)($item['createdAt'] ?? ($item['created_at'] ?? '')))
+    ];
+  }
+  return $result;
+}
+
+function saveTaskTeamChallenges(string $tasksDir, string $tagCode, array $challenges): bool
+{
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return false;
+  }
+  $taskDir = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag;
+  if (!is_dir($taskDir) && !(mkdir($taskDir, 0777, true) || is_dir($taskDir))) {
+    return false;
+  }
+  $path = $taskDir . DIRECTORY_SEPARATOR . TASK_TEAM_CHALLENGES_FILE;
+  $safe = [];
+  $seen = [];
+  foreach ($challenges as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $challengeId = trim((string)($item['id'] ?? ''));
+    if ($challengeId === '' || isset($seen[$challengeId])) {
+      continue;
+    }
+    $seen[$challengeId] = true;
+    $name = trim((string)($item['name'] ?? ''));
+    if ($name === '') {
+      $name = 'Challenge';
+    }
+    $guide = trim((string)($item['guide'] ?? ''));
+    $quantity = max(0, normalizeTaskScoreValue($item['quantity'] ?? 0));
+    $last = max(0, normalizeTaskScoreValue($item['last'] ?? $quantity));
+    if ($quantity === 0 && $last > 0) {
+      $quantity = $last;
+    }
+    if ($last > $quantity) {
+      $last = $quantity;
+    }
+    $safe[] = [
+      'id' => $challengeId,
+      'name' => $name,
+      'guide' => $guide,
+      'quantity' => $quantity,
+      'last' => $last,
+      'createdAt' => trim((string)($item['createdAt'] ?? ($item['created_at'] ?? date('Y-m-d H:i:s'))))
+    ];
+  }
+  $json = json_encode($safe, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function readTaskTeamRuntime(string $tasksDir, string $tagCode): array
+{
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return ['teams' => []];
+  }
+  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_RUNTIME_FILE;
+  if (!is_file($path)) {
+    return ['teams' => []];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return ['teams' => []];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return ['teams' => []];
+  }
+  $teams = is_array($decoded['teams'] ?? null) ? $decoded['teams'] : [];
+  $safeTeams = [];
+  $seenIds = [];
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamId = trim((string)($team['id'] ?? ''));
+    $teamName = trim((string)($team['name'] ?? ''));
+    $leaderWorkId = trim((string)($team['leaderWorkId'] ?? ($team['leader_work_id'] ?? '')));
+    if ($teamId === '' || $teamName === '' || $leaderWorkId === '' || isset($seenIds[$teamId])) {
+      continue;
+    }
+    $seenIds[$teamId] = true;
+    $joinType = normalizeTeamJoinType((string)($team['joinType'] ?? ($team['join_type'] ?? 'private')));
+    $members = [];
+    foreach ((array)($team['members'] ?? []) as $memberWorkId) {
+      $member = trim((string)$memberWorkId);
+      if ($member !== '' && !in_array($member, $members, true)) {
+        $members[] = $member;
+      }
+    }
+    if (!in_array($leaderWorkId, $members, true)) {
+      array_unshift($members, $leaderWorkId);
+    }
+    $invites = [];
+    foreach ((array)($team['invites'] ?? []) as $inviteWorkId) {
+      $invite = trim((string)$inviteWorkId);
+      if ($invite !== '' && !in_array($invite, $invites, true) && !in_array($invite, $members, true)) {
+        $invites[] = $invite;
+      }
+    }
+    $requests = [];
+    foreach ((array)($team['requests'] ?? []) as $requestWorkId) {
+      $request = trim((string)$requestWorkId);
+      if ($request !== '' && !in_array($request, $requests, true) && !in_array($request, $members, true)) {
+        $requests[] = $request;
+      }
+    }
+    $safeTeams[] = [
+      'id' => $teamId,
+      'name' => $teamName,
+      'leaderWorkId' => $leaderWorkId,
+      'joinType' => $joinType,
+      'members' => array_values($members),
+      'invites' => array_values($invites),
+      'requests' => array_values($requests),
+      'renameCount' => max(0, min(3, (int)($team['renameCount'] ?? ($team['rename_count'] ?? 0)))),
+      'started' => (bool)($team['started'] ?? false),
+      'startedAt' => trim((string)($team['startedAt'] ?? ($team['started_at'] ?? ''))),
+      'challengeId' => trim((string)($team['challengeId'] ?? ($team['challenge_id'] ?? ''))),
+      'challengeName' => trim((string)($team['challengeName'] ?? ($team['challenge_name'] ?? ''))),
+      'challengeGuide' => trim((string)($team['challengeGuide'] ?? ($team['challenge_guide'] ?? ''))),
+      'createdAt' => trim((string)($team['createdAt'] ?? ($team['created_at'] ?? '')))
+    ];
+  }
+  return ['teams' => $safeTeams];
+}
+
+function saveTaskTeamRuntime(string $tasksDir, string $tagCode, array $runtime): bool
+{
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  if ($normalizedTag === '') {
+    return false;
+  }
+  $taskDir = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag;
+  if (!is_dir($taskDir) && !(mkdir($taskDir, 0777, true) || is_dir($taskDir))) {
+    return false;
+  }
+  $path = $taskDir . DIRECTORY_SEPARATOR . TASK_TEAM_RUNTIME_FILE;
+  $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+  $json = json_encode(['teams' => array_values($teams)], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function normalizeTeamJoinType(string $value): string
+{
+  $token = strtolower(trim($value));
+  if ($token === 'public_open' || $token === 'public-open' || $token === 'open' || $token === 'free') {
+    return 'public_open';
+  }
+  if ($token === 'public_request' || $token === 'public-request' || $token === 'request') {
+    return 'public_request';
+  }
+  return 'private';
+}
+
+function makeTeamId(): string
+{
+  try {
+    return 'ttm_' . bin2hex(random_bytes(6));
+  } catch (Throwable $e) {
+    return 'ttm_' . str_replace('.', '', uniqid('', true));
+  }
+}
+
+function findTaskTeamIndexById(array $teams, string $teamId): int
+{
+  $target = trim($teamId);
+  if ($target === '') {
+    return -1;
+  }
+  foreach ($teams as $index => $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    if (trim((string)($team['id'] ?? '')) === $target) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function findTaskTeamIndexByMember(array $teams, string $workId): int
+{
+  $target = trim($workId);
+  if ($target === '') {
+    return -1;
+  }
+  foreach ($teams as $index => $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+    if (in_array($target, $members, true)) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function findTaskTeamIndexByInvite(array $teams, string $workId): int
+{
+  $target = trim($workId);
+  if ($target === '') {
+    return -1;
+  }
+  foreach ($teams as $index => $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $invites = is_array($team['invites'] ?? null) ? $team['invites'] : [];
+    if (in_array($target, $invites, true)) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function findTaskTeamIndexByRequest(array $teams, string $workId): int
+{
+  $target = trim($workId);
+  if ($target === '') {
+    return -1;
+  }
+  foreach ($teams as $index => $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $requests = is_array($team['requests'] ?? null) ? $team['requests'] : [];
+    if (in_array($target, $requests, true)) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function findInviteePhoneIndex(array $header, array $mapping): int
+{
+  $mappingKeys = ['phone', 'phoneNumber', 'phone_number', 'mobile', 'mobileNumber', 'mobile_number'];
+  foreach ($mappingKeys as $key) {
+    $mappedIndex = $mapping[$key] ?? null;
+    if (is_numeric($mappedIndex) && (int)$mappedIndex >= 0) {
+      return (int)$mappedIndex;
+    }
+  }
+  return findFirstHeaderIndex($header, [
+    'phone',
+    'phone number',
+    'mobile',
+    'mobile number',
+    'شماره موبایل',
+    'شماره تلفن',
+    'تلفن'
+  ]);
+}
+
+function findInviteeLastNameIndex(array $header, array $mapping): int
+{
+  $mappingKeys = ['lastName', 'last_name', 'last name', 'family', 'surname'];
+  foreach ($mappingKeys as $key) {
+    $mappedIndex = $mapping[$key] ?? null;
+    if (is_numeric($mappedIndex) && (int)$mappedIndex >= 0) {
+      return (int)$mappedIndex;
+    }
+  }
+  return findFirstHeaderIndex($header, [
+    'last name',
+    'family',
+    'surname',
+    'نام خانوادگی'
+  ]);
+}
+
+function normalizePhoneLookupToken(string $value): string
+{
+  $normalizedDigits = normalizeUnicodeDigitsToAscii($value);
+  $digitsOnly = preg_replace('/\D+/', '', $normalizedDigits);
+  return is_string($digitsOnly) ? $digitsOnly : '';
+}
+
+function parseTeamTaskMap(string $raw): array
+{
+  $entries = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($entries)) {
+    return [];
+  }
+  $result = [];
+  foreach ($entries as $entry) {
+    $token = trim((string)$entry);
+    if ($token === '') {
+      continue;
+    }
+    $parts = explode('::', $token);
+    if (count($parts) < 4) {
+      continue;
+    }
+    $taskId = trim((string)($parts[0] ?? ''));
+    if ($taskId === '') {
+      continue;
+    }
+    $teamName = trim((string)($parts[1] ?? ''));
+    $status = trim((string)($parts[2] ?? ''));
+    $score = normalizeTaskScoreValue($parts[3] ?? 0);
+    $result[$taskId] = [
+      'teamName' => $teamName,
+      'status' => $status,
+      'score' => $score
+    ];
+  }
+  return $result;
+}
+
+function serializeTeamTaskMap(array $map): string
+{
+  $tokens = [];
+  foreach ($map as $taskId => $entry) {
+    $normalizedTaskId = trim((string)$taskId);
+    if ($normalizedTaskId === '' || !is_array($entry)) {
+      continue;
+    }
+    $teamName = trim((string)($entry['teamName'] ?? ''));
+    $status = trim((string)($entry['status'] ?? ''));
+    $score = normalizeTaskScoreValue($entry['score'] ?? 0);
+    $tokens[] = $normalizedTaskId . '::' . $teamName . '::' . $status . '::' . (string)$score;
+  }
+  return implode(', ', $tokens);
+}
+
+function readTeamTaskScoreFromInviteeRow(array $columns, array $row, string $taskId): int
+{
+  $taskColumnIndex = (int)($columns['team task'] ?? -1);
+  if ($taskColumnIndex < 0 || $taskId === '') {
+    return 0;
+  }
+  $map = parseTeamTaskMap((string)($row[$taskColumnIndex] ?? ''));
+  if (!isset($map[$taskId]) || !is_array($map[$taskId])) {
+    return 0;
+  }
+  return normalizeTaskScoreValue($map[$taskId]['score'] ?? 0);
+}
+
+function updateTeamTaskInviteeEntry(array &$rows, array $columns, int $rowIndex, string $taskId, ?string $teamName, ?string $status, ?int $score = null): void
+{
+  $taskColumnIndex = (int)($columns['team task'] ?? -1);
+  if ($taskColumnIndex < 0 || $taskId === '' || $rowIndex < 1 || !isset($rows[$rowIndex]) || !is_array($rows[$rowIndex])) {
+    return;
+  }
+  $header = is_array($rows[0] ?? null) ? $rows[0] : [];
+  $rowLength = count($header);
+  if (count($rows[$rowIndex]) < $rowLength) {
+    $rows[$rowIndex] = array_pad($rows[$rowIndex], $rowLength, '');
+  }
+  $map = parseTeamTaskMap((string)($rows[$rowIndex][$taskColumnIndex] ?? ''));
+  if ($teamName === null || $status === null || trim($status) === '') {
+    unset($map[$taskId]);
+  } else {
+    $existingScore = isset($map[$taskId]) && is_array($map[$taskId])
+      ? normalizeTaskScoreValue($map[$taskId]['score'] ?? 0)
+      : 0;
+    $nextScore = is_int($score) ? max(0, $score) : $existingScore;
+    $map[$taskId] = [
+      'teamName' => trim($teamName),
+      'status' => trim($status),
+      'score' => $nextScore
+    ];
+  }
+  $rows[$rowIndex][$taskColumnIndex] = serializeTeamTaskMap($map);
+}
+
+function getInviteeSummaryByWorkId(array $table, string $workId): ?array
+{
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $header = is_array($table['header'] ?? null) ? $table['header'] : [];
+  $mapping = is_array($table['mapping'] ?? null) ? $table['mapping'] : [];
+  $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+  if ($workIdIndex < 0) {
+    return null;
+  }
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $workId);
+  if ($rowIndex < 0 || !is_array($rows[$rowIndex] ?? null)) {
+    return null;
+  }
+  $row = $rows[$rowIndex];
+  $phoneIndex = findInviteePhoneIndex($header, $mapping);
+  $lastNameIndex = findInviteeLastNameIndex($header, $mapping);
+  $resolvedWorkId = trim((string)($row[$workIdIndex] ?? $workId));
+  $fullName = resolveInviteeFullName($header, $mapping, $row, $resolvedWorkId);
+  $firstName = resolveInviteeFirstName($header, $mapping, $row, $fullName);
+  $lastName = $lastNameIndex >= 0 ? trim((string)($row[$lastNameIndex] ?? '')) : '';
+  $phone = $phoneIndex >= 0 ? trim((string)($row[$phoneIndex] ?? '')) : '';
+  return [
+    'workId' => $resolvedWorkId,
+    'fullName' => $fullName,
+    'firstName' => $firstName,
+    'lastName' => $lastName,
+    'phone' => $phone
+  ];
+}
+
+function findInviteeRowIndexByPhone(array $table, string $phone): int
+{
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $header = is_array($table['header'] ?? null) ? $table['header'] : [];
+  $mapping = is_array($table['mapping'] ?? null) ? $table['mapping'] : [];
+  $phoneIndex = findInviteePhoneIndex($header, $mapping);
+  if ($phoneIndex < 0) {
+    return -1;
+  }
+  $needle = normalizePhoneLookupToken($phone);
+  if ($needle === '') {
+    return -1;
+  }
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = $rows[$i] ?? [];
+    $value = normalizePhoneLookupToken((string)($row[$phoneIndex] ?? ''));
+    if ($value !== '' && $value === $needle) {
+      return $i;
+    }
+  }
+  return -1;
+}
+
+function resolveInviteeWorkIdByCredential(array $table, string $credential): string
+{
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+  if ($workIdIndex < 0) {
+    return '';
+  }
+  $target = trim($credential);
+  if ($target === '') {
+    return '';
+  }
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $target);
+  if ($rowIndex >= 0) {
+    return trim((string)($rows[$rowIndex][$workIdIndex] ?? ''));
+  }
+  $phoneRowIndex = findInviteeRowIndexByPhone($table, $target);
+  if ($phoneRowIndex >= 0) {
+    return trim((string)($rows[$phoneRowIndex][$workIdIndex] ?? ''));
+  }
+  return '';
+}
+
+function buildTeamTaskGuideText(string $prefix, string $guide, string $suffix): string
+{
+  $parts = [];
+  $prefixText = trim($prefix);
+  $guideText = trim($guide);
+  $suffixText = trim($suffix);
+  if ($prefixText !== '') {
+    $parts[] = $prefixText;
+  }
+  if ($guideText !== '') {
+    $parts[] = $guideText;
+  }
+  if ($suffixText !== '') {
+    $parts[] = $suffixText;
+  }
+  return trim(implode("\n\n", $parts));
+}
+
+function buildTeamTaskMemberPayload(array $table, array $team, string $taskId): array
+{
+  $members = [];
+  $memberIds = is_array($team['members'] ?? null) ? $team['members'] : [];
+  foreach ($memberIds as $memberWorkId) {
+    $memberId = trim((string)$memberWorkId);
+    if ($memberId === '') {
+      continue;
+    }
+    $profile = getInviteeSummaryByWorkId($table, $memberId);
+    $members[] = [
+      'workId' => $memberId,
+      'fullName' => (string)($profile['fullName'] ?? $memberId),
+      'firstName' => (string)($profile['firstName'] ?? ''),
+      'lastName' => (string)($profile['lastName'] ?? ''),
+      'phone' => (string)($profile['phone'] ?? ''),
+      'status' => $memberId === (string)($team['leaderWorkId'] ?? '') ? 'leader' : 'member',
+      'score' => readTeamTaskScoreFromInviteeRow((array)($table['columns']['index'] ?? []), (array)($table['rows'][findInviteeRowIndex((array)$table['rows'], (int)($table['workIdIndex'] ?? -1), $memberId)] ?? []), $taskId)
+    ];
+  }
+
+  $invites = [];
+  foreach ((array)($team['invites'] ?? []) as $inviteWorkId) {
+    $inviteId = trim((string)$inviteWorkId);
+    if ($inviteId === '') {
+      continue;
+    }
+    $profile = getInviteeSummaryByWorkId($table, $inviteId);
+    $invites[] = [
+      'workId' => $inviteId,
+      'fullName' => (string)($profile['fullName'] ?? $inviteId),
+      'firstName' => (string)($profile['firstName'] ?? ''),
+      'lastName' => (string)($profile['lastName'] ?? ''),
+      'phone' => (string)($profile['phone'] ?? ''),
+      'status' => 'invited'
+    ];
+  }
+
+  $requests = [];
+  foreach ((array)($team['requests'] ?? []) as $requestWorkId) {
+    $requestId = trim((string)$requestWorkId);
+    if ($requestId === '') {
+      continue;
+    }
+    $profile = getInviteeSummaryByWorkId($table, $requestId);
+    $requests[] = [
+      'workId' => $requestId,
+      'fullName' => (string)($profile['fullName'] ?? $requestId),
+      'firstName' => (string)($profile['firstName'] ?? ''),
+      'lastName' => (string)($profile['lastName'] ?? ''),
+      'phone' => (string)($profile['phone'] ?? ''),
+      'status' => 'requested'
+    ];
+  }
+
+  return [
+    'members' => $members,
+    'invites' => $invites,
+    'requests' => $requests
+  ];
+}
+
+function buildTeamTaskSummaryPayload(array $team, array $teamSettings, string $sessionWorkId): array
+{
+  $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+  $invites = is_array($team['invites'] ?? null) ? $team['invites'] : [];
+  $requests = is_array($team['requests'] ?? null) ? $team['requests'] : [];
+  $teamMax = max(1, (int)($teamSettings['teamMax'] ?? 1));
+  $teamMin = max(1, (int)($teamSettings['teamMin'] ?? 1));
+  return [
+    'id' => (string)($team['id'] ?? ''),
+    'name' => (string)($team['name'] ?? ''),
+    'leaderWorkId' => (string)($team['leaderWorkId'] ?? ''),
+    'joinType' => normalizeTeamJoinType((string)($team['joinType'] ?? 'private')),
+    'memberCount' => count($members),
+    'inviteCount' => count($invites),
+    'requestCount' => count($requests),
+    'minMembers' => $teamMin,
+    'maxMembers' => $teamMax,
+    'hasSlot' => count($members) < $teamMax,
+    'started' => (bool)($team['started'] ?? false),
+    'challengeId' => (string)($team['challengeId'] ?? ''),
+    'challengeName' => (string)($team['challengeName'] ?? ''),
+    'isLeader' => trim((string)($team['leaderWorkId'] ?? '')) === trim($sessionWorkId),
+    'isMember' => in_array(trim($sessionWorkId), $members, true),
+    'isInvited' => in_array(trim($sessionWorkId), $invites, true),
+    'isRequested' => in_array(trim($sessionWorkId), $requests, true)
+  ];
+}
+
+function buildTeamTaskContextForUser(array $task, string $sessionWorkId, string $inviteesPath, string $inviteesMapPath): array
+{
+  $taskId = trim((string)($task['id'] ?? ''));
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+  if ($taskId === '' || $tagCode === '' || trim($sessionWorkId) === '') {
+    return [
+      'teamSettings' => ['teamMin' => 1, 'teamMax' => 1, 'teamAdditionalNote' => ''],
+      'guidePrefix' => '',
+      'guideSuffix' => '',
+      'myTeam' => null,
+      'invitedTeams' => [],
+      'publicTeams' => [],
+      'myStatus' => 'none'
+    ];
+  }
+  $table = loadInviteesTable($inviteesPath, $inviteesMapPath);
+  $teamSettings = readTaskTeamSettings(TASKS_DIR_PATH, $tagCode);
+  $infoSettings = readTaskInfoSettings(TASKS_DIR_PATH, $tagCode);
+  $runtime = readTaskTeamRuntime(TASKS_DIR_PATH, $tagCode);
+  $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+  $teamMin = max(1, (int)($teamSettings['teamMin'] ?? 1));
+  $teamMax = max($teamMin, (int)($teamSettings['teamMax'] ?? 1));
+  $teamSettings['teamMin'] = $teamMin;
+  $teamSettings['teamMax'] = $teamMax;
+  $sessionToken = trim($sessionWorkId);
+
+  $myTeam = null;
+  $invitedTeams = [];
+  $publicTeams = [];
+  $myStatus = 'none';
+
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $summary = buildTeamTaskSummaryPayload($team, $teamSettings, $sessionToken);
+    $membersBundle = buildTeamTaskMemberPayload($table, $team, $taskId);
+    $summary['members'] = $membersBundle['members'] ?? [];
+    $summaryId = trim((string)($summary['id'] ?? ''));
+    if ($summaryId === '') {
+      continue;
+    }
+    if (!empty($summary['isMember'])) {
+      $summary['members'] = $membersBundle['members'] ?? [];
+      $summary['invites'] = $membersBundle['invites'] ?? [];
+      $summary['requests'] = $membersBundle['requests'] ?? [];
+      $summary['started'] = (bool)($team['started'] ?? false);
+      $summary['challengeId'] = (string)($team['challengeId'] ?? '');
+      $summary['challengeName'] = (string)($team['challengeName'] ?? '');
+      $summary['challengeGuide'] = (string)($team['challengeGuide'] ?? '');
+      $summary['startedAt'] = (string)($team['startedAt'] ?? '');
+      $myTeam = $summary;
+      $myStatus = !empty($summary['isLeader']) ? 'leader' : 'member';
+      continue;
+    }
+    if (!empty($summary['isInvited'])) {
+      $invitedTeams[] = $summary;
+      if ($myStatus === 'none') {
+        $myStatus = 'invited';
+      }
+    }
+    if (!empty($summary['isRequested']) && $myStatus === 'none') {
+      $myStatus = 'requested';
+    }
+    if ((string)($summary['joinType'] ?? '') !== 'private') {
+      $publicTeams[] = $summary;
+    }
+  }
+
+  return [
+    'teamSettings' => $teamSettings,
+    'guidePrefix' => (string)($infoSettings['guidePrefix'] ?? ''),
+    'guideSuffix' => (string)($infoSettings['guideSuffix'] ?? ''),
+    'myTeam' => $myTeam,
+    'invitedTeams' => array_values($invitedTeams),
+    'publicTeams' => array_values($publicTeams),
+    'myStatus' => $myStatus
+  ];
+}
+
+function resolveTeamTaskStatusForUser(array $teams, string $workId): array
+{
+  $target = trim($workId);
+  if ($target === '') {
+    return ['teamName' => '', 'status' => ''];
+  }
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamName = trim((string)($team['name'] ?? ''));
+    $leaderWorkId = trim((string)($team['leaderWorkId'] ?? ''));
+    $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+    if (in_array($target, $members, true)) {
+      if ((bool)($team['started'] ?? false)) {
+        return ['teamName' => $teamName, 'status' => 'started'];
+      }
+      if ($target === $leaderWorkId) {
+        return ['teamName' => $teamName, 'status' => 'leader'];
+      }
+      return ['teamName' => $teamName, 'status' => 'member'];
+    }
+  }
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamName = trim((string)($team['name'] ?? ''));
+    $invites = is_array($team['invites'] ?? null) ? $team['invites'] : [];
+    if (in_array($target, $invites, true)) {
+      return ['teamName' => $teamName, 'status' => 'invited'];
+    }
+  }
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamName = trim((string)($team['name'] ?? ''));
+    $requests = is_array($team['requests'] ?? null) ? $team['requests'] : [];
+    if (in_array($target, $requests, true)) {
+      return ['teamName' => $teamName, 'status' => 'requested'];
+    }
+  }
+  return ['teamName' => '', 'status' => ''];
+}
+
+function syncTeamTaskInviteeStatusByWorkId(array &$rows, array $columns, int $workIdIndex, string $taskId, array $teams, string $workId): void
+{
+  if ($workIdIndex < 0) {
+    return;
+  }
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $workId);
+  if ($rowIndex < 0) {
+    return;
+  }
+  $resolved = resolveTeamTaskStatusForUser($teams, $workId);
+  $status = trim((string)($resolved['status'] ?? ''));
+  $teamName = trim((string)($resolved['teamName'] ?? ''));
+  $teamTaskColumnIndex = (int)($columns['team task'] ?? -1);
+  $infoTasksColumnIndex = (int)($columns['info tasks'] ?? -1);
+  $preservedScore = 0;
+  if ($teamTaskColumnIndex >= 0) {
+    $currentMap = parseTeamTaskMap((string)($rows[$rowIndex][$teamTaskColumnIndex] ?? ''));
+    if (isset($currentMap[$taskId]) && is_array($currentMap[$taskId])) {
+      $preservedScore = normalizeTaskScoreValue($currentMap[$taskId]['score'] ?? 0);
+    }
+  }
+  if ($preservedScore <= 0 && $infoTasksColumnIndex >= 0) {
+    $legacyMap = parseInfoTasksScoreMap((string)($rows[$rowIndex][$infoTasksColumnIndex] ?? ''));
+    if (array_key_exists($taskId, $legacyMap)) {
+      $preservedScore = normalizeTaskScoreValue($legacyMap[$taskId] ?? 0);
+    }
+  }
+  if ($status === '') {
+    updateTeamTaskInviteeEntry($rows, $columns, $rowIndex, $taskId, null, null);
+    return;
+  }
+  updateTeamTaskInviteeEntry($rows, $columns, $rowIndex, $taskId, $teamName, $status, $preservedScore);
+}
+
+function collectTeamTaskAffectedUsers(array $teams): array
+{
+  $seen = [];
+  $result = [];
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    foreach (['members', 'invites', 'requests'] as $key) {
+      $items = is_array($team[$key] ?? null) ? $team[$key] : [];
+      foreach ($items as $workId) {
+        $token = trim((string)$workId);
+        if ($token === '' || isset($seen[$token])) {
+          continue;
+        }
+        $seen[$token] = true;
+        $result[] = $token;
+      }
+    }
+  }
+  return $result;
 }
 
 function normalizeTaskRecord(array $task, int $fallbackOrder): array
@@ -972,6 +1811,20 @@ function loadTaskRecords(string $storePath, string $tasksDir): array
     $infoSettings = readTaskInfoSettings($tasksDir, $tagCode);
     $task['infoTitle'] = (string)($infoSettings['title'] ?? '');
     $task['infoText'] = (string)($infoSettings['text'] ?? '');
+    $task['guidePrefix'] = (string)($infoSettings['guidePrefix'] ?? '');
+    $task['guideSuffix'] = (string)($infoSettings['guideSuffix'] ?? '');
+    if ((string)($task['taskType'] ?? '') === 'team_task') {
+      $teamSettings = readTaskTeamSettings($tasksDir, $tagCode);
+      $task['teamMin'] = (int)($teamSettings['teamMin'] ?? 1);
+      $task['teamMax'] = (int)($teamSettings['teamMax'] ?? 1);
+      $task['teamAdditionalNote'] = (string)($teamSettings['teamAdditionalNote'] ?? '');
+      $task['teamChallenges'] = readTaskTeamChallenges($tasksDir, $tagCode);
+    } else {
+      $task['teamMin'] = 0;
+      $task['teamMax'] = 0;
+      $task['teamAdditionalNote'] = '';
+      $task['teamChallenges'] = [];
+    }
     $result[] = $task;
     $seenIds[$idKey] = true;
     $seenTagCodes[$tagKey] = true;
@@ -1740,7 +2593,8 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     'score' => 0,
     'answered' => 0,
     'completed' => false,
-    'describeSubmitted' => false
+    'describeSubmitted' => false,
+    'teamStartedPending' => false
   ];
   $normalizedWorkId = trim($workId);
   $taskId = trim((string)($task['id'] ?? ''));
@@ -1760,12 +2614,15 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
   $taskCompletedIndex = (int)($columns['task completed ids'] ?? -1);
   $taskScoreMapIndex = (int)($columns['task score map'] ?? -1);
   $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-  $taskScoreColumn = $taskType === 'describe_photo' ? 'describe photo task' : 'info tasks';
+  $taskScoreColumn = $taskType === 'describe_photo'
+    ? 'describe photo task'
+    : ($taskType === 'team_task' ? 'team task' : 'info tasks');
   $infoTasksIndex = (int)($columns[$taskScoreColumn] ?? -1);
   $row = is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [];
   $describeSubmitted = $taskType === 'describe_photo'
     ? hasDescribePhotoSubmissionForUserTask($task, $row, $columns)
     : false;
+  $teamStartedPending = false;
   $completedIds = [];
   if ($taskCompletedIndex >= 0) {
     $completedIds = parseTaskCompletedIds((string)($row[$taskCompletedIndex] ?? ''));
@@ -1777,12 +2634,40 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
   }
   $taskScore = 0;
   if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
-    $infoMap = $infoTasksIndex >= 0
-      ? parseInfoTasksScoreMap((string)($row[$infoTasksIndex] ?? ''))
-      : [];
-    if (array_key_exists($taskId, $infoMap)) {
-      $isCompleted = true;
-      $taskScore = max(0, (int)($infoMap[$taskId] ?? 0));
+    if ($taskType === 'team_task') {
+      $teamTaskMap = $infoTasksIndex >= 0
+        ? parseTeamTaskMap((string)($row[$infoTasksIndex] ?? ''))
+        : [];
+      if (isset($teamTaskMap[$taskId]) && is_array($teamTaskMap[$taskId])) {
+        $taskScore = max(0, normalizeTaskScoreValue($teamTaskMap[$taskId]['score'] ?? 0));
+        $teamStatus = strtolower(trim((string)($teamTaskMap[$taskId]['status'] ?? '')));
+        if ($taskScore <= 0 && $teamStatus === 'started') {
+          $teamStartedPending = true;
+        }
+        if ($taskScore > 0) {
+          $isCompleted = true;
+        }
+      }
+      if ($taskScore <= 0) {
+        $legacyInfoIndex = (int)($columns['info tasks'] ?? -1);
+        if ($legacyInfoIndex >= 0) {
+          $legacyMap = parseInfoTasksScoreMap((string)($row[$legacyInfoIndex] ?? ''));
+          if (array_key_exists($taskId, $legacyMap)) {
+            $taskScore = max(0, (int)($legacyMap[$taskId] ?? 0));
+            if ($taskScore > 0) {
+              $isCompleted = true;
+            }
+          }
+        }
+      }
+    } else {
+      $infoMap = $infoTasksIndex >= 0
+        ? parseInfoTasksScoreMap((string)($row[$infoTasksIndex] ?? ''))
+        : [];
+      if (array_key_exists($taskId, $infoMap)) {
+        $isCompleted = true;
+        $taskScore = max(0, (int)($infoMap[$taskId] ?? 0));
+      }
     }
   }
   if ($isCompleted) {
@@ -1795,11 +2680,16 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     }
   }
 
+  if ($isCompleted || $taskScore > 0) {
+    $teamStartedPending = false;
+  }
+
   return [
     'score' => $isCompleted ? $taskScore : 0,
     'answered' => $isCompleted ? 1 : 0,
     'completed' => $isCompleted,
-    'describeSubmitted' => $describeSubmitted
+    'describeSubmitted' => $describeSubmitted,
+    'teamStartedPending' => $teamStartedPending
   ];
 }
 
@@ -1840,9 +2730,18 @@ function buildTaskPayloadForView(array $tasks, string $inviteesPath, string $inv
     $progress = readTaskUserProgress($task, $inviteesPath, $inviteesMapPath, $workId);
     $completed = (bool)($progress['completed'] ?? false);
     $describeSubmitted = (bool)($progress['describeSubmitted'] ?? false);
+    $teamStartedPending = (bool)($progress['teamStartedPending'] ?? false);
     $statusLabel = $completed
       ? 'تکمیل شده'
-      : (($taskType === 'describe_photo' && $status === 'active' && $describeSubmitted)
+      : (((
+          $taskType === 'describe_photo'
+          && $status === 'active'
+          && $describeSubmitted
+        ) || (
+          $taskType === 'team_task'
+          && $status === 'active'
+          && $teamStartedPending
+        ))
         ? 'تکمیل شده'
         : resolveTaskStatusLabel($status));
     $items[] = [
@@ -1862,6 +2761,7 @@ function buildTaskPayloadForView(array $tasks, string $inviteesPath, string $inv
       'statusLabel' => $statusLabel,
       'completed' => $completed,
       'describeSubmitted' => $describeSubmitted,
+      'teamStartedPending' => $teamStartedPending,
       'available' => ($isActive || $isEndedQuiz) && !$completed,
       'userScore' => (int)($progress['score'] ?? 0)
     ];
@@ -2121,6 +3021,7 @@ function ensureInviteeColumns(array &$rows, array $columns): array
       }
     }
     $index[$column] = $colIndex;
+    $index[normalizeHeaderName($column)] = $colIndex;
   }
   $rows[0] = $header;
   return ['index' => $index, 'added' => $added];
@@ -2154,6 +3055,7 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'task completed ids',
     'task score map',
     'info tasks',
+    'Team Task',
     'describe photo task',
     'describe photo picks',
     'Card Flips Count',
@@ -2587,6 +3489,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $settings = loadWfqSettings($settingsPath);
     $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
     $describePhotos = [];
+    $teamContext = null;
     if ($taskType === 'describe_photo' && $available) {
       $resolvedPicks = resolveDescribePhotoPicksForUser($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath);
       if (!($resolvedPicks['ok'] ?? false)) {
@@ -2594,6 +3497,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
       }
       $describePhotos = is_array($resolvedPicks['photos'] ?? null) ? $resolvedPicks['photos'] : [];
+    } elseif ($taskType === 'team_task') {
+      $teamContext = buildTeamTaskContextForUser($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath);
     }
     echo json_encode([
       'status' => 'ok',
@@ -2609,6 +3514,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'statusLabel' => resolveTaskStatusLabel($status),
         'infoTitle' => (string)($task['infoTitle'] ?? ''),
         'infoText' => (string)($task['infoText'] ?? ''),
+        'guidePrefix' => (string)($task['guidePrefix'] ?? ''),
+        'guideSuffix' => (string)($task['guideSuffix'] ?? ''),
+        'teamMin' => (int)($task['teamMin'] ?? 0),
+        'teamMax' => (int)($task['teamMax'] ?? 0),
+        'teamAdditionalNote' => (string)($task['teamAdditionalNote'] ?? ''),
+        'teamChallenges' => is_array($task['teamChallenges'] ?? null) ? $task['teamChallenges'] : [],
+        'teamContext' => $teamContext,
         'describePhotos' => $describePhotos
       ],
       'questions' => $questions,
@@ -2736,6 +3648,648 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'maxWords' => 300
       ]
     ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'team_task_action') {
+    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
+      exit;
+    }
+    $eventStatus = loadGlobalEventStatus();
+    if ($eventStatus === 'inactive') {
+      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+      exit;
+    }
+
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    $mode = strtolower(trim((string)($payload['mode'] ?? 'state')));
+    if ($taskId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'شناسه ماموریت نامعتبر است.']);
+      exit;
+    }
+
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task)) {
+      echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
+      exit;
+    }
+    $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+    if ($taskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع تیمی نیست.']);
+      exit;
+    }
+    $taskStatus = deriveTaskAvailabilityStatus($task);
+    $mutationModes = [
+      'create',
+      'invite',
+      'remove_member',
+      'join',
+      'review_request',
+      'settings',
+      'start'
+    ];
+    if (in_array($mode, $mutationModes, true) && $taskStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در حال حاضر فعال نیست.']);
+      exit;
+    }
+
+    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'شناسه پوشه ماموریت نامعتبر است.']);
+      exit;
+    }
+
+    $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
+    $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+    $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
+    $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+    $sessionRowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
+    if ($sessionRowIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'رکورد کاربر پیدا نشد.']);
+      exit;
+    }
+
+    $runtime = readTaskTeamRuntime(TASKS_DIR_PATH, $tagCode);
+    $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+    $teamSettings = readTaskTeamSettings(TASKS_DIR_PATH, $tagCode);
+    $teamMin = max(1, (int)($teamSettings['teamMin'] ?? 1));
+    $teamMax = max($teamMin, (int)($teamSettings['teamMax'] ?? 1));
+    $teamSettings['teamMin'] = $teamMin;
+    $teamSettings['teamMax'] = $teamMax;
+    $infoSettings = readTaskInfoSettings(TASKS_DIR_PATH, $tagCode);
+
+    $runtimeChanged = false;
+    $rowsChanged = (bool)($table['columns']['added'] ?? false);
+    $syncInviteeStatus = function (string $workId) use (&$rows, $columns, $workIdIndex, $taskId, &$teams, &$rowsChanged): void {
+      syncTeamTaskInviteeStatusByWorkId($rows, $columns, $workIdIndex, $taskId, $teams, $workId);
+      $rowsChanged = true;
+    };
+    $saveChanges = function () use (&$runtimeChanged, &$rowsChanged, &$teams, &$rows, $tagCode, $inviteesFilePath): array {
+      if ($runtimeChanged) {
+        if (!saveTaskTeamRuntime(TASKS_DIR_PATH, $tagCode, ['teams' => $teams])) {
+          return ['ok' => false, 'message' => 'ذخیره وضعیت تیم ناموفق بود.'];
+        }
+      }
+      if ($rowsChanged) {
+        if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+          return ['ok' => false, 'message' => 'ذخیره وضعیت کاربران ناموفق بود.'];
+        }
+      }
+      return ['ok' => true];
+    };
+    $respondWithContext = function (array $extra = []) use ($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath): void {
+      $context = buildTeamTaskContextForUser($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath);
+      echo json_encode([
+        'status' => 'ok',
+        'data' => array_merge([
+          'context' => $context
+        ], $extra)
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    };
+
+    if ($mode === 'state') {
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $respondWithContext();
+    }
+
+    if ($mode === 'create') {
+      if (findTaskTeamIndexByMember($teams, $sessionWorkId) >= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'شما هم‌اکنون عضو یک تیم هستید.']);
+        exit;
+      }
+      $teamName = trim((string)($payload['teamName'] ?? ''));
+      if ($teamName === '') {
+        echo json_encode(['status' => 'error', 'message' => 'نام تیم را وارد کنید.']);
+        exit;
+      }
+      $joinType = normalizeTeamJoinType((string)($payload['joinType'] ?? 'private'));
+      foreach ($teams as $idx => $otherTeam) {
+        if (!is_array($otherTeam)) {
+          continue;
+        }
+        $otherTeam['invites'] = array_values(array_filter((array)($otherTeam['invites'] ?? []), static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+        $otherTeam['requests'] = array_values(array_filter((array)($otherTeam['requests'] ?? []), static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+        $teams[$idx] = $otherTeam;
+      }
+      $teams[] = [
+        'id' => makeTeamId(),
+        'name' => $teamName,
+        'leaderWorkId' => $sessionWorkId,
+        'joinType' => $joinType,
+        'members' => [$sessionWorkId],
+        'invites' => [],
+        'requests' => [],
+        'renameCount' => 0,
+        'started' => false,
+        'startedAt' => '',
+        'challengeId' => '',
+        'challengeName' => '',
+        'challengeGuide' => '',
+        'createdAt' => date('Y-m-d H:i:s')
+      ];
+      $runtimeChanged = true;
+      $syncInviteeStatus($sessionWorkId);
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $respondWithContext(['message' => 'تیم جدید ساخته شد.']);
+    }
+
+    if ($mode === 'lookup_user') {
+      $myTeamIndex = findTaskTeamIndexByMember($teams, $sessionWorkId);
+      if ($myTeamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'ابتدا یک تیم بسازید یا عضو تیم شوید.']);
+        exit;
+      }
+      $myTeam = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
+      if (trim((string)($myTeam['leaderWorkId'] ?? '')) !== trim($sessionWorkId)) {
+        echo json_encode(['status' => 'error', 'message' => 'فقط سرگروه می‌تواند عضو دعوت کند.']);
+        exit;
+      }
+      $query = trim((string)($payload['query'] ?? ''));
+      if ($query === '') {
+        echo json_encode(['status' => 'error', 'message' => 'شماره پرسنلی یا شماره تلفن را وارد کنید.']);
+        exit;
+      }
+      $targetWorkId = resolveInviteeWorkIdByCredential($table, $query);
+      if ($targetWorkId === '') {
+        echo json_encode(['status' => 'error', 'message' => 'کاربری با این مشخصات پیدا نشد.']);
+        exit;
+      }
+      if (trim($targetWorkId) === trim($sessionWorkId)) {
+        echo json_encode(['status' => 'error', 'message' => 'دعوت از خودتان امکان‌پذیر نیست.']);
+        exit;
+      }
+      $profile = getInviteeSummaryByWorkId($table, $targetWorkId);
+      if (!is_array($profile)) {
+        echo json_encode(['status' => 'error', 'message' => 'مشخصات کاربر قابل بازیابی نیست.']);
+        exit;
+      }
+      $isMemberAny = findTaskTeamIndexByMember($teams, $targetWorkId) >= 0;
+      $isInvitedInMyTeam = in_array($targetWorkId, (array)($myTeam['invites'] ?? []), true);
+      $isRequestedInMyTeam = in_array($targetWorkId, (array)($myTeam['requests'] ?? []), true);
+      echo json_encode([
+        'status' => 'ok',
+        'data' => [
+          'invitee' => $profile,
+          'isMemberAny' => $isMemberAny,
+          'isInvitedInMyTeam' => $isInvitedInMyTeam,
+          'isRequestedInMyTeam' => $isRequestedInMyTeam
+        ]
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    if ($mode === 'invite') {
+      $myTeamIndex = findTaskTeamIndexByMember($teams, $sessionWorkId);
+      if ($myTeamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'ابتدا یک تیم بسازید یا عضو تیم شوید.']);
+        exit;
+      }
+      $myTeam = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
+      if (trim((string)($myTeam['leaderWorkId'] ?? '')) !== trim($sessionWorkId)) {
+        echo json_encode(['status' => 'error', 'message' => 'فقط سرگروه می‌تواند عضو دعوت کند.']);
+        exit;
+      }
+      $targetRaw = trim((string)($payload['targetWorkId'] ?? ($payload['query'] ?? '')));
+      if ($targetRaw === '') {
+        echo json_encode(['status' => 'error', 'message' => 'کاربر دعوت‌شونده مشخص نیست.']);
+        exit;
+      }
+      $targetWorkId = resolveInviteeWorkIdByCredential($table, $targetRaw);
+      if ($targetWorkId === '') {
+        echo json_encode(['status' => 'error', 'message' => 'کاربری با این مشخصات پیدا نشد.']);
+        exit;
+      }
+      if (trim($targetWorkId) === trim($sessionWorkId)) {
+        echo json_encode(['status' => 'error', 'message' => 'دعوت از خودتان امکان‌پذیر نیست.']);
+        exit;
+      }
+      if (findTaskTeamIndexByMember($teams, $targetWorkId) >= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'این کاربر هم‌اکنون عضو یک تیم است.']);
+        exit;
+      }
+      $members = is_array($myTeam['members'] ?? null) ? $myTeam['members'] : [];
+      $invites = is_array($myTeam['invites'] ?? null) ? $myTeam['invites'] : [];
+      $requests = is_array($myTeam['requests'] ?? null) ? $myTeam['requests'] : [];
+      if (in_array($targetWorkId, $invites, true)) {
+        echo json_encode(['status' => 'error', 'message' => 'این کاربر قبلا دعوت شده است.']);
+        exit;
+      }
+      if (count($members) + count($invites) >= $teamMax) {
+        echo json_encode(['status' => 'error', 'message' => 'ظرفیت تیم برای دعوت تکمیل است.']);
+        exit;
+      }
+      $requests = array_values(array_filter($requests, static fn($item) => trim((string)$item) !== trim($targetWorkId)));
+      $invites[] = $targetWorkId;
+      $myTeam['invites'] = array_values(array_unique(array_map('strval', $invites)));
+      $myTeam['requests'] = array_values(array_unique(array_map('strval', $requests)));
+      $teams[$myTeamIndex] = $myTeam;
+      $runtimeChanged = true;
+      $syncInviteeStatus($targetWorkId);
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $respondWithContext(['message' => 'دعوت‌نامه ارسال شد.']);
+    }
+
+    if ($mode === 'remove_member') {
+      $targetWorkId = trim((string)($payload['targetWorkId'] ?? ''));
+      if ($targetWorkId === '') {
+        echo json_encode(['status' => 'error', 'message' => 'کاربر موردنظر مشخص نیست.']);
+        exit;
+      }
+      $myTeamIndex = findTaskTeamIndexByMember($teams, $sessionWorkId);
+      if ($myTeamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'شما عضو هیچ تیمی نیستید.']);
+        exit;
+      }
+      $myTeam = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
+      $isLeader = trim((string)($myTeam['leaderWorkId'] ?? '')) === trim($sessionWorkId);
+      if ($isLeader) {
+        if (trim($targetWorkId) === trim($sessionWorkId)) {
+          echo json_encode(['status' => 'error', 'message' => 'برای حذف تیم از تنظیمات تیم استفاده کنید.']);
+          exit;
+        }
+        $removed = false;
+        foreach (['members', 'invites', 'requests'] as $bucket) {
+          $list = is_array($myTeam[$bucket] ?? null) ? $myTeam[$bucket] : [];
+          $next = array_values(array_filter($list, static fn($item) => trim((string)$item) !== trim($targetWorkId)));
+          if (count($next) !== count($list)) {
+            $removed = true;
+            $myTeam[$bucket] = $next;
+          }
+        }
+        if (!$removed) {
+          echo json_encode(['status' => 'error', 'message' => 'این کاربر در تیم شما یافت نشد.']);
+          exit;
+        }
+        $teams[$myTeamIndex] = $myTeam;
+        $runtimeChanged = true;
+        $syncInviteeStatus($targetWorkId);
+      } else {
+        if (trim($targetWorkId) !== trim($sessionWorkId)) {
+          echo json_encode(['status' => 'error', 'message' => 'فقط خروج از تیم خودتان مجاز است.']);
+          exit;
+        }
+        $members = is_array($myTeam['members'] ?? null) ? $myTeam['members'] : [];
+        $nextMembers = array_values(array_filter($members, static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+        if (count($nextMembers) === count($members)) {
+          echo json_encode(['status' => 'error', 'message' => 'وضعیت عضویت شما پیدا نشد.']);
+          exit;
+        }
+        $myTeam['members'] = $nextMembers;
+        $teams[$myTeamIndex] = $myTeam;
+        $runtimeChanged = true;
+        $syncInviteeStatus($sessionWorkId);
+      }
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $respondWithContext(['message' => 'تغییرات تیم ثبت شد.']);
+    }
+
+    if ($mode === 'find_by_leader') {
+      $query = trim((string)($payload['query'] ?? ''));
+      if ($query === '') {
+        echo json_encode(['status' => 'error', 'message' => 'شماره پرسنلی یا شماره تلفن سرگروه را وارد کنید.']);
+        exit;
+      }
+      $leaderWorkId = resolveInviteeWorkIdByCredential($table, $query);
+      if ($leaderWorkId === '') {
+        echo json_encode(['status' => 'error', 'message' => 'سرگروهی با این مشخصات پیدا نشد.']);
+        exit;
+      }
+      $teamIndex = -1;
+      foreach ($teams as $idx => $team) {
+        if (!is_array($team)) {
+          continue;
+        }
+        if (trim((string)($team['leaderWorkId'] ?? '')) === trim($leaderWorkId)) {
+          $teamIndex = (int)$idx;
+          break;
+        }
+      }
+      if ($teamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'تیمی برای این سرگروه پیدا نشد.']);
+        exit;
+      }
+      $targetTeam = is_array($teams[$teamIndex] ?? null) ? $teams[$teamIndex] : [];
+      $summary = buildTeamTaskSummaryPayload($targetTeam, $teamSettings, $sessionWorkId);
+      $membersBundle = buildTeamTaskMemberPayload($table, $targetTeam, $taskId);
+      $summary['members'] = $membersBundle['members'] ?? [];
+      echo json_encode([
+        'status' => 'ok',
+        'data' => [
+          'team' => $summary
+        ]
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    if ($mode === 'join') {
+      $teamId = trim((string)($payload['teamId'] ?? ''));
+      if ($teamId === '') {
+        echo json_encode(['status' => 'error', 'message' => 'شناسه تیم نامعتبر است.']);
+        exit;
+      }
+      $memberTeamIndex = findTaskTeamIndexByMember($teams, $sessionWorkId);
+      if ($memberTeamIndex >= 0) {
+        $currentTeam = $teams[$memberTeamIndex] ?? [];
+        if (trim((string)($currentTeam['id'] ?? '')) !== $teamId) {
+          echo json_encode(['status' => 'error', 'message' => 'ابتدا از تیم فعلی خارج شوید.']);
+          exit;
+        }
+        $respondWithContext(['message' => 'شما قبلا عضو این تیم شده‌اید.']);
+      }
+      $teamIndex = findTaskTeamIndexById($teams, $teamId);
+      if ($teamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'تیم پیدا نشد.']);
+        exit;
+      }
+      $team = is_array($teams[$teamIndex] ?? null) ? $teams[$teamIndex] : [];
+      $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+      $invites = is_array($team['invites'] ?? null) ? $team['invites'] : [];
+      $requests = is_array($team['requests'] ?? null) ? $team['requests'] : [];
+      $joinType = normalizeTeamJoinType((string)($team['joinType'] ?? 'private'));
+      $joinedNow = false;
+      $requestedNow = false;
+      if (in_array($sessionWorkId, $invites, true)) {
+        if (count($members) >= $teamMax) {
+          echo json_encode(['status' => 'error', 'message' => 'ظرفیت تیم تکمیل است.']);
+          exit;
+        }
+        $invites = array_values(array_filter($invites, static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+        $requests = array_values(array_filter($requests, static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+        $members[] = $sessionWorkId;
+        $joinedNow = true;
+      } elseif ($joinType === 'private') {
+        echo json_encode(['status' => 'error', 'message' => 'این تیم خصوصی است و باید دعوت شوید.']);
+        exit;
+      } elseif ($joinType === 'public_request') {
+        if (!in_array($sessionWorkId, $requests, true)) {
+          $requests[] = $sessionWorkId;
+          $requestedNow = true;
+        }
+      } else {
+        if (count($members) >= $teamMax) {
+          echo json_encode(['status' => 'error', 'message' => 'ظرفیت تیم تکمیل است.']);
+          exit;
+        }
+        $members[] = $sessionWorkId;
+        $joinedNow = true;
+      }
+      if ($joinedNow) {
+        foreach ($teams as $idx => $otherTeam) {
+          if (!is_array($otherTeam)) {
+            continue;
+          }
+          $otherTeam['invites'] = array_values(array_filter((array)($otherTeam['invites'] ?? []), static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+          $otherTeam['requests'] = array_values(array_filter((array)($otherTeam['requests'] ?? []), static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+          if ((int)$idx !== $teamIndex) {
+            $otherTeam['members'] = array_values(array_filter((array)($otherTeam['members'] ?? []), static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+          }
+          $teams[$idx] = $otherTeam;
+        }
+      }
+      $team['members'] = array_values(array_unique(array_map('strval', $members)));
+      $team['invites'] = array_values(array_unique(array_map('strval', $invites)));
+      $team['requests'] = array_values(array_unique(array_map('strval', $requests)));
+      $teams[$teamIndex] = $team;
+      $runtimeChanged = true;
+      $syncInviteeStatus($sessionWorkId);
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $respondWithContext([
+        'message' => $joinedNow ? 'عضویت شما در تیم ثبت شد.' : ($requestedNow ? 'درخواست عضویت ارسال شد.' : 'وضعیت عضویت شما بدون تغییر است.'),
+        'joined' => $joinedNow,
+        'requested' => $requestedNow
+      ]);
+    }
+
+    if ($mode === 'review_request') {
+      $teamId = trim((string)($payload['teamId'] ?? ''));
+      $targetWorkId = trim((string)($payload['targetWorkId'] ?? ''));
+      $decision = strtolower(trim((string)($payload['decision'] ?? 'reject')));
+      if ($teamId === '' || $targetWorkId === '') {
+        echo json_encode(['status' => 'error', 'message' => 'درخواست بررسی ناقص است.']);
+        exit;
+      }
+      $teamIndex = findTaskTeamIndexById($teams, $teamId);
+      if ($teamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'تیم پیدا نشد.']);
+        exit;
+      }
+      $team = is_array($teams[$teamIndex] ?? null) ? $teams[$teamIndex] : [];
+      if (trim((string)($team['leaderWorkId'] ?? '')) !== trim($sessionWorkId)) {
+        echo json_encode(['status' => 'error', 'message' => 'فقط سرگروه می‌تواند درخواست‌ها را مدیریت کند.']);
+        exit;
+      }
+      $requests = is_array($team['requests'] ?? null) ? $team['requests'] : [];
+      if (!in_array($targetWorkId, $requests, true)) {
+        echo json_encode(['status' => 'error', 'message' => 'درخواست عضویتی برای این کاربر ثبت نشده است.']);
+        exit;
+      }
+      $team['requests'] = array_values(array_filter($requests, static fn($item) => trim((string)$item) !== trim($targetWorkId)));
+      if ($decision === 'accept') {
+        $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+        $team['invites'] = array_values(array_filter((array)($team['invites'] ?? []), static fn($item) => trim((string)$item) !== trim($targetWorkId)));
+        if (count($members) >= $teamMax) {
+          echo json_encode(['status' => 'error', 'message' => 'ظرفیت تیم تکمیل است.']);
+          exit;
+        }
+        if (!in_array($targetWorkId, $members, true)) {
+          $members[] = $targetWorkId;
+        }
+        $team['members'] = array_values(array_unique(array_map('strval', $members)));
+      }
+      $teams[$teamIndex] = $team;
+      $runtimeChanged = true;
+      $syncInviteeStatus($targetWorkId);
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $respondWithContext(['message' => $decision === 'accept' ? 'درخواست عضویت تایید شد.' : 'درخواست عضویت رد شد.']);
+    }
+
+    if ($mode === 'settings') {
+      $myTeamIndex = findTaskTeamIndexByMember($teams, $sessionWorkId);
+      if ($myTeamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'شما عضو هیچ تیمی نیستید.']);
+        exit;
+      }
+      $team = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
+      $isLeader = trim((string)($team['leaderWorkId'] ?? '')) === trim($sessionWorkId);
+      $asBool = static function ($value): bool {
+        $token = strtolower(trim((string)$value));
+        return in_array($token, ['1', 'true', 'on', 'yes'], true);
+      };
+      $deleteTeam = $asBool($payload['deleteTeam'] ?? false);
+      if ($isLeader && $deleteTeam) {
+        $affected = collectTeamTaskAffectedUsers([$team]);
+        array_splice($teams, $myTeamIndex, 1);
+        $runtimeChanged = true;
+        foreach ($affected as $affectedWorkId) {
+          $syncInviteeStatus((string)$affectedWorkId);
+        }
+        $saved = $saveChanges();
+        if (!($saved['ok'] ?? false)) {
+          echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+          exit;
+        }
+        $respondWithContext(['message' => 'تیم حذف شد.']);
+      }
+      if ($isLeader) {
+        $changed = false;
+        $nextName = trim((string)($payload['teamName'] ?? ''));
+        if ($nextName !== '' && $nextName !== trim((string)($team['name'] ?? ''))) {
+          $renameCount = max(0, min(3, (int)($team['renameCount'] ?? 0)));
+          if ($renameCount >= 3) {
+            echo json_encode(['status' => 'error', 'message' => 'حداکثر ۳ بار امکان تغییر نام تیم وجود دارد.']);
+            exit;
+          }
+          $team['name'] = $nextName;
+          $team['renameCount'] = $renameCount + 1;
+          $changed = true;
+        }
+        if (array_key_exists('joinType', $payload)) {
+          $nextJoinType = normalizeTeamJoinType((string)($payload['joinType'] ?? 'private'));
+          if ($nextJoinType !== normalizeTeamJoinType((string)($team['joinType'] ?? 'private'))) {
+            $team['joinType'] = $nextJoinType;
+            $changed = true;
+          }
+        }
+        if (!$changed) {
+          $respondWithContext(['message' => 'تغییری برای ذخیره وجود ندارد.']);
+        }
+        $teams[$myTeamIndex] = $team;
+        $runtimeChanged = true;
+        foreach (collectTeamTaskAffectedUsers([$team]) as $affectedWorkId) {
+          $syncInviteeStatus((string)$affectedWorkId);
+        }
+        $saved = $saveChanges();
+        if (!($saved['ok'] ?? false)) {
+          echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+          exit;
+        }
+        $respondWithContext(['message' => 'تنظیمات تیم ذخیره شد.']);
+      }
+
+      $leaveTeam = $asBool($payload['leaveTeam'] ?? true);
+      if (!$leaveTeam) {
+        echo json_encode(['status' => 'error', 'message' => 'گزینه معتبری انتخاب نشده است.']);
+        exit;
+      }
+      $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+      $nextMembers = array_values(array_filter($members, static fn($item) => trim((string)$item) !== trim($sessionWorkId)));
+      if (count($nextMembers) === count($members)) {
+        echo json_encode(['status' => 'error', 'message' => 'شما عضو تیم نیستید.']);
+        exit;
+      }
+      $team['members'] = $nextMembers;
+      $teams[$myTeamIndex] = $team;
+      $runtimeChanged = true;
+      $syncInviteeStatus($sessionWorkId);
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $respondWithContext(['message' => 'از تیم خارج شدید.']);
+    }
+
+    if ($mode === 'start') {
+      $myTeamIndex = findTaskTeamIndexByMember($teams, $sessionWorkId);
+      if ($myTeamIndex < 0) {
+        echo json_encode(['status' => 'error', 'message' => 'شما عضو هیچ تیمی نیستید.']);
+        exit;
+      }
+      $team = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
+      if (trim((string)($team['leaderWorkId'] ?? '')) !== trim($sessionWorkId)) {
+        echo json_encode(['status' => 'error', 'message' => 'فقط سرگروه می‌تواند چالش را شروع کند.']);
+        exit;
+      }
+      $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+      if (count($members) < $teamMin) {
+        echo json_encode(['status' => 'error', 'message' => 'تعداد اعضای تیم هنوز به حداقل نرسیده است.']);
+        exit;
+      }
+      if (!(bool)($team['started'] ?? false)) {
+        $challenges = readTaskTeamChallenges(TASKS_DIR_PATH, $tagCode);
+        $availableIndexes = [];
+        foreach ($challenges as $index => $challenge) {
+          if (!is_array($challenge)) {
+            continue;
+          }
+          $last = max(0, (int)($challenge['last'] ?? 0));
+          if ($last > 0) {
+            $availableIndexes[] = (int)$index;
+          }
+        }
+        if (!$availableIndexes) {
+          echo json_encode(['status' => 'error', 'message' => 'چالشی با ظرفیت باقی‌مانده برای این ماموریت تعریف نشده است.']);
+          exit;
+        }
+        $selectedIndex = $availableIndexes[array_rand($availableIndexes)];
+        $selectedChallenge = is_array($challenges[$selectedIndex] ?? null) ? $challenges[$selectedIndex] : [];
+        $challengeLast = max(0, (int)($selectedChallenge['last'] ?? 0));
+        $challenges[$selectedIndex]['last'] = max(0, $challengeLast - 1);
+        if (!saveTaskTeamChallenges(TASKS_DIR_PATH, $tagCode, $challenges)) {
+          echo json_encode(['status' => 'error', 'message' => 'به‌روزرسانی ظرفیت چالش ناموفق بود.']);
+          exit;
+        }
+        $team['started'] = true;
+        $team['startedAt'] = date('Y-m-d H:i:s');
+        $team['challengeId'] = trim((string)($selectedChallenge['id'] ?? ''));
+        $team['challengeName'] = trim((string)($selectedChallenge['name'] ?? ''));
+        $team['challengeGuide'] = trim((string)($selectedChallenge['guide'] ?? ''));
+        $teams[$myTeamIndex] = $team;
+        $runtimeChanged = true;
+      }
+      foreach ((array)($team['members'] ?? []) as $memberWorkId) {
+        $memberToken = trim((string)$memberWorkId);
+        if ($memberToken === '') {
+          continue;
+        }
+        $syncInviteeStatus($memberToken);
+      }
+      $saved = $saveChanges();
+      if (!($saved['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+        exit;
+      }
+      $guideText = buildTeamTaskGuideText(
+        (string)($infoSettings['guidePrefix'] ?? ''),
+        (string)($team['challengeGuide'] ?? ''),
+        (string)($infoSettings['guideSuffix'] ?? '')
+      );
+      $respondWithContext([
+        'message' => 'چالش تیمی شروع شد.',
+        'guideText' => $guideText,
+        'challengeName' => (string)($team['challengeName'] ?? '')
+      ]);
+    }
+
+    echo json_encode(['status' => 'error', 'message' => 'عملیات تیمی نامعتبر است.']);
     exit;
   }
 
@@ -5044,6 +6598,205 @@ $sessionPayload = [
         width: 100%;
       }
 
+      .team-task-step {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+      }
+
+      .team-task-actions {
+        display: grid;
+        gap: 8px;
+        margin-top: auto;
+      }
+
+      .team-list-title {
+        margin: 0;
+        color: #355286;
+        font-size: 0.85rem;
+        font-weight: 700;
+      }
+
+      .team-list-group {
+        display: grid;
+        gap: 8px;
+      }
+
+      .team-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .team-list-item {
+        border: 1px solid #d8e3f7;
+        background: #f8fbff;
+        border-radius: 12px;
+        padding: 10px 12px;
+        display: grid;
+        gap: 4px;
+        text-align: right;
+      }
+
+      .team-list-item-title {
+        color: #213b6b;
+        font-weight: 700;
+        font-size: 0.9rem;
+      }
+
+      .team-list-item-meta {
+        color: #5670a1;
+        font-size: 0.8rem;
+      }
+
+      .team-list-item-btn {
+        width: 100%;
+        text-align: right;
+        border: 1px solid #cad9f5;
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 10px 12px;
+        color: #2c4f87;
+        font: inherit;
+      }
+
+      .team-list-item-btn strong {
+        display: block;
+      }
+
+      .team-list-item-btn span {
+        display: block;
+        margin-top: 3px;
+        font-size: 0.8rem;
+        color: #6a7fa8;
+      }
+
+      .team-members-grid {
+        display: grid;
+        gap: 8px;
+      }
+
+      .team-member-chip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border: 1px solid #d9e4f8;
+        border-radius: 12px;
+        background: #f8fbff;
+        padding: 9px 10px;
+      }
+
+      .team-member-text {
+        display: grid;
+        gap: 2px;
+      }
+
+      .team-member-name {
+        color: #1f3560;
+        font-size: 0.86rem;
+        font-weight: 700;
+      }
+
+      .team-member-status {
+        color: #5d739a;
+        font-size: 0.78rem;
+      }
+
+      .team-member-remove {
+        border: none;
+        background: transparent;
+        color: #c7363e;
+        font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 2px 6px;
+      }
+
+      .team-empty-slots {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+        gap: 7px;
+      }
+
+      .team-empty-slot {
+        border: 1px dashed #c9d8f5;
+        border-radius: 10px;
+        min-height: 36px;
+        display: grid;
+        place-items: center;
+        color: #8da0c4;
+        font-size: 0.78rem;
+      }
+
+      .team-invite-panel {
+        border: 1px solid #dce6fa;
+        border-radius: 14px;
+        background: #f8fbff;
+        padding: 10px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .team-invite-result {
+        border: 1px solid #ccdbf8;
+        border-radius: 10px;
+        background: #fff;
+        padding: 8px;
+        display: grid;
+        gap: 7px;
+      }
+
+      .team-invite-result-name {
+        margin: 0;
+        color: #1f3560;
+        font-size: 0.86rem;
+      }
+
+      .team-field-hint {
+        color: #627aa6;
+        font-size: 0.74rem;
+        line-height: 1.7;
+      }
+
+      .team-join-type-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .team-join-type-btn {
+        border: 1px solid #cad9f4;
+        border-radius: 12px;
+        background: #f8fbff;
+        color: #2a4a82;
+        font: inherit;
+        text-align: right;
+        padding: 10px 12px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .team-join-type-btn strong {
+        font-size: 0.86rem;
+      }
+
+      .team-join-type-btn span {
+        font-size: 0.78rem;
+        color: #5f759f;
+        line-height: 1.65;
+      }
+
+      .team-danger-btn {
+        width: 100%;
+        background: #fff2f3;
+        color: #b82c34;
+        border: 1px solid #f0b5ba;
+      }
+
       .login-form {
         display: flex;
         flex-direction: column;
@@ -5859,6 +7612,7 @@ $sessionPayload = [
                   $isAvailable = (bool)($taskItem['available'] ?? false);
                   $isCompleted = (bool)($taskItem['completed'] ?? false);
                   $isDescribeSubmitted = (bool)($taskItem['describeSubmitted'] ?? false);
+                  $isTeamStartedPending = (bool)($taskItem['teamStartedPending'] ?? false);
                   $taskTypeToken = (string)($taskItem['taskType'] ?? 'quiz');
                   $taskStatusToken = (string)($taskItem['status'] ?? 'inactive');
                   $buttonClass = 'task-item-btn';
@@ -5867,7 +7621,10 @@ $sessionPayload = [
                   }
                   if ($isCompleted) {
                     $buttonClass .= ' is-completed';
-                  } elseif ($taskTypeToken === 'describe_photo' && $taskStatusToken === 'active' && $isDescribeSubmitted) {
+                  } elseif (
+                    ($taskTypeToken === 'describe_photo' && $taskStatusToken === 'active' && $isDescribeSubmitted)
+                    || ($taskTypeToken === 'team_task' && $taskStatusToken === 'active' && $isTeamStartedPending)
+                  ) {
                     $buttonClass .= ' is-describe-submitted';
                   }
                   $disabledAttr = $isAvailable ? '' : 'disabled';
@@ -5889,6 +7646,7 @@ $sessionPayload = [
                   data-task-status="<?= htmlspecialchars($taskStatusToken, ENT_QUOTES, 'UTF-8') ?>"
                   data-task-completed="<?= $isCompleted ? '1' : '0' ?>"
                   data-task-describe-submitted="<?= $isDescribeSubmitted ? '1' : '0' ?>"
+                  data-task-team-started-pending="<?= $isTeamStartedPending ? '1' : '0' ?>"
                   data-task-user-score="<?= (int)($taskItem['userScore'] ?? 0) ?>"
                   <?= $disabledAttr ?>
                 >
@@ -5946,6 +7704,108 @@ $sessionPayload = [
             <h3 id="tc-task-info-title" class="tc-task-info-title">اطلاعات ماموریت</h3>
           </div>
           <div id="tc-task-info-content" class="info-task-content"></div>
+          <section id="tc-team-rules-step" class="team-task-step hidden">
+            <div class="info-task-section team-task-rules-card">
+              <h3>قوانین تیم</h3>
+              <p id="tc-team-rules-text">برای این ماموریت تیمی ابتدا تیم خود را بسازید یا به یک تیم ملحق شوید.</p>
+            </div>
+            <div class="team-task-actions">
+              <button id="tc-team-find-btn" class="login-btn describe-photo-btn secondary" type="button">پیدا کردن تیم</button>
+              <button id="tc-team-create-btn" class="login-btn describe-photo-btn" type="button">ساختن تیم</button>
+            </div>
+          </section>
+          <section id="tc-team-create-name-step" class="team-task-step hidden">
+            <label class="login-field">
+              <span>نام تیم را انتخاب کنید</span>
+              <input id="tc-team-create-name-input" class="login-input" type="text" maxlength="80" placeholder="نام تیم" />
+            </label>
+            <button id="tc-team-create-name-confirm" class="login-btn describe-photo-btn" type="button">تایید نام</button>
+          </section>
+          <section id="tc-team-create-type-step" class="team-task-step hidden">
+            <p class="team-list-title">نوع تیم را انتخاب کنید</p>
+            <div class="team-join-type-list">
+              <button class="team-join-type-btn" type="button" data-team-join-type="private">
+                <strong>تیم خصوصی</strong>
+                <span>فقط افرادی که دعوت می‌کنید می‌توانند ملحق شوند</span>
+              </button>
+              <button class="team-join-type-btn" type="button" data-team-join-type="public_request">
+                <strong>تیم عمومی با درخواست دعوت</strong>
+                <span>در لیست تیم‌ها نمایش داده می‌شود و دیگران می‌توانند درخواست عضویت بفرستند</span>
+              </button>
+              <button class="team-join-type-btn" type="button" data-team-join-type="public_open">
+                <strong>تیم عمومی ورود آزاد</strong>
+                <span>هر کسی می‌تواند تیم را ببیند و مستقیم وارد شود</span>
+              </button>
+            </div>
+          </section>
+          <section id="tc-team-room-step" class="team-task-step hidden">
+            <p id="tc-team-room-name" class="describe-photo-editor-title">-</p>
+            <p id="tc-team-room-slot" class="describe-photo-index">-</p>
+            <div id="tc-team-room-members" class="team-members-grid"></div>
+            <div id="tc-team-room-empty-slots" class="team-empty-slots"></div>
+            <div id="tc-team-room-invite-panel" class="team-invite-panel hidden">
+              <label class="login-field">
+                <span>دعوت عضو جدید (شماره پرسنلی یا تلفن)</span>
+                <input id="tc-team-invite-query-input" class="login-input" type="text" placeholder="مثال: 12345 یا 0912..." />
+              </label>
+              <button id="tc-team-invite-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجو</button>
+              <div id="tc-team-invite-result" class="team-invite-result hidden">
+                <p id="tc-team-invite-result-name" class="team-invite-result-name">-</p>
+                <button id="tc-team-invite-confirm-btn" class="login-btn describe-photo-btn" type="button">دعوت</button>
+              </div>
+            </div>
+            <div class="team-task-actions">
+              <button id="tc-team-start-btn" class="login-btn describe-photo-btn" type="button" disabled>شروع چالش</button>
+              <button id="tc-team-settings-btn" class="login-btn describe-photo-btn secondary" type="button">تنظیمات تیم</button>
+            </div>
+          </section>
+          <section id="tc-team-find-step" class="team-task-step hidden">
+            <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
+            <div class="team-list-group">
+              <p class="team-list-title">دعوت‌شده‌ها</p>
+              <div id="tc-team-invited-list" class="team-list"></div>
+            </div>
+            <div class="team-list-group">
+              <p class="team-list-title">تیم‌های عمومی</p>
+              <div id="tc-team-public-list" class="team-list"></div>
+            </div>
+          </section>
+          <section id="tc-team-search-step" class="team-task-step hidden">
+            <label class="login-field">
+              <span>جستجوی سرگروه</span>
+              <small class="team-field-hint">شماره پرسنلی یا شماره تلفن سرگروه مدنظر خود را وارد کنید.</small>
+              <input id="tc-team-search-leader-input" class="login-input" type="text" placeholder="شماره پرسنلی یا تلفن سرگروه" />
+            </label>
+            <button id="tc-team-search-leader-btn" class="login-btn describe-photo-btn" type="button">جستجوی تیم</button>
+          </section>
+          <section id="tc-team-preview-step" class="team-task-step hidden">
+            <p id="tc-team-preview-name" class="describe-photo-editor-title">-</p>
+            <p id="tc-team-preview-meta" class="describe-photo-index">-</p>
+            <div id="tc-team-preview-members" class="team-list"></div>
+            <button id="tc-team-preview-join-btn" class="login-btn describe-photo-btn" type="button">درخواست عضویت</button>
+          </section>
+          <section id="tc-team-settings-step" class="team-task-step hidden">
+            <label class="login-field">
+              <span>نام تیم</span>
+              <input id="tc-team-settings-name-input" class="login-input" type="text" maxlength="80" placeholder="نام جدید تیم" />
+            </label>
+            <label id="tc-team-settings-join-wrap" class="login-field">
+              <span>نوع عضویت</span>
+              <select id="tc-team-settings-join-select" class="login-input">
+                <option value="private">تیم خصوصی</option>
+                <option value="public_request">تیم عمومی با درخواست دعوت</option>
+                <option value="public_open">تیم عمومی ورود آزاد</option>
+              </select>
+            </label>
+            <button id="tc-team-settings-save-btn" class="login-btn describe-photo-btn" type="button">ذخیره تنظیمات</button>
+            <button id="tc-team-settings-delete-btn" class="login-btn team-danger-btn" type="button">حذف تیم</button>
+            <button id="tc-team-settings-leave-btn" class="login-btn team-danger-btn hidden" type="button">خروج از تیم</button>
+          </section>
+          <section id="tc-team-challenge-step" class="team-task-step hidden">
+            <p id="tc-team-challenge-title" class="describe-photo-editor-title">راهنمای چالش تیمی</p>
+            <div id="tc-team-challenge-content" class="info-task-content"></div>
+            <button id="tc-team-challenge-back-btn" class="login-btn describe-photo-btn secondary" type="button">برگشت به تیم</button>
+          </section>
           <section id="tc-describe-photo-step" class="describe-photo-step hidden">
             <div class="describe-photo-preview">
               <img id="tc-describe-photo-image" class="describe-photo-image" alt="تصویر ماموریت" />
@@ -6320,6 +8180,51 @@ $sessionPayload = [
         const describePhotoTextareaEl = document.getElementById('tc-describe-photo-text');
         const describePhotoWordCountEl = document.getElementById('tc-describe-photo-word-count');
         const describePhotoSaveBtnEl = document.getElementById('tc-describe-photo-save');
+        const teamRulesStepEl = document.getElementById('tc-team-rules-step');
+        const teamRulesTextEl = document.getElementById('tc-team-rules-text');
+        const teamFindBtnEl = document.getElementById('tc-team-find-btn');
+        const teamCreateBtnEl = document.getElementById('tc-team-create-btn');
+        const teamCreateNameStepEl = document.getElementById('tc-team-create-name-step');
+        const teamCreateNameInputEl = document.getElementById('tc-team-create-name-input');
+        const teamCreateNameConfirmBtnEl = document.getElementById('tc-team-create-name-confirm');
+        const teamCreateTypeStepEl = document.getElementById('tc-team-create-type-step');
+        const teamJoinTypeButtons = Array.from(document.querySelectorAll('.team-join-type-btn[data-team-join-type]'));
+        const teamRoomStepEl = document.getElementById('tc-team-room-step');
+        const teamRoomNameEl = document.getElementById('tc-team-room-name');
+        const teamRoomSlotEl = document.getElementById('tc-team-room-slot');
+        const teamRoomMembersEl = document.getElementById('tc-team-room-members');
+        const teamRoomEmptySlotsEl = document.getElementById('tc-team-room-empty-slots');
+        const teamRoomInvitePanelEl = document.getElementById('tc-team-room-invite-panel');
+        const teamInviteQueryInputEl = document.getElementById('tc-team-invite-query-input');
+        const teamInviteSearchBtnEl = document.getElementById('tc-team-invite-search-btn');
+        const teamInviteResultEl = document.getElementById('tc-team-invite-result');
+        const teamInviteResultNameEl = document.getElementById('tc-team-invite-result-name');
+        const teamInviteConfirmBtnEl = document.getElementById('tc-team-invite-confirm-btn');
+        const teamStartBtnEl = document.getElementById('tc-team-start-btn');
+        const teamSettingsBtnEl = document.getElementById('tc-team-settings-btn');
+        const teamFindStepEl = document.getElementById('tc-team-find-step');
+        const teamOpenSearchBtnEl = document.getElementById('tc-team-open-search-btn');
+        const teamInvitedListEl = document.getElementById('tc-team-invited-list');
+        const teamPublicListEl = document.getElementById('tc-team-public-list');
+        const teamSearchStepEl = document.getElementById('tc-team-search-step');
+        const teamSearchLeaderInputEl = document.getElementById('tc-team-search-leader-input');
+        const teamSearchLeaderBtnEl = document.getElementById('tc-team-search-leader-btn');
+        const teamPreviewStepEl = document.getElementById('tc-team-preview-step');
+        const teamPreviewNameEl = document.getElementById('tc-team-preview-name');
+        const teamPreviewMetaEl = document.getElementById('tc-team-preview-meta');
+        const teamPreviewMembersEl = document.getElementById('tc-team-preview-members');
+        const teamPreviewJoinBtnEl = document.getElementById('tc-team-preview-join-btn');
+        const teamSettingsStepEl = document.getElementById('tc-team-settings-step');
+        const teamSettingsNameInputEl = document.getElementById('tc-team-settings-name-input');
+        const teamSettingsJoinWrapEl = document.getElementById('tc-team-settings-join-wrap');
+        const teamSettingsJoinSelectEl = document.getElementById('tc-team-settings-join-select');
+        const teamSettingsSaveBtnEl = document.getElementById('tc-team-settings-save-btn');
+        const teamSettingsDeleteBtnEl = document.getElementById('tc-team-settings-delete-btn');
+        const teamSettingsLeaveBtnEl = document.getElementById('tc-team-settings-leave-btn');
+        const teamChallengeStepEl = document.getElementById('tc-team-challenge-step');
+        const teamChallengeTitleEl = document.getElementById('tc-team-challenge-title');
+        const teamChallengeContentEl = document.getElementById('tc-team-challenge-content');
+        const teamChallengeBackBtnEl = document.getElementById('tc-team-challenge-back-btn');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
         const quizTitleEl = document.getElementById('tc-task-quiz-title');
         const quizCounterEl = document.getElementById('tc-task-quiz-counter');
@@ -6357,6 +8262,11 @@ $sessionPayload = [
         let describePhotoCurrentIndex = 0;
         let describePhotoSelected = null;
         let describePhotoBusy = false;
+        let teamTaskState = null;
+        let teamTaskPreviewTeam = null;
+        let teamTaskInviteCandidate = null;
+        let teamTaskPendingName = '';
+        let teamTaskBusy = false;
         let answerTimeLimitEnabled = true;
         let globalEventStatus = 'inactive';
 
@@ -6737,8 +8647,11 @@ $sessionPayload = [
           const taskScore = Number.parseInt(button.dataset.taskUserScore || '0', 10);
           const taskType = String(button.dataset.taskType || 'quiz').trim().toLowerCase() || 'quiz';
           const describeSubmitted = String(button.dataset.taskDescribeSubmitted || '') === '1';
+          const teamStartedPending = String(button.dataset.taskTeamStartedPending || '') === '1';
           const infoEndedNoScore = (taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') && status === 'ended' && !completed;
           const describeEditableDone = taskType === 'describe_photo' && status === 'active' && describeSubmitted && !completed;
+          const teamEditableDone = taskType === 'team_task' && status === 'active' && teamStartedPending && !completed;
+          const editableSubmittedDone = describeEditableDone || teamEditableDone;
 
           if (completed) {
             button.disabled = true;
@@ -6762,12 +8675,12 @@ $sessionPayload = [
           const scoreNow = taskAvailableScoreNow(button, status, taskType);
           const isGoldenAppearance = status === 'active'
             && (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')
-            && !describeEditableDone;
+            && !editableSubmittedDone;
           button.disabled = !available;
           button.classList.toggle('is-disabled', !available && !isUpcoming);
           button.classList.toggle('is-upcoming', isUpcoming);
           button.classList.remove('is-completed');
-          button.classList.toggle('is-describe-submitted', describeEditableDone);
+          button.classList.toggle('is-describe-submitted', editableSubmittedDone);
           button.classList.toggle('is-info-ended', infoEndedNoScore);
           button.classList.toggle('is-golden', isGoldenAppearance);
           button.classList.toggle('is-golden-live', false);
@@ -6788,7 +8701,7 @@ $sessionPayload = [
               } else {
                 setMetaText(metaEl, resolveTaskScoreText(button, taskType, scoreNow), false);
               }
-            } else if (describeEditableDone) {
+            } else if (editableSubmittedDone) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const editCountdown = formatDescribeEditCountdown(endDate, endTime);
@@ -6995,6 +8908,43 @@ $sessionPayload = [
           if (describePhotoSaveBtnEl instanceof HTMLButtonElement) {
             describePhotoSaveBtnEl.disabled = false;
           }
+          if (teamRulesStepEl) teamRulesStepEl.classList.add('hidden');
+          if (teamCreateNameStepEl) teamCreateNameStepEl.classList.add('hidden');
+          if (teamCreateTypeStepEl) teamCreateTypeStepEl.classList.add('hidden');
+          if (teamRoomStepEl) teamRoomStepEl.classList.add('hidden');
+          if (teamFindStepEl) teamFindStepEl.classList.add('hidden');
+          if (teamSearchStepEl) teamSearchStepEl.classList.add('hidden');
+          if (teamPreviewStepEl) teamPreviewStepEl.classList.add('hidden');
+          if (teamSettingsStepEl) teamSettingsStepEl.classList.add('hidden');
+          if (teamChallengeStepEl) teamChallengeStepEl.classList.add('hidden');
+          if (teamRulesTextEl) teamRulesTextEl.textContent = '';
+          if (teamCreateNameInputEl instanceof HTMLInputElement) teamCreateNameInputEl.value = '';
+          if (teamRoomNameEl) teamRoomNameEl.textContent = '-';
+          if (teamRoomSlotEl) teamRoomSlotEl.textContent = '-';
+          if (teamRoomMembersEl) teamRoomMembersEl.innerHTML = '';
+          if (teamRoomEmptySlotsEl) teamRoomEmptySlotsEl.innerHTML = '';
+          if (teamInvitedListEl) teamInvitedListEl.innerHTML = '';
+          if (teamPublicListEl) teamPublicListEl.innerHTML = '';
+          if (teamPreviewNameEl) teamPreviewNameEl.textContent = '-';
+          if (teamPreviewMetaEl) teamPreviewMetaEl.textContent = '-';
+          if (teamPreviewMembersEl) teamPreviewMembersEl.innerHTML = '';
+          if (teamChallengeTitleEl) teamChallengeTitleEl.textContent = 'راهنمای چالش تیمی';
+          if (teamChallengeContentEl) teamChallengeContentEl.innerHTML = '';
+          if (teamInviteQueryInputEl instanceof HTMLInputElement) teamInviteQueryInputEl.value = '';
+          if (teamInviteResultEl) teamInviteResultEl.classList.add('hidden');
+          if (teamInviteResultNameEl) teamInviteResultNameEl.textContent = '-';
+          if (teamSearchLeaderInputEl instanceof HTMLInputElement) teamSearchLeaderInputEl.value = '';
+          if (teamSettingsNameInputEl instanceof HTMLInputElement) teamSettingsNameInputEl.value = '';
+          if (teamSettingsJoinSelectEl instanceof HTMLSelectElement) teamSettingsJoinSelectEl.value = 'private';
+          if (teamSettingsJoinWrapEl) teamSettingsJoinWrapEl.classList.remove('hidden');
+          if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) teamSettingsSaveBtnEl.classList.remove('hidden');
+          if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) teamSettingsDeleteBtnEl.classList.remove('hidden');
+          if (teamSettingsLeaveBtnEl instanceof HTMLButtonElement) teamSettingsLeaveBtnEl.classList.add('hidden');
+          teamTaskState = null;
+          teamTaskPreviewTeam = null;
+          teamTaskInviteCandidate = null;
+          teamTaskPendingName = '';
+          teamTaskBusy = false;
           infoTaskViewOpen = false;
           infoTaskCurrentStep = 'info';
           quizLocked = false;
@@ -7214,7 +9164,16 @@ $sessionPayload = [
           const isInfoStep = next === 'info';
           const isPhotoStep = next === 'photo';
           const isEditorStep = next === 'editor';
-          infoTaskCurrentStep = isPhotoStep ? 'photo' : (isEditorStep ? 'editor' : 'info');
+          const isTeamRulesStep = next === 'team_rules';
+          const isTeamCreateNameStep = next === 'team_create_name';
+          const isTeamCreateTypeStep = next === 'team_create_type';
+          const isTeamRoomStep = next === 'team_room';
+          const isTeamFindStep = next === 'team_find';
+          const isTeamSearchStep = next === 'team_search';
+          const isTeamPreviewStep = next === 'team_preview';
+          const isTeamSettingsStep = next === 'team_settings';
+          const isTeamChallengeStep = next === 'team_challenge';
+          infoTaskCurrentStep = next;
           if (taskInfoHeadEl) {
             taskInfoHeadEl.classList.toggle('hidden', !isInfoStep);
           }
@@ -7222,14 +9181,31 @@ $sessionPayload = [
             taskInfoContentEl.classList.toggle('hidden', !isInfoStep);
           }
           if (describePhotoStepEl) {
-            describePhotoStepEl.classList.toggle('hidden', !isPhotoStep);
+            describePhotoStepEl.classList.toggle('hidden', !(currentTaskType === 'describe_photo' && isPhotoStep));
           }
           if (describePhotoEditorStepEl) {
-            describePhotoEditorStepEl.classList.toggle('hidden', !isEditorStep);
+            describePhotoEditorStepEl.classList.toggle('hidden', !(currentTaskType === 'describe_photo' && isEditorStep));
           }
+          if (teamRulesStepEl) teamRulesStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamRulesStep));
+          if (teamCreateNameStepEl) teamCreateNameStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamCreateNameStep));
+          if (teamCreateTypeStepEl) teamCreateTypeStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamCreateTypeStep));
+          if (teamRoomStepEl) teamRoomStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamRoomStep));
+          if (teamFindStepEl) teamFindStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamFindStep));
+          if (teamSearchStepEl) teamSearchStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamSearchStep));
+          if (teamPreviewStepEl) teamPreviewStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamPreviewStep));
+          if (teamSettingsStepEl) teamSettingsStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamSettingsStep));
+          if (teamChallengeStepEl) teamChallengeStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamChallengeStep));
           if (taskInfoAckBtnEl) {
-            taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
-            taskInfoAckBtnEl.textContent = currentTaskType === 'describe_photo' ? 'ادامه' : 'متوجه شدم';
+            if (currentTaskType === 'describe_photo') {
+              taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
+              taskInfoAckBtnEl.textContent = 'ادامه';
+            } else if (currentTaskType === 'team_task') {
+              taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
+              taskInfoAckBtnEl.textContent = 'ادامه';
+            } else {
+              taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
+              taskInfoAckBtnEl.textContent = 'متوجه شدم';
+            }
           }
         };
 
@@ -7353,12 +9329,304 @@ $sessionPayload = [
           }
         };
 
+        const normalizeTeamJoinTypeClient = (value) => {
+          const token = String(value || '').trim().toLowerCase();
+          if (token === 'public_open' || token === 'public-open' || token === 'open') return 'public_open';
+          if (token === 'public_request' || token === 'public-request' || token === 'request') return 'public_request';
+          return 'private';
+        };
+
+        const formatTeamJoinTypeText = (joinType) => {
+          const token = normalizeTeamJoinTypeClient(joinType);
+          if (token === 'public_open') return 'عمومی ورود آزاد';
+          if (token === 'public_request') return 'عمومی با درخواست';
+          return 'خصوصی';
+        };
+
+        const teamTaskPost = async (mode, body = {}) => {
+          return postJson({
+            action: 'team_task_action',
+            taskId: currentTaskId,
+            mode,
+            ...body
+          });
+        };
+
+        const renderTeamCardList = (container, teams, emptyText = 'موردی یافت نشد.') => {
+          if (!(container instanceof HTMLElement)) return;
+          const list = Array.isArray(teams) ? teams : [];
+          if (!list.length) {
+            container.innerHTML = `<div class="team-list-item"><div class="team-list-item-meta">${escapeTaskMetaHtml(emptyText)}</div></div>`;
+            return;
+          }
+          container.innerHTML = list.map((team) => {
+            const teamId = escapeTaskMetaHtml(String(team?.id || ''));
+            const teamName = escapeTaskMetaHtml(String(team?.name || 'تیم'));
+            const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
+            const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
+            const joinTypeText = escapeTaskMetaHtml(formatTeamJoinTypeText(team?.joinType));
+            const metaText = `${memberCount}/${maxMembers} نفر | ${joinTypeText}`;
+            return `<button class="team-list-item-btn" type="button" data-team-open-id="${teamId}">
+              <strong>${teamName}</strong>
+              <span>${escapeTaskMetaHtml(metaText)}</span>
+            </button>`;
+          }).join('');
+        };
+
+        const renderTeamRoomMembers = (myTeam) => {
+          if (!(teamRoomMembersEl instanceof HTMLElement)) return;
+          const team = myTeam && typeof myTeam === 'object' ? myTeam : null;
+          if (!team) {
+            teamRoomMembersEl.innerHTML = '';
+            return;
+          }
+          const isLeader = Boolean(team?.isLeader);
+          const members = Array.isArray(team?.members) ? team.members : [];
+          const invites = Array.isArray(team?.invites) ? team.invites : [];
+          const requests = Array.isArray(team?.requests) ? team.requests : [];
+          const memberItems = members.map((item) => {
+            const workId = String(item?.workId || '').trim();
+            const name = String(item?.fullName || workId || 'کاربر').trim() || 'کاربر';
+            const statusText = String(item?.status || '') === 'leader' ? 'سرگروه' : 'عضو تیم';
+            const canRemove = isLeader && String(item?.status || '') !== 'leader';
+            return `<div class="team-member-chip">
+              <div class="team-member-text">
+                <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                <div class="team-member-status">${escapeTaskMetaHtml(statusText)}</div>
+              </div>
+              ${canRemove ? `<button class="team-member-remove" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="member">✕</button>` : ''}
+            </div>`;
+          });
+          const inviteItems = invites.map((item) => {
+            const workId = String(item?.workId || '').trim();
+            const name = String(item?.fullName || workId || 'کاربر').trim() || 'کاربر';
+            return `<div class="team-member-chip">
+              <div class="team-member-text">
+                <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                <div class="team-member-status">دعوت شده</div>
+              </div>
+              ${isLeader ? `<button class="team-member-remove" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="invite">✕</button>` : ''}
+            </div>`;
+          });
+          const requestItems = requests.map((item) => {
+            const workId = String(item?.workId || '').trim();
+            const name = String(item?.fullName || workId || 'کاربر').trim() || 'کاربر';
+            if (!isLeader) {
+              return `<div class="team-member-chip">
+                <div class="team-member-text">
+                  <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                  <div class="team-member-status">درخواست عضویت</div>
+                </div>
+              </div>`;
+            }
+            return `<div class="team-member-chip">
+              <div class="team-member-text">
+                <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                <div class="team-member-status">درخواست عضویت</div>
+              </div>
+              <div>
+                <button class="team-member-remove" type="button" data-team-review-work-id="${escapeTaskMetaHtml(workId)}" data-team-review-decision="accept">✓</button>
+                <button class="team-member-remove" type="button" data-team-review-work-id="${escapeTaskMetaHtml(workId)}" data-team-review-decision="reject">✕</button>
+              </div>
+            </div>`;
+          });
+          const allItems = memberItems.concat(inviteItems, requestItems);
+          teamRoomMembersEl.innerHTML = allItems.length ? allItems.join('') : '<div class="team-list-item"><div class="team-list-item-meta">هنوز عضوی ثبت نشده است.</div></div>';
+        };
+
+        const renderTeamRoomSlots = (myTeam, settings) => {
+          if (!(teamRoomEmptySlotsEl instanceof HTMLElement)) return;
+          const maxMembers = Math.max(1, Number.parseInt(settings?.teamMax ?? 1, 10) || 1);
+          const memberCount = Math.max(0, Number.parseInt(myTeam?.memberCount ?? 0, 10) || 0);
+          const empty = Math.max(0, maxMembers - memberCount);
+          if (empty <= 0) {
+            teamRoomEmptySlotsEl.innerHTML = '';
+            return;
+          }
+          const nodes = [];
+          for (let i = 0; i < empty; i += 1) {
+            nodes.push('<div class="team-empty-slot">جای خالی</div>');
+          }
+          teamRoomEmptySlotsEl.innerHTML = nodes.join('');
+        };
+
+        const renderTeamRulesText = (context) => {
+          if (!(teamRulesTextEl instanceof HTMLElement)) return;
+          const settings = context?.teamSettings || {};
+          const minMembers = Math.max(1, Number.parseInt(settings?.teamMin ?? 1, 10) || 1);
+          const maxMembers = Math.max(minMembers, Number.parseInt(settings?.teamMax ?? minMembers, 10) || minMembers);
+          const additionalNote = String(settings?.teamAdditionalNote || '').trim();
+          const lines = [
+            `حداقل اعضای تیم: ${minMembers} نفر`,
+            `حداکثر اعضای تیم: ${maxMembers} نفر`
+          ];
+          if (additionalNote) {
+            lines.push(additionalNote);
+          }
+          teamRulesTextEl.textContent = lines.join('\n');
+        };
+
+        const renderTeamTaskState = (context) => {
+          teamTaskState = context && typeof context === 'object' ? context : null;
+          renderTeamRulesText(teamTaskState);
+          renderTeamCardList(teamInvitedListEl, teamTaskState?.invitedTeams || [], 'دعوتی فعالی ندارید.');
+          renderTeamCardList(teamPublicListEl, teamTaskState?.publicTeams || [], 'تیم عمومی فعالی وجود ندارد.');
+          const myTeam = teamTaskState?.myTeam || null;
+          if (myTeam && teamRoomNameEl) {
+            teamRoomNameEl.textContent = String(myTeam?.name || 'تیم من');
+          }
+          if (teamRoomSlotEl) {
+            const count = Math.max(0, Number.parseInt(myTeam?.memberCount ?? 0, 10) || 0);
+            const maxMembers = Math.max(1, Number.parseInt(myTeam?.maxMembers ?? teamTaskState?.teamSettings?.teamMax ?? 1, 10) || 1);
+            teamRoomSlotEl.textContent = `اعضا: ${count} / ${maxMembers}`;
+          }
+          renderTeamRoomMembers(myTeam);
+          renderTeamRoomSlots(myTeam, teamTaskState?.teamSettings || {});
+          const isLeader = Boolean(myTeam?.isLeader);
+          if (teamRoomInvitePanelEl) {
+            teamRoomInvitePanelEl.classList.toggle('hidden', !(myTeam && isLeader));
+          }
+          if (teamInviteResultEl) {
+            teamInviteResultEl.classList.add('hidden');
+          }
+          teamTaskInviteCandidate = null;
+          if (teamStartBtnEl instanceof HTMLButtonElement) {
+            const minMembers = Math.max(1, Number.parseInt(myTeam?.minMembers ?? teamTaskState?.teamSettings?.teamMin ?? 1, 10) || 1);
+            const memberCount = Math.max(0, Number.parseInt(myTeam?.memberCount ?? 0, 10) || 0);
+            const started = Boolean(myTeam?.started);
+            teamStartBtnEl.disabled = !myTeam || (!started && (!isLeader || memberCount < minMembers));
+            teamStartBtnEl.textContent = started ? 'مشاهده چالش' : 'شروع چالش';
+          }
+          if (teamSettingsBtnEl instanceof HTMLButtonElement) {
+            teamSettingsBtnEl.disabled = !myTeam;
+          }
+        };
+
+        const openTeamPreview = (team) => {
+          teamTaskPreviewTeam = team && typeof team === 'object' ? team : null;
+          if (!teamTaskPreviewTeam) return;
+          if (teamPreviewNameEl) {
+            teamPreviewNameEl.textContent = String(teamTaskPreviewTeam?.name || 'تیم');
+          }
+          if (teamPreviewMetaEl) {
+            const memberCount = Math.max(0, Number.parseInt(teamTaskPreviewTeam?.memberCount ?? 0, 10) || 0);
+            const maxMembers = Math.max(1, Number.parseInt(teamTaskPreviewTeam?.maxMembers ?? 1, 10) || 1);
+            const joinTypeText = formatTeamJoinTypeText(teamTaskPreviewTeam?.joinType);
+            teamPreviewMetaEl.textContent = `${memberCount}/${maxMembers} نفر | ${joinTypeText}`;
+          }
+          if (teamPreviewMembersEl) {
+            const members = Array.isArray(teamTaskPreviewTeam?.members) ? teamTaskPreviewTeam.members : [];
+            if (!members.length) {
+              teamPreviewMembersEl.innerHTML = '<div class="team-list-item"><div class="team-list-item-meta">عضوی ثبت نشده است.</div></div>';
+            } else {
+              teamPreviewMembersEl.innerHTML = members.map((item) => {
+                const name = String(item?.fullName || item?.workId || 'کاربر').trim() || 'کاربر';
+                return `<div class="team-list-item"><div class="team-list-item-title">${escapeTaskMetaHtml(name)}</div></div>`;
+              }).join('');
+            }
+          }
+          if (teamPreviewJoinBtnEl instanceof HTMLButtonElement) {
+            const isInvited = Boolean(teamTaskPreviewTeam?.isInvited);
+            const isRequested = Boolean(teamTaskPreviewTeam?.isRequested);
+            if (isInvited) {
+              teamPreviewJoinBtnEl.textContent = 'عضویت';
+              teamPreviewJoinBtnEl.disabled = false;
+            } else if (isRequested) {
+              teamPreviewJoinBtnEl.textContent = 'درخواست عضویت ثبت شده';
+              teamPreviewJoinBtnEl.disabled = true;
+            } else if (normalizeTeamJoinTypeClient(teamTaskPreviewTeam?.joinType) === 'public_request') {
+              teamPreviewJoinBtnEl.textContent = 'درخواست عضویت';
+              teamPreviewJoinBtnEl.disabled = false;
+            } else {
+              teamPreviewJoinBtnEl.textContent = 'عضویت';
+              teamPreviewJoinBtnEl.disabled = false;
+            }
+          }
+          setInfoTaskStep('team_preview');
+        };
+
+        const openTeamSettingsView = () => {
+          const myTeam = teamTaskState?.myTeam || null;
+          if (!myTeam) return;
+          const isLeader = Boolean(myTeam?.isLeader);
+          if (teamSettingsNameInputEl instanceof HTMLInputElement) {
+            teamSettingsNameInputEl.value = String(myTeam?.name || '').trim();
+            teamSettingsNameInputEl.disabled = !isLeader;
+          }
+          if (teamSettingsJoinWrapEl) {
+            teamSettingsJoinWrapEl.classList.toggle('hidden', !isLeader);
+          }
+          if (teamSettingsJoinSelectEl instanceof HTMLSelectElement) {
+            teamSettingsJoinSelectEl.value = normalizeTeamJoinTypeClient(myTeam?.joinType);
+            teamSettingsJoinSelectEl.disabled = !isLeader;
+          }
+          if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) {
+            teamSettingsSaveBtnEl.classList.toggle('hidden', !isLeader);
+          }
+          if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) {
+            teamSettingsDeleteBtnEl.classList.toggle('hidden', !isLeader);
+          }
+          if (teamSettingsLeaveBtnEl instanceof HTMLButtonElement) {
+            teamSettingsLeaveBtnEl.classList.toggle('hidden', isLeader);
+          }
+          setInfoTaskStep('team_settings');
+        };
+
+        const openTeamChallengeView = () => {
+          const myTeam = teamTaskState?.myTeam || null;
+          if (!myTeam || !myTeam.started) {
+            return;
+          }
+          const challengeName = String(myTeam?.challengeName || '').trim();
+          const guideText = [
+            String(teamTaskState?.guidePrefix || '').trim(),
+            String(myTeam?.challengeGuide || '').trim(),
+            String(teamTaskState?.guideSuffix || '').trim()
+          ].filter((part) => part !== '').join('\n\n');
+          if (teamChallengeTitleEl) {
+            teamChallengeTitleEl.textContent = challengeName !== '' ? challengeName : 'راهنمای چالش تیمی';
+          }
+          if (teamChallengeContentEl) {
+            teamChallengeContentEl.innerHTML = buildInfoTaskContentHtml(guideText);
+          }
+          setInfoTaskStep('team_challenge');
+        };
+
+        const refreshTeamTaskState = async (targetStep = '') => {
+          if (!currentTaskId) return;
+          const payload = await teamTaskPost('state');
+          const context = payload?.data?.context || null;
+          renderTeamTaskState(context);
+          const targetButton = taskButtons.find(
+            (button) => String(button?.dataset?.taskId || '').trim() === String(currentTaskId || '').trim()
+          );
+          if (targetButton instanceof HTMLButtonElement) {
+            const completed = String(targetButton.dataset.taskCompleted || '') === '1';
+            const startedPending = !completed && Boolean(context?.myTeam?.started);
+            targetButton.dataset.taskTeamStartedPending = startedPending ? '1' : '0';
+            setTaskButtonState(targetButton, deriveTaskStatusFromButton(targetButton));
+          }
+          if (targetStep) {
+            setInfoTaskStep(targetStep);
+            return;
+          }
+          if (context?.myTeam) {
+            setInfoTaskStep('team_room');
+            return;
+          }
+          setInfoTaskStep('team_rules');
+        };
+
         const openInfoTaskView = (taskTitle, infoTitle, infoText, options = {}) => {
           currentTaskType = String(options?.taskType || 'info').trim().toLowerCase() || 'info';
           describePhotoChoices = normalizeDescribePhotoChoices(options?.describePhotos || []);
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
           describePhotoBusy = false;
+          teamTaskState = (options?.teamContext && typeof options.teamContext === 'object') ? options.teamContext : null;
+          teamTaskPreviewTeam = null;
+          teamTaskInviteCandidate = null;
+          teamTaskPendingName = '';
           if (timerAreaEl) timerAreaEl.classList.add('quiz-hidden');
           if (bottomCtaEl) bottomCtaEl.classList.add('quiz-hidden');
           if (quizAreaEl) quizAreaEl.classList.add('quiz-hidden');
@@ -7372,6 +9640,8 @@ $sessionPayload = [
           }
           if (currentTaskType === 'describe_photo') {
             renderDescribePhotoChoice();
+          } else if (currentTaskType === 'team_task') {
+            renderTeamTaskState(teamTaskState);
           }
           setInfoTaskStep('info');
           infoTaskViewOpen = true;
@@ -8304,6 +10574,8 @@ $sessionPayload = [
             const progress = payload?.progress || {};
             const describeSubmitted = Boolean(progress?.describeSubmitted);
             button.dataset.taskDescribeSubmitted = describeSubmitted ? '1' : '0';
+            const teamStartedPending = Boolean(progress?.teamStartedPending);
+            button.dataset.taskTeamStartedPending = teamStartedPending ? '1' : '0';
             setTaskButtonState(button, deriveTaskStatusFromButton(button));
             if (progress?.completed) {
               button.dataset.taskCompleted = '1';
@@ -8324,13 +10596,17 @@ $sessionPayload = [
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
               const describePhotos = Array.isArray(payload?.task?.describePhotos) ? payload.task.describePhotos : [];
+              const teamContext = payload?.task?.teamContext && typeof payload.task.teamContext === 'object'
+                ? payload.task.teamContext
+                : null;
               openInfoTaskView(
                 currentTaskTitle,
                 String(payload?.task?.infoTitle ?? '').trim(),
                 String(payload?.task?.infoText ?? '').trim(),
                 {
                   taskType: fetchedTaskType,
-                  describePhotos
+                  describePhotos,
+                  teamContext
                 }
               );
               return;
@@ -8397,6 +10673,20 @@ $sessionPayload = [
               });
               return;
             }
+            if (currentTaskType === 'team_task') {
+              try {
+                await withTransitionLoader(async () => {
+                  await refreshTeamTaskState();
+                }, {
+                  primaryText: 'در حال آماده‌سازی تیم',
+                  secondaryText: 'در حال دریافت وضعیت تیم‌ها',
+                  delayMs: 120
+                });
+              } catch (error) {
+                await openInfoDialog(error?.message || 'دریافت وضعیت تیم‌ها ناموفق بود.');
+              }
+              return;
+            }
             closeQuizOverlay();
           });
         }
@@ -8441,6 +10731,353 @@ $sessionPayload = [
           });
         }
 
+        const findTeamFromCurrentContext = (teamId) => {
+          const target = String(teamId || '').trim();
+          if (target === '') return null;
+          const myTeam = teamTaskState?.myTeam && String(teamTaskState.myTeam.id || '').trim() === target
+            ? teamTaskState.myTeam
+            : null;
+          if (myTeam) return myTeam;
+          const invited = (Array.isArray(teamTaskState?.invitedTeams) ? teamTaskState.invitedTeams : [])
+            .find((item) => String(item?.id || '').trim() === target);
+          if (invited) return invited;
+          const publicTeam = (Array.isArray(teamTaskState?.publicTeams) ? teamTaskState.publicTeams : [])
+            .find((item) => String(item?.id || '').trim() === target);
+          return publicTeam || null;
+        };
+
+        if (teamCreateBtnEl instanceof HTMLButtonElement) {
+          teamCreateBtnEl.addEventListener('click', () => {
+            setInfoTaskStep('team_create_name');
+          });
+        }
+
+        if (teamFindBtnEl instanceof HTMLButtonElement) {
+          teamFindBtnEl.addEventListener('click', () => {
+            void withTransitionLoader(
+              () => refreshTeamTaskState('team_find'),
+              {
+                primaryText: 'در حال دریافت فهرست تیم‌ها',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 120
+              }
+            );
+          });
+        }
+
+        if (teamCreateNameConfirmBtnEl instanceof HTMLButtonElement) {
+          teamCreateNameConfirmBtnEl.addEventListener('click', async () => {
+            const teamName = String(teamCreateNameInputEl?.value || '').trim();
+            if (teamName === '') {
+              await openInfoDialog('نام تیم را وارد کنید.');
+              return;
+            }
+            teamTaskPendingName = teamName;
+            setInfoTaskStep('team_create_type');
+          });
+        }
+
+        if (teamJoinTypeButtons.length) {
+          teamJoinTypeButtons.forEach((button) => {
+            if (!(button instanceof HTMLButtonElement)) return;
+            button.addEventListener('click', () => {
+              const joinType = normalizeTeamJoinTypeClient(button.dataset.teamJoinType || 'private');
+              const teamName = String(teamTaskPendingName || '').trim();
+              if (teamName === '') {
+                setInfoTaskStep('team_create_name');
+                return;
+              }
+              void withTransitionLoader(
+                async () => {
+                  await teamTaskPost('create', { teamName, joinType });
+                  teamTaskPendingName = '';
+                  await refreshTeamTaskState('team_room');
+                },
+                {
+                  primaryText: 'در حال ساخت تیم',
+                  secondaryText: 'لطفا چند لحظه صبر کنید',
+                  delayMs: 120
+                }
+              ).catch(async (error) => {
+                await openInfoDialog(error?.message || 'ساخت تیم ناموفق بود.');
+              });
+            });
+          });
+        }
+
+        if (teamOpenSearchBtnEl instanceof HTMLButtonElement) {
+          teamOpenSearchBtnEl.addEventListener('click', () => {
+            setInfoTaskStep('team_search');
+          });
+        }
+
+        if (teamSearchLeaderBtnEl instanceof HTMLButtonElement) {
+          teamSearchLeaderBtnEl.addEventListener('click', () => {
+            const query = String(teamSearchLeaderInputEl?.value || '').trim();
+            if (query === '') {
+              void openInfoDialog('شماره پرسنلی یا شماره تلفن سرگروه را وارد کنید.');
+              return;
+            }
+            void withTransitionLoader(
+              async () => {
+                const payload = await teamTaskPost('find_by_leader', { query });
+                const team = payload?.data?.team || null;
+                if (!team) {
+                  throw new Error('تیمی پیدا نشد.');
+                }
+                openTeamPreview(team);
+              },
+              {
+                primaryText: 'در حال جستجوی تیم',
+                secondaryText: 'لطفا صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'جستجوی تیم ناموفق بود.');
+            });
+          });
+        }
+
+        const onTeamListClick = (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const button = target.closest('[data-team-open-id]');
+          if (!(button instanceof HTMLButtonElement)) return;
+          const teamId = String(button.dataset.teamOpenId || '').trim();
+          if (teamId === '') return;
+          const team = findTeamFromCurrentContext(teamId);
+          if (!team) return;
+          openTeamPreview(team);
+        };
+        if (teamInvitedListEl instanceof HTMLElement) {
+          teamInvitedListEl.addEventListener('click', onTeamListClick);
+        }
+        if (teamPublicListEl instanceof HTMLElement) {
+          teamPublicListEl.addEventListener('click', onTeamListClick);
+        }
+
+        if (teamPreviewJoinBtnEl instanceof HTMLButtonElement) {
+          teamPreviewJoinBtnEl.addEventListener('click', () => {
+            const teamId = String(teamTaskPreviewTeam?.id || '').trim();
+            if (teamId === '') return;
+            void withTransitionLoader(
+              async () => {
+                const payload = await teamTaskPost('join', { teamId });
+                const joined = Boolean(payload?.data?.joined);
+                await refreshTeamTaskState(joined ? 'team_room' : 'team_find');
+              },
+              {
+                primaryText: 'در حال ثبت عضویت',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'ثبت عضویت ناموفق بود.');
+            });
+          });
+        }
+
+        if (teamInviteSearchBtnEl instanceof HTMLButtonElement) {
+          teamInviteSearchBtnEl.addEventListener('click', () => {
+            const query = String(teamInviteQueryInputEl?.value || '').trim();
+            if (query === '') {
+              void openInfoDialog('شماره پرسنلی یا شماره تلفن کاربر را وارد کنید.');
+              return;
+            }
+            void withTransitionLoader(
+              async () => {
+                const payload = await teamTaskPost('lookup_user', { query });
+                const invitee = payload?.data?.invitee || null;
+                if (!invitee) {
+                  throw new Error('کاربری پیدا نشد.');
+                }
+                if (payload?.data?.isMemberAny) {
+                  throw new Error('این کاربر هم‌اکنون عضو یک تیم است.');
+                }
+                teamTaskInviteCandidate = invitee;
+                if (teamInviteResultNameEl) {
+                  const fullName = String(invitee?.fullName || invitee?.workId || '').trim();
+                  teamInviteResultNameEl.textContent = fullName !== '' ? fullName : String(invitee?.workId || 'کاربر');
+                }
+                if (teamInviteResultEl) {
+                  teamInviteResultEl.classList.remove('hidden');
+                }
+              },
+              {
+                primaryText: 'در حال جستجوی کاربر',
+                secondaryText: 'لطفا صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              teamTaskInviteCandidate = null;
+              if (teamInviteResultEl) teamInviteResultEl.classList.add('hidden');
+              await openInfoDialog(error?.message || 'جستجوی کاربر ناموفق بود.');
+            });
+          });
+        }
+
+        if (teamInviteConfirmBtnEl instanceof HTMLButtonElement) {
+          teamInviteConfirmBtnEl.addEventListener('click', () => {
+            const targetWorkId = String(teamTaskInviteCandidate?.workId || '').trim();
+            if (targetWorkId === '') {
+              void openInfoDialog('ابتدا کاربر را جستجو کنید.');
+              return;
+            }
+            void withTransitionLoader(
+              async () => {
+                await teamTaskPost('invite', { targetWorkId });
+                await refreshTeamTaskState('team_room');
+              },
+              {
+                primaryText: 'در حال ارسال دعوت',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'ارسال دعوت ناموفق بود.');
+            });
+          });
+        }
+
+        if (teamRoomMembersEl instanceof HTMLElement) {
+          teamRoomMembersEl.addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const removeBtn = target.closest('[data-team-remove-work-id]');
+            if (removeBtn instanceof HTMLButtonElement) {
+              const targetWorkId = String(removeBtn.dataset.teamRemoveWorkId || '').trim();
+              if (targetWorkId === '') return;
+              void withTransitionLoader(
+                async () => {
+                  await teamTaskPost('remove_member', { targetWorkId });
+                  await refreshTeamTaskState('team_room');
+                },
+                {
+                  primaryText: 'در حال ثبت تغییرات تیم',
+                  secondaryText: 'لطفا صبر کنید',
+                  delayMs: 120
+                }
+              ).catch(async (error) => {
+                await openInfoDialog(error?.message || 'ثبت تغییرات ناموفق بود.');
+              });
+              return;
+            }
+            const reviewBtn = target.closest('[data-team-review-work-id]');
+            if (reviewBtn instanceof HTMLButtonElement) {
+              const targetWorkId = String(reviewBtn.dataset.teamReviewWorkId || '').trim();
+              const decision = String(reviewBtn.dataset.teamReviewDecision || 'reject').trim().toLowerCase();
+              const teamId = String(teamTaskState?.myTeam?.id || '').trim();
+              if (teamId === '' || targetWorkId === '') return;
+              void withTransitionLoader(
+                async () => {
+                  await teamTaskPost('review_request', { teamId, targetWorkId, decision });
+                  await refreshTeamTaskState('team_room');
+                },
+                {
+                  primaryText: 'در حال بررسی درخواست',
+                  secondaryText: 'لطفا صبر کنید',
+                  delayMs: 120
+                }
+              ).catch(async (error) => {
+                await openInfoDialog(error?.message || 'ثبت نتیجه درخواست ناموفق بود.');
+              });
+            }
+          });
+        }
+
+        if (teamStartBtnEl instanceof HTMLButtonElement) {
+          teamStartBtnEl.addEventListener('click', () => {
+            const myTeam = teamTaskState?.myTeam || null;
+            if (!myTeam) return;
+            if (myTeam?.started) {
+              openTeamChallengeView();
+              return;
+            }
+            void withTransitionLoader(
+              async () => {
+                await teamTaskPost('start');
+                await refreshTeamTaskState('team_room');
+                openTeamChallengeView();
+              },
+              {
+                primaryText: 'در حال شروع چالش تیمی',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'شروع چالش ناموفق بود.');
+            });
+          });
+        }
+
+        if (teamSettingsBtnEl instanceof HTMLButtonElement) {
+          teamSettingsBtnEl.addEventListener('click', () => {
+            openTeamSettingsView();
+          });
+        }
+
+        if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) {
+          teamSettingsSaveBtnEl.addEventListener('click', () => {
+            const teamName = String(teamSettingsNameInputEl?.value || '').trim();
+            const joinType = normalizeTeamJoinTypeClient(teamSettingsJoinSelectEl?.value || 'private');
+            void withTransitionLoader(
+              async () => {
+                await teamTaskPost('settings', { teamName, joinType });
+                await refreshTeamTaskState('team_room');
+              },
+              {
+                primaryText: 'در حال ذخیره تنظیمات تیم',
+                secondaryText: 'لطفا صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'ذخیره تنظیمات تیم ناموفق بود.');
+            });
+          });
+        }
+
+        if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) {
+          teamSettingsDeleteBtnEl.addEventListener('click', () => {
+            void withTransitionLoader(
+              async () => {
+                await teamTaskPost('settings', { deleteTeam: true });
+                await refreshTeamTaskState('team_rules');
+              },
+              {
+                primaryText: 'در حال حذف تیم',
+                secondaryText: 'لطفا صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'حذف تیم ناموفق بود.');
+            });
+          });
+        }
+
+        if (teamSettingsLeaveBtnEl instanceof HTMLButtonElement) {
+          teamSettingsLeaveBtnEl.addEventListener('click', () => {
+            void withTransitionLoader(
+              async () => {
+                await teamTaskPost('settings', { leaveTeam: true });
+                await refreshTeamTaskState('team_rules');
+              },
+              {
+                primaryText: 'در حال خروج از تیم',
+                secondaryText: 'لطفا صبر کنید',
+                delayMs: 120
+              }
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'خروج از تیم ناموفق بود.');
+            });
+          });
+        }
+
+        if (teamChallengeBackBtnEl instanceof HTMLButtonElement) {
+          teamChallengeBackBtnEl.addEventListener('click', () => {
+            setInfoTaskStep('team_room');
+          });
+        }
+
         if (openRewardsBtnEl) {
           openRewardsBtnEl.addEventListener('click', () => {
             void withTransitionLoader(
@@ -8472,6 +11109,35 @@ $sessionPayload = [
                 }
                 if (infoTaskCurrentStep === 'photo') {
                   setInfoTaskStep('info');
+                  return;
+                }
+              } else if (currentTaskType === 'team_task') {
+                if (infoTaskCurrentStep === 'team_create_name') {
+                  setInfoTaskStep('team_rules');
+                  return;
+                }
+                if (infoTaskCurrentStep === 'team_create_type') {
+                  setInfoTaskStep('team_create_name');
+                  return;
+                }
+                if (infoTaskCurrentStep === 'team_find') {
+                  setInfoTaskStep('team_rules');
+                  return;
+                }
+                if (infoTaskCurrentStep === 'team_search' || infoTaskCurrentStep === 'team_preview') {
+                  setInfoTaskStep('team_find');
+                  return;
+                }
+                if (infoTaskCurrentStep === 'team_settings' || infoTaskCurrentStep === 'team_challenge') {
+                  setInfoTaskStep('team_room');
+                  return;
+                }
+                if (infoTaskCurrentStep === 'team_room') {
+                  closeQuizOverlay();
+                  return;
+                }
+                if (infoTaskCurrentStep === 'team_rules') {
+                  closeQuizOverlay();
                   return;
                 }
               }

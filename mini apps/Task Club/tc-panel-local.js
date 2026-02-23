@@ -964,7 +964,19 @@
 
   function getInfoRateTableColspanForPane(pane) {
     if (!(pane instanceof HTMLElement)) return 7;
+    if (isTeamTaskType(pane.dataset.taskType || 'quiz')) return 8;
     return isDescribePhotoTaskType(pane.dataset.taskType || 'quiz') ? 8 : 7;
+  }
+
+  function formatTeamJoinTypeLabel(value) {
+    const token = String(value ?? '').trim().toLowerCase();
+    if (token === 'public_open' || token === 'public-open' || token === 'open') {
+      return 'Public (Open)';
+    }
+    if (token === 'public_request' || token === 'public-request' || token === 'request') {
+      return 'Public (Request)';
+    }
+    return 'Private';
   }
 
   function normalizeDescribeResultItem(item) {
@@ -987,13 +999,13 @@
     const selectAll = pane.querySelector('[data-task-info-select-all]');
     const bulkScoreInput = pane.querySelector('[data-task-info-bulk-score]');
     const statusEl = pane.querySelector('[data-task-info-rate-status]');
-    if (!(body instanceof HTMLElement) || !(searchInput instanceof HTMLInputElement) || !(selectAll instanceof HTMLInputElement)) {
+    if (!(body instanceof HTMLElement) || !(searchInput instanceof HTMLInputElement)) {
       return null;
     }
     return {
       body,
       searchInput,
-      selectAll,
+      selectAll: selectAll instanceof HTMLInputElement ? selectAll : null,
       bulkScoreInput: bulkScoreInput instanceof HTMLInputElement ? bulkScoreInput : null,
       statusEl: statusEl instanceof HTMLElement ? statusEl : null
     };
@@ -1012,6 +1024,8 @@
     if (!infoRateStateByTaskId.has(key)) {
       infoRateStateByTaskId.set(key, {
         maxScore: 0,
+        isTeamMode: false,
+        teams: [],
         invitees: [],
         selected: new Set(),
         query: ''
@@ -1035,25 +1049,93 @@
       const state = getInfoRateState(taskId);
       if (!state) return;
       state.maxScore = normalizeScoreValue(data.maxScore ?? 0);
-      state.invitees = Array.isArray(data.invitees) ? data.invitees.map((row) => ({
-        workId: String(row.workId || '').trim(),
-        firstName: String(row.firstName || '').trim(),
-        lastName: String(row.lastName || '').trim(),
-        phone: String(row.phone || '').trim(),
-        customScore: normalizeScoreValue(row.customScore ?? 0),
-        describeResults: Array.isArray(row.describeResults ?? row.describe_results)
-          ? (row.describeResults ?? row.describe_results)
-            .map((item) => normalizeDescribeResultItem(item))
-            .filter(Boolean)
-          : []
-      })) : [];
-      state.selected = new Set();
+      const taskType = normalizeTaskType(data.taskType || pane.dataset.taskType || 'quiz');
+      state.isTeamMode = taskType === 'team_task';
+      if (state.isTeamMode) {
+        state.teams = Array.isArray(data.teams) ? data.teams.map((row) => ({
+          id: String(row.id || '').trim(),
+          name: String(row.name || '').trim(),
+          joinType: String(row.joinType || row.join_type || 'private').trim(),
+          status: String(row.status || '').trim().toLowerCase() === 'started' ? 'started' : 'draft',
+          challengeAccepted: Boolean(row.challengeAccepted ?? row.challenge_accepted ?? false),
+          leaderWorkId: String(row.leaderWorkId || row.leader_work_id || '').trim(),
+          leaderName: String(row.leaderName || row.leader_name || '').trim(),
+          memberCount: normalizeScoreValue(row.memberCount ?? row.member_count ?? 0),
+          minMembers: normalizeScoreValue(row.minMembers ?? row.min_members ?? 0),
+          maxMembers: normalizeScoreValue(row.maxMembers ?? row.max_members ?? 0),
+          assignedScore: normalizeScoreValue(row.assignedScore ?? row.assigned_score ?? 0),
+          inviteCount: normalizeScoreValue(row.inviteCount ?? row.invite_count ?? 0),
+          requestCount: normalizeScoreValue(row.requestCount ?? row.request_count ?? 0),
+          members: Array.isArray(row.members) ? row.members.map((member) => ({
+            workId: String(member.workId || '').trim(),
+            firstName: String(member.firstName || '').trim(),
+            lastName: String(member.lastName || '').trim(),
+            phone: String(member.phone || '').trim(),
+            score: normalizeScoreValue(member.score ?? 0)
+          })) : []
+        })).filter((row) => row.id) : [];
+        state.invitees = [];
+        state.selected = new Set();
+      } else {
+        state.teams = [];
+        state.invitees = Array.isArray(data.invitees) ? data.invitees.map((row) => ({
+          workId: String(row.workId || '').trim(),
+          firstName: String(row.firstName || '').trim(),
+          lastName: String(row.lastName || '').trim(),
+          phone: String(row.phone || '').trim(),
+          customScore: normalizeScoreValue(row.customScore ?? 0),
+          describeResults: Array.isArray(row.describeResults ?? row.describe_results)
+            ? (row.describeResults ?? row.describe_results)
+              .map((item) => normalizeDescribeResultItem(item))
+              .filter(Boolean)
+            : []
+        })) : [];
+        state.selected = new Set();
+      }
       renderInfoRateTable(pane);
       setInfoRateStatus(pane, '');
     } catch (error) {
-      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">Failed to load invitees.</td></tr>`;
-      setInfoRateStatus(pane, error?.message || 'Failed to load invitees.', true);
+      const failedText = isTeamTaskType(pane.dataset.taskType || 'quiz') ? 'Failed to load teams.' : 'Failed to load invitees.';
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">${failedText}</td></tr>`;
+      setInfoRateStatus(pane, error?.message || failedText, true);
     }
+  }
+
+  function renderTeamRateTable(pane, state, controls, colspan) {
+    const query = String(state.query || '').trim().toLowerCase();
+    const visibleRows = (Array.isArray(state.teams) ? state.teams : []).filter((row) => {
+      if (!query) return true;
+      const haystack = `${row.name} ${row.leaderName} ${row.leaderWorkId} ${row.status} ${row.joinType}`.toLowerCase();
+      return haystack.includes(query);
+    });
+    if (!visibleRows.length) {
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">No team found.</td></tr>`;
+      return;
+    }
+
+    controls.body.innerHTML = visibleRows.map((team) => {
+      const statusLabel = team.status === 'started' ? 'Started' : 'Draft';
+      const minMembers = Math.max(1, normalizeScoreValue(team.minMembers || 1));
+      const maxMembers = Math.max(minMembers, normalizeScoreValue(team.maxMembers || minMembers));
+      const memberCount = normalizeScoreValue(team.memberCount || 0);
+      return `
+        <tr data-team-id="${escapeHtml(team.id)}">
+          <td>${escapeHtml(team.name || 'Team')}</td>
+          <td>${escapeHtml(statusLabel)}</td>
+          <td>${escapeHtml(formatTeamJoinTypeLabel(team.joinType))}</td>
+          <td>${escapeHtml(team.leaderName || team.leaderWorkId || '-')}</td>
+          <td>${escapeHtml(String(memberCount))} / ${escapeHtml(String(maxMembers))} <small class="muted">(min ${escapeHtml(String(minMembers))})</small></td>
+          <td>${escapeHtml(String(normalizeScoreValue(team.assignedScore || 0)))}</td>
+          <td>
+            <label class="tc-team-accepted-check-wrap">
+              <input type="checkbox" data-team-challenge-accepted-check ${team.challengeAccepted ? 'checked' : ''} />
+              <span>Challenge Accepted</span>
+            </label>
+          </td>
+          <td><button type="button" class="btn primary standard-primary-button" data-action="team-row-preview">Team Preview</button></td>
+        </tr>
+      `;
+    }).join('');
   }
 
   function renderInfoRateTable(pane) {
@@ -1062,6 +1144,10 @@
     const state = getInfoRateState(taskId);
     const controls = getInfoRateElements(pane);
     if (!state || !controls) return;
+    if (state.isTeamMode || isTeamTaskType(pane.dataset.taskType || 'quiz')) {
+      renderTeamRateTable(pane, state, controls, getInfoRateTableColspanForPane(pane));
+      return;
+    }
     const isDescribeTask = isDescribePhotoTaskType(pane.dataset.taskType || 'quiz');
     const colspan = getInfoRateTableColspanForPane(pane);
     const query = String(state.query || '').trim().toLowerCase();
@@ -1072,8 +1158,10 @@
     });
     if (!visibleRows.length) {
       controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">No invitee found.</td></tr>`;
-      controls.selectAll.checked = false;
-      controls.selectAll.indeterminate = false;
+      if (controls.selectAll instanceof HTMLInputElement) {
+        controls.selectAll.checked = false;
+        controls.selectAll.indeterminate = false;
+      }
       return;
     }
     const selectedCount = state.selected.size;
@@ -1101,8 +1189,10 @@
 
     const visibleIds = visibleRows.map((row) => row.workId);
     const visibleSelected = visibleIds.filter((id) => state.selected.has(id)).length;
-    controls.selectAll.checked = visibleIds.length > 0 && visibleSelected === visibleIds.length;
-    controls.selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visibleIds.length;
+    if (controls.selectAll instanceof HTMLInputElement) {
+      controls.selectAll.checked = visibleIds.length > 0 && visibleSelected === visibleIds.length;
+      controls.selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visibleIds.length;
+    }
   }
 
   async function assignInfoScores(pane, workIds, mode, customScoreValue = 0) {
@@ -1147,6 +1237,8 @@
   let describeArticleModalEl = null;
   let describeResultsContext = null;
   let describeArticleContext = null;
+  let teamPreviewModalEl = null;
+  let teamPreviewContext = null;
 
   function closeDescribeResultsModal() {
     if (!(describeResultsModalEl instanceof HTMLElement)) return;
@@ -1406,8 +1498,392 @@
     }
   }
 
+  function closeTeamPreviewModal() {
+    if (!(teamPreviewModalEl instanceof HTMLElement)) return;
+    teamPreviewModalEl.hidden = true;
+    teamPreviewContext = null;
+  }
+
+  function setTeamPreviewStatus(message, isError = false) {
+    if (!(teamPreviewModalEl instanceof HTMLElement)) return;
+    const statusEl = teamPreviewModalEl.querySelector('[data-team-preview-status]');
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.textContent = String(message || '');
+    statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function renderTeamPreviewModalContent() {
+    if (!(teamPreviewModalEl instanceof HTMLElement)) return;
+    const context = teamPreviewContext;
+    if (!context || !context.team) return;
+    const team = context.team;
+    const titleEl = teamPreviewModalEl.querySelector('[data-team-preview-title]');
+    const hintEl = teamPreviewModalEl.querySelector('[data-team-preview-hint]');
+    const nameInput = teamPreviewModalEl.querySelector('[data-team-preview-name]');
+    const joinSelect = teamPreviewModalEl.querySelector('[data-team-preview-join-type]');
+    const statusSelect = teamPreviewModalEl.querySelector('[data-team-preview-status-select]');
+    const leaderSelect = teamPreviewModalEl.querySelector('[data-team-preview-leader]');
+    const scoreInput = teamPreviewModalEl.querySelector('[data-team-preview-score]');
+    const applyScoreButton = teamPreviewModalEl.querySelector('[data-action="team-preview-apply-score"]');
+    const maxScoreButton = teamPreviewModalEl.querySelector('[data-action="team-preview-max-score"]');
+    const membersBody = teamPreviewModalEl.querySelector('[data-team-preview-members-body]');
+    if (
+      !(titleEl instanceof HTMLElement) ||
+      !(hintEl instanceof HTMLElement) ||
+      !(nameInput instanceof HTMLInputElement) ||
+      !(joinSelect instanceof HTMLSelectElement) ||
+      !(statusSelect instanceof HTMLSelectElement) ||
+      !(leaderSelect instanceof HTMLSelectElement) ||
+      !(scoreInput instanceof HTMLInputElement) ||
+      !(applyScoreButton instanceof HTMLButtonElement) ||
+      !(maxScoreButton instanceof HTMLButtonElement) ||
+      !(membersBody instanceof HTMLElement)
+    ) {
+      return;
+    }
+
+    const members = Array.isArray(team.members) ? team.members : [];
+    const memberCount = normalizeScoreValue(team.memberCount ?? members.length);
+    const maxMembers = Math.max(1, normalizeScoreValue(team.maxMembers || 1));
+    const minMembers = Math.max(1, normalizeScoreValue(team.minMembers || 1));
+    const challengeAccepted = Boolean(team.challengeAccepted ?? false);
+
+    titleEl.textContent = `Team Preview - ${team.name || 'Team'}`;
+    hintEl.textContent = `Members: ${memberCount} / ${maxMembers} (min ${minMembers}) - Challenge Accepted: ${challengeAccepted ? 'Yes' : 'No'}`;
+    nameInput.value = String(team.name || '');
+    joinSelect.value = String(team.joinType || 'private');
+    statusSelect.value = String(team.status || 'draft') === 'started' ? 'started' : 'draft';
+    scoreInput.max = String(normalizeScoreValue(context.maxScore || 0));
+    scoreInput.placeholder = `0-${normalizeScoreValue(context.maxScore || 0)}`;
+    scoreInput.disabled = !challengeAccepted;
+    applyScoreButton.disabled = !challengeAccepted;
+    maxScoreButton.disabled = !challengeAccepted;
+
+    leaderSelect.innerHTML = members.length
+      ? members.map((member) => {
+        const fullName = `${String(member.firstName || '').trim()} ${String(member.lastName || '').trim()}`.trim() || String(member.workId || '');
+        const selected = String(member.workId || '') === String(team.leaderWorkId || '') ? ' selected' : '';
+        return `<option value="${escapeHtml(String(member.workId || ''))}"${selected}>${escapeHtml(fullName)} (${escapeHtml(String(member.workId || ''))})</option>`;
+      }).join('')
+      : '<option value="">No members</option>';
+
+    if (!members.length) {
+      membersBody.innerHTML = '<tr><td colspan="6" class="muted">No members found in this team.</td></tr>';
+    } else {
+      membersBody.innerHTML = members.map((member) => {
+        const fullName = `${String(member.firstName || '').trim()} ${String(member.lastName || '').trim()}`.trim();
+        const role = String(member.status || '').trim() === 'leader' ? 'Team Admin' : 'Member';
+        const isLeader = String(member.workId || '') === String(team.leaderWorkId || '');
+        const disableRemove = members.length <= 1;
+        return `
+          <tr data-team-member-work-id="${escapeHtml(String(member.workId || ''))}">
+            <td>${escapeHtml(fullName || '-')}</td>
+            <td>${escapeHtml(String(member.phone || '-'))}</td>
+            <td><code>${escapeHtml(String(member.workId || ''))}</code></td>
+            <td>${escapeHtml(role)}</td>
+            <td>${escapeHtml(String(normalizeScoreValue(member.score || 0)))}</td>
+            <td>
+              <button
+                type="button"
+                class="btn ghost"
+                data-action="team-preview-remove-member"
+                data-work-id="${escapeHtml(String(member.workId || ''))}"
+                ${disableRemove ? 'disabled' : ''}
+              >${isLeader ? 'Remove Admin' : 'Remove'}</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  function ensureTeamPreviewModal() {
+    if (teamPreviewModalEl instanceof HTMLElement) {
+      return teamPreviewModalEl;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tc-team-preview-modal';
+    wrapper.hidden = true;
+    wrapper.innerHTML = `
+      <div class="tc-team-preview-dialog" role="dialog" aria-modal="true" aria-label="Team Preview">
+        <div class="tc-team-preview-head">
+          <h3 data-team-preview-title>Team Preview</h3>
+          <button type="button" class="btn ghost" data-action="close-team-preview-modal">Close</button>
+        </div>
+        <p class="muted small" data-team-preview-hint></p>
+        <div class="tc-team-preview-grid">
+          <label class="field standard-width">
+            <span>Team Name</span>
+            <input type="text" data-team-preview-name autocomplete="off" />
+          </label>
+          <label class="field standard-width">
+            <span>Join Type</span>
+            <select data-team-preview-join-type>
+              <option value="private">Private</option>
+              <option value="public_request">Public (Request)</option>
+              <option value="public_open">Public (Open)</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Team Status</span>
+            <select data-team-preview-status-select>
+              <option value="draft">Draft</option>
+              <option value="started">Started</option>
+            </select>
+          </label>
+          <label class="field standard-width">
+            <span>Team Admin</span>
+            <select data-team-preview-leader></select>
+          </label>
+          <button type="button" class="btn primary standard-primary-button" data-action="team-preview-save-settings">Save Team Settings</button>
+        </div>
+        <div class="tc-team-preview-score-actions">
+          <label class="field standard-width">
+            <span>Custom Score (All Team Members)</span>
+            <input type="number" min="0" step="1" data-team-preview-score />
+          </label>
+          <button type="button" class="btn secondary" data-action="team-preview-apply-score">Apply Custom Score</button>
+          <button type="button" class="btn primary standard-primary-button" data-action="team-preview-max-score">Max Score</button>
+        </div>
+        <div class="table-wrapper tc-team-preview-members-wrap">
+          <table class="tct-list-table tc-team-preview-members-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Work ID</th>
+                <th>Role</th>
+                <th>Score</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody data-team-preview-members-body>
+              <tr><td colspan="6" class="muted">Loading team...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted small" data-team-preview-status></p>
+      </div>
+    `;
+    wrapper.addEventListener('click', async (event) => {
+      const rawTarget = event.target;
+      const target = rawTarget instanceof Element
+        ? rawTarget
+        : (rawTarget instanceof Node ? rawTarget.parentElement : null);
+      if (!(target instanceof Element)) return;
+
+      if (target === wrapper || target.closest('[data-action="close-team-preview-modal"]')) {
+        closeTeamPreviewModal();
+        return;
+      }
+
+      const context = teamPreviewContext;
+      if (!context || !(context.pane instanceof HTMLElement) || !context.taskId || !context.teamId) {
+        return;
+      }
+
+      const saveSettingsButton = target.closest('[data-action="team-preview-save-settings"]');
+      if (saveSettingsButton instanceof HTMLButtonElement) {
+        if (context.saving) return;
+        const teamNameInput = wrapper.querySelector('[data-team-preview-name]');
+        const joinTypeInput = wrapper.querySelector('[data-team-preview-join-type]');
+        const statusInput = wrapper.querySelector('[data-team-preview-status-select]');
+        const leaderInput = wrapper.querySelector('[data-team-preview-leader]');
+        if (
+          !(teamNameInput instanceof HTMLInputElement) ||
+          !(joinTypeInput instanceof HTMLSelectElement) ||
+          !(statusInput instanceof HTMLSelectElement) ||
+          !(leaderInput instanceof HTMLSelectElement)
+        ) {
+          return;
+        }
+        const teamName = String(teamNameInput.value || '').trim();
+        if (!teamName) {
+          setTeamPreviewStatus('Team name is required.', true);
+          return;
+        }
+        context.saving = true;
+        setTeamPreviewStatus('Saving...', false);
+        try {
+          await postTaskAction('team_task_admin_update_team', {
+            id: context.taskId,
+            team_id: context.teamId,
+            team_name: teamName,
+            join_type: String(joinTypeInput.value || 'private'),
+            team_status: String(statusInput.value || 'draft'),
+            leader_work_id: String(leaderInput.value || '')
+          });
+          await loadInfoRateDataIntoPane(context.pane, { silent: true });
+          const teamData = await postTaskAction('team_task_admin_get_team', {
+            id: context.taskId,
+            team_id: context.teamId
+          });
+          context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
+          context.team = teamData.team || null;
+          renderTeamPreviewModalContent();
+          setTeamPreviewStatus('Team settings saved.');
+        } catch (error) {
+          setTeamPreviewStatus(error?.message || 'Failed to save team settings.', true);
+        } finally {
+          context.saving = false;
+        }
+        return;
+      }
+
+      const removeMemberButton = target.closest('[data-action="team-preview-remove-member"]');
+      if (removeMemberButton instanceof HTMLButtonElement) {
+        if (context.saving) return;
+        const workId = String(removeMemberButton.getAttribute('data-work-id') || '').trim();
+        if (!workId) return;
+        if (!window.confirm('Remove this user from team?')) return;
+        context.saving = true;
+        setTeamPreviewStatus('Updating team...', false);
+        try {
+          await postTaskAction('team_task_admin_remove_member', {
+            id: context.taskId,
+            team_id: context.teamId,
+            work_id: workId
+          });
+          await loadInfoRateDataIntoPane(context.pane, { silent: true });
+          const teamData = await postTaskAction('team_task_admin_get_team', {
+            id: context.taskId,
+            team_id: context.teamId
+          });
+          context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
+          context.team = teamData.team || null;
+          renderTeamPreviewModalContent();
+          setTeamPreviewStatus('Team member removed.');
+        } catch (error) {
+          const message = String(error?.message || 'Failed to update team.');
+          if (message.toLowerCase().includes('team not found')) {
+            closeTeamPreviewModal();
+            setInfoRateStatus(context.pane, 'Team was removed.');
+          } else {
+            setTeamPreviewStatus(message, true);
+          }
+        } finally {
+          context.saving = false;
+        }
+        return;
+      }
+
+      const applyScoreButton = target.closest('[data-action="team-preview-apply-score"]');
+      if (applyScoreButton instanceof HTMLButtonElement) {
+        if (context.saving) return;
+        const scoreInput = wrapper.querySelector('[data-team-preview-score]');
+        if (!(scoreInput instanceof HTMLInputElement)) return;
+        const members = Array.isArray(context.team?.members) ? context.team.members : [];
+        const workIds = members
+          .map((member) => String(member?.workId || '').trim())
+          .filter((token) => token !== '');
+        if (!workIds.length) {
+          setTeamPreviewStatus('Team has no members to score.', true);
+          return;
+        }
+        context.saving = true;
+        setTeamPreviewStatus('Saving scores...', false);
+        const scoreValue = normalizeScoreValue(scoreInput.value);
+        const ok = await assignInfoScores(context.pane, workIds, 'custom', scoreValue);
+        if (ok) {
+          try {
+            await loadInfoRateDataIntoPane(context.pane, { silent: true });
+            const teamData = await postTaskAction('team_task_admin_get_team', {
+              id: context.taskId,
+              team_id: context.teamId
+            });
+            context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
+            context.team = teamData.team || null;
+            renderTeamPreviewModalContent();
+            setTeamPreviewStatus('Team score updated.');
+          } catch (error) {
+            setTeamPreviewStatus(error?.message || 'Score was saved but refresh failed.', true);
+          }
+        } else {
+          setTeamPreviewStatus('Failed to save team score.', true);
+        }
+        context.saving = false;
+        return;
+      }
+
+      const maxScoreButton = target.closest('[data-action="team-preview-max-score"]');
+      if (maxScoreButton instanceof HTMLButtonElement) {
+        if (context.saving) return;
+        const members = Array.isArray(context.team?.members) ? context.team.members : [];
+        const workIds = members
+          .map((member) => String(member?.workId || '').trim())
+          .filter((token) => token !== '');
+        if (!workIds.length) {
+          setTeamPreviewStatus('Team has no members to score.', true);
+          return;
+        }
+        context.saving = true;
+        setTeamPreviewStatus('Saving scores...', false);
+        const ok = await assignInfoScores(context.pane, workIds, 'max');
+        if (ok) {
+          try {
+            await loadInfoRateDataIntoPane(context.pane, { silent: true });
+            const teamData = await postTaskAction('team_task_admin_get_team', {
+              id: context.taskId,
+              team_id: context.teamId
+            });
+            context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
+            context.team = teamData.team || null;
+            renderTeamPreviewModalContent();
+            setTeamPreviewStatus('Max score applied to team members.');
+          } catch (error) {
+            setTeamPreviewStatus(error?.message || 'Score was saved but refresh failed.', true);
+          }
+        } else {
+          setTeamPreviewStatus('Failed to save team score.', true);
+        }
+        context.saving = false;
+      }
+    });
+    const modalHost = document.querySelector('.tc-shell');
+    (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
+    teamPreviewModalEl = wrapper;
+    return wrapper;
+  }
+
+  async function openTeamPreviewModal(pane, teamId) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const normalizedTeamId = String(teamId || '').trim();
+    if (!taskId || !normalizedTeamId) return;
+    const modal = ensureTeamPreviewModal();
+    const membersBody = modal.querySelector('[data-team-preview-members-body]');
+    if (membersBody instanceof HTMLElement) {
+      membersBody.innerHTML = '<tr><td colspan="6" class="muted">Loading team...</td></tr>';
+    }
+    setTeamPreviewStatus('', false);
+    modal.hidden = false;
+    try {
+      const data = await postTaskAction('team_task_admin_get_team', {
+        id: taskId,
+        team_id: normalizedTeamId
+      });
+      teamPreviewContext = {
+        pane,
+        taskId,
+        teamId: normalizedTeamId,
+        maxScore: normalizeScoreValue(data.maxScore ?? 0),
+        team: data.team || null,
+        saving: false
+      };
+      renderTeamPreviewModalContent();
+      setTeamPreviewStatus('');
+    } catch (error) {
+      closeTeamPreviewModal();
+      setInfoRateStatus(pane, error?.message || 'Failed to load team preview.', true);
+    }
+  }
+
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    if (teamPreviewModalEl instanceof HTMLElement && !teamPreviewModalEl.hidden) {
+      closeTeamPreviewModal();
+      return;
+    }
     if (teamChallengeGuideModalEl instanceof HTMLElement && !teamChallengeGuideModalEl.hidden) {
       closeTeamChallengeGuideModal();
       return;
@@ -1567,7 +2043,7 @@
     const infoTaskTopTabs = isDescribePhotoTask
       ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">Photo</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
       : (isTeamTask
-        ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">Challenge Storage</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">Team</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
+        ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">Challenge Storage</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">Team</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Teams Rate</button>'
         : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>');
     const describePhotoSection = isDescribePhotoTask
       ? `
@@ -1691,8 +2167,47 @@
           </div>
         `
       : '';
-    const inviteesRateColspan = isDescribePhotoTask ? 8 : 7;
+    const inviteesRateColspan = isTeamTask ? 8 : (isDescribePhotoTask ? 8 : 7);
     const inviteesRateResultHeader = isDescribePhotoTask ? '<th>Results</th>' : '';
+    const inviteesRateCardTitle = isTeamTask ? 'Team List Card' : 'Invitees List Card';
+    const inviteesRateSearchLabel = isTeamTask ? 'Search Teams' : 'Search Invitees';
+    const inviteesRateSearchPlaceholder = isTeamTask
+      ? 'Search by team name or team admin'
+      : 'Search by name, phone, Work ID';
+    const inviteesRateBulkControls = isTeamTask ? '' : `
+                <div class="tc-info-rate-bulk">
+                  <label class="field standard-width">
+                    <span>Custom Score (Selected)</span>
+                    <input type="number" min="0" step="1" data-task-info-bulk-score />
+                  </label>
+                  <button type="button" class="btn secondary" data-action="info-bulk-apply">Apply Custom Score</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="info-bulk-max">Max Score</button>
+                </div>
+              `;
+    const inviteesRateTableWrapClass = isTeamTask ? 'tc-team-rate-table-wrap' : 'tc-info-rate-table-wrap';
+    const inviteesRateTableClass = isTeamTask ? 'tc-team-rate-table' : 'tc-info-rate-table';
+    const inviteesRateTableHeader = isTeamTask
+      ? `
+                        <th>Team Name</th>
+                        <th>Status</th>
+                        <th>Join Type</th>
+                        <th>Team Admin</th>
+                        <th>Members</th>
+                        <th>Score</th>
+                        <th>Challenge Accepted</th>
+                        <th>Action</th>
+                      `
+      : `
+                        <th><input type="checkbox" data-task-info-select-all /></th>
+                        <th>First Name</th>
+                        <th>Last Name</th>
+                        <th>Phone</th>
+                        <th>Work ID</th>
+                        <th>Custom Score</th>
+                        <th>Fast Score</th>
+                        ${inviteesRateResultHeader}
+                      `;
+    const inviteesRateLoadingText = isTeamTask ? 'Loading teams...' : 'Loading invitees...';
     return `
       <div class="tc-task-top-shell" data-task-top-shell>
         <div class="tc-task-top-nav" role="tablist" aria-label="Task Tabs">
@@ -1826,36 +2341,22 @@
           ${teamSettingsSection}
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
-              <div class="section-header"><h3>Invitees List Card</h3></div>
+              <div class="section-header"><h3>${inviteesRateCardTitle}</h3></div>
               <div class="form" style="gap:12px;">
                 <label class="field standard-width">
-                  <span>Search Invitees</span>
-                  <input type="text" data-task-info-search placeholder="Search by name, phone, Work ID" autocomplete="off" />
+                  <span>${inviteesRateSearchLabel}</span>
+                  <input type="text" data-task-info-search placeholder="${inviteesRateSearchPlaceholder}" autocomplete="off" />
                 </label>
-                <div class="tc-info-rate-bulk">
-                  <label class="field standard-width">
-                    <span>Custom Score (Selected)</span>
-                    <input type="number" min="0" step="1" data-task-info-bulk-score />
-                  </label>
-                  <button type="button" class="btn secondary" data-action="info-bulk-apply">Apply Custom Score</button>
-                  <button type="button" class="btn primary standard-primary-button" data-action="info-bulk-max">Max Score</button>
-                </div>
-                <div class="table-wrapper tc-info-rate-table-wrap">
-                  <table class="tct-list-table tc-info-rate-table">
+                ${inviteesRateBulkControls}
+                <div class="table-wrapper ${inviteesRateTableWrapClass}">
+                  <table class="tct-list-table ${inviteesRateTableClass}">
                     <thead>
                       <tr>
-                        <th><input type="checkbox" data-task-info-select-all /></th>
-                        <th>First Name</th>
-                        <th>Last Name</th>
-                        <th>Phone</th>
-                        <th>Work ID</th>
-                        <th>Custom Score</th>
-                        <th>Fast Score</th>
-                        ${inviteesRateResultHeader}
+                        ${inviteesRateTableHeader}
                       </tr>
                     </thead>
                     <tbody data-task-info-rate-body>
-                      <tr><td colspan="${inviteesRateColspan}" class="muted">Loading invitees...</td></tr>
+                      <tr><td colspan="${inviteesRateColspan}" class="muted">${inviteesRateLoadingText}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -2062,9 +2563,55 @@
       const state = getInfoRateState(taskId);
       if (!state) return;
 
+      if (target.matches('[data-team-challenge-accepted-check]')) {
+        if (!state.isTeamMode) return;
+        const checkbox = target;
+        if (!(checkbox instanceof HTMLInputElement)) return;
+        const row = checkbox.closest('tr[data-team-id]');
+        if (!(row instanceof HTMLTableRowElement)) return;
+        const teamId = String(row.dataset.teamId || '').trim();
+        if (!teamId) return;
+        const nextValue = checkbox.checked;
+        checkbox.disabled = true;
+        setInfoRateStatus(pane, 'Saving...');
+        void (async () => {
+          try {
+            await postTaskAction('team_task_admin_set_challenge_accepted', {
+              id: taskId,
+              team_id: teamId,
+              challenge_accepted: nextValue ? '1' : '0'
+            });
+            state.teams = state.teams.map((team) => {
+              if (String(team.id || '').trim() !== teamId) return team;
+              return { ...team, challengeAccepted: nextValue };
+            });
+            renderInfoRateTable(pane);
+            setInfoRateStatus(pane, 'Challenge accepted state updated.');
+            if (
+              teamPreviewContext
+              && String(teamPreviewContext.taskId || '').trim() === taskId
+              && String(teamPreviewContext.teamId || '').trim() === teamId
+              && teamPreviewContext.team
+            ) {
+              teamPreviewContext.team = {
+                ...teamPreviewContext.team,
+                challengeAccepted: nextValue
+              };
+              renderTeamPreviewModalContent();
+            }
+          } catch (error) {
+            checkbox.checked = !nextValue;
+            setInfoRateStatus(pane, error?.message || 'Failed to save challenge accepted state.', true);
+          } finally {
+            checkbox.disabled = false;
+          }
+        })();
+        return;
+      }
+
       if (target.matches('[data-task-info-select-all]')) {
         const controls = getInfoRateElements(pane);
-        if (!controls) return;
+        if (!controls || !(controls.selectAll instanceof HTMLInputElement) || state.isTeamMode) return;
         const shouldSelect = controls.selectAll.checked;
         const visibleRows = Array.from(pane.querySelectorAll('tbody[data-task-info-rate-body] tr[data-work-id]'));
         visibleRows.forEach((row) => {
@@ -2082,6 +2629,7 @@
       }
 
       if (target.matches('[data-info-row-check]')) {
+        if (state.isTeamMode) return;
         const checkbox = target;
         if (!(checkbox instanceof HTMLInputElement)) return;
         const workId = String(checkbox.value || '').trim();
@@ -2504,6 +3052,17 @@
         if (!(scoreInput instanceof HTMLInputElement)) return;
         const scoreValue = normalizeScoreValue(scoreInput.value);
         await assignInfoScores(pane, [workId], 'custom', scoreValue);
+        return;
+      }
+
+      const teamPreviewButton = target.closest('[data-action="team-row-preview"]');
+      if (teamPreviewButton instanceof HTMLButtonElement) {
+        const pane = teamPreviewButton.closest('.sub-pane[data-task-pane="1"]');
+        const row = teamPreviewButton.closest('tr[data-team-id]');
+        if (!(pane instanceof HTMLElement) || !(row instanceof HTMLTableRowElement)) return;
+        const teamId = String(row.dataset.teamId || '').trim();
+        if (!teamId) return;
+        void openTeamPreviewModal(pane, teamId);
         return;
       }
 

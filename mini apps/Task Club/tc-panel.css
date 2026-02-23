@@ -69,6 +69,42 @@
   justify-content: flex-end;
 }
 
+.tc-shell .tc-admin-search-result {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 12px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tc-shell .tc-admin-search-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.tc-shell .tc-admin-search-meta strong {
+  color: #111111;
+}
+
+.tc-shell .tc-admin-search-meta code,
+.tc-shell .tc-admin-table code {
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+
+.tc-shell .tc-admin-table td:last-child {
+  width: 160px;
+}
+
+.tc-shell .tc-admin-table .tc-admin-action {
+  display: flex;
+  justify-content: center;
+}
+
 .tc-shell .tc-standard-third {
   width: min(140px, 100%);
   margin-left: auto;
@@ -618,6 +654,24 @@
   white-space: nowrap;
 }
 
+.tc-shell .tc-team-rate-table-wrap {
+  max-height: 460px;
+  overflow: auto;
+}
+
+.tc-shell .tc-team-rate-table td,
+.tc-shell .tc-team-rate-table th {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tc-shell .tc-team-accepted-check-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
 .tc-shell .tc-info-rate-row-actions {
   display: flex;
   align-items: center;
@@ -663,7 +717,8 @@
 
 .tc-shell .tc-describe-results-modal,
 .tc-shell .tc-describe-article-modal,
-.tc-shell .tc-team-challenge-guide-modal {
+.tc-shell .tc-team-challenge-guide-modal,
+.tc-shell .tc-team-preview-modal {
   position: fixed;
   inset: 0;
   z-index: 1200;
@@ -676,13 +731,15 @@
 
 .tc-shell .tc-describe-results-modal[hidden],
 .tc-shell .tc-describe-article-modal[hidden],
-.tc-shell .tc-team-challenge-guide-modal[hidden] {
+.tc-shell .tc-team-challenge-guide-modal[hidden],
+.tc-shell .tc-team-preview-modal[hidden] {
   display: none !important;
 }
 
 .tc-shell .tc-describe-results-dialog,
 .tc-shell .tc-describe-article-dialog,
-.tc-shell .tc-team-challenge-guide-dialog {
+.tc-shell .tc-team-challenge-guide-dialog,
+.tc-shell .tc-team-preview-dialog {
   width: min(960px, 100%);
   max-height: min(88vh, 860px);
   overflow: auto;
@@ -695,7 +752,8 @@
 
 .tc-shell .tc-describe-results-head,
 .tc-shell .tc-describe-article-head,
-.tc-shell .tc-team-challenge-guide-head {
+.tc-shell .tc-team-challenge-guide-head,
+.tc-shell .tc-team-preview-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -705,8 +763,39 @@
 
 .tc-shell .tc-describe-results-head h3,
 .tc-shell .tc-describe-article-head h3,
-.tc-shell .tc-team-challenge-guide-head h3 {
+.tc-shell .tc-team-challenge-guide-head h3,
+.tc-shell .tc-team-preview-head h3 {
   margin: 0;
+}
+
+.tc-shell .tc-team-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.tc-shell .tc-team-preview-grid .btn {
+  align-self: end;
+}
+
+.tc-shell .tc-team-preview-score-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.tc-shell .tc-team-preview-members-wrap {
+  margin-top: 12px;
+  max-height: min(48vh, 420px);
+  overflow: auto;
+}
+
+.tc-shell .tc-team-preview-members-table td,
+.tc-shell .tc-team-preview-members-table th {
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .tc-shell .tc-team-challenge-guide-textarea,

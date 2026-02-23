@@ -19,6 +19,7 @@ const TCT_DESCRIBE_PHOTO_DIR = 'photos';
 const TCT_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 const TCT_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 const TCT_TEAM_CHALLENGES_FILE = 'team-challenges.json';
+const TCT_TEAM_RUNTIME_FILE = 'team-runtime.json';
 
 function tctNormalizeTaskType(string $value): string
 {
@@ -573,6 +574,298 @@ function tctSaveTaskTeamChallenges(string $tasksDir, string $tagCode, array $cha
     return false;
   }
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tctBuildTaskTeamRuntimePath(string $tasksDir, string $tagCode): string
+{
+  $taskDir = tctBuildTaskDirPath($tasksDir, $tagCode);
+  if ($taskDir === '') {
+    return '';
+  }
+  return $taskDir . DIRECTORY_SEPARATOR . TCT_TEAM_RUNTIME_FILE;
+}
+
+function tctNormalizeTeamJoinType(string $value): string
+{
+  $token = strtolower(trim($value));
+  if ($token === 'public_open' || $token === 'public-open' || $token === 'open' || $token === 'free') {
+    return 'public_open';
+  }
+  if ($token === 'public_request' || $token === 'public-request' || $token === 'request') {
+    return 'public_request';
+  }
+  return 'private';
+}
+
+function tctLoadTaskTeamRuntime(string $tasksDir, string $tagCode): array
+{
+  $path = tctBuildTaskTeamRuntimePath($tasksDir, $tagCode);
+  if ($path === '' || !is_file($path)) {
+    return ['teams' => []];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return ['teams' => []];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return ['teams' => []];
+  }
+  $teams = is_array($decoded['teams'] ?? null) ? $decoded['teams'] : [];
+  $safeTeams = [];
+  $seen = [];
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamId = trim((string)($team['id'] ?? ''));
+    $teamName = trim((string)($team['name'] ?? ''));
+    $leaderWorkId = trim((string)($team['leaderWorkId'] ?? ($team['leader_work_id'] ?? '')));
+    if ($teamId === '' || $teamName === '' || $leaderWorkId === '' || isset($seen[$teamId])) {
+      continue;
+    }
+    $seen[$teamId] = true;
+
+    $members = [];
+    foreach ((array)($team['members'] ?? []) as $memberRaw) {
+      $memberId = trim((string)$memberRaw);
+      if ($memberId !== '' && !in_array($memberId, $members, true)) {
+        $members[] = $memberId;
+      }
+    }
+    if (!in_array($leaderWorkId, $members, true)) {
+      array_unshift($members, $leaderWorkId);
+    }
+
+    $invites = [];
+    foreach ((array)($team['invites'] ?? []) as $inviteRaw) {
+      $inviteId = trim((string)$inviteRaw);
+      if (
+        $inviteId !== ''
+        && !in_array($inviteId, $invites, true)
+        && !in_array($inviteId, $members, true)
+      ) {
+        $invites[] = $inviteId;
+      }
+    }
+
+    $requests = [];
+    foreach ((array)($team['requests'] ?? []) as $requestRaw) {
+      $requestId = trim((string)$requestRaw);
+      if (
+        $requestId !== ''
+        && !in_array($requestId, $requests, true)
+        && !in_array($requestId, $members, true)
+      ) {
+        $requests[] = $requestId;
+      }
+    }
+
+    $safeTeams[] = [
+      'id' => $teamId,
+      'name' => $teamName,
+      'leaderWorkId' => $leaderWorkId,
+      'joinType' => tctNormalizeTeamJoinType((string)($team['joinType'] ?? ($team['join_type'] ?? 'private'))),
+      'members' => array_values($members),
+      'invites' => array_values($invites),
+      'requests' => array_values($requests),
+      'renameCount' => max(0, min(3, (int)($team['renameCount'] ?? ($team['rename_count'] ?? 0)))),
+      'started' => (bool)($team['started'] ?? false),
+      'challengeAccepted' => (bool)($team['challengeAccepted'] ?? ($team['challenge_accepted'] ?? false)),
+      'startedAt' => trim((string)($team['startedAt'] ?? ($team['started_at'] ?? ''))),
+      'challengeId' => trim((string)($team['challengeId'] ?? ($team['challenge_id'] ?? ''))),
+      'challengeName' => trim((string)($team['challengeName'] ?? ($team['challenge_name'] ?? ''))),
+      'challengeGuide' => trim((string)($team['challengeGuide'] ?? ($team['challenge_guide'] ?? ''))),
+      'createdAt' => trim((string)($team['createdAt'] ?? ($team['created_at'] ?? '')))
+    ];
+  }
+  return ['teams' => $safeTeams];
+}
+
+function tctSaveTaskTeamRuntime(string $tasksDir, string $tagCode, array $runtime): bool
+{
+  if (!tctEnsureTaskFolder($tasksDir, $tagCode)) {
+    return false;
+  }
+  $path = tctBuildTaskTeamRuntimePath($tasksDir, $tagCode);
+  if ($path === '') {
+    return false;
+  }
+  $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+  $json = json_encode(['teams' => array_values($teams)], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tctFindTaskTeamIndexById(array $teams, string $teamId): int
+{
+  $target = trim($teamId);
+  if ($target === '') {
+    return -1;
+  }
+  foreach ($teams as $index => $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    if (trim((string)($team['id'] ?? '')) === $target) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function tctResolveTeamTaskStatusForUser(array $teams, string $workId): array
+{
+  $target = trim($workId);
+  if ($target === '') {
+    return ['teamName' => '', 'status' => ''];
+  }
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamName = trim((string)($team['name'] ?? ''));
+    $leaderWorkId = trim((string)($team['leaderWorkId'] ?? ''));
+    $members = is_array($team['members'] ?? null) ? $team['members'] : [];
+    if (in_array($target, $members, true)) {
+      if ((bool)($team['started'] ?? false)) {
+        return ['teamName' => $teamName, 'status' => 'started'];
+      }
+      if ($target === $leaderWorkId) {
+        return ['teamName' => $teamName, 'status' => 'leader'];
+      }
+      return ['teamName' => $teamName, 'status' => 'member'];
+    }
+  }
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamName = trim((string)($team['name'] ?? ''));
+    $invites = is_array($team['invites'] ?? null) ? $team['invites'] : [];
+    if (in_array($target, $invites, true)) {
+      return ['teamName' => $teamName, 'status' => 'invited'];
+    }
+  }
+  foreach ($teams as $team) {
+    if (!is_array($team)) {
+      continue;
+    }
+    $teamName = trim((string)($team['name'] ?? ''));
+    $requests = is_array($team['requests'] ?? null) ? $team['requests'] : [];
+    if (in_array($target, $requests, true)) {
+      return ['teamName' => $teamName, 'status' => 'requested'];
+    }
+  }
+  return ['teamName' => '', 'status' => ''];
+}
+
+function tctParseTeamTaskMap(string $value): array
+{
+  $map = [];
+  $parts = preg_split('/\s*,\s*/', trim($value));
+  if (!is_array($parts)) {
+    return $map;
+  }
+  foreach ($parts as $part) {
+    $chunk = trim((string)$part);
+    if ($chunk === '') {
+      continue;
+    }
+    $segments = explode('::', $chunk);
+    if (count($segments) >= 4) {
+      $taskId = trim((string)($segments[0] ?? ''));
+      if ($taskId === '') {
+        continue;
+      }
+      $map[$taskId] = [
+        'teamName' => trim((string)($segments[1] ?? '')),
+        'status' => trim((string)($segments[2] ?? '')),
+        'score' => tctNormalizeScoreValue($segments[3] ?? 0)
+      ];
+      continue;
+    }
+    if (count($segments) >= 2) {
+      $taskId = trim((string)($segments[0] ?? ''));
+      if ($taskId === '') {
+        continue;
+      }
+      $map[$taskId] = [
+        'teamName' => '',
+        'status' => '',
+        'score' => tctNormalizeScoreValue($segments[1] ?? 0)
+      ];
+    }
+  }
+  return $map;
+}
+
+function tctSerializeTeamTaskMap(array $map): string
+{
+  $tokens = [];
+  foreach ($map as $taskId => $entry) {
+    $normalizedTaskId = trim((string)$taskId);
+    if ($normalizedTaskId === '' || !is_array($entry)) {
+      continue;
+    }
+    $teamName = trim((string)($entry['teamName'] ?? ''));
+    $status = trim((string)($entry['status'] ?? ''));
+    $score = tctNormalizeScoreValue($entry['score'] ?? 0);
+    $tokens[] = $normalizedTaskId . '::' . $teamName . '::' . $status . '::' . (string)$score;
+  }
+  return implode(', ', $tokens);
+}
+
+function tctSyncTeamTaskCsvState(string $inviteesPath, string $mapPath, string $taskId, array $teams): bool
+{
+  $normalizedTaskId = trim($taskId);
+  if ($normalizedTaskId === '' || !is_file($inviteesPath)) {
+    return false;
+  }
+  $rows = tctReadCsvRows($inviteesPath);
+  $columnIndexByName = tctEnsureInviteesColumns($rows, ['Work ID', 'Team Task']);
+  $header = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : [];
+  $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $mapPath);
+  if ($workIdIndex < 0) {
+    $workIdIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Work ID')] ?? -1);
+  }
+  $teamTaskIndex = (int)($columnIndexByName[tctNormalizeHeaderName('Team Task')] ?? -1);
+  if ($workIdIndex < 0 || $teamTaskIndex < 0) {
+    return false;
+  }
+
+  for ($rowIndex = 1; $rowIndex < count($rows); $rowIndex += 1) {
+    if (!is_array($rows[$rowIndex])) {
+      $rows[$rowIndex] = [];
+    }
+    $row = &$rows[$rowIndex];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      unset($row);
+      continue;
+    }
+    $teamMap = tctParseTeamTaskMap((string)($row[$teamTaskIndex] ?? ''));
+    $previousScore = isset($teamMap[$normalizedTaskId]) && is_array($teamMap[$normalizedTaskId])
+      ? tctNormalizeScoreValue($teamMap[$normalizedTaskId]['score'] ?? 0)
+      : 0;
+    $resolved = tctResolveTeamTaskStatusForUser($teams, $workId);
+    $status = trim((string)($resolved['status'] ?? ''));
+    if ($status === '') {
+      unset($teamMap[$normalizedTaskId]);
+    } else {
+      $teamMap[$normalizedTaskId] = [
+        'teamName' => trim((string)($resolved['teamName'] ?? '')),
+        'status' => $status,
+        'score' => $previousScore
+      ];
+    }
+    $row[$teamTaskIndex] = tctSerializeTeamTaskMap($teamMap);
+    unset($row);
+  }
+
+  return tctWriteCsvRows($inviteesPath, $rows);
 }
 
 function tctBuildTaskDescribePhotoDirPath(string $tasksDir, string $tagCode): string
@@ -1498,7 +1791,13 @@ function tctSerializeInfoTasksMap(array $map): string
 
 function tctResolveTaskScoreColumnByType(string $taskType): string
 {
-  return $taskType === 'describe_photo' ? 'Describe Photo Task' : 'Info Tasks';
+  if ($taskType === 'describe_photo') {
+    return 'Describe Photo Task';
+  }
+  if ($taskType === 'team_task') {
+    return 'Team Task';
+  }
+  return 'Info Tasks';
 }
 
 function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
@@ -1535,7 +1834,8 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       'guideSuffix' => ''
     ],
     TCT_INFO_SCORES_FILE => [],
-    TCT_TEAM_CHALLENGES_FILE => []
+    TCT_TEAM_CHALLENGES_FILE => [],
+    TCT_TEAM_RUNTIME_FILE => ['teams' => []]
   ];
   foreach ($defaultJsonFiles as $fileName => $payload) {
     $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
@@ -2556,10 +2856,95 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
         if ($workId === '') {
           continue;
         }
-        $infoMap = tctParseInfoTasksMap((string)($row[$infoTasksIndex] ?? ''));
-        $infoTaskScoreByWorkId[$workId] = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
+        if ($targetTaskType === 'team_task') {
+          $teamMap = tctParseTeamTaskMap((string)($row[$infoTasksIndex] ?? ''));
+          $entry = is_array($teamMap[$taskId] ?? null) ? $teamMap[$taskId] : [];
+          $infoTaskScoreByWorkId[$workId] = tctNormalizeScoreValue($entry['score'] ?? 0);
+        } else {
+          $infoMap = tctParseInfoTasksMap((string)($row[$infoTasksIndex] ?? ''));
+          $infoTaskScoreByWorkId[$workId] = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
+        }
       }
     }
+    if ($targetTaskType === 'team_task') {
+      $runtime = tctLoadTaskTeamRuntime($tctTasksDir, $tagCode);
+      $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+      $teamSettings = tctLoadTaskTeamSettings($tctTasksDir, $tagCode);
+      $teamMin = max(1, (int)($teamSettings['teamMin'] ?? 1));
+      $teamMax = max($teamMin, (int)($teamSettings['teamMax'] ?? 1));
+
+      $inviteesByWorkId = [];
+      foreach ($invitees as $invitee) {
+        $workIdToken = trim((string)($invitee['workId'] ?? ''));
+        if ($workIdToken !== '' && !isset($inviteesByWorkId[$workIdToken])) {
+          $inviteesByWorkId[$workIdToken] = $invitee;
+        }
+      }
+
+      $teamRows = [];
+      foreach ($teams as $team) {
+        if (!is_array($team)) {
+          continue;
+        }
+        $teamId = trim((string)($team['id'] ?? ''));
+        $teamName = trim((string)($team['name'] ?? ''));
+        if ($teamId === '' || $teamName === '') {
+          continue;
+        }
+        $membersRaw = is_array($team['members'] ?? null) ? $team['members'] : [];
+        $members = [];
+        foreach ($membersRaw as $memberRaw) {
+          $memberId = trim((string)$memberRaw);
+          if ($memberId !== '' && !in_array($memberId, $members, true)) {
+            $members[] = $memberId;
+          }
+        }
+        $memberPreview = [];
+        $memberScores = [];
+        foreach ($members as $memberId) {
+          $profile = is_array($inviteesByWorkId[$memberId] ?? null) ? $inviteesByWorkId[$memberId] : [];
+          $memberScore = max(0, min($maxScore, (int)($infoTaskScoreByWorkId[$memberId] ?? 0)));
+          $memberScores[] = $memberScore;
+          $memberPreview[] = [
+            'workId' => $memberId,
+            'firstName' => trim((string)($profile['firstName'] ?? '')),
+            'lastName' => trim((string)($profile['lastName'] ?? '')),
+            'phone' => trim((string)($profile['phone'] ?? '')),
+            'score' => $memberScore
+          ];
+        }
+        $leaderWorkId = trim((string)($team['leaderWorkId'] ?? ''));
+        $leaderProfile = is_array($inviteesByWorkId[$leaderWorkId] ?? null) ? $inviteesByWorkId[$leaderWorkId] : [];
+        $leaderName = trim(((string)($leaderProfile['firstName'] ?? '')) . ' ' . ((string)($leaderProfile['lastName'] ?? '')));
+        if ($leaderName === '') {
+          $leaderName = $leaderWorkId;
+        }
+        $teamRows[] = [
+          'id' => $teamId,
+          'name' => $teamName,
+          'joinType' => tctNormalizeTeamJoinType((string)($team['joinType'] ?? 'private')),
+          'status' => (bool)($team['started'] ?? false) ? 'started' : 'draft',
+          'challengeAccepted' => (bool)($team['challengeAccepted'] ?? false),
+          'leaderWorkId' => $leaderWorkId,
+          'leaderName' => $leaderName,
+          'memberCount' => count($members),
+          'inviteCount' => count(is_array($team['invites'] ?? null) ? $team['invites'] : []),
+          'requestCount' => count(is_array($team['requests'] ?? null) ? $team['requests'] : []),
+          'minMembers' => $teamMin,
+          'maxMembers' => $teamMax,
+          'assignedScore' => $memberScores ? max($memberScores) : 0,
+          'members' => $memberPreview
+        ];
+      }
+      echo json_encode([
+        'status' => 'ok',
+        'taskType' => $targetTaskType,
+        'maxScore' => $maxScore,
+        'teams' => $teamRows
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
     $describeSubmissionsByWorkId = [];
     if ($targetTaskType === 'describe_photo') {
       $describeSubmissionsByWorkId = tctCollectDescribePhotoSubmissionsByWorkId(
@@ -2591,6 +2976,375 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       'taskType' => $targetTaskType,
       'maxScore' => $maxScore,
       'invitees' => $invitees
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'team_task_admin_get_team') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $teamId = trim((string)($_POST['team_id'] ?? ''));
+    if ($id === '' || $teamId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid team payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!is_file($tctEventInviteesPath)) {
+      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $runtime = tctLoadTaskTeamRuntime($tctTasksDir, $tagCode);
+    $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+    $teamIndex = tctFindTaskTeamIndexById($teams, $teamId);
+    if ($teamIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Team not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $team = is_array($teams[$teamIndex] ?? null) ? $teams[$teamIndex] : [];
+
+    $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
+    $maxScore = max(0, (int)($scoreSettings['score'] ?? 0));
+    $taskId = trim((string)($targetTask['id'] ?? ''));
+    $teamSettings = tctLoadTaskTeamSettings($tctTasksDir, $tagCode);
+    $teamMin = max(1, (int)($teamSettings['teamMin'] ?? 1));
+    $teamMax = max($teamMin, (int)($teamSettings['teamMax'] ?? 1));
+
+    $invitees = tctResolveInviteesForRateTable($tctEventInviteesPath, $tctEventInviteesMapPath);
+    $inviteesByWorkId = [];
+    foreach ($invitees as $invitee) {
+      $workIdToken = trim((string)($invitee['workId'] ?? ''));
+      if ($workIdToken !== '' && !isset($inviteesByWorkId[$workIdToken])) {
+        $inviteesByWorkId[$workIdToken] = $invitee;
+      }
+    }
+
+    $eventRows = tctReadCsvRows($tctEventInviteesPath);
+    $eventHeader = (isset($eventRows[0]) && is_array($eventRows[0])) ? $eventRows[0] : [];
+    $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($eventHeader, $tctEventInviteesMapPath);
+    $teamTaskIndex = tctFindHeaderIndex($eventHeader, 'Team Task');
+    $scoreByWorkId = [];
+    if ($workIdIndex >= 0 && $teamTaskIndex >= 0) {
+      for ($rowIndex = 1; $rowIndex < count($eventRows); $rowIndex += 1) {
+        $row = is_array($eventRows[$rowIndex] ?? null) ? $eventRows[$rowIndex] : [];
+        $workId = trim((string)($row[$workIdIndex] ?? ''));
+        if ($workId === '') {
+          continue;
+        }
+        $teamMap = tctParseTeamTaskMap((string)($row[$teamTaskIndex] ?? ''));
+        $entry = is_array($teamMap[$taskId] ?? null) ? $teamMap[$taskId] : [];
+        $scoreByWorkId[$workId] = tctNormalizeScoreValue($entry['score'] ?? 0);
+      }
+    }
+
+    $buildUserPayload = static function (string $workId, string $status) use ($inviteesByWorkId, $scoreByWorkId, $maxScore): array {
+      $profile = is_array($inviteesByWorkId[$workId] ?? null) ? $inviteesByWorkId[$workId] : [];
+      return [
+        'workId' => $workId,
+        'firstName' => trim((string)($profile['firstName'] ?? '')),
+        'lastName' => trim((string)($profile['lastName'] ?? '')),
+        'phone' => trim((string)($profile['phone'] ?? '')),
+        'score' => max(0, min($maxScore, (int)($scoreByWorkId[$workId] ?? 0))),
+        'status' => $status
+      ];
+    };
+
+    $leaderWorkId = trim((string)($team['leaderWorkId'] ?? ''));
+    $membersRaw = is_array($team['members'] ?? null) ? $team['members'] : [];
+    $members = [];
+    foreach ($membersRaw as $memberRaw) {
+      $memberId = trim((string)$memberRaw);
+      if ($memberId !== '' && !in_array($memberId, $members, true)) {
+        $members[] = $memberId;
+      }
+    }
+    if ($leaderWorkId !== '' && !in_array($leaderWorkId, $members, true)) {
+      array_unshift($members, $leaderWorkId);
+    }
+    $memberPayload = [];
+    foreach ($members as $memberId) {
+      $memberPayload[] = $buildUserPayload($memberId, $memberId === $leaderWorkId ? 'leader' : 'member');
+    }
+    $invitePayload = [];
+    foreach ((array)($team['invites'] ?? []) as $inviteRaw) {
+      $inviteId = trim((string)$inviteRaw);
+      if ($inviteId === '' || in_array($inviteId, $members, true)) {
+        continue;
+      }
+      $invitePayload[] = $buildUserPayload($inviteId, 'invited');
+    }
+    $requestPayload = [];
+    foreach ((array)($team['requests'] ?? []) as $requestRaw) {
+      $requestId = trim((string)$requestRaw);
+      if ($requestId === '' || in_array($requestId, $members, true)) {
+        continue;
+      }
+      $requestPayload[] = $buildUserPayload($requestId, 'requested');
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'maxScore' => $maxScore,
+      'team' => [
+        'id' => trim((string)($team['id'] ?? '')),
+        'name' => trim((string)($team['name'] ?? '')),
+        'joinType' => tctNormalizeTeamJoinType((string)($team['joinType'] ?? 'private')),
+        'status' => (bool)($team['started'] ?? false) ? 'started' : 'draft',
+        'challengeAccepted' => (bool)($team['challengeAccepted'] ?? false),
+        'leaderWorkId' => $leaderWorkId,
+        'memberCount' => count($memberPayload),
+        'minMembers' => $teamMin,
+        'maxMembers' => $teamMax,
+        'members' => $memberPayload,
+        'invites' => $invitePayload,
+        'requests' => $requestPayload
+      ]
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'team_task_admin_update_team') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $teamId = trim((string)($_POST['team_id'] ?? ''));
+    $teamName = trim((string)($_POST['team_name'] ?? ''));
+    if ($id === '' || $teamId === '' || $teamName === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid team update payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $runtime = tctLoadTaskTeamRuntime($tctTasksDir, $tagCode);
+    $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+    $teamIndex = tctFindTaskTeamIndexById($teams, $teamId);
+    if ($teamIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Team not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $team = is_array($teams[$teamIndex] ?? null) ? $teams[$teamIndex] : [];
+    $members = [];
+    foreach ((array)($team['members'] ?? []) as $memberRaw) {
+      $memberId = trim((string)$memberRaw);
+      if ($memberId !== '' && !in_array($memberId, $members, true)) {
+        $members[] = $memberId;
+      }
+    }
+    if (!$members) {
+      echo json_encode(['status' => 'error', 'message' => 'Team has no members.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $leaderWorkId = trim((string)($_POST['leader_work_id'] ?? (string)($team['leaderWorkId'] ?? '')));
+    if ($leaderWorkId === '') {
+      $leaderWorkId = $members[0];
+    }
+    if (!in_array($leaderWorkId, $members, true)) {
+      echo json_encode(['status' => 'error', 'message' => 'Selected team admin must be a member of this team.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $joinType = tctNormalizeTeamJoinType((string)($_POST['join_type'] ?? ($team['joinType'] ?? 'private')));
+    $statusToken = strtolower(trim((string)($_POST['team_status'] ?? ((bool)($team['started'] ?? false) ? 'started' : 'draft'))));
+    $started = in_array($statusToken, ['started', 'active', '1', 'true'], true);
+
+    $team['name'] = $teamName;
+    $team['joinType'] = $joinType;
+    $team['leaderWorkId'] = $leaderWorkId;
+    $team['started'] = $started;
+    if ($started && trim((string)($team['startedAt'] ?? '')) === '') {
+      $team['startedAt'] = date('Y-m-d H:i:s');
+    }
+    $teams[$teamIndex] = $team;
+
+    if (!tctSaveTaskTeamRuntime($tctTasksDir, $tagCode, ['teams' => $teams])) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (is_file($tctEventInviteesPath)) {
+      tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams);
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Team updated.'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'team_task_admin_set_challenge_accepted') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $teamId = trim((string)($_POST['team_id'] ?? ''));
+    if ($id === '' || $teamId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid challenge accepted payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $runtime = tctLoadTaskTeamRuntime($tctTasksDir, $tagCode);
+    $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+    $teamIndex = tctFindTaskTeamIndexById($teams, $teamId);
+    if ($teamIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Team not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $team = is_array($teams[$teamIndex] ?? null) ? $teams[$teamIndex] : [];
+    $acceptedToken = strtolower(trim((string)($_POST['challenge_accepted'] ?? '0')));
+    $isAccepted = in_array($acceptedToken, ['1', 'true', 'yes', 'on'], true);
+    $team['challengeAccepted'] = $isAccepted;
+    $teams[$teamIndex] = $team;
+
+    if (!tctSaveTaskTeamRuntime($tctTasksDir, $tagCode, ['teams' => $teams])) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update challenge accepted state.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (is_file($tctEventInviteesPath)) {
+      tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams);
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Challenge accepted state updated.',
+      'challengeAccepted' => $isAccepted
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'team_task_admin_remove_member') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $teamId = trim((string)($_POST['team_id'] ?? ''));
+    $workId = trim((string)($_POST['work_id'] ?? ''));
+    if ($id === '' || $teamId === '' || $workId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid member remove payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $runtime = tctLoadTaskTeamRuntime($tctTasksDir, $tagCode);
+    $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+    $teamIndex = tctFindTaskTeamIndexById($teams, $teamId);
+    if ($teamIndex < 0) {
+      echo json_encode(['status' => 'error', 'message' => 'Team not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $team = is_array($teams[$teamIndex] ?? null) ? $teams[$teamIndex] : [];
+
+    $members = array_values(array_filter((array)($team['members'] ?? []), static fn($value) => trim((string)$value) !== ''));
+    $invites = array_values(array_filter((array)($team['invites'] ?? []), static fn($value) => trim((string)$value) !== ''));
+    $requests = array_values(array_filter((array)($team['requests'] ?? []), static fn($value) => trim((string)$value) !== ''));
+    $beforeCount = count($members) + count($invites) + count($requests);
+
+    $members = array_values(array_filter($members, static fn($value) => trim((string)$value) !== trim($workId)));
+    $invites = array_values(array_filter($invites, static fn($value) => trim((string)$value) !== trim($workId)));
+    $requests = array_values(array_filter($requests, static fn($value) => trim((string)$value) !== trim($workId)));
+    $afterCount = count($members) + count($invites) + count($requests);
+    if ($beforeCount === $afterCount) {
+      echo json_encode(['status' => 'error', 'message' => 'Member was not found in this team.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    if (!$members) {
+      array_splice($teams, $teamIndex, 1);
+    } else {
+      $leaderWorkId = trim((string)($team['leaderWorkId'] ?? ''));
+      if ($leaderWorkId === '' || !in_array($leaderWorkId, $members, true)) {
+        $leaderWorkId = $members[0];
+      }
+      $team['leaderWorkId'] = $leaderWorkId;
+      $team['members'] = array_values($members);
+      $team['invites'] = array_values($invites);
+      $team['requests'] = array_values($requests);
+      $teams[$teamIndex] = $team;
+    }
+
+    if (!tctSaveTaskTeamRuntime($tctTasksDir, $tagCode, ['teams' => $teams])) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (is_file($tctEventInviteesPath)) {
+      tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams);
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Team member removed.'
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2732,6 +3486,43 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
 
     $scoreMap = tctLoadTaskInfoScores($tctTasksDir, $tagCode);
+    $runtimeTeams = [];
+    $acceptedByWorkId = [];
+    if ($targetTaskType === 'team_task') {
+      $runtime = tctLoadTaskTeamRuntime($tctTasksDir, $tagCode);
+      $runtimeTeams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
+      foreach ($runtimeTeams as $runtimeTeam) {
+        if (!is_array($runtimeTeam)) {
+          continue;
+        }
+        $members = is_array($runtimeTeam['members'] ?? null) ? $runtimeTeam['members'] : [];
+        $isAccepted = (bool)($runtimeTeam['challengeAccepted'] ?? false);
+        foreach ($members as $memberRaw) {
+          $memberId = trim((string)$memberRaw);
+          if ($memberId === '') {
+            continue;
+          }
+          if (!isset($acceptedByWorkId[$memberId])) {
+            $acceptedByWorkId[$memberId] = $isAccepted;
+          } elseif ($isAccepted) {
+            $acceptedByWorkId[$memberId] = true;
+          }
+        }
+      }
+      $blockedWorkIds = [];
+      foreach ($workIds as $selectedWorkId) {
+        if (!($acceptedByWorkId[$selectedWorkId] ?? false)) {
+          $blockedWorkIds[] = $selectedWorkId;
+        }
+      }
+      if ($blockedWorkIds) {
+        echo json_encode([
+          'status' => 'error',
+          'message' => 'Challenge Accepted must be enabled before scoring this team.'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+    }
     $updatedCount = 0;
     foreach ($workIds as $workId) {
       $rowIndex = $workIdLookup[$workId] ?? null;
@@ -2742,13 +3533,44 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
         $rows[$rowIndex] = [];
       }
       $row = &$rows[$rowIndex];
-      $infoMap = tctParseInfoTasksMap((string)($row[$infoTasksIndex] ?? ''));
-      $previousScore = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
+      $previousScore = 0;
+      if ($targetTaskType === 'team_task') {
+        $teamMap = tctParseTeamTaskMap((string)($row[$infoTasksIndex] ?? ''));
+        $currentEntry = is_array($teamMap[$taskId] ?? null) ? $teamMap[$taskId] : [];
+        $previousScore = tctNormalizeScoreValue($currentEntry['score'] ?? 0);
+      } else {
+        $infoMap = tctParseInfoTasksMap((string)($row[$infoTasksIndex] ?? ''));
+        $previousScore = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
+      }
       $delta = $assignedScore - $previousScore;
       $currentTotal = tctNormalizeScoreValue($row[$scoreIndex] ?? 0);
       $row[$scoreIndex] = (string)max(0, $currentTotal + $delta);
-      $infoMap[$taskId] = $assignedScore;
-      $row[$infoTasksIndex] = tctSerializeInfoTasksMap($infoMap);
+      if ($targetTaskType === 'team_task') {
+        $teamMap = tctParseTeamTaskMap((string)($row[$infoTasksIndex] ?? ''));
+        $currentEntry = is_array($teamMap[$taskId] ?? null) ? $teamMap[$taskId] : [];
+        $resolved = tctResolveTeamTaskStatusForUser($runtimeTeams, $workId);
+        $teamName = trim((string)($resolved['teamName'] ?? ''));
+        $status = trim((string)($resolved['status'] ?? ''));
+        if ($teamName === '') {
+          $teamName = trim((string)($currentEntry['teamName'] ?? ''));
+        }
+        if ($status === '') {
+          $status = trim((string)($currentEntry['status'] ?? ''));
+        }
+        if ($status === '') {
+          $status = 'member';
+        }
+        $teamMap[$taskId] = [
+          'teamName' => $teamName,
+          'status' => $status,
+          'score' => $assignedScore
+        ];
+        $row[$infoTasksIndex] = tctSerializeTeamTaskMap($teamMap);
+      } else {
+        $infoMap = tctParseInfoTasksMap((string)($row[$infoTasksIndex] ?? ''));
+        $infoMap[$taskId] = $assignedScore;
+        $row[$infoTasksIndex] = tctSerializeInfoTasksMap($infoMap);
+      }
       $scoreMap[$workId] = $assignedScore;
       $updatedCount += 1;
       unset($row);
@@ -2769,7 +3591,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
     echo json_encode([
       'status' => 'ok',
-      'message' => 'Invitees scores updated.',
+      'message' => $targetTaskType === 'team_task' ? 'Team members scores updated.' : 'Invitees scores updated.',
       'assignedScore' => $assignedScore
     ], JSON_UNESCAPED_UNICODE);
     exit;

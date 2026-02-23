@@ -156,6 +156,40 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
   </div>
 </div>
 
+<div class="card" id="tc-assign-admin-card">
+  <div class="section-header">
+    <h3>Assign Admin</h3>
+  </div>
+  <div class="form" style="gap:12px;">
+    <label class="field standard-width">
+      <span>Work ID</span>
+      <input id="tc-admin-workid" type="text" autocomplete="off" placeholder="Enter Work ID" />
+    </label>
+    <div class="field full tc-form-action">
+      <button type="button" class="btn primary standard-primary-button" id="tc-admin-search-btn">Search User</button>
+    </div>
+    <div id="tc-admin-search-result" class="tc-admin-search-result hidden" aria-live="polite"></div>
+    <p id="tc-admin-status" class="muted small" aria-live="polite"></p>
+    <div class="table-wrapper">
+      <table class="tc-admin-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Work ID</th>
+            <th>Phone Number</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="tc-admin-list">
+          <tr>
+            <td colspan="4" class="muted">No admins assigned yet.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="section-header">
     <h3>Fake Items</h3>
@@ -380,7 +414,6 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
 <script src="mini%20apps/Task%20Club/TCSetting.js?v=<?= htmlspecialchars($tcSettingJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCMonitoring.js?v=<?= htmlspecialchars($tcMonitoringJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-
 
 
 
