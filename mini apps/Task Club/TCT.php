@@ -14,9 +14,11 @@ $tctEventInviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
 const TCT_SCORE_SETTINGS_FILE = 'task-score.json';
 const TCT_INFO_SETTINGS_FILE = 'info-task.json';
 const TCT_INFO_SCORES_FILE = 'info-task-scores.json';
+const TCT_TEAM_SETTINGS_FILE = 'team-settings.json';
 const TCT_DESCRIBE_PHOTO_DIR = 'photos';
 const TCT_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 const TCT_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
+const TCT_TEAM_CHALLENGES_FILE = 'team-challenges.json';
 
 function tctNormalizeTaskType(string $value): string
 {
@@ -26,6 +28,9 @@ function tctNormalizeTaskType(string $value): string
   }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
+  }
+  if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
+    return 'team_task';
   }
   if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
     return 'describe_photo';
@@ -265,7 +270,9 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = [
     'title' => '',
-    'text' => ''
+    'text' => '',
+    'guidePrefix' => '',
+    'guideSuffix' => ''
   ];
   $path = tctBuildTaskInfoSettingsPath($tasksDir, $tagCode);
   if ($path === '' || !is_file($path)) {
@@ -281,7 +288,9 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
   }
   return [
     'title' => trim((string)($decoded['title'] ?? '')),
-    'text' => trim((string)($decoded['text'] ?? ''))
+    'text' => trim((string)($decoded['text'] ?? '')),
+    'guidePrefix' => trim((string)($decoded['guidePrefix'] ?? ($decoded['guide_prefix'] ?? ''))),
+    'guideSuffix' => trim((string)($decoded['guideSuffix'] ?? ($decoded['guide_suffix'] ?? '')))
   ];
 }
 
@@ -296,7 +305,9 @@ function tctSaveTaskInfoSettings(string $tasksDir, string $tagCode, array $paylo
   }
   $safePayload = [
     'title' => trim((string)($payload['title'] ?? '')),
-    'text' => trim((string)($payload['text'] ?? ''))
+    'text' => trim((string)($payload['text'] ?? '')),
+    'guidePrefix' => trim((string)($payload['guidePrefix'] ?? ($payload['guide_prefix'] ?? ''))),
+    'guideSuffix' => trim((string)($payload['guideSuffix'] ?? ($payload['guide_suffix'] ?? '')))
   ];
   $json = json_encode($safePayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
@@ -348,6 +359,216 @@ function tctSaveTaskInfoScores(string $tasksDir, string $tagCode, array $scoreMa
     $safeMap[$normalizedWorkId] = tctNormalizeScoreValue($rawScore);
   }
   $json = json_encode($safeMap, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tctBuildTaskTeamSettingsPath(string $tasksDir, string $tagCode): string
+{
+  $taskDir = tctBuildTaskDirPath($tasksDir, $tagCode);
+  if ($taskDir === '') {
+    return '';
+  }
+  return $taskDir . DIRECTORY_SEPARATOR . TCT_TEAM_SETTINGS_FILE;
+}
+
+function tctLoadTaskTeamSettings(string $tasksDir, string $tagCode): array
+{
+  $defaults = [
+    'teamMin' => 1,
+    'teamMax' => 1,
+    'teamAdditionalNote' => ''
+  ];
+  $path = tctBuildTaskTeamSettingsPath($tasksDir, $tagCode);
+  if ($path === '' || !is_file($path)) {
+    return $defaults;
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return $defaults;
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return $defaults;
+  }
+  $teamMin = tctNormalizeScoreValue($decoded['teamMin'] ?? ($decoded['team_min'] ?? 1));
+  $teamMax = tctNormalizeScoreValue($decoded['teamMax'] ?? ($decoded['team_max'] ?? 1));
+  $teamAdditionalNote = str_replace(["\r\n", "\r"], "\n", (string)($decoded['teamAdditionalNote'] ?? ($decoded['team_additional_note'] ?? '')));
+  if ($teamMin < 1) {
+    $teamMin = 1;
+  }
+  if ($teamMax < $teamMin) {
+    $teamMax = $teamMin;
+  }
+  return [
+    'teamMin' => $teamMin,
+    'teamMax' => $teamMax,
+    'teamAdditionalNote' => $teamAdditionalNote
+  ];
+}
+
+function tctSaveTaskTeamSettings(string $tasksDir, string $tagCode, array $settings): bool
+{
+  if (!tctEnsureTaskFolder($tasksDir, $tagCode)) {
+    return false;
+  }
+  $path = tctBuildTaskTeamSettingsPath($tasksDir, $tagCode);
+  if ($path === '') {
+    return false;
+  }
+  $teamMin = tctNormalizeScoreValue($settings['teamMin'] ?? ($settings['team_min'] ?? 1));
+  $teamMax = tctNormalizeScoreValue($settings['teamMax'] ?? ($settings['team_max'] ?? 1));
+  $teamAdditionalNote = str_replace(["\r\n", "\r"], "\n", (string)($settings['teamAdditionalNote'] ?? ($settings['team_additional_note'] ?? '')));
+  if ($teamMin < 1) {
+    $teamMin = 1;
+  }
+  if ($teamMax < $teamMin) {
+    $teamMax = $teamMin;
+  }
+  $payload = [
+    'teamMin' => $teamMin,
+    'teamMax' => $teamMax,
+    'teamAdditionalNote' => $teamAdditionalNote
+  ];
+  $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tctBuildTaskTeamChallengesPath(string $tasksDir, string $tagCode): string
+{
+  $taskDir = tctBuildTaskDirPath($tasksDir, $tagCode);
+  if ($taskDir === '') {
+    return '';
+  }
+  return $taskDir . DIRECTORY_SEPARATOR . TCT_TEAM_CHALLENGES_FILE;
+}
+
+function tctMakeTaskTeamChallengeId(): string
+{
+  try {
+    return 'tch_' . bin2hex(random_bytes(6));
+  } catch (Throwable $e) {
+    return 'tch_' . str_replace('.', '', uniqid('', true));
+  }
+}
+
+function tctLoadTaskTeamChallenges(string $tasksDir, string $tagCode): array
+{
+  $path = tctBuildTaskTeamChallengesPath($tasksDir, $tagCode);
+  if ($path === '' || !is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return [];
+  }
+
+  $result = [];
+  $seen = [];
+  foreach ($decoded as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $challengeId = trim((string)($item['id'] ?? ''));
+    if ($challengeId === '' || isset($seen[$challengeId])) {
+      continue;
+    }
+    $seen[$challengeId] = true;
+
+    $name = trim((string)($item['name'] ?? ''));
+    if ($name === '') {
+      $name = 'Challenge';
+    }
+    $guide = str_replace(["\r\n", "\r"], "\n", (string)($item['guide'] ?? ($item['challengeGuide'] ?? ($item['challenge_guide'] ?? ''))));
+
+    $quantity = max(0, tctNormalizeScoreValue($item['quantity'] ?? 0));
+    $last = max(0, tctNormalizeScoreValue($item['last'] ?? $quantity));
+    if ($quantity === 0 && $last > 0) {
+      $quantity = $last;
+    }
+    if ($last > $quantity) {
+      $last = $quantity;
+    }
+
+    $createdAt = trim((string)($item['createdAt'] ?? ($item['created_at'] ?? '')));
+    if ($createdAt === '') {
+      $createdAt = date('Y-m-d H:i:s');
+    }
+
+    $result[] = [
+      'id' => $challengeId,
+      'name' => $name,
+      'guide' => $guide,
+      'quantity' => $quantity,
+      'last' => $last,
+      'createdAt' => $createdAt
+    ];
+  }
+  return $result;
+}
+
+function tctSaveTaskTeamChallenges(string $tasksDir, string $tagCode, array $challenges): bool
+{
+  if (!tctEnsureTaskFolder($tasksDir, $tagCode)) {
+    return false;
+  }
+  $path = tctBuildTaskTeamChallengesPath($tasksDir, $tagCode);
+  if ($path === '') {
+    return false;
+  }
+
+  $safe = [];
+  $seen = [];
+  foreach ($challenges as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $challengeId = trim((string)($item['id'] ?? ''));
+    if ($challengeId === '' || isset($seen[$challengeId])) {
+      continue;
+    }
+    $seen[$challengeId] = true;
+
+    $name = trim((string)($item['name'] ?? ''));
+    if ($name === '') {
+      $name = 'Challenge';
+    }
+    $guide = str_replace(["\r\n", "\r"], "\n", (string)($item['guide'] ?? ($item['challengeGuide'] ?? ($item['challenge_guide'] ?? ''))));
+
+    $quantity = max(0, tctNormalizeScoreValue($item['quantity'] ?? 0));
+    $last = max(0, tctNormalizeScoreValue($item['last'] ?? $quantity));
+    if ($quantity === 0 && $last > 0) {
+      $quantity = $last;
+    }
+    if ($last > $quantity) {
+      $last = $quantity;
+    }
+
+    $createdAt = trim((string)($item['createdAt'] ?? ($item['created_at'] ?? '')));
+    if ($createdAt === '') {
+      $createdAt = date('Y-m-d H:i:s');
+    }
+
+    $safe[] = [
+      'id' => $challengeId,
+      'name' => $name,
+      'guide' => $guide,
+      'quantity' => $quantity,
+      'last' => $last,
+      'createdAt' => $createdAt
+    ];
+  }
+
+  $json = json_encode($safe, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
     return false;
   }
@@ -850,17 +1071,34 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
     $task['score'] = $scoreSettings['score'];
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
-    if ($taskType === 'info' || $taskType === 'describe_photo') {
+    if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
+      $task['guidePrefix'] = (string)($info['guidePrefix'] ?? '');
+      $task['guideSuffix'] = (string)($info['guideSuffix'] ?? '');
+      $teamSettings = $taskType === 'team_task'
+        ? tctLoadTaskTeamSettings($tasksDir, $tagCode)
+        : ['teamMin' => 0, 'teamMax' => 0, 'teamAdditionalNote' => ''];
+      $task['teamMin'] = (int)($teamSettings['teamMin'] ?? 0);
+      $task['teamMax'] = (int)($teamSettings['teamMax'] ?? 0);
+      $task['teamAdditionalNote'] = (string)($teamSettings['teamAdditionalNote'] ?? '');
       $task['taskPhotos'] = $taskType === 'describe_photo'
         ? tctLoadTaskDescribePhotos($tasksDir, $tagCode)
+        : [];
+      $task['taskChallenges'] = $taskType === 'team_task'
+        ? tctLoadTaskTeamChallenges($tasksDir, $tagCode)
         : [];
     } else {
       $task['infoTitle'] = '';
       $task['infoText'] = '';
+      $task['guidePrefix'] = '';
+      $task['guideSuffix'] = '';
+      $task['teamMin'] = 0;
+      $task['teamMax'] = 0;
+      $task['teamAdditionalNote'] = '';
       $task['taskPhotos'] = [];
+      $task['taskChallenges'] = [];
     }
     $merged[] = $task;
   }
@@ -1285,11 +1523,19 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       'score' => 0,
       'afterEndtimeScore' => 0
     ],
+    TCT_TEAM_SETTINGS_FILE => [
+      'teamMin' => 1,
+      'teamMax' => 1,
+      'teamAdditionalNote' => ''
+    ],
     TCT_INFO_SETTINGS_FILE => [
       'title' => '',
-      'text' => ''
+      'text' => '',
+      'guidePrefix' => '',
+      'guideSuffix' => ''
     ],
-    TCT_INFO_SCORES_FILE => []
+    TCT_INFO_SCORES_FILE => [],
+    TCT_TEAM_CHALLENGES_FILE => []
   ];
   foreach ($defaultJsonFiles as $fileName => $payload) {
     $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
@@ -1653,7 +1899,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
 
-    if ($targetTaskType === 'info' || $targetTaskType === 'describe_photo') {
+    if ($targetTaskType === 'info' || $targetTaskType === 'team_task' || $targetTaskType === 'describe_photo') {
       $afterEndtimeScore = 0;
     }
 
@@ -1666,6 +1912,61 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
 
     echo json_encode(['status' => 'ok', 'message' => 'Score settings saved.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_team_task_settings') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTagCode = '';
+    $targetTaskType = 'quiz';
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') !== $id) {
+        continue;
+      }
+      $targetTagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
+      $targetTaskType = tctNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
+      break;
+    }
+    if ($targetTagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $teamMin = tctNormalizeScoreValue($_POST['team_min'] ?? 0);
+    $teamMax = tctNormalizeScoreValue($_POST['team_max'] ?? 0);
+    $teamAdditionalNote = str_replace(["\r\n", "\r"], "\n", (string)($_POST['team_additional_note'] ?? ''));
+    if ($teamMin < 1 || $teamMax < 1) {
+      echo json_encode(['status' => 'error', 'message' => 'Team Min and Team Max must be at least 1.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($teamMax < $teamMin) {
+      echo json_encode(['status' => 'error', 'message' => 'Team Max must be equal to or greater than Team Min.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    if (!tctSaveTaskTeamSettings($tctTasksDir, $targetTagCode, [
+      'teamMin' => $teamMin,
+      'teamMax' => $teamMax,
+      'teamAdditionalNote' => $teamAdditionalNote
+    ])) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save team settings.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Team settings saved.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -1687,7 +1988,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'info' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -1699,9 +2000,13 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
     $title = trim((string)($_POST['info_title'] ?? ''));
     $text = str_replace(["\r\n", "\r"], "\n", (string)($_POST['info_text'] ?? ''));
+    $guidePrefix = str_replace(["\r\n", "\r"], "\n", (string)($_POST['info_guide_prefix'] ?? ''));
+    $guideSuffix = str_replace(["\r\n", "\r"], "\n", (string)($_POST['info_guide_suffix'] ?? ''));
     if (!tctSaveTaskInfoSettings($tctTasksDir, $tagCode, [
       'title' => $title,
-      'text' => $text
+      'text' => $text,
+      'guidePrefix' => $guidePrefix,
+      'guideSuffix' => $guideSuffix
     ])) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save information content.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -1944,6 +2249,265 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     exit;
   }
 
+  if ($action === 'add_team_task_challenge') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $challengeName = trim((string)($_POST['challenge_name'] ?? ''));
+    $quantity = max(0, tctNormalizeScoreValue($_POST['quantity'] ?? 0));
+    if ($challengeName === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Challenge name is required.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($quantity < 1) {
+      echo json_encode(['status' => 'error', 'message' => 'Challenge quantity must be at least 1.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $challenges = tctLoadTaskTeamChallenges($tctTasksDir, $tagCode);
+    $challenges[] = [
+      'id' => tctMakeTaskTeamChallengeId(),
+      'name' => $challengeName,
+      'guide' => '',
+      'quantity' => $quantity,
+      'last' => $quantity,
+      'createdAt' => date('Y-m-d H:i:s')
+    ];
+    if (!tctSaveTaskTeamChallenges($tctTasksDir, $tagCode, $challenges)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save challenge list.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Challenge added.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_team_task_challenge') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $challengeId = trim((string)($_POST['challenge_id'] ?? ''));
+    if ($id === '' || $challengeId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid challenge payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $challengeName = trim((string)($_POST['challenge_name'] ?? ''));
+    if ($challengeName === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Challenge name is required.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $quantity = max(0, tctNormalizeScoreValue($_POST['quantity'] ?? 0));
+    $providedLast = isset($_POST['last']) ? max(0, tctNormalizeScoreValue($_POST['last'])) : null;
+    $providedGuide = array_key_exists('challenge_guide', $_POST)
+      ? str_replace(["\r\n", "\r"], "\n", (string)($_POST['challenge_guide'] ?? ''))
+      : null;
+
+    $challenges = tctLoadTaskTeamChallenges($tctTasksDir, $tagCode);
+    $found = false;
+    foreach ($challenges as $index => $challenge) {
+      if (!is_array($challenge) || trim((string)($challenge['id'] ?? '')) !== $challengeId) {
+        continue;
+      }
+      $nextLast = is_int($providedLast) ? $providedLast : max(0, tctNormalizeScoreValue($challenge['last'] ?? 0));
+      if ($quantity === 0) {
+        $nextLast = 0;
+      } elseif ($nextLast > $quantity) {
+        $nextLast = $quantity;
+      }
+      $challenges[$index]['name'] = $challengeName;
+      $challenges[$index]['quantity'] = $quantity;
+      $challenges[$index]['last'] = $nextLast;
+      if (is_string($providedGuide)) {
+        $challenges[$index]['guide'] = $providedGuide;
+      }
+      $found = true;
+      break;
+    }
+    if (!$found) {
+      echo json_encode(['status' => 'error', 'message' => 'Challenge not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!tctSaveTaskTeamChallenges($tctTasksDir, $tagCode, $challenges)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update challenge.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Challenge updated.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_team_task_challenge_guide') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $challengeId = trim((string)($_POST['challenge_id'] ?? ''));
+    if ($id === '' || $challengeId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid challenge payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $guide = str_replace(["\r\n", "\r"], "\n", (string)($_POST['challenge_guide'] ?? ''));
+    $challenges = tctLoadTaskTeamChallenges($tctTasksDir, $tagCode);
+    $found = false;
+    foreach ($challenges as $index => $challenge) {
+      if (!is_array($challenge) || trim((string)($challenge['id'] ?? '')) !== $challengeId) {
+        continue;
+      }
+      $challenges[$index]['guide'] = $guide;
+      $found = true;
+      break;
+    }
+    if (!$found) {
+      echo json_encode(['status' => 'error', 'message' => 'Challenge not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!tctSaveTaskTeamChallenges($tctTasksDir, $tagCode, $challenges)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save challenge guide.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Challenge guide saved.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'remove_team_task_challenge') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $challengeId = trim((string)($_POST['challenge_id'] ?? ''));
+    if ($id === '' || $challengeId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid challenge payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
+    if ($targetTaskType !== 'team_task') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Team Task.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
+    if ($tagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $challenges = tctLoadTaskTeamChallenges($tctTasksDir, $tagCode);
+    $nextChallenges = [];
+    $found = false;
+    foreach ($challenges as $challenge) {
+      if (!is_array($challenge)) {
+        continue;
+      }
+      if (!$found && trim((string)($challenge['id'] ?? '')) === $challengeId) {
+        $found = true;
+        continue;
+      }
+      $nextChallenges[] = $challenge;
+    }
+    if (!$found) {
+      echo json_encode(['status' => 'error', 'message' => 'Challenge not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!tctSaveTaskTeamChallenges($tctTasksDir, $tagCode, $nextChallenges)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update challenge list.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Challenge removed.',
+      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
   if ($action === 'get_info_task_rate_data') {
     $id = trim((string)($_POST['id'] ?? ''));
     if ($id === '') {
@@ -1962,7 +2526,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'info' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -2103,7 +2667,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'info' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -2280,6 +2844,7 @@ if (TCT_INCLUDE_ONLY) {
       <select id="tct-task-type" name="task_type" required>
         <option value="quiz">Quiz Task</option>
         <option value="info">Info Task</option>
+        <option value="team_task">Team Task</option>
         <option value="describe_photo">Describe Photo Task</option>
       </select>
     </label>
@@ -2339,6 +2904,9 @@ if (TCT_INCLUDE_ONLY) {
     }
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
+    }
+    if (token === 'team_task' || token === 'team-task' || token === 'team task') {
+      return 'team_task';
     }
     if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
       return 'describe_photo';

@@ -36,6 +36,7 @@
   function taskTypeLabel(taskType) {
     const token = String(taskType || '').trim().toLowerCase();
     if (token === 'describe_photo') return 'Describe Photo';
+    if (token === 'team_task') return 'Team Task';
     if (token === 'info') return 'Info';
     return 'Quiz';
   }

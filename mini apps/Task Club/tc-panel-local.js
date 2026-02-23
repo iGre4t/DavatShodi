@@ -22,6 +22,9 @@
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
+    if (token === 'team_task' || token === 'team-task' || token === 'team task') {
+      return 'team_task';
+    }
     if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
       return 'describe_photo';
     }
@@ -30,11 +33,15 @@
 
   function isInfoLikeTaskType(taskType) {
     const type = normalizeTaskType(taskType);
-    return type === 'info' || type === 'describe_photo';
+    return type === 'info' || type === 'team_task' || type === 'describe_photo';
   }
 
   function isDescribePhotoTaskType(taskType) {
     return normalizeTaskType(taskType) === 'describe_photo';
+  }
+
+  function isTeamTaskType(taskType) {
+    return normalizeTaskType(taskType) === 'team_task';
   }
 
   function normalizeBool(value) {
@@ -85,6 +92,11 @@
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
       infoTitle: String(raw.infoTitle ?? raw.info_title ?? '').trim(),
       infoText: String(raw.infoText ?? raw.info_text ?? '').trim(),
+      guidePrefix: String(raw.guidePrefix ?? raw.guide_prefix ?? '').replace(/\r\n?/g, '\n'),
+      guideSuffix: String(raw.guideSuffix ?? raw.guide_suffix ?? '').replace(/\r\n?/g, '\n'),
+      teamMin: normalizeScoreValue(raw.teamMin ?? raw.team_min ?? (normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz') === 'team_task' ? 1 : 0)),
+      teamMax: normalizeScoreValue(raw.teamMax ?? raw.team_max ?? (normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz') === 'team_task' ? 1 : 0)),
+      teamAdditionalNote: String(raw.teamAdditionalNote ?? raw.team_additional_note ?? '').replace(/\r\n?/g, '\n'),
       taskPhotos: Array.isArray(raw.taskPhotos ?? raw.task_photos)
         ? (raw.taskPhotos ?? raw.task_photos).map((item) => ({
           id: String(item?.id ?? '').trim(),
@@ -95,6 +107,16 @@
           url: String(item?.url ?? '').trim(),
           createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
         })).filter((item) => item.id && item.fileName)
+        : [],
+      taskChallenges: Array.isArray(raw.taskChallenges ?? raw.task_challenges)
+        ? (raw.taskChallenges ?? raw.task_challenges).map((item) => ({
+          id: String(item?.id ?? '').trim(),
+          name: String(item?.name ?? '').trim(),
+          guide: String(item?.guide ?? item?.challengeGuide ?? item?.challenge_guide ?? '').replace(/\r\n?/g, '\n'),
+          quantity: normalizeScoreValue(item?.quantity ?? 0),
+          last: normalizeScoreValue(item?.last ?? item?.quantity ?? 0),
+          createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
+        })).filter((item) => item.id)
         : [],
       order: Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : (index + 1)
     };
@@ -370,6 +392,30 @@
     };
   }
 
+  function getTaskTeamSettingsControls(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    if (!isTeamTaskType(pane.dataset.taskType || 'quiz')) return null;
+    const teamMinInput = pane.querySelector('[data-task-field="teamMin"]');
+    const teamMaxInput = pane.querySelector('[data-task-field="teamMax"]');
+    const teamAdditionalNoteInput = pane.querySelector('[data-task-field="teamAdditionalNote"]');
+    const saveStatusEl = pane.querySelector('[data-task-team-save-status]');
+    const saveButton = pane.querySelector('[data-action="save-team-settings"]');
+    if (
+      !(teamMinInput instanceof HTMLInputElement) ||
+      !(teamMaxInput instanceof HTMLInputElement) ||
+      !(teamAdditionalNoteInput instanceof HTMLTextAreaElement)
+    ) {
+      return null;
+    }
+    return {
+      teamMinInput,
+      teamMaxInput,
+      teamAdditionalNoteInput,
+      saveStatusEl: saveStatusEl instanceof HTMLElement ? saveStatusEl : null,
+      saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null
+    };
+  }
+
   function setTaskSaveStatus(pane, message, isError = false) {
     const controls = getTaskPaneControls(pane);
     if (!controls?.saveStatusEl) return;
@@ -384,10 +430,19 @@
     controls.saveStatusEl.style.color = isError ? '#d1434a' : '';
   }
 
+  function setTaskTeamSettingsSaveStatus(pane, message, isError = false) {
+    const controls = getTaskTeamSettingsControls(pane);
+    if (!controls?.saveStatusEl) return;
+    controls.saveStatusEl.textContent = message || '';
+    controls.saveStatusEl.style.color = isError ? '#d1434a' : '';
+  }
+
   function getTaskInfoContentControls(pane) {
     if (!(pane instanceof HTMLElement)) return null;
     const titleInput = pane.querySelector('[data-task-field="infoTitle"]');
     const textInput = pane.querySelector('[data-task-field="infoText"]');
+    const guidePrefixInput = pane.querySelector('[data-task-field="guidePrefix"]');
+    const guideSuffixInput = pane.querySelector('[data-task-field="guideSuffix"]');
     const saveButton = pane.querySelector('[data-action="save-task-information"]');
     const statusEl = pane.querySelector('[data-task-info-save-status]');
     if (!(titleInput instanceof HTMLInputElement) || !(textInput instanceof HTMLTextAreaElement)) {
@@ -396,6 +451,8 @@
     return {
       titleInput,
       textInput,
+      guidePrefixInput: guidePrefixInput instanceof HTMLTextAreaElement ? guidePrefixInput : null,
+      guideSuffixInput: guideSuffixInput instanceof HTMLTextAreaElement ? guideSuffixInput : null,
       saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null,
       statusEl: statusEl instanceof HTMLElement ? statusEl : null
     };
@@ -413,7 +470,19 @@
     if (!controls) return null;
     return {
       info_title: String(controls.titleInput.value || '').trim(),
-      info_text: String(controls.textInput.value || '').replace(/\r\n?/g, '\n')
+      info_text: String(controls.textInput.value || '').replace(/\r\n?/g, '\n'),
+      info_guide_prefix: String(controls.guidePrefixInput?.value || '').replace(/\r\n?/g, '\n'),
+      info_guide_suffix: String(controls.guideSuffixInput?.value || '').replace(/\r\n?/g, '\n')
+    };
+  }
+
+  function collectTaskTeamSettingsFromPane(pane) {
+    const controls = getTaskTeamSettingsControls(pane);
+    if (!controls) return null;
+    return {
+      team_min: String(normalizeScoreValue(controls.teamMinInput.value)),
+      team_max: String(normalizeScoreValue(controls.teamMaxInput.value)),
+      team_additional_note: String(controls.teamAdditionalNoteInput.value || '').replace(/\r\n?/g, '\n')
     };
   }
 
@@ -601,6 +670,271 @@
     renderDescribePhotoList(pane);
     setDescribePhotoUploadStatus(pane, '');
     setDescribePhotoListStatus(pane, '');
+  }
+
+  const teamChallengeStateByTaskId = new Map();
+
+  function normalizeTeamChallengeList(items) {
+    if (!Array.isArray(items)) return [];
+    return items.map((item) => {
+      const id = String(item?.id ?? '').trim();
+      const name = String(item?.name ?? '').trim() || 'Challenge';
+      const guide = String(item?.guide ?? item?.challengeGuide ?? item?.challenge_guide ?? '').replace(/\r\n?/g, '\n');
+      const quantity = Math.max(0, normalizeScoreValue(item?.quantity ?? 0));
+      const rawLast = Math.max(0, normalizeScoreValue(item?.last ?? quantity));
+      const last = quantity === 0 ? 0 : Math.min(rawLast, quantity);
+      return {
+        id,
+        name,
+        guide,
+        quantity,
+        last,
+        createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
+      };
+    }).filter((item) => item.id);
+  }
+
+  function getTeamChallengeState(taskId) {
+    const key = String(taskId || '').trim();
+    if (!key) return null;
+    if (!teamChallengeStateByTaskId.has(key)) {
+      teamChallengeStateByTaskId.set(key, { challenges: [] });
+    }
+    return teamChallengeStateByTaskId.get(key);
+  }
+
+  function getTeamChallengeControls(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    const nameInput = pane.querySelector('[data-team-challenge-name]');
+    const quantityInput = pane.querySelector('[data-team-challenge-quantity]');
+    const addStatusEl = pane.querySelector('[data-team-challenge-add-status]');
+    const listBody = pane.querySelector('[data-team-challenge-list-body]');
+    const listStatusEl = pane.querySelector('[data-team-challenge-list-status]');
+    if (
+      !(nameInput instanceof HTMLInputElement) ||
+      !(quantityInput instanceof HTMLInputElement) ||
+      !(addStatusEl instanceof HTMLElement) ||
+      !(listBody instanceof HTMLElement) ||
+      !(listStatusEl instanceof HTMLElement)
+    ) {
+      return null;
+    }
+    return {
+      nameInput,
+      quantityInput,
+      addStatusEl,
+      listBody,
+      listStatusEl
+    };
+  }
+
+  function setTeamChallengeAddStatus(pane, message, isError = false) {
+    const controls = getTeamChallengeControls(pane);
+    if (!controls) return;
+    controls.addStatusEl.textContent = String(message || '').trim();
+    controls.addStatusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setTeamChallengeListStatus(pane, message, isError = false) {
+    const controls = getTeamChallengeControls(pane);
+    if (!controls) return;
+    controls.listStatusEl.textContent = String(message || '').trim();
+    controls.listStatusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function renderTeamChallengeList(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const state = getTeamChallengeState(taskId);
+    const controls = getTeamChallengeControls(pane);
+    if (!state || !controls) return;
+
+    if (!Array.isArray(state.challenges) || !state.challenges.length) {
+      controls.listBody.innerHTML = '<tr><td colspan="4" class="muted">No challenges added yet.</td></tr>';
+      return;
+    }
+
+    controls.listBody.innerHTML = state.challenges.map((challenge) => {
+      const challengeId = escapeHtml(challenge.id);
+      const name = escapeHtml(challenge.name || 'Challenge');
+      const quantity = Math.max(0, normalizeScoreValue(challenge.quantity));
+      const last = quantity === 0
+        ? 0
+        : Math.min(Math.max(0, normalizeScoreValue(challenge.last)), quantity);
+      return `
+        <tr data-team-challenge-row="${challengeId}">
+          <td>
+            <input type="text" class="tc-team-challenge-name-input" data-team-challenge-row-name value="${name}" />
+          </td>
+          <td>
+            <input type="number" min="0" step="1" class="tc-team-challenge-num-input" data-team-challenge-row-quantity value="${escapeHtml(String(quantity))}" />
+          </td>
+          <td>
+            <input type="number" min="0" step="1" class="tc-team-challenge-num-input" data-team-challenge-row-last value="${escapeHtml(String(last))}" />
+          </td>
+          <td>
+            <div class="tc-team-challenge-row-actions">
+              <button type="button" class="btn ghost" data-action="open-team-challenge-guide" data-challenge-id="${challengeId}">Guide</button>
+              <button type="button" class="btn ghost" data-action="save-team-challenge" data-challenge-id="${challengeId}">Save</button>
+              <button type="button" class="btn ghost tc-btn-danger" data-action="remove-team-challenge" data-challenge-id="${challengeId}">Remove</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function applyTeamTaskChallengeStateFromTask(pane, task) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    if (!taskId) return;
+    const state = getTeamChallengeState(taskId);
+    if (!state) return;
+    state.challenges = normalizeTeamChallengeList(task?.taskChallenges);
+    const controls = getTeamChallengeControls(pane);
+    if (controls) {
+      controls.nameInput.value = '';
+      controls.quantityInput.value = '1';
+    }
+    renderTeamChallengeList(pane);
+    setTeamChallengeAddStatus(pane, '');
+    setTeamChallengeListStatus(pane, '');
+  }
+
+  function getTeamChallengeById(taskId, challengeId) {
+    const state = getTeamChallengeState(taskId);
+    if (!state) return null;
+    const normalizedId = String(challengeId || '').trim();
+    if (!normalizedId) return null;
+    return state.challenges.find((item) => String(item?.id || '').trim() === normalizedId) || null;
+  }
+
+  let teamChallengeGuideModalEl = null;
+  let teamChallengeGuideContext = null;
+
+  function closeTeamChallengeGuideModal() {
+    if (!(teamChallengeGuideModalEl instanceof HTMLElement)) return;
+    teamChallengeGuideModalEl.hidden = true;
+    teamChallengeGuideContext = null;
+  }
+
+  function setTeamChallengeGuideModalStatus(message, isError = false) {
+    const modal = ensureTeamChallengeGuideModal();
+    const statusEl = modal.querySelector('[data-team-challenge-guide-status]');
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.textContent = String(message || '').trim();
+    statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function ensureTeamChallengeGuideModal() {
+    if (teamChallengeGuideModalEl instanceof HTMLElement) {
+      return teamChallengeGuideModalEl;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tc-team-challenge-guide-modal';
+    wrapper.hidden = true;
+    wrapper.innerHTML = `
+      <div class="tc-team-challenge-guide-dialog" role="dialog" aria-modal="true" aria-label="Challenge Guide">
+        <div class="tc-team-challenge-guide-head">
+          <h3 data-team-challenge-guide-title>Challenge Guide</h3>
+          <button type="button" class="btn ghost" data-action="close-team-challenge-guide-modal">Close</button>
+        </div>
+        <label class="field full">
+          <span>Guide Text</span>
+          <textarea data-team-challenge-guide-text rows="10"></textarea>
+        </label>
+        <div class="field full tc-team-challenge-guide-actions">
+          <button type="button" class="btn primary standard-primary-button" data-action="save-team-challenge-guide">Save Guide</button>
+        </div>
+        <p class="muted small" data-team-challenge-guide-status aria-live="polite"></p>
+      </div>
+    `;
+    wrapper.addEventListener('keydown', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      if (!target.matches('[data-team-challenge-guide-text]')) return;
+      const isOneKey = event.key === '1' || event.code === 'Digit1' || event.code === 'Numpad1';
+      if (event.ctrlKey && event.altKey && isOneKey) {
+        event.preventDefault();
+        applyHeaderShortcutToTextarea(target);
+      }
+    });
+    wrapper.addEventListener('click', async (event) => {
+      const rawTarget = event.target;
+      const target = rawTarget instanceof Element
+        ? rawTarget
+        : (rawTarget instanceof Node ? rawTarget.parentElement : null);
+      if (!(target instanceof Element)) return;
+      if (target === wrapper || target.closest('[data-action="close-team-challenge-guide-modal"]')) {
+        closeTeamChallengeGuideModal();
+        return;
+      }
+      const saveButton = target.closest('[data-action="save-team-challenge-guide"]');
+      if (!(saveButton instanceof HTMLButtonElement)) return;
+      if (!teamChallengeGuideContext || teamChallengeGuideContext.saving) return;
+      const textarea = wrapper.querySelector('[data-team-challenge-guide-text]');
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+
+      const context = teamChallengeGuideContext;
+      context.saving = true;
+      saveButton.disabled = true;
+      setTeamChallengeGuideModalStatus('Saving...');
+      try {
+        const data = await postTaskAction('save_team_task_challenge_guide', {
+          id: context.taskId,
+          challenge_id: context.challengeId,
+          challenge_guide: String(textarea.value || '').replace(/\r\n?/g, '\n')
+        });
+        const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+        const keepPane = context.paneKey || '';
+        if (returnedTasks.length) {
+          renderTaskSubtabs(context.layout, returnedTasks, keepPane);
+          try {
+            window.TC_TASKS = returnedTasks;
+          } catch {}
+        }
+        const activePane = findPaneByKey(context.layout, keepPane);
+        if (activePane instanceof HTMLElement) {
+          activateTaskTopPane(activePane, 'challenge-storage');
+          setTeamChallengeListStatus(activePane, data.message || 'Challenge guide saved.');
+        }
+        closeTeamChallengeGuideModal();
+      } catch (error) {
+        setTeamChallengeGuideModalStatus(error?.message || 'Failed to save challenge guide.', true);
+      } finally {
+        if (teamChallengeGuideContext) {
+          teamChallengeGuideContext.saving = false;
+        }
+        saveButton.disabled = false;
+      }
+    });
+    const modalHost = document.querySelector('.tc-shell');
+    (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
+    teamChallengeGuideModalEl = wrapper;
+    return wrapper;
+  }
+
+  function openTeamChallengeGuideModal(layout, pane, challenge) {
+    if (!(layout instanceof HTMLElement) || !(pane instanceof HTMLElement) || !challenge) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const challengeId = String(challenge.id || '').trim();
+    if (!taskId || !challengeId) return;
+    const modal = ensureTeamChallengeGuideModal();
+    const titleEl = modal.querySelector('[data-team-challenge-guide-title]');
+    const textarea = modal.querySelector('[data-team-challenge-guide-text]');
+    if (!(titleEl instanceof HTMLElement) || !(textarea instanceof HTMLTextAreaElement)) return;
+    titleEl.textContent = `Guide - ${String(challenge.name || 'Challenge').trim() || 'Challenge'}`;
+    textarea.value = String(challenge.guide || '').replace(/\r\n?/g, '\n');
+    setTeamChallengeGuideModalStatus('', false);
+    teamChallengeGuideContext = {
+      layout,
+      paneKey: String(pane.dataset.pane || '').trim(),
+      taskId,
+      challengeId,
+      saving: false
+    };
+    modal.hidden = false;
+    textarea.focus();
   }
 
   function applyHeaderShortcutToTextarea(textarea) {
@@ -1074,6 +1408,10 @@
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    if (teamChallengeGuideModalEl instanceof HTMLElement && !teamChallengeGuideModalEl.hidden) {
+      closeTeamChallengeGuideModal();
+      return;
+    }
     if (describeArticleModalEl instanceof HTMLElement && !describeArticleModalEl.hidden) {
       closeDescribeArticleModal();
       return;
@@ -1174,14 +1512,32 @@
         scoreControls.afterEndtimeScoreInput.value = String(normalizeScoreValue(task?.afterEndtimeScore));
       }
     }
+    const teamSettingsControls = getTaskTeamSettingsControls(pane);
+    if (teamSettingsControls) {
+      const nextTeamMin = Math.max(1, normalizeScoreValue(task?.teamMin));
+      const nextTeamMax = Math.max(nextTeamMin, normalizeScoreValue(task?.teamMax));
+      teamSettingsControls.teamMinInput.value = String(nextTeamMin);
+      teamSettingsControls.teamMaxInput.value = String(nextTeamMax);
+      teamSettingsControls.teamAdditionalNoteInput.value = String(task?.teamAdditionalNote || '');
+      setTaskTeamSettingsSaveStatus(pane, '');
+    }
     const infoControls = getTaskInfoContentControls(pane);
     if (infoControls) {
       infoControls.titleInput.value = String(task?.infoTitle || '');
       infoControls.textInput.value = String(task?.infoText || '');
+      if (infoControls.guidePrefixInput instanceof HTMLTextAreaElement) {
+        infoControls.guidePrefixInput.value = String(task?.guidePrefix || '');
+      }
+      if (infoControls.guideSuffixInput instanceof HTMLTextAreaElement) {
+        infoControls.guideSuffixInput.value = String(task?.guideSuffix || '');
+      }
       setTaskInfoContentSaveStatus(pane, '');
     }
     if (normalizeTaskType(task?.taskType || pane.dataset.taskType || 'quiz') === 'describe_photo') {
       applyDescribePhotoTaskStateFromTask(pane, task);
+    }
+    if (isTeamTaskType(task?.taskType || pane.dataset.taskType || 'quiz')) {
+      applyTeamTaskChallengeStateFromTask(pane, task);
     }
     syncTaskPaneToggleState(pane);
     setTaskSaveStatus(pane, '');
@@ -1193,14 +1549,26 @@
     const isInfoTask = isInfoLikeTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
-    const typeLabel = taskTypeToken === 'describe_photo' ? 'Describe Photo Task' : (isInfoTask ? 'Info Task' : 'Quiz Task');
+    const isTeamTask = taskTypeToken === 'team_task';
+    const typeLabel = taskTypeToken === 'describe_photo'
+      ? 'Describe Photo Task'
+      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : 'Quiz Task'));
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
+    const guidePrefix = String(task.guidePrefix || '');
+    const guideSuffix = String(task.guideSuffix || '');
+    const teamMin = Math.max(1, normalizeScoreValue(task.teamMin ?? 1));
+    const teamMaxRaw = Math.max(1, normalizeScoreValue(task.teamMax ?? teamMin));
+    const teamMax = Math.max(teamMin, teamMaxRaw);
+    const teamAdditionalNote = String(task.teamAdditionalNote || '');
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
+    const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
     const infoTaskTopTabs = isDescribePhotoTask
       ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">Photo</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
-      : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>';
+      : (isTeamTask
+        ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">Challenge Storage</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">Team</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
+        : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>');
     const describePhotoSection = isDescribePhotoTask
       ? `
           <div class="tc-task-top-section" data-task-top-section="photo" hidden>
@@ -1242,6 +1610,83 @@
                 </table>
               </div>
               <p class="muted small" data-task-photo-list-status aria-live="polite"></p>
+            </div>
+          </div>
+        `
+      : '';
+    const teamChallengeSection = isTeamTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="challenge-storage" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Add Challenge</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field standard-width">
+                  <span>Name</span>
+                  <input type="text" data-team-challenge-name autocomplete="off" placeholder="Challenge name" />
+                </label>
+                <label class="field standard-width">
+                  <span>Quantity</span>
+                  <input type="number" min="1" step="1" value="1" data-team-challenge-quantity />
+                </label>
+                <div class="field full">
+                  <button type="button" class="btn primary standard-primary-button" data-action="add-team-challenge">Add</button>
+                </div>
+                <p class="muted small" data-team-challenge-add-status aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="section-header"><h3>Challenge List</h3></div>
+              <div class="table-wrapper tc-team-challenge-table-wrap">
+                <table class="tct-list-table tc-team-challenge-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Quantity</th>
+                      <th>Last</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody data-team-challenge-list-body>
+                    ${taskChallenges.length ? '' : '<tr><td colspan="4" class="muted">No challenges added yet.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted small" data-team-challenge-list-status aria-live="polite"></p>
+            </div>
+          </div>
+        `
+      : '';
+    const teamSettingsSection = isTeamTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="team" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Team Setting</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field standard-width">
+                  <span>Team Min</span>
+                  <input type="number" min="1" step="1" data-task-field="teamMin" value="${escapeHtml(String(teamMin))}" />
+                </label>
+                <label class="field standard-width">
+                  <span>Team Max</span>
+                  <input type="number" min="1" step="1" data-task-field="teamMax" value="${escapeHtml(String(teamMax))}" />
+                </label>
+                <div class="field full">
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-team-settings">Save</button>
+                </div>
+                <p class="muted small" data-task-team-save-status aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="section-header"><h3>Team Additional Note</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field full">
+                  <span>Team Additional Note</span>
+                  <textarea data-task-field="teamAdditionalNote" rows="8">${escapeHtml(teamAdditionalNote)}</textarea>
+                </label>
+                <div class="field full">
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-team-settings">Save</button>
+                </div>
+              </div>
             </div>
           </div>
         `
@@ -1357,8 +1802,28 @@
                 <p class="muted small" data-task-info-save-status aria-live="polite"></p>
               </div>
             </div>
+            ${isTeamTask ? `
+              <div class="card">
+                <div class="section-header"><h3>Guide Wrapper</h3></div>
+                <div class="form" style="gap:12px;">
+                  <label class="field full">
+                    <span>Guide Prefix</span>
+                    <textarea data-task-field="guidePrefix" rows="6">${escapeHtml(guidePrefix)}</textarea>
+                  </label>
+                  <label class="field full">
+                    <span>Guide Suffix</span>
+                    <textarea data-task-field="guideSuffix" rows="6">${escapeHtml(guideSuffix)}</textarea>
+                  </label>
+                  <div class="field full">
+                    <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
+                  </div>
+                </div>
+              </div>
+            ` : ''}
           </div>
           ${describePhotoSection}
+          ${teamChallengeSection}
+          ${teamSettingsSection}
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
               <div class="section-header"><h3>Invitees List Card</h3></div>
@@ -1548,7 +2013,15 @@
         setTaskScoreSaveStatus(pane, '');
         return;
       }
-      if (fieldName === 'infoTitle' || fieldName === 'infoText') {
+      if (fieldName === 'teamMin' || fieldName === 'teamMax') {
+        setTaskTeamSettingsSaveStatus(pane, '');
+        return;
+      }
+      if (fieldName === 'teamAdditionalNote') {
+        setTaskTeamSettingsSaveStatus(pane, '');
+        return;
+      }
+      if (fieldName === 'infoTitle' || fieldName === 'infoText' || fieldName === 'guidePrefix' || fieldName === 'guideSuffix') {
         setTaskInfoContentSaveStatus(pane, '');
       }
     };
@@ -1558,7 +2031,7 @@
     layout.addEventListener('keydown', (event) => {
       const target = event.target;
       if (!(target instanceof HTMLTextAreaElement)) return;
-      if (!target.matches('[data-task-field="infoText"]')) return;
+      if (!target.matches('[data-task-field="infoText"], [data-task-field="guidePrefix"], [data-task-field="guideSuffix"], [data-task-field="teamAdditionalNote"]')) return;
       const isOneKey = event.key === '1' || event.code === 'Digit1' || event.code === 'Numpad1';
       if (event.ctrlKey && event.altKey && isOneKey) {
         event.preventDefault();
@@ -1640,6 +2113,9 @@
         if (sectionKey === 'photo') {
           renderDescribePhotoUploadCard(pane);
           renderDescribePhotoList(pane);
+        }
+        if (sectionKey === 'challenge-storage') {
+          renderTeamChallengeList(pane);
         }
         return;
       }
@@ -1813,6 +2289,173 @@
         return;
       }
 
+      const addTeamChallengeButton = target.closest('[data-action="add-team-challenge"]');
+      if (addTeamChallengeButton instanceof HTMLButtonElement) {
+        const pane = addTeamChallengeButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const controls = getTeamChallengeControls(pane);
+        if (!taskId || !controls) return;
+        const challengeName = String(controls.nameInput.value || '').trim();
+        const quantity = Math.max(0, normalizeScoreValue(controls.quantityInput.value));
+        if (!challengeName) {
+          setTeamChallengeAddStatus(pane, 'Challenge name is required.', true);
+          controls.nameInput.focus();
+          return;
+        }
+        if (quantity < 1) {
+          setTeamChallengeAddStatus(pane, 'Challenge quantity must be at least 1.', true);
+          controls.quantityInput.focus();
+          return;
+        }
+
+        addTeamChallengeButton.disabled = true;
+        setTeamChallengeAddStatus(pane, 'Saving...');
+        try {
+          const data = await postTaskAction('add_team_task_challenge', {
+            id: taskId,
+            challenge_name: challengeName,
+            quantity: String(quantity)
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'challenge-storage');
+            setTeamChallengeAddStatus(activePane, data.message || 'Challenge added.');
+          }
+        } catch (error) {
+          setTeamChallengeAddStatus(pane, error?.message || 'Failed to add challenge.', true);
+        } finally {
+          addTeamChallengeButton.disabled = false;
+        }
+        return;
+      }
+
+      const openTeamChallengeGuideButton = target.closest('[data-action="open-team-challenge-guide"]');
+      if (openTeamChallengeGuideButton instanceof HTMLButtonElement) {
+        const pane = openTeamChallengeGuideButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const challengeId = String(openTeamChallengeGuideButton.getAttribute('data-challenge-id') || '').trim();
+        if (!taskId || !challengeId) return;
+        const challenge = getTeamChallengeById(taskId, challengeId);
+        if (!challenge) {
+          setTeamChallengeListStatus(pane, 'Challenge not found.', true);
+          return;
+        }
+        openTeamChallengeGuideModal(layout, pane, challenge);
+        return;
+      }
+
+      const saveTeamChallengeButton = target.closest('[data-action="save-team-challenge"]');
+      if (saveTeamChallengeButton instanceof HTMLButtonElement) {
+        const pane = saveTeamChallengeButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const challengeId = String(saveTeamChallengeButton.getAttribute('data-challenge-id') || '').trim();
+        const row = saveTeamChallengeButton.closest('tr[data-team-challenge-row]');
+        const nameInput = row?.querySelector('[data-team-challenge-row-name]');
+        const quantityInput = row?.querySelector('[data-team-challenge-row-quantity]');
+        const lastInput = row?.querySelector('[data-team-challenge-row-last]');
+        if (
+          !taskId ||
+          !challengeId ||
+          !(nameInput instanceof HTMLInputElement) ||
+          !(quantityInput instanceof HTMLInputElement) ||
+          !(lastInput instanceof HTMLInputElement)
+        ) {
+          return;
+        }
+        const challengeName = String(nameInput.value || '').trim();
+        const quantity = Math.max(0, normalizeScoreValue(quantityInput.value));
+        let last = Math.max(0, normalizeScoreValue(lastInput.value));
+        if (!challengeName) {
+          setTeamChallengeListStatus(pane, 'Challenge name is required.', true);
+          nameInput.focus();
+          return;
+        }
+        if (quantity === 0) {
+          last = 0;
+        } else if (last > quantity) {
+          last = quantity;
+          lastInput.value = String(last);
+        }
+
+        saveTeamChallengeButton.disabled = true;
+        setTeamChallengeListStatus(pane, 'Saving...');
+        try {
+          const data = await postTaskAction('save_team_task_challenge', {
+            id: taskId,
+            challenge_id: challengeId,
+            challenge_name: challengeName,
+            quantity: String(quantity),
+            last: String(last)
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'challenge-storage');
+            setTeamChallengeListStatus(activePane, data.message || 'Challenge updated.');
+          }
+        } catch (error) {
+          setTeamChallengeListStatus(pane, error?.message || 'Failed to update challenge.', true);
+        } finally {
+          saveTeamChallengeButton.disabled = false;
+        }
+        return;
+      }
+
+      const removeTeamChallengeButton = target.closest('[data-action="remove-team-challenge"]');
+      if (removeTeamChallengeButton instanceof HTMLButtonElement) {
+        const pane = removeTeamChallengeButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const challengeId = String(removeTeamChallengeButton.getAttribute('data-challenge-id') || '').trim();
+        if (!taskId || !challengeId) return;
+        if (!window.confirm('Remove this challenge?')) return;
+
+        removeTeamChallengeButton.disabled = true;
+        setTeamChallengeListStatus(pane, 'Removing...');
+        try {
+          const data = await postTaskAction('remove_team_task_challenge', {
+            id: taskId,
+            challenge_id: challengeId
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'challenge-storage');
+            setTeamChallengeListStatus(activePane, data.message || 'Challenge removed.');
+          }
+        } catch (error) {
+          setTeamChallengeListStatus(pane, error?.message || 'Failed to remove challenge.', true);
+        } finally {
+          removeTeamChallengeButton.disabled = false;
+        }
+        return;
+      }
+
       const saveInfoButton = target.closest('[data-action="save-task-information"]');
       if (saveInfoButton instanceof HTMLButtonElement) {
         const pane = saveInfoButton.closest('.sub-pane[data-task-pane="1"]');
@@ -1958,6 +2601,65 @@
             refreshedButton.disabled = false;
           } else {
             saveButton.disabled = false;
+          }
+        }
+        return;
+      }
+
+      const teamSaveButton = target.closest('[data-action="save-team-settings"]');
+      if (teamSaveButton instanceof HTMLButtonElement) {
+        const pane = teamSaveButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        if (!taskId) return;
+
+        const teamSettings = collectTaskTeamSettingsFromPane(pane);
+        if (!teamSettings) return;
+
+        const teamMinValue = normalizeScoreValue(teamSettings.team_min);
+        const teamMaxValue = normalizeScoreValue(teamSettings.team_max);
+        if (teamMinValue < 1 || teamMaxValue < 1) {
+          setTaskTeamSettingsSaveStatus(pane, 'Team Min and Team Max must be at least 1.', true);
+          return;
+        }
+        if (teamMaxValue < teamMinValue) {
+          setTaskTeamSettingsSaveStatus(pane, 'Team Max must be equal to or greater than Team Min.', true);
+          return;
+        }
+
+        teamSaveButton.disabled = true;
+        setTaskTeamSettingsSaveStatus(pane, 'Saving...');
+        try {
+          const data = await postTaskAction('save_team_task_settings', {
+            id: taskId,
+            ...teamSettings
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'team');
+            setTaskTeamSettingsSaveStatus(activePane, data.message || 'Team settings saved.');
+          }
+        } catch (error) {
+          setTaskTeamSettingsSaveStatus(pane, error?.message || 'Failed to save team settings.', true);
+        } finally {
+          const refreshedPane = pane.dataset.pane
+            ? findPaneByKey(layout, pane.dataset.pane)
+            : null;
+          const refreshedButton = refreshedPane instanceof HTMLElement
+            ? refreshedPane.querySelector('[data-action="save-team-settings"]')
+            : null;
+          if (refreshedButton instanceof HTMLButtonElement) {
+            refreshedButton.disabled = false;
+          } else {
+            teamSaveButton.disabled = false;
           }
         }
         return;

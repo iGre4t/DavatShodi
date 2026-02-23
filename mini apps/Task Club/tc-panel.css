@@ -629,8 +629,41 @@
   min-width: 88px;
 }
 
+.tc-shell .tc-team-challenge-table-wrap {
+  max-height: 430px;
+  overflow: auto;
+}
+
+.tc-shell .tc-team-challenge-table td,
+.tc-shell .tc-team-challenge-table th {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tc-shell .tc-team-challenge-name-input {
+  width: min(280px, 100%);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #ffffff;
+}
+
+.tc-shell .tc-team-challenge-num-input {
+  width: 96px;
+  min-width: 96px;
+}
+
+.tc-shell .tc-team-challenge-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
 .tc-shell .tc-describe-results-modal,
-.tc-shell .tc-describe-article-modal {
+.tc-shell .tc-describe-article-modal,
+.tc-shell .tc-team-challenge-guide-modal {
   position: fixed;
   inset: 0;
   z-index: 1200;
@@ -642,12 +675,14 @@
 }
 
 .tc-shell .tc-describe-results-modal[hidden],
-.tc-shell .tc-describe-article-modal[hidden] {
+.tc-shell .tc-describe-article-modal[hidden],
+.tc-shell .tc-team-challenge-guide-modal[hidden] {
   display: none !important;
 }
 
 .tc-shell .tc-describe-results-dialog,
-.tc-shell .tc-describe-article-dialog {
+.tc-shell .tc-describe-article-dialog,
+.tc-shell .tc-team-challenge-guide-dialog {
   width: min(960px, 100%);
   max-height: min(88vh, 860px);
   overflow: auto;
@@ -659,7 +694,8 @@
 }
 
 .tc-shell .tc-describe-results-head,
-.tc-shell .tc-describe-article-head {
+.tc-shell .tc-describe-article-head,
+.tc-shell .tc-team-challenge-guide-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -668,8 +704,20 @@
 }
 
 .tc-shell .tc-describe-results-head h3,
-.tc-shell .tc-describe-article-head h3 {
+.tc-shell .tc-describe-article-head h3,
+.tc-shell .tc-team-challenge-guide-head h3 {
   margin: 0;
+}
+
+.tc-shell .tc-team-challenge-guide-textarea,
+.tc-shell textarea[data-team-challenge-guide-text] {
+  min-height: 280px;
+  resize: vertical;
+}
+
+.tc-shell .tc-team-challenge-guide-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .tc-shell .tc-describe-results-grid {

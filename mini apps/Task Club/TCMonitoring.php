@@ -161,6 +161,9 @@ function tcMonitoringNormalizeTaskType(string $value): string
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
+  if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
+    return 'team_task';
+  }
   if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
     return 'describe_photo';
   }
@@ -524,7 +527,7 @@ function tcMonitoringBuildStats(string $baseDir): array
       $taskType = (string)($taskStat['taskType'] ?? 'quiz');
       $completed = false;
       $awardedScore = null;
-      if ($taskType === 'info') {
+      if ($taskType === 'info' || $taskType === 'team_task') {
         if (array_key_exists($taskId, $infoTasksMap)) {
           $completed = true;
           $awardedScore = (float)$infoTasksMap[$taskId];

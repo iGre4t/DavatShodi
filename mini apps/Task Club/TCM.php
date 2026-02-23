@@ -809,6 +809,9 @@ function normalizeTaskTypeValue($value): string
   if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
     return 'info';
   }
+  if ($token === 'team_task' || $token === 'team-task' || $token === 'team task') {
+    return 'team_task';
+  }
   if ($token === 'describe_photo' || $token === 'describe-photo' || $token === 'describe photo' || $token === 'describe-photo-task' || $token === 'describe photo task') {
     return 'describe_photo';
   }
@@ -1770,7 +1773,7 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     $taskScoreMap = parseTaskScoreMap((string)($row[$taskScoreMapIndex] ?? ''));
   }
   $taskScore = 0;
-  if ($taskType === 'info' || $taskType === 'describe_photo') {
+  if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
     $infoMap = $infoTasksIndex >= 0
       ? parseInfoTasksScoreMap((string)($row[$infoTasksIndex] ?? ''))
       : [];
@@ -1780,7 +1783,7 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     }
   }
   if ($isCompleted) {
-    if ($taskType === 'info' || $taskType === 'describe_photo') {
+    if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $taskScore = max(0, $taskScore);
     } elseif (isset($taskScoreMap[$taskId])) {
       $taskScore = max(0, (int)$taskScoreMap[$taskId]);
@@ -1939,6 +1942,37 @@ function normalizeHeaderName(string $value): string
   $value = trim(mb_strtolower($value, 'UTF-8'));
   $value = preg_replace('/\s+/', ' ', $value);
   return $value ?? '';
+}
+
+function normalizeUnicodeDigitsToAscii(string $value): string
+{
+  return strtr($value, [
+    '۰' => '0',
+    '۱' => '1',
+    '۲' => '2',
+    '۳' => '3',
+    '۴' => '4',
+    '۵' => '5',
+    '۶' => '6',
+    '۷' => '7',
+    '۸' => '8',
+    '۹' => '9',
+    '٠' => '0',
+    '١' => '1',
+    '٢' => '2',
+    '٣' => '3',
+    '٤' => '4',
+    '٥' => '5',
+    '٦' => '6',
+    '٧' => '7',
+    '٨' => '8',
+    '٩' => '9'
+  ]);
+}
+
+function normalizeCredentialToken(string $value): string
+{
+  return trim(normalizeUnicodeDigitsToAscii($value));
 }
 
 function findHeaderIndex(array $header, string $needle): int
@@ -2144,10 +2178,17 @@ function findInviteeRowIndex(array $rows, int $workIdIndex, string $workId): int
   if ($workIdIndex < 0) {
     return -1;
   }
+  $normalizedTarget = normalizeCredentialToken($workId);
+  if ($normalizedTarget === '') {
+    return -1;
+  }
   for ($i = 1; $i < count($rows); $i += 1) {
     $row = $rows[$i] ?? [];
     $value = trim((string)($row[$workIdIndex] ?? ''));
-    if ($value !== '' && $value === $workId) {
+    if ($value === '') {
+      continue;
+    }
+    if ($value === $workId || normalizeCredentialToken($value) === $normalizedTarget) {
       return $i;
     }
   }
@@ -2316,8 +2357,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $maxAttemptsPerIp = 30;
     $windowSeconds = 10 * 60;
     $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
-    $username = trim((string)($payload['username'] ?? ''));
-    $password = trim((string)($payload['password'] ?? ''));
+    $username = normalizeCredentialToken((string)($payload['username'] ?? ''));
+    $password = normalizeCredentialToken((string)($payload['password'] ?? ''));
     $attemptKey = $ip . '|' . $username;
     $ipAttemptKey = '__ip__' . $ip;
     $attempts = readLoginAttempts($loginAttemptsPath);
@@ -2380,7 +2421,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
       exit;
     }
-    $rowPassword = trim((string)($rows[$rowIndex][$passwordIndex] ?? ''));
+    $rowPassword = normalizeCredentialToken((string)($rows[$rowIndex][$passwordIndex] ?? ''));
     if ($rowPassword === '' || $rowPassword !== $password) {
       $recordFail();
       echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
@@ -2419,8 +2460,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($attemptsUpdated) {
       writeLoginAttempts($loginAttemptsPath, $attempts);
     }
+    $resolvedWorkId = trim((string)($rows[$rowIndex][$workIdIndex] ?? ''));
+    if ($resolvedWorkId === '') {
+      $resolvedWorkId = $username;
+    }
     $_SESSION['tc_authed'] = true;
-    $_SESSION['tc_work_id'] = $username;
+    $_SESSION['tc_work_id'] = $resolvedWorkId;
     $_SESSION['tc_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
     $prizeIndex = $columns['prize won'] ?? -1;
     $prizeWonAtIndex = $columns['prize won at'] ?? -1;
@@ -2429,7 +2474,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $questionCodes = array_values(array_map(static fn($item) => (string)($item['code'] ?? ''), $questions));
     $quizState = ensureUserQuestionProgress($rows, $rowIndex, $columns, $questionCodes, (bool)$tcqSettings['randomOrder']);
     $prizeWon = $prizeIndex >= 0 ? trim((string)($rows[$rowIndex][$prizeIndex] ?? '')) : '';
-    $fullName = resolveInviteeFullName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $username);
+    $fullName = resolveInviteeFullName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $resolvedWorkId);
     $prizeWonAt = null;
     if ($prizeWonAtIndex >= 0) {
       $prizeWonAt = parseEpochValue($rows[$rowIndex][$prizeWonAtIndex] ?? null);
@@ -6145,6 +6190,9 @@ $sessionPayload = [
         } catch {}
         window.location.reload();
       };
+      const normalizeLoginDigits = (value) => String(value ?? '')
+        .replace(/[۰-۹]/g, (char) => String(char.charCodeAt(0) - 1728))
+        .replace(/[٠-٩]/g, (char) => String(char.charCodeAt(0) - 1584));
       if (!sessionInfo?.authed) {
         const loginBtn = document.querySelector('.login-btn');
         const loginMsg = document.getElementById('tc-login-msg');
@@ -6156,8 +6204,8 @@ $sessionPayload = [
             if (loginBtn) loginBtn.disabled = true;
             if (loginMsg) loginMsg.textContent = '';
             try {
-              const username = String(userInput?.value ?? '').trim();
-              const password = String(passInput?.value ?? '').trim();
+              const username = normalizeLoginDigits(String(userInput?.value ?? '')).trim();
+              const password = normalizeLoginDigits(String(passInput?.value ?? '')).trim();
               const response = await fetch(window.location.href, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -6490,7 +6538,7 @@ $sessionPayload = [
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
           if (completed) return 'تکمیل شده';
           if (status === 'active') {
-            return (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
+            return (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
           }
           if (status === 'upcoming') return 'به‌زودی';
           if (status === 'ended') {
@@ -6657,7 +6705,7 @@ $sessionPayload = [
           const taskScore = Number.parseInt(button.dataset.taskUserScore || '0', 10);
           const taskType = String(button.dataset.taskType || 'quiz').trim().toLowerCase() || 'quiz';
           const describeSubmitted = String(button.dataset.taskDescribeSubmitted || '') === '1';
-          const infoEndedNoScore = (taskType === 'info' || taskType === 'describe_photo') && status === 'ended' && !completed;
+          const infoEndedNoScore = (taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') && status === 'ended' && !completed;
           const describeEditableDone = taskType === 'describe_photo' && status === 'active' && describeSubmitted && !completed;
 
           if (completed) {
@@ -6681,7 +6729,7 @@ $sessionPayload = [
           const isUpcoming = status === 'upcoming';
           const scoreNow = taskAvailableScoreNow(button, status, taskType);
           const isGoldenAppearance = status === 'active'
-            && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo')
+            && (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')
             && !describeEditableDone;
           button.disabled = !available;
           button.classList.toggle('is-disabled', !available && !isUpcoming);
@@ -6717,7 +6765,7 @@ $sessionPayload = [
               } else {
                 setMetaWithScoreBlock(metaEl, 'تکمیل شده | تا پایان مهلت ویرایش', button, taskType, scoreNow);
               }
-            } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'describe_photo')) {
+            } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
@@ -8236,7 +8284,7 @@ $sessionPayload = [
             }
 
             const fetchedTaskType = String(payload?.task?.taskType || button?.dataset?.taskType || 'quiz').trim().toLowerCase();
-            if (fetchedTaskType === 'info' || fetchedTaskType === 'describe_photo') {
+            if (fetchedTaskType === 'info' || fetchedTaskType === 'team_task' || fetchedTaskType === 'describe_photo') {
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
               const describePhotos = Array.isArray(payload?.task?.describePhotos) ? payload.task.describePhotos : [];
