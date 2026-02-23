@@ -6846,6 +6846,12 @@ $sessionPayload = [
         font-size: 0.78rem;
       }
 
+      .team-list-item-hint {
+        display: block;
+        color: #7085ab;
+        font-size: 0.72rem;
+      }
+
       .team-list-item-meta-row {
         display: flex;
         flex-wrap: wrap;
@@ -6869,12 +6875,6 @@ $sessionPayload = [
         border-color: #cddcf7;
         background: #f2f7ff;
         color: #4b6290;
-      }
-
-      .team-list-item-members {
-        display: block;
-        color: #5f749b;
-        font-size: 0.77rem;
       }
 
       .team-list-item-invited-tag {
@@ -6927,6 +6927,11 @@ $sessionPayload = [
       .team-member-status {
         color: #5d739a;
         font-size: 0.78rem;
+      }
+
+      .team-member-workid {
+        color: #7085ab;
+        font-size: 0.72rem;
       }
 
       .team-member-remove {
@@ -6983,6 +6988,11 @@ $sessionPayload = [
         display: inline-flex;
         align-items: center;
         gap: 8px;
+      }
+
+      .team-invite-result-text {
+        display: grid;
+        gap: 2px;
       }
 
       .team-list-item-title {
@@ -9292,7 +9302,7 @@ $sessionPayload = [
           if (teamChallengeContentEl) teamChallengeContentEl.innerHTML = '';
           if (teamInviteQueryInputEl instanceof HTMLInputElement) teamInviteQueryInputEl.value = '';
           if (teamInviteResultEl) teamInviteResultEl.classList.add('hidden');
-          if (teamInviteResultNameEl) teamInviteResultNameEl.textContent = '-';
+          if (teamInviteResultNameEl) teamInviteResultNameEl.innerHTML = '<span>-</span>';
           if (teamSearchLeaderInputEl instanceof HTMLInputElement) teamSearchLeaderInputEl.value = '';
           if (teamSettingsNameInputEl instanceof HTMLInputElement) teamSettingsNameInputEl.value = '';
           teamSettingsJoinInputs.forEach((input) => {
@@ -9721,20 +9731,27 @@ $sessionPayload = [
         };
 
         const resolveInviteeDisplayName = (entry, fallback = 'کاربر') => {
+          const workId = String(entry?.workId || '').trim();
           const fullName = String(entry?.fullName || '').trim();
-          if (fullName !== '') return fullName;
           const firstName = String(entry?.firstName || '').trim();
           const lastName = String(entry?.lastName || '').trim();
           const composed = `${firstName} ${lastName}`.trim();
           if (composed !== '') return composed;
+          if (fullName !== '' && fullName !== workId) return fullName;
           const fallbackText = String(fallback || '').trim();
           return fallbackText !== '' ? fallbackText : 'کاربر';
         };
 
-        const resolveTeamLeaderName = (team) => {
+        const resolveInviteeDisplayMeta = (entry, fallback = 'کاربر') => {
+          const workId = String(entry?.workId || '').trim();
+          const name = resolveInviteeDisplayName(entry, fallback);
+          return { name, workId };
+        };
+
+        const resolveTeamLeaderMeta = (team) => {
           const members = Array.isArray(team?.members) ? team.members : [];
           const leader = members.find((member) => String(member?.status || '').trim() === 'leader');
-          return resolveInviteeDisplayName(leader, 'سرگروه');
+          return resolveInviteeDisplayMeta(leader || {}, 'سرگروه');
         };
 
         const TEAM_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a2.5 2.5 0 0 1 2.5-2.5h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm4.1 2.8a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm7.8 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4ZM12 11.9c-2.8 0-5 1.4-5 3.1 0 .4.3.7.7.7h8.6c.4 0 .7-.3.7-.7 0-1.7-2.2-3.1-5-3.1Z"/></svg>';
@@ -9758,17 +9775,11 @@ $sessionPayload = [
             const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
             const joinTypeText = escapeTaskMetaHtml(formatTeamJoinTypeText(team?.joinType));
-            const leaderName = escapeTaskMetaHtml(resolveTeamLeaderName(team));
-            const members = Array.isArray(team?.members) ? team.members : [];
-            const memberNames = members
-              .map((item) => resolveInviteeDisplayName(item, ''))
-              .map((name) => String(name || '').trim())
-              .filter((name) => name !== '');
-            const previewNames = memberNames.slice(0, 3).map((name) => escapeTaskMetaHtml(name)).join('، ');
-            const remainingCount = Math.max(0, memberNames.length - 3);
-            const membersText = previewNames !== ''
-              ? `اعضا: ${previewNames}${remainingCount > 0 ? ` +${remainingCount}` : ''}`
-              : 'اعضا: هنوز مشخص نیست';
+            const leaderMeta = resolveTeamLeaderMeta(team);
+            const leaderName = escapeTaskMetaHtml(leaderMeta.name);
+            const leaderWorkIdHint = leaderMeta.workId !== ''
+              ? `<span class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(leaderMeta.workId)}</span>`
+              : '';
             const invitedTag = variant === 'invited'
               ? '<span class="team-list-item-invited-tag">دعوت برای شما</span>'
               : '';
@@ -9776,11 +9787,11 @@ $sessionPayload = [
               ${invitedTag}
               <span class="team-entity-title">${renderEntityIcon('team')}<strong>${teamName}</strong></span>
               <span class="team-list-item-leader">سرگروه: ${leaderName}</span>
+              ${leaderWorkIdHint}
               <span class="team-list-item-meta-row">
                 <span class="team-list-item-chip">${memberCount}/${maxMembers} نفر</span>
                 <span class="team-list-item-chip team-list-item-chip--join">${joinTypeText}</span>
               </span>
-              <span class="team-list-item-members">${membersText}</span>
             </button>`;
           }).join('');
         };
@@ -9797,37 +9808,46 @@ $sessionPayload = [
           const invites = Array.isArray(team?.invites) ? team.invites : [];
           const requests = Array.isArray(team?.requests) ? team.requests : [];
           const memberItems = members.map((item) => {
-            const workId = String(item?.workId || '').trim();
-            const name = resolveInviteeDisplayName(item, 'کاربر');
+            const meta = resolveInviteeDisplayMeta(item, 'کاربر');
+            const workId = meta.workId;
+            const name = meta.name;
             const statusText = String(item?.status || '') === 'leader' ? 'سرگروه' : 'عضو تیم';
             const canRemove = isLeader && String(item?.status || '') !== 'leader';
+            const workIdHint = workId !== '' ? `<div class="team-member-workid">شناسه: ${escapeTaskMetaHtml(workId)}</div>` : '';
             return `<div class="team-member-chip">
               <div class="team-member-text">
                 <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">${escapeTaskMetaHtml(statusText)}</div>
+                ${workIdHint}
               </div>
               ${canRemove ? `<button class="team-member-remove" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="member">✕</button>` : ''}
             </div>`;
           });
           const inviteItems = invites.map((item) => {
-            const workId = String(item?.workId || '').trim();
-            const name = resolveInviteeDisplayName(item, 'کاربر');
+            const meta = resolveInviteeDisplayMeta(item, 'کاربر');
+            const workId = meta.workId;
+            const name = meta.name;
+            const workIdHint = workId !== '' ? `<div class="team-member-workid">شناسه: ${escapeTaskMetaHtml(workId)}</div>` : '';
             return `<div class="team-member-chip">
               <div class="team-member-text">
                 <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">دعوت شده</div>
+                ${workIdHint}
               </div>
               ${isLeader ? `<button class="team-member-remove" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="invite">✕</button>` : ''}
             </div>`;
           });
           const requestItems = requests.map((item) => {
-            const workId = String(item?.workId || '').trim();
-            const name = resolveInviteeDisplayName(item, 'کاربر');
+            const meta = resolveInviteeDisplayMeta(item, 'کاربر');
+            const workId = meta.workId;
+            const name = meta.name;
+            const workIdHint = workId !== '' ? `<div class="team-member-workid">شناسه: ${escapeTaskMetaHtml(workId)}</div>` : '';
             if (!isLeader) {
               return `<div class="team-member-chip">
                 <div class="team-member-text">
                   <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                   <div class="team-member-status">درخواست عضویت</div>
+                  ${workIdHint}
                 </div>
               </div>`;
             }
@@ -9835,6 +9855,7 @@ $sessionPayload = [
               <div class="team-member-text">
                 <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">درخواست عضویت</div>
+                ${workIdHint}
               </div>
               <div>
                 <button class="team-member-remove" type="button" data-team-review-work-id="${escapeTaskMetaHtml(workId)}" data-team-review-decision="accept">✓</button>
@@ -9924,12 +9945,17 @@ $sessionPayload = [
             const memberCount = Math.max(0, Number.parseInt(teamTaskPreviewTeam?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(teamTaskPreviewTeam?.maxMembers ?? 1, 10) || 1);
             const joinTypeText = formatTeamJoinTypeText(teamTaskPreviewTeam?.joinType);
-            const leaderName = resolveTeamLeaderName(teamTaskPreviewTeam);
+            const leaderMeta = resolveTeamLeaderMeta(teamTaskPreviewTeam);
+            const leaderName = leaderMeta.name;
+            const leaderWorkIdBadge = leaderMeta.workId !== ''
+              ? `<span class="team-meta-badge">${escapeTaskMetaHtml(`شناسه سرگروه: ${leaderMeta.workId}`)}</span>`
+              : '';
             teamPreviewMetaEl.innerHTML = [
               `<span class="team-meta-badge">${escapeTaskMetaHtml(`${memberCount}/${maxMembers} نفر`)}</span>`,
               `<span class="team-meta-badge">${escapeTaskMetaHtml(joinTypeText)}</span>`,
-              `<span class="team-meta-badge">${escapeTaskMetaHtml(`سرگروه: ${leaderName}`)}</span>`
-            ].join('');
+              `<span class="team-meta-badge">${escapeTaskMetaHtml(`سرگروه: ${leaderName}`)}</span>`,
+              leaderWorkIdBadge
+            ].filter((part) => part !== '').join('');
           }
           if (teamPreviewMembersEl) {
             const members = Array.isArray(teamTaskPreviewTeam?.members) ? teamTaskPreviewTeam.members : [];
@@ -9937,8 +9963,9 @@ $sessionPayload = [
               teamPreviewMembersEl.innerHTML = '<div class="team-list-item"><div class="team-list-item-meta">عضوی ثبت نشده است.</div></div>';
             } else {
               teamPreviewMembersEl.innerHTML = members.map((item) => {
-                const name = resolveInviteeDisplayName(item, 'کاربر');
-                return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('user')}<span>${escapeTaskMetaHtml(name)}</span></div></div>`;
+                const meta = resolveInviteeDisplayMeta(item, 'کاربر');
+                const workIdHint = meta.workId !== '' ? `<div class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(meta.workId)}</div>` : '';
+                return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('user')}<span>${escapeTaskMetaHtml(meta.name)}</span></div>${workIdHint}</div>`;
               }).join('');
             }
           }
@@ -11361,8 +11388,9 @@ $sessionPayload = [
                 }
                 teamTaskInviteCandidate = invitee;
                 if (teamInviteResultNameEl) {
-                  const inviteeName = resolveInviteeDisplayName(invitee, 'کاربر');
-                  teamInviteResultNameEl.innerHTML = `${renderEntityIcon('user')}<span>${escapeTaskMetaHtml(inviteeName)}</span>`;
+                  const inviteeMeta = resolveInviteeDisplayMeta(invitee, 'کاربر');
+                  const workIdHint = inviteeMeta.workId !== '' ? `<small class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(inviteeMeta.workId)}</small>` : '';
+                  teamInviteResultNameEl.innerHTML = `${renderEntityIcon('user')}<span class="team-invite-result-text"><span>${escapeTaskMetaHtml(inviteeMeta.name)}</span>${workIdHint}</span>`;
                 }
                 if (teamInviteResultEl) {
                   teamInviteResultEl.classList.remove('hidden');

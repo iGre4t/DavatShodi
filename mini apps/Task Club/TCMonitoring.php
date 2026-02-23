@@ -152,6 +152,92 @@ function tcMonitoringParseTaskScoreMap(string $value): array
   return $map;
 }
 
+function tcMonitoringParseDescribePhotoPicksMap(string $value): array
+{
+  $items = tcMonitoringSplitTokens($value);
+  $map = [];
+  foreach ($items as $item) {
+    $parts = explode('::', $item, 3);
+    $taskId = trim((string)($parts[0] ?? ''));
+    $photoId = trim((string)($parts[1] ?? ''));
+    $fileName = basename(trim((string)($parts[2] ?? '')));
+    if ($taskId === '' || $photoId === '' || $fileName === '') {
+      continue;
+    }
+    if (!isset($map[$taskId]) || !is_array($map[$taskId])) {
+      $map[$taskId] = [];
+    }
+    $map[$taskId][$photoId] = $fileName;
+  }
+  return $map;
+}
+
+function tcMonitoringCountWords(string $text): int
+{
+  $trimmed = trim($text);
+  if ($trimmed === '') {
+    return 0;
+  }
+  $matched = preg_match_all('/\S+/u', $trimmed, $parts);
+  if (!is_int($matched) || $matched <= 0) {
+    return 0;
+  }
+  return $matched;
+}
+
+function tcMonitoringHasDescribePhotoSubmissionForTask(array $user, string $taskId, string $tagCode, string $tasksDir): bool
+{
+  $normalizedTaskId = trim($taskId);
+  if ($normalizedTaskId === '') {
+    return false;
+  }
+  $picksMap = is_array($user['describePhotoPicksMap'] ?? null) ? $user['describePhotoPicksMap'] : [];
+  $taskPicks = is_array($picksMap[$normalizedTaskId] ?? null) ? $picksMap[$normalizedTaskId] : [];
+  if (!$taskPicks) {
+    return false;
+  }
+
+  $normalizedTagCode = strtoupper(trim($tagCode));
+  $normalizedTagCode = preg_replace('/[^A-Z0-9_-]+/', '', $normalizedTagCode);
+  if (!is_string($normalizedTagCode) || $normalizedTagCode === '') {
+    return false;
+  }
+
+  $articlesDir = $tasksDir
+    . DIRECTORY_SEPARATOR
+    . $normalizedTagCode
+    . DIRECTORY_SEPARATOR
+    . 'photos'
+    . DIRECTORY_SEPARATOR
+    . 'articles';
+  if (!is_dir($articlesDir)) {
+    return false;
+  }
+
+  static $submissionCache = [];
+  foreach ($taskPicks as $fileNameRaw) {
+    $fileName = basename(trim((string)$fileNameRaw));
+    if ($fileName === '') {
+      continue;
+    }
+    $filePath = $articlesDir . DIRECTORY_SEPARATOR . $fileName;
+    if (!is_file($filePath)) {
+      continue;
+    }
+    if (!array_key_exists($filePath, $submissionCache)) {
+      $content = file_get_contents($filePath);
+      if (!is_string($content)) {
+        $content = '';
+      }
+      $submissionCache[$filePath] = tcMonitoringCountWords($content) > 0;
+    }
+    if ($submissionCache[$filePath]) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function tcMonitoringNormalizeTaskType(string $value): string
 {
   $token = strtolower(trim($value));
@@ -363,6 +449,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
   $taskScoreMapIndex = tcMonitoringFindHeaderIndex($header, ['task score map']);
   $infoTasksIndex = tcMonitoringFindHeaderIndex($header, ['info tasks']);
   $describeTasksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo task']);
+  $describePicksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo picks']);
   $cardFlipsIndex = tcMonitoringFindHeaderIndex($header, ['card flips count']);
   $prizeWonIndex = tcMonitoringFindHeaderIndex($header, ['prize won']);
   $outOfValueRewardsIndex = tcMonitoringFindHeaderIndex($header, ['out of value rewards']);
@@ -408,6 +495,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
     $taskScoreMap = tcMonitoringParseTaskScoreMap(tcMonitoringCell($row, $taskScoreMapIndex));
     $infoTasksMap = tcMonitoringParseTaskScoreMap(tcMonitoringCell($row, $infoTasksIndex));
     $describeTasksMap = tcMonitoringParseTaskScoreMap(tcMonitoringCell($row, $describeTasksIndex));
+    $describePhotoPicksMap = tcMonitoringParseDescribePhotoPicksMap(tcMonitoringCell($row, $describePicksIndex));
 
     $allCompletedLookup = [];
     foreach ($completedTaskIds as $taskId) {
@@ -441,6 +529,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
       'taskScoreMap' => $taskScoreMap,
       'infoTasksMap' => $infoTasksMap,
       'describeTasksMap' => $describeTasksMap,
+      'describePhotoPicksMap' => $describePhotoPicksMap,
       'completedTaskCount' => $completedTaskCount,
       'cardFlips' => $cardFlips,
       'prizeWonCount' => count($prizeWonList),
@@ -533,8 +622,16 @@ function tcMonitoringBuildStats(string $baseDir): array
           $awardedScore = (float)$infoTasksMap[$taskId];
         }
       } elseif ($taskType === 'describe_photo') {
-        if (array_key_exists($taskId, $describeTasksMap)) {
+        $hasDescribeSubmission = tcMonitoringHasDescribePhotoSubmissionForTask(
+          $user,
+          $taskId,
+          (string)($taskStat['tagCode'] ?? ''),
+          $tasksDir
+        );
+        if ($hasDescribeSubmission || array_key_exists($taskId, $describeTasksMap)) {
           $completed = true;
+        }
+        if (array_key_exists($taskId, $describeTasksMap)) {
           $awardedScore = (float)$describeTasksMap[$taskId];
         }
       } else {
