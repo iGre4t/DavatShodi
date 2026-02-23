@@ -4,6 +4,9 @@ $cspNonce = base64_encode(random_bytes(16));
 header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$cspNonce}'; style-src 'self' 'nonce-{$cspNonce}'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: same-origin");
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 if (empty($_SESSION['tc_csrf'])) {
   $_SESSION['tc_csrf'] = bin2hex(random_bytes(16));
 }
@@ -2345,8 +2348,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   $payload = json_decode($rawInput ?: '', true);
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
   $csrfToken = is_array($payload) ? (string)($payload['csrf'] ?? '') : '';
-  if ($csrfToken === '' || !hash_equals((string)($_SESSION['tc_csrf'] ?? ''), $csrfToken)) {
-    echo json_encode(['status' => 'error', 'message' => 'درخواست نامعتبر است.']);
+  $sessionCsrf = (string)($_SESSION['tc_csrf'] ?? '');
+  if ($sessionCsrf === '') {
+    $sessionCsrf = bin2hex(random_bytes(16));
+    $_SESSION['tc_csrf'] = $sessionCsrf;
+  }
+  if ($csrfToken === '' || $sessionCsrf === '' || !hash_equals($sessionCsrf, $csrfToken)) {
+    echo json_encode([
+      'status' => 'error',
+      'code' => 'csrf_mismatch',
+      'message' => 'نشست شما به‌روز نبود. لطفا دوباره تلاش کنید.',
+      'csrf' => $sessionCsrf
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -6071,7 +6084,13 @@ $sessionPayload = [
       bootReady();
 
       const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-      const csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+      let csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+      const isCsrfMismatchPayload = (payload) => (
+        payload &&
+        payload.code === 'csrf_mismatch' &&
+        typeof payload.csrf === 'string' &&
+        payload.csrf.trim() !== ''
+      );
       const rewardCardLogoUrl = <?= json_encode($eventLogoUrl !== '' ? $eventLogoUrl : $fallbackSiteIconUrl, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const loginForm = document.getElementById('tc-login-form');
       const logoutBtn = document.getElementById('tc-logout');
@@ -6206,22 +6225,35 @@ $sessionPayload = [
             try {
               const username = normalizeLoginDigits(String(userInput?.value ?? '')).trim();
               const password = normalizeLoginDigits(String(passInput?.value ?? '')).trim();
-              const response = await fetch(window.location.href, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'login', username, password, csrf: csrfToken })
-              });
-              const payload = await response.json();
+              let response = null;
+              let payload = null;
+              for (let attempt = 0; attempt < 2; attempt += 1) {
+                response = await fetch(window.location.href, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'login', username, password, csrf: csrfToken })
+                });
+                try {
+                  payload = await response.json();
+                } catch {
+                  payload = { status: 'error', message: 'پاسخ نامعتبر از سرور دریافت شد.' };
+                }
+                if (isCsrfMismatchPayload(payload) && attempt === 0) {
+                  csrfToken = payload.csrf.trim();
+                  continue;
+                }
+                break;
+              }
               if (response.ok && payload?.status === 'ok') {
                 window.location.reload();
                 return;
               }
               if (loginMsg) {
-                loginMsg.textContent = payload?.message || 'ورود failed.';
+                loginMsg.textContent = payload?.message || 'ورود ناموفق بود.';
               }
             } catch {
               if (loginMsg) {
-                loginMsg.textContent = 'ورود failed.';
+                loginMsg.textContent = 'ورود ناموفق بود.';
               }
             } finally {
               if (loginBtn) loginBtn.disabled = false;
@@ -7365,7 +7397,7 @@ $sessionPayload = [
           }
         };
 
-        const postJson = async (body) => {
+        const postJson = async (body, retriedOnCsrf = false) => {
           const response = await fetch(window.location.href, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -7376,6 +7408,10 @@ $sessionPayload = [
             payload = await response.json();
           } catch {
             payload = { status: 'error', message: 'پاسخ نامعتبر از سرور دریافت شد.' };
+          }
+          if (isCsrfMismatchPayload(payload) && !retriedOnCsrf) {
+            csrfToken = payload.csrf.trim();
+            return postJson(body, true);
           }
           if (!response.ok || payload?.status !== 'ok') {
             throw new Error(payload?.message || 'درخواست ناموفق بود.');
