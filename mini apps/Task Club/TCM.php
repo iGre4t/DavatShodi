@@ -6740,12 +6740,27 @@ $sessionPayload = [
 
       .team-list-group {
         display: grid;
-        gap: 8px;
+        gap: 9px;
+      }
+
+      .team-list-group--invited .team-list-title {
+        color: #1f3f77;
       }
 
       .team-list {
         display: grid;
-        gap: 8px;
+        gap: 9px;
+      }
+
+      .team-list--invited .team-list-item-btn {
+        border-color: #b7cdf9;
+        background: #eef5ff;
+        box-shadow: 0 14px 22px rgba(36, 74, 140, 0.13);
+      }
+
+      .team-list--public .team-list-item-btn {
+        border-color: #d8e4f7;
+        background: #fbfdff;
       }
 
       .team-list-item {
@@ -6774,21 +6789,105 @@ $sessionPayload = [
         text-align: right;
         border: 1px solid #cad9f5;
         background: #ffffff;
-        border-radius: 12px;
-        padding: 10px 12px;
+        border-radius: 14px;
+        padding: 12px;
         color: #2c4f87;
         font: inherit;
+        display: grid;
+        gap: 6px;
+        position: relative;
       }
 
       .team-list-item-btn strong {
         display: block;
+        color: #1c3a6e;
+        font-size: 0.92rem;
       }
 
-      .team-list-item-btn span {
+      .team-entity-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .team-entity-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #c7d8f6;
+        background: #eef4ff;
+        color: #2f4f87;
+        flex: 0 0 24px;
+      }
+
+      .team-entity-icon svg {
+        width: 13px;
+        height: 13px;
         display: block;
-        margin-top: 3px;
-        font-size: 0.8rem;
-        color: #6a7fa8;
+        fill: currentColor;
+      }
+
+      .team-entity-icon--team {
+        background: #edf4ff;
+        color: #2f4f87;
+      }
+
+      .team-entity-icon--user {
+        background: #f2f7ff;
+        color: #355788;
+      }
+
+      .team-list-item-leader {
+        display: block;
+        color: #4f6792;
+        font-size: 0.78rem;
+      }
+
+      .team-list-item-meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .team-list-item-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid #c9d9f6;
+        background: #ffffff;
+        color: #385889;
+        font-size: 0.74rem;
+        font-weight: 700;
+      }
+
+      .team-list-item-chip--join {
+        border-color: #cddcf7;
+        background: #f2f7ff;
+        color: #4b6290;
+      }
+
+      .team-list-item-members {
+        display: block;
+        color: #5f749b;
+        font-size: 0.77rem;
+      }
+
+      .team-list-item-invited-tag {
+        position: absolute;
+        top: -9px;
+        inset-inline-end: 10px;
+        background: var(--tc-highlight);
+        color: #fff;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        box-shadow: 0 8px 16px rgba(37, 73, 136, 0.2);
       }
 
       .team-members-grid {
@@ -6813,9 +6912,16 @@ $sessionPayload = [
       }
 
       .team-member-name {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
         color: #1f3560;
         font-size: 0.86rem;
         font-weight: 700;
+      }
+
+      .team-member-name-label {
+        display: inline-block;
       }
 
       .team-member-status {
@@ -6835,18 +6941,21 @@ $sessionPayload = [
 
       .team-empty-slots {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-        gap: 7px;
+        grid-template-columns: 1fr;
+        gap: 8px;
       }
 
       .team-empty-slot {
         border: 1px dashed #c9d8f5;
-        border-radius: 10px;
-        min-height: 36px;
-        display: grid;
-        place-items: center;
+        border-radius: 12px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         color: #8da0c4;
-        font-size: 0.78rem;
+        font-size: 0.8rem;
+        background: #f9fbff;
+        padding: 9px 10px;
       }
 
       .team-invite-panel {
@@ -6871,6 +6980,15 @@ $sessionPayload = [
         margin: 0;
         color: #1f3560;
         font-size: 0.86rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .team-list-item-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
       }
 
       .team-field-hint {
@@ -6884,33 +7002,113 @@ $sessionPayload = [
         gap: 8px;
       }
 
-      .team-join-type-btn {
+      .team-join-type-option {
         border: 1px solid #cad9f4;
         border-radius: 12px;
         background: #f8fbff;
-        color: #2a4a82;
-        font: inherit;
-        text-align: right;
         padding: 10px 12px;
-        display: grid;
-        gap: 4px;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        text-align: right;
       }
 
-      .team-join-type-btn strong {
+      .team-join-type-option input[type="radio"] {
+        margin-top: 3px;
+        accent-color: var(--accent);
+        inline-size: 16px;
+        block-size: 16px;
+      }
+
+      .team-join-type-text {
+        display: grid;
+        gap: 4px;
+        color: #2a4a82;
+      }
+
+      .team-join-type-text strong {
         font-size: 0.86rem;
       }
 
-      .team-join-type-btn span {
+      .team-join-type-text small {
         font-size: 0.78rem;
         color: #5f759f;
         line-height: 1.65;
       }
 
+      .team-join-type-option input[type="radio"]:checked + .team-join-type-text strong {
+        color: #1a3c75;
+      }
+
+      .team-meta-badges {
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .team-meta-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid #cfddf6;
+        background: #f4f8ff;
+        color: #37588a;
+        font-size: 0.76rem;
+        font-weight: 700;
+        padding: 4px 10px;
+      }
+
+      .team-room-slot-badge {
+        margin-inline: auto;
+        width: fit-content;
+        border: 1px solid #cfddf6;
+        border-radius: 999px;
+        background: #f4f8ff;
+        color: #2d4f85;
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 5px 12px;
+      }
+
       .team-danger-btn {
         width: 100%;
-        background: #fff2f3;
-        color: #b82c34;
-        border: 1px solid #f0b5ba;
+        background: #d5434d;
+        color: #fff;
+        border: 1px solid #b6363e;
+      }
+
+      .team-danger-btn:hover {
+        background: #bf333d;
+      }
+
+      .team-danger-btn:disabled {
+        opacity: 0.72;
+      }
+
+      .tc-confirm-dialog-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: auto;
+      }
+
+      .tc-confirm-dialog-actions .tc-result-dialog-confirm {
+        margin-top: 0;
+      }
+
+      .tc-confirm-dialog-cancel {
+        background: #eef3fb;
+        color: #2c4b7f;
+        border: 1px solid #cfdbf1;
+      }
+
+      .tc-confirm-dialog-danger {
+        background: #d5434d;
+        color: #fff;
       }
 
       .login-form {
@@ -7840,25 +8038,33 @@ $sessionPayload = [
           <section id="tc-team-create-type-step" class="team-task-step hidden">
             <p class="team-list-title">نوع تیم را انتخاب کنید</p>
             <div class="team-join-type-list">
-              <button class="team-join-type-btn" type="button" data-team-join-type="private">
-                <strong>تیم خصوصی</strong>
-                <span>فقط افرادی که دعوت می‌کنید می‌توانند ملحق شوند</span>
-              </button>
-              <button class="team-join-type-btn" type="button" data-team-join-type="public_request">
-                <strong>تیم عمومی با درخواست دعوت</strong>
-                <span>در لیست تیم‌ها نمایش داده می‌شود و دیگران می‌توانند درخواست عضویت بفرستند</span>
-              </button>
-              <button class="team-join-type-btn" type="button" data-team-join-type="public_open">
-                <strong>تیم عمومی ورود آزاد</strong>
-                <span>هر کسی می‌تواند تیم را ببیند و مستقیم وارد شود</span>
-              </button>
+              <label class="team-join-type-option">
+                <input type="radio" name="tc-team-create-join-type" value="private" checked />
+                <span class="team-join-type-text">
+                  <strong>تیم خصوصی</strong>
+                  <small>فقط افرادی که دعوت می‌کنید می‌توانند ملحق شوند</small>
+                </span>
+              </label>
+              <label class="team-join-type-option">
+                <input type="radio" name="tc-team-create-join-type" value="public_request" />
+                <span class="team-join-type-text">
+                  <strong>تیم عمومی با درخواست دعوت</strong>
+                  <small>در لیست تیم‌ها نمایش داده می‌شود و دیگران می‌توانند درخواست عضویت بفرستند</small>
+                </span>
+              </label>
+              <label class="team-join-type-option">
+                <input type="radio" name="tc-team-create-join-type" value="public_open" />
+                <span class="team-join-type-text">
+                  <strong>تیم عمومی ورود آزاد</strong>
+                  <small>هر کسی می‌تواند تیم را ببیند و مستقیم وارد شود</small>
+                </span>
+              </label>
             </div>
+            <button id="tc-team-create-type-confirm" class="login-btn describe-photo-btn" type="button">ادامه و ساخت تیم</button>
           </section>
           <section id="tc-team-room-step" class="team-task-step hidden">
             <p id="tc-team-room-name" class="describe-photo-editor-title">-</p>
-            <p id="tc-team-room-slot" class="describe-photo-index">-</p>
-            <div id="tc-team-room-members" class="team-members-grid"></div>
-            <div id="tc-team-room-empty-slots" class="team-empty-slots"></div>
+            <p id="tc-team-room-slot" class="describe-photo-index team-room-slot-badge">-</p>
             <div id="tc-team-room-invite-panel" class="team-invite-panel hidden">
               <label class="login-field">
                 <span>دعوت عضو جدید (شماره پرسنلی یا تلفن)</span>
@@ -7870,6 +8076,8 @@ $sessionPayload = [
                 <button id="tc-team-invite-confirm-btn" class="login-btn describe-photo-btn" type="button">دعوت</button>
               </div>
             </div>
+            <div id="tc-team-room-members" class="team-members-grid"></div>
+            <div id="tc-team-room-empty-slots" class="team-empty-slots"></div>
             <div class="team-task-actions">
               <button id="tc-team-start-btn" class="login-btn describe-photo-btn" type="button" disabled>شروع چالش</button>
               <button id="tc-team-settings-btn" class="login-btn describe-photo-btn secondary" type="button">تنظیمات تیم</button>
@@ -7877,13 +8085,13 @@ $sessionPayload = [
           </section>
           <section id="tc-team-find-step" class="team-task-step hidden">
             <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
-            <div class="team-list-group">
+            <div class="team-list-group team-list-group--invited">
               <p class="team-list-title">دعوت‌شده‌ها</p>
-              <div id="tc-team-invited-list" class="team-list"></div>
+              <div id="tc-team-invited-list" class="team-list team-list--invited"></div>
             </div>
-            <div class="team-list-group">
+            <div class="team-list-group team-list-group--public">
               <p class="team-list-title">تیم‌های عمومی</p>
-              <div id="tc-team-public-list" class="team-list"></div>
+              <div id="tc-team-public-list" class="team-list team-list--public"></div>
             </div>
           </section>
           <section id="tc-team-search-step" class="team-task-step hidden">
@@ -7896,7 +8104,7 @@ $sessionPayload = [
           </section>
           <section id="tc-team-preview-step" class="team-task-step hidden">
             <p id="tc-team-preview-name" class="describe-photo-editor-title">-</p>
-            <p id="tc-team-preview-meta" class="describe-photo-index">-</p>
+            <p id="tc-team-preview-meta" class="team-meta-badges">-</p>
             <div id="tc-team-preview-members" class="team-list"></div>
             <button id="tc-team-preview-join-btn" class="login-btn describe-photo-btn" type="button">درخواست عضویت</button>
           </section>
@@ -7905,14 +8113,32 @@ $sessionPayload = [
               <span>نام تیم</span>
               <input id="tc-team-settings-name-input" class="login-input" type="text" maxlength="80" placeholder="نام جدید تیم" />
             </label>
-            <label id="tc-team-settings-join-wrap" class="login-field">
+            <div id="tc-team-settings-join-wrap" class="login-field">
               <span>نوع عضویت</span>
-              <select id="tc-team-settings-join-select" class="login-input">
-                <option value="private">تیم خصوصی</option>
-                <option value="public_request">تیم عمومی با درخواست دعوت</option>
-                <option value="public_open">تیم عمومی ورود آزاد</option>
-              </select>
-            </label>
+              <div class="team-join-type-list">
+                <label class="team-join-type-option">
+                  <input type="radio" name="tc-team-settings-join-type" value="private" checked />
+                  <span class="team-join-type-text">
+                    <strong>تیم خصوصی</strong>
+                    <small>فقط افرادی که دعوت می‌کنید می‌توانند ملحق شوند</small>
+                  </span>
+                </label>
+                <label class="team-join-type-option">
+                  <input type="radio" name="tc-team-settings-join-type" value="public_request" />
+                  <span class="team-join-type-text">
+                    <strong>تیم عمومی با درخواست دعوت</strong>
+                    <small>نمایش عمومی همراه با تایید سرگروه</small>
+                  </span>
+                </label>
+                <label class="team-join-type-option">
+                  <input type="radio" name="tc-team-settings-join-type" value="public_open" />
+                  <span class="team-join-type-text">
+                    <strong>تیم عمومی ورود آزاد</strong>
+                    <small>همه کاربران می‌توانند مستقیم عضو شوند</small>
+                  </span>
+                </label>
+              </div>
+            </div>
             <button id="tc-team-settings-save-btn" class="login-btn describe-photo-btn" type="button">ذخیره تنظیمات</button>
             <button id="tc-team-settings-delete-btn" class="login-btn team-danger-btn" type="button">حذف تیم</button>
             <button id="tc-team-settings-leave-btn" class="login-btn team-danger-btn hidden" type="button">خروج از تیم</button>
@@ -7990,6 +8216,18 @@ $sessionPayload = [
             <p id="tc-info-dialog-message" class="hint hint-align-center">-</p>
           </div>
           <button id="tc-info-dialog-confirm" class="tc-result-dialog-confirm" type="button">متوجه شدم</button>
+        </section>
+      </div>
+      <div id="tc-confirm-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
+        <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-confirm-dialog-title">
+          <h3 id="tc-confirm-dialog-title" class="tc-result-dialog-title">تایید عملیات</h3>
+          <div class="tc-result-dialog-content">
+            <p id="tc-confirm-dialog-message" class="hint hint-align-center">-</p>
+          </div>
+          <div class="tc-confirm-dialog-actions">
+            <button id="tc-confirm-dialog-cancel" class="tc-result-dialog-confirm tc-confirm-dialog-cancel" type="button">انصراف</button>
+            <button id="tc-confirm-dialog-confirm" class="tc-result-dialog-confirm tc-confirm-dialog-danger" type="button">تایید</button>
+          </div>
         </section>
       </div>
     <?php endif; ?>
@@ -8278,6 +8516,11 @@ $sessionPayload = [
         const infoDialogTitleEl = document.getElementById('tc-info-dialog-title');
         const infoDialogMessageEl = document.getElementById('tc-info-dialog-message');
         const infoDialogConfirmEl = document.getElementById('tc-info-dialog-confirm');
+        const confirmDialogEl = document.getElementById('tc-confirm-dialog');
+        const confirmDialogTitleEl = document.getElementById('tc-confirm-dialog-title');
+        const confirmDialogMessageEl = document.getElementById('tc-confirm-dialog-message');
+        const confirmDialogCancelEl = document.getElementById('tc-confirm-dialog-cancel');
+        const confirmDialogConfirmEl = document.getElementById('tc-confirm-dialog-confirm');
         const quizAreaEl = document.getElementById('tc-task-quiz-area');
         const taskInfoAreaEl = document.getElementById('tc-task-info-area');
         const taskInfoTitleEl = document.getElementById('tc-task-info-title');
@@ -8304,7 +8547,8 @@ $sessionPayload = [
         const teamCreateNameInputEl = document.getElementById('tc-team-create-name-input');
         const teamCreateNameConfirmBtnEl = document.getElementById('tc-team-create-name-confirm');
         const teamCreateTypeStepEl = document.getElementById('tc-team-create-type-step');
-        const teamJoinTypeButtons = Array.from(document.querySelectorAll('.team-join-type-btn[data-team-join-type]'));
+        const teamCreateJoinTypeInputs = Array.from(document.querySelectorAll('input[name="tc-team-create-join-type"]'));
+        const teamCreateTypeConfirmBtnEl = document.getElementById('tc-team-create-type-confirm');
         const teamRoomStepEl = document.getElementById('tc-team-room-step');
         const teamRoomNameEl = document.getElementById('tc-team-room-name');
         const teamRoomSlotEl = document.getElementById('tc-team-room-slot');
@@ -8333,7 +8577,7 @@ $sessionPayload = [
         const teamSettingsStepEl = document.getElementById('tc-team-settings-step');
         const teamSettingsNameInputEl = document.getElementById('tc-team-settings-name-input');
         const teamSettingsJoinWrapEl = document.getElementById('tc-team-settings-join-wrap');
-        const teamSettingsJoinSelectEl = document.getElementById('tc-team-settings-join-select');
+        const teamSettingsJoinInputs = Array.from(document.querySelectorAll('input[name="tc-team-settings-join-type"]'));
         const teamSettingsSaveBtnEl = document.getElementById('tc-team-settings-save-btn');
         const teamSettingsDeleteBtnEl = document.getElementById('tc-team-settings-delete-btn');
         const teamSettingsLeaveBtnEl = document.getElementById('tc-team-settings-leave-btn');
@@ -9051,7 +9295,15 @@ $sessionPayload = [
           if (teamInviteResultNameEl) teamInviteResultNameEl.textContent = '-';
           if (teamSearchLeaderInputEl instanceof HTMLInputElement) teamSearchLeaderInputEl.value = '';
           if (teamSettingsNameInputEl instanceof HTMLInputElement) teamSettingsNameInputEl.value = '';
-          if (teamSettingsJoinSelectEl instanceof HTMLSelectElement) teamSettingsJoinSelectEl.value = 'private';
+          teamSettingsJoinInputs.forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            input.checked = input.value === 'private';
+            input.disabled = false;
+          });
+          teamCreateJoinTypeInputs.forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            input.checked = input.value === 'private';
+          });
           if (teamSettingsJoinWrapEl) teamSettingsJoinWrapEl.classList.remove('hidden');
           if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) teamSettingsSaveBtnEl.classList.remove('hidden');
           if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) teamSettingsDeleteBtnEl.classList.remove('hidden');
@@ -9468,7 +9720,32 @@ $sessionPayload = [
           });
         };
 
-        const renderTeamCardList = (container, teams, emptyText = 'موردی یافت نشد.') => {
+        const resolveInviteeDisplayName = (entry, fallback = 'کاربر') => {
+          const fullName = String(entry?.fullName || '').trim();
+          if (fullName !== '') return fullName;
+          const firstName = String(entry?.firstName || '').trim();
+          const lastName = String(entry?.lastName || '').trim();
+          const composed = `${firstName} ${lastName}`.trim();
+          if (composed !== '') return composed;
+          const fallbackText = String(fallback || '').trim();
+          return fallbackText !== '' ? fallbackText : 'کاربر';
+        };
+
+        const resolveTeamLeaderName = (team) => {
+          const members = Array.isArray(team?.members) ? team.members : [];
+          const leader = members.find((member) => String(member?.status || '').trim() === 'leader');
+          return resolveInviteeDisplayName(leader, 'سرگروه');
+        };
+
+        const TEAM_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a2.5 2.5 0 0 1 2.5-2.5h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm4.1 2.8a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm7.8 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4ZM12 11.9c-2.8 0-5 1.4-5 3.1 0 .4.3.7.7.7h8.6c.4 0 .7-.3.7-.7 0-1.7-2.2-3.1-5-3.1Z"/></svg>';
+        const USER_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2A4.3 4.3 0 1 1 7.7 8.5 4.3 4.3 0 0 1 12 4.2Zm0 9.6c3.8 0 6.8 2.1 6.8 4.8 0 .7-.6 1.2-1.2 1.2H6.4c-.7 0-1.2-.6-1.2-1.2 0-2.7 3-4.8 6.8-4.8Z"/></svg>';
+        const renderEntityIcon = (kind) => {
+          const type = String(kind || '').trim().toLowerCase() === 'team' ? 'team' : 'user';
+          const icon = type === 'team' ? TEAM_ICON_SVG : USER_ICON_SVG;
+          return `<span class="team-entity-icon team-entity-icon--${type}" aria-hidden="true">${icon}</span>`;
+        };
+
+        const renderTeamCardList = (container, teams, emptyText = 'موردی یافت نشد.', variant = 'public') => {
           if (!(container instanceof HTMLElement)) return;
           const list = Array.isArray(teams) ? teams : [];
           if (!list.length) {
@@ -9481,10 +9758,29 @@ $sessionPayload = [
             const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
             const joinTypeText = escapeTaskMetaHtml(formatTeamJoinTypeText(team?.joinType));
-            const metaText = `${memberCount}/${maxMembers} نفر | ${joinTypeText}`;
+            const leaderName = escapeTaskMetaHtml(resolveTeamLeaderName(team));
+            const members = Array.isArray(team?.members) ? team.members : [];
+            const memberNames = members
+              .map((item) => resolveInviteeDisplayName(item, ''))
+              .map((name) => String(name || '').trim())
+              .filter((name) => name !== '');
+            const previewNames = memberNames.slice(0, 3).map((name) => escapeTaskMetaHtml(name)).join('، ');
+            const remainingCount = Math.max(0, memberNames.length - 3);
+            const membersText = previewNames !== ''
+              ? `اعضا: ${previewNames}${remainingCount > 0 ? ` +${remainingCount}` : ''}`
+              : 'اعضا: هنوز مشخص نیست';
+            const invitedTag = variant === 'invited'
+              ? '<span class="team-list-item-invited-tag">دعوت برای شما</span>'
+              : '';
             return `<button class="team-list-item-btn" type="button" data-team-open-id="${teamId}">
-              <strong>${teamName}</strong>
-              <span>${escapeTaskMetaHtml(metaText)}</span>
+              ${invitedTag}
+              <span class="team-entity-title">${renderEntityIcon('team')}<strong>${teamName}</strong></span>
+              <span class="team-list-item-leader">سرگروه: ${leaderName}</span>
+              <span class="team-list-item-meta-row">
+                <span class="team-list-item-chip">${memberCount}/${maxMembers} نفر</span>
+                <span class="team-list-item-chip team-list-item-chip--join">${joinTypeText}</span>
+              </span>
+              <span class="team-list-item-members">${membersText}</span>
             </button>`;
           }).join('');
         };
@@ -9502,12 +9798,12 @@ $sessionPayload = [
           const requests = Array.isArray(team?.requests) ? team.requests : [];
           const memberItems = members.map((item) => {
             const workId = String(item?.workId || '').trim();
-            const name = String(item?.fullName || workId || 'کاربر').trim() || 'کاربر';
+            const name = resolveInviteeDisplayName(item, 'کاربر');
             const statusText = String(item?.status || '') === 'leader' ? 'سرگروه' : 'عضو تیم';
             const canRemove = isLeader && String(item?.status || '') !== 'leader';
             return `<div class="team-member-chip">
               <div class="team-member-text">
-                <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">${escapeTaskMetaHtml(statusText)}</div>
               </div>
               ${canRemove ? `<button class="team-member-remove" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="member">✕</button>` : ''}
@@ -9515,10 +9811,10 @@ $sessionPayload = [
           });
           const inviteItems = invites.map((item) => {
             const workId = String(item?.workId || '').trim();
-            const name = String(item?.fullName || workId || 'کاربر').trim() || 'کاربر';
+            const name = resolveInviteeDisplayName(item, 'کاربر');
             return `<div class="team-member-chip">
               <div class="team-member-text">
-                <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">دعوت شده</div>
               </div>
               ${isLeader ? `<button class="team-member-remove" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="invite">✕</button>` : ''}
@@ -9526,18 +9822,18 @@ $sessionPayload = [
           });
           const requestItems = requests.map((item) => {
             const workId = String(item?.workId || '').trim();
-            const name = String(item?.fullName || workId || 'کاربر').trim() || 'کاربر';
+            const name = resolveInviteeDisplayName(item, 'کاربر');
             if (!isLeader) {
               return `<div class="team-member-chip">
                 <div class="team-member-text">
-                  <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                  <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                   <div class="team-member-status">درخواست عضویت</div>
                 </div>
               </div>`;
             }
             return `<div class="team-member-chip">
               <div class="team-member-text">
-                <div class="team-member-name">${escapeTaskMetaHtml(name)}</div>
+                <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">درخواست عضویت</div>
               </div>
               <div>
@@ -9585,8 +9881,8 @@ $sessionPayload = [
         const renderTeamTaskState = (context) => {
           teamTaskState = context && typeof context === 'object' ? context : null;
           renderTeamRulesText(teamTaskState);
-          renderTeamCardList(teamInvitedListEl, teamTaskState?.invitedTeams || [], 'دعوتی فعالی ندارید.');
-          renderTeamCardList(teamPublicListEl, teamTaskState?.publicTeams || [], 'تیم عمومی فعالی وجود ندارد.');
+          renderTeamCardList(teamInvitedListEl, teamTaskState?.invitedTeams || [], 'دعوتی فعالی ندارید.', 'invited');
+          renderTeamCardList(teamPublicListEl, teamTaskState?.publicTeams || [], 'تیم عمومی فعالی وجود ندارد.', 'public');
           const myTeam = teamTaskState?.myTeam || null;
           if (myTeam && teamRoomNameEl) {
             teamRoomNameEl.textContent = String(myTeam?.name || 'تیم من');
@@ -9628,7 +9924,12 @@ $sessionPayload = [
             const memberCount = Math.max(0, Number.parseInt(teamTaskPreviewTeam?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(teamTaskPreviewTeam?.maxMembers ?? 1, 10) || 1);
             const joinTypeText = formatTeamJoinTypeText(teamTaskPreviewTeam?.joinType);
-            teamPreviewMetaEl.textContent = `${memberCount}/${maxMembers} نفر | ${joinTypeText}`;
+            const leaderName = resolveTeamLeaderName(teamTaskPreviewTeam);
+            teamPreviewMetaEl.innerHTML = [
+              `<span class="team-meta-badge">${escapeTaskMetaHtml(`${memberCount}/${maxMembers} نفر`)}</span>`,
+              `<span class="team-meta-badge">${escapeTaskMetaHtml(joinTypeText)}</span>`,
+              `<span class="team-meta-badge">${escapeTaskMetaHtml(`سرگروه: ${leaderName}`)}</span>`
+            ].join('');
           }
           if (teamPreviewMembersEl) {
             const members = Array.isArray(teamTaskPreviewTeam?.members) ? teamTaskPreviewTeam.members : [];
@@ -9636,8 +9937,8 @@ $sessionPayload = [
               teamPreviewMembersEl.innerHTML = '<div class="team-list-item"><div class="team-list-item-meta">عضوی ثبت نشده است.</div></div>';
             } else {
               teamPreviewMembersEl.innerHTML = members.map((item) => {
-                const name = String(item?.fullName || item?.workId || 'کاربر').trim() || 'کاربر';
-                return `<div class="team-list-item"><div class="team-list-item-title">${escapeTaskMetaHtml(name)}</div></div>`;
+                const name = resolveInviteeDisplayName(item, 'کاربر');
+                return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('user')}<span>${escapeTaskMetaHtml(name)}</span></div></div>`;
               }).join('');
             }
           }
@@ -9672,10 +9973,12 @@ $sessionPayload = [
           if (teamSettingsJoinWrapEl) {
             teamSettingsJoinWrapEl.classList.toggle('hidden', !isLeader);
           }
-          if (teamSettingsJoinSelectEl instanceof HTMLSelectElement) {
-            teamSettingsJoinSelectEl.value = normalizeTeamJoinTypeClient(myTeam?.joinType);
-            teamSettingsJoinSelectEl.disabled = !isLeader;
-          }
+          const selectedJoinType = normalizeTeamJoinTypeClient(myTeam?.joinType);
+          teamSettingsJoinInputs.forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            input.checked = input.value === selectedJoinType;
+            input.disabled = !isLeader;
+          });
           if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) {
             teamSettingsSaveBtnEl.classList.toggle('hidden', !isLeader);
           }
@@ -10225,6 +10528,52 @@ $sessionPayload = [
           };
           infoDialogConfirmEl.addEventListener('click', onConfirm);
           infoDialogEl.addEventListener('click', onOverlay);
+        });
+
+        const openConfirmDialog = (
+          message,
+          title = 'تایید عملیات',
+          confirmText = 'تایید',
+          cancelText = 'انصراف'
+        ) => new Promise((resolve) => {
+          removeTransitionLoader();
+          if (
+            !(confirmDialogEl instanceof HTMLElement) ||
+            !(confirmDialogTitleEl instanceof HTMLElement) ||
+            !(confirmDialogMessageEl instanceof HTMLElement) ||
+            !(confirmDialogCancelEl instanceof HTMLButtonElement) ||
+            !(confirmDialogConfirmEl instanceof HTMLButtonElement)
+          ) {
+            resolve(false);
+            return;
+          }
+          confirmDialogTitleEl.textContent = String(title || 'تایید عملیات').trim() || 'تایید عملیات';
+          confirmDialogMessageEl.textContent = String(message || '').trim() || '—';
+          confirmDialogCancelEl.textContent = String(cancelText || 'انصراف').trim() || 'انصراف';
+          confirmDialogConfirmEl.textContent = String(confirmText || 'تایید').trim() || 'تایید';
+          confirmDialogEl.classList.add('open');
+          confirmDialogEl.setAttribute('aria-hidden', 'false');
+
+          const close = (result) => {
+            confirmDialogEl.classList.remove('open');
+            confirmDialogEl.setAttribute('aria-hidden', 'true');
+            confirmDialogCancelEl.removeEventListener('click', onCancel);
+            confirmDialogConfirmEl.removeEventListener('click', onConfirm);
+            confirmDialogEl.removeEventListener('click', onOverlay);
+            resolve(Boolean(result));
+          };
+
+          const onCancel = () => close(false);
+          const onConfirm = () => close(true);
+          const onOverlay = (event) => {
+            if (event.target === confirmDialogEl) {
+              close(false);
+            }
+          };
+
+          confirmDialogCancelEl.addEventListener('click', onCancel);
+          confirmDialogConfirmEl.addEventListener('click', onConfirm);
+          confirmDialogEl.addEventListener('click', onOverlay);
         });
 
         const openRewardWinDialog = (prizeName) => new Promise((resolve) => {
@@ -10893,30 +11242,30 @@ $sessionPayload = [
           });
         }
 
-        if (teamJoinTypeButtons.length) {
-          teamJoinTypeButtons.forEach((button) => {
-            if (!(button instanceof HTMLButtonElement)) return;
-            button.addEventListener('click', () => {
-              const joinType = normalizeTeamJoinTypeClient(button.dataset.teamJoinType || 'private');
-              const teamName = String(teamTaskPendingName || '').trim();
-              if (teamName === '') {
-                setInfoTaskStep('team_create_name');
-                return;
+        if (teamCreateTypeConfirmBtnEl instanceof HTMLButtonElement) {
+          teamCreateTypeConfirmBtnEl.addEventListener('click', () => {
+            const selectedInput = teamCreateJoinTypeInputs.find((input) => (
+              input instanceof HTMLInputElement && input.checked
+            ));
+            const joinType = normalizeTeamJoinTypeClient(selectedInput?.value || 'private');
+            const teamName = String(teamTaskPendingName || '').trim();
+            if (teamName === '') {
+              setInfoTaskStep('team_create_name');
+              return;
+            }
+            void withTransitionLoader(
+              async () => {
+                await teamTaskPost('create', { teamName, joinType });
+                teamTaskPendingName = '';
+                await refreshTeamTaskState('team_room');
+              },
+              {
+                primaryText: 'در حال ساخت تیم',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 120
               }
-              void withTransitionLoader(
-                async () => {
-                  await teamTaskPost('create', { teamName, joinType });
-                  teamTaskPendingName = '';
-                  await refreshTeamTaskState('team_room');
-                },
-                {
-                  primaryText: 'در حال ساخت تیم',
-                  secondaryText: 'لطفا چند لحظه صبر کنید',
-                  delayMs: 120
-                }
-              ).catch(async (error) => {
-                await openInfoDialog(error?.message || 'ساخت تیم ناموفق بود.');
-              });
+            ).catch(async (error) => {
+              await openInfoDialog(error?.message || 'ساخت تیم ناموفق بود.');
             });
           });
         }
@@ -11012,8 +11361,8 @@ $sessionPayload = [
                 }
                 teamTaskInviteCandidate = invitee;
                 if (teamInviteResultNameEl) {
-                  const fullName = String(invitee?.fullName || invitee?.workId || '').trim();
-                  teamInviteResultNameEl.textContent = fullName !== '' ? fullName : String(invitee?.workId || 'کاربر');
+                  const inviteeName = resolveInviteeDisplayName(invitee, 'کاربر');
+                  teamInviteResultNameEl.innerHTML = `${renderEntityIcon('user')}<span>${escapeTaskMetaHtml(inviteeName)}</span>`;
                 }
                 if (teamInviteResultEl) {
                   teamInviteResultEl.classList.remove('hidden');
@@ -11135,7 +11484,10 @@ $sessionPayload = [
         if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) {
           teamSettingsSaveBtnEl.addEventListener('click', () => {
             const teamName = String(teamSettingsNameInputEl?.value || '').trim();
-            const joinType = normalizeTeamJoinTypeClient(teamSettingsJoinSelectEl?.value || 'private');
+            const selectedJoinInput = teamSettingsJoinInputs.find((input) => (
+              input instanceof HTMLInputElement && input.checked
+            ));
+            const joinType = normalizeTeamJoinTypeClient(selectedJoinInput?.value || 'private');
             void withTransitionLoader(
               async () => {
                 await teamTaskPost('settings', { teamName, joinType });
@@ -11154,19 +11506,30 @@ $sessionPayload = [
 
         if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) {
           teamSettingsDeleteBtnEl.addEventListener('click', () => {
-            void withTransitionLoader(
-              async () => {
-                await teamTaskPost('settings', { deleteTeam: true });
-                await refreshTeamTaskState('team_rules');
-              },
-              {
-                primaryText: 'در حال حذف تیم',
-                secondaryText: 'لطفا صبر کنید',
-                delayMs: 120
+            void (async () => {
+              const shouldDelete = await openConfirmDialog(
+                'آیا از حذف کامل تیم مطمئن هستید؟ این عملیات قابل بازگشت نیست.',
+                'حذف تیم',
+                'حذف تیم',
+                'انصراف'
+              );
+              if (!shouldDelete) {
+                return;
               }
-            ).catch(async (error) => {
-              await openInfoDialog(error?.message || 'حذف تیم ناموفق بود.');
-            });
+              await withTransitionLoader(
+                async () => {
+                  await teamTaskPost('settings', { deleteTeam: true });
+                  await refreshTeamTaskState('team_rules');
+                },
+                {
+                  primaryText: 'در حال حذف تیم',
+                  secondaryText: 'لطفا صبر کنید',
+                  delayMs: 120
+                }
+              ).catch(async (error) => {
+                await openInfoDialog(error?.message || 'حذف تیم ناموفق بود.');
+              });
+            })();
           });
         }
 
