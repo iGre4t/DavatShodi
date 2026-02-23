@@ -1409,6 +1409,7 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
   $taskType = tctNormalizeTaskType((string)($task['taskType'] ?? ($task['task_type'] ?? 'quiz')));
   $active = tctNormalizeBoolValue($task['active'] ?? false);
   $duration = tctNormalizeBoolValue($task['duration'] ?? false);
+  $devPhase = tctNormalizeBoolValue($task['devPhase'] ?? ($task['dev_phase'] ?? false));
   $startDate = tctNormalizeDateValue((string)($task['startDate'] ?? ($task['start_date'] ?? '')));
   $startTime = tctNormalizeTimeValue((string)($task['startTime'] ?? ($task['start_time'] ?? '')));
   $endDate = tctNormalizeDateValue((string)($task['endDate'] ?? ($task['end_date'] ?? '')));
@@ -1428,6 +1429,7 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
     'taskType' => $taskType,
     'active' => $active,
     'duration' => $duration,
+    'devPhase' => $devPhase,
     'startDate' => $startDate,
     'startTime' => $startTime,
     'endDate' => $endDate,
@@ -2032,6 +2034,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       'title' => $title,
       'tagCode' => $tagCode,
       'taskType' => $taskType,
+      'devPhase' => false,
       'order' => count($tasks) + 1,
       'createdAt' => date('Y-m-d H:i:s')
     ];
@@ -2141,6 +2144,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
 
     $active = tctNormalizeBoolValue($_POST['active'] ?? '0');
     $duration = tctNormalizeBoolValue($_POST['duration'] ?? '0');
+    $devPhase = tctNormalizeBoolValue($_POST['dev_phase'] ?? '0');
     $startDate = tctNormalizeDateValue((string)($_POST['start_date'] ?? ''));
     $startTime = tctNormalizeTimeValue((string)($_POST['start_time'] ?? ''));
     $endDate = tctNormalizeDateValue((string)($_POST['end_date'] ?? ''));
@@ -2154,6 +2158,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       $tasks[$index]['title'] = $title;
       $tasks[$index]['active'] = $active;
       $tasks[$index]['duration'] = $duration;
+      $tasks[$index]['devPhase'] = $devPhase;
       $tasks[$index]['startDate'] = $startDate;
       $tasks[$index]['startTime'] = $startTime;
       $tasks[$index]['endDate'] = $endDate;
@@ -3757,6 +3762,7 @@ if (TCT_INCLUDE_ONLY) {
       taskType: normalizeTaskType(task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
+      devPhase: Boolean(task.devPhase),
       startDate: String(task.startDate || ''),
       startTime: String(task.startTime || ''),
       endDate: String(task.endDate || ''),
@@ -3783,6 +3789,7 @@ if (TCT_INCLUDE_ONLY) {
       taskType: normalizeTaskType(task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
+      devPhase: Boolean(task.devPhase),
       startDate: String(task.startDate || ''),
       startTime: String(task.startTime || ''),
       endDate: String(task.endDate || ''),

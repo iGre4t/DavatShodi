@@ -1758,6 +1758,7 @@ function normalizeTaskRecord(array $task, int $fallbackOrder): array
     'taskType' => normalizeTaskTypeValue($task['taskType'] ?? ($task['task_type'] ?? 'quiz')),
     'active' => normalizeTaskBoolValue($task['active'] ?? false),
     'duration' => normalizeTaskBoolValue($task['duration'] ?? false),
+    'devPhase' => normalizeTaskBoolValue($task['devPhase'] ?? ($task['dev_phase'] ?? false)),
     'startDate' => normalizeTaskDateValue((string)($task['startDate'] ?? ($task['start_date'] ?? ''))),
     'startTime' => normalizeTaskTimeValue((string)($task['startTime'] ?? ($task['start_time'] ?? ''))),
     'endDate' => normalizeTaskDateValue((string)($task['endDate'] ?? ($task['end_date'] ?? ''))),
@@ -1765,6 +1766,19 @@ function normalizeTaskRecord(array $task, int $fallbackOrder): array
     'order' => $order,
     'createdAt' => trim((string)($task['createdAt'] ?? ''))
   ];
+}
+
+function isTaskInDevPhase(array $task): bool
+{
+  return normalizeTaskBoolValue($task['devPhase'] ?? ($task['dev_phase'] ?? false));
+}
+
+function canUserAccessTaskByRole(array $task, bool $isAdmin): bool
+{
+  if (!isTaskInDevPhase($task)) {
+    return true;
+  }
+  return $isAdmin;
 }
 
 function loadTaskRecords(string $storePath, string $tasksDir): array
@@ -2716,11 +2730,20 @@ function computeUserTotalTaskScore(string $inviteesPath, string $inviteesMapPath
   return max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0));
 }
 
-function buildTaskPayloadForView(array $tasks, string $inviteesPath, string $inviteesMapPath, string $workId): array
+function buildTaskPayloadForView(
+  array $tasks,
+  string $inviteesPath,
+  string $inviteesMapPath,
+  string $workId,
+  bool $isAdmin
+): array
 {
   $items = [];
   foreach ($tasks as $task) {
     if (!is_array($task)) {
+      continue;
+    }
+    if (!canUserAccessTaskByRole($task, $isAdmin)) {
       continue;
     }
     $status = deriveTaskAvailabilityStatus($task);
@@ -3100,6 +3123,65 @@ function findInviteeRowIndex(array $rows, int $workIdIndex, string $workId): int
   return -1;
 }
 
+function resolveInviteeAdminColumnIndex(array $table): int
+{
+  $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
+  $header = is_array($table['header'] ?? null) ? $table['header'] : [];
+  $candidates = ['admin', 'tc admin', 'is admin', 'ادمین'];
+  foreach ($candidates as $candidate) {
+    $colIndex = (int)($columns[$candidate] ?? -1);
+    if ($colIndex >= 0) {
+      return $colIndex;
+    }
+    $headerIndex = findHeaderIndex($header, $candidate);
+    if ($headerIndex >= 0) {
+      return $headerIndex;
+    }
+  }
+  return -1;
+}
+
+function parseInviteeAdminCell($value): bool
+{
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_int($value) || is_float($value)) {
+    return ((float)$value) > 0;
+  }
+  $token = strtolower(trim((string)$value));
+  if ($token === '') {
+    return false;
+  }
+  return in_array($token, ['1', 'true', 'yes', 'admin', 'ادمین'], true);
+}
+
+function isInviteeAdminFromTable(array $table, string $workId): bool
+{
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $workIdIndex = (int)($table['workIdIndex'] ?? -1);
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $workId);
+  if ($rowIndex < 0) {
+    return false;
+  }
+  $adminIndex = resolveInviteeAdminColumnIndex($table);
+  if ($adminIndex < 0) {
+    return false;
+  }
+  $row = is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [];
+  return parseInviteeAdminCell($row[$adminIndex] ?? '');
+}
+
+function isInviteeAdmin(string $inviteesPath, string $inviteesMapPath, string $workId): bool
+{
+  $normalizedWorkId = trim($workId);
+  if ($normalizedWorkId === '') {
+    return false;
+  }
+  $table = loadInviteesTable($inviteesPath, $inviteesMapPath);
+  return isInviteeAdminFromTable($table, $normalizedWorkId);
+}
+
 function parseQuestionOrder(string $value, array $questionCodes): array
 {
   $questionCount = count($questionCodes);
@@ -3473,6 +3555,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
       exit;
     }
+    $sessionIsAdmin = isInviteeAdmin($inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if (!canUserAccessTaskByRole($task, $sessionIsAdmin)) {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در فاز توسعه است و فقط برای ادمین‌ها قابل مشاهده است.']);
+      exit;
+    }
 
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
@@ -3570,6 +3657,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
       exit;
     }
+    $sessionIsAdmin = isInviteeAdmin($inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if (!canUserAccessTaskByRole($task, $sessionIsAdmin)) {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در فاز توسعه است و فقط برای ادمین‌ها قابل مشاهده است.']);
+      exit;
+    }
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
     if ($taskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع توصیف تصویر نیست.']);
@@ -3624,6 +3716,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
       exit;
     }
+    $sessionIsAdmin = isInviteeAdmin($inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if (!canUserAccessTaskByRole($task, $sessionIsAdmin)) {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در فاز توسعه است و فقط برای ادمین‌ها قابل مشاهده است.']);
+      exit;
+    }
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
     if ($taskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع توصیف تصویر نیست.']);
@@ -3674,6 +3771,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $task = findTaskById($tasks, $taskId);
     if (!is_array($task)) {
       echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
+      exit;
+    }
+    $sessionIsAdmin = isInviteeAdmin($inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if (!canUserAccessTaskByRole($task, $sessionIsAdmin)) {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در فاز توسعه است و فقط برای ادمین‌ها قابل مشاهده است.']);
       exit;
     }
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
@@ -4315,6 +4417,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $task = findTaskById($tasks, $taskId);
     if (!is_array($task)) {
       echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
+      exit;
+    }
+    $sessionIsAdmin = isInviteeAdmin($inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if (!canUserAccessTaskByRole($task, $sessionIsAdmin)) {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در فاز توسعه است و فقط برای ادمین‌ها قابل مشاهده است.']);
       exit;
     }
 
@@ -4961,6 +5068,7 @@ $sessionPrizeWonAt = null;
 $sessionWheelAngle = null;
 $sessionQuizOrder = [];
 $sessionAnswered = 0;
+$sessionIsAdmin = false;
 if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   $tcqSettings = loadWfqSettings($tcqSettingsPath);
   $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
@@ -4981,6 +5089,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     $sessionAuthed = false;
     $sessionWorkId = '';
   } else {
+    $sessionIsAdmin = isInviteeAdminFromTable($table, $sessionWorkId);
     $sessionFullName = resolveInviteeFullName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $sessionWorkId);
     $resolvedFirstName = resolveInviteeFirstName($table['header'] ?? [], $table['mapping'] ?? [], $rows[$rowIndex] ?? [], $sessionFullName);
     if ($resolvedFirstName !== '') {
@@ -5006,7 +5115,13 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     }
   }
 }
-$taskItemsForView = buildTaskPayloadForView($taskRecords, $inviteesFilePath, $inviteesMapPath, $sessionAuthed ? $sessionWorkId : '');
+$taskItemsForView = buildTaskPayloadForView(
+  $taskRecords,
+  $inviteesFilePath,
+  $inviteesMapPath,
+  $sessionAuthed ? $sessionWorkId : '',
+  $sessionIsAdmin
+);
 $sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
   ? computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)
   : 0;
@@ -5017,6 +5132,7 @@ $tcqSettingsForPayload = loadWfqSettings($tcqSettingsPath);
 $sessionPayload = [
   'authed' => $sessionAuthed,
   'workId' => $sessionWorkId,
+  'isAdmin' => $sessionIsAdmin,
   'fullName' => $sessionFullName,
   'prizeWon' => $sessionPrizeWon,
   'prizeWonAt' => $sessionPrizeWonAt,

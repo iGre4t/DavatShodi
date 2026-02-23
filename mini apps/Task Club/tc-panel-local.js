@@ -84,6 +84,7 @@
       taskType: normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz'),
       active: normalizeBool(raw.active),
       duration: normalizeBool(raw.duration),
+      devPhase: normalizeBool(raw.devPhase ?? raw.dev_phase ?? false),
       startDate: normalizeDate(raw.startDate ?? raw.start_date ?? ''),
       startTime: normalizeTime(raw.startTime ?? raw.start_time ?? ''),
       endDate: normalizeDate(raw.endDate ?? raw.end_date ?? ''),
@@ -341,6 +342,7 @@
     const titleInput = pane.querySelector('[data-task-field="taskTitle"]');
     const activeToggle = pane.querySelector('[data-task-field="active"]');
     const durationToggle = pane.querySelector('[data-task-field="duration"]');
+    const devPhaseToggle = pane.querySelector('[data-task-field="devPhase"]');
     const startDate = pane.querySelector('[data-task-field="startDate"]');
     const startTime = pane.querySelector('[data-task-field="startTime"]');
     const endDate = pane.querySelector('[data-task-field="endDate"]');
@@ -352,6 +354,7 @@
       !(titleInput instanceof HTMLInputElement) ||
       !(activeToggle instanceof HTMLInputElement) ||
       !(durationToggle instanceof HTMLInputElement) ||
+      !(devPhaseToggle instanceof HTMLInputElement) ||
       !(startDate instanceof HTMLInputElement) ||
       !(startTime instanceof HTMLSelectElement) ||
       !(endDate instanceof HTMLInputElement) ||
@@ -363,6 +366,7 @@
       titleInput,
       activeToggle,
       durationToggle,
+      devPhaseToggle,
       startDate,
       startTime,
       endDate,
@@ -1928,6 +1932,7 @@
       title: String(controls.titleInput.value || '').trim(),
       active: controls.activeToggle.checked ? '1' : '0',
       duration: controls.durationToggle.checked ? '1' : '0',
+      dev_phase: controls.devPhaseToggle.checked ? '1' : '0',
       start_date: normalizeDate(controls.startDate.value),
       start_time: normalizeTime(controls.startTime.value),
       end_date: normalizeDate(controls.endDate.value),
@@ -1977,6 +1982,7 @@
     controls.titleInput.value = String(task?.title || task?.tagCode || '');
     controls.activeToggle.checked = normalizeBool(task?.active);
     controls.durationToggle.checked = normalizeBool(task?.duration);
+    controls.devPhaseToggle.checked = normalizeBool(task?.devPhase);
     controls.startDate.value = normalizeDate(task?.startDate);
     controls.startTime.value = normalizeTime(task?.startTime);
     controls.endDate.value = normalizeDate(task?.endDate);
@@ -2244,6 +2250,13 @@
                     <span class="switch-track"><span class="switch-thumb"></span></span>
                   </span>
                 </label>
+                <label class="switch tc-switch">
+                  <span class="switch-label">Dev Phase</span>
+                  <span class="switch-toggle">
+                    <input type="checkbox" data-task-field="devPhase" aria-label="Task Dev Phase" />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
               </div>
               <div class="form grid two-column-fields tc-datetime-grid">
                 <div class="tc-datetime-title tc-datetime-title--start">Start</div>
@@ -2496,6 +2509,10 @@
       const fieldName = field.getAttribute('data-task-field') || '';
       if (fieldName === 'active' || fieldName === 'duration') {
         syncTaskPaneToggleState(pane);
+        setTaskSaveStatus(pane, '');
+        return;
+      }
+      if (fieldName === 'devPhase') {
         setTaskSaveStatus(pane, '');
         return;
       }
