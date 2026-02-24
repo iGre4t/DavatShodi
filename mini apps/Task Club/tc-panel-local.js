@@ -1117,15 +1117,27 @@
       return;
     }
 
-    controls.body.innerHTML = visibleRows.map((team) => {
-      const statusLabel = team.status === 'started' ? 'Started' : 'Draft';
+    const startedRows = visibleRows.filter((team) => team.status === 'started');
+    const otherRows = visibleRows.filter((team) => team.status !== 'started');
+
+    const renderTeamRow = (team, sectionToken = 'other') => {
+      const isStarted = sectionToken === 'started';
+      const statusMarkup = isStarted
+        ? '<span class="tc-team-started-flag"><i class="ri-flag-2-line" aria-hidden="true"></i><span>Started</span></span>'
+        : '<span class="tc-team-status-muted">Draft</span>';
       const minMembers = Math.max(1, normalizeScoreValue(team.minMembers || 1));
       const maxMembers = Math.max(minMembers, normalizeScoreValue(team.maxMembers || minMembers));
       const memberCount = normalizeScoreValue(team.memberCount || 0);
+      const startedTag = isStarted ? '<span class="tc-team-started-chip">Live</span>' : '';
       return `
-        <tr data-team-id="${escapeHtml(team.id)}">
-          <td>${escapeHtml(team.name || 'Team')}</td>
-          <td>${escapeHtml(statusLabel)}</td>
+        <tr class="tc-team-rate-row ${isStarted ? 'tc-team-rate-row--started' : ''}" data-team-id="${escapeHtml(team.id)}">
+          <td>
+            <div class="tc-team-name-cell">
+              <span>${escapeHtml(team.name || 'Team')}</span>
+              ${startedTag}
+            </div>
+          </td>
+          <td>${statusMarkup}</td>
           <td>${escapeHtml(formatTeamJoinTypeLabel(team.joinType))}</td>
           <td>${escapeHtml(team.leaderName || team.leaderWorkId || '-')}</td>
           <td>${escapeHtml(String(memberCount))} / ${escapeHtml(String(maxMembers))} <small class="muted">(min ${escapeHtml(String(minMembers))})</small></td>
@@ -1139,7 +1151,27 @@
           <td><button type="button" class="btn primary standard-primary-button" data-action="team-row-preview">Team Preview</button></td>
         </tr>
       `;
-    }).join('');
+    };
+
+    const renderSection = (title, rows, sectionToken) => {
+      if (!rows.length) return '';
+      return `
+        <tr class="tc-team-rate-section-row tc-team-rate-section-row--${escapeHtml(sectionToken)}">
+          <td colspan="${colspan}">
+            <div class="tc-team-rate-section-head">
+              <span class="tc-team-rate-section-title">${escapeHtml(title)}</span>
+              <span class="tc-team-rate-section-count">${escapeHtml(String(rows.length))}</span>
+            </div>
+          </td>
+        </tr>
+        ${rows.map((team) => renderTeamRow(team, sectionToken)).join('')}
+      `;
+    };
+
+    controls.body.innerHTML = [
+      renderSection('Started Teams', startedRows, 'started'),
+      renderSection('Other Teams', otherRows, 'other')
+    ].filter(Boolean).join('');
   }
 
   function renderInfoRateTable(pane) {

@@ -665,6 +665,98 @@
   vertical-align: middle;
 }
 
+.tc-shell .tc-team-rate-section-row td {
+  background: #f8fafc;
+  border-top: 1px solid var(--border, #e5e7eb);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.tc-shell .tc-team-rate-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tc-shell .tc-team-rate-section-title {
+  font-weight: 700;
+  color: #334155;
+}
+
+.tc-shell .tc-team-rate-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 8px;
+}
+
+.tc-shell .tc-team-rate-section-row--started td {
+  background: #eef4ff;
+}
+
+.tc-shell .tc-team-rate-section-row--started .tc-team-rate-section-title {
+  color: #1d4ed8;
+}
+
+.tc-shell .tc-team-rate-section-row--started .tc-team-rate-section-count {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.tc-shell .tc-team-rate-row--started td {
+  background: #f8fbff;
+}
+
+.tc-shell .tc-team-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tc-shell .tc-team-started-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+}
+
+.tc-shell .tc-team-started-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+}
+
+.tc-shell .tc-team-started-flag i {
+  font-size: 14px;
+}
+
+.tc-shell .tc-team-status-muted {
+  color: #64748b;
+  font-weight: 600;
+}
+
 .tc-shell .tc-team-accepted-check-wrap {
   display: inline-flex;
   align-items: center;
