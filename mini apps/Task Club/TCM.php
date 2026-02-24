@@ -6727,6 +6727,8 @@ $sessionPayload = [
         overflow-y: auto;
         overflow-x: hidden;
         -webkit-overflow-scrolling: touch;
+        align-content: start;
+        grid-auto-rows: max-content;
       }
 
       .team-preview-actions {
@@ -8258,7 +8260,7 @@ $sessionPayload = [
               <label class="team-join-type-option">
                 <input type="radio" name="tc-team-create-join-type" value="public_request" />
                 <span class="team-join-type-text">
-                  <strong>درخواست ورود</strong>
+                  <strong>ورود فقط با درخواست</strong>
                   <small>در لیست تیم‌ها نمایش داده می‌شود و دیگران می‌توانند درخواست عضویت بفرستند</small>
                 </span>
               </label>
@@ -8338,7 +8340,7 @@ $sessionPayload = [
                 <label class="team-join-type-option">
                   <input type="radio" name="tc-team-settings-join-type" value="public_request" />
                   <span class="team-join-type-text">
-                    <strong>درخواست ورود</strong>
+                    <strong>ورود فقط با درخواست</strong>
                     <small>نمایش عمومی همراه با تایید سرگروه</small>
                   </span>
                 </label>
@@ -9963,7 +9965,7 @@ $sessionPayload = [
             return { token, label: 'ورود آزاد', iconClass: 'ri-earth-line' };
           }
           if (token === 'public_request') {
-            return { token, label: 'درخواست ورود', iconClass: 'ri-user-follow-line' };
+            return { token, label: 'ورود فقط با درخواست', iconClass: 'ri-user-follow-line' };
           }
           return { token: 'private', label: 'خصوصی', iconClass: 'ri-lock-2-line' };
         };
@@ -10336,7 +10338,7 @@ $sessionPayload = [
                 const meta = resolveInviteeDisplayMeta(item, 'کاربر');
                 const maskedName = maskLastNameToInitial(item, meta.name);
                 const roleText = String(item?.status || '').trim() === 'leader' ? 'سرگروه' : 'عضو';
-                const roleHint = `<div class="team-list-item-hint">نقش: ${escapeTaskMetaHtml(roleText)}</div>`;
+                const roleHint = `<div class="team-member-status">نقش: ${escapeTaskMetaHtml(roleText)}</div>`;
                 return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('member')}<span>${escapeTaskMetaHtml(maskedName)}</span></div>${roleHint}</div>`;
               }).join('');
             }
@@ -11960,7 +11962,7 @@ $sessionPayload = [
               await withTransitionLoader(
                 async () => {
                   await teamTaskPost('settings', { deleteTeam: true });
-                  await refreshTeamTaskState('team_rules');
+                  await refreshTeamTaskState('team_find');
                 },
                 {
                   primaryText: 'در حال حذف تیم',
@@ -11979,7 +11981,7 @@ $sessionPayload = [
             void withTransitionLoader(
               async () => {
                 await teamTaskPost('settings', { leaveTeam: true });
-                await refreshTeamTaskState('team_rules');
+                await refreshTeamTaskState('team_find');
               },
               {
                 primaryText: 'در حال خروج از تیم',
