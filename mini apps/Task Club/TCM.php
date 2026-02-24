@@ -3914,10 +3914,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
       }
       $myTeam = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
-      if (trim((string)($myTeam['leaderWorkId'] ?? '')) !== trim($sessionWorkId)) {
-        echo json_encode(['status' => 'error', 'message' => 'فقط سرگروه می‌تواند عضو دعوت کند.']);
-        exit;
-      }
       $query = trim((string)($payload['query'] ?? ''));
       if ($query === '') {
         echo json_encode(['status' => 'error', 'message' => 'شماره پرسنلی یا شماره تلفن را وارد کنید.']);
@@ -3959,10 +3955,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
       }
       $myTeam = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
-      if (trim((string)($myTeam['leaderWorkId'] ?? '')) !== trim($sessionWorkId)) {
-        echo json_encode(['status' => 'error', 'message' => 'فقط سرگروه می‌تواند عضو دعوت کند.']);
-        exit;
-      }
       $targetRaw = trim((string)($payload['targetWorkId'] ?? ($payload['query'] ?? '')));
       if ($targetRaw === '') {
         echo json_encode(['status' => 'error', 'message' => 'کاربر دعوت‌شونده مشخص نیست.']);
@@ -6873,21 +6865,46 @@ $sessionPayload = [
         flex: 0 0 24px;
       }
 
-      .team-entity-icon svg {
-        width: 13px;
-        height: 13px;
+      .team-entity-icon i {
+        font-size: 0.62rem;
         display: block;
-        fill: currentColor;
+        line-height: 1;
+        transform: scale(2);
+        transform-origin: center;
       }
 
-      .team-entity-icon--team {
+      .team-entity-icon--member {
+        background: #f2f7ff;
+        color: #355788;
+      }
+
+      .team-entity-icon--invite {
+        background: #fff8ea;
+        color: #b86e1f;
+        border-color: #efd5ae;
+      }
+
+      .team-entity-icon--request {
+        background: #f7f0ff;
+        color: #6f4a9a;
+        border-color: #dccbf2;
+      }
+
+      .team-entity-icon--team-private {
         background: #edf4ff;
         color: #2f4f87;
       }
 
-      .team-entity-icon--user {
-        background: #f2f7ff;
-        color: #355788;
+      .team-entity-icon--team-public-request {
+        background: #fff6e9;
+        color: #b86e1f;
+        border-color: #efd5ae;
+      }
+
+      .team-entity-icon--team-public-open {
+        background: #edf9f2;
+        color: #2e8d58;
+        border-color: #cae8d7;
       }
 
       .team-list-item-leader {
@@ -6925,6 +6942,35 @@ $sessionPayload = [
         border-color: #cddcf7;
         background: #f2f7ff;
         color: #4b6290;
+      }
+
+      .team-join-type-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .team-join-type-badge i {
+        font-size: 0.92rem;
+        line-height: 1;
+      }
+
+      .team-join-type-badge--private {
+        border-color: #d3def4;
+        background: #f2f7ff;
+        color: #36598c;
+      }
+
+      .team-join-type-badge--public-request {
+        border-color: #efd5ae;
+        background: #fff8ea;
+        color: #b86e1f;
+      }
+
+      .team-join-type-badge--public-open {
+        border-color: #cae8d7;
+        background: #edf9f2;
+        color: #2e8d58;
       }
 
       .team-list-item-invited-tag {
@@ -7030,10 +7076,24 @@ $sessionPayload = [
         border-radius: 10px;
         background: #ffffff;
         color: #355487;
-        font-size: 0.76rem;
+        font-size: 0.9rem;
         font-weight: 700;
         cursor: pointer;
-        padding: 5px 8px;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .team-member-remove i {
+        font-size: 1.04rem;
+        line-height: 1;
+      }
+
+      .team-member-remove:hover {
+        background: #f3f8ff;
       }
 
       .team-member-remove--danger {
@@ -7042,13 +7102,19 @@ $sessionPayload = [
         background: #fff4f5;
       }
 
+      .team-member-remove--accept {
+        border-color: #c7e7d3;
+        color: #1f8a4b;
+        background: #f2fff6;
+      }
+
       .team-member-review-actions {
         display: inline-flex;
         align-items: center;
         gap: 6px;
       }
 
-      .team-member-review-actions .team-member-remove[data-team-review-decision="accept"] {
+      .team-member-review-actions .team-member-remove--accept {
         border-color: #c7e7d3;
         color: #1f8a4b;
         background: #f2fff6;
@@ -7061,30 +7127,43 @@ $sessionPayload = [
       }
 
       .team-invite-dialog {
-        width: min(400px, calc(100% - 26px));
+        width: min(460px, calc(100% - 26px));
       }
 
       .team-invite-dialog-content {
         display: grid;
         gap: 8px;
+        width: 100%;
+        align-items: stretch;
+        justify-content: flex-start;
+      }
+
+      .team-invite-dialog-content .login-field,
+      .team-invite-dialog-content .login-input,
+      .team-invite-dialog-content .login-btn,
+      .team-invite-dialog-content .tc-result-dialog-confirm,
+      .team-invite-dialog-content .team-invite-result {
+        width: 100%;
       }
 
       .team-invite-result {
         border: 1px solid #ccdbf8;
         border-radius: 10px;
         background: #fff;
-        padding: 8px;
+        padding: 10px;
         display: grid;
         gap: 7px;
+        box-sizing: border-box;
       }
 
       .team-invite-result-name {
         margin: 0;
         color: #1f3560;
         font-size: 0.86rem;
-        display: inline-flex;
+        display: flex;
         align-items: center;
         gap: 8px;
+        width: 100%;
       }
 
       .team-invite-result-text {
@@ -7180,18 +7259,21 @@ $sessionPayload = [
         padding: 5px 12px;
       }
 
-      .team-danger-btn {
+      .login-btn.team-danger-btn {
         width: 100%;
         background: #d5434d;
         color: #fff;
         border: 1px solid #b6363e;
       }
 
-      .team-danger-btn:hover {
+      .login-btn.team-danger-btn:hover {
         background: #bf333d;
+        color: #fff;
       }
 
-      .team-danger-btn:disabled {
+      .login-btn.team-danger-btn:disabled {
+        background: #d5434d;
+        color: #fff;
         opacity: 0.72;
       }
 
@@ -8330,12 +8412,10 @@ $sessionPayload = [
               <span>شماره پرسنلی یا شماره تلفن</span>
               <input id="tc-team-invite-query-input" class="login-input" type="text" placeholder="مثال: 12345 یا 0912..." />
             </label>
-            <button id="tc-team-invite-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجو</button>
             <div id="tc-team-invite-result" class="team-invite-result hidden">
               <p id="tc-team-invite-result-name" class="team-invite-result-name">-</p>
-              <button id="tc-team-invite-confirm-btn" class="login-btn describe-photo-btn" type="button">دعوت</button>
             </div>
-            <button id="tc-team-invite-dialog-close" class="tc-result-dialog-confirm tc-confirm-dialog-cancel" type="button">بستن</button>
+            <button id="tc-team-invite-action-btn" class="tc-result-dialog-confirm" type="button">جستجو</button>
           </div>
         </section>
       </div>
@@ -8677,12 +8757,10 @@ $sessionPayload = [
         const teamRoomMembersEl = document.getElementById('tc-team-room-members');
         const teamOpenInviteBtnEl = document.getElementById('tc-team-open-invite-btn');
         const teamInviteQueryInputEl = document.getElementById('tc-team-invite-query-input');
-        const teamInviteSearchBtnEl = document.getElementById('tc-team-invite-search-btn');
         const teamInviteResultEl = document.getElementById('tc-team-invite-result');
         const teamInviteResultNameEl = document.getElementById('tc-team-invite-result-name');
-        const teamInviteConfirmBtnEl = document.getElementById('tc-team-invite-confirm-btn');
+        const teamInviteActionBtnEl = document.getElementById('tc-team-invite-action-btn');
         const teamInviteDialogEl = document.getElementById('tc-team-invite-dialog');
-        const teamInviteDialogCloseBtnEl = document.getElementById('tc-team-invite-dialog-close');
         const teamStartBtnEl = document.getElementById('tc-team-start-btn');
         const teamSettingsBtnEl = document.getElementById('tc-team-settings-btn');
         const teamFindStepEl = document.getElementById('tc-team-find-step');
@@ -8748,6 +8826,8 @@ $sessionPayload = [
         let teamTaskState = null;
         let teamTaskPreviewTeam = null;
         let teamTaskInviteCandidate = null;
+        let teamInviteDialogActionMode = 'search';
+        let teamInviteDialogHasHistoryState = false;
         let teamTaskPendingName = '';
         let teamTaskBusy = false;
         let answerTimeLimitEnabled = true;
@@ -9423,6 +9503,11 @@ $sessionPayload = [
             teamInviteDialogEl.classList.remove('open');
             teamInviteDialogEl.setAttribute('aria-hidden', 'true');
           }
+          teamInviteDialogHasHistoryState = false;
+          teamInviteDialogActionMode = 'search';
+          if (teamInviteActionBtnEl instanceof HTMLButtonElement) {
+            teamInviteActionBtnEl.textContent = 'جستجو';
+          }
           if (teamOpenInviteBtnEl instanceof HTMLButtonElement) {
             teamOpenInviteBtnEl.disabled = true;
             teamOpenInviteBtnEl.classList.remove('hidden');
@@ -9844,11 +9929,21 @@ $sessionPayload = [
           return 'private';
         };
 
-        const formatTeamJoinTypeText = (joinType) => {
+        const getTeamJoinTypeMeta = (joinType) => {
           const token = normalizeTeamJoinTypeClient(joinType);
-          if (token === 'public_open') return 'عمومی ورود آزاد';
-          if (token === 'public_request') return 'عمومی با درخواست';
-          return 'خصوصی';
+          if (token === 'public_open') {
+            return { token, label: 'عمومی - ورود آزاد', iconClass: 'ri-earth-line' };
+          }
+          if (token === 'public_request') {
+            return { token, label: 'عمومی - با تایید', iconClass: 'ri-user-follow-line' };
+          }
+          return { token: 'private', label: 'خصوصی', iconClass: 'ri-lock-2-line' };
+        };
+
+        const renderTeamJoinTypeBadge = (joinType, baseClasses = 'team-list-item-chip team-list-item-chip--join') => {
+          const meta = getTeamJoinTypeMeta(joinType);
+          const tokenClass = `team-join-type-badge--${meta.token.replace(/_/g, '-')}`;
+          return `<span class="${escapeTaskMetaHtml(`${baseClasses} team-join-type-badge ${tokenClass}`)}"><i class="${escapeTaskMetaHtml(meta.iconClass)}" aria-hidden="true"></i><span>${escapeTaskMetaHtml(meta.label)}</span></span>`;
         };
 
         const teamTaskPost = async (mode, body = {}) => {
@@ -9884,12 +9979,27 @@ $sessionPayload = [
           return resolveInviteeDisplayMeta(leader || {}, 'سرگروه');
         };
 
-        const TEAM_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a2.5 2.5 0 0 1 2.5-2.5h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm4.1 2.8a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm7.8 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4ZM12 11.9c-2.8 0-5 1.4-5 3.1 0 .4.3.7.7.7h8.6c.4 0 .7-.3.7-.7 0-1.7-2.2-3.1-5-3.1Z"/></svg>';
-        const USER_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2A4.3 4.3 0 1 1 7.7 8.5 4.3 4.3 0 0 1 12 4.2Zm0 9.6c3.8 0 6.8 2.1 6.8 4.8 0 .7-.6 1.2-1.2 1.2H6.4c-.7 0-1.2-.6-1.2-1.2 0-2.7 3-4.8 6.8-4.8Z"/></svg>';
-        const renderEntityIcon = (kind) => {
-          const type = String(kind || '').trim().toLowerCase() === 'team' ? 'team' : 'user';
-          const icon = type === 'team' ? TEAM_ICON_SVG : USER_ICON_SVG;
-          return `<span class="team-entity-icon team-entity-icon--${type}" aria-hidden="true">${icon}</span>`;
+        const renderEntityIcon = (kind, options = {}) => {
+          const type = String(kind || '').trim().toLowerCase();
+          let iconClass = 'ri-user-3-line';
+          let variantClass = 'member';
+
+          if (type === 'team') {
+            const meta = getTeamJoinTypeMeta(options?.joinType);
+            variantClass = `team-${meta.token.replace(/_/g, '-')}`;
+            iconClass = meta.iconClass;
+          } else if (type === 'invite' || type === 'invited') {
+            variantClass = 'invite';
+            iconClass = 'ri-mail-line';
+          } else if (type === 'request' || type === 'requested') {
+            variantClass = 'request';
+            iconClass = 'ri-user-add-line';
+          } else {
+            variantClass = 'member';
+            iconClass = 'ri-user-3-line';
+          }
+
+          return `<span class="team-entity-icon team-entity-icon--${escapeTaskMetaHtml(variantClass)}" aria-hidden="true"><i class="${escapeTaskMetaHtml(iconClass)}"></i></span>`;
         };
 
         const renderTeamCardList = (container, teams, emptyText = 'موردی یافت نشد.', variant = 'public') => {
@@ -9904,7 +10014,7 @@ $sessionPayload = [
             const teamName = escapeTaskMetaHtml(String(team?.name || 'تیم'));
             const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
-            const joinTypeText = escapeTaskMetaHtml(formatTeamJoinTypeText(team?.joinType));
+            const joinTypeBadge = renderTeamJoinTypeBadge(team?.joinType);
             const leaderMeta = resolveTeamLeaderMeta(team);
             const leaderName = escapeTaskMetaHtml(leaderMeta.name);
             const leaderWorkIdHint = leaderMeta.workId !== ''
@@ -9915,20 +10025,34 @@ $sessionPayload = [
               : '';
             return `<button class="team-list-item-btn" type="button" data-team-open-id="${teamId}">
               ${invitedTag}
-              <span class="team-entity-title">${renderEntityIcon('team')}<strong>${teamName}</strong></span>
+              <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType })}<strong>${teamName}</strong></span>
               <span class="team-list-item-leader">سرگروه: ${leaderName}</span>
               ${leaderWorkIdHint}
               <span class="team-list-item-meta-row">
                 <span class="team-list-item-chip">${memberCount}/${maxMembers} نفر</span>
-                <span class="team-list-item-chip team-list-item-chip--join">${joinTypeText}</span>
+                ${joinTypeBadge}
               </span>
             </button>`;
           }).join('');
         };
 
-        const resetTeamInviteLookup = () => {
+        const isTeamInviteDialogOpen = () => (
+          teamInviteDialogEl instanceof HTMLElement
+          && teamInviteDialogEl.classList.contains('open')
+        );
+
+        const setTeamInviteDialogActionMode = (mode = 'search') => {
+          const next = String(mode || '').trim().toLowerCase() === 'invite' ? 'invite' : 'search';
+          teamInviteDialogActionMode = next;
+          if (teamInviteActionBtnEl instanceof HTMLButtonElement) {
+            teamInviteActionBtnEl.textContent = next === 'invite' ? 'دعوت' : 'جستجو';
+          }
+        };
+
+        const resetTeamInviteLookup = (options = {}) => {
+          const clearInput = options?.clearInput !== false;
           teamTaskInviteCandidate = null;
-          if (teamInviteQueryInputEl instanceof HTMLInputElement) {
+          if (clearInput && teamInviteQueryInputEl instanceof HTMLInputElement) {
             teamInviteQueryInputEl.value = '';
           }
           if (teamInviteResultEl) {
@@ -9937,21 +10061,40 @@ $sessionPayload = [
           if (teamInviteResultNameEl) {
             teamInviteResultNameEl.innerHTML = '<span>-</span>';
           }
+          setTeamInviteDialogActionMode('search');
         };
 
-        const closeTeamInviteDialog = () => {
-          if (!(teamInviteDialogEl instanceof HTMLElement)) return;
+        const closeTeamInviteDialog = (options = {}) => {
+          const fromPopState = Boolean(options?.fromPopState);
+          const wasOpen = isTeamInviteDialogOpen();
+          if (!(teamInviteDialogEl instanceof HTMLElement) || (!wasOpen && !teamInviteDialogHasHistoryState)) return;
           teamInviteDialogEl.classList.remove('open');
           teamInviteDialogEl.setAttribute('aria-hidden', 'true');
+          if (fromPopState) {
+            teamInviteDialogHasHistoryState = false;
+            return;
+          }
+          if (teamInviteDialogHasHistoryState && typeof window !== 'undefined' && window.history && typeof window.history.back === 'function') {
+            teamInviteDialogHasHistoryState = false;
+            window.history.back();
+          }
         };
 
         const openTeamInviteDialog = () => {
           const myTeam = teamTaskState?.myTeam || null;
-          if (!myTeam || !myTeam.isLeader) return;
+          if (!myTeam) return;
+          if (isTeamInviteDialogOpen()) return;
           resetTeamInviteLookup();
           if (teamInviteDialogEl instanceof HTMLElement) {
             teamInviteDialogEl.classList.add('open');
             teamInviteDialogEl.setAttribute('aria-hidden', 'false');
+          }
+          if (!teamInviteDialogHasHistoryState && typeof window !== 'undefined' && window.history && typeof window.history.pushState === 'function') {
+            const baseState = (window.history.state && typeof window.history.state === 'object')
+              ? window.history.state
+              : {};
+            window.history.pushState({ ...baseState, tcOverlay: 'teamInviteDialog' }, '', window.location.href);
+            teamInviteDialogHasHistoryState = true;
           }
           window.setTimeout(() => {
             if (teamInviteQueryInputEl instanceof HTMLInputElement) {
@@ -9990,11 +10133,11 @@ $sessionPayload = [
             const canRemove = isLeader && !isLeadMember && workId !== '';
             return `<div class="team-member-chip ${isLeadMember ? 'team-member-chip--leader' : 'team-member-chip--member'}">
               <div class="team-member-text">
-                <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
+                <div class="team-member-name">${renderEntityIcon('member')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">${escapeTaskMetaHtml(statusText)}</div>
                 ${workIdHint}
               </div>
-              ${canRemove ? `<button class="team-member-remove team-member-remove--danger" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="member">حذف</button>` : ''}
+              ${canRemove ? `<button class="team-member-remove team-member-remove--danger" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="member" aria-label="حذف عضو"><i class="ri-user-unfollow-line" aria-hidden="true"></i></button>` : ''}
             </div>`;
           });
 
@@ -10006,11 +10149,11 @@ $sessionPayload = [
             const canCancel = isLeader && workId !== '';
             return `<div class="team-member-chip team-member-chip--invited">
               <div class="team-member-text">
-                <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
+                <div class="team-member-name">${renderEntityIcon('invite')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">دعوت در انتظار تایید</div>
                 ${workIdHint}
               </div>
-              ${canCancel ? `<button class="team-member-remove team-member-remove--danger" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="invite">لغو دعوت</button>` : ''}
+              ${canCancel ? `<button class="team-member-remove team-member-remove--danger" type="button" data-team-remove-work-id="${escapeTaskMetaHtml(workId)}" data-team-remove-kind="invite" aria-label="لغو دعوت"><i class="ri-mail-close-line" aria-hidden="true"></i></button>` : ''}
             </div>`;
           });
 
@@ -10021,13 +10164,13 @@ $sessionPayload = [
             const workIdHint = workId !== '' ? `<div class="team-member-workid">شناسه: ${escapeTaskMetaHtml(workId)}</div>` : '';
             const actionButtons = (isLeader && workId !== '')
               ? `<div class="team-member-review-actions">
-                  <button class="team-member-remove" type="button" data-team-review-work-id="${escapeTaskMetaHtml(workId)}" data-team-review-decision="accept">تایید</button>
-                  <button class="team-member-remove" type="button" data-team-review-work-id="${escapeTaskMetaHtml(workId)}" data-team-review-decision="reject">رد</button>
+                  <button class="team-member-remove team-member-remove--accept" type="button" data-team-review-work-id="${escapeTaskMetaHtml(workId)}" data-team-review-decision="accept" aria-label="تایید درخواست"><i class="ri-check-line" aria-hidden="true"></i></button>
+                  <button class="team-member-remove team-member-remove--danger" type="button" data-team-review-work-id="${escapeTaskMetaHtml(workId)}" data-team-review-decision="reject" aria-label="رد درخواست"><i class="ri-close-line" aria-hidden="true"></i></button>
                 </div>`
               : '';
             return `<div class="team-member-chip team-member-chip--request">
               <div class="team-member-text">
-                <div class="team-member-name">${renderEntityIcon('user')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
+                <div class="team-member-name">${renderEntityIcon('request')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
                 <div class="team-member-status">درخواست عضویت</div>
                 ${workIdHint}
               </div>
@@ -10080,13 +10223,13 @@ $sessionPayload = [
           const isLeader = Boolean(myTeam?.isLeader);
           if (teamRoomTopActionsEl) {
             teamRoomTopActionsEl.classList.toggle('hidden', !myTeam);
-            teamRoomTopActionsEl.classList.toggle('team-room-top-actions--single', Boolean(myTeam) && !isLeader);
+            teamRoomTopActionsEl.classList.remove('team-room-top-actions--single');
           }
           if (teamOpenInviteBtnEl instanceof HTMLButtonElement) {
-            teamOpenInviteBtnEl.classList.toggle('hidden', !isLeader);
-            teamOpenInviteBtnEl.disabled = !myTeam || !isLeader;
+            teamOpenInviteBtnEl.classList.toggle('hidden', !myTeam);
+            teamOpenInviteBtnEl.disabled = !myTeam;
           }
-          if (!myTeam || !isLeader) {
+          if (!myTeam) {
             closeTeamInviteDialog();
           }
           resetTeamInviteLookup();
@@ -10094,8 +10237,23 @@ $sessionPayload = [
             const minMembers = Math.max(1, Number.parseInt(myTeam?.minMembers ?? teamTaskState?.teamSettings?.teamMin ?? 1, 10) || 1);
             const memberCount = Math.max(0, Number.parseInt(myTeam?.memberCount ?? 0, 10) || 0);
             const started = Boolean(myTeam?.started);
-            teamStartBtnEl.disabled = !myTeam || (!started && (!isLeader || memberCount < minMembers));
-            teamStartBtnEl.textContent = started ? 'مشاهده چالش' : 'شروع چالش';
+            const neededMembers = Math.max(0, minMembers - memberCount);
+            if (!myTeam) {
+              teamStartBtnEl.disabled = true;
+              teamStartBtnEl.textContent = 'شروع چالش';
+            } else if (started) {
+              teamStartBtnEl.disabled = false;
+              teamStartBtnEl.textContent = 'مشاهده چالش';
+            } else if (neededMembers > 0) {
+              teamStartBtnEl.disabled = true;
+              teamStartBtnEl.textContent = `${neededMembers} عضو دیگر برای شروع چالش`;
+            } else if (!isLeader) {
+              teamStartBtnEl.disabled = true;
+              teamStartBtnEl.textContent = 'در انتظار شروع توسط سرگروه';
+            } else {
+              teamStartBtnEl.disabled = false;
+              teamStartBtnEl.textContent = 'شروع چالش';
+            }
           }
           if (teamSettingsBtnEl instanceof HTMLButtonElement) {
             teamSettingsBtnEl.disabled = !myTeam;
@@ -10111,7 +10269,7 @@ $sessionPayload = [
           if (teamPreviewMetaEl) {
             const memberCount = Math.max(0, Number.parseInt(teamTaskPreviewTeam?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(teamTaskPreviewTeam?.maxMembers ?? 1, 10) || 1);
-            const joinTypeText = formatTeamJoinTypeText(teamTaskPreviewTeam?.joinType);
+            const joinTypeBadge = renderTeamJoinTypeBadge(teamTaskPreviewTeam?.joinType, 'team-meta-badge team-meta-badge--join');
             const leaderMeta = resolveTeamLeaderMeta(teamTaskPreviewTeam);
             const leaderName = leaderMeta.name;
             const leaderWorkIdBadge = leaderMeta.workId !== ''
@@ -10119,7 +10277,7 @@ $sessionPayload = [
               : '';
             teamPreviewMetaEl.innerHTML = [
               `<span class="team-meta-badge">${escapeTaskMetaHtml(`${memberCount}/${maxMembers} نفر`)}</span>`,
-              `<span class="team-meta-badge">${escapeTaskMetaHtml(joinTypeText)}</span>`,
+              joinTypeBadge,
               `<span class="team-meta-badge">${escapeTaskMetaHtml(`سرگروه: ${leaderName}`)}</span>`,
               leaderWorkIdBadge
             ].filter((part) => part !== '').join('');
@@ -10132,7 +10290,7 @@ $sessionPayload = [
               teamPreviewMembersEl.innerHTML = members.map((item) => {
                 const meta = resolveInviteeDisplayMeta(item, 'کاربر');
                 const workIdHint = meta.workId !== '' ? `<div class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(meta.workId)}</div>` : '';
-                return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('user')}<span>${escapeTaskMetaHtml(meta.name)}</span></div>${workIdHint}</div>`;
+                return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('member')}<span>${escapeTaskMetaHtml(meta.name)}</span></div>${workIdHint}</div>`;
               }).join('');
             }
           }
@@ -11543,12 +11701,6 @@ $sessionPayload = [
           });
         }
 
-        if (teamInviteDialogCloseBtnEl instanceof HTMLButtonElement) {
-          teamInviteDialogCloseBtnEl.addEventListener('click', () => {
-            closeTeamInviteDialog();
-          });
-        }
-
         if (teamInviteDialogEl instanceof HTMLElement) {
           teamInviteDialogEl.addEventListener('click', (event) => {
             if (event.target === teamInviteDialogEl) {
@@ -11557,80 +11709,97 @@ $sessionPayload = [
           });
         }
 
+        const runTeamInviteLookup = () => {
+          const query = String(teamInviteQueryInputEl?.value || '').trim();
+          if (query === '') {
+            void openInfoDialog('شماره پرسنلی یا شماره تلفن کاربر را وارد کنید.');
+            return;
+          }
+          void withTransitionLoader(
+            async () => {
+              const payload = await teamTaskPost('lookup_user', { query });
+              const invitee = payload?.data?.invitee || null;
+              if (!invitee) {
+                throw new Error('کاربری پیدا نشد.');
+              }
+              if (payload?.data?.isMemberAny) {
+                throw new Error('این کاربر هم‌اکنون عضو یک تیم است.');
+              }
+              teamTaskInviteCandidate = invitee;
+              if (teamInviteResultNameEl) {
+                const inviteeMeta = resolveInviteeDisplayMeta(invitee, 'کاربر');
+                const workIdHint = inviteeMeta.workId !== '' ? `<small class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(inviteeMeta.workId)}</small>` : '';
+                teamInviteResultNameEl.innerHTML = `${renderEntityIcon('member')}<span class="team-invite-result-text"><span>${escapeTaskMetaHtml(inviteeMeta.name)}</span>${workIdHint}</span>`;
+              }
+              if (teamInviteResultEl) {
+                teamInviteResultEl.classList.remove('hidden');
+              }
+              setTeamInviteDialogActionMode('invite');
+            },
+            {
+              primaryText: 'در حال جستجوی کاربر',
+              secondaryText: 'لطفا صبر کنید',
+              delayMs: 120
+            }
+          ).catch(async (error) => {
+            resetTeamInviteLookup({ clearInput: false });
+            await openInfoDialog(error?.message || 'جستجوی کاربر ناموفق بود.');
+          });
+        };
+
+        const runTeamInviteSubmit = () => {
+          const targetWorkId = String(teamTaskInviteCandidate?.workId || '').trim();
+          if (targetWorkId === '') {
+            void openInfoDialog('ابتدا کاربر را جستجو کنید.');
+            return;
+          }
+          void withTransitionLoader(
+            async () => {
+              await teamTaskPost('invite', { targetWorkId });
+              await refreshTeamTaskState('team_room');
+              closeTeamInviteDialog();
+            },
+            {
+              primaryText: 'در حال ارسال دعوت',
+              secondaryText: 'لطفا چند لحظه صبر کنید',
+              delayMs: 120
+            }
+          ).catch(async (error) => {
+            await openInfoDialog(error?.message || 'ارسال دعوت ناموفق بود.');
+          });
+        };
+
+        if (teamInviteActionBtnEl instanceof HTMLButtonElement) {
+          teamInviteActionBtnEl.addEventListener('click', () => {
+            if (teamInviteDialogActionMode === 'invite') {
+              runTeamInviteSubmit();
+              return;
+            }
+            runTeamInviteLookup();
+          });
+        }
+
         if (teamInviteQueryInputEl instanceof HTMLInputElement) {
           teamInviteQueryInputEl.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              if (teamInviteSearchBtnEl instanceof HTMLButtonElement) {
-                teamInviteSearchBtnEl.click();
+              if (teamInviteActionBtnEl instanceof HTMLButtonElement) {
+                teamInviteActionBtnEl.click();
               }
+            }
+          });
+          teamInviteQueryInputEl.addEventListener('input', () => {
+            if (teamInviteDialogActionMode === 'invite') {
+              resetTeamInviteLookup({ clearInput: false });
             }
           });
         }
 
-        if (teamInviteSearchBtnEl instanceof HTMLButtonElement) {
-          teamInviteSearchBtnEl.addEventListener('click', () => {
-            const query = String(teamInviteQueryInputEl?.value || '').trim();
-            if (query === '') {
-              void openInfoDialog('شماره پرسنلی یا شماره تلفن کاربر را وارد کنید.');
-              return;
-            }
-            void withTransitionLoader(
-              async () => {
-                const payload = await teamTaskPost('lookup_user', { query });
-                const invitee = payload?.data?.invitee || null;
-                if (!invitee) {
-                  throw new Error('کاربری پیدا نشد.');
-                }
-                if (payload?.data?.isMemberAny) {
-                  throw new Error('این کاربر هم‌اکنون عضو یک تیم است.');
-                }
-                teamTaskInviteCandidate = invitee;
-                if (teamInviteResultNameEl) {
-                  const inviteeMeta = resolveInviteeDisplayMeta(invitee, 'کاربر');
-                  const workIdHint = inviteeMeta.workId !== '' ? `<small class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(inviteeMeta.workId)}</small>` : '';
-                  teamInviteResultNameEl.innerHTML = `${renderEntityIcon('user')}<span class="team-invite-result-text"><span>${escapeTaskMetaHtml(inviteeMeta.name)}</span>${workIdHint}</span>`;
-                }
-                if (teamInviteResultEl) {
-                  teamInviteResultEl.classList.remove('hidden');
-                }
-              },
-              {
-                primaryText: 'در حال جستجوی کاربر',
-                secondaryText: 'لطفا صبر کنید',
-                delayMs: 120
-              }
-            ).catch(async (error) => {
-              teamTaskInviteCandidate = null;
-              if (teamInviteResultEl) teamInviteResultEl.classList.add('hidden');
-              await openInfoDialog(error?.message || 'جستجوی کاربر ناموفق بود.');
-            });
-          });
-        }
-
-        if (teamInviteConfirmBtnEl instanceof HTMLButtonElement) {
-          teamInviteConfirmBtnEl.addEventListener('click', () => {
-            const targetWorkId = String(teamTaskInviteCandidate?.workId || '').trim();
-            if (targetWorkId === '') {
-              void openInfoDialog('ابتدا کاربر را جستجو کنید.');
-              return;
-            }
-            void withTransitionLoader(
-              async () => {
-                await teamTaskPost('invite', { targetWorkId });
-                await refreshTeamTaskState('team_room');
-                closeTeamInviteDialog();
-              },
-              {
-                primaryText: 'در حال ارسال دعوت',
-                secondaryText: 'لطفا چند لحظه صبر کنید',
-                delayMs: 120
-              }
-            ).catch(async (error) => {
-              await openInfoDialog(error?.message || 'ارسال دعوت ناموفق بود.');
-            });
-          });
-        }
+        window.addEventListener('popstate', () => {
+          if (isTeamInviteDialogOpen()) {
+            closeTeamInviteDialog({ fromPopState: true });
+          }
+        });
 
         if (teamRoomMembersEl instanceof HTMLElement) {
           teamRoomMembersEl.addEventListener('click', (event) => {
