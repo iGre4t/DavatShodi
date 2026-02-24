@@ -1444,10 +1444,6 @@ function resolveInviteeWorkIdByCredential(array $table, string $credential): str
   if ($rowIndex >= 0) {
     return trim((string)($rows[$rowIndex][$workIdIndex] ?? ''));
   }
-  $phoneRowIndex = findInviteeRowIndexByPhone($table, $target);
-  if ($phoneRowIndex >= 0) {
-    return trim((string)($rows[$phoneRowIndex][$workIdIndex] ?? ''));
-  }
   return '';
 }
 
@@ -3916,7 +3912,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $myTeam = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
       $query = trim((string)($payload['query'] ?? ''));
       if ($query === '') {
-        echo json_encode(['status' => 'error', 'message' => 'شماره پرسنلی یا شماره تلفن را وارد کنید.']);
+        echo json_encode(['status' => 'error', 'message' => 'شماره پرسنلی (Work ID) را وارد کنید.']);
         exit;
       }
       $targetWorkId = resolveInviteeWorkIdByCredential($table, $query);
@@ -4060,7 +4056,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($mode === 'find_by_leader') {
       $query = trim((string)($payload['query'] ?? ''));
       if ($query === '') {
-        echo json_encode(['status' => 'error', 'message' => 'شماره پرسنلی یا شماره تلفن سرگروه را وارد کنید.']);
+        echo json_encode(['status' => 'error', 'message' => 'شماره پرسنلی (Work ID) سرگروه را وارد کنید.']);
         exit;
       }
       $leaderWorkId = resolveInviteeWorkIdByCredential($table, $query);
@@ -6809,6 +6805,13 @@ $sessionPayload = [
         gap: 9px;
       }
 
+      .team-groups-hint {
+        margin: 2px 0 0;
+        color: #5d7399;
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+
       .team-list-group--invited .team-list-title {
         color: #1f3f77;
       }
@@ -6915,8 +6918,9 @@ $sessionPayload = [
       }
 
       .team-entity-icon--team-private {
-        background: #edf4ff;
-        color: #2f4f87;
+        background: #fff1f2;
+        color: #c23a44;
+        border-color: #f0c6cb;
       }
 
       .team-entity-icon--team-public-request {
@@ -6968,6 +6972,13 @@ $sessionPayload = [
         color: #4b6290;
       }
 
+      .team-list-separator {
+        width: 100%;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(140, 160, 196, 0.18) 0%, rgba(140, 160, 196, 0.6) 50%, rgba(140, 160, 196, 0.18) 100%);
+        margin: 2px 0 4px;
+      }
+
       .team-join-type-badge {
         display: inline-flex;
         align-items: center;
@@ -6980,9 +6991,9 @@ $sessionPayload = [
       }
 
       .team-join-type-badge--private {
-        border-color: #d3def4;
-        background: #f2f7ff;
-        color: #36598c;
+        border-color: #f0c6cb;
+        background: #fff1f2;
+        color: #c23a44;
       }
 
       .team-join-type-badge--public-request {
@@ -6992,6 +7003,18 @@ $sessionPayload = [
       }
 
       .team-join-type-badge--public-open {
+        border-color: #cae8d7;
+        background: #edf9f2;
+        color: #2e8d58;
+      }
+
+      .team-join-type-badge--full {
+        border-color: #efc7cb;
+        background: #fff1f2;
+        color: #c23a44;
+      }
+
+      .team-join-type-badge--started {
         border-color: #cae8d7;
         background: #edf9f2;
         color: #2e8d58;
@@ -7271,6 +7294,24 @@ $sessionPayload = [
         padding: 4px 10px;
       }
 
+      .team-meta-badge.team-join-type-badge--private {
+        border-color: #f0c6cb;
+        background: #fff1f2;
+        color: #c23a44;
+      }
+
+      .team-meta-badge.team-join-type-badge--public-request {
+        border-color: #efd5ae;
+        background: #fff8ea;
+        color: #b86e1f;
+      }
+
+      .team-meta-badge.team-join-type-badge--public-open {
+        border-color: #cae8d7;
+        background: #edf9f2;
+        color: #2e8d58;
+      }
+
       .team-room-slot-badge {
         margin-inline: auto;
         width: fit-content;
@@ -7281,6 +7322,24 @@ $sessionPayload = [
         font-size: 0.8rem;
         font-weight: 700;
         padding: 5px 12px;
+      }
+
+      .team-room-slot-badge--need-members {
+        border-color: #f0c6cb;
+        background: #fff1f2;
+        color: #c23a44;
+      }
+
+      .team-room-slot-badge--min-reached {
+        border-color: #efd5ae;
+        background: #fff8ea;
+        color: #b86e1f;
+      }
+
+      .team-room-slot-badge--max-reached {
+        border-color: #cae8d7;
+        background: #edf9f2;
+        color: #2e8d58;
       }
 
       .login-btn.team-danger-btn {
@@ -8297,6 +8356,7 @@ $sessionPayload = [
               <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
               <button id="tc-team-create-from-find-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             </div>
+            <p id="tc-team-groups-hint" class="team-groups-hint">گروه تیم‌ها</p>
             <div id="tc-team-invited-group" class="team-list-group team-list-group--invited">
               <p class="team-list-title">دعوت‌شده‌ها</p>
               <div id="tc-team-invited-list" class="team-list team-list--invited"></div>
@@ -8309,8 +8369,8 @@ $sessionPayload = [
           <section id="tc-team-search-step" class="team-task-step hidden">
             <label class="login-field">
               <span>جستجوی سرگروه</span>
-              <small class="team-field-hint">شماره پرسنلی یا شماره تلفن سرگروه مدنظر خود را وارد کنید.</small>
-              <input id="tc-team-search-leader-input" class="login-input" type="text" placeholder="شماره پرسنلی یا تلفن سرگروه" />
+              <small class="team-field-hint">شماره پرسنلی (Work ID) سرگروه مدنظر خود را وارد کنید.</small>
+              <input id="tc-team-search-leader-input" class="login-input" type="text" placeholder="شماره پرسنلی سرگروه" />
             </label>
             <button id="tc-team-search-leader-btn" class="login-btn describe-photo-btn" type="button">جستجوی تیم</button>
           </section>
@@ -8437,8 +8497,8 @@ $sessionPayload = [
           <h3 id="tc-team-invite-dialog-title" class="tc-result-dialog-title">دعوت عضو جدید</h3>
           <div class="tc-result-dialog-content team-invite-dialog-content">
             <label class="login-field">
-              <span>شماره پرسنلی یا شماره تلفن</span>
-              <input id="tc-team-invite-query-input" class="login-input" type="text" placeholder="مثال: 12345 یا 0912..." />
+              <span>شماره پرسنلی (Work ID)</span>
+              <input id="tc-team-invite-query-input" class="login-input" type="text" placeholder="مثال: 12345" />
             </label>
             <div id="tc-team-invite-result" class="team-invite-result hidden">
               <p id="tc-team-invite-result-name" class="team-invite-result-name">-</p>
@@ -9976,6 +10036,23 @@ $sessionPayload = [
           return `<span class="${escapeTaskMetaHtml(`${baseClasses} team-join-type-badge ${tokenClass}`)}"><i class="${escapeTaskMetaHtml(meta.iconClass)}" aria-hidden="true"></i><span>${escapeTaskMetaHtml(meta.label)}</span></span>`;
         };
 
+        const renderTeamAccessBadge = (team, baseClasses = 'team-list-item-chip team-list-item-chip--join') => {
+          const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
+          const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
+          const started = Boolean(team?.started);
+          const isFull = memberCount >= maxMembers;
+
+          if (started) {
+            return `<span class="${escapeTaskMetaHtml(`${baseClasses} team-join-type-badge team-join-type-badge--started`)}"><i class="ri-flag-2-line" aria-hidden="true"></i><span>چالش را شروع کردند</span></span>`;
+          }
+
+          if (isFull) {
+            return `<span class="${escapeTaskMetaHtml(`${baseClasses} team-join-type-badge team-join-type-badge--full`)}"><i class="ri-user-forbid-line" aria-hidden="true"></i><span>ظرفیت تیم تکمیل</span></span>`;
+          }
+
+          return renderTeamJoinTypeBadge(team?.joinType, baseClasses);
+        };
+
         const teamTaskPost = async (mode, body = {}) => {
           return postJson({
             action: 'team_task_action',
@@ -10067,12 +10144,12 @@ $sessionPayload = [
             container.innerHTML = `<div class="team-list-item"><div class="team-list-item-meta">${escapeTaskMetaHtml(emptyText)}</div></div>`;
             return;
           }
-          container.innerHTML = list.map((team) => {
+          const buildTeamCard = (team) => {
             const teamId = escapeTaskMetaHtml(String(team?.id || ''));
             const teamName = escapeTaskMetaHtml(String(team?.name || 'تیم'));
             const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
-            const joinTypeBadge = renderTeamJoinTypeBadge(team?.joinType);
+            const joinTypeBadge = renderTeamAccessBadge(team);
             const invitedTag = variant === 'invited'
               ? '<span class="team-list-item-invited-tag">دعوت برای شما</span>'
               : '';
@@ -10084,7 +10161,33 @@ $sessionPayload = [
                 ${joinTypeBadge}
               </span>
             </button>`;
-          }).join('');
+          };
+
+          const openTeams = [];
+          const lockedTeams = [];
+          list.forEach((team) => {
+            const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
+            const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
+            const started = Boolean(team?.started);
+            const isFull = memberCount >= maxMembers;
+            if (started || isFull) {
+              lockedTeams.push(team);
+            } else {
+              openTeams.push(team);
+            }
+          });
+
+          const chunks = [];
+          if (openTeams.length > 0) {
+            chunks.push(openTeams.map((team) => buildTeamCard(team)).join(''));
+          }
+          if (openTeams.length > 0 && lockedTeams.length > 0) {
+            chunks.push('<div class="team-list-separator" role="separator" aria-hidden="true"></div>');
+          }
+          if (lockedTeams.length > 0) {
+            chunks.push(lockedTeams.map((team) => buildTeamCard(team)).join(''));
+          }
+          container.innerHTML = chunks.join('');
         };
 
         const isTeamInviteDialogOpen = () => (
@@ -10265,13 +10368,22 @@ $sessionPayload = [
           }
           renderTeamCardList(teamPublicListEl, publicTeams, 'تیم عمومی فعالی وجود ندارد.', 'public');
           const myTeam = teamTaskState?.myTeam || null;
+          const memberCount = Math.max(0, Number.parseInt(myTeam?.memberCount ?? 0, 10) || 0);
+          const minMembers = Math.max(1, Number.parseInt(myTeam?.minMembers ?? teamTaskState?.teamSettings?.teamMin ?? 1, 10) || 1);
+          const maxMembers = Math.max(1, Number.parseInt(myTeam?.maxMembers ?? teamTaskState?.teamSettings?.teamMax ?? 1, 10) || 1);
           if (myTeam && teamRoomNameEl) {
             teamRoomNameEl.textContent = String(myTeam?.name || 'تیم من');
           }
           if (teamRoomSlotEl) {
-            const count = Math.max(0, Number.parseInt(myTeam?.memberCount ?? 0, 10) || 0);
-            const maxMembers = Math.max(1, Number.parseInt(myTeam?.maxMembers ?? teamTaskState?.teamSettings?.teamMax ?? 1, 10) || 1);
-            teamRoomSlotEl.textContent = `اعضا: ${count} / ${maxMembers}`;
+            teamRoomSlotEl.textContent = `اعضا: ${memberCount} / ${maxMembers}`;
+            teamRoomSlotEl.classList.remove('team-room-slot-badge--need-members', 'team-room-slot-badge--min-reached', 'team-room-slot-badge--max-reached');
+            if (!myTeam || memberCount < minMembers) {
+              teamRoomSlotEl.classList.add('team-room-slot-badge--need-members');
+            } else if (memberCount >= maxMembers) {
+              teamRoomSlotEl.classList.add('team-room-slot-badge--max-reached');
+            } else {
+              teamRoomSlotEl.classList.add('team-room-slot-badge--min-reached');
+            }
           }
           renderTeamRoomMembers(myTeam);
           const isLeader = Boolean(myTeam?.isLeader);
@@ -10288,8 +10400,6 @@ $sessionPayload = [
           }
           resetTeamInviteLookup();
           if (teamStartBtnEl instanceof HTMLButtonElement) {
-            const minMembers = Math.max(1, Number.parseInt(myTeam?.minMembers ?? teamTaskState?.teamSettings?.teamMin ?? 1, 10) || 1);
-            const memberCount = Math.max(0, Number.parseInt(myTeam?.memberCount ?? 0, 10) || 0);
             const started = Boolean(myTeam?.started);
             const neededMembers = Math.max(0, minMembers - memberCount);
             if (!myTeam) {
@@ -11679,7 +11789,7 @@ $sessionPayload = [
           teamSearchLeaderBtnEl.addEventListener('click', () => {
             const query = String(teamSearchLeaderInputEl?.value || '').trim();
             if (query === '') {
-              void openInfoDialog('شماره پرسنلی یا شماره تلفن سرگروه را وارد کنید.');
+              void openInfoDialog('شماره پرسنلی (Work ID) سرگروه را وارد کنید.');
               return;
             }
             void withTransitionLoader(
@@ -11758,7 +11868,7 @@ $sessionPayload = [
         const runTeamInviteLookup = () => {
           const query = String(teamInviteQueryInputEl?.value || '').trim();
           if (query === '') {
-            void openInfoDialog('شماره پرسنلی یا شماره تلفن کاربر را وارد کنید.');
+            void openInfoDialog('شماره پرسنلی (Work ID) کاربر را وارد کنید.');
             return;
           }
           void withTransitionLoader(
