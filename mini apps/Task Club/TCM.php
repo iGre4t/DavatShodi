@@ -2751,7 +2751,7 @@ function buildTaskPayloadForView(
     $describeSubmitted = (bool)($progress['describeSubmitted'] ?? false);
     $teamStartedPending = (bool)($progress['teamStartedPending'] ?? false);
     $statusLabel = $completed
-      ? 'تکمیل شده'
+      ? ($taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده')
       : (((
           $taskType === 'describe_photo'
           && $status === 'active'
@@ -2761,7 +2761,7 @@ function buildTaskPayloadForView(
           && $status === 'active'
           && $teamStartedPending
         ))
-        ? 'تکمیل شده'
+        ? ($taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده')
         : resolveTaskStatusLabel($status));
     $items[] = [
       'id' => (string)($task['id'] ?? ''),
@@ -6778,6 +6778,18 @@ $sessionPayload = [
         gap: 8px;
       }
 
+      .team-find-additional-text {
+        margin: 0;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid #dbe6f8;
+        background: #f5f8ff;
+        color: #5f759d;
+        font-size: 0.78rem;
+        line-height: 1.8;
+        white-space: pre-line;
+      }
+
       .team-task-actions {
         display: grid;
         gap: 8px;
@@ -6851,28 +6863,6 @@ $sessionPayload = [
         color: #5d7399;
         font-size: 0.8rem;
         font-weight: 700;
-      }
-
-      .team-groups-hint-inner {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      .team-groups-hint-icon {
-        width: 14px;
-        height: 14px;
-        flex: 0 0 14px;
-        border-color: #d4e0f6;
-        background: #f4f8ff;
-        color: #6b7fa5;
-      }
-
-      .team-groups-hint-icon i {
-        font-size: 0.44rem;
-        transform: scale(1);
-        font-weight: 400;
-        opacity: 0.88;
       }
 
       .team-list-group--invited .team-list-title {
@@ -8439,12 +8429,8 @@ $sessionPayload = [
               <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
               <button id="tc-team-create-from-find-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             </div>
-            <p id="tc-team-groups-hint" class="team-groups-hint">
-              <span class="team-groups-hint-inner">
-                <span class="team-entity-icon team-groups-hint-icon" aria-hidden="true"><i class="ri-team-line"></i></span>
-                <span>گروه تیم‌ها</span>
-              </span>
-            </p>
+            <p id="tc-team-find-additional-text" class="team-find-additional-text hidden"></p>
+            <p id="tc-team-groups-hint" class="team-groups-hint">گروه تیم‌ها</p>
             <div id="tc-team-invited-group" class="team-list-group team-list-group--invited">
               <p class="team-list-title">دعوت‌شده‌ها</p>
               <div id="tc-team-invited-list" class="team-list team-list--invited"></div>
@@ -8939,6 +8925,7 @@ $sessionPayload = [
         const teamStartBtnEl = document.getElementById('tc-team-start-btn');
         const teamSettingsBtnEl = document.getElementById('tc-team-settings-btn');
         const teamFindStepEl = document.getElementById('tc-team-find-step');
+        const teamFindAdditionalTextEl = document.getElementById('tc-team-find-additional-text');
         const teamOpenSearchBtnEl = document.getElementById('tc-team-open-search-btn');
         const teamCreateFromFindBtnEl = document.getElementById('tc-team-create-from-find-btn');
         const teamInvitedGroupEl = document.getElementById('tc-team-invited-group');
@@ -9218,7 +9205,7 @@ $sessionPayload = [
         };
 
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
-          if (completed) return 'تکمیل شده';
+          if (completed) return taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده';
           if (status === 'active') {
             return (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
           }
@@ -9404,7 +9391,8 @@ $sessionPayload = [
             button.dataset.taskStatus = 'completed';
             if (metaEl) {
               const shownScore = Number.isFinite(taskScore) ? Math.max(0, taskScore) : 0;
-              setMetaText(metaEl, shownScore > 0 ? `تکمیل شده (امتیاز ${shownScore})` : 'تکمیل شده', false);
+              const completedLabel = taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده';
+              setMetaText(metaEl, shownScore > 0 ? `${completedLabel} (امتیاز ${shownScore})` : completedLabel, false);
             }
             return;
           }
@@ -9445,10 +9433,15 @@ $sessionPayload = [
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const editCountdown = formatDescribeEditCountdown(endDate, endTime);
-              if (editCountdown) {
-                setMetaWithScoreBlock(metaEl, `تکمیل شده\n${editCountdown}`, button, taskType, scoreNow);
+              const doneLabel = taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده';
+              const editLabel = taskType === 'team_task' ? 'تا پایان مهلت تکمیل چالش' : 'تا پایان مهلت ویرایش';
+              const normalizedEditCountdown = taskType === 'team_task'
+                ? String(editCountdown || '').replace('تا پایان مهلت ویرایش', editLabel)
+                : editCountdown;
+              if (normalizedEditCountdown) {
+                setMetaWithScoreBlock(metaEl, `${doneLabel}\n${normalizedEditCountdown}`, button, taskType, scoreNow);
               } else {
-                setMetaWithScoreBlock(metaEl, 'تکمیل شده | تا پایان مهلت ویرایش', button, taskType, scoreNow);
+                setMetaWithScoreBlock(metaEl, `${doneLabel} | ${editLabel}`, button, taskType, scoreNow);
               }
             } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
@@ -9669,6 +9662,10 @@ $sessionPayload = [
           if (teamInvitedGroupEl) teamInvitedGroupEl.classList.remove('hidden');
           if (teamInvitedListEl) teamInvitedListEl.innerHTML = '';
           if (teamPublicListEl) teamPublicListEl.innerHTML = '';
+          if (teamFindAdditionalTextEl) {
+            teamFindAdditionalTextEl.textContent = '';
+            teamFindAdditionalTextEl.classList.add('hidden');
+          }
           if (teamPreviewNameEl) teamPreviewNameEl.textContent = '-';
           if (teamPreviewMetaEl) teamPreviewMetaEl.textContent = '-';
           if (teamPreviewMembersEl) teamPreviewMembersEl.innerHTML = '';
@@ -10458,6 +10455,16 @@ $sessionPayload = [
         const renderTeamTaskState = (context) => {
           teamTaskState = context && typeof context === 'object' ? context : null;
           renderTeamRulesText(teamTaskState);
+          const additionalText = String(teamTaskState?.teamSettings?.teamAdditionalNote || '').trim();
+          if (teamFindAdditionalTextEl) {
+            if (additionalText !== '') {
+              teamFindAdditionalTextEl.textContent = additionalText;
+              teamFindAdditionalTextEl.classList.remove('hidden');
+            } else {
+              teamFindAdditionalTextEl.textContent = '';
+              teamFindAdditionalTextEl.classList.add('hidden');
+            }
+          }
           const invitedTeams = Array.isArray(teamTaskState?.invitedTeams) ? teamTaskState.invitedTeams : [];
           const publicTeams = Array.isArray(teamTaskState?.publicTeams) ? teamTaskState.publicTeams : [];
           if (teamInvitedGroupEl) {
