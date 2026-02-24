@@ -112,6 +112,38 @@ if ($rows) {
 
 <div class="card">
   <div class="section-header">
+    <h3>Add Invitee</h3>
+  </div>
+  <div class="form grid two-columns">
+    <label class="field">
+      <span>Work ID</span>
+      <input id="tc-add-work-id" type="text" placeholder="Work ID" />
+    </label>
+    <label class="field">
+      <span>First Name</span>
+      <input id="tc-add-first-name" type="text" placeholder="First Name" />
+    </label>
+    <label class="field">
+      <span>Last Name</span>
+      <input id="tc-add-last-name" type="text" placeholder="Last Name" />
+    </label>
+    <label class="field">
+      <span>National ID</span>
+      <input id="tc-add-national-id" type="text" placeholder="National ID" />
+    </label>
+    <label class="field">
+      <span>Phone Number</span>
+      <input id="tc-add-phone-number" type="text" placeholder="Phone Number" />
+    </label>
+    <div class="field full">
+      <button type="button" class="btn primary standard-primary-button" id="tc-add-invitee-btn">Add Invitee</button>
+      <p id="tc-add-invitee-msg" class="hint" aria-live="polite"></p>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-header">
     <h3>Stats</h3>
   </div>
   <div class="form" style="gap:12px;">
@@ -240,6 +272,13 @@ if ($rows) {
   const msgEl = document.getElementById('tc-invite-msg');
   const progressEl = document.getElementById('tc-invite-progress');
   const progressMsg = progressEl?.querySelector('[data-invite-progress-message]');
+  const addWorkIdEl = document.getElementById('tc-add-work-id');
+  const addFirstNameEl = document.getElementById('tc-add-first-name');
+  const addLastNameEl = document.getElementById('tc-add-last-name');
+  const addNationalIdEl = document.getElementById('tc-add-national-id');
+  const addPhoneNumberEl = document.getElementById('tc-add-phone-number');
+  const addInviteeBtn = document.getElementById('tc-add-invitee-btn');
+  const addInviteeMsgEl = document.getElementById('tc-add-invitee-msg');
 
   let parsedRows = [];
   let headerRow = [];
@@ -248,6 +287,12 @@ if ($rows) {
     if (!msgEl) return;
     msgEl.textContent = text;
     msgEl.style.color = isError ? '#e11d2e' : '';
+  };
+
+  const setAddMsg = (text, isError = false) => {
+    if (!addInviteeMsgEl) return;
+    addInviteeMsgEl.textContent = text;
+    addInviteeMsgEl.style.color = isError ? '#e11d2e' : '';
   };
 
   const openModal = () => {
@@ -419,6 +464,54 @@ if ($rows) {
       setMsg('خطا در آپلود.', true);
     } finally {
       hideProgress();
+    }
+  });
+
+  addInviteeBtn?.addEventListener('click', async () => {
+    const workId = String(addWorkIdEl?.value || '').trim();
+    const firstName = String(addFirstNameEl?.value || '').trim();
+    const lastName = String(addLastNameEl?.value || '').trim();
+    const nationalId = String(addNationalIdEl?.value || '').trim();
+    const phoneNumber = String(addPhoneNumberEl?.value || '').trim();
+
+    if (!workId || !firstName || !lastName || !nationalId || !phoneNumber) {
+      setAddMsg('Please fill all fields.', true);
+      return;
+    }
+
+    addInviteeBtn.disabled = true;
+    setAddMsg('Saving invitee...');
+    try {
+      const response = await fetch('mini%20apps/Task%20Club/invitees_add.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          csrf: csrfToken,
+          invitee: {
+            workId,
+            firstName,
+            lastName,
+            nationalId,
+            phoneNumber
+          }
+        })
+      });
+      const result = await response.json();
+      if (response.ok && result?.status === 'ok') {
+        setAddMsg('Invitee added successfully.');
+        if (addWorkIdEl) addWorkIdEl.value = '';
+        if (addFirstNameEl) addFirstNameEl.value = '';
+        if (addLastNameEl) addLastNameEl.value = '';
+        if (addNationalIdEl) addNationalIdEl.value = '';
+        if (addPhoneNumberEl) addPhoneNumberEl.value = '';
+        setTimeout(() => window.location.reload(), 350);
+      } else {
+        setAddMsg(result?.message || 'Failed to add invitee.', true);
+      }
+    } catch {
+      setAddMsg('Failed to add invitee.', true);
+    } finally {
+      addInviteeBtn.disabled = false;
     }
   });
 })();

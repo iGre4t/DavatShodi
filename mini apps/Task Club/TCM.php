@@ -10131,7 +10131,7 @@ $sessionPayload = [
             const isFull = memberCount >= maxMembers;
             if (isFull) {
               variantClass = 'team-full';
-              iconClass = 'ri-user-forbid-line';
+              iconClass = 'ri-user-unfollow-line';
             } else {
               const meta = getTeamJoinTypeMeta(options?.joinType);
               variantClass = `team-${meta.token.replace(/_/g, '-')}`;
