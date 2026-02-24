@@ -9973,10 +9973,19 @@ $sessionPayload = [
           return { name, workId };
         };
 
-        const resolveTeamLeaderMeta = (team) => {
-          const members = Array.isArray(team?.members) ? team.members : [];
-          const leader = members.find((member) => String(member?.status || '').trim() === 'leader');
-          return resolveInviteeDisplayMeta(leader || {}, 'سرگروه');
+        const maskLastNameToInitial = (fullName) => {
+          const normalized = String(fullName || '').replace(/\s+/g, ' ').trim();
+          if (normalized === '') return '';
+          const parts = normalized.split(' ').filter((part) => part !== '');
+          if (parts.length < 2) {
+            return normalized;
+          }
+          const firstPart = parts.slice(0, -1).join(' ').trim();
+          const lastInitial = String(parts[parts.length - 1] || '').trim().charAt(0);
+          if (firstPart === '' || lastInitial === '') {
+            return normalized;
+          }
+          return `${firstPart} . ${lastInitial}`;
         };
 
         const renderEntityIcon = (kind, options = {}) => {
@@ -10015,19 +10024,12 @@ $sessionPayload = [
             const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
             const joinTypeBadge = renderTeamJoinTypeBadge(team?.joinType);
-            const leaderMeta = resolveTeamLeaderMeta(team);
-            const leaderName = escapeTaskMetaHtml(leaderMeta.name);
-            const leaderWorkIdHint = leaderMeta.workId !== ''
-              ? `<span class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(leaderMeta.workId)}</span>`
-              : '';
             const invitedTag = variant === 'invited'
               ? '<span class="team-list-item-invited-tag">دعوت برای شما</span>'
               : '';
             return `<button class="team-list-item-btn" type="button" data-team-open-id="${teamId}">
               ${invitedTag}
               <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType })}<strong>${teamName}</strong></span>
-              <span class="team-list-item-leader">سرگروه: ${leaderName}</span>
-              ${leaderWorkIdHint}
               <span class="team-list-item-meta-row">
                 <span class="team-list-item-chip">${memberCount}/${maxMembers} نفر</span>
                 ${joinTypeBadge}
@@ -10270,16 +10272,9 @@ $sessionPayload = [
             const memberCount = Math.max(0, Number.parseInt(teamTaskPreviewTeam?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(teamTaskPreviewTeam?.maxMembers ?? 1, 10) || 1);
             const joinTypeBadge = renderTeamJoinTypeBadge(teamTaskPreviewTeam?.joinType, 'team-meta-badge team-meta-badge--join');
-            const leaderMeta = resolveTeamLeaderMeta(teamTaskPreviewTeam);
-            const leaderName = leaderMeta.name;
-            const leaderWorkIdBadge = leaderMeta.workId !== ''
-              ? `<span class="team-meta-badge">${escapeTaskMetaHtml(`شناسه سرگروه: ${leaderMeta.workId}`)}</span>`
-              : '';
             teamPreviewMetaEl.innerHTML = [
               `<span class="team-meta-badge">${escapeTaskMetaHtml(`${memberCount}/${maxMembers} نفر`)}</span>`,
-              joinTypeBadge,
-              `<span class="team-meta-badge">${escapeTaskMetaHtml(`سرگروه: ${leaderName}`)}</span>`,
-              leaderWorkIdBadge
+              joinTypeBadge
             ].filter((part) => part !== '').join('');
           }
           if (teamPreviewMembersEl) {
@@ -10289,8 +10284,9 @@ $sessionPayload = [
             } else {
               teamPreviewMembersEl.innerHTML = members.map((item) => {
                 const meta = resolveInviteeDisplayMeta(item, 'کاربر');
+                const maskedName = maskLastNameToInitial(meta.name);
                 const workIdHint = meta.workId !== '' ? `<div class="team-list-item-hint">شناسه: ${escapeTaskMetaHtml(meta.workId)}</div>` : '';
-                return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('member')}<span>${escapeTaskMetaHtml(meta.name)}</span></div>${workIdHint}</div>`;
+                return `<div class="team-list-item"><div class="team-list-item-title">${renderEntityIcon('member')}<span>${escapeTaskMetaHtml(maskedName)}</span></div>${workIdHint}</div>`;
               }).join('');
             }
           }
