@@ -8213,8 +8213,7 @@ $sessionPayload = [
               <p id="tc-team-rules-text">برای این ماموریت تیمی ابتدا تیم خود را بسازید یا به یک تیم ملحق شوید.</p>
             </div>
             <div class="team-task-actions">
-              <button id="tc-team-find-btn" class="login-btn describe-photo-btn secondary" type="button">پیدا کردن تیم</button>
-              <button id="tc-team-create-btn" class="login-btn describe-photo-btn" type="button">ساختن تیم</button>
+              <button id="tc-team-create-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             </div>
           </section>
           <section id="tc-team-create-name-step" class="team-task-step hidden">
@@ -8271,6 +8270,7 @@ $sessionPayload = [
           </section>
           <section id="tc-team-find-step" class="team-task-step hidden">
             <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
+            <button id="tc-team-create-from-find-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             <div class="team-list-group team-list-group--invited">
               <p class="team-list-title">دعوت‌شده‌ها</p>
               <div id="tc-team-invited-list" class="team-list team-list--invited"></div>
@@ -8742,7 +8742,6 @@ $sessionPayload = [
         const describePhotoSaveBtnEl = document.getElementById('tc-describe-photo-save');
         const teamRulesStepEl = document.getElementById('tc-team-rules-step');
         const teamRulesTextEl = document.getElementById('tc-team-rules-text');
-        const teamFindBtnEl = document.getElementById('tc-team-find-btn');
         const teamCreateBtnEl = document.getElementById('tc-team-create-btn');
         const teamCreateNameStepEl = document.getElementById('tc-team-create-name-step');
         const teamCreateNameInputEl = document.getElementById('tc-team-create-name-input');
@@ -8765,6 +8764,7 @@ $sessionPayload = [
         const teamSettingsBtnEl = document.getElementById('tc-team-settings-btn');
         const teamFindStepEl = document.getElementById('tc-team-find-step');
         const teamOpenSearchBtnEl = document.getElementById('tc-team-open-search-btn');
+        const teamCreateFromFindBtnEl = document.getElementById('tc-team-create-from-find-btn');
         const teamInvitedListEl = document.getElementById('tc-team-invited-list');
         const teamPublicListEl = document.getElementById('tc-team-public-list');
         const teamSearchStepEl = document.getElementById('tc-team-search-step');
@@ -10386,7 +10386,7 @@ $sessionPayload = [
             setInfoTaskStep('team_room');
             return;
           }
-          setInfoTaskStep('team_rules');
+          setInfoTaskStep('team_find');
         };
 
         const openInfoTaskView = (taskTitle, infoTitle, infoText, options = {}) => {
@@ -11570,16 +11570,9 @@ $sessionPayload = [
           });
         }
 
-        if (teamFindBtnEl instanceof HTMLButtonElement) {
-          teamFindBtnEl.addEventListener('click', () => {
-            void withTransitionLoader(
-              () => refreshTeamTaskState('team_find'),
-              {
-                primaryText: 'در حال دریافت فهرست تیم‌ها',
-                secondaryText: 'لطفا چند لحظه صبر کنید',
-                delayMs: 120
-              }
-            );
+        if (teamCreateFromFindBtnEl instanceof HTMLButtonElement) {
+          teamCreateFromFindBtnEl.addEventListener('click', () => {
+            setInfoTaskStep('team_rules');
           });
         }
 
@@ -12000,8 +11993,12 @@ $sessionPayload = [
                   setInfoTaskStep('team_create_name');
                   return;
                 }
+                if (infoTaskCurrentStep === 'team_rules') {
+                  setInfoTaskStep('team_find');
+                  return;
+                }
                 if (infoTaskCurrentStep === 'team_find') {
-                  setInfoTaskStep('team_rules');
+                  setInfoTaskStep('info');
                   return;
                 }
                 if (infoTaskCurrentStep === 'team_search' || infoTaskCurrentStep === 'team_preview') {
@@ -12013,10 +12010,6 @@ $sessionPayload = [
                   return;
                 }
                 if (infoTaskCurrentStep === 'team_room') {
-                  closeQuizOverlay();
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_rules') {
                   closeQuizOverlay();
                   return;
                 }
