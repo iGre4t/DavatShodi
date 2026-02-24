@@ -6935,6 +6935,12 @@ $sessionPayload = [
         border-color: #cae8d7;
       }
 
+      .team-entity-icon--team-full {
+        background: #fff1f2;
+        color: #c23a44;
+        border-color: #f0c6cb;
+      }
+
       .team-list-item-leader {
         display: block;
         color: #4f6792;
@@ -10120,9 +10126,17 @@ $sessionPayload = [
           let variantClass = 'member';
 
           if (type === 'team') {
-            const meta = getTeamJoinTypeMeta(options?.joinType);
-            variantClass = `team-${meta.token.replace(/_/g, '-')}`;
-            iconClass = meta.iconClass;
+            const memberCount = Math.max(0, Number.parseInt(options?.memberCount ?? 0, 10) || 0);
+            const maxMembers = Math.max(1, Number.parseInt(options?.maxMembers ?? 1, 10) || 1);
+            const isFull = memberCount >= maxMembers;
+            if (isFull) {
+              variantClass = 'team-full';
+              iconClass = 'ri-user-forbid-line';
+            } else {
+              const meta = getTeamJoinTypeMeta(options?.joinType);
+              variantClass = `team-${meta.token.replace(/_/g, '-')}`;
+              iconClass = meta.iconClass;
+            }
           } else if (type === 'invite' || type === 'invited') {
             variantClass = 'invite';
             iconClass = 'ri-mail-line';
@@ -10155,7 +10169,7 @@ $sessionPayload = [
               : '';
             return `<button class="team-list-item-btn" type="button" data-team-open-id="${teamId}">
               ${invitedTag}
-              <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType })}<strong>${teamName}</strong></span>
+              <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType, memberCount, maxMembers })}<strong>${teamName}</strong></span>
               <span class="team-list-item-meta-row">
                 <span class="team-list-item-chip">${memberCount}/${maxMembers} نفر</span>
                 ${joinTypeBadge}
@@ -10433,7 +10447,7 @@ $sessionPayload = [
           if (teamPreviewMetaEl) {
             const memberCount = Math.max(0, Number.parseInt(teamTaskPreviewTeam?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(teamTaskPreviewTeam?.maxMembers ?? 1, 10) || 1);
-            const joinTypeBadge = renderTeamJoinTypeBadge(teamTaskPreviewTeam?.joinType, 'team-meta-badge team-meta-badge--join');
+            const joinTypeBadge = renderTeamAccessBadge(teamTaskPreviewTeam, 'team-meta-badge team-meta-badge--join');
             teamPreviewMetaEl.innerHTML = [
               `<span class="team-meta-badge">${escapeTaskMetaHtml(`${memberCount}/${maxMembers} نفر`)}</span>`,
               joinTypeBadge
@@ -10454,9 +10468,16 @@ $sessionPayload = [
             }
           }
           if (teamPreviewJoinBtnEl instanceof HTMLButtonElement) {
+            const memberCount = Math.max(0, Number.parseInt(teamTaskPreviewTeam?.memberCount ?? 0, 10) || 0);
+            const maxMembers = Math.max(1, Number.parseInt(teamTaskPreviewTeam?.maxMembers ?? 1, 10) || 1);
+            const isFullTeam = memberCount >= maxMembers;
             const isInvited = Boolean(teamTaskPreviewTeam?.isInvited);
             const isRequested = Boolean(teamTaskPreviewTeam?.isRequested);
-            if (isInvited) {
+            teamPreviewJoinBtnEl.classList.toggle('team-danger-btn', isFullTeam);
+            if (isFullTeam) {
+              teamPreviewJoinBtnEl.textContent = 'ظرفیت تکمیل است';
+              teamPreviewJoinBtnEl.disabled = true;
+            } else if (isInvited) {
               teamPreviewJoinBtnEl.textContent = 'عضویت';
               teamPreviewJoinBtnEl.disabled = false;
             } else if (isRequested) {
