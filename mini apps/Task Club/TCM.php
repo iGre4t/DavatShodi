@@ -3821,6 +3821,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $runtimeChanged = false;
     $rowsChanged = (bool)($table['columns']['added'] ?? false);
+    foreach ($teams as $idx => $teamItem) {
+      if (!is_array($teamItem)) {
+        continue;
+      }
+      $started = (bool)($teamItem['started'] ?? false);
+      $joinType = normalizeTeamJoinType((string)($teamItem['joinType'] ?? 'private'));
+      if ($started && $joinType === 'public_open') {
+        $teamItem['joinType'] = 'public_request';
+        $teams[$idx] = $teamItem;
+        $runtimeChanged = true;
+      }
+    }
     $syncInviteeStatus = function (string $workId) use (&$rows, $columns, $workIdIndex, $taskId, &$teams, &$rowsChanged): void {
       syncTeamTaskInviteeStatusByWorkId($rows, $columns, $workIdIndex, $taskId, $teams, $workId);
       $rowsChanged = true;
@@ -4013,6 +4025,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           echo json_encode(['status' => 'error', 'message' => 'برای حذف تیم از تنظیمات تیم استفاده کنید.']);
           exit;
         }
+        $members = is_array($myTeam['members'] ?? null) ? $myTeam['members'] : [];
+        $isTargetMember = in_array($targetWorkId, $members, true);
+        if ($isTargetMember) {
+          $nextMemberCount = max(0, count($members) - 1);
+          if ($nextMemberCount < $teamMin) {
+            echo json_encode(['status' => 'error', 'message' => 'با حذف این عضو، تعداد اعضا از حداقل مجاز کمتر می‌شود.']);
+            exit;
+          }
+        }
         $removed = false;
         foreach (['members', 'invites', 'requests'] as $bucket) {
           $list = is_array($myTeam[$bucket] ?? null) ? $myTeam[$bucket] : [];
@@ -4030,6 +4051,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $runtimeChanged = true;
         $syncInviteeStatus($targetWorkId);
       } else {
+        if ((bool)($myTeam['started'] ?? false)) {
+          echo json_encode(['status' => 'error', 'message' => 'پس از شروع چالش، خروج عضو از تیم غیرفعال است و فقط سرگروه می‌تواند اعضا را مدیریت کند.']);
+          exit;
+        }
         if (trim($targetWorkId) !== trim($sessionWorkId)) {
           echo json_encode(['status' => 'error', 'message' => 'فقط خروج از تیم خودتان مجاز است.']);
           exit;
@@ -4116,6 +4141,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $invites = is_array($team['invites'] ?? null) ? $team['invites'] : [];
       $requests = is_array($team['requests'] ?? null) ? $team['requests'] : [];
       $joinType = normalizeTeamJoinType((string)($team['joinType'] ?? 'private'));
+      if ((bool)($team['started'] ?? false) && $joinType === 'public_open') {
+        $joinType = 'public_request';
+        $team['joinType'] = 'public_request';
+        $teams[$teamIndex] = $team;
+        $runtimeChanged = true;
+      }
       $joinedNow = false;
       $requestedNow = false;
       if (in_array($sessionWorkId, $invites, true)) {
@@ -4229,24 +4260,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
       $team = is_array($teams[$myTeamIndex] ?? null) ? $teams[$myTeamIndex] : [];
       $isLeader = trim((string)($team['leaderWorkId'] ?? '')) === trim($sessionWorkId);
+      $teamStarted = (bool)($team['started'] ?? false);
       $asBool = static function ($value): bool {
         $token = strtolower(trim((string)$value));
         return in_array($token, ['1', 'true', 'on', 'yes'], true);
       };
       $deleteTeam = $asBool($payload['deleteTeam'] ?? false);
-      if ($isLeader && $deleteTeam) {
-        $affected = collectTeamTaskAffectedUsers([$team]);
-        array_splice($teams, $myTeamIndex, 1);
-        $runtimeChanged = true;
-        foreach ($affected as $affectedWorkId) {
-          $syncInviteeStatus((string)$affectedWorkId);
-        }
-        $saved = $saveChanges();
-        if (!($saved['ok'] ?? false)) {
-          echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
-          exit;
-        }
-        $respondWithContext(['message' => 'تیم حذف شد.']);
+      if ($deleteTeam) {
+        echo json_encode(['status' => 'error', 'message' => 'حذف تیم در این مرحله غیرفعال است.']);
+        exit;
+      }
+      $leaveTeamRequested = $asBool($payload['leaveTeam'] ?? false);
+      if ($isLeader && $leaveTeamRequested) {
+        echo json_encode(['status' => 'error', 'message' => 'سرگروه امکان خروج از تیم را ندارد.']);
+        exit;
       }
       if ($isLeader) {
         $changed = false;
@@ -4263,6 +4290,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         if (array_key_exists('joinType', $payload)) {
           $nextJoinType = normalizeTeamJoinType((string)($payload['joinType'] ?? 'private'));
+          if ($teamStarted && $nextJoinType === 'public_open') {
+            $nextJoinType = 'public_request';
+          }
           if ($nextJoinType !== normalizeTeamJoinType((string)($team['joinType'] ?? 'private'))) {
             $team['joinType'] = $nextJoinType;
             $changed = true;
@@ -4287,6 +4317,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $leaveTeam = $asBool($payload['leaveTeam'] ?? true);
       if (!$leaveTeam) {
         echo json_encode(['status' => 'error', 'message' => 'گزینه معتبری انتخاب نشده است.']);
+        exit;
+      }
+      if ($teamStarted) {
+        echo json_encode(['status' => 'error', 'message' => 'پس از شروع چالش امکان خروج از تیم وجود ندارد.']);
         exit;
       }
       $members = is_array($team['members'] ?? null) ? $team['members'] : [];
@@ -4349,9 +4383,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         $team['started'] = true;
         $team['startedAt'] = date('Y-m-d H:i:s');
+        if (normalizeTeamJoinType((string)($team['joinType'] ?? 'private')) === 'public_open') {
+          $team['joinType'] = 'public_request';
+        }
         $team['challengeId'] = trim((string)($selectedChallenge['id'] ?? ''));
         $team['challengeName'] = trim((string)($selectedChallenge['name'] ?? ''));
         $team['challengeGuide'] = trim((string)($selectedChallenge['guide'] ?? ''));
+        $teams[$myTeamIndex] = $team;
+        $runtimeChanged = true;
+      } elseif (normalizeTeamJoinType((string)($team['joinType'] ?? 'private')) === 'public_open') {
+        $team['joinType'] = 'public_request';
         $teams[$myTeamIndex] = $team;
         $runtimeChanged = true;
       }
@@ -6812,6 +6853,28 @@ $sessionPayload = [
         font-weight: 700;
       }
 
+      .team-groups-hint-inner {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .team-groups-hint-icon {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 14px;
+        border-color: #d4e0f6;
+        background: #f4f8ff;
+        color: #6b7fa5;
+      }
+
+      .team-groups-hint-icon i {
+        font-size: 0.44rem;
+        transform: scale(1);
+        font-weight: 400;
+        opacity: 0.88;
+      }
+
       .team-list-group--invited .team-list-title {
         color: #1f3f77;
       }
@@ -6880,24 +6943,26 @@ $sessionPayload = [
       }
 
       .team-entity-icon {
-        width: 24px;
-        height: 24px;
+        width: 20px;
+        height: 20px;
         border-radius: 50%;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         border: 1px solid #c7d8f6;
         background: #eef4ff;
-        color: #2f4f87;
-        flex: 0 0 24px;
+        color: #47618f;
+        flex: 0 0 20px;
       }
 
       .team-entity-icon i {
-        font-size: 0.62rem;
+        font-size: 0.56rem;
         display: block;
         line-height: 1;
-        transform: scale(2);
+        transform: scale(1);
         transform-origin: center;
+        font-weight: 400;
+        opacity: 0.92;
       }
 
       .team-entity-icon--member {
@@ -6939,6 +7004,12 @@ $sessionPayload = [
         background: #fff1f2;
         color: #c23a44;
         border-color: #f0c6cb;
+      }
+
+      .team-entity-icon--team-started {
+        background: #edf4ff;
+        color: #2f63ba;
+        border-color: #c8daf8;
       }
 
       .team-list-item-leader {
@@ -7021,9 +7092,9 @@ $sessionPayload = [
       }
 
       .team-join-type-badge--started {
-        border-color: #cae8d7;
-        background: #edf9f2;
-        color: #2e8d58;
+        border-color: #c8daf8;
+        background: #edf4ff;
+        color: #2f63ba;
       }
 
       .team-list-item-invited-tag {
@@ -7316,6 +7387,12 @@ $sessionPayload = [
         border-color: #cae8d7;
         background: #edf9f2;
         color: #2e8d58;
+      }
+
+      .team-meta-badge.team-join-type-badge--started {
+        border-color: #c8daf8;
+        background: #edf4ff;
+        color: #2f63ba;
       }
 
       .team-room-slot-badge {
@@ -8362,7 +8439,12 @@ $sessionPayload = [
               <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
               <button id="tc-team-create-from-find-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             </div>
-            <p id="tc-team-groups-hint" class="team-groups-hint">گروه تیم‌ها</p>
+            <p id="tc-team-groups-hint" class="team-groups-hint">
+              <span class="team-groups-hint-inner">
+                <span class="team-entity-icon team-groups-hint-icon" aria-hidden="true"><i class="ri-team-line"></i></span>
+                <span>گروه تیم‌ها</span>
+              </span>
+            </p>
             <div id="tc-team-invited-group" class="team-list-group team-list-group--invited">
               <p class="team-list-title">دعوت‌شده‌ها</p>
               <div id="tc-team-invited-list" class="team-list team-list--invited"></div>
@@ -10126,10 +10208,14 @@ $sessionPayload = [
           let variantClass = 'member';
 
           if (type === 'team') {
+            const started = Boolean(options?.started);
             const memberCount = Math.max(0, Number.parseInt(options?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(options?.maxMembers ?? 1, 10) || 1);
             const isFull = memberCount >= maxMembers;
-            if (isFull) {
+            if (started) {
+              variantClass = 'team-started';
+              iconClass = 'ri-flag-2-line';
+            } else if (isFull) {
               variantClass = 'team-full';
               iconClass = 'ri-user-unfollow-line';
             } else {
@@ -10169,7 +10255,7 @@ $sessionPayload = [
               : '';
             return `<button class="team-list-item-btn" type="button" data-team-open-id="${teamId}">
               ${invitedTag}
-              <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType, memberCount, maxMembers })}<strong>${teamName}</strong></span>
+              <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType, memberCount, maxMembers, started: Boolean(team?.started) })}<strong>${teamName}</strong></span>
               <span class="team-list-item-meta-row">
                 <span class="team-list-item-chip">${memberCount}/${maxMembers} نفر</span>
                 ${joinTypeBadge}
@@ -10290,6 +10376,8 @@ $sessionPayload = [
           const members = Array.isArray(team?.members) ? team.members : [];
           const invites = Array.isArray(team?.invites) ? team.invites : [];
           const requests = Array.isArray(team?.requests) ? team.requests : [];
+          const minMembers = Math.max(1, Number.parseInt(team?.minMembers ?? teamTaskState?.teamSettings?.teamMin ?? 1, 10) || 1);
+          const currentMembersCount = members.length;
 
           const memberItems = members.map((item) => {
             const meta = resolveInviteeDisplayMeta(item, 'کاربر');
@@ -10297,7 +10385,7 @@ $sessionPayload = [
             const name = meta.name;
             const isLeadMember = String(item?.status || '').trim() === 'leader';
             const statusText = isLeadMember ? 'سرگروه' : 'عضو تیم';
-            const canRemove = isLeader && !isLeadMember && workId !== '';
+            const canRemove = isLeader && !isLeadMember && workId !== '' && (currentMembersCount - 1) >= minMembers;
             return `<div class="team-member-chip ${isLeadMember ? 'team-member-chip--leader' : 'team-member-chip--member'}">
               <div class="team-member-text">
                 <div class="team-member-name">${renderEntityIcon('member')}<span class="team-member-name-label">${escapeTaskMetaHtml(name)}</span></div>
@@ -10499,6 +10587,7 @@ $sessionPayload = [
           if (!myTeam) return;
           closeTeamInviteDialog();
           const isLeader = Boolean(myTeam?.isLeader);
+          const started = Boolean(myTeam?.started);
           if (teamSettingsNameInputEl instanceof HTMLInputElement) {
             teamSettingsNameInputEl.value = String(myTeam?.name || '').trim();
             teamSettingsNameInputEl.disabled = !isLeader;
@@ -10516,10 +10605,10 @@ $sessionPayload = [
             teamSettingsSaveBtnEl.classList.toggle('hidden', !isLeader);
           }
           if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) {
-            teamSettingsDeleteBtnEl.classList.toggle('hidden', !isLeader);
+            teamSettingsDeleteBtnEl.classList.add('hidden');
           }
           if (teamSettingsLeaveBtnEl instanceof HTMLButtonElement) {
-            teamSettingsLeaveBtnEl.classList.toggle('hidden', isLeader);
+            teamSettingsLeaveBtnEl.classList.toggle('hidden', isLeader || started);
           }
           setInfoTaskStep('team_settings');
         };
