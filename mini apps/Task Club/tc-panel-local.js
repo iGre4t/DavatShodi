@@ -858,14 +858,17 @@
       if (!(target instanceof HTMLTextAreaElement)) return;
       if (!target.matches('[data-team-challenge-guide-text]')) return;
       const hasCtrl = event.ctrlKey || event.metaKey;
-      const key = String(event.key || '').toLowerCase();
-      if (hasCtrl && !event.altKey && key === 'b') {
+      const isBoldKey = isShortcutLetterKey(event, 'B');
+      const isListKey = isShortcutLetterKey(event, 'L');
+      if (hasCtrl && !event.altKey && isBoldKey) {
         event.preventDefault();
+        event.stopPropagation();
         applyBoldShortcutToTextarea(target);
         return;
       }
-      if (hasCtrl && !event.altKey && key === 'l') {
+      if (hasCtrl && !event.altKey && isListKey) {
         event.preventDefault();
+        event.stopPropagation();
         applyListShortcutToTextarea(target);
         return;
       }
@@ -974,6 +977,14 @@
     textarea.selectionStart = caret;
     textarea.selectionEnd = caret;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function isShortcutLetterKey(event, letter) {
+    const token = String(letter || '').trim().toUpperCase();
+    if (!/^[A-Z]$/.test(token)) return false;
+    const byKey = String(event?.key || '').toLowerCase() === token.toLowerCase();
+    const byCode = String(event?.code || '').toUpperCase() === `KEY${token}`;
+    return byKey || byCode;
   }
 
   function replaceTextareaRange(textarea, start, end, replacement, selectionStart = null, selectionEnd = null) {
@@ -2649,14 +2660,17 @@
       if (!(target instanceof HTMLTextAreaElement)) return;
       if (!target.matches('[data-task-field="infoText"], [data-task-field="guidePrefix"], [data-task-field="guideSuffix"], [data-task-field="teamAdditionalNote"]')) return;
       const hasCtrl = event.ctrlKey || event.metaKey;
-      const key = String(event.key || '').toLowerCase();
-      if (hasCtrl && !event.altKey && key === 'b') {
+      const isBoldKey = isShortcutLetterKey(event, 'B');
+      const isListKey = isShortcutLetterKey(event, 'L');
+      if (hasCtrl && !event.altKey && isBoldKey) {
         event.preventDefault();
+        event.stopPropagation();
         applyBoldShortcutToTextarea(target);
         return;
       }
-      if (hasCtrl && !event.altKey && key === 'l') {
+      if (hasCtrl && !event.altKey && isListKey) {
         event.preventDefault();
+        event.stopPropagation();
         applyListShortcutToTextarea(target);
         return;
       }
