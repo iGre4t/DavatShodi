@@ -1551,7 +1551,8 @@ function buildTeamTaskSummaryPayload(array $team, array $teamSettings, string $s
     'isLeader' => trim((string)($team['leaderWorkId'] ?? '')) === trim($sessionWorkId),
     'isMember' => in_array(trim($sessionWorkId), $members, true),
     'isInvited' => in_array(trim($sessionWorkId), $invites, true),
-    'isRequested' => in_array(trim($sessionWorkId), $requests, true)
+    'isRequested' => in_array(trim($sessionWorkId), $requests, true),
+    'scoreSubmitted' => false
   ];
 }
 
@@ -1574,6 +1575,21 @@ function buildTeamTaskContextForUser(array $task, string $sessionWorkId, string 
   $teamSettings = readTaskTeamSettings(TASKS_DIR_PATH, $tagCode);
   $infoSettings = readTaskInfoSettings(TASKS_DIR_PATH, $tagCode);
   $runtime = readTaskTeamRuntime(TASKS_DIR_PATH, $tagCode);
+  $challengeRecords = readTaskTeamChallenges(TASKS_DIR_PATH, $tagCode);
+  $challengeMapById = [];
+  foreach ($challengeRecords as $challengeItem) {
+    if (!is_array($challengeItem)) {
+      continue;
+    }
+    $challengeId = trim((string)($challengeItem['id'] ?? ''));
+    if ($challengeId === '') {
+      continue;
+    }
+    $challengeMapById[$challengeId] = [
+      'name' => trim((string)($challengeItem['name'] ?? '')),
+      'guide' => trim((string)($challengeItem['guide'] ?? ($challengeItem['challengeGuide'] ?? ($challengeItem['challenge_guide'] ?? ''))))
+    ];
+  }
   $teams = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
   $teamMin = max(1, (int)($teamSettings['teamMin'] ?? 1));
   $teamMax = max($teamMin, (int)($teamSettings['teamMax'] ?? 1));
@@ -1593,6 +1609,32 @@ function buildTeamTaskContextForUser(array $task, string $sessionWorkId, string 
     $summary = buildTeamTaskSummaryPayload($team, $teamSettings, $sessionToken);
     $membersBundle = buildTeamTaskMemberPayload($table, $team, $taskId);
     $summary['members'] = $membersBundle['members'] ?? [];
+    $runtimeChallengeId = trim((string)($team['challengeId'] ?? ''));
+    $runtimeChallengeName = trim((string)($team['challengeName'] ?? ''));
+    $runtimeChallengeGuide = trim((string)($team['challengeGuide'] ?? ''));
+    $freshChallenge = ($runtimeChallengeId !== '' && isset($challengeMapById[$runtimeChallengeId]) && is_array($challengeMapById[$runtimeChallengeId]))
+      ? $challengeMapById[$runtimeChallengeId]
+      : null;
+    $resolvedChallengeName = ($freshChallenge && trim((string)($freshChallenge['name'] ?? '')) !== '')
+      ? trim((string)$freshChallenge['name'])
+      : $runtimeChallengeName;
+    $resolvedChallengeGuide = $freshChallenge
+      ? trim((string)($freshChallenge['guide'] ?? ''))
+      : $runtimeChallengeGuide;
+    $summary['challengeId'] = $runtimeChallengeId;
+    $summary['challengeName'] = $resolvedChallengeName;
+    $summary['challengeGuide'] = $resolvedChallengeGuide;
+    $summary['scoreSubmitted'] = false;
+    foreach ((array)($membersBundle['members'] ?? []) as $memberItem) {
+      if (!is_array($memberItem)) {
+        continue;
+      }
+      $memberScore = max(0, normalizeTaskScoreValue($memberItem['score'] ?? 0));
+      if ($memberScore > 0) {
+        $summary['scoreSubmitted'] = true;
+        break;
+      }
+    }
     $summaryId = trim((string)($summary['id'] ?? ''));
     if ($summaryId === '') {
       continue;
@@ -1602,9 +1644,9 @@ function buildTeamTaskContextForUser(array $task, string $sessionWorkId, string 
       $summary['invites'] = $membersBundle['invites'] ?? [];
       $summary['requests'] = $membersBundle['requests'] ?? [];
       $summary['started'] = (bool)($team['started'] ?? false);
-      $summary['challengeId'] = (string)($team['challengeId'] ?? '');
-      $summary['challengeName'] = (string)($team['challengeName'] ?? '');
-      $summary['challengeGuide'] = (string)($team['challengeGuide'] ?? '');
+      $summary['challengeId'] = $runtimeChallengeId;
+      $summary['challengeName'] = $resolvedChallengeName;
+      $summary['challengeGuide'] = $resolvedChallengeGuide;
       $summary['startedAt'] = (string)($team['startedAt'] ?? '');
       $myTeam = $summary;
       $myStatus = !empty($summary['isLeader']) ? 'leader' : 'member';
@@ -2751,7 +2793,7 @@ function buildTaskPayloadForView(
     $describeSubmitted = (bool)($progress['describeSubmitted'] ?? false);
     $teamStartedPending = (bool)($progress['teamStartedPending'] ?? false);
     $statusLabel = $completed
-      ? ($taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده')
+      ? 'تکمیل شده'
       : (((
           $taskType === 'describe_photo'
           && $status === 'active'
@@ -4107,6 +4149,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $summary = buildTeamTaskSummaryPayload($targetTeam, $teamSettings, $sessionWorkId);
       $membersBundle = buildTeamTaskMemberPayload($table, $targetTeam, $taskId);
       $summary['members'] = $membersBundle['members'] ?? [];
+      $summary['scoreSubmitted'] = false;
+      foreach ((array)($membersBundle['members'] ?? []) as $memberItem) {
+        if (!is_array($memberItem)) {
+          continue;
+        }
+        $memberScore = max(0, normalizeTaskScoreValue($memberItem['score'] ?? 0));
+        if ($memberScore > 0) {
+          $summary['scoreSubmitted'] = true;
+          break;
+        }
+      }
       echo json_encode([
         'status' => 'ok',
         'data' => [
@@ -7054,6 +7107,12 @@ $sessionPayload = [
         border-color: #c8daf8;
       }
 
+      .team-entity-icon--team-completed {
+        background: #edf9f2;
+        color: #2e8d58;
+        border-color: #cae8d7;
+      }
+
       .team-list-item-leader {
         display: block;
         color: #4f6792;
@@ -7137,6 +7196,12 @@ $sessionPayload = [
         border-color: #c8daf8;
         background: #edf4ff;
         color: #2f63ba;
+      }
+
+      .team-join-type-badge--completed {
+        border-color: #cae8d7;
+        background: #edf9f2;
+        color: #2e8d58;
       }
 
       .team-list-item-invited-tag {
@@ -7435,6 +7500,12 @@ $sessionPayload = [
         border-color: #c8daf8;
         background: #edf4ff;
         color: #2f63ba;
+      }
+
+      .team-meta-badge.team-join-type-badge--completed {
+        border-color: #cae8d7;
+        background: #edf9f2;
+        color: #2e8d58;
       }
 
       .team-room-slot-badge {
@@ -9326,7 +9397,7 @@ $sessionPayload = [
         };
 
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
-          if (completed) return taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده';
+          if (completed) return 'تکمیل شده';
           if (status === 'active') {
             return (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
           }
@@ -9512,7 +9583,7 @@ $sessionPayload = [
             button.dataset.taskStatus = 'completed';
             if (metaEl) {
               const shownScore = Number.isFinite(taskScore) ? Math.max(0, taskScore) : 0;
-              const completedLabel = taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده';
+              const completedLabel = 'تکمیل شده';
               setMetaText(metaEl, shownScore > 0 ? `${completedLabel} (امتیاز ${shownScore})` : completedLabel, false);
             }
             return;
@@ -10274,9 +10345,13 @@ $sessionPayload = [
           const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
           const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
           const started = Boolean(team?.started);
+          const scoreSubmitted = Boolean(team?.scoreSubmitted);
           const isFull = memberCount >= maxMembers;
 
           if (started) {
+            if (scoreSubmitted) {
+              return `<span class="${escapeTaskMetaHtml(`${baseClasses} team-join-type-badge team-join-type-badge--completed`)}"><i class="ri-checkbox-circle-line" aria-hidden="true"></i><span>چالش را با موفقیت تمام کردند</span></span>`;
+            }
             return `<span class="${escapeTaskMetaHtml(`${baseClasses} team-join-type-badge team-join-type-badge--started`)}"><i class="ri-flag-2-line" aria-hidden="true"></i><span>چالش را شروع کردند</span></span>`;
           }
 
@@ -10355,12 +10430,18 @@ $sessionPayload = [
 
           if (type === 'team') {
             const started = Boolean(options?.started);
+            const scoreSubmitted = Boolean(options?.scoreSubmitted);
             const memberCount = Math.max(0, Number.parseInt(options?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(options?.maxMembers ?? 1, 10) || 1);
             const isFull = memberCount >= maxMembers;
             if (started) {
-              variantClass = 'team-started';
-              iconClass = 'ri-flag-2-line';
+              if (scoreSubmitted) {
+                variantClass = 'team-completed';
+                iconClass = 'ri-checkbox-circle-line';
+              } else {
+                variantClass = 'team-started';
+                iconClass = 'ri-flag-2-line';
+              }
             } else if (isFull) {
               variantClass = 'team-full';
               iconClass = 'ri-user-unfollow-line';
@@ -10401,7 +10482,7 @@ $sessionPayload = [
               : '';
             return `<button class="team-list-item-btn" type="button" data-team-open-id="${teamId}">
               ${invitedTag}
-              <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType, memberCount, maxMembers, started: Boolean(team?.started) })}<strong>${teamName}</strong></span>
+              <span class="team-entity-title">${renderEntityIcon('team', { joinType: team?.joinType, memberCount, maxMembers, started: Boolean(team?.started), scoreSubmitted: Boolean(team?.scoreSubmitted) })}<strong>${teamName}</strong></span>
               <span class="team-list-item-meta-row">
                 <span class="team-list-item-chip">${memberCount}/${maxMembers} نفر</span>
                 ${joinTypeBadge}
