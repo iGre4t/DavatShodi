@@ -6958,6 +6958,10 @@ $sessionPayload = [
         font-weight: 700;
       }
 
+      .team-list-title--others {
+        margin-top: 2px;
+      }
+
       .team-list-group {
         display: grid;
         gap: 9px;
@@ -10504,12 +10508,33 @@ $sessionPayload = [
             }
           });
 
+          const getLockedTeamOrder = (team) => {
+            const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
+            const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
+            const started = Boolean(team?.started);
+            const completed = started && Boolean(team?.scoreSubmitted);
+            const isFull = memberCount >= maxMembers;
+            if (isFull) return 0;
+            if (started && !completed) return 1;
+            if (completed) return 2;
+            return 3;
+          };
+
+          lockedTeams.sort((a, b) => {
+            const orderDiff = getLockedTeamOrder(a) - getLockedTeamOrder(b);
+            if (orderDiff !== 0) return orderDiff;
+            const nameA = String(a?.name || '').trim();
+            const nameB = String(b?.name || '').trim();
+            return nameA.localeCompare(nameB, 'fa');
+          });
+
           const chunks = [];
           if (openTeams.length > 0) {
             chunks.push(openTeams.map((team) => buildTeamCard(team)).join(''));
           }
           if (openTeams.length > 0 && lockedTeams.length > 0) {
             chunks.push('<div class="team-list-separator" role="separator" aria-hidden="true"></div>');
+            chunks.push('<p class="team-list-title team-list-title--others">تیم‌های دیگر</p>');
           }
           if (lockedTeams.length > 0) {
             chunks.push(lockedTeams.map((team) => buildTeamCard(team)).join(''));
