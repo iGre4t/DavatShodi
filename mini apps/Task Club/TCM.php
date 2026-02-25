@@ -10508,21 +10508,50 @@ $sessionPayload = [
             }
           });
 
+          const getPublicJoinTypeOrder = (team) => {
+            const joinType = normalizeTeamJoinTypeClient(team?.joinType);
+            if (joinType === 'public_open') return 0;
+            if (joinType === 'public_request') return 1;
+            return 2;
+          };
+
+          const comparePublicTeamPriority = (a, b) => {
+            const memberCountA = Math.max(0, Number.parseInt(a?.memberCount ?? 0, 10) || 0);
+            const memberCountB = Math.max(0, Number.parseInt(b?.memberCount ?? 0, 10) || 0);
+            if (memberCountA !== memberCountB) {
+              return memberCountB - memberCountA;
+            }
+            const joinTypeDiff = getPublicJoinTypeOrder(a) - getPublicJoinTypeOrder(b);
+            if (joinTypeDiff !== 0) {
+              return joinTypeDiff;
+            }
+            const nameA = String(a?.name || '').trim();
+            const nameB = String(b?.name || '').trim();
+            return nameA.localeCompare(nameB, 'fa');
+          };
+
+          if (variant === 'public') {
+            openTeams.sort(comparePublicTeamPriority);
+          }
+
           const getLockedTeamOrder = (team) => {
             const memberCount = Math.max(0, Number.parseInt(team?.memberCount ?? 0, 10) || 0);
             const maxMembers = Math.max(1, Number.parseInt(team?.maxMembers ?? 1, 10) || 1);
             const started = Boolean(team?.started);
             const completed = started && Boolean(team?.scoreSubmitted);
             const isFull = memberCount >= maxMembers;
-            if (isFull) return 0;
-            if (started && !completed) return 1;
             if (completed) return 2;
+            if (started) return 1;
+            if (isFull) return 0;
             return 3;
           };
 
           lockedTeams.sort((a, b) => {
             const orderDiff = getLockedTeamOrder(a) - getLockedTeamOrder(b);
             if (orderDiff !== 0) return orderDiff;
+            if (variant === 'public') {
+              return comparePublicTeamPriority(a, b);
+            }
             const nameA = String(a?.name || '').trim();
             const nameB = String(b?.name || '').trim();
             return nameA.localeCompare(nameB, 'fa');
