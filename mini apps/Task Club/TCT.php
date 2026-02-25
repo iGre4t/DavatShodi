@@ -8,6 +8,7 @@ $tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest
 if (!userHasPermissionId($tctSessionUser, 'task-club:manage-tasks')) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tctIsJsonRequest);
 }
+$tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
 $tctCsrfToken = tcSecurityGetCsrfToken();
 
 $tctTasksDir = __DIR__ . '/tasks';
@@ -23,6 +24,7 @@ const TCT_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 const TCT_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 const TCT_TEAM_CHALLENGES_FILE = 'team-challenges.json';
 const TCT_TEAM_RUNTIME_FILE = 'team-runtime.json';
+const TCT_TASK_ACCESS_FILE = 'task-access.json';
 
 function tctNormalizeTaskType(string $value): string
 {
@@ -1805,6 +1807,195 @@ function tctResolveTaskScoreColumnByType(string $taskType): string
   return 'Info Tasks';
 }
 
+function tctResolveTaskPaneKeysByType(string $taskType): array
+{
+  $normalizedType = tctNormalizeTaskType($taskType);
+  if ($normalizedType === 'info') {
+    return ['control', 'information', 'invitees-rate'];
+  }
+  if ($normalizedType === 'team_task') {
+    return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
+  }
+  if ($normalizedType === 'describe_photo') {
+    return ['control', 'information', 'photo', 'invitees-rate'];
+  }
+  return ['control', 'quiz'];
+}
+
+function tctReadTaskAccessConfig(string $tasksDir): array
+{
+  $path = $tasksDir . DIRECTORY_SEPARATOR . TCT_TASK_ACCESS_FILE;
+  if (!is_file($path)) {
+    return ['users' => []];
+  }
+  $content = file_get_contents($path);
+  if (!is_string($content) || trim($content) === '') {
+    return ['users' => []];
+  }
+  $decoded = json_decode($content, true);
+  if (!is_array($decoded)) {
+    return ['users' => []];
+  }
+  $users = is_array($decoded['users'] ?? null) ? $decoded['users'] : [];
+  return ['users' => $users];
+}
+
+function tctWriteTaskAccessConfig(string $tasksDir, array $config): bool
+{
+  $path = $tasksDir . DIRECTORY_SEPARATOR . TCT_TASK_ACCESS_FILE;
+  $normalized = [
+    'users' => is_array($config['users'] ?? null) ? $config['users'] : [],
+    'updatedAt' => date('Y-m-d H:i:s')
+  ];
+  $json = json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if ($json === false) {
+    return false;
+  }
+  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tctResolveUserTaskAccessForTask(array $task, string $sessionUserCode, array $taskAccessConfig): array
+{
+  $paneKeys = tctResolveTaskPaneKeysByType((string)($task['taskType'] ?? 'quiz'));
+  $resolved = [
+    'enabled' => true,
+    'panes' => []
+  ];
+  foreach ($paneKeys as $paneKey) {
+    $resolved['panes'][$paneKey] = true;
+  }
+
+  $normalizedUserCode = strtolower(trim($sessionUserCode));
+  if ($normalizedUserCode === '') {
+    return $resolved;
+  }
+  $users = is_array($taskAccessConfig['users'] ?? null) ? $taskAccessConfig['users'] : [];
+  $userEntry = null;
+  foreach ($users as $rawUserCode => $entry) {
+    if (!is_array($entry)) {
+      continue;
+    }
+    if (strtolower(trim((string)$rawUserCode)) === $normalizedUserCode) {
+      $userEntry = $entry;
+      break;
+    }
+  }
+  if (!is_array($userEntry)) {
+    return $resolved;
+  }
+  $taskId = trim((string)($task['id'] ?? ''));
+  if ($taskId === '') {
+    return $resolved;
+  }
+  $taskRules = is_array($userEntry['tasks'] ?? null) ? $userEntry['tasks'] : [];
+  $taskRule = null;
+  foreach ($taskRules as $ruleTaskId => $entry) {
+    if (!is_array($entry)) {
+      continue;
+    }
+    if (strtolower(trim((string)$ruleTaskId)) === strtolower($taskId)) {
+      $taskRule = $entry;
+      break;
+    }
+  }
+  if (!is_array($taskRule)) {
+    return $resolved;
+  }
+
+  $resolved['enabled'] = tctNormalizeBoolValue($taskRule['enabled'] ?? true);
+  $paneRules = is_array($taskRule['panes'] ?? null) ? $taskRule['panes'] : [];
+  foreach ($paneKeys as $paneKey) {
+    $resolved['panes'][$paneKey] = tctNormalizeBoolValue($paneRules[$paneKey] ?? true);
+  }
+  if (!$resolved['enabled']) {
+    return $resolved;
+  }
+  $hasAllowedPane = false;
+  foreach ($resolved['panes'] as $isPaneAllowed) {
+    if ($isPaneAllowed) {
+      $hasAllowedPane = true;
+      break;
+    }
+  }
+  if (!$hasAllowedPane) {
+    $resolved['enabled'] = false;
+  }
+  return $resolved;
+}
+
+function tctCanSessionUserAccessTask(array $task, string $sessionUserCode, array $taskAccessConfig): bool
+{
+  $access = tctResolveUserTaskAccessForTask($task, $sessionUserCode, $taskAccessConfig);
+  return (bool)($access['enabled'] ?? false);
+}
+
+function tctCanSessionUserAccessTaskPane(array $task, string $sessionUserCode, array $taskAccessConfig, string $paneKey): bool
+{
+  $normalizedPane = strtolower(trim($paneKey));
+  if ($normalizedPane === '') {
+    return tctCanSessionUserAccessTask($task, $sessionUserCode, $taskAccessConfig);
+  }
+  $access = tctResolveUserTaskAccessForTask($task, $sessionUserCode, $taskAccessConfig);
+  if (!($access['enabled'] ?? false)) {
+    return false;
+  }
+  return tctNormalizeBoolValue(($access['panes'][$normalizedPane] ?? false));
+}
+
+function tctAttachTaskAccessMeta(array $tasks, string $sessionUserCode, array $taskAccessConfig): array
+{
+  $result = [];
+  foreach ($tasks as $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    $access = tctResolveUserTaskAccessForTask($task, $sessionUserCode, $taskAccessConfig);
+    $paneMap = is_array($access['panes'] ?? null) ? $access['panes'] : [];
+    $allowedPanes = [];
+    foreach ($paneMap as $paneKey => $allowed) {
+      if (tctNormalizeBoolValue($allowed)) {
+        $allowedPanes[] = (string)$paneKey;
+      }
+    }
+    $task['taskAccessEnabled'] = tctNormalizeBoolValue($access['enabled'] ?? true);
+    $task['allowedTopPanes'] = array_values($allowedPanes);
+    $result[] = $task;
+  }
+  return $result;
+}
+
+function tctCleanupTaskAccessForRemovedTask(string $tasksDir, string $taskId): bool
+{
+  $trimmedTaskId = trim($taskId);
+  if ($trimmedTaskId === '') {
+    return true;
+  }
+  $config = tctReadTaskAccessConfig($tasksDir);
+  $users = is_array($config['users'] ?? null) ? $config['users'] : [];
+  $changed = false;
+  foreach ($users as $userCode => $entry) {
+    if (!is_array($entry)) {
+      continue;
+    }
+    $taskRules = is_array($entry['tasks'] ?? null) ? $entry['tasks'] : [];
+    $nextRules = [];
+    foreach ($taskRules as $ruleTaskId => $ruleValue) {
+      if (strtolower(trim((string)$ruleTaskId)) === strtolower($trimmedTaskId)) {
+        $changed = true;
+        continue;
+      }
+      $nextRules[$ruleTaskId] = $ruleValue;
+    }
+    $entry['tasks'] = $nextRules;
+    $users[$userCode] = $entry;
+  }
+  if (!$changed) {
+    return true;
+  }
+  $config['users'] = $users;
+  return tctWriteTaskAccessConfig($tasksDir, $config);
+}
+
 function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
 {
   $normalizedTagCode = tctNormalizeTagCode($tagCode);
@@ -2009,13 +2200,93 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
 
   $action = trim((string)($_POST['tct_action'] ?? ''));
   $tasks = tctReindexTasks(tctReadStoreTasks($tctStorePath));
+  $tctTaskAccessConfig = tctReadTaskAccessConfig($tctTasksDir);
+  $buildTasksForResponse = static function (array $taskRows) use ($tctTasksDir, $tctSessionUserCode, $tctTaskAccessConfig): array {
+    return tctAttachTaskAccessMeta(
+      tctMergeTaskScores($taskRows, $tctTasksDir),
+      $tctSessionUserCode,
+      $tctTaskAccessConfig
+    );
+  };
+  $findTaskById = static function (array $taskRows, string $taskId): ?array {
+    $needle = trim($taskId);
+    if ($needle === '') {
+      return null;
+    }
+    foreach ($taskRows as $taskRow) {
+      if (!is_array($taskRow)) {
+        continue;
+      }
+      if (trim((string)($taskRow['id'] ?? '')) === $needle) {
+        return $taskRow;
+      }
+    }
+    return null;
+  };
+  $actionPaneMap = [
+    'remove' => 'control',
+    'save_task_title' => 'control',
+    'save_task_settings' => 'control',
+    'save_task_score_system' => 'control',
+    'save_team_task_settings' => 'team',
+    'save_info_task_content' => 'information',
+    'add_describe_task_photo' => 'photo',
+    'rename_describe_task_photo' => 'photo',
+    'remove_describe_task_photo' => 'photo',
+    'add_team_task_challenge' => 'challenge-storage',
+    'save_team_task_challenge' => 'challenge-storage',
+    'save_team_task_challenge_guide' => 'challenge-storage',
+    'remove_team_task_challenge' => 'challenge-storage',
+    'get_info_task_rate_data' => 'invitees-rate',
+    'team_task_admin_get_team' => 'invitees-rate',
+    'team_task_admin_update_team' => 'invitees-rate',
+    'team_task_admin_set_challenge_accepted' => 'invitees-rate',
+    'team_task_admin_remove_member' => 'invitees-rate',
+    'get_describe_task_result_text' => 'invitees-rate',
+    'save_info_task_scores' => 'invitees-rate'
+  ];
+  if (isset($actionPaneMap[$action])) {
+    $targetTaskId = trim((string)($_POST['id'] ?? ''));
+    if ($targetTaskId === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $accessTask = $findTaskById($tasks, $targetTaskId);
+    if (!is_array($accessTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!tctCanSessionUserAccessTask($accessTask, $tctSessionUserCode, $tctTaskAccessConfig)) {
+      echo json_encode(['status' => 'error', 'message' => 'You do not have access to this task tab.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $requiredPane = (string)($actionPaneMap[$action] ?? '');
+    if (
+      $requiredPane !== ''
+      && !tctCanSessionUserAccessTaskPane($accessTask, $tctSessionUserCode, $tctTaskAccessConfig, $requiredPane)
+    ) {
+      echo json_encode(['status' => 'error', 'message' => 'You do not have access to this task subpane.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+  }
+  if ($action === 'reorder') {
+    foreach ($tasks as $task) {
+      if (!is_array($task)) {
+        continue;
+      }
+      if (!tctCanSessionUserAccessTask($task, $tctSessionUserCode, $tctTaskAccessConfig)) {
+        echo json_encode(['status' => 'error', 'message' => 'Task reorder is allowed only for users with access to all task tabs.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+    }
+  }
 
   if ($action === 'list') {
     foreach ($tasks as $task) {
       tctEnsureTaskFolder($tctTasksDir, (string)($task['tagCode'] ?? ''));
     }
     tctSaveStoreTasks($tctStorePath, $tasks);
-    echo json_encode(['status' => 'ok', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2050,7 +2321,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       'status' => 'ok',
       'message' => "Task added. Tag Code: {$tagCode}",
       'generatedTagCode' => $tagCode,
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2090,11 +2361,15 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
 
     $tasks = tctReindexTasks($nextTasks);
+    if (!tctCleanupTaskAccessForRemovedTask($tctTasksDir, $id)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task removed, but cleanup of task access settings failed.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save task list.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task removed and cleaned up.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'Task removed and cleaned up.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2129,7 +2404,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to save task title.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task title saved.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'Task title saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2179,7 +2454,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to save task settings.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task settings saved.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'Task settings saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2219,7 +2494,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
 
-    echo json_encode(['status' => 'ok', 'message' => 'Score settings saved.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'Score settings saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2273,7 +2548,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Team settings saved.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2322,7 +2597,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Information content saved.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2419,7 +2694,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Photo added.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2482,7 +2757,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Photo name updated.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2552,7 +2827,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Photo removed.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2614,7 +2889,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Challenge added.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2693,7 +2968,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Challenge updated.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2751,7 +3026,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Challenge guide saved.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2811,7 +3086,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode([
       'status' => 'ok',
       'message' => 'Challenge removed.',
-      'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)
+      'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -3642,7 +3917,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to save task order.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task order updated.', 'tasks' => tctMergeTaskScores($tasks, $tctTasksDir)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'Task order updated.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -3752,6 +4027,35 @@ if (TCT_INCLUDE_ONLY) {
     return parsed;
   };
 
+  const resolveDefaultTopPanes = (taskType) => {
+    const token = normalizeTaskType(taskType);
+    if (token === 'info') {
+      return ['control', 'information', 'invitees-rate'];
+    }
+    if (token === 'describe_photo') {
+      return ['control', 'information', 'photo', 'invitees-rate'];
+    }
+    if (token === 'team_task') {
+      return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
+    }
+    return ['control', 'quiz'];
+  };
+
+  const normalizeAllowedTopPanes = (value, taskType) => {
+    const defaults = resolveDefaultTopPanes(taskType);
+    const allowedSet = new Set(defaults);
+    if (!Array.isArray(value) || !value.length) {
+      return defaults;
+    }
+    const filtered = value
+      .map((item) => String(item ?? '').trim().toLowerCase())
+      .filter((item) => item && allowedSet.has(item));
+    if (!filtered.length) {
+      return defaults;
+    }
+    return Array.from(new Set(filtered));
+  };
+
   const setStatus = (message, isError = false) => {
     statusEl.textContent = message || '';
     statusEl.style.color = isError ? '#d1434a' : '';
@@ -3763,6 +4067,8 @@ if (TCT_INCLUDE_ONLY) {
       title: String(task.title || ''),
       tagCode: String(task.tagCode || '').trim(),
       taskType: normalizeTaskType(task.taskType || 'quiz'),
+      taskAccessEnabled: task.taskAccessEnabled !== false,
+      allowedTopPanes: normalizeAllowedTopPanes(task.allowedTopPanes, task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
       devPhase: Boolean(task.devPhase),
@@ -3790,6 +4096,8 @@ if (TCT_INCLUDE_ONLY) {
       title: String(task.title || ''),
       tagCode: String(task.tagCode || '').trim(),
       taskType: normalizeTaskType(task.taskType || 'quiz'),
+      taskAccessEnabled: task.taskAccessEnabled !== false,
+      allowedTopPanes: normalizeAllowedTopPanes(task.allowedTopPanes, task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
       devPhase: Boolean(task.devPhase),
@@ -3811,8 +4119,14 @@ if (TCT_INCLUDE_ONLY) {
   };
 
   const moveTaskByOffset = (id, offset) => {
+    if (!tasks.every((item) => item.taskAccessEnabled !== false)) {
+      return false;
+    }
     const fromIndex = tasks.findIndex((item) => item.id === id);
     if (fromIndex < 0) {
+      return false;
+    }
+    if (tasks[fromIndex]?.taskAccessEnabled === false) {
       return false;
     }
     const toIndex = fromIndex + offset;
@@ -3830,6 +4144,7 @@ if (TCT_INCLUDE_ONLY) {
       listBody.innerHTML = '<tr><td colspan="5" class="muted">No tasks created yet.</td></tr>';
       return;
     }
+    const canReorderAll = tasks.every((task) => task.taskAccessEnabled !== false);
     listBody.innerHTML = tasks.map((task, index) => `
       <tr data-task-id="${esc(task.id)}">
         <td>${index + 1}</td>
@@ -3841,21 +4156,24 @@ if (TCT_INCLUDE_ONLY) {
               data-task-title-id="${esc(task.id)}"
               value="${esc(task.title)}"
               autocomplete="off"
+              ${task.taskAccessEnabled === false ? 'disabled' : ''}
             />
-            <button type="button" class="btn ghost" data-save-title-id="${esc(task.id)}">Save</button>
+            <button type="button" class="btn ghost" data-save-title-id="${esc(task.id)}" ${task.taskAccessEnabled === false ? 'disabled' : ''}>Save</button>
           </div>
+          ${task.taskAccessEnabled === false ? '<p class="muted small">No access to this task tab.</p>' : ''}
         </td>
         <td><code>${esc(task.tagCode)}</code></td>
         <td>
           <div class="tct-action-wrap">
-            <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}">Remove</button>
+            <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}" ${task.taskAccessEnabled === false ? 'disabled' : ''}>Remove</button>
           </div>
         </td>
         <td>
           <div class="tct-order-actions">
-            <button type="button" class="btn ghost" data-move-up-id="${esc(task.id)}" ${index === 0 ? 'disabled' : ''}>Up</button>
-            <button type="button" class="btn ghost" data-move-down-id="${esc(task.id)}" ${index === (tasks.length - 1) ? 'disabled' : ''}>Down</button>
+            <button type="button" class="btn ghost" data-move-up-id="${esc(task.id)}" ${(index === 0 || !canReorderAll) ? 'disabled' : ''}>Up</button>
+            <button type="button" class="btn ghost" data-move-down-id="${esc(task.id)}" ${(index === (tasks.length - 1) || !canReorderAll) ? 'disabled' : ''}>Down</button>
           </div>
+          ${canReorderAll ? '' : '<p class="muted small">Reorder requires access to all task tabs.</p>'}
         </td>
       </tr>
     `).join('');
@@ -4021,3 +4339,4 @@ if (TCT_INCLUDE_ONLY) {
     });
 })();
 </script>
+

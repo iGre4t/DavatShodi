@@ -8,12 +8,14 @@ $tcAllowedChildSet = array_fill_keys($tcAllowedChildTabs, true);
 $tcCanMainPane = isset($tcAllowedChildSet['task-club:main']);
 $tcCanInviteesPane = isset($tcAllowedChildSet['task-club:invitees']);
 $tcCanManageTasksPane = isset($tcAllowedChildSet['task-club:manage-tasks']);
+$tcCanTaskAccessPane = isset($tcAllowedChildSet['task-club:task-access']);
 $tcCanMonitoringPane = isset($tcAllowedChildSet['task-club:monitoring']);
 $tcCanExportPane = isset($tcAllowedChildSet['task-club:export']);
 $tcCanEventStylePane = isset($tcAllowedChildSet['task-club:event-style']);
 $tcHasAnyPane = $tcCanMainPane
   || $tcCanInviteesPane
   || $tcCanManageTasksPane
+  || $tcCanTaskAccessPane
   || $tcCanMonitoringPane
   || $tcCanExportPane
   || $tcCanEventStylePane;
@@ -22,6 +24,7 @@ foreach ([
   'tc-main' => $tcCanMainPane,
   'tc-invitees' => $tcCanInviteesPane,
   'tc-manage-tasks' => $tcCanManageTasksPane,
+  'tc-task-access' => $tcCanTaskAccessPane,
   'tc-monitoring' => $tcCanMonitoringPane,
   'tc-export' => $tcCanExportPane,
   'tc-event-style' => $tcCanEventStylePane
@@ -40,6 +43,7 @@ $tcPrizesJsVer = (string)(@filemtime(__DIR__ . '/TC Prizes.js') ?: time());
 $tcSettingJsVer = (string)(@filemtime(__DIR__ . '/TCSetting.js') ?: time());
 $tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time());
 $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time());
+$tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time());
 ?>
 
 <link rel="stylesheet" href="mini%20apps/Task%20Club/tc-panel.css?v=<?= htmlspecialchars($tcPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
@@ -56,6 +60,9 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
       <?php endif; ?>
       <?php if ($tcCanManageTasksPane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">Manage Tasks</button>
+      <?php endif; ?>
+      <?php if ($tcCanTaskAccessPane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-task-access' ? ' active' : '' ?>" data-pane="tc-task-access">دسترسی تسک‌ها</button>
       <?php endif; ?>
       <?php if ($tcCanMonitoringPane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">Monitoring</button>
@@ -378,6 +385,26 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
       <?php include __DIR__ . '/TCT.php'; ?>
     </div>
     <?php endif; ?>
+    <?php if ($tcCanTaskAccessPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-task-access' ? ' active' : '' ?>" data-pane="tc-task-access">
+      <div class="card">
+        <div class="section-header">
+          <h3>دسترسی تسک‌ها</h3>
+        </div>
+        <div class="form" style="gap:12px;">
+          <label class="field standard-width">
+            <span>کاربر پنل</span>
+            <select id="tc-task-access-user-select"></select>
+          </label>
+          <p class="muted small" id="tc-task-access-status" aria-live="polite"></p>
+          <div id="tc-task-access-tree" class="tc-task-access-tree"></div>
+          <div class="field full">
+            <button type="button" class="btn primary standard-primary-button" id="tc-task-access-save">ذخیره دسترسی‌ها</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
     <?php if ($tcCanMonitoringPane): ?>
     <div class="sub-pane<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">
       <?php include __DIR__ . '/TCMonitoring.php'; ?>
@@ -481,7 +508,9 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
 <?php if ($tcCanEventStylePane): ?>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
+<?php if ($tcCanTaskAccessPane): ?>
+<script src="mini%20apps/Task%20Club/TCTaskAccess.js?v=<?= htmlspecialchars($tcTaskAccessJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php endif; ?>
 <?php if ($tcCanMonitoringPane): ?>
 <script src="mini%20apps/Task%20Club/TCMonitoring.js?v=<?= htmlspecialchars($tcMonitoringJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
-

@@ -258,6 +258,41 @@
   color: var(--primary, #111111);
 }
 
+.tc-shell .tc-task-access-tree {
+  display: grid;
+  gap: 10px;
+}
+
+.tc-shell .tc-task-access-group {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.tc-shell .tc-task-access-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #111111;
+}
+
+.tc-shell .tc-task-access-parent {
+  font-weight: 700;
+}
+
+.tc-shell .tc-task-access-children {
+  margin-top: 8px;
+  padding-right: 22px;
+  display: grid;
+  gap: 6px;
+}
+
+.tc-shell .tc-task-access-child {
+  font-weight: 500;
+  color: var(--muted, #6b7280);
+}
+
 .tc-shell .tc-status-divider,
 .tc-shell .tc-status-qty {
   color: var(--muted, #6b7280);

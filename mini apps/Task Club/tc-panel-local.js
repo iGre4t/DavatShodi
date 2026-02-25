@@ -44,6 +44,34 @@
     return normalizeTaskType(taskType) === 'team_task';
   }
 
+  function resolveDefaultTopPanesForTaskType(taskType) {
+    const normalizedType = normalizeTaskType(taskType);
+    if (normalizedType === 'info') {
+      return ['control', 'information', 'invitees-rate'];
+    }
+    if (normalizedType === 'describe_photo') {
+      return ['control', 'information', 'photo', 'invitees-rate'];
+    }
+    if (normalizedType === 'team_task') {
+      return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
+    }
+    return ['control', 'quiz'];
+  }
+
+  function normalizeAllowedTopPanes(value, taskType) {
+    const defaults = resolveDefaultTopPanesForTaskType(taskType);
+    const allowedSet = new Set(defaults);
+    if (!Array.isArray(value) || !value.length) {
+      return defaults;
+    }
+    const filtered = value.map((entry) => String(entry || '').trim().toLowerCase())
+      .filter((paneKey) => paneKey && allowedSet.has(paneKey));
+    if (!filtered.length) {
+      return defaults;
+    }
+    return Array.from(new Set(filtered));
+  }
+
   function normalizeBool(value) {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'number') return value === 1;
@@ -76,12 +104,15 @@
     const id = String(raw.id ?? '').trim();
     const title = String(raw.title ?? '').trim();
     const tagCode = String(raw.tagCode ?? raw.tag_code ?? '').trim().toUpperCase();
+    const taskType = normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz');
     const parsedOrder = Number.parseInt(raw.order, 10);
     return {
       id,
       title,
       tagCode,
-      taskType: normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz'),
+      taskType,
+      taskAccessEnabled: normalizeBool(raw.taskAccessEnabled ?? raw.task_access_enabled ?? true),
+      allowedTopPanes: normalizeAllowedTopPanes(raw.allowedTopPanes ?? raw.allowed_top_panes ?? [], taskType),
       active: normalizeBool(raw.active),
       duration: normalizeBool(raw.duration),
       devPhase: normalizeBool(raw.devPhase ?? raw.dev_phase ?? false),
@@ -335,6 +366,37 @@
       section.classList.toggle('active', isActive);
       section.hidden = !isActive;
     });
+  }
+
+  function applyTaskTopPaneAccess(taskPane, task) {
+    if (!(taskPane instanceof HTMLElement)) return;
+    const shell = taskPane.querySelector('[data-task-top-shell]');
+    if (!(shell instanceof HTMLElement)) return;
+    const allowed = new Set(normalizeAllowedTopPanes(task?.allowedTopPanes || [], task?.taskType || 'quiz'));
+    shell.querySelectorAll('[data-task-top-trigger]').forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      const key = String(button.getAttribute('data-task-top-trigger') || '').trim().toLowerCase();
+      if (key && !allowed.has(key)) {
+        button.remove();
+      }
+    });
+    shell.querySelectorAll('[data-task-top-section]').forEach((section) => {
+      if (!(section instanceof HTMLElement)) return;
+      const key = String(section.getAttribute('data-task-top-section') || '').trim().toLowerCase();
+      if (key && !allowed.has(key)) {
+        section.remove();
+      }
+    });
+    const remainingTriggers = shell.querySelectorAll('[data-task-top-trigger]');
+    if (remainingTriggers.length > 0) {
+      return;
+    }
+    shell.innerHTML = `
+      <div class="card">
+        <div class="section-header"><h3>No Access</h3></div>
+        <p class="muted">You do not have access to any subpane for this task.</p>
+      </div>
+    `;
   }
 
   function getTaskPaneControls(pane) {
@@ -2521,7 +2583,17 @@
       .filter((task) => task.id && task.tagCode)
       .sort((a, b) => a.order - b.order);
 
-    if (!normalizedTasks.length) {
+    const visibleTasks = normalizedTasks.filter((task) => task.taskAccessEnabled !== false);
+
+    if (!visibleTasks.length) {
+      if (normalizedTasks.length > 0) {
+        paneHost.innerHTML = `
+          <div class="card">
+            <div class="section-header"><h3>No Access</h3></div>
+            <p class="muted">You do not have access to any task tab.</p>
+          </div>
+        `;
+      }
       ensureAnyActivePane(layout, previousActivePane);
       return;
     }
@@ -2531,7 +2603,7 @@
     const navFragment = document.createDocumentFragment();
     const paneFragment = document.createDocumentFragment();
 
-    normalizedTasks.forEach((task, index) => {
+    visibleTasks.forEach((task, index) => {
       const paneKey = makeTaskPaneKey(task, index, usedPaneKeys);
       const labelText = `${task.order}. ${task.title || task.tagCode}`;
 
@@ -2562,8 +2634,16 @@
     paneHost.querySelectorAll('.sub-pane[data-task-pane="1"]').forEach((pane) => {
       if (!(pane instanceof HTMLElement)) return;
       const taskId = pane.dataset.taskId || '';
-      applyTaskSettingsToPane(pane, taskById.get(taskId) || null);
-      activateTaskTopPane(pane, 'control');
+      const task = taskById.get(taskId) || null;
+      applyTaskSettingsToPane(pane, task);
+      applyTaskTopPaneAccess(pane, task);
+      const firstTopTrigger = pane.querySelector('[data-task-top-trigger]');
+      if (firstTopTrigger instanceof HTMLElement) {
+        const firstSection = String(firstTopTrigger.getAttribute('data-task-top-trigger') || '').trim();
+        if (firstSection !== '') {
+          activateTaskTopPane(pane, firstSection);
+        }
+      }
     });
   }
 
@@ -2595,6 +2675,11 @@
 
   async function refreshTaskSubtabs(layout) {
     if (!(layout instanceof HTMLElement)) return;
+    const navHost = layout.querySelector('[data-tc-task-subtab-nav]');
+    const paneHost = layout.querySelector('[data-tc-task-subtab-panes]');
+    if (!(navHost instanceof HTMLElement) || !(paneHost instanceof HTMLElement)) {
+      return;
+    }
     try {
       const tasks = await fetchTaskList();
       renderTaskSubtabs(layout, tasks);
