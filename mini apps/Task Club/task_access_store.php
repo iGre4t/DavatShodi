@@ -259,7 +259,10 @@ if ($action === 'bootstrap') {
       continue;
     }
     $rules = tcTaskAccessNormalizeRulesForTasks(is_array($entry['tasks'] ?? null) ? $entry['tasks'] : [], $tasksByIdLower);
-    $accessByUser[$userCode] = ['tasks' => $rules];
+    $accessByUser[$userCode] = [
+      'allowManageTasksTab' => tcTaskAccessNormalizeBool($entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false)),
+      'tasks' => $rules
+    ];
   }
   echo json_encode([
     'status' => 'ok',
@@ -297,12 +300,14 @@ if ($action === 'save_user_access') {
     exit;
   }
   $rawRules = is_array($payload['rules'] ?? null) ? $payload['rules'] : [];
+  $allowManageTasksTab = tcTaskAccessNormalizeBool($payload['allowManageTasksTab'] ?? ($payload['allow_manage_tasks_tab'] ?? false));
   $normalizedRules = tcTaskAccessNormalizeRulesForTasks($rawRules, $tasksByIdLower);
 
   $config = tcTaskAccessReadJson($taskAccessPath, []);
   $users = is_array($config['users'] ?? null) ? $config['users'] : [];
   $users[$userCode] = [
     'updatedAt' => date('Y-m-d H:i:s'),
+    'allowManageTasksTab' => $allowManageTasksTab,
     'tasks' => $normalizedRules
   ];
   $config['users'] = $users;
@@ -316,6 +321,7 @@ if ($action === 'save_user_access') {
     'message' => 'Task access saved.',
     'data' => [
       'userCode' => $userCodeRaw,
+      'allowManageTasksTab' => $allowManageTasksTab,
       'rules' => $normalizedRules
     ]
   ], JSON_UNESCAPED_UNICODE);

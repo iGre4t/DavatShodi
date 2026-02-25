@@ -6,11 +6,13 @@
     : '';
 
   const userSelectEl = document.getElementById('tc-task-access-user-select');
+  const manageTasksToggleEl = document.getElementById('tc-task-access-manage-tasks');
   const treeEl = document.getElementById('tc-task-access-tree');
   const saveBtnEl = document.getElementById('tc-task-access-save');
   const statusEl = document.getElementById('tc-task-access-status');
   if (
     !(userSelectEl instanceof HTMLSelectElement)
+    || !(manageTasksToggleEl instanceof HTMLInputElement)
     || !(treeEl instanceof HTMLElement)
     || !(saveBtnEl instanceof HTMLButtonElement)
     || !(statusEl instanceof HTMLElement)
@@ -86,6 +88,8 @@
     if (!options.length) {
       userSelectEl.innerHTML = '<option value="">کاربری یافت نشد</option>';
       userSelectEl.disabled = true;
+      manageTasksToggleEl.checked = false;
+      manageTasksToggleEl.disabled = true;
       return;
     }
     const previous = String(userSelectEl.value || '').trim();
@@ -106,6 +110,7 @@
       userSelectEl.value = String(preferred?.code || options[0]?.code || '').trim();
     }
     userSelectEl.disabled = false;
+    manageTasksToggleEl.disabled = false;
   }
 
   function escapeHtml(value) {
@@ -128,6 +133,15 @@
       ? userAccess.tasks
       : {};
     return tasks;
+  }
+
+  function getUserManageTasksFlag() {
+    const key = getSelectedUserKey();
+    const userAccess = state.accessByUser?.[key];
+    const rawValue = userAccess && typeof userAccess === 'object'
+      ? (userAccess.allowManageTasksTab ?? userAccess.allow_manage_tasks_tab)
+      : false;
+    return normalizeBool(rawValue);
   }
 
   function resolveTaskRule(task, userRules) {
@@ -179,6 +193,10 @@
     }).join('');
   }
 
+  function renderManageTasksToggle() {
+    manageTasksToggleEl.checked = getUserManageTasksFlag();
+  }
+
   function collectRulesFromTree() {
     const rules = {};
     const groups = treeEl.querySelectorAll('.tc-task-access-group[data-task-id]');
@@ -225,14 +243,20 @@
     try {
       const response = await requestPost('save_user_access', {
         userCode: selectedUserCode,
-        rules
+        rules,
+        allowManageTasksTab: manageTasksToggleEl.checked ? 1 : 0
       });
       const key = normalizeToken(selectedUserCode);
       const normalizedRules = response?.data?.rules && typeof response.data.rules === 'object'
         ? response.data.rules
         : rules;
-      state.accessByUser[key] = { tasks: normalizedRules };
+      const allowManageTasksTab = normalizeBool(response?.data?.allowManageTasksTab ?? manageTasksToggleEl.checked);
+      state.accessByUser[key] = {
+        allowManageTasksTab,
+        tasks: normalizedRules
+      };
       setStatus(response?.message || 'دسترسی‌ها ذخیره شد.');
+      renderManageTasksToggle();
       renderTree();
     } catch (error) {
       setStatus(error?.message || 'ذخیره دسترسی‌ها ناموفق بود.', true);
@@ -250,6 +274,7 @@
       state.tasks = Array.isArray(data?.tasks) ? data.tasks : [];
       state.accessByUser = data?.access && typeof data.access === 'object' ? data.access : {};
       renderUserOptions();
+      renderManageTasksToggle();
       renderTree();
       setStatus('');
     } catch (error) {
@@ -259,6 +284,7 @@
   }
 
   userSelectEl.addEventListener('change', () => {
+    renderManageTasksToggle();
     renderTree();
     setStatus('');
   });

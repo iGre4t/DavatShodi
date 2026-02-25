@@ -5,10 +5,36 @@ require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
 $tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
-if (!userHasPermissionId($tctSessionUser, 'task-club:manage-tasks')) {
+$tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
+$tctCanAccessManageTasks = userHasPermissionId($tctSessionUser, 'task-club:manage-tasks');
+if (!$tctCanAccessManageTasks && $tctSessionUserCode !== '') {
+  $tctTaskAccessPath = __DIR__ . '/tasks/task-access.json';
+  if (is_file($tctTaskAccessPath)) {
+    $tctTaskAccessRaw = file_get_contents($tctTaskAccessPath);
+    $tctTaskAccessDecoded = is_string($tctTaskAccessRaw) ? json_decode($tctTaskAccessRaw, true) : null;
+    $tctTaskAccessUsers = is_array($tctTaskAccessDecoded['users'] ?? null) ? $tctTaskAccessDecoded['users'] : [];
+    foreach ($tctTaskAccessUsers as $rawCode => $entry) {
+      if (!is_array($entry)) {
+        continue;
+      }
+      if (strtolower(trim((string)$rawCode)) !== $tctSessionUserCode) {
+        continue;
+      }
+      $rawAllowManageTasks = $entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false);
+      if (is_bool($rawAllowManageTasks)) {
+        $tctCanAccessManageTasks = $rawAllowManageTasks;
+      } elseif (is_numeric($rawAllowManageTasks)) {
+        $tctCanAccessManageTasks = ((int)$rawAllowManageTasks) === 1;
+      } else {
+        $tctCanAccessManageTasks = in_array(strtolower(trim((string)$rawAllowManageTasks)), ['1', 'true', 'on', 'yes'], true);
+      }
+      break;
+    }
+  }
+}
+if (!$tctCanAccessManageTasks) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tctIsJsonRequest);
 }
-$tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
 $tctCsrfToken = tcSecurityGetCsrfToken();
 
 $tctTasksDir = __DIR__ . '/tasks';

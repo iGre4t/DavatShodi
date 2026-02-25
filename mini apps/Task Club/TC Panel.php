@@ -12,6 +12,37 @@ $tcCanTaskAccessPane = isset($tcAllowedChildSet['task-club:task-access']);
 $tcCanMonitoringPane = isset($tcAllowedChildSet['task-club:monitoring']);
 $tcCanExportPane = isset($tcAllowedChildSet['task-club:export']);
 $tcCanEventStylePane = isset($tcAllowedChildSet['task-club:event-style']);
+$tcNormalizeBool = static function ($value): bool {
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_numeric($value)) {
+    return ((int)$value) === 1;
+  }
+  $token = strtolower(trim((string)$value));
+  return in_array($token, ['1', 'true', 'on', 'yes'], true);
+};
+$tcSessionUserCode = strtolower(trim((string)($tcPanelUser['code'] ?? '')));
+if (!$tcCanManageTasksPane && $tcSessionUserCode !== '') {
+  $tcTaskAccessPath = __DIR__ . '/tasks/task-access.json';
+  if (is_file($tcTaskAccessPath)) {
+    $tcTaskAccessRaw = file_get_contents($tcTaskAccessPath);
+    $tcTaskAccessDecoded = is_string($tcTaskAccessRaw) ? json_decode($tcTaskAccessRaw, true) : null;
+    $tcTaskAccessUsers = is_array($tcTaskAccessDecoded['users'] ?? null) ? $tcTaskAccessDecoded['users'] : [];
+    foreach ($tcTaskAccessUsers as $rawCode => $entry) {
+      if (!is_array($entry)) {
+        continue;
+      }
+      if (strtolower(trim((string)$rawCode)) !== $tcSessionUserCode) {
+        continue;
+      }
+      if ($tcNormalizeBool($entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false))) {
+        $tcCanManageTasksPane = true;
+      }
+      break;
+    }
+  }
+}
 $tcHasAnyPane = $tcCanMainPane
   || $tcCanInviteesPane
   || $tcCanManageTasksPane
@@ -395,6 +426,10 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           <label class="field standard-width">
             <span>کاربر پنل</span>
             <select id="tc-task-access-user-select"></select>
+          </label>
+          <label class="tc-task-access-manage-row">
+            <input type="checkbox" id="tc-task-access-manage-tasks" />
+            <span>دسترسی به تب Manage Tasks</span>
           </label>
           <p class="muted small" id="tc-task-access-status" aria-live="polite"></p>
           <div id="tc-task-access-tree" class="tc-task-access-tree"></div>
