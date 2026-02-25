@@ -24,6 +24,7 @@ $tcNormalizeBool = static function ($value): bool {
 };
 $tcSessionUserCode = strtolower(trim((string)($tcPanelUser['code'] ?? '')));
 $tcManageTasksOverride = null;
+$tcHasTaskSubtabAccess = false;
 if ($tcSessionUserCode !== '') {
   $tcTaskAccessPath = __DIR__ . '/tasks/task-access.json';
   if (is_file($tcTaskAccessPath)) {
@@ -38,6 +39,26 @@ if ($tcSessionUserCode !== '') {
         continue;
       }
       $tcManageTasksOverride = $tcNormalizeBool($entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false));
+      $tcTaskRules = is_array($entry['tasks'] ?? null) ? $entry['tasks'] : [];
+      foreach ($tcTaskRules as $tcRule) {
+        if (!is_array($tcRule)) {
+          continue;
+        }
+        if (!$tcNormalizeBool($tcRule['enabled'] ?? true)) {
+          continue;
+        }
+        $tcPaneRules = is_array($tcRule['panes'] ?? null) ? $tcRule['panes'] : [];
+        if (count($tcPaneRules) === 0) {
+          $tcHasTaskSubtabAccess = true;
+          break;
+        }
+        foreach ($tcPaneRules as $tcPaneAllowed) {
+          if ($tcNormalizeBool($tcPaneAllowed)) {
+            $tcHasTaskSubtabAccess = true;
+            break 2;
+          }
+        }
+      }
       break;
     }
   }
@@ -45,9 +66,11 @@ if ($tcSessionUserCode !== '') {
 if ($tcManageTasksOverride !== null) {
   $tcCanManageTasksPane = $tcManageTasksOverride;
 }
+$tcCanTaskSubtabs = $tcCanManageTasksPane || $tcHasTaskSubtabAccess;
 $tcHasAnyPane = $tcCanMainPane
   || $tcCanInviteesPane
   || $tcCanManageTasksPane
+  || $tcCanTaskSubtabs
   || $tcCanTaskAccessPane
   || $tcCanMonitoringPane
   || $tcCanExportPane
@@ -106,7 +129,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
       <?php if ($tcCanEventStylePane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-event-style' ? ' active' : '' ?>" data-pane="tc-event-style">Event Style</button>
       <?php endif; ?>
-      <?php if ($tcCanManageTasksPane): ?>
+      <?php if ($tcCanTaskSubtabs): ?>
         <div data-tc-task-subtab-nav></div>
       <?php endif; ?>
     </div>
@@ -522,7 +545,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
       </div>
     </div>
     <?php endif; ?>
-    <?php if ($tcCanManageTasksPane): ?>
+    <?php if ($tcCanTaskSubtabs): ?>
     <div data-tc-task-subtab-panes></div>
     <?php endif; ?>
     <?php if (!$tcHasAnyPane): ?>

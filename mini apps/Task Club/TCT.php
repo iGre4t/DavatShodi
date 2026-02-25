@@ -8,6 +8,7 @@ $tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
 $tctCanAccessManageTasks = userHasPermissionId($tctSessionUser, 'task-club:manage-tasks');
 $tctManageTasksOverride = null;
+$tctHasTaskSubtabAccess = false;
 if ($tctSessionUserCode !== '') {
   $tctTaskAccessPath = __DIR__ . '/tasks/task-access.json';
   if (is_file($tctTaskAccessPath)) {
@@ -29,6 +30,37 @@ if ($tctSessionUserCode !== '') {
       } else {
         $tctManageTasksOverride = in_array(strtolower(trim((string)$rawAllowManageTasks)), ['1', 'true', 'on', 'yes'], true);
       }
+      $rawTaskRules = is_array($entry['tasks'] ?? null) ? $entry['tasks'] : [];
+      foreach ($rawTaskRules as $rawTaskRule) {
+        if (!is_array($rawTaskRule)) {
+          continue;
+        }
+        $rawRuleEnabled = $rawTaskRule['enabled'] ?? true;
+        $ruleEnabled = is_bool($rawRuleEnabled)
+          ? $rawRuleEnabled
+          : (is_numeric($rawRuleEnabled)
+            ? (((int)$rawRuleEnabled) === 1)
+            : in_array(strtolower(trim((string)$rawRuleEnabled)), ['1', 'true', 'on', 'yes'], true));
+        if (!$ruleEnabled) {
+          continue;
+        }
+        $rawPaneRules = is_array($rawTaskRule['panes'] ?? null) ? $rawTaskRule['panes'] : [];
+        if (count($rawPaneRules) === 0) {
+          $tctHasTaskSubtabAccess = true;
+          break;
+        }
+        foreach ($rawPaneRules as $rawPaneAllowed) {
+          $paneAllowed = is_bool($rawPaneAllowed)
+            ? $rawPaneAllowed
+            : (is_numeric($rawPaneAllowed)
+              ? (((int)$rawPaneAllowed) === 1)
+              : in_array(strtolower(trim((string)$rawPaneAllowed)), ['1', 'true', 'on', 'yes'], true));
+          if ($paneAllowed) {
+            $tctHasTaskSubtabAccess = true;
+            break 2;
+          }
+        }
+      }
       break;
     }
   }
@@ -36,7 +68,7 @@ if ($tctSessionUserCode !== '') {
 if ($tctManageTasksOverride !== null) {
   $tctCanAccessManageTasks = $tctManageTasksOverride;
 }
-if (!$tctCanAccessManageTasks) {
+if (!$tctCanAccessManageTasks && !$tctHasTaskSubtabAccess) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tctIsJsonRequest);
 }
 $tctCsrfToken = tcSecurityGetCsrfToken();
@@ -2321,6 +2353,10 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
   }
 
   if ($action === 'add') {
+    if (!$tctCanAccessManageTasks) {
+      echo json_encode(['status' => 'error', 'message' => 'You do not have access to Manage Tasks.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $title = tctNormalizeTaskTitle((string)($_POST['title'] ?? ''));
     $taskType = tctNormalizeTaskType((string)($_POST['task_type'] ?? 'quiz'));
     if ($title === '') {
