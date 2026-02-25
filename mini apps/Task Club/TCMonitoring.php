@@ -5,7 +5,10 @@ require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 
 $tcMonitoringAction = strtolower(trim((string)($_GET['action'] ?? '')));
 $tcMonitoringIsJsonRequest = $tcMonitoringAction === 'stats';
-requireTabPermissionFromSession('task-club', $tcMonitoringIsJsonRequest);
+$tcMonitoringSessionUser = requireTabPermissionFromSession('task-club', $tcMonitoringIsJsonRequest);
+if (!userHasPermissionId($tcMonitoringSessionUser, 'task-club:monitoring')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tcMonitoringIsJsonRequest);
+}
 
 function tcMonitoringReadJson(string $path, $fallback)
 {

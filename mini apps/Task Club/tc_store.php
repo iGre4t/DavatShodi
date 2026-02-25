@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
-requireTabPermissionFromSession('task-club', true);
+$tcStoreSessionUser = requireTabPermissionFromSession('task-club', true);
 tcSecurityGetCsrfToken();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -392,6 +392,28 @@ function requireTcStoreCsrf(?array $payload = null): void
 }
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
+
+$tcStoreMainActions = [
+  'get_prizes',
+  'save_prizes',
+  'get_prize_levels',
+  'save_prize_levels',
+  'search_invitee_admin',
+  'get_admin_assignments',
+  'set_admin_assignment'
+];
+
+if (in_array($action, $tcStoreMainActions, true) && !userHasPermissionId($tcStoreSessionUser, 'task-club:main')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+}
+
+if (in_array($action, ['get_settings', 'save_settings'], true)) {
+  $canMain = userHasPermissionId($tcStoreSessionUser, 'task-club:main');
+  $canEventStyle = userHasPermissionId($tcStoreSessionUser, 'task-club:event-style');
+  if (!$canMain && !$canEventStyle) {
+    denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+  }
+}
 
 if ($action === 'get_prizes') {
   $prizes = readJsonFile($prizesFile, []);

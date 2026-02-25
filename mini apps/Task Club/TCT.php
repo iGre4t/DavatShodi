@@ -4,7 +4,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
-requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
+$tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
+if (!userHasPermissionId($tctSessionUser, 'task-club:manage-tasks')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tctIsJsonRequest);
+}
 $tctCsrfToken = tcSecurityGetCsrfToken();
 
 $tctTasksDir = __DIR__ . '/tasks';

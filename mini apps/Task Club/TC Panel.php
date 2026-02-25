@@ -2,7 +2,35 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-requireTabPermissionFromSession('task-club', false);
+$tcPanelUser = requireTabPermissionFromSession('task-club', false);
+$tcAllowedChildTabs = resolveAllowedPanelChildTabsForUser($tcPanelUser, 'task-club');
+$tcAllowedChildSet = array_fill_keys($tcAllowedChildTabs, true);
+$tcCanMainPane = isset($tcAllowedChildSet['task-club:main']);
+$tcCanInviteesPane = isset($tcAllowedChildSet['task-club:invitees']);
+$tcCanManageTasksPane = isset($tcAllowedChildSet['task-club:manage-tasks']);
+$tcCanMonitoringPane = isset($tcAllowedChildSet['task-club:monitoring']);
+$tcCanExportPane = isset($tcAllowedChildSet['task-club:export']);
+$tcCanEventStylePane = isset($tcAllowedChildSet['task-club:event-style']);
+$tcHasAnyPane = $tcCanMainPane
+  || $tcCanInviteesPane
+  || $tcCanManageTasksPane
+  || $tcCanMonitoringPane
+  || $tcCanExportPane
+  || $tcCanEventStylePane;
+$tcInitialPane = '';
+foreach ([
+  'tc-main' => $tcCanMainPane,
+  'tc-invitees' => $tcCanInviteesPane,
+  'tc-manage-tasks' => $tcCanManageTasksPane,
+  'tc-monitoring' => $tcCanMonitoringPane,
+  'tc-export' => $tcCanExportPane,
+  'tc-event-style' => $tcCanEventStylePane
+] as $paneKey => $allowed) {
+  if ($allowed) {
+    $tcInitialPane = $paneKey;
+    break;
+  }
+}
 require_once __DIR__ . '/tc-security.php';
 $tcPanelCsrfToken = tcSecurityGetCsrfToken();
 
@@ -20,17 +48,32 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
   <aside class="sub-sidebar">
     <div class="sub-header">Task Club</div>
     <div class="sub-nav">
-      <button type="button" class="sub-item active" data-pane="tc-main">Main Panel</button>
-      <button type="button" class="sub-item" data-pane="tc-invitees">Invitees</button>
-      <button type="button" class="sub-item" data-pane="tc-manage-tasks">Manage Tasks</button>
-      <button type="button" class="sub-item" data-pane="tc-monitoring">Monitoring</button>
-      <button type="button" class="sub-item" data-pane="tc-export">Export</button>
-      <button type="button" class="sub-item" data-pane="tc-event-style">Event Style</button>
-      <div data-tc-task-subtab-nav></div>
+      <?php if ($tcCanMainPane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">Main Panel</button>
+      <?php endif; ?>
+      <?php if ($tcCanInviteesPane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">Invitees</button>
+      <?php endif; ?>
+      <?php if ($tcCanManageTasksPane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">Manage Tasks</button>
+      <?php endif; ?>
+      <?php if ($tcCanMonitoringPane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">Monitoring</button>
+      <?php endif; ?>
+      <?php if ($tcCanExportPane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-export' ? ' active' : '' ?>" data-pane="tc-export">Export</button>
+      <?php endif; ?>
+      <?php if ($tcCanEventStylePane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-event-style' ? ' active' : '' ?>" data-pane="tc-event-style">Event Style</button>
+      <?php endif; ?>
+      <?php if ($tcCanManageTasksPane): ?>
+        <div data-tc-task-subtab-nav></div>
+      <?php endif; ?>
     </div>
   </aside>
   <div class="sub-content">
-    <div class="sub-pane active" data-pane="tc-main">
+    <?php if ($tcCanMainPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">
       <div class="card">
   <div class="section-header">
     <h3>Status</h3>
@@ -324,16 +367,24 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
 </div>
 </div>
     </div>
-    <div class="sub-pane" data-pane="tc-invitees">
+    <?php endif; ?>
+    <?php if ($tcCanInviteesPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">
       <?php include __DIR__ . '/invitees.php'; ?>
     </div>
-    <div class="sub-pane" data-pane="tc-manage-tasks">
+    <?php endif; ?>
+    <?php if ($tcCanManageTasksPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">
       <?php include __DIR__ . '/TCT.php'; ?>
     </div>
-    <div class="sub-pane" data-pane="tc-monitoring">
+    <?php endif; ?>
+    <?php if ($tcCanMonitoringPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">
       <?php include __DIR__ . '/TCMonitoring.php'; ?>
     </div>
-    <div class="sub-pane" data-pane="tc-export">
+    <?php endif; ?>
+    <?php if ($tcCanExportPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-export' ? ' active' : '' ?>" data-pane="tc-export">
       <div class="card">
         <div class="section-header">
           <h3>Export</h3>
@@ -348,7 +399,9 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
         </div>
       </div>
     </div>
-    <div class="sub-pane" data-pane="tc-event-style">
+    <?php endif; ?>
+    <?php if ($tcCanEventStylePane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-event-style' ? ' active' : '' ?>" data-pane="tc-event-style">
       <div class="card">
         <div class="section-header">
           <h3>Upload Logo</h3>
@@ -404,18 +457,31 @@ $tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time()
         </div>
       </div>
     </div>
+    <?php endif; ?>
+    <?php if ($tcCanManageTasksPane): ?>
     <div data-tc-task-subtab-panes></div>
+    <?php endif; ?>
+    <?php if (!$tcHasAnyPane): ?>
+      <div class="card">
+        <div class="section-header">
+          <h3>Access Restricted</h3>
+        </div>
+        <p class="muted">You do not have access to any Task Club subtab.</p>
+      </div>
+    <?php endif; ?>
   </div>
 </div>
 </div>
 
 <script src="mini%20apps/Task%20Club/tc-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php if ($tcCanMainPane): ?>
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/Task%20Club/TCSetting.js?v=<?= htmlspecialchars($tcSettingJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php endif; ?>
+<?php if ($tcCanEventStylePane): ?>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php endif; ?>
+<?php if ($tcCanMonitoringPane): ?>
 <script src="mini%20apps/Task%20Club/TCMonitoring.js?v=<?= htmlspecialchars($tcMonitoringJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-
-
-
-
+<?php endif; ?>
 

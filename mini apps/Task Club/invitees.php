@@ -1,7 +1,10 @@
 <?php
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
-requireTabPermissionFromSession('task-club', false);
+$tcInviteesSessionUser = requireTabPermissionFromSession('task-club', false);
+if (!userHasPermissionId($tcInviteesSessionUser, 'task-club:invitees')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', false);
+}
 $tcInviteesCsrfToken = tcSecurityGetCsrfToken();
 
 $baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';

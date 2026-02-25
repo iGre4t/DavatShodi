@@ -4,7 +4,10 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
-requireTabPermissionFromSession('task-club', true);
+$tcInviteesUploadSessionUser = requireTabPermissionFromSession('task-club', true);
+if (!userHasPermissionId($tcInviteesUploadSessionUser, 'task-club:invitees')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+}
 tcSecurityGetCsrfToken();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {

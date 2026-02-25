@@ -2,7 +2,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-requireTabPermissionFromSession('task-club', false);
+$tcExportSessionUser = requireTabPermissionFromSession('task-club', false);
+if (!userHasPermissionId($tcExportSessionUser, 'task-club:export')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', false);
+}
 
 $baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';
 $inviteesPath = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';

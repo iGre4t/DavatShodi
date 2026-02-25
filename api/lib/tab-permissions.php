@@ -27,6 +27,14 @@ function getPanelChildTabDefinitionsByParent(): array
         return $children;
     }
     $children = [
+        'task-club' => [
+            ['id' => 'task-club:main', 'label' => 'Main Panel'],
+            ['id' => 'task-club:invitees', 'label' => 'Invitees'],
+            ['id' => 'task-club:manage-tasks', 'label' => 'Manage Tasks'],
+            ['id' => 'task-club:monitoring', 'label' => 'Monitoring'],
+            ['id' => 'task-club:export', 'label' => 'Export'],
+            ['id' => 'task-club:event-style', 'label' => 'Event Style']
+        ],
         'devsettings' => [
             ['id' => 'devsettings:panel-settings', 'label' => 'عمومی'],
             ['id' => 'devsettings:appearance', 'label' => 'ظاهر'],

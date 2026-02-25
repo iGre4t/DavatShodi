@@ -6,7 +6,10 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 
-requireTabPermissionFromSession('task-club', true);
+$tcInviteesAddSessionUser = requireTabPermissionFromSession('task-club', true);
+if (!userHasPermissionId($tcInviteesAddSessionUser, 'task-club:invitees')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+}
 tcSecurityGetCsrfToken();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
@@ -280,4 +283,3 @@ if (!writeCsvRowsLocked($mappedFile, $rows)) {
 }
 
 echo json_encode(['status' => 'ok', 'message' => 'Invitee added successfully.']);
-
