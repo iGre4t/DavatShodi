@@ -8996,9 +8996,78 @@ $sessionPayload = [
         let teamTaskBusy = false;
         let answerTimeLimitEnabled = true;
         let globalEventStatus = 'inactive';
+        let tcmInPageHistoryDepth = 0;
+        let tcmHistoryReady = false;
+        let tcmHistorySyncLocked = false;
+        let tcmSuppressNextPopstate = false;
 
         const QUIZ_TIME_LIMIT_MS = 14000;
         const QUIZ_FEEDBACK_DELAY_MS = 1000;
+
+        const parseHistoryDepth = (state) => {
+          if (!state || typeof state !== 'object') return null;
+          const raw = state.tcDepth;
+          const depth = Number.parseInt(String(raw ?? ''), 10);
+          if (!Number.isFinite(depth) || depth < 0) return null;
+          return depth;
+        };
+
+        const initInPageHistoryState = () => {
+          if (typeof window === 'undefined' || !window.history || typeof window.history.replaceState !== 'function') {
+            return;
+          }
+          const currentState = (window.history.state && typeof window.history.state === 'object')
+            ? window.history.state
+            : {};
+          const currentDepth = parseHistoryDepth(currentState);
+          const depth = currentDepth === null ? 0 : currentDepth;
+          tcmInPageHistoryDepth = depth;
+          window.history.replaceState(
+            { ...currentState, tcPage: 'TCM', tcDepth: depth },
+            '',
+            window.location.href
+          );
+          tcmHistoryReady = true;
+        };
+
+        const pushInPageHistoryState = () => {
+          if (!tcmHistoryReady || tcmHistorySyncLocked) return;
+          if (typeof window === 'undefined' || !window.history || typeof window.history.pushState !== 'function') return;
+          const currentState = (window.history.state && typeof window.history.state === 'object')
+            ? window.history.state
+            : {};
+          const nextDepth = Math.max(0, tcmInPageHistoryDepth) + 1;
+          tcmInPageHistoryDepth = nextDepth;
+          window.history.pushState(
+            { ...currentState, tcPage: 'TCM', tcDepth: nextDepth },
+            '',
+            window.location.href
+          );
+        };
+
+        const requestInPageBackByHistory = () => {
+          if (typeof window === 'undefined' || !window.history || typeof window.history.back !== 'function') {
+            return false;
+          }
+          if (teamInviteDialogHasHistoryState && isTeamInviteDialogOpen()) {
+            window.history.back();
+            return true;
+          }
+          if (tcmInPageHistoryDepth > 0) {
+            window.history.back();
+            return true;
+          }
+          return false;
+        };
+
+        const runWithoutHistorySync = (runner) => {
+          tcmHistorySyncLocked = true;
+          try {
+            return runner();
+          } finally {
+            tcmHistorySyncLocked = false;
+          }
+        };
 
         const setTimeCounter = (label, value) => {
           if (timeCounterLabelEl) {
@@ -9924,8 +9993,13 @@ $sessionPayload = [
         bindDescribePhotoImageState(describePhotoImageEl);
         bindDescribePhotoImageState(describePhotoEditorImageEl);
 
-        const setInfoTaskStep = (step) => {
+        const setInfoTaskStep = (step, options = {}) => {
           const next = String(step || 'info').trim().toLowerCase();
+          const previous = String(infoTaskCurrentStep || '').trim().toLowerCase();
+          const shouldPushHistory = options?.pushHistory !== false;
+          if (shouldPushHistory && infoTaskViewOpen && previous !== '' && previous !== next) {
+            pushInPageHistoryState();
+          }
           const isInfoStep = next === 'info';
           const isPhotoStep = next === 'photo';
           const isEditorStep = next === 'editor';
@@ -10327,6 +10401,7 @@ $sessionPayload = [
           }
           if (teamInviteDialogHasHistoryState && typeof window !== 'undefined' && window.history && typeof window.history.back === 'function') {
             teamInviteDialogHasHistoryState = false;
+            tcmSuppressNextPopstate = true;
             window.history.back();
           }
         };
@@ -10666,6 +10741,7 @@ $sessionPayload = [
         };
 
         const openInfoTaskView = (taskTitle, infoTitle, infoText, options = {}) => {
+          pushInPageHistoryState();
           currentTaskType = String(options?.taskType || 'info').trim().toLowerCase() || 'info';
           describePhotoChoices = normalizeDescribePhotoChoices(options?.describePhotos || []);
           describePhotoCurrentIndex = 0;
@@ -10691,11 +10767,11 @@ $sessionPayload = [
           } else if (currentTaskType === 'team_task') {
             renderTeamTaskState(teamTaskState);
             const hasTeam = Boolean(teamTaskState?.myTeam);
-            setInfoTaskStep(hasTeam ? 'team_room' : 'info');
+            setInfoTaskStep(hasTeam ? 'team_room' : 'info', { pushHistory: false });
             infoTaskViewOpen = true;
             return;
           }
-          setInfoTaskStep('info');
+          setInfoTaskStep('info', { pushHistory: false });
           infoTaskViewOpen = true;
         };
 
@@ -11327,7 +11403,8 @@ $sessionPayload = [
           }
         };
 
-        const openRewardCardsSlide = async (levelId) => {
+        const openRewardCardsSlide = async (levelId, options = {}) => {
+          const shouldPushHistory = options?.pushHistory !== false;
           if (!(rewardCardsViewEl instanceof HTMLElement)) return;
           const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
           const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
@@ -11352,6 +11429,9 @@ $sessionPayload = [
             await openInfoDialog('هنوز به این سطح نرسیده‌اید.');
             return;
           }
+          if (shouldPushHistory) {
+            pushInPageHistoryState();
+          }
           selectedRewardLevelId = String(level.id || '');
           rewardsCardsViewOpen = true;
           if (rewardsViewEl) rewardsViewEl.classList.add('hidden');
@@ -11371,7 +11451,11 @@ $sessionPayload = [
           if (rewardsViewEl) rewardsViewEl.classList.remove('hidden');
         };
 
-        const openRewardsView = async () => {
+        const openRewardsView = async (options = {}) => {
+          const shouldPushHistory = options?.pushHistory !== false;
+          if (shouldPushHistory && !rewardsViewOpen) {
+            pushInPageHistoryState();
+          }
           rewardsViewOpen = true;
           rewardsCardsViewOpen = false;
           if (timerAreaEl) timerAreaEl.classList.add('hidden');
@@ -11728,6 +11812,7 @@ $sessionPayload = [
             }
 
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
+            pushInPageHistoryState();
             currentTaskId = taskId;
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
             currentQuestions = nextQuestions;
@@ -12068,10 +12153,84 @@ $sessionPayload = [
           });
         }
 
-        window.addEventListener('popstate', () => {
+        const performInternalBackAction = () => {
+          if (rewardsCardsViewOpen) {
+            closeRewardCardsSlide();
+            return true;
+          }
+          if (rewardsViewOpen) {
+            closeRewardsView();
+            return true;
+          }
+          if (infoTaskViewOpen) {
+            if (currentTaskType === 'describe_photo') {
+              if (infoTaskCurrentStep === 'editor') {
+                setInfoTaskStep('photo');
+                return true;
+              }
+              if (infoTaskCurrentStep === 'photo') {
+                setInfoTaskStep('info');
+                return true;
+              }
+            } else if (currentTaskType === 'team_task') {
+              if (infoTaskCurrentStep === 'team_room' && teamInviteDialogEl instanceof HTMLElement && teamInviteDialogEl.classList.contains('open')) {
+                closeTeamInviteDialog();
+                return true;
+              }
+              if (infoTaskCurrentStep === 'team_create_name') {
+                setInfoTaskStep('team_rules');
+                return true;
+              }
+              if (infoTaskCurrentStep === 'team_create_type') {
+                setInfoTaskStep('team_create_name');
+                return true;
+              }
+              if (infoTaskCurrentStep === 'team_rules') {
+                setInfoTaskStep('team_find');
+                return true;
+              }
+              if (infoTaskCurrentStep === 'team_find') {
+                setInfoTaskStep('info');
+                return true;
+              }
+              if (infoTaskCurrentStep === 'team_search' || infoTaskCurrentStep === 'team_preview') {
+                setInfoTaskStep('team_find');
+                return true;
+              }
+              if (infoTaskCurrentStep === 'team_settings' || infoTaskCurrentStep === 'team_challenge') {
+                setInfoTaskStep('team_room');
+                return true;
+              }
+              if (infoTaskCurrentStep === 'team_room') {
+                closeQuizOverlay();
+                return true;
+              }
+            }
+            closeQuizOverlay();
+            return true;
+          }
+          return false;
+        };
+
+        window.addEventListener('popstate', (event) => {
+          const previousDepth = tcmInPageHistoryDepth;
+          const nextDepth = parseHistoryDepth(event?.state);
+          if (nextDepth !== null) {
+            tcmInPageHistoryDepth = nextDepth;
+          }
+          if (tcmSuppressNextPopstate) {
+            tcmSuppressNextPopstate = false;
+            return;
+          }
           if (isTeamInviteDialogOpen()) {
             closeTeamInviteDialog({ fromPopState: true });
+            return;
           }
+          const goingBack = nextDepth === null ? true : nextDepth < previousDepth;
+          if (!goingBack) return;
+          runWithoutHistorySync(() => {
+            performInternalBackAction();
+          });
         });
 
         if (teamRoomMembersEl instanceof HTMLElement) {
@@ -12242,60 +12401,12 @@ $sessionPayload = [
 
         if (topbarBackBtnEl) {
           topbarBackBtnEl.addEventListener('click', () => {
-            if (rewardsCardsViewOpen) {
-              closeRewardCardsSlide();
+            if (requestInPageBackByHistory()) {
               return;
             }
-            if (rewardsViewOpen) {
-              closeRewardsView();
-              return;
-            }
-            if (infoTaskViewOpen) {
-              if (currentTaskType === 'describe_photo') {
-                if (infoTaskCurrentStep === 'editor') {
-                  setInfoTaskStep('photo');
-                  return;
-                }
-                if (infoTaskCurrentStep === 'photo') {
-                  setInfoTaskStep('info');
-                  return;
-                }
-              } else if (currentTaskType === 'team_task') {
-                if (infoTaskCurrentStep === 'team_room' && teamInviteDialogEl instanceof HTMLElement && teamInviteDialogEl.classList.contains('open')) {
-                  closeTeamInviteDialog();
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_create_name') {
-                  setInfoTaskStep('team_rules');
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_create_type') {
-                  setInfoTaskStep('team_create_name');
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_rules') {
-                  setInfoTaskStep('team_find');
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_find') {
-                  setInfoTaskStep('info');
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_search' || infoTaskCurrentStep === 'team_preview') {
-                  setInfoTaskStep('team_find');
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_settings' || infoTaskCurrentStep === 'team_challenge') {
-                  setInfoTaskStep('team_room');
-                  return;
-                }
-                if (infoTaskCurrentStep === 'team_room') {
-                  closeQuizOverlay();
-                  return;
-                }
-              }
-              closeQuizOverlay();
-            }
+            runWithoutHistorySync(() => {
+              performInternalBackAction();
+            });
           });
         }
 
@@ -12369,6 +12480,7 @@ $sessionPayload = [
           }, delay);
         };
 
+        initInPageHistoryState();
         setTopbarMode('tasks');
         loadLockedRewardCards();
         refreshStatus();
