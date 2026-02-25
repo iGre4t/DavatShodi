@@ -19,7 +19,7 @@
     if (!Number.isFinite(numeric)) {
       return '0';
     }
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('fa-IR', {
       maximumFractionDigits,
       minimumFractionDigits: maximumFractionDigits > 0 ? 2 : 0
     }).format(numeric);
@@ -28,17 +28,20 @@
   function formatPercent(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
-      return '0%';
+      return '۰٪';
     }
-    return `${numeric.toFixed(1)}%`;
+    return `${new Intl.NumberFormat('fa-IR', {
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 1
+    }).format(numeric)}٪`;
   }
 
   function taskTypeLabel(taskType) {
     const token = String(taskType || '').trim().toLowerCase();
-    if (token === 'describe_photo') return 'Describe Photo';
-    if (token === 'team_task') return 'Team Task';
-    if (token === 'info') return 'Info';
-    return 'Quiz';
+    if (token === 'describe_photo') return 'توصیف تصویر';
+    if (token === 'team_task') return 'تیمی';
+    if (token === 'info') return 'اطلاعاتی';
+    return 'کوییز';
   }
 
   function getPane() {
@@ -72,7 +75,7 @@
       updatedEl.textContent = '';
       return;
     }
-    updatedEl.textContent = `Last updated: ${date.toLocaleString('en-GB')}`;
+    updatedEl.textContent = `آخرین بروزرسانی: ${date.toLocaleString('fa-IR')}`;
   }
 
   function renderKpis(summary = {}) {
@@ -81,22 +84,22 @@
     const favoriteTask = summary?.favoriteTask;
     const favoriteText = favoriteTask?.title
       ? `${favoriteTask.title} (${formatPercent(favoriteTask.completionRate || 0)})`
-      : 'No completed task yet';
+      : 'هنوز ماموریتی تکمیل نشده است';
 
     const items = [
-      { label: 'Invitees', value: formatNumber(summary.totalUsers || 0) },
-      { label: 'Logged In At Least Once', value: formatNumber(summary.loggedInUsers || 0) },
-      { label: 'Users With Completed Task', value: formatNumber(summary.usersWithCompletion || 0) },
-      { label: 'Users Eligible For Any Level', value: formatNumber(summary.usersEligibleAnyLevel || 0) },
-      { label: 'Average Score', value: formatNumber(summary.avgScore || 0, 2) },
-      { label: 'Top Score', value: formatNumber(summary.topScore || 0) },
-      { label: 'Card Flips', value: formatNumber(summary.totalCardFlips || 0) },
-      { label: 'Task Count', value: formatNumber(summary.taskCount || 0) },
-      { label: 'Prize Types', value: formatNumber(summary.prizeTypes || 0) },
-      { label: 'Prize Remaining', value: formatNumber(summary.prizeRemaining || 0) },
-      { label: 'Prize Capacity', value: formatNumber(summary.prizeCapacity || 0) },
-      { label: 'Prizes Given', value: formatNumber(summary.prizeGiven || 0) },
-      { label: 'Favorite Task', value: favoriteText, wide: true }
+      { label: 'تعداد دعوت‌شدگان', value: formatNumber(summary.totalUsers || 0) },
+      { label: 'حداقل یک‌بار ورود', value: formatNumber(summary.loggedInUsers || 0) },
+      { label: 'کاربران با ماموریت تکمیل‌شده', value: formatNumber(summary.usersWithCompletion || 0) },
+      { label: 'واجد حداقل یک سطح جایزه', value: formatNumber(summary.usersEligibleAnyLevel || 0) },
+      { label: 'میانگین امتیاز', value: formatNumber(summary.avgScore || 0, 2) },
+      { label: 'بیشترین امتیاز', value: formatNumber(summary.topScore || 0) },
+      { label: 'تعداد کارت‌های بازشده', value: formatNumber(summary.totalCardFlips || 0) },
+      { label: 'تعداد ماموریت‌ها', value: formatNumber(summary.taskCount || 0) },
+      { label: 'تعداد نوع جایزه', value: formatNumber(summary.prizeTypes || 0) },
+      { label: 'جوایز باقی‌مانده', value: formatNumber(summary.prizeRemaining || 0) },
+      { label: 'ظرفیت کل جوایز', value: formatNumber(summary.prizeCapacity || 0) },
+      { label: 'جوایز داده‌شده', value: formatNumber(summary.prizeGiven || 0) },
+      { label: 'محبوب‌ترین ماموریت', value: favoriteText, wide: true }
     ];
 
     host.innerHTML = items.map((item) => `
@@ -112,7 +115,7 @@
     if (!host) return;
     const rows = Array.isArray(taskStats) ? taskStats : [];
     if (!rows.length) {
-      host.innerHTML = '<p class="muted">No task data found.</p>';
+      host.innerHTML = '<p class="muted">داده‌ای برای ماموریت‌ها پیدا نشد.</p>';
       return;
     }
 
@@ -139,7 +142,7 @@
     if (!host) return;
     const rows = Array.isArray(levelStats) ? levelStats : [];
     if (!rows.length) {
-      host.innerHTML = '<p class="muted">No prize levels found.</p>';
+      host.innerHTML = '<p class="muted">سطح جایزه‌ای ثبت نشده است.</p>';
       return;
     }
 
@@ -149,13 +152,13 @@
       const eligibleUsers = Math.max(0, Number.parseInt(item?.eligibleUsers ?? 0, 10) || 0);
       const eligibleRate = Math.max(0, Math.min(100, Number(item?.eligibleRate ?? 0) || 0));
       const levelType = String(item?.type || 'value_sum') === 'out_of_value'
-        ? 'Out of Value'
-        : 'Value Sum';
+        ? 'خارج از ارزش'
+        : 'جمع ارزش';
       return `
         <div class="tc-monitoring-bar-row">
           <div class="tc-monitoring-bar-head">
             <span class="tc-monitoring-bar-title">${escapeHtml(name)} <span class="tc-monitoring-badge">${escapeHtml(levelType)}</span></span>
-            <span class="tc-monitoring-bar-meta">${formatNumber(eligibleUsers)} / ${formatNumber(totalUsers)} | score ${formatNumber(score)}</span>
+            <span class="tc-monitoring-bar-meta">${formatNumber(eligibleUsers)} / ${formatNumber(totalUsers)} | امتیاز ${formatNumber(score)}</span>
           </div>
           <div class="tc-monitoring-bar-track">
             <span class="tc-monitoring-bar-fill tc-monitoring-bar-fill--alt" style="width:${eligibleRate}%"></span>
@@ -170,7 +173,7 @@
     if (!body) return;
     const rows = Array.isArray(users) ? users : [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="8" class="muted">No user activity found.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="muted">فعالیتی از کاربران ثبت نشده است.</td></tr>';
       return;
     }
     body.innerHTML = rows.map((row) => `
@@ -192,7 +195,7 @@
     if (!body) return;
     const rows = Array.isArray(taskStats) ? taskStats : [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="6" class="muted">No task stats found.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="muted">آماری برای ماموریت‌ها ثبت نشده است.</td></tr>';
       return;
     }
     body.innerHTML = rows.map((row) => `
@@ -212,7 +215,7 @@
     if (!body) return;
     const rows = Array.isArray(prizeStats?.rows) ? prizeStats.rows : [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="6" class="muted">No prizes found.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="muted">جایزه‌ای ثبت نشده است.</td></tr>';
       return;
     }
     body.innerHTML = rows.map((row) => {
@@ -250,7 +253,7 @@
     if (hasLoadedOnce && !force) return;
 
     isLoading = true;
-    setStatus('Loading monitoring data...');
+    setStatus('در حال بارگذاری داده‌های مانیتورینگ...');
     try {
       const response = await fetch(API_URL, {
         method: 'GET',
@@ -259,14 +262,14 @@
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload || payload.status !== 'ok') {
-        const message = payload?.message || `Request failed (${response.status})`;
+        const message = payload?.message || `خطا در دریافت اطلاعات (${response.status})`;
         throw new Error(message);
       }
       renderData(payload.data || {});
       hasLoadedOnce = true;
       setStatus('');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load monitoring data.';
+      const message = error instanceof Error ? error.message : 'بارگذاری داده‌های مانیتورینگ ناموفق بود.';
       setStatus(message, true);
     } finally {
       isLoading = false;

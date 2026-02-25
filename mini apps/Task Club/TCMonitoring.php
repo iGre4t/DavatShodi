@@ -7,7 +7,7 @@ $tcMonitoringAction = strtolower(trim((string)($_GET['action'] ?? '')));
 $tcMonitoringIsJsonRequest = $tcMonitoringAction === 'stats';
 $tcMonitoringSessionUser = requireTabPermissionFromSession('task-club', $tcMonitoringIsJsonRequest);
 if (!userHasPermissionId($tcMonitoringSessionUser, 'task-club:monitoring')) {
-  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tcMonitoringIsJsonRequest);
+  denyPanelAccess(403, 'شما دسترسی لازم برای مشاهده این بخش باشگاه تعاملی را ندارید.', $tcMonitoringIsJsonRequest);
 }
 
 function tcMonitoringReadJson(string $path, $fallback)
@@ -347,9 +347,9 @@ function tcMonitoringReadPrizeLevels(string $path): array
       continue;
     }
     $score = max(1, tcMonitoringParseInt($item['score'] ?? ($item['levelScore'] ?? 0)));
-    $name = trim((string)($item['name'] ?? ($item['levelName'] ?? ('Level ' . $score))));
+    $name = trim((string)($item['name'] ?? ($item['levelName'] ?? ('سطح ' . $score))));
     if ($name === '') {
-      $name = 'Level ' . $score;
+      $name = 'سطح ' . $score;
     }
     $typeToken = strtolower(trim((string)($item['type'] ?? ($item['levelType'] ?? 'value_sum'))));
     $type = $typeToken === 'out_of_value' ? 'out_of_value' : 'value_sum';
@@ -709,7 +709,7 @@ function tcMonitoringBuildStats(string $baseDir): array
     }
     $levelStats[] = [
       'id' => (string)($level['id'] ?? ''),
-      'name' => (string)($level['name'] ?? ('Level ' . $targetScore)),
+      'name' => (string)($level['name'] ?? ('سطح ' . $targetScore)),
       'type' => (string)($level['type'] ?? 'value_sum'),
       'score' => $targetScore,
       'eligibleUsers' => $eligibleUsers,
@@ -821,10 +821,10 @@ if ($tcMonitoringIsJsonRequest) {
 
 <div class="card">
   <div class="section-header">
-    <h3>Monitoring</h3>
-    <button type="button" class="btn ghost" id="tc-monitoring-refresh">Refresh</button>
+    <h3>مانیتورینگ</h3>
+    <button type="button" class="btn ghost" id="tc-monitoring-refresh">بروزرسانی</button>
   </div>
-  <p class="muted small">Overview of users, tasks, prize eligibility, and reward inventory.</p>
+  <p class="muted small">نمای کلی کاربران، ماموریت‌ها، سطوح جایزه و موجودی جوایز.</p>
   <p id="tc-monitoring-status" class="muted small" aria-live="polite"></p>
   <p id="tc-monitoring-updated" class="muted small"></p>
 </div>
@@ -833,34 +833,34 @@ if ($tcMonitoringIsJsonRequest) {
 
 <div class="card">
   <div class="section-header">
-    <h3>Task Completion</h3>
+    <h3>تکمیل ماموریت‌ها</h3>
   </div>
   <div id="tc-monitoring-task-chart" class="tc-monitoring-bars"></div>
 </div>
 
 <div class="card">
   <div class="section-header">
-    <h3>Prize Level Reach</h3>
+    <h3>وضعیت رسیدن به سطوح جایزه</h3>
   </div>
   <div id="tc-monitoring-level-chart" class="tc-monitoring-bars"></div>
 </div>
 
 <div class="card">
   <div class="section-header">
-    <h3>Most Active Users</h3>
+    <h3>فعال‌ترین کاربران</h3>
   </div>
   <div class="table-wrapper">
     <table class="tc-monitoring-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Name</th>
-          <th>Work ID</th>
-          <th>Score</th>
-          <th>Logins</th>
-          <th>Completed Tasks</th>
-          <th>Card Flips</th>
-          <th>Won Prizes</th>
+          <th>ردیف</th>
+          <th>نام</th>
+          <th>شماره پرسنلی</th>
+          <th>امتیاز</th>
+          <th>ورودها</th>
+          <th>ماموریت تکمیل‌شده</th>
+          <th>کارت بازشده</th>
+          <th>جوایز برنده‌شده</th>
         </tr>
       </thead>
       <tbody id="tc-monitoring-active-users"></tbody>
@@ -870,18 +870,18 @@ if ($tcMonitoringIsJsonRequest) {
 
 <div class="card">
   <div class="section-header">
-    <h3>Task Stats</h3>
+    <h3>آمار ماموریت‌ها</h3>
   </div>
   <div class="table-wrapper">
     <table class="tc-monitoring-table">
       <thead>
         <tr>
-          <th>Task</th>
-          <th>Type</th>
-          <th>Completed</th>
-          <th>Completion Rate</th>
-          <th>Avg Awarded Score</th>
-          <th>Total Awarded Score</th>
+          <th>ماموریت</th>
+          <th>نوع</th>
+          <th>تکمیل‌شده</th>
+          <th>نرخ تکمیل</th>
+          <th>میانگین امتیاز ثبت‌شده</th>
+          <th>مجموع امتیاز ثبت‌شده</th>
         </tr>
       </thead>
       <tbody id="tc-monitoring-task-stats"></tbody>
@@ -891,18 +891,18 @@ if ($tcMonitoringIsJsonRequest) {
 
 <div class="card">
   <div class="section-header">
-    <h3>Prize Inventory</h3>
+    <h3>موجودی جوایز</h3>
   </div>
   <div class="table-wrapper">
     <table class="tc-monitoring-table">
       <thead>
         <tr>
-          <th>Prize</th>
-          <th>On Wheel Name</th>
-          <th>Capacity</th>
-          <th>Remaining</th>
-          <th>Given</th>
-          <th>Value (Each)</th>
+          <th>جایزه</th>
+          <th>نام روی گردونه</th>
+          <th>ظرفیت</th>
+          <th>باقی‌مانده</th>
+          <th>داده‌شده</th>
+          <th>ارزش (هر مورد)</th>
         </tr>
       </thead>
       <tbody id="tc-monitoring-prize-inventory"></tbody>

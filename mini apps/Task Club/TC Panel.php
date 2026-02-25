@@ -121,7 +121,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-task-access' ? ' active' : '' ?>" data-pane="tc-task-access">دسترسی تسک‌ها</button>
       <?php endif; ?>
       <?php if ($tcCanMonitoringPane): ?>
-        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">Monitoring</button>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">مانیتورینگ</button>
       <?php endif; ?>
       <?php if ($tcCanExportPane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-export' ? ' active' : '' ?>" data-pane="tc-export">Export</button>

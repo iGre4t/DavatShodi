@@ -19,6 +19,7 @@ $stats = [
     'phoneNumber' => []
   ]
 ];
+$allInvitees = [];
 
 function readMappedConfig(string $path): array {
   if (!is_file($path)) {
@@ -42,17 +43,66 @@ function readCsvRows(string $path): array {
   return $rows;
 }
 
+function normalizeInviteHeaderToken(string $value): string {
+  $token = trim($value);
+  $token = str_replace(['-', '_'], ' ', $token);
+  if (function_exists('mb_strtolower')) {
+    return mb_strtolower($token, 'UTF-8');
+  }
+  return strtolower($token);
+}
+
+function findInviteHeaderIndex(array $header, array $names): int {
+  $targets = [];
+  foreach ($names as $name) {
+    if (!is_scalar($name)) {
+      continue;
+    }
+    $token = normalizeInviteHeaderToken((string)$name);
+    if ($token !== '') {
+      $targets[$token] = true;
+    }
+  }
+  if (!$targets) {
+    return -1;
+  }
+  foreach ($header as $index => $value) {
+    $token = normalizeInviteHeaderToken((string)$value);
+    if ($token !== '' && isset($targets[$token])) {
+      return (int)$index;
+    }
+  }
+  return -1;
+}
+
+function resolveMappedInviteColumnIndex(array $header, array $mapping, string $key, array $fallbackNames): int {
+  $mappedIndex = $mapping[$key] ?? null;
+  if (is_numeric($mappedIndex)) {
+    $index = (int)$mappedIndex;
+    if ($index >= 0 && $index < count($header)) {
+      return $index;
+    }
+  }
+  return findInviteHeaderIndex($header, $fallbackNames);
+}
+
 $mapping = readMappedConfig($mapFile);
 $rows = readCsvRows($mappedFile);
 if ($rows) {
   $header = $rows[0] ?? [];
+  $workIdIndex = resolveMappedInviteColumnIndex($header, $mapping, 'workId', ['work id', 'username', 'user name']);
+  $firstNameIndex = resolveMappedInviteColumnIndex($header, $mapping, 'firstName', ['first name', 'name']);
+  $lastNameIndex = resolveMappedInviteColumnIndex($header, $mapping, 'lastName', ['last name', 'family', 'surname']);
+  $nationalIdIndex = resolveMappedInviteColumnIndex($header, $mapping, 'nationalId', ['national id']);
+  $phoneNumberIndex = resolveMappedInviteColumnIndex($header, $mapping, 'phoneNumber', ['phone number', 'phone', 'mobile']);
+  $passwordIndex = findInviteHeaderIndex($header, ['password']);
   $stats['total'] = max(0, count($rows) - 1);
   $stats['columns'] = [
-    'workId' => $header[$mapping['workId'] ?? -1] ?? '',
-    'firstName' => $header[$mapping['firstName'] ?? -1] ?? '',
-    'lastName' => $header[$mapping['lastName'] ?? -1] ?? '',
-    'nationalId' => $header[$mapping['nationalId'] ?? -1] ?? '',
-    'phoneNumber' => $header[$mapping['phoneNumber'] ?? -1] ?? ''
+    'workId' => ($workIdIndex >= 0 && isset($header[$workIdIndex])) ? (string)$header[$workIdIndex] : '',
+    'firstName' => ($firstNameIndex >= 0 && isset($header[$firstNameIndex])) ? (string)$header[$firstNameIndex] : '',
+    'lastName' => ($lastNameIndex >= 0 && isset($header[$lastNameIndex])) ? (string)$header[$lastNameIndex] : '',
+    'nationalId' => ($nationalIdIndex >= 0 && isset($header[$nationalIdIndex])) ? (string)$header[$nationalIdIndex] : '',
+    'phoneNumber' => ($phoneNumberIndex >= 0 && isset($header[$phoneNumberIndex])) ? (string)$header[$phoneNumberIndex] : ''
   ];
 
   $seen = [
@@ -63,15 +113,31 @@ if ($rows) {
 
   for ($i = 1; $i < count($rows); $i++) {
     $row = $rows[$i];
-    $first = trim((string)($row[$mapping['firstName'] ?? -1] ?? ''));
-    $last = trim((string)($row[$mapping['lastName'] ?? -1] ?? ''));
+    $first = trim((string)($row[$firstNameIndex] ?? ''));
+    $last = trim((string)($row[$lastNameIndex] ?? ''));
     $full = trim($first . ' ' . $last);
     $rowNumber = $i + 1;
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    $nationalId = trim((string)($row[$nationalIdIndex] ?? ''));
+    $phoneNumber = trim((string)($row[$phoneNumberIndex] ?? ''));
+    $password = trim((string)($row[$passwordIndex] ?? ''));
+
+    if ($workId !== '' || $nationalId !== '' || $phoneNumber !== '' || $first !== '' || $last !== '') {
+      $allInvitees[] = [
+        'row' => $rowNumber,
+        'firstName' => $first,
+        'lastName' => $last,
+        'workId' => $workId,
+        'nationalId' => $nationalId,
+        'phoneNumber' => $phoneNumber,
+        'password' => $password
+      ];
+    }
 
     $fields = [
-      'workId' => trim((string)($row[$mapping['workId'] ?? -1] ?? '')),
-      'nationalId' => trim((string)($row[$mapping['nationalId'] ?? -1] ?? '')),
-      'phoneNumber' => trim((string)($row[$mapping['phoneNumber'] ?? -1] ?? ''))
+      'workId' => $workId,
+      'nationalId' => $nationalId,
+      'phoneNumber' => $phoneNumber
     ];
 
     foreach ($fields as $key => $value) {
@@ -92,6 +158,91 @@ if ($rows) {
 }
 ?>
 
+<div class="tc-task-top-shell" id="tc-invitees-top-shell">
+  <div class="tc-task-top-nav" role="tablist" aria-label="Invitees Tabs">
+    <button type="button" class="tc-task-top-item active" data-invitees-top-trigger="all-invitees" aria-selected="true">All Invitees</button>
+    <button type="button" class="tc-task-top-item" data-invitees-top-trigger="manage-invitees" aria-selected="false">Manage Invitees</button>
+  </div>
+  <div class="tc-task-top-section active" data-invitees-top-section="all-invitees">
+    <div class="card">
+      <div class="section-header">
+        <h3>All Invitees</h3>
+      </div>
+      <div class="form" style="gap:12px;">
+        <div class="field">
+          <span>Total Invitees</span>
+          <strong><?= htmlspecialchars((string)count($allInvitees), ENT_QUOTES, 'UTF-8') ?></strong>
+        </div>
+        <div class="table-wrapper tc-info-rate-table-wrap">
+          <table class="tct-list-table tc-info-rate-table">
+            <thead>
+              <tr>
+                <th>Row</th>
+                <th>First Name</th>
+                <th>Last Name</th>
+                <th>Work ID</th>
+                <th>National ID</th>
+                <th>Phone Number</th>
+                <th>Password</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if (!$allInvitees): ?>
+                <tr>
+                  <td colspan="8" class="muted">No invitees found.</td>
+                </tr>
+              <?php else: ?>
+                <?php foreach ($allInvitees as $invitee): ?>
+                  <tr>
+                    <td><?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['firstName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['lastName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['nationalId'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['phoneNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['password'] ?? '') !== '' ? '*****' : '—', ENT_QUOTES, 'UTF-8') ?></td>
+                    <td>
+                      <div class="tc-info-rate-row-actions">
+                        <button
+                          type="button"
+                          class="btn ghost"
+                          data-action="edit-invitee"
+                          data-row="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-first-name="<?= htmlspecialchars((string)($invitee['firstName'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-last-name="<?= htmlspecialchars((string)($invitee['lastName'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-national-id="<?= htmlspecialchars((string)($invitee['nationalId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-phone-number="<?= htmlspecialchars((string)($invitee['phoneNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                        >Edit</button>
+                        <button
+                          type="button"
+                          class="btn ghost"
+                          data-action="reveal-invitee-password"
+                          data-row="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
+                          data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                        >Reveal Password</button>
+                        <button
+                          type="button"
+                          class="btn ghost"
+                          data-action="reset-invitee-progress"
+                          data-row="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
+                          data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                        >Rest</button>
+                      </div>
+                    </td>
+                  </tr>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tc-task-top-section" data-invitees-top-section="manage-invitees" hidden>
 <div class="card">
   <div class="section-header">
     <h3>Insert Invite List</h3>
@@ -208,6 +359,8 @@ if ($rows) {
     </div>
   </div>
 </div>
+  </div>
+</div>
 
 <div id="tc-invite-modal" class="modal hidden" aria-hidden="true">
   <div class="modal-card">
@@ -253,6 +406,113 @@ if ($rows) {
       <button type="button" class="btn ghost" data-close-invite-modal>Cancel</button>
       <button type="button" class="btn primary" id="tc-invite-upload">Upload</button>
     </div>
+</div>
+</div>
+
+<div id="tc-invite-edit-modal" class="modal hidden" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <div class="modal-card-header-start">
+        <h3>Edit Invitee</h3>
+      </div>
+      <button type="button" class="icon-btn" data-close-invite-edit-modal aria-label="Close">×</button>
+    </div>
+    <div class="modal-card-body">
+      <div class="form grid two-columns">
+        <label class="field">
+          <span>Work ID</span>
+          <input id="tc-edit-work-id" type="text" />
+        </label>
+        <label class="field">
+          <span>First Name</span>
+          <input id="tc-edit-first-name" type="text" />
+        </label>
+        <label class="field">
+          <span>Last Name</span>
+          <input id="tc-edit-last-name" type="text" />
+        </label>
+        <label class="field">
+          <span>National ID</span>
+          <input id="tc-edit-national-id" type="text" />
+        </label>
+        <label class="field">
+          <span>Phone Number</span>
+          <input id="tc-edit-phone-number" type="text" />
+        </label>
+      </div>
+      <p id="tc-edit-invitee-msg" class="hint" aria-live="polite"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" data-close-invite-edit-modal>Cancel</button>
+      <button type="button" class="btn primary" id="tc-edit-invitee-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="tc-invite-auth-modal" class="modal hidden" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <div class="modal-card-header-start">
+        <h3>Password Confirmation</h3>
+      </div>
+      <button type="button" class="icon-btn" data-close-invite-auth-modal aria-label="Close">×</button>
+    </div>
+    <div class="modal-card-body">
+      <div class="form">
+        <label class="field">
+          <span>Enter your panel account password</span>
+          <input id="tc-invite-auth-password" type="password" autocomplete="current-password" />
+        </label>
+      </div>
+      <p id="tc-invite-auth-msg" class="hint" aria-live="polite"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" data-close-invite-auth-modal>Cancel</button>
+      <button type="button" class="btn primary" id="tc-invite-auth-submit">Verify</button>
+    </div>
+  </div>
+</div>
+
+<div id="tc-invite-password-modal" class="modal hidden" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <div class="modal-card-header-start">
+        <h3 id="tc-invite-password-title">Invitee Password</h3>
+      </div>
+      <button type="button" class="icon-btn" data-close-invite-password-modal aria-label="Close">×</button>
+    </div>
+    <div class="modal-card-body">
+      <div class="form">
+        <label class="field">
+          <span>Password</span>
+          <input id="tc-invite-password-value" type="text" autocomplete="off" />
+        </label>
+      </div>
+      <p id="tc-invite-password-msg" class="hint" aria-live="polite"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" data-close-invite-password-modal>Close</button>
+      <button type="button" class="btn primary" id="tc-invite-password-save">Save New Password</button>
+    </div>
+  </div>
+</div>
+
+<div id="tc-invite-reset-modal" class="modal hidden" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-card-header">
+      <div class="modal-card-header-start">
+        <h3>Reset Invitee Progress</h3>
+      </div>
+      <button type="button" class="icon-btn" data-close-invite-reset-modal aria-label="Close">×</button>
+    </div>
+    <div class="modal-card-body">
+      <p id="tc-invite-reset-text" class="muted">Are you sure you want to reset this invitee progress?</p>
+      <p id="tc-invite-reset-msg" class="hint" aria-live="polite"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" data-close-invite-reset-modal>Cancel</button>
+      <button type="button" class="btn primary" id="tc-invite-reset-confirm">Confirm</button>
+    </div>
   </div>
 </div>
 
@@ -282,9 +542,39 @@ if ($rows) {
   const addPhoneNumberEl = document.getElementById('tc-add-phone-number');
   const addInviteeBtn = document.getElementById('tc-add-invitee-btn');
   const addInviteeMsgEl = document.getElementById('tc-add-invitee-msg');
+  const editModal = document.getElementById('tc-invite-edit-modal');
+  const editCloseBtns = editModal ? editModal.querySelectorAll('[data-close-invite-edit-modal]') : [];
+  const editWorkIdEl = document.getElementById('tc-edit-work-id');
+  const editFirstNameEl = document.getElementById('tc-edit-first-name');
+  const editLastNameEl = document.getElementById('tc-edit-last-name');
+  const editNationalIdEl = document.getElementById('tc-edit-national-id');
+  const editPhoneNumberEl = document.getElementById('tc-edit-phone-number');
+  const editSaveBtn = document.getElementById('tc-edit-invitee-save');
+  const editMsgEl = document.getElementById('tc-edit-invitee-msg');
+  const authModal = document.getElementById('tc-invite-auth-modal');
+  const authCloseBtns = authModal ? authModal.querySelectorAll('[data-close-invite-auth-modal]') : [];
+  const authPasswordEl = document.getElementById('tc-invite-auth-password');
+  const authSubmitBtn = document.getElementById('tc-invite-auth-submit');
+  const authMsgEl = document.getElementById('tc-invite-auth-msg');
+  const passwordModal = document.getElementById('tc-invite-password-modal');
+  const passwordCloseBtns = passwordModal ? passwordModal.querySelectorAll('[data-close-invite-password-modal]') : [];
+  const passwordTitleEl = document.getElementById('tc-invite-password-title');
+  const passwordValueEl = document.getElementById('tc-invite-password-value');
+  const passwordSaveBtn = document.getElementById('tc-invite-password-save');
+  const passwordMsgEl = document.getElementById('tc-invite-password-msg');
+  const resetModal = document.getElementById('tc-invite-reset-modal');
+  const resetCloseBtns = resetModal ? resetModal.querySelectorAll('[data-close-invite-reset-modal]') : [];
+  const resetTextEl = document.getElementById('tc-invite-reset-text');
+  const resetMsgEl = document.getElementById('tc-invite-reset-msg');
+  const resetConfirmBtn = document.getElementById('tc-invite-reset-confirm');
+  const inviteesTopShell = document.getElementById('tc-invitees-top-shell');
 
   let parsedRows = [];
   let headerRow = [];
+  let editingInviteeRow = 0;
+  let revealPasswordContext = null;
+  let resetProgressContext = null;
+  let pendingSensitiveAction = '';
 
   const setMsg = (text, isError = false) => {
     if (!msgEl) return;
@@ -296,6 +586,30 @@ if ($rows) {
     if (!addInviteeMsgEl) return;
     addInviteeMsgEl.textContent = text;
     addInviteeMsgEl.style.color = isError ? '#e11d2e' : '';
+  };
+
+  const setEditMsg = (text, isError = false) => {
+    if (!editMsgEl) return;
+    editMsgEl.textContent = text;
+    editMsgEl.style.color = isError ? '#e11d2e' : '';
+  };
+
+  const setAuthMsg = (text, isError = false) => {
+    if (!authMsgEl) return;
+    authMsgEl.textContent = text;
+    authMsgEl.style.color = isError ? '#e11d2e' : '';
+  };
+
+  const setPasswordMsg = (text, isError = false) => {
+    if (!passwordMsgEl) return;
+    passwordMsgEl.textContent = text;
+    passwordMsgEl.style.color = isError ? '#e11d2e' : '';
+  };
+
+  const setResetMsg = (text, isError = false) => {
+    if (!resetMsgEl) return;
+    resetMsgEl.textContent = text;
+    resetMsgEl.style.color = isError ? '#e11d2e' : '';
   };
 
   const openModal = () => {
@@ -322,6 +636,378 @@ if ($rows) {
     setMsg('');
     hideProgress();
   };
+
+  const openEditModal = () => {
+    if (!editModal) return;
+    editModal.classList.remove('hidden');
+    editModal.setAttribute('aria-hidden', 'false');
+  };
+
+  const closeEditModal = () => {
+    if (!editModal) return;
+    editModal.classList.add('hidden');
+    editModal.setAttribute('aria-hidden', 'true');
+    setEditMsg('');
+    editingInviteeRow = 0;
+  };
+
+  const openAuthModal = () => {
+    if (!authModal) return;
+    authModal.classList.remove('hidden');
+    authModal.setAttribute('aria-hidden', 'false');
+    setAuthMsg('');
+    if (authPasswordEl) {
+      authPasswordEl.value = '';
+      authPasswordEl.focus();
+    }
+  };
+
+  const closeAuthModal = () => {
+    if (!authModal) return;
+    authModal.classList.add('hidden');
+    authModal.setAttribute('aria-hidden', 'true');
+    setAuthMsg('');
+    if (authPasswordEl) {
+      authPasswordEl.value = '';
+    }
+  };
+
+  const openPasswordModal = () => {
+    if (!passwordModal) return;
+    passwordModal.classList.remove('hidden');
+    passwordModal.setAttribute('aria-hidden', 'false');
+    setPasswordMsg('');
+  };
+
+  const closePasswordModal = () => {
+    if (!passwordModal) return;
+    passwordModal.classList.add('hidden');
+    passwordModal.setAttribute('aria-hidden', 'true');
+    setPasswordMsg('');
+    if (passwordValueEl) {
+      passwordValueEl.value = '';
+    }
+    revealPasswordContext = null;
+  };
+
+  const openResetModal = () => {
+    if (!resetModal) return;
+    resetModal.classList.remove('hidden');
+    resetModal.setAttribute('aria-hidden', 'false');
+    setResetMsg('');
+  };
+
+  const closeResetModal = () => {
+    if (!resetModal) return;
+    resetModal.classList.add('hidden');
+    resetModal.setAttribute('aria-hidden', 'true');
+    setResetMsg('');
+    resetProgressContext = null;
+  };
+
+  const postRevealAction = async (action, payload = {}) => {
+    const response = await fetch('mini%20apps/Task%20Club/invitees_password_guard.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        csrf: csrfToken,
+        action,
+        ...payload
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    return {
+      ok: response.ok && result?.status === 'ok',
+      status: String(result?.status || ''),
+      message: String(result?.message || ''),
+      data: result
+    };
+  };
+
+  const requestRevealPassword = async () => {
+    if (!revealPasswordContext || !Number.isFinite(revealPasswordContext.row) || revealPasswordContext.row <= 1) {
+      setPasswordMsg('Invalid invitee row.', true);
+      return;
+    }
+    const response = await postRevealAction('get_password', { row: revealPasswordContext.row });
+    if (response.ok) {
+      const currentPassword = String(response.data?.password ?? '');
+      if (passwordValueEl) {
+        passwordValueEl.value = currentPassword;
+      }
+      const label = String(revealPasswordContext.displayName || revealPasswordContext.workId || '').trim();
+      if (passwordTitleEl) {
+        passwordTitleEl.textContent = label !== '' ? `Invitee Password - ${label}` : 'Invitee Password';
+      }
+      setPasswordMsg('');
+      openPasswordModal();
+      return;
+    }
+    if (response.status === 'auth_required') {
+      pendingSensitiveAction = 'reveal';
+      openAuthModal();
+      return;
+    }
+    setPasswordMsg(response.message || 'Failed to reveal password.', true);
+  };
+
+  const requestResetAccess = async () => {
+    if (!resetProgressContext || !Number.isFinite(resetProgressContext.row) || resetProgressContext.row <= 1) {
+      setResetMsg('Invalid invitee row.', true);
+      return;
+    }
+    const check = await postRevealAction('check_unlock');
+    if (check.ok) {
+      const label = String(resetProgressContext.displayName || resetProgressContext.workId || '').trim();
+      if (resetTextEl) {
+        const suffix = label !== '' ? ` (${label})` : '';
+        resetTextEl.textContent = `This action will reset logins, score, mission progress, and rewards for this invitee${suffix}.`;
+      }
+      setResetMsg('');
+      openResetModal();
+      return;
+    }
+    if (check.status === 'auth_required') {
+      pendingSensitiveAction = 'reset';
+      openAuthModal();
+      return;
+    }
+    setResetMsg(check.message || 'Failed to authorize reset action.', true);
+  };
+
+  const activateInviteesPane = (paneKey) => {
+    if (!(inviteesTopShell instanceof HTMLElement)) return;
+    const targetPane = String(paneKey || '').trim();
+    if (!targetPane) return;
+    inviteesTopShell.querySelectorAll('[data-invitees-top-trigger]').forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      const isActive = button.getAttribute('data-invitees-top-trigger') === targetPane;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    inviteesTopShell.querySelectorAll('[data-invitees-top-section]').forEach((section) => {
+      if (!(section instanceof HTMLElement)) return;
+      const isActive = section.getAttribute('data-invitees-top-section') === targetPane;
+      section.classList.toggle('active', isActive);
+      section.hidden = !isActive;
+    });
+  };
+
+  if (inviteesTopShell instanceof HTMLElement) {
+    inviteesTopShell.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const trigger = target.closest('[data-invitees-top-trigger]');
+      if (!(trigger instanceof HTMLElement)) return;
+      const paneKey = String(trigger.getAttribute('data-invitees-top-trigger') || '').trim();
+      if (!paneKey) return;
+      event.preventDefault();
+      activateInviteesPane(paneKey);
+    });
+    activateInviteesPane('all-invitees');
+  }
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const revealTrigger = target.closest('[data-action="reveal-invitee-password"]');
+    if (revealTrigger instanceof HTMLElement) {
+      const rowValue = Number(revealTrigger.getAttribute('data-row') || '0');
+      if (!Number.isFinite(rowValue) || rowValue <= 1) {
+        return;
+      }
+      pendingSensitiveAction = 'reveal';
+      revealPasswordContext = {
+        row: Math.trunc(rowValue),
+        displayName: String(revealTrigger.getAttribute('data-display-name') || '').trim(),
+        workId: String(revealTrigger.getAttribute('data-work-id') || '').trim()
+      };
+      void requestRevealPassword();
+      return;
+    }
+
+    const resetTrigger = target.closest('[data-action="reset-invitee-progress"]');
+    if (resetTrigger instanceof HTMLElement) {
+      const rowValue = Number(resetTrigger.getAttribute('data-row') || '0');
+      if (!Number.isFinite(rowValue) || rowValue <= 1) {
+        return;
+      }
+      pendingSensitiveAction = 'reset';
+      resetProgressContext = {
+        row: Math.trunc(rowValue),
+        displayName: String(resetTrigger.getAttribute('data-display-name') || '').trim(),
+        workId: String(resetTrigger.getAttribute('data-work-id') || '').trim()
+      };
+      void requestResetAccess();
+      return;
+    }
+
+    const editTrigger = target.closest('[data-action="edit-invitee"]');
+    if (!(editTrigger instanceof HTMLElement)) return;
+    const rowValue = Number(editTrigger.getAttribute('data-row') || '0');
+    if (!Number.isFinite(rowValue) || rowValue <= 1) {
+      return;
+    }
+    editingInviteeRow = Math.trunc(rowValue);
+    if (editWorkIdEl) editWorkIdEl.value = String(editTrigger.getAttribute('data-work-id') || '').trim();
+    if (editFirstNameEl) editFirstNameEl.value = String(editTrigger.getAttribute('data-first-name') || '').trim();
+    if (editLastNameEl) editLastNameEl.value = String(editTrigger.getAttribute('data-last-name') || '').trim();
+    if (editNationalIdEl) editNationalIdEl.value = String(editTrigger.getAttribute('data-national-id') || '').trim();
+    if (editPhoneNumberEl) editPhoneNumberEl.value = String(editTrigger.getAttribute('data-phone-number') || '').trim();
+    setEditMsg('');
+    openEditModal();
+  });
+
+  editCloseBtns.forEach((btn) => btn.addEventListener('click', closeEditModal));
+
+  editSaveBtn?.addEventListener('click', async () => {
+    if (!editingInviteeRow) {
+      setEditMsg('Invalid invitee row.', true);
+      return;
+    }
+    const workId = String(editWorkIdEl?.value || '').trim();
+    const firstName = String(editFirstNameEl?.value || '').trim();
+    const lastName = String(editLastNameEl?.value || '').trim();
+    const nationalId = String(editNationalIdEl?.value || '').trim();
+    const phoneNumber = String(editPhoneNumberEl?.value || '').trim();
+
+    if (!workId || !firstName || !lastName || !nationalId || !phoneNumber) {
+      setEditMsg('Please fill all fields.', true);
+      return;
+    }
+
+    editSaveBtn.disabled = true;
+    setEditMsg('Saving invitee...');
+    try {
+      const response = await fetch('mini%20apps/Task%20Club/invitees_update.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          csrf: csrfToken,
+          row: editingInviteeRow,
+          invitee: {
+            workId,
+            firstName,
+            lastName,
+            nationalId,
+            phoneNumber
+          }
+        })
+      });
+      const result = await response.json();
+      if (response.ok && result?.status === 'ok') {
+        setEditMsg('Invitee updated successfully.');
+        setTimeout(() => window.location.reload(), 350);
+      } else {
+        setEditMsg(result?.message || 'Failed to update invitee.', true);
+      }
+    } catch {
+      setEditMsg('Failed to update invitee.', true);
+    } finally {
+      editSaveBtn.disabled = false;
+    }
+  });
+
+  authCloseBtns.forEach((btn) => btn.addEventListener('click', closeAuthModal));
+  passwordCloseBtns.forEach((btn) => btn.addEventListener('click', closePasswordModal));
+  resetCloseBtns.forEach((btn) => btn.addEventListener('click', closeResetModal));
+
+  authSubmitBtn?.addEventListener('click', async () => {
+    const password = String(authPasswordEl?.value || '');
+    if (password.trim() === '') {
+      setAuthMsg('Enter your panel password.', true);
+      return;
+    }
+    authSubmitBtn.disabled = true;
+    setAuthMsg('Verifying password...');
+    try {
+      const response = await postRevealAction('verify_unlock', { password });
+      if (response.ok) {
+        setAuthMsg('Verified. Sensitive actions are unlocked for 5 minutes.');
+        const nextAction = pendingSensitiveAction;
+        pendingSensitiveAction = '';
+        closeAuthModal();
+        if (nextAction === 'reveal' && revealPasswordContext) {
+          await requestRevealPassword();
+        } else if (nextAction === 'reset' && resetProgressContext) {
+          await requestResetAccess();
+        }
+      } else {
+        setAuthMsg(response.message || 'Password verification failed.', true);
+      }
+    } catch {
+      setAuthMsg('Password verification failed.', true);
+    } finally {
+      authSubmitBtn.disabled = false;
+    }
+  });
+
+  authPasswordEl?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    authSubmitBtn?.click();
+  });
+
+  passwordSaveBtn?.addEventListener('click', async () => {
+    if (!revealPasswordContext || !Number.isFinite(revealPasswordContext.row) || revealPasswordContext.row <= 1) {
+      setPasswordMsg('Invalid invitee row.', true);
+      return;
+    }
+    const newPassword = String(passwordValueEl?.value || '').trim();
+    if (newPassword === '') {
+      setPasswordMsg('Password cannot be empty.', true);
+      return;
+    }
+    passwordSaveBtn.disabled = true;
+    setPasswordMsg('Saving password...');
+    try {
+      const response = await postRevealAction('save_password', {
+        row: revealPasswordContext.row,
+        new_password: newPassword
+      });
+      if (response.ok) {
+        setPasswordMsg(response.message || 'Password updated.');
+      } else if (response.status === 'auth_required') {
+        setPasswordMsg('Authorization expired. Please verify again.', true);
+        pendingSensitiveAction = 'reveal';
+        openAuthModal();
+      } else {
+        setPasswordMsg(response.message || 'Failed to save password.', true);
+      }
+    } catch {
+      setPasswordMsg('Failed to save password.', true);
+    } finally {
+      passwordSaveBtn.disabled = false;
+    }
+  });
+
+  resetConfirmBtn?.addEventListener('click', async () => {
+    if (!resetProgressContext || !Number.isFinite(resetProgressContext.row) || resetProgressContext.row <= 1) {
+      setResetMsg('Invalid invitee row.', true);
+      return;
+    }
+    resetConfirmBtn.disabled = true;
+    setResetMsg('Resetting invitee progress...');
+    try {
+      const response = await postRevealAction('reset_progress', { row: resetProgressContext.row });
+      if (response.ok) {
+        setResetMsg(response.message || 'Invitee progress reset.');
+        setTimeout(() => window.location.reload(), 500);
+      } else if (response.status === 'auth_required') {
+        setResetMsg('Authorization expired. Please verify again.', true);
+        pendingSensitiveAction = 'reset';
+        closeResetModal();
+        openAuthModal();
+      } else {
+        setResetMsg(response.message || 'Failed to reset invitee progress.', true);
+      }
+    } catch {
+      setResetMsg('Failed to reset invitee progress.', true);
+    } finally {
+      resetConfirmBtn.disabled = false;
+    }
+  });
 
   const csvEscape = (value) => {
     const text = String(value ?? '');
