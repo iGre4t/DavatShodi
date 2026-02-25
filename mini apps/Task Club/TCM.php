@@ -4320,8 +4320,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       };
       $deleteTeam = $asBool($payload['deleteTeam'] ?? false);
       if ($deleteTeam) {
-        echo json_encode(['status' => 'error', 'message' => 'حذف تیم در این مرحله غیرفعال است.']);
-        exit;
+        if (!$isLeader) {
+          echo json_encode(['status' => 'error', 'message' => 'فقط سرگروه می‌تواند تیم را حذف کند.']);
+          exit;
+        }
+        if ($teamStarted) {
+          echo json_encode(['status' => 'error', 'message' => 'پس از شروع چالش امکان حذف تیم وجود ندارد.']);
+          exit;
+        }
+        $affectedUsers = collectTeamTaskAffectedUsers([$team]);
+        array_splice($teams, $myTeamIndex, 1);
+        $runtimeChanged = true;
+        foreach ($affectedUsers as $affectedWorkId) {
+          $syncInviteeStatus((string)$affectedWorkId);
+        }
+        $saved = $saveChanges();
+        if (!($saved['ok'] ?? false)) {
+          echo json_encode(['status' => 'error', 'message' => $saved['message'] ?? 'ذخیره اطلاعات ناموفق بود.']);
+          exit;
+        }
+        $respondWithContext(['message' => 'تیم حذف شد.']);
       }
       $leaveTeamRequested = $asBool($payload['leaveTeam'] ?? false);
       if ($isLeader && $leaveTeamRequested) {
@@ -10895,16 +10913,17 @@ $sessionPayload = [
             input.checked = input.value === selectedJoinType;
             input.disabled = !isLeader;
           });
-          if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) {
-            teamSettingsSaveBtnEl.classList.toggle('hidden', !isLeader);
-          }
-          if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) {
-            teamSettingsDeleteBtnEl.classList.add('hidden');
-          }
-          if (teamSettingsLeaveBtnEl instanceof HTMLButtonElement) {
-            teamSettingsLeaveBtnEl.classList.toggle('hidden', isLeader || started);
-          }
-          setInfoTaskStep('team_settings');
+        if (teamSettingsSaveBtnEl instanceof HTMLButtonElement) {
+          teamSettingsSaveBtnEl.classList.toggle('hidden', !isLeader);
+        }
+        if (teamSettingsDeleteBtnEl instanceof HTMLButtonElement) {
+          teamSettingsDeleteBtnEl.classList.toggle('hidden', !isLeader);
+          teamSettingsDeleteBtnEl.disabled = started;
+        }
+        if (teamSettingsLeaveBtnEl instanceof HTMLButtonElement) {
+          teamSettingsLeaveBtnEl.classList.toggle('hidden', isLeader || started);
+        }
+        setInfoTaskStep('team_settings');
         };
 
         const openTeamChallengeView = () => {
