@@ -7,7 +7,8 @@ $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset(
 $tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
 $tctCanAccessManageTasks = userHasPermissionId($tctSessionUser, 'task-club:manage-tasks');
-if (!$tctCanAccessManageTasks && $tctSessionUserCode !== '') {
+$tctManageTasksOverride = null;
+if ($tctSessionUserCode !== '') {
   $tctTaskAccessPath = __DIR__ . '/tasks/task-access.json';
   if (is_file($tctTaskAccessPath)) {
     $tctTaskAccessRaw = file_get_contents($tctTaskAccessPath);
@@ -22,15 +23,18 @@ if (!$tctCanAccessManageTasks && $tctSessionUserCode !== '') {
       }
       $rawAllowManageTasks = $entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false);
       if (is_bool($rawAllowManageTasks)) {
-        $tctCanAccessManageTasks = $rawAllowManageTasks;
+        $tctManageTasksOverride = $rawAllowManageTasks;
       } elseif (is_numeric($rawAllowManageTasks)) {
-        $tctCanAccessManageTasks = ((int)$rawAllowManageTasks) === 1;
+        $tctManageTasksOverride = ((int)$rawAllowManageTasks) === 1;
       } else {
-        $tctCanAccessManageTasks = in_array(strtolower(trim((string)$rawAllowManageTasks)), ['1', 'true', 'on', 'yes'], true);
+        $tctManageTasksOverride = in_array(strtolower(trim((string)$rawAllowManageTasks)), ['1', 'true', 'on', 'yes'], true);
       }
       break;
     }
   }
+}
+if ($tctManageTasksOverride !== null) {
+  $tctCanAccessManageTasks = $tctManageTasksOverride;
 }
 if (!$tctCanAccessManageTasks) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tctIsJsonRequest);

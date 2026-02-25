@@ -23,7 +23,8 @@ $tcNormalizeBool = static function ($value): bool {
   return in_array($token, ['1', 'true', 'on', 'yes'], true);
 };
 $tcSessionUserCode = strtolower(trim((string)($tcPanelUser['code'] ?? '')));
-if (!$tcCanManageTasksPane && $tcSessionUserCode !== '') {
+$tcManageTasksOverride = null;
+if ($tcSessionUserCode !== '') {
   $tcTaskAccessPath = __DIR__ . '/tasks/task-access.json';
   if (is_file($tcTaskAccessPath)) {
     $tcTaskAccessRaw = file_get_contents($tcTaskAccessPath);
@@ -36,12 +37,13 @@ if (!$tcCanManageTasksPane && $tcSessionUserCode !== '') {
       if (strtolower(trim((string)$rawCode)) !== $tcSessionUserCode) {
         continue;
       }
-      if ($tcNormalizeBool($entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false))) {
-        $tcCanManageTasksPane = true;
-      }
+      $tcManageTasksOverride = $tcNormalizeBool($entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false));
       break;
     }
   }
+}
+if ($tcManageTasksOverride !== null) {
+  $tcCanManageTasksPane = $tcManageTasksOverride;
 }
 $tcHasAnyPane = $tcCanMainPane
   || $tcCanInviteesPane
