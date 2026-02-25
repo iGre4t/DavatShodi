@@ -4170,8 +4170,13 @@ if (TCT_INCLUDE_ONLY) {
       listBody.innerHTML = '<tr><td colspan="5" class="muted">No tasks created yet.</td></tr>';
       return;
     }
-    const canReorderAll = tasks.every((task) => task.taskAccessEnabled !== false);
-    listBody.innerHTML = tasks.map((task, index) => `
+    const visibleTasks = tasks.filter((task) => task.taskAccessEnabled !== false);
+    if (!visibleTasks.length) {
+      listBody.innerHTML = '<tr><td colspan="5" class="muted">No tasks available for your access.</td></tr>';
+      return;
+    }
+    const canReorderAll = visibleTasks.length === tasks.length;
+    listBody.innerHTML = visibleTasks.map((task, index) => `
       <tr data-task-id="${esc(task.id)}">
         <td>${index + 1}</td>
         <td>
@@ -4182,22 +4187,20 @@ if (TCT_INCLUDE_ONLY) {
               data-task-title-id="${esc(task.id)}"
               value="${esc(task.title)}"
               autocomplete="off"
-              ${task.taskAccessEnabled === false ? 'disabled' : ''}
             />
-            <button type="button" class="btn ghost" data-save-title-id="${esc(task.id)}" ${task.taskAccessEnabled === false ? 'disabled' : ''}>Save</button>
+            <button type="button" class="btn ghost" data-save-title-id="${esc(task.id)}">Save</button>
           </div>
-          ${task.taskAccessEnabled === false ? '<p class="muted small">No access to this task tab.</p>' : ''}
         </td>
         <td><code>${esc(task.tagCode)}</code></td>
         <td>
           <div class="tct-action-wrap">
-            <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}" ${task.taskAccessEnabled === false ? 'disabled' : ''}>Remove</button>
+            <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}">Remove</button>
           </div>
         </td>
         <td>
           <div class="tct-order-actions">
             <button type="button" class="btn ghost" data-move-up-id="${esc(task.id)}" ${(index === 0 || !canReorderAll) ? 'disabled' : ''}>Up</button>
-            <button type="button" class="btn ghost" data-move-down-id="${esc(task.id)}" ${(index === (tasks.length - 1) || !canReorderAll) ? 'disabled' : ''}>Down</button>
+            <button type="button" class="btn ghost" data-move-down-id="${esc(task.id)}" ${(index === (visibleTasks.length - 1) || !canReorderAll) ? 'disabled' : ''}>Down</button>
           </div>
           ${canReorderAll ? '' : '<p class="muted small">Reorder requires access to all task tabs.</p>'}
         </td>

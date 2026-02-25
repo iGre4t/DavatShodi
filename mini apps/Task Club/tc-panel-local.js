@@ -2642,6 +2642,9 @@
         const firstSection = String(firstTopTrigger.getAttribute('data-task-top-trigger') || '').trim();
         if (firstSection !== '') {
           activateTaskTopPane(pane, firstSection);
+          if (firstSection === 'invitees-rate' && isInfoLikeTaskType(task?.taskType || pane.dataset.taskType || 'quiz')) {
+            void loadInfoRateDataIntoPane(pane);
+          }
         }
       }
     });
