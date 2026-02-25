@@ -857,6 +857,18 @@
       const target = event.target;
       if (!(target instanceof HTMLTextAreaElement)) return;
       if (!target.matches('[data-team-challenge-guide-text]')) return;
+      const hasCtrl = event.ctrlKey || event.metaKey;
+      const key = String(event.key || '').toLowerCase();
+      if (hasCtrl && !event.altKey && key === 'b') {
+        event.preventDefault();
+        applyBoldShortcutToTextarea(target);
+        return;
+      }
+      if (hasCtrl && !event.altKey && key === 'l') {
+        event.preventDefault();
+        applyListShortcutToTextarea(target);
+        return;
+      }
       const isOneKey = event.key === '1' || event.code === 'Digit1' || event.code === 'Numpad1';
       if (event.ctrlKey && event.altKey && isOneKey) {
         event.preventDefault();
@@ -962,6 +974,60 @@
     textarea.selectionStart = caret;
     textarea.selectionEnd = caret;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function replaceTextareaRange(textarea, start, end, replacement, selectionStart = null, selectionEnd = null) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || '');
+    const safeStart = Math.max(0, Math.min(value.length, Number.isFinite(start) ? start : 0));
+    const safeEnd = Math.max(safeStart, Math.min(value.length, Number.isFinite(end) ? end : safeStart));
+    const nextValue = `${value.slice(0, safeStart)}${replacement}${value.slice(safeEnd)}`;
+    textarea.value = nextValue;
+    const defaultCaret = safeStart + String(replacement || '').length;
+    const nextSelectionStart = Number.isFinite(selectionStart) ? Math.max(0, Math.min(nextValue.length, selectionStart)) : defaultCaret;
+    const nextSelectionEnd = Number.isFinite(selectionEnd) ? Math.max(nextSelectionStart, Math.min(nextValue.length, selectionEnd)) : nextSelectionStart;
+    textarea.selectionStart = nextSelectionStart;
+    textarea.selectionEnd = nextSelectionEnd;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function applyBoldShortcutToTextarea(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || '');
+    const start = Math.max(0, textarea.selectionStart ?? 0);
+    const end = Math.max(start, textarea.selectionEnd ?? start);
+    if (start === end) {
+      const wrapped = '<b></b>';
+      const caret = start + 3;
+      replaceTextareaRange(textarea, start, end, wrapped, caret, caret);
+      return;
+    }
+    const selectedText = value.slice(start, end);
+    const wrapped = `<b>${selectedText}</b>`;
+    replaceTextareaRange(textarea, start, end, wrapped, start + 3, start + 3 + selectedText.length);
+  }
+
+  function applyListShortcutToTextarea(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || '');
+    const rawStart = Math.max(0, textarea.selectionStart ?? 0);
+    const rawEnd = Math.max(rawStart, textarea.selectionEnd ?? rawStart);
+
+    const lineStart = value.lastIndexOf('\n', Math.max(0, rawStart - 1)) + 1;
+    const lineEndIndex = value.indexOf('\n', rawEnd);
+    const lineEnd = lineEndIndex >= 0 ? lineEndIndex : value.length;
+
+    const selectedBlock = value.slice(lineStart, lineEnd);
+    const lines = selectedBlock
+      .split('\n')
+      .map((line) => String(line || '').trim())
+      .filter((line) => line !== '');
+
+    if (!lines.length) return;
+
+    const listBody = lines.map((line) => `  <li>${line}</li>`).join('\n');
+    const listMarkup = `<ul>\n${listBody}\n</ul>`;
+    replaceTextareaRange(textarea, lineStart, lineEnd, listMarkup);
   }
 
   const infoRateStateByTaskId = new Map();
@@ -2582,6 +2648,18 @@
       const target = event.target;
       if (!(target instanceof HTMLTextAreaElement)) return;
       if (!target.matches('[data-task-field="infoText"], [data-task-field="guidePrefix"], [data-task-field="guideSuffix"], [data-task-field="teamAdditionalNote"]')) return;
+      const hasCtrl = event.ctrlKey || event.metaKey;
+      const key = String(event.key || '').toLowerCase();
+      if (hasCtrl && !event.altKey && key === 'b') {
+        event.preventDefault();
+        applyBoldShortcutToTextarea(target);
+        return;
+      }
+      if (hasCtrl && !event.altKey && key === 'l') {
+        event.preventDefault();
+        applyListShortcutToTextarea(target);
+        return;
+      }
       const isOneKey = event.key === '1' || event.code === 'Digit1' || event.code === 'Numpad1';
       if (event.ctrlKey && event.altKey && isOneKey) {
         event.preventDefault();

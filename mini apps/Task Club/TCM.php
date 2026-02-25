@@ -6787,7 +6787,59 @@ $sessionPayload = [
         color: #5f759d;
         font-size: 0.78rem;
         line-height: 1.8;
-        white-space: pre-line;
+        white-space: normal;
+      }
+
+      .team-find-additional-text p,
+      .team-find-additional-text h1,
+      .team-find-additional-text h2,
+      .team-find-additional-text h3,
+      .team-find-additional-text h4,
+      .team-find-additional-text h5,
+      .team-find-additional-text h6 {
+        margin: 0;
+      }
+
+      .team-find-additional-text p + p {
+        margin-top: 6px;
+      }
+
+      .team-find-additional-text ul,
+      .team-find-additional-text ol {
+        margin: 8px 0 0;
+        padding-inline-start: 18px;
+      }
+
+      #tc-team-rules-text {
+        margin: 0;
+        color: #4a5e86;
+        line-height: 1.8;
+      }
+
+      #tc-team-rules-text .team-rules-note {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed #d5e2f8;
+      }
+
+      #tc-team-rules-text p,
+      #tc-team-rules-text h1,
+      #tc-team-rules-text h2,
+      #tc-team-rules-text h3,
+      #tc-team-rules-text h4,
+      #tc-team-rules-text h5,
+      #tc-team-rules-text h6 {
+        margin: 0;
+      }
+
+      #tc-team-rules-text p + p {
+        margin-top: 6px;
+      }
+
+      #tc-team-rules-text ul,
+      #tc-team-rules-text ol {
+        margin: 8px 0 0;
+        padding-inline-start: 18px;
       }
 
       .team-task-actions {
@@ -8366,7 +8418,7 @@ $sessionPayload = [
           <section id="tc-team-rules-step" class="team-task-step hidden">
             <div class="info-task-section team-task-rules-card">
               <h3>قوانین تیم</h3>
-              <p id="tc-team-rules-text">برای این ماموریت تیمی ابتدا تیم خود را بسازید یا به یک تیم ملحق شوید.</p>
+              <div id="tc-team-rules-text">برای این ماموریت تیمی ابتدا تیم خود را بسازید یا به یک تیم ملحق شوید.</div>
             </div>
             <div class="team-task-actions">
               <button id="tc-team-create-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
@@ -8429,7 +8481,7 @@ $sessionPayload = [
               <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
               <button id="tc-team-create-from-find-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             </div>
-            <p id="tc-team-find-additional-text" class="team-find-additional-text hidden"></p>
+            <div id="tc-team-find-additional-text" class="team-find-additional-text hidden"></div>
             <p id="tc-team-groups-hint" class="team-groups-hint">گروه تیم‌ها</p>
             <div id="tc-team-invited-group" class="team-list-group team-list-group--invited">
               <p class="team-list-title">دعوت‌شده‌ها</p>
@@ -8443,7 +8495,7 @@ $sessionPayload = [
           <section id="tc-team-search-step" class="team-task-step hidden">
             <label class="login-field">
               <span>جستجوی سرگروه</span>
-              <small class="team-field-hint">شماره پرسنلی (Work ID) سرگروه مدنظر خود را وارد کنید.</small>
+              <small class="team-field-hint">شماره پرسنلی سرگروه مدنظر خود را وارد کنید.</small>
               <input id="tc-team-search-leader-input" class="login-input" type="text" placeholder="شماره پرسنلی سرگروه" />
             </label>
             <button id="tc-team-search-leader-btn" class="login-btn describe-photo-btn" type="button">جستجوی تیم</button>
@@ -9846,7 +9898,21 @@ $sessionPayload = [
 
           const sanitizeNode = (node) => {
             if (node.nodeType === Node.TEXT_NODE) {
-              return document.createTextNode(String(node.textContent || ''));
+              const normalizedText = String(node.textContent || '').replace(/\r\n?/g, '\n');
+              if (normalizedText.indexOf('\n') === -1) {
+                return document.createTextNode(normalizedText);
+              }
+              const fragment = document.createDocumentFragment();
+              const parts = normalizedText.split('\n');
+              parts.forEach((part, index) => {
+                if (part !== '') {
+                  fragment.appendChild(document.createTextNode(part));
+                }
+                if (index < parts.length - 1) {
+                  fragment.appendChild(document.createElement('br'));
+                }
+              });
+              return fragment;
             }
             if (node.nodeType !== Node.ELEMENT_NODE) {
               return null;
@@ -9927,6 +9993,15 @@ $sessionPayload = [
             .map((part) => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`)
             .join('');
           return `<section class="info-task-section info-task-rich">${content}</section>`;
+        };
+
+        const buildInlineInfoRichHtml = (text) => {
+          const source = String(text || '').replace(/\r/g, '').trim();
+          if (source === '') return '';
+          if (hasInfoHtmlTag(source)) {
+            return sanitizeInfoTaskHtml(source);
+          }
+          return escapeHtml(source).replace(/\n/g, '<br>');
         };
 
         const countWords = (text) => {
@@ -10517,14 +10592,16 @@ $sessionPayload = [
           const minMembers = Math.max(1, Number.parseInt(settings?.teamMin ?? 1, 10) || 1);
           const maxMembers = Math.max(minMembers, Number.parseInt(settings?.teamMax ?? minMembers, 10) || minMembers);
           const additionalNote = String(settings?.teamAdditionalNote || '').trim();
-          const lines = [
-            `حداقل اعضای تیم: ${minMembers} نفر`,
-            `حداکثر اعضای تیم: ${maxMembers} نفر`
-          ];
-          if (additionalNote) {
-            lines.push(additionalNote);
+          const baseHtml = [
+            `<div>حداقل اعضای تیم: ${escapeTaskMetaHtml(minMembers)} نفر</div>`,
+            `<div>حداکثر اعضای تیم: ${escapeTaskMetaHtml(maxMembers)} نفر</div>`
+          ].join('');
+          const additionalHtml = buildInlineInfoRichHtml(additionalNote);
+          if (additionalHtml !== '') {
+            teamRulesTextEl.innerHTML = `${baseHtml}<div class="team-rules-note">${additionalHtml}</div>`;
+            return;
           }
-          teamRulesTextEl.textContent = lines.join('\n');
+          teamRulesTextEl.innerHTML = baseHtml;
         };
 
         const renderTeamTaskState = (context) => {
@@ -10533,10 +10610,10 @@ $sessionPayload = [
           const additionalText = String(teamTaskState?.teamSettings?.teamAdditionalNote || '').trim();
           if (teamFindAdditionalTextEl) {
             if (additionalText !== '') {
-              teamFindAdditionalTextEl.textContent = additionalText;
+              teamFindAdditionalTextEl.innerHTML = buildInlineInfoRichHtml(additionalText);
               teamFindAdditionalTextEl.classList.remove('hidden');
             } else {
-              teamFindAdditionalTextEl.textContent = '';
+              teamFindAdditionalTextEl.innerHTML = '';
               teamFindAdditionalTextEl.classList.add('hidden');
             }
           }
