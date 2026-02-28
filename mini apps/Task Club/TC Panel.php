@@ -448,18 +448,44 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           <h3>دسترسی تسک‌ها</h3>
         </div>
         <div class="form" style="gap:12px;">
-          <label class="field standard-width">
-            <span>کاربر پنل</span>
-            <select id="tc-task-access-user-select"></select>
-          </label>
+          <p class="muted small">فهرست کاربران دارای دسترسی «باشگاه تعاملی». برای ویرایش دسترسی تسک‌ها روی دکمه «دسترسی‌ها» بزنید.</p>
+          <div class="table-wrapper">
+            <table class="tct-list-table tc-task-access-users-table">
+              <thead>
+                <tr>
+                  <th>ردیف</th>
+                  <th>نام کاربر</th>
+                  <th>شناسه</th>
+                  <th>نام کاربری</th>
+                  <th>عملیات</th>
+                </tr>
+              </thead>
+              <tbody id="tc-task-access-users-body">
+                <tr>
+                  <td colspan="5" class="muted">در حال بارگذاری...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="tc-task-access-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tc-task-access-modal-title">
+        <div class="modal-card default-modal-card">
+          <div class="modal-card-header">
+            <h3 id="tc-task-access-modal-title">دسترسی‌ها</h3>
+            <button type="button" class="icon-btn" data-tc-task-access-close aria-label="بستن">×</button>
+          </div>
+          <p class="hint">دسترسی هر کاربر به تب‌ها و زیربخش‌های هر تسک از این بخش مدیریت می‌شود.</p>
           <label class="tc-task-access-manage-row">
             <input type="checkbox" id="tc-task-access-manage-tasks" />
             <span>دسترسی به تب Manage Tasks</span>
           </label>
           <p class="muted small" id="tc-task-access-status" aria-live="polite"></p>
           <div id="tc-task-access-tree" class="tc-task-access-tree"></div>
-          <div class="field full">
-            <button type="button" class="btn primary standard-primary-button" id="tc-task-access-save">ذخیره دسترسی‌ها</button>
+          <div class="modal-actions">
+            <button type="button" class="btn" data-tc-task-access-close>بستن</button>
+            <button type="button" class="btn primary" id="tc-task-access-save">ذخیره دسترسی‌ها</button>
           </div>
         </div>
       </div>

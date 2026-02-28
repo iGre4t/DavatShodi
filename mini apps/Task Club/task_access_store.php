@@ -176,7 +176,8 @@ function tcTaskAccessLoadPanelUsers(): array
       $users[] = [
         'code' => $code,
         'username' => trim((string)($entry['username'] ?? '')),
-        'fullname' => trim((string)($entry['fullname'] ?? $entry['name'] ?? ''))
+        'fullname' => trim((string)($entry['fullname'] ?? $entry['name'] ?? '')),
+        'permissions' => normalizeTabPermissions($entry['permissions'] ?? null, true)
       ];
     }
   }
@@ -187,6 +188,10 @@ function tcTaskAccessLoadPanelUsers(): array
     }
     $code = trim((string)($entry['code'] ?? ''));
     if ($code === '') {
+      continue;
+    }
+    $permissions = normalizeTabPermissions($entry['permissions'] ?? null, true);
+    if (!in_array('task-club', $permissions, true)) {
       continue;
     }
     $fullName = trim((string)($entry['fullname'] ?? $entry['name'] ?? ''));

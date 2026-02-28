@@ -5,13 +5,18 @@
     ? String(tcShellEl.dataset.tcCsrf || '').trim()
     : '';
 
-  const userSelectEl = document.getElementById('tc-task-access-user-select');
+  const usersBodyEl = document.getElementById('tc-task-access-users-body');
+  const modalEl = document.getElementById('tc-task-access-modal');
+  const modalTitleEl = document.getElementById('tc-task-access-modal-title');
   const manageTasksToggleEl = document.getElementById('tc-task-access-manage-tasks');
   const treeEl = document.getElementById('tc-task-access-tree');
   const saveBtnEl = document.getElementById('tc-task-access-save');
   const statusEl = document.getElementById('tc-task-access-status');
+  const closeBtns = modalEl ? modalEl.querySelectorAll('[data-tc-task-access-close]') : [];
+
   if (
-    !(userSelectEl instanceof HTMLSelectElement)
+    !(usersBodyEl instanceof HTMLElement)
+    || !(modalEl instanceof HTMLElement)
     || !(manageTasksToggleEl instanceof HTMLInputElement)
     || !(treeEl instanceof HTMLElement)
     || !(saveBtnEl instanceof HTMLButtonElement)
@@ -34,12 +39,12 @@
     users: [],
     tasks: [],
     accessByUser: {},
-    currentUserCode: ''
+    currentUserCode: '',
+    editingUserCode: ''
   };
 
   function normalizeToken(value) {
-    const token = String(value ?? '').trim().toLowerCase();
-    return token;
+    return String(value ?? '').trim().toLowerCase();
   }
 
   function normalizeBool(value) {
@@ -49,9 +54,22 @@
     return token === '1' || token === 'true' || token === 'on' || token === 'yes';
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function setStatus(message, isError = false) {
     statusEl.textContent = String(message || '').trim();
     statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setUsersTableMessage(message, colspan = 5) {
+    usersBodyEl.innerHTML = `<tr><td colspan="${colspan}" class="muted">${escapeHtml(message)}</td></tr>`;
   }
 
   async function requestGet(action, params = {}) {
@@ -83,65 +101,31 @@
     return data;
   }
 
-  function renderUserOptions() {
-    const options = Array.isArray(state.users) ? state.users : [];
-    if (!options.length) {
-      userSelectEl.innerHTML = '<option value="">کاربری یافت نشد</option>';
-      userSelectEl.disabled = true;
-      manageTasksToggleEl.checked = false;
-      manageTasksToggleEl.disabled = true;
-      return;
-    }
-    const previous = String(userSelectEl.value || '').trim();
-    userSelectEl.innerHTML = options.map((user) => {
-      const code = String(user?.code || '').trim();
-      const fullName = String(user?.fullName || '').trim() || String(user?.username || '').trim() || code;
-      const username = String(user?.username || '').trim();
-      const subtitle = username && username !== fullName ? ` - ${username}` : '';
-      return `<option value="${escapeHtml(code)}">${escapeHtml(`${fullName} (${code}${subtitle})`)}</option>`;
-    }).join('');
-    const match = options.find((item) => String(item?.code || '').trim() === previous);
-    if (match) {
-      userSelectEl.value = previous;
-    } else {
-      const preferred = options.find((item) => (
-        normalizeToken(String(item?.code || '')) === normalizeToken(state.currentUserCode)
-      ));
-      userSelectEl.value = String(preferred?.code || options[0]?.code || '').trim();
-    }
-    userSelectEl.disabled = false;
-    manageTasksToggleEl.disabled = false;
+  function findUserByCode(userCode) {
+    const key = normalizeToken(userCode);
+    return state.users.find((user) => normalizeToken(user?.code) === key) || null;
   }
 
-  function escapeHtml(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+  function getEditingUser() {
+    if (!state.editingUserCode) return null;
+    return findUserByCode(state.editingUserCode);
   }
 
-  function getSelectedUserKey() {
-    return normalizeToken(String(userSelectEl.value || '').trim());
+  function getUserAccessEntry(userCode) {
+    const key = normalizeToken(userCode);
+    const entry = state.accessByUser?.[key];
+    return entry && typeof entry === 'object' ? entry : {};
   }
 
-  function getUserRules() {
-    const key = getSelectedUserKey();
-    const userAccess = state.accessByUser?.[key];
-    const tasks = userAccess && typeof userAccess === 'object' && userAccess.tasks && typeof userAccess.tasks === 'object'
-      ? userAccess.tasks
-      : {};
-    return tasks;
+  function getUserRules(userCode) {
+    const entry = getUserAccessEntry(userCode);
+    const tasks = entry.tasks;
+    return tasks && typeof tasks === 'object' ? tasks : {};
   }
 
-  function getUserManageTasksFlag() {
-    const key = getSelectedUserKey();
-    const userAccess = state.accessByUser?.[key];
-    const rawValue = userAccess && typeof userAccess === 'object'
-      ? (userAccess.allowManageTasksTab ?? userAccess.allow_manage_tasks_tab)
-      : false;
-    return normalizeBool(rawValue);
+  function getUserManageTasksFlag(userCode) {
+    const entry = getUserAccessEntry(userCode);
+    return normalizeBool(entry.allowManageTasksTab ?? entry.allow_manage_tasks_tab ?? false);
   }
 
   function resolveTaskRule(task, userRules) {
@@ -159,12 +143,17 @@
   }
 
   function renderTree() {
+    const editingUser = getEditingUser();
+    if (!editingUser) {
+      treeEl.innerHTML = '<div class="muted">کاربری انتخاب نشده است.</div>';
+      return;
+    }
     const tasks = Array.isArray(state.tasks) ? state.tasks : [];
     if (!tasks.length) {
       treeEl.innerHTML = '<div class="muted">هیچ تسکی ثبت نشده است.</div>';
       return;
     }
-    const userRules = getUserRules();
+    const userRules = getUserRules(editingUser.code);
     treeEl.innerHTML = tasks.map((task) => {
       const taskId = String(task?.id || '').trim();
       const title = String(task?.title || '').trim() || String(task?.tagCode || '').trim() || taskId;
@@ -194,7 +183,32 @@
   }
 
   function renderManageTasksToggle() {
-    manageTasksToggleEl.checked = getUserManageTasksFlag();
+    const editingUser = getEditingUser();
+    const hasUser = Boolean(editingUser);
+    manageTasksToggleEl.disabled = !hasUser;
+    manageTasksToggleEl.checked = hasUser ? getUserManageTasksFlag(editingUser.code) : false;
+  }
+
+  function renderUsersTable() {
+    const users = Array.isArray(state.users) ? state.users : [];
+    if (!users.length) {
+      setUsersTableMessage('کاربری با دسترسی باشگاه تعاملی پیدا نشد.');
+      return;
+    }
+    usersBodyEl.innerHTML = users.map((user, index) => {
+      const code = String(user?.code || '').trim();
+      const fullName = String(user?.fullName || '').trim() || String(user?.username || '').trim() || code;
+      const username = String(user?.username || '').trim() || '—';
+      return `<tr>
+        <td>${escapeHtml(String(index + 1))}</td>
+        <td>${escapeHtml(fullName)}</td>
+        <td><code>${escapeHtml(code)}</code></td>
+        <td>${escapeHtml(username)}</td>
+        <td>
+          <button type="button" class="btn ghost" data-action="open-task-access" data-user-code="${escapeHtml(code)}">دسترسی‌ها</button>
+        </td>
+      </tr>`;
+    }).join('');
   }
 
   function collectRulesFromTree() {
@@ -231,9 +245,39 @@
     });
   }
 
+  function openModalForUser(userCode) {
+    const user = findUserByCode(userCode);
+    if (!user) {
+      setUsersTableMessage('کاربر انتخاب‌شده یافت نشد.');
+      return;
+    }
+    state.editingUserCode = normalizeToken(user.code);
+    if (modalTitleEl instanceof HTMLElement) {
+      const fullName = String(user.fullName || '').trim() || String(user.username || '').trim() || String(user.code || '');
+      modalTitleEl.textContent = `دسترسی‌ها · ${fullName}`;
+    }
+    setStatus('');
+    renderManageTasksToggle();
+    renderTree();
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeModal() {
+    modalEl.classList.add('hidden');
+    modalEl.setAttribute('aria-hidden', 'true');
+    state.editingUserCode = '';
+    setStatus('');
+    renderManageTasksToggle();
+    renderTree();
+    if (modalTitleEl instanceof HTMLElement) {
+      modalTitleEl.textContent = 'دسترسی‌ها';
+    }
+  }
+
   async function saveCurrentUserRules() {
-    const selectedUserCode = String(userSelectEl.value || '').trim();
-    if (!selectedUserCode) {
+    const editingUser = getEditingUser();
+    if (!editingUser) {
       setStatus('ابتدا یک کاربر انتخاب کنید.', true);
       return;
     }
@@ -242,11 +286,11 @@
     setStatus('در حال ذخیره...');
     try {
       const response = await requestPost('save_user_access', {
-        userCode: selectedUserCode,
+        userCode: String(editingUser.code || '').trim(),
         rules,
         allowManageTasksTab: manageTasksToggleEl.checked ? 1 : 0
       });
-      const key = normalizeToken(selectedUserCode);
+      const key = normalizeToken(editingUser.code);
       const normalizedRules = response?.data?.rules && typeof response.data.rules === 'object'
         ? response.data.rules
         : rules;
@@ -256,6 +300,7 @@
         tasks: normalizedRules
       };
       setStatus(response?.message || 'دسترسی‌ها ذخیره شد.');
+      renderUsersTable();
       renderManageTasksToggle();
       renderTree();
     } catch (error) {
@@ -266,28 +311,54 @@
   }
 
   async function bootstrap() {
-    setStatus('در حال بارگذاری...');
+    setUsersTableMessage('در حال بارگذاری...');
     try {
       const data = await requestGet('bootstrap');
       state.currentUserCode = String(data?.currentUserCode || '').trim();
       state.users = Array.isArray(data?.users) ? data.users : [];
       state.tasks = Array.isArray(data?.tasks) ? data.tasks : [];
       state.accessByUser = data?.access && typeof data.access === 'object' ? data.access : {};
-      renderUserOptions();
-      renderManageTasksToggle();
-      renderTree();
-      setStatus('');
+      renderUsersTable();
+      if (!modalEl.classList.contains('hidden')) {
+        const editingUser = getEditingUser();
+        if (!editingUser) {
+          closeModal();
+        } else {
+          renderManageTasksToggle();
+          renderTree();
+          setStatus('');
+        }
+      }
     } catch (error) {
-      setStatus(error?.message || 'بارگذاری اطلاعات دسترسی تسک‌ها ناموفق بود.', true);
-      treeEl.innerHTML = '';
+      setUsersTableMessage('بارگذاری اطلاعات دسترسی تسک‌ها ناموفق بود.');
+      if (!modalEl.classList.contains('hidden')) {
+        setStatus(error?.message || 'بارگذاری اطلاعات دسترسی تسک‌ها ناموفق بود.', true);
+      }
     }
   }
 
-  userSelectEl.addEventListener('change', () => {
-    renderManageTasksToggle();
-    renderTree();
-    setStatus('');
+  usersBodyEl.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const trigger = target.closest('button[data-action="open-task-access"][data-user-code]');
+    if (!(trigger instanceof HTMLButtonElement)) return;
+    const userCode = String(trigger.dataset.userCode || '').trim();
+    if (!userCode) return;
+    openModalForUser(userCode);
   });
+
+  closeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      closeModal();
+    });
+  });
+
+  modalEl.addEventListener('click', (event) => {
+    if (event.target === modalEl) {
+      closeModal();
+    }
+  });
+
   treeEl.addEventListener('change', onTreeChange);
   saveBtnEl.addEventListener('click', () => {
     void saveCurrentUserRules();
@@ -296,5 +367,7 @@
     void bootstrap();
   });
 
+  renderManageTasksToggle();
+  renderTree();
   void bootstrap();
 })();

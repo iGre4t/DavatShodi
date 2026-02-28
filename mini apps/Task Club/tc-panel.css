@@ -261,6 +261,20 @@
 .tc-shell .tc-task-access-tree {
   display: grid;
   gap: 10px;
+  max-height: min(56vh, 560px);
+  overflow: auto;
+  padding-inline-end: 2px;
+}
+
+.tc-shell .tc-task-access-users-table td,
+.tc-shell .tc-task-access-users-table th {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tc-shell .tc-task-access-users-table td:last-child,
+.tc-shell .tc-task-access-users-table th:last-child {
+  width: 1%;
 }
 
 .tc-shell .tc-task-access-manage-row {
