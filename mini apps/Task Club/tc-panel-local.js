@@ -1200,6 +1200,7 @@
           name: String(row.name || '').trim(),
           joinType: String(row.joinType || row.join_type || 'private').trim(),
           status: String(row.status || '').trim().toLowerCase() === 'started' ? 'started' : 'draft',
+          scoreSubmitted: Boolean(row.scoreSubmitted ?? row.score_submitted ?? false),
           challengeAccepted: Boolean(row.challengeAccepted ?? row.challenge_accepted ?? false),
           leaderWorkId: String(row.leaderWorkId || row.leader_work_id || '').trim(),
           leaderName: String(row.leaderName || row.leader_name || '').trim(),
@@ -1248,7 +1249,7 @@
     const query = String(state.query || '').trim().toLowerCase();
     const visibleRows = (Array.isArray(state.teams) ? state.teams : []).filter((row) => {
       if (!query) return true;
-      const haystack = `${row.name} ${row.leaderName} ${row.leaderWorkId} ${row.status} ${row.joinType}`.toLowerCase();
+      const haystack = `${row.name} ${row.leaderName} ${row.leaderWorkId} ${row.status} ${row.joinType} ${row.scoreSubmitted ? 'submitted score' : ''}`.toLowerCase();
       return haystack.includes(query);
     });
     if (!visibleRows.length) {
@@ -1256,24 +1257,30 @@
       return;
     }
 
-    const startedRows = visibleRows.filter((team) => team.status === 'started');
-    const otherRows = visibleRows.filter((team) => team.status !== 'started');
+    const submittedRows = visibleRows.filter((team) => Boolean(team.scoreSubmitted));
+    const startedRows = visibleRows.filter((team) => !Boolean(team.scoreSubmitted) && team.status === 'started');
+    const otherRows = visibleRows.filter((team) => !Boolean(team.scoreSubmitted) && team.status !== 'started');
 
     const renderTeamRow = (team, sectionToken = 'other') => {
-      const isStarted = sectionToken === 'started';
-      const statusMarkup = isStarted
-        ? '<span class="tc-team-started-flag"><i class="ri-flag-2-line" aria-hidden="true"></i><span>Started</span></span>'
-        : '<span class="tc-team-status-muted">Draft</span>';
+      const isSubmitted = sectionToken === 'submitted' || Boolean(team.scoreSubmitted);
+      const isStarted = !isSubmitted && sectionToken === 'started';
+      const statusMarkup = isSubmitted
+        ? '<span class="tc-team-submitted-flag"><i class="ri-checkbox-circle-line" aria-hidden="true"></i><span>Submitted Score</span></span>'
+        : (isStarted
+          ? '<span class="tc-team-started-flag"><i class="ri-flag-2-line" aria-hidden="true"></i><span>Started</span></span>'
+          : '<span class="tc-team-status-muted">Draft</span>');
       const minMembers = Math.max(1, normalizeScoreValue(team.minMembers || 1));
       const maxMembers = Math.max(minMembers, normalizeScoreValue(team.maxMembers || minMembers));
       const memberCount = normalizeScoreValue(team.memberCount || 0);
-      const startedTag = isStarted ? '<span class="tc-team-started-chip">Live</span>' : '';
+      const statusTag = isSubmitted
+        ? '<span class="tc-team-submitted-chip">Scored</span>'
+        : (isStarted ? '<span class="tc-team-started-chip">Live</span>' : '');
       return `
-        <tr class="tc-team-rate-row ${isStarted ? 'tc-team-rate-row--started' : ''}" data-team-id="${escapeHtml(team.id)}">
+        <tr class="tc-team-rate-row ${isStarted ? 'tc-team-rate-row--started' : ''} ${isSubmitted ? 'tc-team-rate-row--submitted' : ''}" data-team-id="${escapeHtml(team.id)}">
           <td>
             <div class="tc-team-name-cell">
               <span>${escapeHtml(team.name || 'Team')}</span>
-              ${startedTag}
+              ${statusTag}
             </div>
           </td>
           <td>${statusMarkup}</td>
@@ -1309,7 +1316,8 @@
 
     controls.body.innerHTML = [
       renderSection('Started Teams', startedRows, 'started'),
-      renderSection('Other Teams', otherRows, 'other')
+      renderSection('Other Teams', otherRows, 'other'),
+      renderSection('Submitted Score', submittedRows, 'submitted')
     ].filter(Boolean).join('');
   }
 

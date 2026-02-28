@@ -3191,6 +3191,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
     $maxScore = max(0, (int)($scoreSettings['score'] ?? 0));
     $taskId = trim((string)($targetTask['id'] ?? ''));
+    $taskScoreMapByWorkId = tctLoadTaskInfoScores($tctTasksDir, $tagCode);
     $invitees = tctResolveInviteesForRateTable($tctEventInviteesPath, $tctEventInviteesMapPath);
     $eventRows = tctReadCsvRows($tctEventInviteesPath);
     $eventHeader = (isset($eventRows[0]) && is_array($eventRows[0])) ? $eventRows[0] : [];
@@ -3250,10 +3251,14 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
         }
         $memberPreview = [];
         $memberScores = [];
+        $scoreSubmitted = false;
         foreach ($members as $memberId) {
           $profile = is_array($inviteesByWorkId[$memberId] ?? null) ? $inviteesByWorkId[$memberId] : [];
           $memberScore = max(0, min($maxScore, (int)($infoTaskScoreByWorkId[$memberId] ?? 0)));
           $memberScores[] = $memberScore;
+          if (!$scoreSubmitted && array_key_exists($memberId, $taskScoreMapByWorkId)) {
+            $scoreSubmitted = true;
+          }
           $memberPreview[] = [
             'workId' => $memberId,
             'firstName' => trim((string)($profile['firstName'] ?? '')),
@@ -3281,6 +3286,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
           'requestCount' => count(is_array($team['requests'] ?? null) ? $team['requests'] : []),
           'minMembers' => $teamMin,
           'maxMembers' => $teamMax,
+          'scoreSubmitted' => $scoreSubmitted,
           'assignedScore' => $memberScores ? max($memberScores) : 0,
           'members' => $memberPreview
         ];

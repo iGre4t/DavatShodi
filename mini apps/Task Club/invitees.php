@@ -173,6 +173,16 @@ if ($rows) {
           <span>Total Invitees</span>
           <strong><?= htmlspecialchars((string)count($allInvitees), ENT_QUOTES, 'UTF-8') ?></strong>
         </div>
+        <label class="field standard-width">
+          <span>Search Invitee</span>
+          <input
+            id="tc-all-invitees-search"
+            type="text"
+            placeholder="Search by name, work ID, national ID, or phone number"
+            autocomplete="off"
+          />
+          <small id="tc-all-invitees-search-meta" class="hint"></small>
+        </label>
         <div class="table-wrapper tc-info-rate-table-wrap">
           <table class="tct-list-table tc-info-rate-table">
             <thead>
@@ -187,14 +197,24 @@ if ($rows) {
                 <th>Action</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody data-invitees-all-table-body>
               <?php if (!$allInvitees): ?>
                 <tr>
                   <td colspan="8" class="muted">No invitees found.</td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($allInvitees as $invitee): ?>
-                  <tr>
+                  <?php
+                    $inviteeSearchText = trim(implode(' ', [
+                      (string)($invitee['row'] ?? ''),
+                      (string)($invitee['firstName'] ?? ''),
+                      (string)($invitee['lastName'] ?? ''),
+                      (string)($invitee['workId'] ?? ''),
+                      (string)($invitee['nationalId'] ?? ''),
+                      (string)($invitee['phoneNumber'] ?? '')
+                    ]));
+                  ?>
+                  <tr data-invitee-row="1" data-search="<?= htmlspecialchars($inviteeSearchText, ENT_QUOTES, 'UTF-8') ?>">
                     <td><?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['firstName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['lastName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
@@ -235,6 +255,9 @@ if ($rows) {
                     </td>
                   </tr>
                 <?php endforeach; ?>
+                <tr data-invitees-no-results hidden>
+                  <td colspan="8" class="muted">No matching invitee found.</td>
+                </tr>
               <?php endif; ?>
             </tbody>
           </table>
@@ -568,6 +591,9 @@ if ($rows) {
   const resetMsgEl = document.getElementById('tc-invite-reset-msg');
   const resetConfirmBtn = document.getElementById('tc-invite-reset-confirm');
   const inviteesTopShell = document.getElementById('tc-invitees-top-shell');
+  const allInviteesSearchInput = document.getElementById('tc-all-invitees-search');
+  const allInviteesSearchMetaEl = document.getElementById('tc-all-invitees-search-meta');
+  const allInviteesTableBody = document.querySelector('[data-invitees-all-table-body]');
 
   let parsedRows = [];
   let headerRow = [];
@@ -575,6 +601,42 @@ if ($rows) {
   let revealPasswordContext = null;
   let resetProgressContext = null;
   let pendingSensitiveAction = '';
+
+  const normalizeSearchValue = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const applyAllInviteesSearch = () => {
+    if (!(allInviteesTableBody instanceof HTMLElement)) return;
+    const inviteeRows = Array.from(allInviteesTableBody.querySelectorAll('tr[data-invitee-row="1"]'));
+    if (!inviteeRows.length) return;
+    const noResultsRow = allInviteesTableBody.querySelector('tr[data-invitees-no-results]');
+    const query = normalizeSearchValue(allInviteesSearchInput?.value || '');
+
+    let visibleCount = 0;
+    inviteeRows.forEach((row) => {
+      const haystack = normalizeSearchValue(row.getAttribute('data-search') || row.textContent || '');
+      const isVisible = query === '' || haystack.includes(query);
+      row.hidden = !isVisible;
+      if (isVisible) {
+        visibleCount += 1;
+      }
+    });
+
+    if (noResultsRow instanceof HTMLElement) {
+      noResultsRow.hidden = visibleCount > 0 || query === '';
+    }
+    if (allInviteesSearchMetaEl instanceof HTMLElement) {
+      if (query === '') {
+        allInviteesSearchMetaEl.textContent = `Showing ${visibleCount} invitees`;
+      } else if (visibleCount === 0) {
+        allInviteesSearchMetaEl.textContent = 'No match found';
+      } else {
+        allInviteesSearchMetaEl.textContent = `${visibleCount} result${visibleCount === 1 ? '' : 's'} found`;
+      }
+    }
+  };
 
   const setMsg = (text, isError = false) => {
     if (!msgEl) return;
@@ -806,6 +868,11 @@ if ($rows) {
     });
     activateInviteesPane('all-invitees');
   }
+
+  allInviteesSearchInput?.addEventListener('input', () => {
+    applyAllInviteesSearch();
+  });
+  applyAllInviteesSearch();
 
   document.addEventListener('click', (event) => {
     const target = event.target;
