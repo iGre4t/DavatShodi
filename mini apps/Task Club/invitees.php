@@ -1,11 +1,18 @@
 <?php
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_special_access.php';
 $tcInviteesSessionUser = requireTabPermissionFromSession('task-club', false);
 if (!userHasPermissionId($tcInviteesSessionUser, 'task-club:invitees')) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', false);
 }
 $tcInviteesCsrfToken = tcSecurityGetCsrfToken();
+$tcInviteesSpecialAccess = tcInviteesSpecialAccessForPanelUser($tcInviteesSessionUser, __DIR__ . '/tasks/task-access.json');
+$tcInviteesCanManage = !empty($tcInviteesSpecialAccess['manageInvitees']);
+$tcInviteesCanReset = !empty($tcInviteesSpecialAccess['resetInvitee']);
+$tcInviteesCanReveal = !empty($tcInviteesSpecialAccess['revealPassword']);
+$tcInviteesCanEdit = !empty($tcInviteesSpecialAccess['editInvitee']);
+$tcInviteesHasRowAction = $tcInviteesCanEdit || $tcInviteesCanReveal || $tcInviteesCanReset;
 
 $baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';
 $mappedFile = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
@@ -161,7 +168,9 @@ if ($rows) {
 <div class="tc-task-top-shell" id="tc-invitees-top-shell">
   <div class="tc-task-top-nav" role="tablist" aria-label="Invitees Tabs">
     <button type="button" class="tc-task-top-item active" data-invitees-top-trigger="all-invitees" aria-selected="true">All Invitees</button>
+    <?php if ($tcInviteesCanManage): ?>
     <button type="button" class="tc-task-top-item" data-invitees-top-trigger="manage-invitees" aria-selected="false">Manage Invitees</button>
+    <?php endif; ?>
   </div>
   <div class="tc-task-top-section active" data-invitees-top-section="all-invitees">
     <div class="card">
@@ -224,6 +233,7 @@ if ($rows) {
                     <td><?= htmlspecialchars((string)($invitee['password'] ?? '') !== '' ? '*****' : '—', ENT_QUOTES, 'UTF-8') ?></td>
                     <td>
                       <div class="tc-info-rate-row-actions">
+                        <?php if ($tcInviteesCanEdit): ?>
                         <button
                           type="button"
                           class="btn ghost"
@@ -235,6 +245,8 @@ if ($rows) {
                           data-national-id="<?= htmlspecialchars((string)($invitee['nationalId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-phone-number="<?= htmlspecialchars((string)($invitee['phoneNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                         >Edit</button>
+                        <?php endif; ?>
+                        <?php if ($tcInviteesCanReveal): ?>
                         <button
                           type="button"
                           class="btn ghost"
@@ -243,6 +255,8 @@ if ($rows) {
                           data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                         >Reveal Password</button>
+                        <?php endif; ?>
+                        <?php if ($tcInviteesCanReset): ?>
                         <button
                           type="button"
                           class="btn ghost"
@@ -251,6 +265,10 @@ if ($rows) {
                           data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                         >Rest</button>
+                        <?php endif; ?>
+                        <?php if (!$tcInviteesHasRowAction): ?>
+                        <span class="muted">&mdash;</span>
+                        <?php endif; ?>
                       </div>
                     </td>
                   </tr>
@@ -265,6 +283,7 @@ if ($rows) {
       </div>
     </div>
   </div>
+  <?php if ($tcInviteesCanManage): ?>
   <div class="tc-task-top-section" data-invitees-top-section="manage-invitees" hidden>
 <div class="card">
   <div class="section-header">
@@ -383,6 +402,7 @@ if ($rows) {
   </div>
 </div>
   </div>
+  <?php endif; ?>
 </div>
 
 <div id="tc-invite-modal" class="modal hidden" aria-hidden="true">

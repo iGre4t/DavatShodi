@@ -448,7 +448,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           <h3>دسترسی تسک‌ها</h3>
         </div>
         <div class="form" style="gap:12px;">
-          <p class="muted small">فهرست کاربران دارای دسترسی «باشگاه تعاملی». برای ویرایش دسترسی تسک‌ها روی دکمه «دسترسی‌ها» بزنید.</p>
+          <p class="muted small">فهرست کاربران دارای دسترسی «باشگاه تعاملی». برای هر کاربر می‌توانید «دسترسی تسک‌ها» و «دسترسی‌های خاص» را تنظیم کنید.</p>
           <div class="table-wrapper">
             <table class="tct-list-table tc-task-access-users-table">
               <thead>
@@ -486,6 +486,39 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           <div class="modal-actions">
             <button type="button" class="btn" data-tc-task-access-close>بستن</button>
             <button type="button" class="btn primary" id="tc-task-access-save">ذخیره دسترسی‌ها</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tc-task-special-access-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tc-task-special-access-modal-title">
+        <div class="modal-card default-modal-card">
+          <div class="modal-card-header">
+            <h3 id="tc-task-special-access-modal-title">دسترسی‌های خاص</h3>
+            <button type="button" class="icon-btn" data-tc-task-special-close aria-label="بستن">×</button>
+          </div>
+          <p class="hint">این دسترسی‌ها مربوط به تب «Invitees» هستند.</p>
+          <div class="tc-task-special-access-grid">
+            <label class="tc-task-access-manage-row">
+              <input type="checkbox" id="tc-special-invitees-manage" />
+              <span>Manage Invitees</span>
+            </label>
+            <label class="tc-task-access-manage-row">
+              <input type="checkbox" id="tc-special-invitees-reset" />
+              <span>Rest Invitee</span>
+            </label>
+            <label class="tc-task-access-manage-row">
+              <input type="checkbox" id="tc-special-invitees-reveal" />
+              <span>Reveal Password</span>
+            </label>
+            <label class="tc-task-access-manage-row">
+              <input type="checkbox" id="tc-special-invitees-edit" />
+              <span>Edit Invitee</span>
+            </label>
+          </div>
+          <p class="muted small" id="tc-task-special-access-status" aria-live="polite"></p>
+          <div class="modal-actions">
+            <button type="button" class="btn" data-tc-task-special-close>بستن</button>
+            <button type="button" class="btn primary" id="tc-task-special-access-save">ذخیره دسترسی‌های خاص</button>
           </div>
         </div>
       </div>

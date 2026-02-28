@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/users.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_special_access.php';
 
 $tcTaskAccessSessionUser = requireTabPermissionFromSession('task-club', true);
 if (!userHasPermissionId($tcTaskAccessSessionUser, 'task-club:task-access')) {
@@ -212,6 +213,39 @@ function tcTaskAccessLoadPanelUsers(): array
   return $normalized;
 }
 
+function tcTaskAccessResolveManageTasksPermissionForUser(string $userCode): bool
+{
+  $normalizedCode = tcTaskAccessNormalizeToken($userCode);
+  if ($normalizedCode === '') {
+    return false;
+  }
+
+  $config = loadConfig(__DIR__ . '/../../api/config.php');
+  $pdo = connectDatabase($config);
+  if ($pdo instanceof PDO) {
+    ensureUsersExtendedColumns($pdo);
+    $user = loadUserByCode($pdo, $userCode);
+    if (is_array($user)) {
+      return userHasPermissionId($user, 'task-club:manage-tasks');
+    }
+  }
+
+  $store = tcTaskAccessReadJson(__DIR__ . '/../../data/store.json', []);
+  $storeUsers = is_array($store['users'] ?? null) ? $store['users'] : [];
+  foreach ($storeUsers as $entry) {
+    if (!is_array($entry)) {
+      continue;
+    }
+    if (tcTaskAccessNormalizeToken((string)($entry['code'] ?? '')) !== $normalizedCode) {
+      continue;
+    }
+    $permissions = normalizeTabPermissions($entry['permissions'] ?? null, true);
+    return in_array('task-club:manage-tasks', $permissions, true);
+  }
+
+  return false;
+}
+
 function tcTaskAccessNormalizeRulesForTasks(array $rawRules, array $tasksByIdLower): array
 {
   $rules = [];
@@ -244,6 +278,11 @@ function tcTaskAccessNormalizeRulesForTasks(array $rawRules, array $tasksByIdLow
   return $rules;
 }
 
+function tcTaskAccessNormalizeInviteesSpecialAccess($raw): array
+{
+  return tcInviteesSpecialAccessNormalize($raw);
+}
+
 $action = trim((string)($_GET['action'] ?? $_POST['action'] ?? 'bootstrap'));
 $tasks = tcTaskAccessLoadTasks($tasksStorePath);
 $tasksByIdLower = [];
@@ -266,7 +305,8 @@ if ($action === 'bootstrap') {
     $rules = tcTaskAccessNormalizeRulesForTasks(is_array($entry['tasks'] ?? null) ? $entry['tasks'] : [], $tasksByIdLower);
     $accessByUser[$userCode] = [
       'allowManageTasksTab' => tcTaskAccessNormalizeBool($entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false)),
-      'tasks' => $rules
+      'tasks' => $rules,
+      'inviteesSpecialAccess' => tcTaskAccessNormalizeInviteesSpecialAccess($entry['inviteesSpecialAccess'] ?? null)
     ];
   }
   echo json_encode([
@@ -310,10 +350,13 @@ if ($action === 'save_user_access') {
 
   $config = tcTaskAccessReadJson($taskAccessPath, []);
   $users = is_array($config['users'] ?? null) ? $config['users'] : [];
+  $existingEntry = is_array($users[$userCode] ?? null) ? $users[$userCode] : [];
+  $inviteesSpecialAccess = tcTaskAccessNormalizeInviteesSpecialAccess($existingEntry['inviteesSpecialAccess'] ?? null);
   $users[$userCode] = [
     'updatedAt' => date('Y-m-d H:i:s'),
     'allowManageTasksTab' => $allowManageTasksTab,
-    'tasks' => $normalizedRules
+    'tasks' => $normalizedRules,
+    'inviteesSpecialAccess' => $inviteesSpecialAccess
   ];
   $config['users'] = $users;
   $config['updatedAt'] = date('Y-m-d H:i:s');
@@ -327,7 +370,66 @@ if ($action === 'save_user_access') {
     'data' => [
       'userCode' => $userCodeRaw,
       'allowManageTasksTab' => $allowManageTasksTab,
-      'rules' => $normalizedRules
+      'rules' => $normalizedRules,
+      'inviteesSpecialAccess' => $inviteesSpecialAccess
+    ]
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'save_user_special_access') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode((string)file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  $csrfToken = tcSecurityReadCsrfFromRequest($payload, 'csrf');
+  if (!tcSecurityIsValidCsrfToken($csrfToken)) {
+    http_response_code(403);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.']);
+    exit;
+  }
+  $userCodeRaw = trim((string)($payload['userCode'] ?? ''));
+  $userCode = tcTaskAccessNormalizeToken($userCodeRaw);
+  if ($userCodeRaw === '' || $userCode === '') {
+    echo json_encode(['status' => 'error', 'message' => 'User code is required.']);
+    exit;
+  }
+  $specialAccess = tcTaskAccessNormalizeInviteesSpecialAccess($payload['inviteesSpecialAccess'] ?? null);
+
+  $config = tcTaskAccessReadJson($taskAccessPath, []);
+  $users = is_array($config['users'] ?? null) ? $config['users'] : [];
+  $existingEntry = is_array($users[$userCode] ?? null) ? $users[$userCode] : [];
+  $existingRules = tcTaskAccessNormalizeRulesForTasks(is_array($existingEntry['tasks'] ?? null) ? $existingEntry['tasks'] : [], $tasksByIdLower);
+  if (array_key_exists('allowManageTasksTab', $existingEntry) || array_key_exists('allow_manage_tasks_tab', $existingEntry)) {
+    $allowManageTasksTab = tcTaskAccessNormalizeBool($existingEntry['allowManageTasksTab'] ?? ($existingEntry['allow_manage_tasks_tab'] ?? false));
+  } else {
+    $allowManageTasksTab = tcTaskAccessResolveManageTasksPermissionForUser($userCodeRaw);
+  }
+  $users[$userCode] = [
+    'updatedAt' => date('Y-m-d H:i:s'),
+    'allowManageTasksTab' => $allowManageTasksTab,
+    'tasks' => $existingRules,
+    'inviteesSpecialAccess' => $specialAccess
+  ];
+  $config['users'] = $users;
+  $config['updatedAt'] = date('Y-m-d H:i:s');
+  if (!tcTaskAccessWriteJson($taskAccessPath, $config)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save special access settings.']);
+    exit;
+  }
+
+  echo json_encode([
+    'status' => 'ok',
+    'message' => 'Special access saved.',
+    'data' => [
+      'userCode' => $userCodeRaw,
+      'inviteesSpecialAccess' => $specialAccess
     ]
   ], JSON_UNESCAPED_UNICODE);
   exit;

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/users.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_special_access.php';
 
 $tcInviteesPasswordSessionUser = requireTabPermissionFromSession('task-club', true);
 if (!userHasPermissionId($tcInviteesPasswordSessionUser, 'task-club:invitees')) {
@@ -176,6 +177,23 @@ $sessionUserCode = trim((string)($tcInviteesPasswordSessionUser['code'] ?? ''));
 if ($sessionUserCode === '') {
   echo json_encode(['status' => 'error', 'message' => 'Session user is not valid.']);
   exit;
+}
+$tcInviteesSensitiveAccess = tcInviteesSpecialAccessForPanelUser($tcInviteesPasswordSessionUser, __DIR__ . '/tasks/task-access.json');
+$canRevealPassword = !empty($tcInviteesSensitiveAccess['revealPassword']);
+$canResetInvitee = !empty($tcInviteesSensitiveAccess['resetInvitee']);
+$canUseSensitiveAuth = $canRevealPassword || $canResetInvitee;
+$isRevealAction = in_array($action, ['get_password', 'save_password'], true);
+$isResetAction = ($action === 'reset_progress');
+$isAuthAction = in_array($action, ['verify_unlock', 'check_unlock'], true);
+
+if ($isRevealAction && !$canRevealPassword) {
+  denyPanelAccess(403, 'You do not have permission to reveal invitee passwords.', true);
+}
+if ($isResetAction && !$canResetInvitee) {
+  denyPanelAccess(403, 'You do not have permission to reset invitees.', true);
+}
+if ($isAuthAction && !$canUseSensitiveAuth) {
+  denyPanelAccess(403, 'You do not have permission to run sensitive invitee actions.', true);
 }
 
 $baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';

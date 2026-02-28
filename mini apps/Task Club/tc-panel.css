@@ -277,12 +277,23 @@
   width: 1%;
 }
 
+.tc-shell .tc-task-access-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .tc-shell .tc-task-access-manage-row {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: #111111;
   font-weight: 600;
+}
+
+.tc-shell .tc-task-special-access-grid {
+  display: grid;
+  gap: 10px;
 }
 
 .tc-shell .tc-task-access-group {

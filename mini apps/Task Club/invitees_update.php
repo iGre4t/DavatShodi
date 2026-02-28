@@ -5,10 +5,15 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_special_access.php';
 
 $tcInviteesUpdateSessionUser = requireTabPermissionFromSession('task-club', true);
 if (!userHasPermissionId($tcInviteesUpdateSessionUser, 'task-club:invitees')) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+}
+$tcInviteesUpdateSpecialAccess = tcInviteesSpecialAccessForPanelUser($tcInviteesUpdateSessionUser, __DIR__ . '/tasks/task-access.json');
+if (empty($tcInviteesUpdateSpecialAccess['editInvitee'])) {
+  denyPanelAccess(403, 'You do not have permission to edit invitees.', true);
 }
 tcSecurityGetCsrfToken();
 
@@ -257,4 +262,3 @@ if (!writeCsvRowsLocked($mappedFile, $rows)) {
 }
 
 echo json_encode(['status' => 'ok', 'message' => 'Invitee updated successfully.']);
-

@@ -14,6 +14,26 @@
   const statusEl = document.getElementById('tc-task-access-status');
   const closeBtns = modalEl ? modalEl.querySelectorAll('[data-tc-task-access-close]') : [];
 
+  const specialModalEl = document.getElementById('tc-task-special-access-modal');
+  const specialModalTitleEl = document.getElementById('tc-task-special-access-modal-title');
+  const specialManageEl = document.getElementById('tc-special-invitees-manage');
+  const specialResetEl = document.getElementById('tc-special-invitees-reset');
+  const specialRevealEl = document.getElementById('tc-special-invitees-reveal');
+  const specialEditEl = document.getElementById('tc-special-invitees-edit');
+  const specialSaveBtnEl = document.getElementById('tc-task-special-access-save');
+  const specialStatusEl = document.getElementById('tc-task-special-access-status');
+  const specialCloseBtns = specialModalEl ? specialModalEl.querySelectorAll('[data-tc-task-special-close]') : [];
+
+  const supportsSpecialAccess = Boolean(
+    specialModalEl instanceof HTMLElement
+    && specialManageEl instanceof HTMLInputElement
+    && specialResetEl instanceof HTMLInputElement
+    && specialRevealEl instanceof HTMLInputElement
+    && specialEditEl instanceof HTMLInputElement
+    && specialSaveBtnEl instanceof HTMLButtonElement
+    && specialStatusEl instanceof HTMLElement
+  );
+
   if (
     !(usersBodyEl instanceof HTMLElement)
     || !(modalEl instanceof HTMLElement)
@@ -27,7 +47,7 @@
 
   const paneLabelMap = {
     control: 'کنترل پنل',
-    quiz: 'کوییز',
+    quiz: 'کوئیز',
     information: 'اطلاعات',
     photo: 'عکس‌ها',
     'invitees-rate': 'امتیازدهی',
@@ -40,8 +60,18 @@
     tasks: [],
     accessByUser: {},
     currentUserCode: '',
-    editingUserCode: ''
+    editingUserCode: '',
+    specialEditingUserCode: ''
   };
+
+  function defaultInviteesSpecialAccess() {
+    return {
+      manageInvitees: true,
+      resetInvitee: true,
+      revealPassword: true,
+      editInvitee: true
+    };
+  }
 
   function normalizeToken(value) {
     return String(value ?? '').trim().toLowerCase();
@@ -66,6 +96,12 @@
   function setStatus(message, isError = false) {
     statusEl.textContent = String(message || '').trim();
     statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setSpecialStatus(message, isError = false) {
+    if (!(specialStatusEl instanceof HTMLElement)) return;
+    specialStatusEl.textContent = String(message || '').trim();
+    specialStatusEl.style.color = isError ? '#d1434a' : '';
   }
 
   function setUsersTableMessage(message, colspan = 5) {
@@ -111,6 +147,11 @@
     return findUserByCode(state.editingUserCode);
   }
 
+  function getSpecialEditingUser() {
+    if (!state.specialEditingUserCode) return null;
+    return findUserByCode(state.specialEditingUserCode);
+  }
+
   function getUserAccessEntry(userCode) {
     const key = normalizeToken(userCode);
     const entry = state.accessByUser?.[key];
@@ -126,6 +167,21 @@
   function getUserManageTasksFlag(userCode) {
     const entry = getUserAccessEntry(userCode);
     return normalizeBool(entry.allowManageTasksTab ?? entry.allow_manage_tasks_tab ?? false);
+  }
+
+  function getUserInviteesSpecialAccess(userCode) {
+    const entry = getUserAccessEntry(userCode);
+    const defaults = defaultInviteesSpecialAccess();
+    const raw = entry.inviteesSpecialAccess;
+    if (!raw || typeof raw !== 'object') {
+      return defaults;
+    }
+    return {
+      manageInvitees: normalizeBool(raw.manageInvitees ?? defaults.manageInvitees),
+      resetInvitee: normalizeBool(raw.resetInvitee ?? defaults.resetInvitee),
+      revealPassword: normalizeBool(raw.revealPassword ?? defaults.revealPassword),
+      editInvitee: normalizeBool(raw.editInvitee ?? defaults.editInvitee)
+    };
   }
 
   function resolveTaskRule(task, userRules) {
@@ -189,6 +245,21 @@
     manageTasksToggleEl.checked = hasUser ? getUserManageTasksFlag(editingUser.code) : false;
   }
 
+  function renderSpecialAccessForm() {
+    if (!supportsSpecialAccess) return;
+    const editingUser = getSpecialEditingUser();
+    const hasUser = Boolean(editingUser);
+    const values = hasUser ? getUserInviteesSpecialAccess(editingUser.code) : defaultInviteesSpecialAccess();
+    specialManageEl.disabled = !hasUser;
+    specialResetEl.disabled = !hasUser;
+    specialRevealEl.disabled = !hasUser;
+    specialEditEl.disabled = !hasUser;
+    specialManageEl.checked = values.manageInvitees;
+    specialResetEl.checked = values.resetInvitee;
+    specialRevealEl.checked = values.revealPassword;
+    specialEditEl.checked = values.editInvitee;
+  }
+
   function renderUsersTable() {
     const users = Array.isArray(state.users) ? state.users : [];
     if (!users.length) {
@@ -199,13 +270,19 @@
       const code = String(user?.code || '').trim();
       const fullName = String(user?.fullName || '').trim() || String(user?.username || '').trim() || code;
       const username = String(user?.username || '').trim() || '—';
+      const specialBtn = supportsSpecialAccess
+        ? `<button type="button" class="btn ghost" data-action="open-special-access" data-user-code="${escapeHtml(code)}">دسترسی های خاص</button>`
+        : '';
       return `<tr>
         <td>${escapeHtml(String(index + 1))}</td>
         <td>${escapeHtml(fullName)}</td>
         <td><code>${escapeHtml(code)}</code></td>
         <td>${escapeHtml(username)}</td>
         <td>
-          <button type="button" class="btn ghost" data-action="open-task-access" data-user-code="${escapeHtml(code)}">دسترسی‌ها</button>
+          <div class="tc-task-access-actions">
+            <button type="button" class="btn ghost" data-action="open-task-access" data-user-code="${escapeHtml(code)}">دسترسی تسک‌ها</button>
+            ${specialBtn}
+          </div>
         </td>
       </tr>`;
     }).join('');
@@ -230,6 +307,16 @@
       rules[taskId] = { enabled, panes };
     });
     return rules;
+  }
+
+  function collectSpecialAccessFromForm() {
+    if (!supportsSpecialAccess) return defaultInviteesSpecialAccess();
+    return {
+      manageInvitees: specialManageEl.checked,
+      resetInvitee: specialResetEl.checked,
+      revealPassword: specialRevealEl.checked,
+      editInvitee: specialEditEl.checked
+    };
   }
 
   function onTreeChange(event) {
@@ -275,6 +362,36 @@
     }
   }
 
+  function openSpecialModalForUser(userCode) {
+    if (!supportsSpecialAccess) return;
+    const user = findUserByCode(userCode);
+    if (!user) {
+      setUsersTableMessage('کاربر انتخاب‌شده یافت نشد.');
+      return;
+    }
+    state.specialEditingUserCode = normalizeToken(user.code);
+    if (specialModalTitleEl instanceof HTMLElement) {
+      const fullName = String(user.fullName || '').trim() || String(user.username || '').trim() || String(user.code || '');
+      specialModalTitleEl.textContent = `دسترسی‌های خاص · ${fullName}`;
+    }
+    setSpecialStatus('');
+    renderSpecialAccessForm();
+    specialModalEl.classList.remove('hidden');
+    specialModalEl.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeSpecialModal() {
+    if (!supportsSpecialAccess) return;
+    specialModalEl.classList.add('hidden');
+    specialModalEl.setAttribute('aria-hidden', 'true');
+    state.specialEditingUserCode = '';
+    setSpecialStatus('');
+    renderSpecialAccessForm();
+    if (specialModalTitleEl instanceof HTMLElement) {
+      specialModalTitleEl.textContent = 'دسترسی‌های خاص';
+    }
+  }
+
   async function saveCurrentUserRules() {
     const editingUser = getEditingUser();
     if (!editingUser) {
@@ -295,18 +412,53 @@
         ? response.data.rules
         : rules;
       const allowManageTasksTab = normalizeBool(response?.data?.allowManageTasksTab ?? manageTasksToggleEl.checked);
+      const currentSpecial = getUserInviteesSpecialAccess(editingUser.code);
       state.accessByUser[key] = {
         allowManageTasksTab,
-        tasks: normalizedRules
+        tasks: normalizedRules,
+        inviteesSpecialAccess: response?.data?.inviteesSpecialAccess ?? currentSpecial
       };
       setStatus(response?.message || 'دسترسی‌ها ذخیره شد.');
       renderUsersTable();
       renderManageTasksToggle();
       renderTree();
+      renderSpecialAccessForm();
     } catch (error) {
       setStatus(error?.message || 'ذخیره دسترسی‌ها ناموفق بود.', true);
     } finally {
       saveBtnEl.disabled = false;
+    }
+  }
+
+  async function saveCurrentUserSpecialAccess() {
+    if (!supportsSpecialAccess) return;
+    const editingUser = getSpecialEditingUser();
+    if (!editingUser) {
+      setSpecialStatus('ابتدا یک کاربر انتخاب کنید.', true);
+      return;
+    }
+    const inviteesSpecialAccess = collectSpecialAccessFromForm();
+    specialSaveBtnEl.disabled = true;
+    setSpecialStatus('در حال ذخیره...');
+    try {
+      const response = await requestPost('save_user_special_access', {
+        userCode: String(editingUser.code || '').trim(),
+        inviteesSpecialAccess
+      });
+      const key = normalizeToken(editingUser.code);
+      const currentEntry = getUserAccessEntry(editingUser.code);
+      state.accessByUser[key] = {
+        allowManageTasksTab: getUserManageTasksFlag(editingUser.code),
+        tasks: currentEntry.tasks && typeof currentEntry.tasks === 'object' ? currentEntry.tasks : {},
+        inviteesSpecialAccess: response?.data?.inviteesSpecialAccess ?? inviteesSpecialAccess
+      };
+      setSpecialStatus(response?.message || 'دسترسی‌های خاص ذخیره شد.');
+      renderUsersTable();
+      renderSpecialAccessForm();
+    } catch (error) {
+      setSpecialStatus(error?.message || 'ذخیره دسترسی‌های خاص ناموفق بود.', true);
+    } finally {
+      specialSaveBtnEl.disabled = false;
     }
   }
 
@@ -329,10 +481,22 @@
           setStatus('');
         }
       }
+      if (supportsSpecialAccess && !specialModalEl.classList.contains('hidden')) {
+        const editingUser = getSpecialEditingUser();
+        if (!editingUser) {
+          closeSpecialModal();
+        } else {
+          renderSpecialAccessForm();
+          setSpecialStatus('');
+        }
+      }
     } catch (error) {
       setUsersTableMessage('بارگذاری اطلاعات دسترسی تسک‌ها ناموفق بود.');
       if (!modalEl.classList.contains('hidden')) {
         setStatus(error?.message || 'بارگذاری اطلاعات دسترسی تسک‌ها ناموفق بود.', true);
+      }
+      if (supportsSpecialAccess && !specialModalEl.classList.contains('hidden')) {
+        setSpecialStatus(error?.message || 'بارگذاری اطلاعات دسترسی‌های خاص ناموفق بود.', true);
       }
     }
   }
@@ -340,11 +504,18 @@
   usersBodyEl.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const trigger = target.closest('button[data-action="open-task-access"][data-user-code]');
+    const trigger = target.closest('button[data-action][data-user-code]');
     if (!(trigger instanceof HTMLButtonElement)) return;
+    const action = String(trigger.dataset.action || '').trim();
     const userCode = String(trigger.dataset.userCode || '').trim();
     if (!userCode) return;
-    openModalForUser(userCode);
+    if (action === 'open-task-access') {
+      openModalForUser(userCode);
+      return;
+    }
+    if (action === 'open-special-access') {
+      openSpecialModalForUser(userCode);
+    }
   });
 
   closeBtns.forEach((btn) => {
@@ -359,6 +530,24 @@
     }
   });
 
+  if (supportsSpecialAccess) {
+    specialCloseBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        closeSpecialModal();
+      });
+    });
+
+    specialModalEl.addEventListener('click', (event) => {
+      if (event.target === specialModalEl) {
+        closeSpecialModal();
+      }
+    });
+
+    specialSaveBtnEl.addEventListener('click', () => {
+      void saveCurrentUserSpecialAccess();
+    });
+  }
+
   treeEl.addEventListener('change', onTreeChange);
   saveBtnEl.addEventListener('click', () => {
     void saveCurrentUserRules();
@@ -369,5 +558,7 @@
 
   renderManageTasksToggle();
   renderTree();
+  renderSpecialAccessForm();
   void bootstrap();
 })();
+
