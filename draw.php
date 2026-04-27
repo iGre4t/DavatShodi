@@ -18,6 +18,7 @@ const DEFAULT_PANEL_SETTINGS = [
   'siteIcon' => ''
 ];
 const DRAW_TIMEZONE = 'Asia/Tehran';
+const DEFAULT_DRAW_CAPTION = 'قرعه‌کشی مشهد مقدس';
 function loadPanelSettings(): array
 {
   $payload = loadJsonPayload(STORE_PATH);
@@ -103,6 +104,17 @@ if (defined('EVENT_SCOPED_EVENT_CODE')) {
 $drawEventCode = sanitizeEventCode($drawEventCode);
 if ($drawEventCode === '') {
   $drawEventCode = sanitizeEventCode(loadGuestStoreForDraw(GUEST_STORE_PATH)['active_event_code'] ?? '');
+}
+$drawCaption = loadEventDrawCaption(EVENTS_ROOT, $drawEventCode);
+$getAction = strtolower(trim((string)($_GET['draw_action'] ?? '')));
+
+if ($method === 'GET' && $getAction === 'caption') {
+  header('Content-Type: application/json; charset=UTF-8');
+  echo json_encode([
+    'status' => 'ok',
+    'caption' => $drawCaption
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
 }
 
 if ($method === 'POST') {
@@ -528,7 +540,7 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       </div>
     </nav>
     <div class="draw-shell" aria-live="polite">
-      <p class="caption">قرعه‌کشی مشهد مقدس</p>
+      <p id="draw-caption" class="caption"><?= htmlspecialchars($drawCaption, ENT_QUOTES, 'UTF-8') ?></p>
       <p id="code-display" class="code-display" aria-live="polite" aria-label="کد قرعه‌کشی فعلی">
         <?php for ($idx = 0; $idx < 4; $idx++): ?>
           <span class="code-digit code-digit--animating" data-index="<?= $idx ?>"></span>
@@ -550,8 +562,11 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       window.__WINNERS_LIST = window.__WINNERS_LIST || <?= json_encode($winnersList, JSON_UNESCAPED_UNICODE); ?>;
       const EVENT_CODE = <?= json_encode($drawEventCode, JSON_UNESCAPED_UNICODE); ?>;
       const DRAW_API_PATH = 'draw.php' + (EVENT_CODE ? '?event_code=' + encodeURIComponent(EVENT_CODE) : '');
+      const DRAW_CAPTION_REFRESH_MS = 5000;
+      const DRAW_CAPTION_API_PATH = DRAW_API_PATH + (DRAW_API_PATH.includes('?') ? '&' : '?') + 'draw_action=caption';
       const guestPool = Array.isArray(window.__GUEST_POOL) ? window.__GUEST_POOL : [];
       let winnersList = Array.isArray(window.__WINNERS_LIST) ? window.__WINNERS_LIST : [];
+      const drawCaptionEl = document.getElementById('draw-caption');
       const codeDisplay = document.getElementById('code-display');
       const winnerNameEl = document.getElementById('winner-name');
       const startBtn = document.getElementById('start-draw');
@@ -668,6 +683,27 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
       const flashError = (message) => {
         console.error(message);
         confirmBtn.disabled = false;
+      };
+
+      const refreshDrawCaption = async () => {
+        if (!drawCaptionEl) {
+          return;
+        }
+        try {
+          const response = await fetch(`${DRAW_CAPTION_API_PATH}&_ts=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          const payload = await response.json();
+          if (!response.ok || payload?.status !== 'ok') {
+            throw new Error(payload?.message || 'Unable to refresh draw caption.');
+          }
+          const nextCaption = (payload?.caption ?? '').toString().trim();
+          if (nextCaption !== '' && drawCaptionEl.textContent !== nextCaption) {
+            drawCaptionEl.textContent = nextCaption;
+          }
+        } catch (error) {
+          console.error(error);
+        }
       };
 
       const resetWinnersList = async () => {
@@ -814,6 +850,7 @@ $fontBoldUrl = htmlspecialchars(buildPublicAssetUrl('style/fonts/PeydaWebFaNum-B
         startBtn.disabled = true;
       }
       renderWinnerList(winnersList);
+      window.setInterval(refreshDrawCaption, DRAW_CAPTION_REFRESH_MS);
     </script>
   </body>
 </html>
@@ -893,6 +930,36 @@ function buildGuestPool(string $storePath, string $targetEventCode = ''): array
     }
   }
   return $pool;
+}
+
+function resolveEventDrawSettingsPath(string $eventsRoot, string $eventCode): string
+{
+  $eventCode = sanitizeEventCode($eventCode);
+  if ($eventCode === '') {
+    return '';
+  }
+  return rtrim($eventsRoot, '/\\') . '/' . $eventCode . '/draw-settings.json';
+}
+
+function loadEventDrawSettings(string $eventsRoot, string $eventCode): array
+{
+  $path = resolveEventDrawSettingsPath($eventsRoot, $eventCode);
+  if ($path === '' || !is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function loadEventDrawCaption(string $eventsRoot, string $eventCode): string
+{
+  $settings = loadEventDrawSettings($eventsRoot, $eventCode);
+  $caption = trim((string)($settings['caption'] ?? ''));
+  return $caption !== '' ? $caption : DEFAULT_DRAW_CAPTION;
 }
 
 function normalizeSlug(string $value): string

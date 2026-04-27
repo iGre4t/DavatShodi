@@ -2,6 +2,7 @@
 if (!defined('EVENTS_ROOT')) {
   define('EVENTS_ROOT', __DIR__ . '/events');
 }
+const DEFAULT_DRAW_CAPTION = 'قرعه‌کشی مشهد مقدس';
 
 function sanitizeEventCode(string $value): string
 {
@@ -28,6 +29,19 @@ function resolvePrizeCsvPath(string $eventCode): string
     return '';
   }
   return $directory . '/prizelist.csv';
+}
+
+function resolveDrawSettingsPath(string $eventCode): string
+{
+  $code = sanitizeEventCode($eventCode);
+  if ($code === '') {
+    return '';
+  }
+  $directory = ensureEventDirectory($code);
+  if ($directory === '') {
+    return '';
+  }
+  return $directory . '/draw-settings.json';
 }
 
 function respondPrizesJson(array $payload, int $statusCode = 200): void
@@ -91,6 +105,40 @@ function writePrizes(string $path, array $prizes): bool
   return true;
 }
 
+function readDrawSettings(string $path): array
+{
+  if ($path === '' || !is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function writeDrawSettings(string $path, array $settings): bool
+{
+  $dir = dirname($path);
+  if ($dir === '' || (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir))) {
+    return false;
+  }
+  $encoded = json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  if ($encoded === false) {
+    return false;
+  }
+  return file_put_contents($path, $encoded, LOCK_EX) !== false;
+}
+
+function getDrawCaption(string $eventCode): string
+{
+  $settingsPath = resolveDrawSettingsPath($eventCode);
+  $settings = readDrawSettings($settingsPath);
+  $caption = trim((string)($settings['caption'] ?? ''));
+  return $caption !== '' ? $caption : DEFAULT_DRAW_CAPTION;
+}
+
 $eventCode = trim((string)($_REQUEST['event_code'] ?? ''));
 $eventCode = sanitizeEventCode($eventCode);
 if ($eventCode === '') {
@@ -104,10 +152,15 @@ $csvPath = resolvePrizeCsvPath($eventCode);
 if ($csvPath === '') {
   respondPrizesJson(['status' => 'error', 'message' => 'Unable to access event prize list.'], 500);
 }
+$drawSettingsPath = resolveDrawSettingsPath($eventCode);
 $prizes = readPrizes($csvPath);
 switch ($action) {
   case 'list':
-    respondPrizesJson(['status' => 'ok', 'prizes' => $prizes]);
+    respondPrizesJson([
+      'status' => 'ok',
+      'prizes' => $prizes,
+      'draw_caption' => getDrawCaption($eventCode)
+    ]);
     break;
   case 'add':
     $name = trim((string)($_POST['name'] ?? ''));
@@ -120,7 +173,12 @@ switch ($action) {
     if (!writePrizes($csvPath, $prizes)) {
       respondPrizesJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
     }
-    respondPrizesJson(['status' => 'ok', 'message' => 'Prize added.', 'prizes' => readPrizes($csvPath)]);
+    respondPrizesJson([
+      'status' => 'ok',
+      'message' => 'Prize added.',
+      'prizes' => readPrizes($csvPath),
+      'draw_caption' => getDrawCaption($eventCode)
+    ]);
     break;
   case 'update':
     $id = (int)($_POST['id'] ?? 0);
@@ -143,7 +201,12 @@ switch ($action) {
     if (!writePrizes($csvPath, $prizes)) {
       respondPrizesJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
     }
-    respondPrizesJson(['status' => 'ok', 'message' => 'Prize updated.', 'prizes' => readPrizes($csvPath)]);
+    respondPrizesJson([
+      'status' => 'ok',
+      'message' => 'Prize updated.',
+      'prizes' => readPrizes($csvPath),
+      'draw_caption' => getDrawCaption($eventCode)
+    ]);
     break;
   case 'delete':
     $id = (int)($_POST['id'] ?? 0);
@@ -157,7 +220,29 @@ switch ($action) {
     if (!writePrizes($csvPath, array_values($filtered))) {
       respondPrizesJson(['status' => 'error', 'message' => 'Unable to persist the prize list.'], 500);
     }
-    respondPrizesJson(['status' => 'ok', 'message' => 'Prize removed.', 'prizes' => readPrizes($csvPath)]);
+    respondPrizesJson([
+      'status' => 'ok',
+      'message' => 'Prize removed.',
+      'prizes' => readPrizes($csvPath),
+      'draw_caption' => getDrawCaption($eventCode)
+    ]);
+    break;
+  case 'save_draw_caption':
+    $caption = trim((string)($_POST['caption'] ?? ''));
+    if ($caption === '') {
+      respondPrizesJson(['status' => 'error', 'message' => 'Draw title is required.'], 422);
+    }
+    $settings = readDrawSettings($drawSettingsPath);
+    $settings['caption'] = $caption;
+    if ($drawSettingsPath === '' || !writeDrawSettings($drawSettingsPath, $settings)) {
+      respondPrizesJson(['status' => 'error', 'message' => 'Unable to persist the draw title.'], 500);
+    }
+    respondPrizesJson([
+      'status' => 'ok',
+      'message' => 'Draw title saved.',
+      'prizes' => $prizes,
+      'draw_caption' => getDrawCaption($eventCode)
+    ]);
     break;
   default:
     respondPrizesJson(['status' => 'error', 'message' => 'Unknown action.'], 400);

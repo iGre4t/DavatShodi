@@ -232,6 +232,7 @@
               >
                 <div style="display:flex; align-items:center; gap:8px;">
                   <button type="button" class="btn" id="export-sms-link">Export SMS Link</button>
+                  <button type="button" class="btn" id="fill-all-entered-at">Fill all time and date</button>
                   <button type="button" class="btn" id="export-present-guest-list">Export Present Guests List</button>
                 </div>
                 <button type="button" class="btn primary" id="open-manual-modal-event">Add guest manually</button>
@@ -302,6 +303,34 @@
           </div>
         </div>
         <div class="event-section hidden" data-event-section="event-prizes" id="event-prizes-section">
+          <div class="card">
+            <div class="table-header" style="flex-wrap:wrap;">
+              <div>
+                <h3>Draw title</h3>
+                <p class="muted small" style="margin:4px 0 0;">Shown on this event's <code>draw.php</code> page.</p>
+              </div>
+              <form
+                id="event-draw-caption-form"
+                class="form"
+                style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; direction:rtl; min-width:320px;"
+              >
+                <label class="field standard-width" style="flex:1 1 260px; direction:rtl; text-align:right;">
+                  <span>Draw title text</span>
+                  <input
+                    id="event-draw-caption-input"
+                    name="caption"
+                    type="text"
+                    placeholder="قرعه‌کشی مشهد مقدس"
+                    autocomplete="off"
+                    required
+                    style="direction:rtl; text-align:right;"
+                  />
+                </label>
+                <button type="submit" class="btn primary" id="event-draw-caption-save">Save</button>
+              </form>
+            </div>
+            <p id="event-draw-caption-status" class="muted small" aria-live="polite" style="margin:0;"></p>
+          </div>
           <div class="card">
             <div class="card-progress hidden" role="status" aria-live="polite">
               <div class="loader-ring" aria-hidden="true">
@@ -663,6 +692,7 @@
     const manualPhoneInput = document.getElementById("manual-phone");
     const manualEventPaneAddButton = document.getElementById("open-manual-modal-event");
     const exportSmsButton = document.getElementById("export-sms-link");
+    const fillAllEnteredAtButton = document.getElementById("fill-all-entered-at");
     const exportPresentGuestButton = document.getElementById("export-present-guest-list");
     const eventListBody = document.getElementById("guest-event-list-body");
     const eventTabsContainer = document.getElementById("guest-event-tabs");
@@ -681,6 +711,10 @@
     const eventSections = Array.from(guestEventPane?.querySelectorAll("[data-event-section]") || []);
     const eventWinnerListBody = document.getElementById("event-winner-list-body");
     const eventWinnersStatus = document.getElementById("event-winners-status");
+    const eventDrawCaptionForm = document.getElementById("event-draw-caption-form");
+    const eventDrawCaptionInput = document.getElementById("event-draw-caption-input");
+    const eventDrawCaptionSaveButton = document.getElementById("event-draw-caption-save");
+    const eventDrawCaptionStatus = document.getElementById("event-draw-caption-status");
     const eventPrizeForm = document.getElementById("event-prize-add-form");
     const eventPrizeInput = document.getElementById("event-prize-name");
     const eventPrizeAddButton = document.getElementById("event-prize-add-button");
@@ -696,6 +730,7 @@
     let currentSubPane = "guest-upload-pane";
     let cachedWinners = [];
     let winnersLoaded = false;
+    let currentEventDrawCaption = "";
     let eventPrizes = [];
     let currentEventPrizeCode = "";
     let eventPrizeFetchId = 0;
@@ -868,6 +903,11 @@
       renderManualEventOptions();
       renderEventTabs();
       renderGuestTable();
+    }
+
+    function updateBulkGuestActionState() {
+      if (!fillAllEnteredAtButton) return;
+      fillAllEnteredAtButton.disabled = !getActiveGuestEvent();
     }
 
     function renderManualEventOptions(forceEventCode = "") {
@@ -1093,6 +1133,7 @@
 
     function renderGuestTable() {
       if (!guestListBody) return;
+      updateBulkGuestActionState();
       guestListBody.innerHTML = "";
       const events = Array.isArray(state.events) ? state.events : [];
       if (!events.length) {
@@ -1591,6 +1632,29 @@
           exportSmsButton.removeAttribute("disabled");
         }
       });
+
+    fillAllEnteredAtButton?.addEventListener("click", async () => {
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        showErrorSnackbar?.({ message: "Select an event before filling join date and time." });
+        return;
+      }
+      const shouldContinue = window.confirm(
+        `Fill join date and time for all guests in "${activeEvent.name || activeEvent.code || "this event"}"?`
+      );
+      if (!shouldContinue) {
+        return;
+      }
+      fillAllEnteredAtButton.setAttribute("disabled", "disabled");
+      try {
+        const data = await fillAllGuestEnteredAt();
+        showDefaultToast?.(data?.message || "Join date and time filled for all guests.");
+      } catch (error) {
+        showErrorSnackbar?.({ message: error?.message || "Failed to fill join date and time." });
+      } finally {
+        updateBulkGuestActionState();
+      }
+    });
 
     exportPresentGuestButton?.addEventListener("click", async () => {
       exportPresentGuestButton.setAttribute("disabled", "disabled");
@@ -2125,6 +2189,24 @@
       } catch (error) {
         showErrorSnackbar?.({ message: error?.message || "Failed to delete guest." });
       }
+    }
+
+    async function fillAllGuestEnteredAt() {
+      const activeEvent = getActiveGuestEvent();
+      if (!activeEvent) {
+        throw new Error("Select an event before filling join date and time.");
+      }
+      const formData = new FormData();
+      formData.append("action", "fill_all_guest_entered_at");
+      formData.append("event_code", String(activeEvent.code || ""));
+      const response = await fetch("./api/guests.php", { method: "POST", body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status !== "ok") {
+        throw new Error(data?.message || "Failed to fill join date and time.");
+      }
+      state.events = Array.isArray(data.events) ? data.events : state.events;
+      renderGuestTable();
+      return data;
     }
 
     async function deleteEvent(code) {
@@ -2826,6 +2908,27 @@
       }
     }
 
+    function setEventDrawCaptionStatus(message, isError = false) {
+      if (!eventDrawCaptionStatus) return;
+      eventDrawCaptionStatus.textContent = message || "";
+      if (isError) {
+        eventDrawCaptionStatus.style.color = "var(--primary)";
+      } else {
+        eventDrawCaptionStatus.style.color = "";
+      }
+    }
+
+    function syncEventDrawCaptionForm(caption = "", disabled = false) {
+      currentEventDrawCaption = String(caption || "");
+      if (eventDrawCaptionInput) {
+        eventDrawCaptionInput.value = currentEventDrawCaption;
+        eventDrawCaptionInput.disabled = disabled;
+      }
+      if (eventDrawCaptionSaveButton) {
+        eventDrawCaptionSaveButton.disabled = disabled;
+      }
+    }
+
     function renderEventPrizeTable() {
       if (!eventPrizeListBody) return;
       if (!eventPrizes.length) {
@@ -2861,12 +2964,16 @@
       currentEventPrizeCode = String(code || "").trim();
       if (!currentEventPrizeCode) {
         eventPrizes = [];
+        syncEventDrawCaptionForm("", true);
         eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">Select an event to manage prizes.</td></tr>`;
         setEventPrizeStatus("Select an event to view prizes.");
+        setEventDrawCaptionStatus("Select an event to edit the draw title.");
         return;
       }
       const requestId = ++eventPrizeFetchId;
       setEventPrizeStatus("Loading prizes...");
+      setEventDrawCaptionStatus("Loading draw title...");
+      syncEventDrawCaptionForm("", true);
       eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">Loading prizes...</td></tr>`;
       try {
         const params = new URLSearchParams({ prize_action: "list" });
@@ -2882,13 +2989,17 @@
           throw new Error(payload.message || "Unable to load prizes.");
         }
         eventPrizes = Array.isArray(payload.prizes) ? payload.prizes : [];
+        syncEventDrawCaptionForm(payload.draw_caption || "", false);
         renderEventPrizeTable();
         setEventPrizeStatus(eventPrizes.length ? `Loaded ${eventPrizes.length} prize(s).` : "No prizes yet.");
+        setEventDrawCaptionStatus("Draw title loaded.");
       } catch (error) {
         if (requestId !== eventPrizeFetchId) {
           return;
         }
         setEventPrizeStatus(error?.message || "Unable to load prizes.", true);
+        setEventDrawCaptionStatus(error?.message || "Unable to load draw title.", true);
+        syncEventDrawCaptionForm("", true);
         eventPrizeListBody.innerHTML = `<tr><td colspan="3" class="muted">Unable to load prizes.</td></tr>`;
       }
     }
@@ -2913,8 +3024,23 @@
         throw new Error(payload.message || "Unable to save prize changes.");
       }
       eventPrizes = Array.isArray(payload.prizes) ? payload.prizes : eventPrizes;
+      if (Object.prototype.hasOwnProperty.call(payload, "draw_caption")) {
+        syncEventDrawCaptionForm(payload.draw_caption || "", false);
+      }
       renderEventPrizeTable();
-      setEventPrizeStatus(payload.message || "Changes saved.");
+      if (action !== "save_draw_caption") {
+        setEventPrizeStatus(payload.message || "Changes saved.");
+      }
+      return payload;
+    }
+
+    async function saveEventDrawCaption(caption) {
+      if (!currentEventPrizeCode) {
+        setEventDrawCaptionStatus("Select an event before updating the draw title.", true);
+        return;
+      }
+      const payload = await sendEventPrizeAction("save_draw_caption", { caption });
+      setEventDrawCaptionStatus(payload?.message || "Draw title saved.");
       return payload;
     }
 
@@ -3115,6 +3241,31 @@
         setActiveEventSection(button.dataset.eventSectionTarget || "event-info");
       });
       setActiveEventSection("event-info");
+      eventDrawCaptionForm?.addEventListener("submit", async (evt) => {
+        evt.preventDefault();
+        if (!eventDrawCaptionInput) return;
+        const caption = (eventDrawCaptionInput.value || "").trim();
+        if (!caption) {
+          setEventDrawCaptionStatus("Draw title cannot be empty.", true);
+          return;
+        }
+        if (caption === currentEventDrawCaption) {
+          setEventDrawCaptionStatus("No changes to save.");
+          return;
+        }
+        eventDrawCaptionSaveButton?.setAttribute("disabled", "disabled");
+        eventDrawCaptionInput.setAttribute("disabled", "disabled");
+        try {
+          await saveEventDrawCaption(caption);
+        } catch (error) {
+          setEventDrawCaptionStatus(error?.message || "Unable to save the draw title.", true);
+        } finally {
+          if (eventDrawCaptionInput) {
+            eventDrawCaptionInput.removeAttribute("disabled");
+          }
+          eventDrawCaptionSaveButton?.removeAttribute("disabled");
+        }
+      });
       eventPrizeForm?.addEventListener("submit", async (evt) => {
         evt.preventDefault();
         if (!eventPrizeInput) return;
@@ -3185,6 +3336,8 @@
           button.removeAttribute("disabled");
         }
       });
+      syncEventDrawCaptionForm("", true);
+      setEventDrawCaptionStatus("Select an event to edit the draw title.");
       fetchEventWinners();
       cacheInviteCardFieldDefaults();
 

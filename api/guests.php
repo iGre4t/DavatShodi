@@ -440,6 +440,54 @@ if ($method === 'POST') {
             'logs' => normalizeInviteLogs($store['logs'])
         ]);
         exit;
+      } elseif ($action === 'fill_all_guest_entered_at') {
+          $eventCode = trim((string)($_POST['event_code'] ?? ''));
+          if ($eventCode === '') {
+              http_response_code(422);
+              echo json_encode(['status' => 'error', 'message' => 'Event code is required.']);
+              exit;
+          }
+          $store = loadGuestStore($storePath, $eventsRoot);
+          $eventIndex = findEventIndexByCode($store['events'], $eventCode);
+          if ($eventIndex < 0) {
+              http_response_code(404);
+              echo json_encode(['status' => 'error', 'message' => 'Event not found.']);
+              exit;
+          }
+          $nowShamsiParts = formatPersianDateTimeParts(createNowTime());
+          $enteredAt = composeDateTimeString($nowShamsiParts['date'], $nowShamsiParts['time']);
+          $guests = &$store['events'][$eventIndex]['guests'];
+          if (!is_array($guests)) {
+              $guests = [];
+          }
+          foreach ($guests as &$guest) {
+              if (!is_array($guest)) {
+                  $guest = [];
+              }
+              $guest['join_date'] = $nowShamsiParts['date'];
+              $guest['join_time'] = $nowShamsiParts['time'];
+              $guest['date_entered'] = $enteredAt;
+          }
+          unset($guest);
+          $store['events'][$eventIndex]['guest_count'] = count($guests);
+          $store['events'][$eventIndex]['updated_at'] = date('c');
+          if (!syncEventPurelist($store['events'][$eventIndex], $eventsRoot)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to regenerate pure list for the event.']);
+              exit;
+          }
+          if (!saveGuestStore($storePath, $store)) {
+              http_response_code(500);
+              echo json_encode(['status' => 'error', 'message' => 'Failed to persist guest data.']);
+              exit;
+          }
+          echo json_encode([
+              'status' => 'ok',
+              'message' => 'Join date and time filled for all guests.',
+              'events' => normalizeEventsForResponse($store['events']),
+              'logs' => normalizeInviteLogs($store['logs'])
+          ]);
+          exit;
       } elseif ($action === 'delete_guest') {
           $eventCode = trim((string)($_POST['event_code'] ?? ''));
           $number = (int)($_POST['number'] ?? 0);
