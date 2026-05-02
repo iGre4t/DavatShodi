@@ -74,7 +74,9 @@ $inviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
 $loginAttemptsPath = __DIR__ . '/TC Event/login_attempts.json';
 const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
-  'randomOrder' => true
+  'randomOrder' => true,
+  'questionsPerAttempt' => 0,
+  'correctAnswersToScore' => 1
 ];
 
 function readPrizeStore(string $path): array
@@ -390,7 +392,29 @@ function loadWfqSettings(string $path): array
   }
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
+  $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
+  $settings['correctAnswersToScore'] = max(1, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
   return $settings;
+}
+
+function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuestionCount): array
+{
+  $questionsPerAttempt = max(0, (int)($settings['questionsPerAttempt'] ?? TCQ_DEFAULT_SETTINGS['questionsPerAttempt']));
+  $correctAnswersToScore = max(1, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore']));
+  $selectedQuestionCount = $questionsPerAttempt > 0
+    ? min($questionsPerAttempt, max(0, $availableQuestionCount))
+    : max(0, $availableQuestionCount);
+  $resolvedCorrectAnswersToScore = $selectedQuestionCount > 0
+    ? min($correctAnswersToScore, $selectedQuestionCount)
+    : $correctAnswersToScore;
+  return [
+    'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
+    'randomOrder' => (bool)($settings['randomOrder'] ?? true),
+    'questionsPerAttempt' => $questionsPerAttempt,
+    'correctAnswersToScore' => $correctAnswersToScore,
+    'selectedQuestionCount' => $selectedQuestionCount,
+    'resolvedCorrectAnswersToScore' => $resolvedCorrectAnswersToScore
+  ];
 }
 
 function readQuestionColumnsFromStore(string $path): array
@@ -2063,6 +2087,244 @@ function findTaskById(array $tasks, string $taskId): ?array
   return null;
 }
 
+function loadTaskQuizAssets(array $task, string $sharedQuestionsStorePath): array
+{
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+  if ($tagCode === '') {
+    return [
+      'tagCode' => '',
+      'taskDir' => '',
+      'questionsPath' => $sharedQuestionsStorePath,
+      'settingsPath' => '',
+      'answersPath' => '',
+      'questions' => readQuestionStore($sharedQuestionsStorePath),
+      'settings' => TCQ_DEFAULT_SETTINGS
+    ];
+  }
+
+  $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
+  $taskQuestionsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
+  $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ settings.json';
+  $answersPath = $taskDir . DIRECTORY_SEPARATOR . 'Answers.csv';
+  $questions = readQuestionStore($taskQuestionsPath);
+  $resolvedQuestionsPath = $taskQuestionsPath;
+  if (!$questions) {
+    $questions = readQuestionStore($sharedQuestionsStorePath);
+    $resolvedQuestionsPath = $sharedQuestionsStorePath;
+  }
+
+  return [
+    'tagCode' => $tagCode,
+    'taskDir' => $taskDir,
+    'questionsPath' => $resolvedQuestionsPath,
+    'settingsPath' => $settingsPath,
+    'answersPath' => $answersPath,
+    'questions' => $questions,
+    'settings' => loadWfqSettings($settingsPath)
+  ];
+}
+
+function buildQuestionLookupByCode(array $questions): array
+{
+  $lookup = [];
+  foreach ($questions as $question) {
+    if (!is_array($question)) {
+      continue;
+    }
+    $code = strtoupper(trim((string)($question['code'] ?? '')));
+    if ($code === '' || isset($lookup[$code])) {
+      continue;
+    }
+    $lookup[$code] = $question;
+  }
+  return $lookup;
+}
+
+function buildTaskQuizAttemptSessionKey(string $workId, string $taskId): string
+{
+  return trim($workId) . '::' . trim($taskId);
+}
+
+function clearTaskQuizAttemptState(string $workId, string $taskId): void
+{
+  $key = buildTaskQuizAttemptSessionKey($workId, $taskId);
+  if ($key === '') {
+    return;
+  }
+  if (isset($_SESSION['tc_task_quiz_attempts'][$key])) {
+    unset($_SESSION['tc_task_quiz_attempts'][$key]);
+  }
+}
+
+function readTaskQuizAttemptState(string $workId, string $taskId): ?array
+{
+  $key = buildTaskQuizAttemptSessionKey($workId, $taskId);
+  if ($key === '') {
+    return null;
+  }
+  $state = $_SESSION['tc_task_quiz_attempts'][$key] ?? null;
+  if (!is_array($state)) {
+    return null;
+  }
+
+  $questionCodesRaw = is_array($state['questionCodes'] ?? null) ? $state['questionCodes'] : [];
+  $questionCodes = [];
+  foreach ($questionCodesRaw as $code) {
+    $normalizedCode = strtoupper(trim((string)$code));
+    if ($normalizedCode === '' || in_array($normalizedCode, $questionCodes, true)) {
+      continue;
+    }
+    $questionCodes[] = $normalizedCode;
+  }
+
+  $answeredRaw = is_array($state['answered'] ?? null) ? $state['answered'] : [];
+  $answered = [];
+  foreach ($answeredRaw as $code => $entry) {
+    $normalizedCode = strtoupper(trim((string)$code));
+    if ($normalizedCode === '' || !in_array($normalizedCode, $questionCodes, true)) {
+      continue;
+    }
+    $answered[$normalizedCode] = [
+      'answer' => trim((string)($entry['answer'] ?? '')),
+      'correct' => !empty($entry['correct']),
+      'answeredAt' => (int)($entry['answeredAt'] ?? 0)
+    ];
+  }
+
+  $requiredCorrectAnswers = max(1, (int)($state['requiredCorrectAnswers'] ?? 1));
+  $correctCount = 0;
+  foreach ($answered as $entry) {
+    if (!empty($entry['correct'])) {
+      $correctCount += 1;
+    }
+  }
+  if ($questionCodes) {
+    $requiredCorrectAnswers = min($requiredCorrectAnswers, count($questionCodes));
+  }
+
+  return [
+    'questionCodes' => $questionCodes,
+    'requiredCorrectAnswers' => $requiredCorrectAnswers,
+    'correctCount' => $correctCount,
+    'answered' => $answered,
+    'startedAt' => (int)($state['startedAt'] ?? 0)
+  ];
+}
+
+function writeTaskQuizAttemptState(string $workId, string $taskId, array $state): void
+{
+  $key = buildTaskQuizAttemptSessionKey($workId, $taskId);
+  if ($key === '') {
+    return;
+  }
+  if (!isset($_SESSION['tc_task_quiz_attempts']) || !is_array($_SESSION['tc_task_quiz_attempts'])) {
+    $_SESSION['tc_task_quiz_attempts'] = [];
+  }
+  $_SESSION['tc_task_quiz_attempts'][$key] = [
+    'questionCodes' => array_values(array_map(static fn($code) => strtoupper(trim((string)$code)), is_array($state['questionCodes'] ?? null) ? $state['questionCodes'] : [])),
+    'requiredCorrectAnswers' => max(1, (int)($state['requiredCorrectAnswers'] ?? 1)),
+    'answered' => is_array($state['answered'] ?? null) ? $state['answered'] : [],
+    'startedAt' => (int)($state['startedAt'] ?? time())
+  ];
+}
+
+function startTaskQuizAttempt(string $workId, string $taskId, array $questions, array $settings): array
+{
+  $runtimeSettings = resolveTaskQuizSettingsForAttempt($settings, count($questions));
+  $selectedQuestions = array_values($questions);
+  if ($runtimeSettings['randomOrder']) {
+    shuffle($selectedQuestions);
+  }
+  if ($runtimeSettings['questionsPerAttempt'] > 0) {
+    $selectedQuestions = array_slice($selectedQuestions, 0, $runtimeSettings['selectedQuestionCount']);
+  }
+  $questionCodes = array_values(array_map(
+    static fn($question) => strtoupper(trim((string)($question['code'] ?? ''))),
+    $selectedQuestions
+  ));
+  $questionCodes = array_values(array_filter($questionCodes, static fn($code) => $code !== ''));
+  $requiredCorrectAnswers = $questionCodes
+    ? min($runtimeSettings['resolvedCorrectAnswersToScore'], count($questionCodes))
+    : $runtimeSettings['resolvedCorrectAnswersToScore'];
+  writeTaskQuizAttemptState($workId, $taskId, [
+    'questionCodes' => $questionCodes,
+    'requiredCorrectAnswers' => $requiredCorrectAnswers,
+    'answered' => [],
+    'startedAt' => time()
+  ]);
+  $runtimeSettings['selectedQuestionCount'] = count($selectedQuestions);
+  $runtimeSettings['resolvedCorrectAnswersToScore'] = $requiredCorrectAnswers;
+  return [
+    'questions' => $selectedQuestions,
+    'settings' => $runtimeSettings
+  ];
+}
+
+function isTaskQuizAnswerCorrect(array $question, string $answer): bool
+{
+  $type = strtolower(trim((string)($question['type'] ?? 'mcq')));
+  if ($type === 'percentage') {
+    return preg_match('/^\d{1,3}$/', trim($answer)) === 1;
+  }
+  $answers = is_array($question['answers'] ?? null) ? array_values($question['answers']) : [];
+  $correctAnswer = trim((string)($answers[0] ?? ''));
+  return $correctAnswer !== '' && trim($answer) === $correctAnswer;
+}
+
+function recordTaskQuizAttemptAnswer(array $attemptState, string $questionCode, string $answer, array $questionLookup): array
+{
+  $normalizedCode = strtoupper(trim($questionCode));
+  if ($normalizedCode === '' || !in_array($normalizedCode, $attemptState['questionCodes'], true)) {
+    return [
+      'ok' => false,
+      'message' => 'این سوال در تلاش فعلی این ماموریت وجود ندارد.'
+    ];
+  }
+  if (!isset($questionLookup[$normalizedCode]) || !is_array($questionLookup[$normalizedCode])) {
+    return [
+      'ok' => false,
+      'message' => 'سوال ماموریت پیدا نشد.'
+    ];
+  }
+
+  $answered = is_array($attemptState['answered'] ?? null) ? $attemptState['answered'] : [];
+  if (isset($answered[$normalizedCode]) && is_array($answered[$normalizedCode])) {
+    $correctCount = 0;
+    foreach ($answered as $entry) {
+      if (!empty($entry['correct'])) {
+        $correctCount += 1;
+      }
+    }
+    return [
+      'ok' => true,
+      'state' => $attemptState,
+      'wasCorrect' => !empty($answered[$normalizedCode]['correct']),
+      'correctCount' => $correctCount
+    ];
+  }
+
+  $wasCorrect = isTaskQuizAnswerCorrect($questionLookup[$normalizedCode], $answer);
+  $answered[$normalizedCode] = [
+    'answer' => trim($answer),
+    'correct' => $wasCorrect,
+    'answeredAt' => time()
+  ];
+  $attemptState['answered'] = $answered;
+  $correctCount = 0;
+  foreach ($answered as $entry) {
+    if (!empty($entry['correct'])) {
+      $correctCount += 1;
+    }
+  }
+  $attemptState['correctCount'] = $correctCount;
+  return [
+    'ok' => true,
+    'state' => $attemptState,
+    'wasCorrect' => $wasCorrect,
+    'correctCount' => $correctCount
+  ];
+}
+
 function parseTaskCompletedIds(string $raw): array
 {
   $parts = preg_split('/\s*,\s*/', trim($raw));
@@ -3602,17 +3864,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
     $available = $status === 'active' || ($taskType === 'quiz' && $status === 'ended');
-    $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
-    $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
-    $questionPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
-    $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ settings.json';
-    $questions = readQuestionStore($questionPath);
-    if (!$questions) {
-      // Backward compatibility: use shared questions if task-specific file is empty.
-      $questions = readQuestionStore($questionsStorePath);
-    }
-    $settings = loadWfqSettings($settingsPath);
+    $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
+    $tagCode = (string)($quizAssets['tagCode'] ?? '');
+    $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
+    $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : TCQ_DEFAULT_SETTINGS;
     $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if ($taskType !== 'quiz' || !$available || !empty($progress['completed'])) {
+      clearTaskQuizAttemptState($sessionWorkId, $taskId);
+    }
+    $questionsPayload = $questions;
+    $settingsPayload = $settings;
+    if ($taskType === 'quiz' && $available && empty($progress['completed'])) {
+      $attempt = startTaskQuizAttempt($sessionWorkId, $taskId, $questions, $settings);
+      $questionsPayload = is_array($attempt['questions'] ?? null) ? $attempt['questions'] : [];
+      $settingsPayload = is_array($attempt['settings'] ?? null) ? $attempt['settings'] : $settings;
+    }
     $describePhotos = [];
     $teamContext = null;
     if ($taskType === 'describe_photo' && $available) {
@@ -3648,8 +3914,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'teamContext' => $teamContext,
         'describePhotos' => $describePhotos
       ],
-      'questions' => $questions,
-      'settings' => $settings,
+      'questions' => $questionsPayload,
+      'settings' => $settingsPayload,
       'progress' => $progress
     ]);
     exit;
@@ -3666,7 +3932,73 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
       exit;
     }
-    echo json_encode(['status' => 'ok']);
+
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    $questionCode = strtoupper(trim((string)($payload['questionCode'] ?? '')));
+    $questionText = trim((string)($payload['question'] ?? ''));
+    $answer = trim((string)($payload['answer'] ?? ''));
+    if ($taskId === '' || $questionCode === '' || $questionText === '') {
+      echo json_encode(['status' => 'error', 'message' => 'اطلاعات پاسخ کامل نیست.']);
+      exit;
+    }
+
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task)) {
+      echo json_encode(['status' => 'error', 'message' => 'ماموریت پیدا نشد.']);
+      exit;
+    }
+    $sessionIsAdmin = isInviteeAdmin($inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if (!canUserAccessTaskByRole($task, $sessionIsAdmin)) {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در فاز توسعه است و فقط برای ادمین‌ها قابل مشاهده است.']);
+      exit;
+    }
+
+    $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+    if ($taskType !== 'quiz') {
+      echo json_encode(['status' => 'ok']);
+      exit;
+    }
+
+    $taskStatus = deriveTaskAvailabilityStatus($task);
+    if ($taskStatus !== 'active' && $taskStatus !== 'ended') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در حال حاضر فعال نیست.']);
+      exit;
+    }
+
+    $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
+    $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
+    $questionLookup = buildQuestionLookupByCode($questions);
+    $attemptState = readTaskQuizAttemptState($sessionWorkId, $taskId);
+    if (!is_array($attemptState) || !($attemptState['questionCodes'] ?? [])) {
+      echo json_encode(['status' => 'error', 'message' => 'تلاش فعلی ماموریت منقضی شده است. دوباره وارد ماموریت شوید.']);
+      exit;
+    }
+
+    $recorded = recordTaskQuizAttemptAnswer($attemptState, $questionCode, $answer, $questionLookup);
+    if (!($recorded['ok'] ?? false)) {
+      echo json_encode(['status' => 'error', 'message' => (string)($recorded['message'] ?? 'ثبت پاسخ ناموفق بود.')]);
+      exit;
+    }
+
+    $nextState = is_array($recorded['state'] ?? null) ? $recorded['state'] : $attemptState;
+    writeTaskQuizAttemptState($sessionWorkId, $taskId, $nextState);
+
+    $answersPath = (string)($quizAssets['answersPath'] ?? '');
+    $questionsPath = (string)($quizAssets['questionsPath'] ?? '');
+    if ($answersPath !== '' && $questionsPath !== '') {
+      logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $questionText, $answer);
+    }
+
+    $requiredCorrectAnswers = max(1, (int)($nextState['requiredCorrectAnswers'] ?? 1));
+    $correctCount = max(0, (int)($recorded['correctCount'] ?? 0));
+    echo json_encode([
+      'status' => 'ok',
+      'wasCorrect' => !empty($recorded['wasCorrect']),
+      'correctCount' => $correctCount,
+      'requiredCorrectAnswers' => $requiredCorrectAnswers,
+      'attemptCompleted' => $correctCount >= $requiredCorrectAnswers
+    ]);
     exit;
   }
 
@@ -4532,6 +4864,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'This task is not available right now.']);
       exit;
     }
+    if ($taskType === 'quiz') {
+      $attemptState = readTaskQuizAttemptState($sessionWorkId, $taskId);
+      if (!is_array($attemptState) || !($attemptState['questionCodes'] ?? [])) {
+        echo json_encode(['status' => 'error', 'message' => 'تلاش فعلی ماموریت منقضی شده است. دوباره وارد ماموریت شوید.']);
+        exit;
+      }
+      $requiredCorrectAnswers = max(1, (int)($attemptState['requiredCorrectAnswers'] ?? 1));
+      $correctCount = max(0, (int)($attemptState['correctCount'] ?? 0));
+      if ($correctCount < $requiredCorrectAnswers) {
+        echo json_encode(['status' => 'error', 'message' => 'تعداد پاسخ‌های صحیح هنوز برای ثبت امتیاز کافی نیست.']);
+        exit;
+      }
+    }
 
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
     $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
@@ -4568,6 +4913,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
 
     if (in_array($taskId, $completedTaskIds, true)) {
+      clearTaskQuizAttemptState($sessionWorkId, $taskId);
       echo json_encode([
         'status' => 'ok',
         'alreadyCompleted' => true,
@@ -4592,6 +4938,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
+    clearTaskQuizAttemptState($sessionWorkId, $taskId);
     echo json_encode([
       'status' => 'ok',
       'alreadyCompleted' => false,
@@ -5241,7 +5588,9 @@ $sessionPayload = [
   'answered' => $sessionAnswered,
   'taskTotalScore' => $sessionTaskTotalScore,
   'answerTimeLimit' => (bool)($tcqSettingsForPayload['answerTimeLimit'] ?? true),
-  'randomOrder' => (bool)($tcqSettingsForPayload['randomOrder'] ?? true)
+  'randomOrder' => (bool)($tcqSettingsForPayload['randomOrder'] ?? true),
+  'questionsPerAttempt' => max(0, (int)($tcqSettingsForPayload['questionsPerAttempt'] ?? 0)),
+  'correctAnswersToScore' => max(1, (int)($tcqSettingsForPayload['correctAnswersToScore'] ?? 1))
 ];
 ?>
 <!doctype html>
@@ -9126,6 +9475,8 @@ $sessionPayload = [
         let currentTaskType = 'quiz';
         let currentQuestions = [];
         let currentQuestionIndex = 0;
+        let currentCorrectAnswers = 0;
+        let currentRequiredCorrectAnswers = 1;
         let infoTaskViewOpen = false;
         let infoTaskCurrentStep = 'info';
         let describePhotoChoices = [];
@@ -9933,6 +10284,8 @@ $sessionPayload = [
           currentTaskType = 'quiz';
           currentQuestions = [];
           currentQuestionIndex = 0;
+          currentCorrectAnswers = 0;
+          currentRequiredCorrectAnswers = 1;
           describePhotoChoices = [];
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
@@ -11726,15 +12079,28 @@ $sessionPayload = [
           const questionCode = String(item?.code ?? '').trim();
           const questionText = String(item?.question ?? '').trim();
           if (!questionCode || !questionText) return;
-          try {
-            await postJson({
-              action: 'task_log_answer',
-              taskId: currentTaskId,
-              questionCode,
-              question: questionText,
-              answer: String(answerText ?? '').trim()
-            });
-          } catch {}
+          return postJson({
+            action: 'task_log_answer',
+            taskId: currentTaskId,
+            questionCode,
+            question: questionText,
+            answer: String(answerText ?? '').trim()
+          });
+        };
+
+        const syncQuizAttemptProgress = (payload, fallbackIsCorrect = false) => {
+          const required = Math.max(1, Number.parseInt(String(payload?.requiredCorrectAnswers ?? currentRequiredCorrectAnswers ?? 1), 10) || 1);
+          const fallbackCount = fallbackIsCorrect ? (currentCorrectAnswers + 1) : currentCorrectAnswers;
+          const correctCount = Math.max(0, Number.parseInt(String(payload?.correctCount ?? fallbackCount ?? 0), 10) || 0);
+          currentRequiredCorrectAnswers = required;
+          currentCorrectAnswers = Math.min(correctCount, required);
+        };
+
+        const resolveQuizFailureMessage = () => {
+          if (currentRequiredCorrectAnswers > 1) {
+            return 'تعداد پاسخ‌های صحیح برای ثبت امتیاز کافی نبود. دوباره تلاش کنید.';
+          }
+          return 'این مرحله بدون پاسخ صحیح تمام شد. دوباره تلاش کنید.';
         };
 
         const completeCurrentTask = async (item, answerText = '') => {
@@ -11781,7 +12147,7 @@ $sessionPayload = [
           quizLocked = false;
           if (currentQuestionIndex >= currentQuestions.length) {
             closeQuizOverlay();
-            openTaskResultDialog(0, 'این مرحله بدون پاسخ صحیح تمام شد. دوباره تلاش کنید.');
+            openTaskResultDialog(0, resolveQuizFailureMessage());
             return;
           }
           renderQuizQuestion();
@@ -11791,7 +12157,14 @@ $sessionPayload = [
           if (quizLocked) return;
           quizLocked = true;
           const item = currentQuestions[currentQuestionIndex] || null;
-          await sendTaskAnswer(item, '');
+          try {
+            const payload = await sendTaskAnswer(item, '');
+            syncQuizAttemptProgress(payload, false);
+          } catch (error) {
+            closeQuizOverlay();
+            openTaskResultDialog(0, error?.message || 'ثبت پاسخ ناموفق بود.');
+            return;
+          }
           setTimeout(() => {
             continueQuiz();
           }, QUIZ_FEEDBACK_DELAY_MS);
@@ -11826,14 +12199,27 @@ $sessionPayload = [
             }
           });
 
-          await sendTaskAnswer(item, answerText);
+          let answerPayload;
+          try {
+            answerPayload = await sendTaskAnswer(item, answerText);
+          } catch (error) {
+            closeQuizOverlay();
+            openTaskResultDialog(0, error?.message || 'ثبت پاسخ ناموفق بود.');
+            return;
+          }
+          syncQuizAttemptProgress(answerPayload, isCorrect);
+          const wasCorrect = Boolean(answerPayload?.wasCorrect ?? isCorrect);
 
-          if (isCorrect) {
+          if (wasCorrect) {
             if (button instanceof HTMLButtonElement) {
               button.classList.add('is-correct');
             }
             setTimeout(() => {
-              void completeCurrentTask(item, answerText);
+              if (currentCorrectAnswers >= currentRequiredCorrectAnswers) {
+                void completeCurrentTask(item, answerText);
+                return;
+              }
+              continueQuiz();
             }, QUIZ_FEEDBACK_DELAY_MS);
             return;
           }
@@ -11858,13 +12244,25 @@ $sessionPayload = [
           quizLocked = true;
           clearQuizTimer();
           const value = Math.max(0, Math.min(100, Number.parseInt(slider.value || '0', 10)));
-          await sendTaskAnswer(item, String(value));
+          let answerPayload;
+          try {
+            answerPayload = await sendTaskAnswer(item, String(value));
+          } catch (error) {
+            closeQuizOverlay();
+            openTaskResultDialog(0, error?.message || 'ثبت پاسخ ناموفق بود.');
+            return;
+          }
+          syncQuizAttemptProgress(answerPayload, Boolean(answerPayload?.wasCorrect ?? true));
           if (submitButton instanceof HTMLButtonElement) {
             submitButton.classList.add('is-correct');
             submitButton.disabled = true;
           }
           setTimeout(() => {
-            void completeCurrentTask(item, String(value));
+            if (currentCorrectAnswers >= currentRequiredCorrectAnswers) {
+              void completeCurrentTask(item, String(value));
+              return;
+            }
+            continueQuiz();
           }, QUIZ_FEEDBACK_DELAY_MS);
         };
 
@@ -11884,7 +12282,12 @@ $sessionPayload = [
             return;
           }
 
-          quizCounterEl.textContent = `${currentQuestionIndex + 1} / ${total}`;
+          const baseCounter = `${currentQuestionIndex + 1} / ${total}`;
+          if (currentRequiredCorrectAnswers > 1) {
+            quizCounterEl.textContent = `${baseCounter} | ${currentCorrectAnswers} / ${currentRequiredCorrectAnswers} صحیح`;
+          } else {
+            quizCounterEl.textContent = baseCounter;
+          }
           quizQuestionEl.textContent = String(item.question || '').trim() || '-';
           quizAnswersEl.innerHTML = '';
           quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
@@ -12031,23 +12434,22 @@ $sessionPayload = [
               return;
             }
 
-            const randomOrder = Boolean(payload?.settings?.randomOrder ?? true);
-            const nextQuestions = normalizedQuestions.slice();
-            if (randomOrder) {
-              for (let i = nextQuestions.length - 1; i > 0; i -= 1) {
-                const j = Math.floor(Math.random() * (i + 1));
-                const tmp = nextQuestions[i];
-                nextQuestions[i] = nextQuestions[j];
-                nextQuestions[j] = tmp;
-              }
-            }
-
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
             pushInPageHistoryState();
             currentTaskId = taskId;
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
-            currentQuestions = nextQuestions;
+            currentTaskType = 'quiz';
+            currentQuestions = normalizedQuestions.slice();
             currentQuestionIndex = 0;
+            currentCorrectAnswers = 0;
+            currentRequiredCorrectAnswers = Math.max(
+              1,
+              Number.parseInt(String(
+                payload?.settings?.resolvedCorrectAnswersToScore
+                ?? payload?.settings?.correctAnswersToScore
+                ?? 1
+              ), 10) || 1
+            );
             quizLocked = false;
             closeTaskResultDialog();
             openQuizOverlay();

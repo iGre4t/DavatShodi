@@ -2074,7 +2074,9 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
     'TCQ code state.json' => ['nextNumber' => 1],
     'TCQ settings.json' => [
       'answerTimeLimit' => true,
-      'randomOrder' => true
+      'randomOrder' => true,
+      'questionsPerAttempt' => 0,
+      'correctAnswersToScore' => 1
     ],
     TCT_SCORE_SETTINGS_FILE => [
       'score' => 0,

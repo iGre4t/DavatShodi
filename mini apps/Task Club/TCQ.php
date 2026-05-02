@@ -20,7 +20,9 @@ $tcqTaskTagCode = '';
 $tcqTaskTitle = '';
 const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
-  'randomOrder' => true
+  'randomOrder' => true,
+  'questionsPerAttempt' => 0,
+  'correctAnswersToScore' => 1
 ];
 
 function tcqReadCsv(string $path): array
@@ -189,6 +191,8 @@ function tcqLoadSettings(string $path): array
   }
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
+  $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
+  $settings['correctAnswersToScore'] = max(1, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
   return $settings;
 }
 
@@ -200,7 +204,9 @@ function tcqSaveSettings(string $path, array $settings): bool
   }
   $payload = [
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
-    'randomOrder' => (bool)($settings['randomOrder'] ?? true)
+    'randomOrder' => (bool)($settings['randomOrder'] ?? true),
+    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0)),
+    'correctAnswersToScore' => max(1, (int)($settings['correctAnswersToScore'] ?? 1))
   ];
   $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
@@ -542,9 +548,23 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
   if ($action === 'save_settings') {
     $answerTimeLimitRaw = trim((string)($_POST['answer_time_limit'] ?? '1'));
     $randomOrderRaw = trim((string)($_POST['random_order'] ?? '1'));
+    $questionsPerAttemptRaw = trim((string)($_POST['questions_per_attempt'] ?? '0'));
+    $correctAnswersToScoreRaw = trim((string)($_POST['correct_answers_to_score'] ?? '1'));
+    if (!preg_match('/^\d+$/', $questionsPerAttemptRaw) || !preg_match('/^\d+$/', $correctAnswersToScoreRaw)) {
+      echo json_encode(['status' => 'error', 'message' => 'Question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
+    $correctAnswersToScore = max(1, (int)$correctAnswersToScoreRaw);
+    if ($questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
+      echo json_encode(['status' => 'error', 'message' => 'Required correct answers cannot be greater than questions per attempt.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $settings = [
       'answerTimeLimit' => in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
-      'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true)
+      'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true),
+      'questionsPerAttempt' => $questionsPerAttempt,
+      'correctAnswersToScore' => $correctAnswersToScore
     ];
     if (!tcqSaveSettings($tcqSettingsPath, $settings)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save general settings.'], JSON_UNESCAPED_UNICODE);
@@ -655,6 +675,14 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <span>Random Order</span>
       <input id="tcq-setting-random-order" type="checkbox" checked />
     </label>
+    <label class="tcq-settings-row">
+      <span>Questions Per Attempt (0 = All)</span>
+      <input id="tcq-setting-questions-per-attempt" type="number" min="0" step="1" value="0" />
+    </label>
+    <label class="tcq-settings-row">
+      <span>Correct Answers For Score</span>
+      <input id="tcq-setting-correct-answers-to-score" type="number" min="1" step="1" value="1" />
+    </label>
   </div>
   <div class="tcq-settings-actions">
     <button id="tcq-save-settings" type="button" class="btn primary">Save General Settings</button>
@@ -751,6 +779,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const saveAllBtn = document.getElementById('tcq-save-all');
   const answerTimeLimitToggle = document.getElementById('tcq-setting-answer-time-limit');
   const randomOrderToggle = document.getElementById('tcq-setting-random-order');
+  const questionsPerAttemptInput = document.getElementById('tcq-setting-questions-per-attempt');
+  const correctAnswersToScoreInput = document.getElementById('tcq-setting-correct-answers-to-score');
   const saveSettingsBtn = document.getElementById('tcq-save-settings');
   const settingsStatusEl = document.getElementById('tcq-settings-status');
   const formAnswerGrid = document.getElementById('tcq-answer-grid');
@@ -806,9 +836,18 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   };
 
   const applySettingsToForm = (settings) => {
-    if (!(answerTimeLimitToggle instanceof HTMLInputElement) || !(randomOrderToggle instanceof HTMLInputElement)) return;
+    if (
+      !(answerTimeLimitToggle instanceof HTMLInputElement)
+      || !(randomOrderToggle instanceof HTMLInputElement)
+      || !(questionsPerAttemptInput instanceof HTMLInputElement)
+      || !(correctAnswersToScoreInput instanceof HTMLInputElement)
+    ) {
+      return;
+    }
     answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
     randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
+    questionsPerAttemptInput.value = String(Math.max(0, Number.parseInt(String(settings?.questionsPerAttempt ?? 0), 10) || 0));
+    correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 1));
   };
 
   const validateAll = () => {
@@ -1118,12 +1157,27 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
 
   if (saveSettingsBtn instanceof HTMLButtonElement) {
     saveSettingsBtn.addEventListener('click', async () => {
-      if (!(answerTimeLimitToggle instanceof HTMLInputElement) || !(randomOrderToggle instanceof HTMLInputElement)) return;
+      if (
+        !(answerTimeLimitToggle instanceof HTMLInputElement)
+        || !(randomOrderToggle instanceof HTMLInputElement)
+        || !(questionsPerAttemptInput instanceof HTMLInputElement)
+        || !(correctAnswersToScoreInput instanceof HTMLInputElement)
+      ) {
+        return;
+      }
+      const questionsPerAttempt = Math.max(0, Number.parseInt(questionsPerAttemptInput.value || '0', 10) || 0);
+      const correctAnswersToScore = Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 1);
+      if (questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
+        setSettingsStatus('Required correct answers cannot be greater than questions per attempt.', true);
+        return;
+      }
       saveSettingsBtn.disabled = true;
       try {
         const data = await postAction('save_settings', {
           answer_time_limit: answerTimeLimitToggle.checked ? '1' : '0',
-          random_order: randomOrderToggle.checked ? '1' : '0'
+          random_order: randomOrderToggle.checked ? '1' : '0',
+          questions_per_attempt: String(questionsPerAttempt),
+          correct_answers_to_score: String(correctAnswersToScore)
         });
         applySettingsToForm(data.settings || {});
         setSettingsStatus(data.message || 'General settings saved.');

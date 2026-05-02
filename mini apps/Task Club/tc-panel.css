@@ -502,6 +502,12 @@
   background: #ffffff;
 }
 
+.tc-shell .tcq-settings-row input[type="number"] {
+  width: 110px;
+  text-align: center;
+  direction: ltr;
+}
+
 .tc-shell .tcq-settings-actions {
   display: flex;
   justify-content: flex-end;
