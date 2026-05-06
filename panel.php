@@ -111,6 +111,17 @@ $_SESSION['user'] = array_merge($sessionUser, $currentUser, [
 $tabCatalog = getPanelTabOptionsForFrontend();
 $permissionTree = getPanelPermissionTreeForFrontend();
 $childPermissionMap = getPanelChildTabIdsByParent();
+$taskClubCreatorEnabled = in_array('task-club', $allowedTabs, true);
+$panelTabCatalog = $tabCatalog;
+$panelAllowedTabs = array_values($allowedTabs);
+if ($taskClubCreatorEnabled) {
+  $panelTabCatalog[] = [
+    'id' => 'task-club-creator',
+    'label' => 'ساخت باشگاه تعاملی',
+    'title' => 'ساخت باشگاه تعاملی'
+  ];
+  $panelAllowedTabs[] = 'task-club-creator';
+}
 $sidebarName = normalizeUserValue($currentUser['fullname'] ?? '');
 if ($sidebarName === '') {
   $sidebarName = normalizeUserValue($currentUser['username'] ?? '') ?: 'Admin';
@@ -199,7 +210,7 @@ $accountEmail = $currentUser['email'] ?? '';
               <span>تنظیمات حساب</span>
             </button>
           <?php endif; ?>
-          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('task-club', $allowedTabs, true) || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
+          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || $taskClubCreatorEnabled || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
             <div class="nav-separator" aria-hidden="true"></div>
           <?php endif; ?>
           <?php if (in_array('features', $allowedTabs, true)): ?>
@@ -219,6 +230,12 @@ $accountEmail = $currentUser['email'] ?? '';
             <button class="nav-item<?= $initialTab === 'task-club' ? ' active' : '' ?>" data-tab="task-club"<?= $initialTab === 'task-club' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-group-line" aria-hidden="true"></span>
               <span>باشگاه تعاملی</span>
+            </button>
+          <?php endif; ?>
+          <?php if ($taskClubCreatorEnabled): ?>
+            <button class="nav-item<?= $initialTab === 'task-club-creator' ? ' active' : '' ?>" data-tab="task-club-creator"<?= $initialTab === 'task-club-creator' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-add-circle-line" aria-hidden="true"></span>
+              <span>ساخت باشگاه تعاملی</span>
             </button>
           <?php endif; ?>
           <?php if (in_array('asset-manager', $allowedTabs, true)): ?>
@@ -395,6 +412,13 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-task-club"
             class="tab<?= $initialTab === 'task-club' ? ' active' : '' ?>"
             data-tab-source="mini%20apps/Task%20Club/TC%20Panel.php"
+          ></section>
+        <?php endif; ?>
+        <?php if ($taskClubCreatorEnabled): ?>
+          <section
+            id="tab-task-club-creator"
+            class="tab<?= $initialTab === 'task-club-creator' ? ' active' : '' ?>"
+            data-tab-source="mini%20apps/Task%20Club/TCCreator.php"
           ></section>
         <?php endif; ?>
         <?php if (in_array('devsettings', $allowedTabs, true)): ?>
@@ -943,9 +967,9 @@ $accountEmail = $currentUser['email'] ?? '';
     <script>
       window.__CURRENT_USER_NAME = <?= json_encode($topbarUserName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.__CURRENT_USER_CODE = <?= json_encode($userCode, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
-      window.PANEL_TAB_CATALOG = <?= json_encode($tabCatalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.PANEL_TAB_CATALOG = <?= json_encode($panelTabCatalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_CHILD_TAB_MAP = <?= json_encode($childPermissionMap, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
-      window.PANEL_ALLOWED_TABS = <?= json_encode(array_values($allowedTabs), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.PANEL_ALLOWED_TABS = <?= json_encode($panelAllowedTabs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_INITIAL_TAB = <?= json_encode($initialTab, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     </script>
     <script src="mini%20apps/Asset%20Manager/assets-manager.js"></script>

@@ -192,7 +192,7 @@ function tcqLoadSettings(string $path): array
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
   $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
-  $settings['correctAnswersToScore'] = max(1, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
+  $settings['correctAnswersToScore'] = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
   return $settings;
 }
 
@@ -206,7 +206,7 @@ function tcqSaveSettings(string $path, array $settings): bool
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0)),
-    'correctAnswersToScore' => max(1, (int)($settings['correctAnswersToScore'] ?? 1))
+    'correctAnswersToScore' => max(0, (int)($settings['correctAnswersToScore'] ?? 1))
   ];
   $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
@@ -555,8 +555,8 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       exit;
     }
     $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
-    $correctAnswersToScore = max(1, (int)$correctAnswersToScoreRaw);
-    if ($questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
+    $correctAnswersToScore = max(0, (int)$correctAnswersToScoreRaw);
+    if ($questionsPerAttempt > 0 && $correctAnswersToScore > 0 && $correctAnswersToScore > $questionsPerAttempt) {
       echo json_encode(['status' => 'error', 'message' => 'Required correct answers cannot be greater than questions per attempt.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -680,8 +680,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <input id="tcq-setting-questions-per-attempt" type="number" min="0" step="1" value="0" />
     </label>
     <label class="tcq-settings-row">
-      <span>Correct Answers For Score</span>
-      <input id="tcq-setting-correct-answers-to-score" type="number" min="1" step="1" value="1" />
+      <span>Correct Answers For Score (0 = Proportional)</span>
+      <input id="tcq-setting-correct-answers-to-score" type="number" min="0" step="1" value="1" />
     </label>
   </div>
   <div class="tcq-settings-actions">
@@ -847,7 +847,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
     randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
     questionsPerAttemptInput.value = String(Math.max(0, Number.parseInt(String(settings?.questionsPerAttempt ?? 0), 10) || 0));
-    correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 1));
+    correctAnswersToScoreInput.value = String(Math.max(0, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
   };
 
   const validateAll = () => {
@@ -1166,8 +1166,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
         return;
       }
       const questionsPerAttempt = Math.max(0, Number.parseInt(questionsPerAttemptInput.value || '0', 10) || 0);
-      const correctAnswersToScore = Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 1);
-      if (questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
+      const correctAnswersToScore = Math.max(0, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0);
+      if (questionsPerAttempt > 0 && correctAnswersToScore > 0 && correctAnswersToScore > questionsPerAttempt) {
         setSettingsStatus('Required correct answers cannot be greater than questions per attempt.', true);
         return;
       }

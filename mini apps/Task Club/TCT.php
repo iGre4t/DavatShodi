@@ -1431,7 +1431,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
     $task['score'] = $scoreSettings['score'];
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
-    if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
+    if ($taskType === 'quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
@@ -1872,6 +1872,9 @@ function tctResolveTaskScoreColumnByType(string $taskType): string
 function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
+  if ($normalizedType === 'quiz') {
+    return ['control', 'information', 'quiz'];
+  }
   if ($normalizedType === 'info') {
     return ['control', 'information', 'invitees-rate'];
   }
@@ -1881,7 +1884,7 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
   if ($normalizedType === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
   }
-  return ['control', 'quiz'];
+  return ['control', 'information', 'quiz'];
 }
 
 function tctReadTaskAccessConfig(string $tasksDir): array
@@ -2639,8 +2642,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
-      echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
+    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for tasks with information pane.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -4103,6 +4106,9 @@ if (TCT_INCLUDE_ONLY) {
 
   const resolveDefaultTopPanes = (taskType) => {
     const token = normalizeTaskType(taskType);
+    if (token === 'quiz') {
+      return ['control', 'information', 'quiz'];
+    }
     if (token === 'info') {
       return ['control', 'information', 'invitees-rate'];
     }
@@ -4112,7 +4118,7 @@ if (TCT_INCLUDE_ONLY) {
     if (token === 'team_task') {
       return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
     }
-    return ['control', 'quiz'];
+    return ['control', 'information', 'quiz'];
   };
 
   const normalizeAllowedTopPanes = (value, taskType) => {

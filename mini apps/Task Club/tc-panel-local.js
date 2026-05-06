@@ -36,6 +36,11 @@
     return type === 'info' || type === 'team_task' || type === 'describe_photo';
   }
 
+  function hasInformationPaneTaskType(taskType) {
+    const type = normalizeTaskType(taskType);
+    return type === 'quiz' || type === 'info' || type === 'team_task' || type === 'describe_photo';
+  }
+
   function isDescribePhotoTaskType(taskType) {
     return normalizeTaskType(taskType) === 'describe_photo';
   }
@@ -46,6 +51,9 @@
 
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
+    if (normalizedType === 'quiz') {
+      return ['control', 'information', 'quiz'];
+    }
     if (normalizedType === 'info') {
       return ['control', 'information', 'invitees-rate'];
     }
@@ -55,7 +63,7 @@
     if (normalizedType === 'team_task') {
       return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
     }
-    return ['control', 'quiz'];
+    return ['control', 'information', 'quiz'];
   }
 
   function normalizeAllowedTopPanes(value, taskType) {
@@ -2208,6 +2216,7 @@
   function buildTaskControlCardMarkup(task) {
     const titleText = task.title || task.tagCode;
     const isInfoTask = isInfoLikeTaskType(task.taskType);
+    const hasInformationPane = hasInformationPaneTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
@@ -2225,11 +2234,69 @@
     const teamAdditionalNote = String(task.teamAdditionalNote || '');
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
-    const infoTaskTopTabs = isDescribePhotoTask
+    const topTabsMarkup = isDescribePhotoTask
       ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">Photo</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
       : (isTeamTask
         ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">Challenge Storage</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">Team</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Teams Rate</button>'
-        : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>');
+        : (isInfoTask
+          ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
+          : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'));
+    const informationSection = hasInformationPane
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="information" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Information Card</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field standard-width">
+                  <span>Title</span>
+                  <input type="text" data-task-field="infoTitle" value="${escapeHtml(infoTitle)}" />
+                </label>
+                <label class="field full">
+                  <span>Text</span>
+                  <textarea data-task-field="infoText" rows="8">${escapeHtml(infoText)}</textarea>
+                </label>
+                <div class="field full">
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
+                </div>
+                <p class="muted small" data-task-info-save-status aria-live="polite"></p>
+              </div>
+            </div>
+            ${isTeamTask ? `
+              <div class="card">
+                <div class="section-header"><h3>Guide Wrapper</h3></div>
+                <div class="form" style="gap:12px;">
+                  <label class="field full">
+                    <span>Guide Prefix</span>
+                    <textarea data-task-field="guidePrefix" rows="6">${escapeHtml(guidePrefix)}</textarea>
+                  </label>
+                  <label class="field full">
+                    <span>Guide Suffix</span>
+                    <textarea data-task-field="guideSuffix" rows="6">${escapeHtml(guideSuffix)}</textarea>
+                  </label>
+                  <div class="field full">
+                    <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `
+      : '';
+    const quizSection = !isInfoTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="quiz" hidden>
+            <div class="card tc-task-quiz-card">
+              <iframe
+                class="tc-task-quiz-frame"
+                src="${escapeHtml(quizSrc)}"
+                loading="lazy"
+                referrerpolicy="same-origin"
+                title="Task Quiz"
+              ></iframe>
+            </div>
+          </div>
+        `
+      : '';
     const describePhotoSection = isDescribePhotoTask
       ? `
           <div class="tc-task-top-section" data-task-top-section="photo" hidden>
@@ -2397,9 +2464,7 @@
       <div class="tc-task-top-shell" data-task-top-shell>
         <div class="tc-task-top-nav" role="tablist" aria-label="Task Tabs">
           <button type="button" class="tc-task-top-item active" aria-selected="true" data-task-top-trigger="control">Control Pane</button>
-          ${isInfoTask
-            ? infoTaskTopTabs
-            : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'}
+          ${topTabsMarkup}
         </div>
 
         <div class="tc-task-top-section active" data-task-top-section="control">
@@ -2490,47 +2555,11 @@
             </div>
           </div>
         </div>
+        ${informationSection}
+        ${describePhotoSection}
+        ${teamChallengeSection}
+        ${teamSettingsSection}
         ${isInfoTask ? `
-          <div class="tc-task-top-section" data-task-top-section="information" hidden>
-            <div class="card">
-              <div class="section-header"><h3>Information Card</h3></div>
-              <div class="form" style="gap:12px;">
-                <label class="field standard-width">
-                  <span>Title</span>
-                  <input type="text" data-task-field="infoTitle" value="${escapeHtml(infoTitle)}" />
-                </label>
-                <label class="field full">
-                  <span>Text</span>
-                  <textarea data-task-field="infoText" rows="8">${escapeHtml(infoText)}</textarea>
-                </label>
-                <div class="field full">
-                  <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
-                </div>
-                <p class="muted small" data-task-info-save-status aria-live="polite"></p>
-              </div>
-            </div>
-            ${isTeamTask ? `
-              <div class="card">
-                <div class="section-header"><h3>Guide Wrapper</h3></div>
-                <div class="form" style="gap:12px;">
-                  <label class="field full">
-                    <span>Guide Prefix</span>
-                    <textarea data-task-field="guidePrefix" rows="6">${escapeHtml(guidePrefix)}</textarea>
-                  </label>
-                  <label class="field full">
-                    <span>Guide Suffix</span>
-                    <textarea data-task-field="guideSuffix" rows="6">${escapeHtml(guideSuffix)}</textarea>
-                  </label>
-                  <div class="field full">
-                    <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
-                  </div>
-                </div>
-              </div>
-            ` : ''}
-          </div>
-          ${describePhotoSection}
-          ${teamChallengeSection}
-          ${teamSettingsSection}
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
               <div class="section-header"><h3>${inviteesRateCardTitle}</h3></div>
@@ -2556,19 +2585,8 @@
               </div>
             </div>
           </div>
-        ` : `
-          <div class="tc-task-top-section" data-task-top-section="quiz" hidden>
-            <div class="card tc-task-quiz-card">
-              <iframe
-                class="tc-task-quiz-frame"
-                src="${escapeHtml(quizSrc)}"
-                loading="lazy"
-                referrerpolicy="same-origin"
-                title="Task Quiz"
-              ></iframe>
-            </div>
-          </div>
-        `}
+        ` : ''}
+        ${quizSection}
       </div>
     `;
   }

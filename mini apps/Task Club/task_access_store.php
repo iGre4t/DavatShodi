@@ -80,6 +80,9 @@ function tcTaskAccessNormalizeTaskType(string $value): string
 function tcTaskAccessResolvePaneKeys(string $taskType): array
 {
   $type = tcTaskAccessNormalizeTaskType($taskType);
+  if ($type === 'quiz') {
+    return ['control', 'information', 'quiz'];
+  }
   if ($type === 'info') {
     return ['control', 'information', 'invitees-rate'];
   }
@@ -89,7 +92,7 @@ function tcTaskAccessResolvePaneKeys(string $taskType): array
   if ($type === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
   }
-  return ['control', 'quiz'];
+  return ['control', 'information', 'quiz'];
 }
 
 function tcTaskAccessLoadTasks(string $tasksStorePath): array

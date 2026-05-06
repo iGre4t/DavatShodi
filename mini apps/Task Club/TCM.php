@@ -393,25 +393,34 @@ function loadWfqSettings(string $path): array
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
   $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
-  $settings['correctAnswersToScore'] = max(1, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
+  $settings['correctAnswersToScore'] = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
   return $settings;
+}
+
+function isTaskQuizProportionalScoreMode(array $settings): bool
+{
+  return max(0, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore'])) === 0;
 }
 
 function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuestionCount): array
 {
   $questionsPerAttempt = max(0, (int)($settings['questionsPerAttempt'] ?? TCQ_DEFAULT_SETTINGS['questionsPerAttempt']));
-  $correctAnswersToScore = max(1, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore']));
+  $correctAnswersToScore = max(0, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore']));
   $selectedQuestionCount = $questionsPerAttempt > 0
     ? min($questionsPerAttempt, max(0, $availableQuestionCount))
     : max(0, $availableQuestionCount);
-  $resolvedCorrectAnswersToScore = $selectedQuestionCount > 0
-    ? min($correctAnswersToScore, $selectedQuestionCount)
-    : $correctAnswersToScore;
+  $scoreMode = isTaskQuizProportionalScoreMode(['correctAnswersToScore' => $correctAnswersToScore]) ? 'proportional' : 'threshold';
+  $resolvedCorrectAnswersToScore = $scoreMode === 'proportional'
+    ? 0
+    : ($selectedQuestionCount > 0
+      ? min($correctAnswersToScore, $selectedQuestionCount)
+      : $correctAnswersToScore);
   return [
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => $questionsPerAttempt,
     'correctAnswersToScore' => $correctAnswersToScore,
+    'scoreMode' => $scoreMode,
     'selectedQuestionCount' => $selectedQuestionCount,
     'resolvedCorrectAnswersToScore' => $resolvedCorrectAnswersToScore
   ];
@@ -2191,21 +2200,26 @@ function readTaskQuizAttemptState(string $workId, string $taskId): ?array
     ];
   }
 
-  $requiredCorrectAnswers = max(1, (int)($state['requiredCorrectAnswers'] ?? 1));
+  $requiredCorrectAnswers = max(0, (int)($state['requiredCorrectAnswers'] ?? 1));
   $correctCount = 0;
   foreach ($answered as $entry) {
     if (!empty($entry['correct'])) {
       $correctCount += 1;
     }
   }
-  if ($questionCodes) {
+  if ($requiredCorrectAnswers > 0 && $questionCodes) {
     $requiredCorrectAnswers = min($requiredCorrectAnswers, count($questionCodes));
   }
+  $questionCount = count($questionCodes);
+  $answeredCount = count($answered);
 
   return [
     'questionCodes' => $questionCodes,
+    'questionCount' => $questionCount,
     'requiredCorrectAnswers' => $requiredCorrectAnswers,
+    'scoreMode' => $requiredCorrectAnswers === 0 ? 'proportional' : 'threshold',
     'correctCount' => $correctCount,
+    'answeredCount' => $answeredCount,
     'answered' => $answered,
     'startedAt' => (int)($state['startedAt'] ?? 0)
   ];
@@ -2222,7 +2236,7 @@ function writeTaskQuizAttemptState(string $workId, string $taskId, array $state)
   }
   $_SESSION['tc_task_quiz_attempts'][$key] = [
     'questionCodes' => array_values(array_map(static fn($code) => strtoupper(trim((string)$code)), is_array($state['questionCodes'] ?? null) ? $state['questionCodes'] : [])),
-    'requiredCorrectAnswers' => max(1, (int)($state['requiredCorrectAnswers'] ?? 1)),
+    'requiredCorrectAnswers' => max(0, (int)($state['requiredCorrectAnswers'] ?? 1)),
     'answered' => is_array($state['answered'] ?? null) ? $state['answered'] : [],
     'startedAt' => (int)($state['startedAt'] ?? time())
   ];
@@ -2258,6 +2272,29 @@ function startTaskQuizAttempt(string $workId, string $taskId, array $questions, 
     'questions' => $selectedQuestions,
     'settings' => $runtimeSettings
   ];
+}
+
+function isTaskQuizAttemptCompleted(array $attemptState): bool
+{
+  $questionCount = max(0, (int)($attemptState['questionCount'] ?? count((array)($attemptState['questionCodes'] ?? []))));
+  $answeredCount = max(0, (int)($attemptState['answeredCount'] ?? count((array)($attemptState['answered'] ?? []))));
+  $requiredCorrectAnswers = max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1));
+  $correctCount = max(0, (int)($attemptState['correctCount'] ?? 0));
+  if ($requiredCorrectAnswers === 0) {
+    return $questionCount > 0 && $answeredCount >= $questionCount;
+  }
+  return $correctCount >= $requiredCorrectAnswers;
+}
+
+function calculateTaskQuizProportionalScore(int $baseScore, int $correctCount, int $questionCount): int
+{
+  $normalizedBaseScore = max(0, $baseScore);
+  $normalizedCorrectCount = max(0, $correctCount);
+  $normalizedQuestionCount = max(0, $questionCount);
+  if ($normalizedBaseScore <= 0 || $normalizedCorrectCount <= 0 || $normalizedQuestionCount <= 0) {
+    return 0;
+  }
+  return (int)floor(($normalizedBaseScore * $normalizedCorrectCount) / $normalizedQuestionCount);
 }
 
 function isTaskQuizAnswerCorrect(array $question, string $answer): bool
@@ -3990,14 +4027,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $questionText, $answer);
     }
 
-    $requiredCorrectAnswers = max(1, (int)($nextState['requiredCorrectAnswers'] ?? 1));
+    $requiredCorrectAnswers = max(0, (int)($nextState['requiredCorrectAnswers'] ?? 1));
     $correctCount = max(0, (int)($recorded['correctCount'] ?? 0));
+    $answeredCount = max(0, (int)($nextState['answeredCount'] ?? count((array)($nextState['answered'] ?? []))));
+    $questionCount = max(0, (int)($nextState['questionCount'] ?? count((array)($nextState['questionCodes'] ?? []))));
     echo json_encode([
       'status' => 'ok',
       'wasCorrect' => !empty($recorded['wasCorrect']),
       'correctCount' => $correctCount,
+      'answeredCount' => $answeredCount,
+      'questionCount' => $questionCount,
       'requiredCorrectAnswers' => $requiredCorrectAnswers,
-      'attemptCompleted' => $correctCount >= $requiredCorrectAnswers
+      'scoreMode' => $requiredCorrectAnswers === 0 ? 'proportional' : 'threshold',
+      'attemptCompleted' => isTaskQuizAttemptCompleted($nextState)
     ]);
     exit;
   }
@@ -4870,11 +4912,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         echo json_encode(['status' => 'error', 'message' => 'تلاش فعلی ماموریت منقضی شده است. دوباره وارد ماموریت شوید.']);
         exit;
       }
-      $requiredCorrectAnswers = max(1, (int)($attemptState['requiredCorrectAnswers'] ?? 1));
-      $correctCount = max(0, (int)($attemptState['correctCount'] ?? 0));
-      if ($correctCount < $requiredCorrectAnswers) {
-        echo json_encode(['status' => 'error', 'message' => 'تعداد پاسخ‌های صحیح هنوز برای ثبت امتیاز کافی نیست.']);
-        exit;
+      $requiredCorrectAnswers = max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1));
+      if ($requiredCorrectAnswers === 0) {
+        $answeredCount = max(0, (int)($attemptState['answeredCount'] ?? count((array)($attemptState['answered'] ?? []))));
+        $questionCount = max(0, (int)($attemptState['questionCount'] ?? count((array)($attemptState['questionCodes'] ?? []))));
+        if ($questionCount <= 0 || $answeredCount < $questionCount) {
+          echo json_encode(['status' => 'error', 'message' => 'برای محاسبه امتیاز این ماموریت باید به همه سوالات پاسخ بدهید.']);
+          exit;
+        }
+      } else {
+        $correctCount = max(0, (int)($attemptState['correctCount'] ?? 0));
+        if ($correctCount < $requiredCorrectAnswers) {
+          echo json_encode(['status' => 'error', 'message' => 'تعداد پاسخ‌های صحیح هنوز برای ثبت امتیاز کافی نیست.']);
+          exit;
+        }
       }
     }
 
@@ -4909,19 +4960,31 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $completedTaskIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
     $activeScore = max(0, (int)($task['score'] ?? 0));
     $afterEndScore = max(0, (int)($task['afterEndtimeScore'] ?? 0));
-    $awardedScore = ($taskType === 'quiz' && $status === 'ended') ? $afterEndScore : $activeScore;
+    $awardedScoreBase = ($taskType === 'quiz' && $status === 'ended') ? $afterEndScore : $activeScore;
+    $awardedScore = $awardedScoreBase;
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
 
     if (in_array($taskId, $completedTaskIds, true)) {
+      $existingTaskScore = array_key_exists($taskId, $taskScoreMap)
+        ? max(0, (int)$taskScoreMap[$taskId])
+        : $awardedScore;
       clearTaskQuizAttemptState($sessionWorkId, $taskId);
       echo json_encode([
         'status' => 'ok',
         'alreadyCompleted' => true,
         'awardedScore' => 0,
-        'userTaskScore' => $awardedScore,
+        'userTaskScore' => $existingTaskScore,
         'totalScore' => $currentTotalScore
       ]);
       exit;
+    }
+
+    if ($taskType === 'quiz' && isset($attemptState) && is_array($attemptState) && max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1)) === 0) {
+      $awardedScore = calculateTaskQuizProportionalScore(
+        $awardedScoreBase,
+        max(0, (int)($attemptState['correctCount'] ?? 0)),
+        max(0, (int)($attemptState['questionCount'] ?? count((array)($attemptState['questionCodes'] ?? []))))
+      );
     }
 
     $completedTaskIds[] = $taskId;
@@ -4944,7 +5007,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'alreadyCompleted' => false,
       'awardedScore' => $awardedScore,
       'userTaskScore' => $awardedScore,
-      'scoreMode' => ($taskType === 'quiz' && $status === 'ended') ? 'after_endtime' : 'active',
+      'scoreMode' => ($taskType === 'quiz' && isset($attemptState) && is_array($attemptState) && max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1)) === 0)
+        ? 'proportional'
+        : (($taskType === 'quiz' && $status === 'ended') ? 'after_endtime' : 'active'),
       'totalScore' => $newTotalScore
     ]);
     exit;
@@ -5590,7 +5655,7 @@ $sessionPayload = [
   'answerTimeLimit' => (bool)($tcqSettingsForPayload['answerTimeLimit'] ?? true),
   'randomOrder' => (bool)($tcqSettingsForPayload['randomOrder'] ?? true),
   'questionsPerAttempt' => max(0, (int)($tcqSettingsForPayload['questionsPerAttempt'] ?? 0)),
-  'correctAnswersToScore' => max(1, (int)($tcqSettingsForPayload['correctAnswersToScore'] ?? 1))
+  'correctAnswersToScore' => max(0, (int)($tcqSettingsForPayload['correctAnswersToScore'] ?? 1))
 ];
 ?>
 <!doctype html>
@@ -9477,6 +9542,9 @@ $sessionPayload = [
         let currentQuestionIndex = 0;
         let currentCorrectAnswers = 0;
         let currentRequiredCorrectAnswers = 1;
+        let currentAnsweredQuestions = 0;
+        let currentQuestionCount = 0;
+        let currentQuizScoreMode = 'threshold';
         let infoTaskViewOpen = false;
         let infoTaskCurrentStep = 'info';
         let describePhotoChoices = [];
@@ -10286,6 +10354,9 @@ $sessionPayload = [
           currentQuestionIndex = 0;
           currentCorrectAnswers = 0;
           currentRequiredCorrectAnswers = 1;
+          currentAnsweredQuestions = 0;
+          currentQuestionCount = 0;
+          currentQuizScoreMode = 'threshold';
           describePhotoChoices = [];
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
@@ -10560,6 +10631,9 @@ $sessionPayload = [
           }
           if (taskInfoAckBtnEl) {
             if (currentTaskType === 'describe_photo') {
+              taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
+              taskInfoAckBtnEl.textContent = 'ادامه';
+            } else if (currentTaskType === 'quiz') {
               taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
               taskInfoAckBtnEl.textContent = 'ادامه';
             } else if (currentTaskType === 'team_task') {
@@ -11359,6 +11433,11 @@ $sessionPayload = [
           infoTaskViewOpen = true;
         };
 
+        const startCurrentQuizTaskView = () => {
+          openQuizOverlay();
+          renderQuizQuestion();
+        };
+
         const openTaskResultDialog = (scoreValue, messageText) => {
           if (resultValueEl) {
             resultValueEl.textContent = String(Math.max(0, Number.parseInt(scoreValue ?? 0, 10) || 0));
@@ -12088,19 +12167,45 @@ $sessionPayload = [
           });
         };
 
+        const isProportionalQuizScoreMode = (value = currentQuizScoreMode) => String(value || '').trim().toLowerCase() === 'proportional';
+
         const syncQuizAttemptProgress = (payload, fallbackIsCorrect = false) => {
-          const required = Math.max(1, Number.parseInt(String(payload?.requiredCorrectAnswers ?? currentRequiredCorrectAnswers ?? 1), 10) || 1);
+          const nextScoreMode = String(payload?.scoreMode ?? currentQuizScoreMode ?? 'threshold').trim().toLowerCase();
+          const required = Math.max(0, Number.parseInt(String(payload?.requiredCorrectAnswers ?? currentRequiredCorrectAnswers ?? 1), 10) || 0);
+          const questionCount = Math.max(0, Number.parseInt(String(payload?.questionCount ?? currentQuestionCount ?? currentQuestions.length ?? 0), 10) || 0);
+          const fallbackAnsweredCount = Math.min(currentAnsweredQuestions + 1, questionCount > 0 ? questionCount : Math.max(1, currentAnsweredQuestions + 1));
+          const answeredCount = Math.max(0, Number.parseInt(String(payload?.answeredCount ?? fallbackAnsweredCount), 10) || 0);
           const fallbackCount = fallbackIsCorrect ? (currentCorrectAnswers + 1) : currentCorrectAnswers;
           const correctCount = Math.max(0, Number.parseInt(String(payload?.correctCount ?? fallbackCount ?? 0), 10) || 0);
+          currentQuizScoreMode = nextScoreMode === 'proportional' ? 'proportional' : 'threshold';
           currentRequiredCorrectAnswers = required;
-          currentCorrectAnswers = Math.min(correctCount, required);
+          currentQuestionCount = questionCount;
+          currentAnsweredQuestions = questionCount > 0 ? Math.min(answeredCount, questionCount) : answeredCount;
+          currentCorrectAnswers = questionCount > 0 ? Math.min(correctCount, questionCount) : correctCount;
         };
 
-        const resolveQuizFailureMessage = () => {
-          if (currentRequiredCorrectAnswers > 1) {
-            return 'تعداد پاسخ‌های صحیح برای ثبت امتیاز کافی نبود. دوباره تلاش کنید.';
+        const isQuizAttemptReadyToComplete = (payload = null) => {
+          if (payload && payload?.attemptCompleted !== undefined) {
+            return Boolean(payload.attemptCompleted);
           }
-          return 'این مرحله بدون پاسخ صحیح تمام شد. دوباره تلاش کنید.';
+          if (isProportionalQuizScoreMode()) {
+            return currentQuestionCount > 0 && currentAnsweredQuestions >= currentQuestionCount;
+          }
+          return currentCorrectAnswers >= currentRequiredCorrectAnswers;
+        };
+
+        const resolveQuizFailureMessage = (correctValue = currentCorrectAnswers, requiredValue = currentRequiredCorrectAnswers) => {
+          if (isProportionalQuizScoreMode()) {
+            const questionCount = Math.max(0, Number.parseInt(String(currentQuestionCount ?? currentQuestions.length ?? 0), 10) || 0);
+            return `این مرحله تمام شد. ${correctValue} پاسخ صحیح از ${questionCount} سوال ثبت شد.`;
+          }
+          const required = Math.max(1, Number.parseInt(String(requiredValue ?? 1), 10) || 1);
+          const correct = Math.max(0, Number.parseInt(String(correctValue ?? 0), 10) || 0);
+          const remaining = Math.max(0, required - correct);
+          if (remaining <= 0) {
+            return 'ماموریت به پایان رسید.';
+          }
+          return `این مرحله تمام شد، اما هنوز به حد نصاب نرسیدید. ${correct} پاسخ صحیح ثبت کردید و ${remaining} پاسخ صحیح دیگر برای گرفتن امتیاز لازم بود.`;
         };
 
         const completeCurrentTask = async (item, answerText = '') => {
@@ -12138,7 +12243,13 @@ $sessionPayload = [
             openTaskResultDialog(payload?.userTaskScore ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
             return;
           }
-          openTaskResultDialog(payload?.awardedScore ?? 0, 'عالی! ماموریت کامل شد و امتیاز ثبت شد.');
+          const awardedScore = Number.parseInt(payload?.awardedScore ?? 0, 10) || 0;
+          openTaskResultDialog(
+            awardedScore,
+            awardedScore > 0
+              ? 'عالی! ماموریت کامل شد و امتیاز ثبت شد.'
+              : 'ماموریت کامل شد، اما بر اساس پاسخ‌های صحیح این بار امتیازی ثبت نشد.'
+          );
         };
 
         const continueQuiz = () => {
@@ -12146,8 +12257,10 @@ $sessionPayload = [
           currentQuestionIndex += 1;
           quizLocked = false;
           if (currentQuestionIndex >= currentQuestions.length) {
+            const finalCorrectAnswers = currentCorrectAnswers;
+            const finalRequiredCorrectAnswers = currentRequiredCorrectAnswers;
             closeQuizOverlay();
-            openTaskResultDialog(0, resolveQuizFailureMessage());
+            openTaskResultDialog(0, resolveQuizFailureMessage(finalCorrectAnswers, finalRequiredCorrectAnswers));
             return;
           }
           renderQuizQuestion();
@@ -12160,6 +12273,12 @@ $sessionPayload = [
           try {
             const payload = await sendTaskAnswer(item, '');
             syncQuizAttemptProgress(payload, false);
+            if (isQuizAttemptReadyToComplete(payload)) {
+              setTimeout(() => {
+                void completeCurrentTask(item, '');
+              }, QUIZ_FEEDBACK_DELAY_MS);
+              return;
+            }
           } catch (error) {
             closeQuizOverlay();
             openTaskResultDialog(0, error?.message || 'ثبت پاسخ ناموفق بود.');
@@ -12215,7 +12334,7 @@ $sessionPayload = [
               button.classList.add('is-correct');
             }
             setTimeout(() => {
-              if (currentCorrectAnswers >= currentRequiredCorrectAnswers) {
+              if (isQuizAttemptReadyToComplete(answerPayload)) {
                 void completeCurrentTask(item, answerText);
                 return;
               }
@@ -12234,6 +12353,10 @@ $sessionPayload = [
             correctButton.classList.add('is-correct-reveal');
           }
           setTimeout(() => {
+            if (isQuizAttemptReadyToComplete(answerPayload)) {
+              void completeCurrentTask(item, answerText);
+              return;
+            }
             continueQuiz();
           }, QUIZ_FEEDBACK_DELAY_MS);
         };
@@ -12258,7 +12381,7 @@ $sessionPayload = [
             submitButton.disabled = true;
           }
           setTimeout(() => {
-            if (currentCorrectAnswers >= currentRequiredCorrectAnswers) {
+            if (isQuizAttemptReadyToComplete(answerPayload)) {
               void completeCurrentTask(item, String(value));
               return;
             }
@@ -12283,11 +12406,7 @@ $sessionPayload = [
           }
 
           const baseCounter = `${currentQuestionIndex + 1} / ${total}`;
-          if (currentRequiredCorrectAnswers > 1) {
-            quizCounterEl.textContent = `${baseCounter} | ${currentCorrectAnswers} / ${currentRequiredCorrectAnswers} صحیح`;
-          } else {
-            quizCounterEl.textContent = baseCounter;
-          }
+          quizCounterEl.textContent = baseCounter;
           quizQuestionEl.textContent = String(item.question || '').trim() || '-';
           quizAnswersEl.innerHTML = '';
           quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
@@ -12435,25 +12554,40 @@ $sessionPayload = [
             }
 
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
-            pushInPageHistoryState();
             currentTaskId = taskId;
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
             currentTaskType = 'quiz';
             currentQuestions = normalizedQuestions.slice();
             currentQuestionIndex = 0;
             currentCorrectAnswers = 0;
+            currentAnsweredQuestions = 0;
+            currentQuestionCount = Math.max(
+              0,
+              Number.parseInt(String(
+                payload?.settings?.selectedQuestionCount
+                ?? normalizedQuestions.length
+                ?? 0
+              ), 10) || 0
+            );
+            currentQuizScoreMode = String(payload?.settings?.scoreMode ?? '').trim().toLowerCase() === 'proportional'
+              ? 'proportional'
+              : 'threshold';
             currentRequiredCorrectAnswers = Math.max(
-              1,
+              0,
               Number.parseInt(String(
                 payload?.settings?.resolvedCorrectAnswersToScore
                 ?? payload?.settings?.correctAnswersToScore
-                ?? 1
-              ), 10) || 1
+                ?? (currentQuizScoreMode === 'proportional' ? 0 : 1)
+              ), 10) || 0
             );
             quizLocked = false;
             closeTaskResultDialog();
-            openQuizOverlay();
-            renderQuizQuestion();
+            openInfoTaskView(
+              currentTaskTitle,
+              String(payload?.task?.infoTitle ?? '').trim(),
+              String(payload?.task?.infoText ?? '').trim(),
+              { taskType: 'quiz' }
+            );
           } catch (error) {
             openTaskResultDialog(0, error?.message || 'دریافت سوالات ماموریت ناموفق بود.');
           }
@@ -12501,6 +12635,14 @@ $sessionPayload = [
               } catch (error) {
                 await openInfoDialog(error?.message || 'دریافت وضعیت تیم‌ها ناموفق بود.');
               }
+              return;
+            }
+            if (currentTaskType === 'quiz') {
+              if (!currentQuestions.length) {
+                closeQuizOverlay();
+                return;
+              }
+              startCurrentQuizTaskView();
               return;
             }
             closeQuizOverlay();
