@@ -76,6 +76,7 @@ const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
   'randomOrder' => true,
   'questionsPerAttempt' => 0,
+  'proportionalMode' => false,
   'correctAnswersToScore' => 1
 ];
 
@@ -390,27 +391,38 @@ function loadWfqSettings(string $path): array
   if (!is_array($decoded)) {
     return $settings;
   }
+  $storedCorrectAnswersToScore = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
+  $legacyProportionalMode = $storedCorrectAnswersToScore === 0;
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
   $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
-  $settings['correctAnswersToScore'] = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
+  $settings['proportionalMode'] = array_key_exists('proportionalMode', $decoded)
+    ? (bool)$decoded['proportionalMode']
+    : $legacyProportionalMode;
+  $settings['correctAnswersToScore'] = $storedCorrectAnswersToScore > 0
+    ? $storedCorrectAnswersToScore
+    : (int)$settings['correctAnswersToScore'];
   return $settings;
 }
 
 function isTaskQuizProportionalScoreMode(array $settings): bool
 {
+  if (array_key_exists('proportionalMode', $settings)) {
+    return (bool)$settings['proportionalMode'];
+  }
   return max(0, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore'])) === 0;
 }
 
 function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuestionCount): array
 {
   $questionsPerAttempt = max(0, (int)($settings['questionsPerAttempt'] ?? TCQ_DEFAULT_SETTINGS['questionsPerAttempt']));
-  $correctAnswersToScore = max(0, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore']));
+  $correctAnswersToScore = max(1, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore']));
+  $proportionalMode = isTaskQuizProportionalScoreMode($settings);
   $selectedQuestionCount = $questionsPerAttempt > 0
     ? min($questionsPerAttempt, max(0, $availableQuestionCount))
     : max(0, $availableQuestionCount);
-  $scoreMode = isTaskQuizProportionalScoreMode(['correctAnswersToScore' => $correctAnswersToScore]) ? 'proportional' : 'threshold';
-  $resolvedCorrectAnswersToScore = $scoreMode === 'proportional'
+  $scoreMode = $proportionalMode ? 'proportional' : 'threshold';
+  $resolvedCorrectAnswersToScore = $proportionalMode
     ? 0
     : ($selectedQuestionCount > 0
       ? min($correctAnswersToScore, $selectedQuestionCount)
@@ -419,6 +431,7 @@ function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuesti
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => $questionsPerAttempt,
+    'proportionalMode' => $proportionalMode,
     'correctAnswersToScore' => $correctAnswersToScore,
     'scoreMode' => $scoreMode,
     'selectedQuestionCount' => $selectedQuestionCount,
@@ -2294,7 +2307,14 @@ function calculateTaskQuizProportionalScore(int $baseScore, int $correctCount, i
   if ($normalizedBaseScore <= 0 || $normalizedCorrectCount <= 0 || $normalizedQuestionCount <= 0) {
     return 0;
   }
-  return (int)floor(($normalizedBaseScore * $normalizedCorrectCount) / $normalizedQuestionCount);
+  $computed = (int)round(($normalizedBaseScore * $normalizedCorrectCount) / $normalizedQuestionCount, 0, PHP_ROUND_HALF_UP);
+  if ($computed < 0) {
+    return 0;
+  }
+  if ($computed > $normalizedBaseScore) {
+    return $normalizedBaseScore;
+  }
+  return $computed;
 }
 
 function isTaskQuizAnswerCorrect(array $question, string $answer): bool
@@ -2984,6 +3004,12 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     $taskScoreMap = parseTaskScoreMap((string)($row[$taskScoreMapIndex] ?? ''));
   }
   $taskScore = 0;
+  if ($taskType === 'quiz' && array_key_exists($taskId, $taskScoreMap)) {
+    $taskScore = max(0, (int)($taskScoreMap[$taskId] ?? 0));
+    if ($taskScore > 0) {
+      $isCompleted = true;
+    }
+  }
   if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
     if ($taskType === 'team_task') {
       $teamTaskMap = $infoTasksIndex >= 0
@@ -4960,9 +4986,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $completedTaskIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
     $activeScore = max(0, (int)($task['score'] ?? 0));
     $afterEndScore = max(0, (int)($task['afterEndtimeScore'] ?? 0));
-    $awardedScoreBase = ($taskType === 'quiz' && $status === 'ended') ? $afterEndScore : $activeScore;
-    $awardedScore = $awardedScoreBase;
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
+    $isProportionalQuizCompletion = $taskType === 'quiz'
+      && isset($attemptState)
+      && is_array($attemptState)
+      && max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1)) === 0;
+    $awardedScoreBase = (($taskType === 'quiz') && $status === 'ended')
+      ? $afterEndScore
+      : $activeScore;
+    $awardedScore = $awardedScoreBase;
 
     if (in_array($taskId, $completedTaskIds, true)) {
       $existingTaskScore = array_key_exists($taskId, $taskScoreMap)
@@ -4979,7 +5011,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    if ($taskType === 'quiz' && isset($attemptState) && is_array($attemptState) && max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1)) === 0) {
+    if ($isProportionalQuizCompletion) {
       $awardedScore = calculateTaskQuizProportionalScore(
         $awardedScoreBase,
         max(0, (int)($attemptState['correctCount'] ?? 0)),
@@ -5005,9 +5037,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     echo json_encode([
       'status' => 'ok',
       'alreadyCompleted' => false,
+      'taskCompleted' => true,
       'awardedScore' => $awardedScore,
       'userTaskScore' => $awardedScore,
-      'scoreMode' => ($taskType === 'quiz' && isset($attemptState) && is_array($attemptState) && max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1)) === 0)
+      'scoreMode' => $isProportionalQuizCompletion
         ? 'proportional'
         : (($taskType === 'quiz' && $status === 'ended') ? 'after_endtime' : 'active'),
       'totalScore' => $newTotalScore
@@ -5655,7 +5688,8 @@ $sessionPayload = [
   'answerTimeLimit' => (bool)($tcqSettingsForPayload['answerTimeLimit'] ?? true),
   'randomOrder' => (bool)($tcqSettingsForPayload['randomOrder'] ?? true),
   'questionsPerAttempt' => max(0, (int)($tcqSettingsForPayload['questionsPerAttempt'] ?? 0)),
-  'correctAnswersToScore' => max(0, (int)($tcqSettingsForPayload['correctAnswersToScore'] ?? 1))
+  'proportionalMode' => (bool)($tcqSettingsForPayload['proportionalMode'] ?? false),
+  'correctAnswersToScore' => max(1, (int)($tcqSettingsForPayload['correctAnswersToScore'] ?? 1))
 ];
 ?>
 <!doctype html>
@@ -12185,13 +12219,13 @@ $sessionPayload = [
         };
 
         const isQuizAttemptReadyToComplete = (payload = null) => {
-          if (payload && payload?.attemptCompleted !== undefined) {
-            return Boolean(payload.attemptCompleted);
+          const readyByClientState = isProportionalQuizScoreMode()
+            ? (currentQuestionCount > 0 && currentAnsweredQuestions >= currentQuestionCount)
+            : (currentCorrectAnswers >= currentRequiredCorrectAnswers);
+          if (payload?.attemptCompleted === true) {
+            return true;
           }
-          if (isProportionalQuizScoreMode()) {
-            return currentQuestionCount > 0 && currentAnsweredQuestions >= currentQuestionCount;
-          }
-          return currentCorrectAnswers >= currentRequiredCorrectAnswers;
+          return readyByClientState;
         };
 
         const resolveQuizFailureMessage = (correctValue = currentCorrectAnswers, requiredValue = currentRequiredCorrectAnswers) => {
@@ -12233,9 +12267,10 @@ $sessionPayload = [
           const targetButton = taskButtons.find((button) => String(button.dataset.taskId || '') === completedTaskId);
           if (targetButton) {
             const userTaskScore = Number.parseInt(payload?.userTaskScore ?? payload?.awardedScore ?? 0, 10);
-            targetButton.dataset.taskCompleted = '1';
+            const taskCompleted = Boolean(payload?.taskCompleted ?? true);
+            targetButton.dataset.taskCompleted = taskCompleted ? '1' : '0';
             targetButton.dataset.taskUserScore = String(Number.isFinite(userTaskScore) ? Math.max(0, userTaskScore) : 0);
-            setTaskButtonState(targetButton, 'completed');
+            setTaskButtonState(targetButton, taskCompleted ? 'completed' : deriveTaskStatusFromButton(targetButton));
           }
 
           closeQuizOverlay();
@@ -12244,6 +12279,10 @@ $sessionPayload = [
             return;
           }
           const awardedScore = Number.parseInt(payload?.awardedScore ?? 0, 10) || 0;
+          if (!Boolean(payload?.taskCompleted ?? true)) {
+            openTaskResultDialog(0, 'این تلاش امتیازی نگرفت. ماموریت برای تلاش دوباره همچنان در دسترس است.');
+            return;
+          }
           openTaskResultDialog(
             awardedScore,
             awardedScore > 0

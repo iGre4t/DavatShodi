@@ -2079,6 +2079,7 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       'answerTimeLimit' => true,
       'randomOrder' => true,
       'questionsPerAttempt' => 0,
+      'proportionalMode' => false,
       'correctAnswersToScore' => 1
     ],
     TCT_SCORE_SETTINGS_FILE => [

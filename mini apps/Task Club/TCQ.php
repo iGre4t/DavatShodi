@@ -22,6 +22,7 @@ const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
   'randomOrder' => true,
   'questionsPerAttempt' => 0,
+  'proportionalMode' => false,
   'correctAnswersToScore' => 1
 ];
 
@@ -189,10 +190,17 @@ function tcqLoadSettings(string $path): array
   if (!is_array($decoded)) {
     return $settings;
   }
+  $storedCorrectAnswersToScore = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
+  $legacyProportionalMode = $storedCorrectAnswersToScore === 0;
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
   $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
-  $settings['correctAnswersToScore'] = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
+  $settings['proportionalMode'] = array_key_exists('proportionalMode', $decoded)
+    ? (bool)$decoded['proportionalMode']
+    : $legacyProportionalMode;
+  $settings['correctAnswersToScore'] = $storedCorrectAnswersToScore > 0
+    ? $storedCorrectAnswersToScore
+    : (int)$settings['correctAnswersToScore'];
   return $settings;
 }
 
@@ -206,7 +214,8 @@ function tcqSaveSettings(string $path, array $settings): bool
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0)),
-    'correctAnswersToScore' => max(0, (int)($settings['correctAnswersToScore'] ?? 1))
+    'proportionalMode' => (bool)($settings['proportionalMode'] ?? false),
+    'correctAnswersToScore' => max(1, (int)($settings['correctAnswersToScore'] ?? 1))
   ];
   $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
@@ -549,14 +558,16 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
     $answerTimeLimitRaw = trim((string)($_POST['answer_time_limit'] ?? '1'));
     $randomOrderRaw = trim((string)($_POST['random_order'] ?? '1'));
     $questionsPerAttemptRaw = trim((string)($_POST['questions_per_attempt'] ?? '0'));
+    $proportionalModeRaw = trim((string)($_POST['proportional_mode'] ?? '0'));
     $correctAnswersToScoreRaw = trim((string)($_POST['correct_answers_to_score'] ?? '1'));
     if (!preg_match('/^\d+$/', $questionsPerAttemptRaw) || !preg_match('/^\d+$/', $correctAnswersToScoreRaw)) {
       echo json_encode(['status' => 'error', 'message' => 'Question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
-    $correctAnswersToScore = max(0, (int)$correctAnswersToScoreRaw);
-    if ($questionsPerAttempt > 0 && $correctAnswersToScore > 0 && $correctAnswersToScore > $questionsPerAttempt) {
+    $proportionalMode = in_array($proportionalModeRaw, ['1', 'true', 'on'], true);
+    $correctAnswersToScore = max(1, (int)$correctAnswersToScoreRaw);
+    if (!$proportionalMode && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
       echo json_encode(['status' => 'error', 'message' => 'Required correct answers cannot be greater than questions per attempt.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -564,6 +575,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       'answerTimeLimit' => in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
       'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true),
       'questionsPerAttempt' => $questionsPerAttempt,
+      'proportionalMode' => $proportionalMode,
       'correctAnswersToScore' => $correctAnswersToScore
     ];
     if (!tcqSaveSettings($tcqSettingsPath, $settings)) {
@@ -680,8 +692,12 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <input id="tcq-setting-questions-per-attempt" type="number" min="0" step="1" value="0" />
     </label>
     <label class="tcq-settings-row">
-      <span>Correct Answers For Score (0 = Proportional)</span>
-      <input id="tcq-setting-correct-answers-to-score" type="number" min="0" step="1" value="1" />
+      <span>Proportional Score Mode</span>
+      <input id="tcq-setting-proportional-mode" type="checkbox" />
+    </label>
+    <label class="tcq-settings-row">
+      <span>Correct Answers For Score</span>
+      <input id="tcq-setting-correct-answers-to-score" type="number" min="1" step="1" value="1" />
     </label>
   </div>
   <div class="tcq-settings-actions">
@@ -780,6 +796,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const answerTimeLimitToggle = document.getElementById('tcq-setting-answer-time-limit');
   const randomOrderToggle = document.getElementById('tcq-setting-random-order');
   const questionsPerAttemptInput = document.getElementById('tcq-setting-questions-per-attempt');
+  const proportionalModeToggle = document.getElementById('tcq-setting-proportional-mode');
   const correctAnswersToScoreInput = document.getElementById('tcq-setting-correct-answers-to-score');
   const saveSettingsBtn = document.getElementById('tcq-save-settings');
   const settingsStatusEl = document.getElementById('tcq-settings-status');
@@ -835,11 +852,24 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     settingsStatusEl.style.color = isError ? '#d1434a' : '';
   };
 
+  function syncScoreModeControls() {
+    if (
+      !(proportionalModeToggle instanceof HTMLInputElement)
+      || !(correctAnswersToScoreInput instanceof HTMLInputElement)
+    ) {
+      return;
+    }
+    const proportionalEnabled = proportionalModeToggle.checked;
+    correctAnswersToScoreInput.disabled = proportionalEnabled;
+    correctAnswersToScoreInput.setAttribute('aria-disabled', proportionalEnabled ? 'true' : 'false');
+  }
+
   const applySettingsToForm = (settings) => {
     if (
       !(answerTimeLimitToggle instanceof HTMLInputElement)
       || !(randomOrderToggle instanceof HTMLInputElement)
       || !(questionsPerAttemptInput instanceof HTMLInputElement)
+      || !(proportionalModeToggle instanceof HTMLInputElement)
       || !(correctAnswersToScoreInput instanceof HTMLInputElement)
     ) {
       return;
@@ -847,7 +877,9 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
     randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
     questionsPerAttemptInput.value = String(Math.max(0, Number.parseInt(String(settings?.questionsPerAttempt ?? 0), 10) || 0));
-    correctAnswersToScoreInput.value = String(Math.max(0, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
+    proportionalModeToggle.checked = Boolean(settings?.proportionalMode ?? false);
+    correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
+    syncScoreModeControls();
   };
 
   const validateAll = () => {
@@ -1155,19 +1187,26 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   });
   syncAddFormTypeState();
 
+  if (proportionalModeToggle instanceof HTMLInputElement) {
+    proportionalModeToggle.addEventListener('change', syncScoreModeControls);
+  }
+  syncScoreModeControls();
+
   if (saveSettingsBtn instanceof HTMLButtonElement) {
     saveSettingsBtn.addEventListener('click', async () => {
       if (
         !(answerTimeLimitToggle instanceof HTMLInputElement)
         || !(randomOrderToggle instanceof HTMLInputElement)
         || !(questionsPerAttemptInput instanceof HTMLInputElement)
+        || !(proportionalModeToggle instanceof HTMLInputElement)
         || !(correctAnswersToScoreInput instanceof HTMLInputElement)
       ) {
         return;
       }
       const questionsPerAttempt = Math.max(0, Number.parseInt(questionsPerAttemptInput.value || '0', 10) || 0);
-      const correctAnswersToScore = Math.max(0, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0);
-      if (questionsPerAttempt > 0 && correctAnswersToScore > 0 && correctAnswersToScore > questionsPerAttempt) {
+      const proportionalMode = proportionalModeToggle.checked;
+      const correctAnswersToScore = Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0);
+      if (!proportionalMode && questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
         setSettingsStatus('Required correct answers cannot be greater than questions per attempt.', true);
         return;
       }
@@ -1177,6 +1216,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
           answer_time_limit: answerTimeLimitToggle.checked ? '1' : '0',
           random_order: randomOrderToggle.checked ? '1' : '0',
           questions_per_attempt: String(questionsPerAttempt),
+          proportional_mode: proportionalMode ? '1' : '0',
           correct_answers_to_score: String(correctAnswersToScore)
         });
         applySettingsToForm(data.settings || {});
