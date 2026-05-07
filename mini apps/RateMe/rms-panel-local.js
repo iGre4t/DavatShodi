@@ -1,8 +1,8 @@
 (() => {
-  const TASKS_ENDPOINT = 'mini%20apps/Task%20Club/TCT.php';
-  const tcShellEl = document.querySelector('.tc-shell');
+  const TASKS_ENDPOINT = 'mini%20apps/RateMe/rmsT.php';
+  const tcShellEl = document.querySelector('.rms-shell');
   const TASK_CLUB_CSRF = tcShellEl instanceof HTMLElement
-    ? String(tcShellEl.dataset.tcCsrf || '').trim()
+    ? String(tcShellEl.dataset.rmsCsrf || '').trim()
     : '';
 
   function escapeHtml(value) {
@@ -979,7 +979,7 @@
         if (returnedTasks.length) {
           renderTaskSubtabs(context.layout, returnedTasks, keepPane);
           try {
-            window.TC_TASKS = returnedTasks;
+            window.RMS_TASKS = returnedTasks;
           } catch {}
         }
         const activePane = findPaneByKey(context.layout, keepPane);
@@ -997,7 +997,7 @@
         saveButton.disabled = false;
       }
     });
-    const modalHost = document.querySelector('.tc-shell');
+    const modalHost = document.querySelector('.rms-shell');
     (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
     teamChallengeGuideModalEl = wrapper;
     return wrapper;
@@ -1480,7 +1480,7 @@
       if (!selectedResult) return;
       void openDescribeArticleModal(context.pane, context.invitee, selectedResult);
     });
-    const modalHost = document.querySelector('.tc-shell');
+    const modalHost = document.querySelector('.rms-shell');
     (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
     describeResultsModalEl = wrapper;
     return wrapper;
@@ -1572,7 +1572,7 @@
         }
       }
     });
-    const modalHost = document.querySelector('.tc-shell');
+    const modalHost = document.querySelector('.rms-shell');
     (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
     describeArticleModalEl = wrapper;
     return wrapper;
@@ -2030,7 +2030,7 @@
         context.saving = false;
       }
     });
-    const modalHost = document.querySelector('.tc-shell');
+    const modalHost = document.querySelector('.rms-shell');
     (modalHost instanceof HTMLElement ? modalHost : document.body).appendChild(wrapper);
     teamPreviewModalEl = wrapper;
     return wrapper;
@@ -2223,7 +2223,7 @@
     const typeLabel = taskTypeToken === 'describe_photo'
       ? 'Describe Photo Task'
       : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : 'Quiz Task'));
-    const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
+    const quizSrc = `mini%20apps/RateMe/rmsQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
     const guidePrefix = String(task.guidePrefix || '');
@@ -2994,7 +2994,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3041,7 +3041,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3077,7 +3077,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3126,7 +3126,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3207,7 +3207,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3244,7 +3244,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3280,7 +3280,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3396,7 +3396,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3454,7 +3454,7 @@
           if (returnedTasks.length) {
             renderTaskSubtabs(layout, returnedTasks, keepPane);
             try {
-              window.TC_TASKS = returnedTasks;
+              window.RMS_TASKS = returnedTasks;
             } catch {}
           }
           const activePane = findPaneByKey(layout, keepPane);
@@ -3502,7 +3502,7 @@
         if (returnedTasks.length) {
           renderTaskSubtabs(layout, returnedTasks, keepPane);
           try {
-            window.TC_TASKS = returnedTasks;
+            window.RMS_TASKS = returnedTasks;
           } catch {}
         }
         const activePane = findPaneByKey(layout, keepPane);
@@ -3550,7 +3550,7 @@
 
       setupTaskPaneInteractions(layout);
 
-      window.addEventListener('tcTasksChanged', (event) => {
+      window.addEventListener('rmsTasksChanged', (event) => {
         const tasks = event?.detail?.tasks;
         if (Array.isArray(tasks)) {
           renderTaskSubtabs(layout, tasks);

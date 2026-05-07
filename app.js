@@ -43,6 +43,7 @@ const PANEL_TAB_FALLBACK_IDS = [
   "features",
   "wheel-of-fortune",
   "task-club",
+  "rate-me",
   "asset-manager",
   "devsettings"
 ];

@@ -2,11 +2,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/rms-security.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
-$tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
+$tctSessionUser = requireTabPermissionFromSession('rate-me', $tctIsJsonRequest);
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
-$tctCanAccessManageTasks = userHasPermissionId($tctSessionUser, 'task-club:manage-tasks');
+$tctCanAccessManageTasks = userHasPermissionId($tctSessionUser, 'rate-me:manage-tasks');
 $tctManageTasksOverride = null;
 $tctHasTaskSubtabAccess = false;
 if ($tctSessionUserCode !== '') {
@@ -69,14 +69,14 @@ if ($tctManageTasksOverride !== null) {
   $tctCanAccessManageTasks = $tctManageTasksOverride;
 }
 if (!$tctCanAccessManageTasks && !$tctHasTaskSubtabAccess) {
-  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tctIsJsonRequest);
+  denyPanelAccess(403, 'You do not have permission to access this RateMe section.', $tctIsJsonRequest);
 }
 $tctCsrfToken = tcSecurityGetCsrfToken();
 
 $tctTasksDir = __DIR__ . '/tasks';
 $tctStorePath = $tctTasksDir . '/tasks.js';
-$tctEventInviteesPath = __DIR__ . '/TC Event/Invitees mapped.csv';
-$tctEventInviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
+$tctEventInviteesPath = __DIR__ . '/rms Event/Invitees mapped.csv';
+$tctEventInviteesMapPath = __DIR__ . '/rms Event/rms Mapped.json';
 const TCT_SCORE_SETTINGS_FILE = 'task-score.json';
 const TCT_INFO_SETTINGS_FILE = 'info-task.json';
 const TCT_INFO_SCORES_FILE = 'info-task-scores.json';
@@ -145,7 +145,7 @@ function tctEnsureTasksStorage(string $tasksDir, string $storePath): bool
     return false;
   }
   if (!is_file($storePath)) {
-    return file_put_contents($storePath, "window.TC_TASKS = [];\n", LOCK_EX) !== false;
+    return file_put_contents($storePath, "window.RMS_TASKS = [];\n", LOCK_EX) !== false;
   }
   return true;
 }
@@ -1026,7 +1026,7 @@ function tctBuildTaskDescribePhotoUrl(string $tagCode, string $fileName): string
   }
   $segments = [
     'mini apps',
-    'Task Club',
+    'RateMe',
     'tasks',
     $normalizedTagCode,
     TCT_DESCRIBE_PHOTO_DIR,
@@ -1587,7 +1587,7 @@ function tctSaveStoreTasks(string $storePath, array $tasks): bool
   if ($json === false) {
     return false;
   }
-  $payload = "window.TC_TASKS = {$json};\n";
+  $payload = "window.RMS_TASKS = {$json};\n";
   return file_put_contents($storePath, $payload, LOCK_EX) !== false;
 }
 
@@ -2112,9 +2112,9 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
   }
 
   $defaultJsonFiles = [
-    'TCQ list.json' => [],
-    'TCQ code state.json' => ['nextNumber' => 1],
-    'TCQ settings.json' => [
+    'rmsQ list.json' => [],
+    'rmsQ code state.json' => ['nextNumber' => 1],
+    'rmsQ settings.json' => [
       'answerTimeLimit' => true,
       'randomOrder' => true,
       'questionsPerAttempt' => 0,
@@ -3245,7 +3245,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     if (!is_file($tctEventInviteesPath)) {
-      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in rms Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
@@ -3424,7 +3424,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     if (!is_file($tctEventInviteesPath)) {
-      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in rms Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -3846,7 +3846,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     if (!is_file($tctEventInviteesPath)) {
-      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in rms Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
@@ -4116,7 +4116,7 @@ if (TCT_INCLUDE_ONLY) {
 
 <script>
 (() => {
-  const endpoint = 'mini%20apps/Task%20Club/TCT.php';
+  const endpoint = 'mini%20apps/RateMe/rmsT.php';
   const csrfToken = <?= json_encode($tctCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const form = document.getElementById('tct-form');
   const titleInput = document.getElementById('tct-title');
@@ -4217,8 +4217,8 @@ if (TCT_INCLUDE_ONLY) {
       createdAt: String(task.createdAt || '')
     }));
     try {
-      window.TC_TASKS = snapshot;
-      window.dispatchEvent(new CustomEvent('tcTasksChanged', {
+      window.RMS_TASKS = snapshot;
+      window.dispatchEvent(new CustomEvent('rmsTasksChanged', {
         detail: { tasks: snapshot }
       }));
     } catch {}

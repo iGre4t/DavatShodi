@@ -36,7 +36,7 @@ if (is_file($tcMaintenanceSettingsPath)) {
 }
 $tcPanelSessionBypass = !empty($_SESSION['authenticated']) && is_array($_SESSION['user'] ?? null);
 if ($tcMaintenanceEnabled && !$tcPanelSessionBypass) {
-  $maintenanceUrl = 'TCM-maintenance.php';
+  $maintenanceUrl = 'rmsM-maintenance.php';
   if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     header('Content-Type: application/json; charset=UTF-8');
     echo json_encode([
@@ -65,13 +65,13 @@ const TASK_DESCRIBE_PHOTO_DIR = 'photos';
 const TASK_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 const TASK_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 
-$prizeStorePath = __DIR__ . '/TC Prizes.json';
+$prizeStorePath = __DIR__ . '/rms Prizes.json';
 $prizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
-$questionsStorePath = __DIR__ . '/TCQ list.json';
-$tcqSettingsPath = __DIR__ . '/TCQ settings.json';
-$inviteesFilePath = __DIR__ . '/TC Event/Invitees mapped.csv';
-$inviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
-$loginAttemptsPath = __DIR__ . '/TC Event/login_attempts.json';
+$questionsStorePath = __DIR__ . '/rmsQ list.json';
+$tcqSettingsPath = __DIR__ . '/rmsQ settings.json';
+$inviteesFilePath = __DIR__ . '/rms Event/Invitees mapped.csv';
+$inviteesMapPath = __DIR__ . '/rms Event/rms Mapped.json';
+$loginAttemptsPath = __DIR__ . '/rms Event/login_attempts.json';
 const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
   'randomOrder' => true,
@@ -2127,8 +2127,8 @@ function loadTaskQuizAssets(array $task, string $sharedQuestionsStorePath): arra
   }
 
   $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
-  $taskQuestionsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
-  $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ settings.json';
+  $taskQuestionsPath = $taskDir . DIRECTORY_SEPARATOR . 'rmsQ list.json';
+  $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'rmsQ settings.json';
   $answersPath = $taskDir . DIRECTORY_SEPARATOR . 'Answers.csv';
   $questions = readQuestionStore($taskQuestionsPath);
   $resolvedQuestionsPath = $taskQuestionsPath;
@@ -10613,8 +10613,8 @@ $sessionPayload = [
           if (/^mini%20apps\/Task%20Club\//i.test(raw)) {
             return raw.replace(/^mini%20apps\/Task%20Club\//i, '');
           }
-          if (/^mini apps\/Task Club\//i.test(raw)) {
-            return raw.replace(/^mini apps\/Task Club\//i, '');
+          if (/^mini apps\/RateMe\//i.test(raw)) {
+            return raw.replace(/^mini apps\/RateMe\//i, '');
           }
           return raw;
         };

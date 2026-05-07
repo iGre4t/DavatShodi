@@ -112,6 +112,7 @@ $tabCatalog = getPanelTabOptionsForFrontend();
 $permissionTree = getPanelPermissionTreeForFrontend();
 $childPermissionMap = getPanelChildTabIdsByParent();
 $taskClubCreatorEnabled = in_array('task-club', $allowedTabs, true);
+$rateMeCreatorEnabled = in_array('rate-me', $allowedTabs, true);
 $panelTabCatalog = $tabCatalog;
 $panelAllowedTabs = array_values($allowedTabs);
 if ($taskClubCreatorEnabled) {
@@ -121,6 +122,14 @@ if ($taskClubCreatorEnabled) {
     'title' => 'ساخت باشگاه تعاملی'
   ];
   $panelAllowedTabs[] = 'task-club-creator';
+}
+if ($rateMeCreatorEnabled) {
+  $panelTabCatalog[] = [
+    'id' => 'rate-me-creator',
+    'label' => 'Create RateMe',
+    'title' => 'Create RateMe'
+  ];
+  $panelAllowedTabs[] = 'rate-me-creator';
 }
 $sidebarName = normalizeUserValue($currentUser['fullname'] ?? '');
 if ($sidebarName === '') {
@@ -210,7 +219,7 @@ $accountEmail = $currentUser['email'] ?? '';
               <span>تنظیمات حساب</span>
             </button>
           <?php endif; ?>
-          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || $taskClubCreatorEnabled || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
+          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('task-club', $allowedTabs, true) || $taskClubCreatorEnabled || in_array('rate-me', $allowedTabs, true) || $rateMeCreatorEnabled || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
             <div class="nav-separator" aria-hidden="true"></div>
           <?php endif; ?>
           <?php if (in_array('features', $allowedTabs, true)): ?>
@@ -236,6 +245,18 @@ $accountEmail = $currentUser['email'] ?? '';
             <button class="nav-item<?= $initialTab === 'task-club-creator' ? ' active' : '' ?>" data-tab="task-club-creator"<?= $initialTab === 'task-club-creator' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-add-circle-line" aria-hidden="true"></span>
               <span>ساخت باشگاه تعاملی</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('rate-me', $allowedTabs, true)): ?>
+            <button class="nav-item<?= $initialTab === 'rate-me' ? ' active' : '' ?>" data-tab="rate-me"<?= $initialTab === 'rate-me' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-group-line" aria-hidden="true"></span>
+              <span>RateMe</span>
+            </button>
+          <?php endif; ?>
+          <?php if ($rateMeCreatorEnabled): ?>
+            <button class="nav-item<?= $initialTab === 'rate-me-creator' ? ' active' : '' ?>" data-tab="rate-me-creator"<?= $initialTab === 'rate-me-creator' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-add-circle-line" aria-hidden="true"></span>
+              <span>Create RateMe</span>
             </button>
           <?php endif; ?>
           <?php if (in_array('asset-manager', $allowedTabs, true)): ?>
@@ -419,6 +440,20 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-task-club-creator"
             class="tab<?= $initialTab === 'task-club-creator' ? ' active' : '' ?>"
             data-tab-source="mini%20apps/Task%20Club/TCCreator.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('rate-me', $allowedTabs, true)): ?>
+          <section
+            id="tab-rate-me"
+            class="tab<?= $initialTab === 'rate-me' ? ' active' : '' ?>"
+            data-tab-source="mini%20apps/RateMe/rms%20Panel.php"
+          ></section>
+        <?php endif; ?>
+        <?php if ($rateMeCreatorEnabled): ?>
+          <section
+            id="tab-rate-me-creator"
+            class="tab<?= $initialTab === 'rate-me-creator' ? ' active' : '' ?>"
+            data-tab-source="mini%20apps/RateMe/rmsCreator.php"
           ></section>
         <?php endif; ?>
         <?php if (in_array('devsettings', $allowedTabs, true)): ?>

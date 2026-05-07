@@ -2,19 +2,19 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/rms-security.php';
 $tcqIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tcq_action']);
-$tcqSessionUser = requireTabPermissionFromSession('task-club', $tcqIsJsonRequest);
-if (!userHasPermissionId($tcqSessionUser, 'task-club:manage-tasks')) {
-  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tcqIsJsonRequest);
+$tcqSessionUser = requireTabPermissionFromSession('rate-me', $tcqIsJsonRequest);
+if (!userHasPermissionId($tcqSessionUser, 'rate-me:manage-tasks')) {
+  denyPanelAccess(403, 'You do not have permission to access this RateMe section.', $tcqIsJsonRequest);
 }
 $tcqCsrfToken = tcSecurityGetCsrfToken();
 
-$tcqStorePath = __DIR__ . '/TCQ list.json';
-$tcqInviteesCsvPath = __DIR__ . '/TC Event/Invitees mapped.csv';
-$tcqAnswersCsvPath = __DIR__ . '/TC Event/Answers.csv';
-$tcqCodeStatePath = __DIR__ . '/TCQ code state.json';
-$tcqSettingsPath = __DIR__ . '/TCQ settings.json';
+$tcqStorePath = __DIR__ . '/rmsQ list.json';
+$tcqInviteesCsvPath = __DIR__ . '/rms Event/Invitees mapped.csv';
+$tcqAnswersCsvPath = __DIR__ . '/rms Event/Answers.csv';
+$tcqCodeStatePath = __DIR__ . '/rmsQ code state.json';
+$tcqSettingsPath = __DIR__ . '/rmsQ settings.json';
 $tcqTaskId = '';
 $tcqTaskTagCode = '';
 $tcqTaskTitle = '';
@@ -510,11 +510,11 @@ if ($tcqRequestedTaskId !== '') {
     $tcqTaskTitle = trim((string)($task['title'] ?? ''));
     if ($tcqTaskId !== '' && $tcqTaskTagCode !== '') {
       $tcqTaskDir = __DIR__ . '/tasks/' . $tcqTaskTagCode;
-      $tcqStorePath = $tcqTaskDir . '/TCQ list.json';
+      $tcqStorePath = $tcqTaskDir . '/rmsQ list.json';
       $tcqInviteesCsvPath = $tcqTaskDir . '/Invitees mapped.csv';
       $tcqAnswersCsvPath = $tcqTaskDir . '/Answers.csv';
-      $tcqCodeStatePath = $tcqTaskDir . '/TCQ code state.json';
-      $tcqSettingsPath = $tcqTaskDir . '/TCQ settings.json';
+      $tcqCodeStatePath = $tcqTaskDir . '/rmsQ code state.json';
+      $tcqSettingsPath = $tcqTaskDir . '/rmsQ settings.json';
     } else {
       $tcqTaskLookupFailed = true;
     }
@@ -667,9 +667,9 @@ if (TCQ_INCLUDE_ONLY) {
 
 $tcqEmbeddedInPanel = defined('TCQ_EMBEDDED_IN_PANEL') && TCQ_EMBEDDED_IN_PANEL === true;
 $tcqStandaloneCoreCssHref = '../../style/styles.css';
-$tcqStandalonePanelCssHref = 'tc-panel.css';
+$tcqStandalonePanelCssHref = 'rms-panel.css';
 $tcqStandaloneCoreCssVersion = @filemtime(__DIR__ . '/../../style/styles.css');
-$tcqStandalonePanelCssVersion = @filemtime(__DIR__ . '/tc-panel.css');
+$tcqStandalonePanelCssVersion = @filemtime(__DIR__ . '/rms-panel.css');
 if (is_int($tcqStandaloneCoreCssVersion) && $tcqStandaloneCoreCssVersion > 0) {
   $tcqStandaloneCoreCssHref .= '?v=' . rawurlencode((string)$tcqStandaloneCoreCssVersion);
 }
@@ -687,7 +687,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
 </style>
 <?php endif; ?>
 
-<div class="tc-shell tcq-standalone-shell">
+<div class="rms-shell tcq-standalone-shell">
 
 <div class="card">
   <div class="section-header">
@@ -807,7 +807,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
 <script>
 (() => {
   <?php
-  $tcqEndpointBase = $tcqEmbeddedInPanel ? 'mini%20apps/Task%20Club/TCQ.php' : 'TCQ.php';
+  $tcqEndpointBase = $tcqEmbeddedInPanel ? 'mini%20apps/RateMe/rmsQ.php' : 'rmsQ.php';
   ?>
   const endpoint = <?= json_encode(
     $tcqEndpointBase . ($tcqTaskId !== '' ? ('?task_id=' . rawurlencode($tcqTaskId)) : ''),

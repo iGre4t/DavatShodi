@@ -14,6 +14,7 @@ function getPanelTabDefinitions(): array
         ['id' => 'features', 'label' => 'Features', 'title' => 'Features'],
         ['id' => 'wheel-of-fortune', 'label' => 'گردونه شانس', 'title' => 'گردونه شانس'],
         ['id' => 'task-club', 'label' => 'باشگاه تعاملی', 'title' => 'باشگاه تعاملی'],
+        ['id' => 'rate-me', 'label' => 'RateMe', 'title' => 'RateMe'],
         ['id' => 'asset-manager', 'label' => 'مدیریت اموال', 'title' => 'مدیریت اموال'],
         ['id' => 'devsettings', 'label' => 'تنظیمات توسعه‌دهنده', 'title' => 'Developer Settings']
     ];
@@ -35,6 +36,15 @@ function getPanelChildTabDefinitionsByParent(): array
             ['id' => 'task-club:monitoring', 'label' => 'Monitoring'],
             ['id' => 'task-club:export', 'label' => 'Export'],
             ['id' => 'task-club:event-style', 'label' => 'Event Style']
+        ],
+        'rate-me' => [
+            ['id' => 'rate-me:main', 'label' => 'Main Panel'],
+            ['id' => 'rate-me:invitees', 'label' => 'Invitees'],
+            ['id' => 'rate-me:manage-tasks', 'label' => 'Manage Tasks'],
+            ['id' => 'rate-me:task-access', 'label' => 'Task Access'],
+            ['id' => 'rate-me:monitoring', 'label' => 'Monitoring'],
+            ['id' => 'rate-me:export', 'label' => 'Export'],
+            ['id' => 'rate-me:event-style', 'label' => 'Event Style']
         ],
         'devsettings' => [
             ['id' => 'devsettings:panel-settings', 'label' => 'عمومی'],

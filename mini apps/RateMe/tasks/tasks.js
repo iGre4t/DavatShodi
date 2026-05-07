@@ -1,0 +1,1 @@
+window.RMS_TASKS = [];
