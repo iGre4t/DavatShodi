@@ -4065,6 +4065,7 @@ if (TCT_INCLUDE_ONLY) {
 }
 ?>
 
+<div data-rate-me-manage-tasks-root>
 <div class="card">
   <div class="section-header">
     <h3>Create Task</h3>
@@ -4120,13 +4121,15 @@ if (TCT_INCLUDE_ONLY) {
 
 <script>
 (() => {
+  const root = document.querySelector('[data-rate-me-manage-tasks-root]');
+  if (!(root instanceof HTMLElement)) return;
   const endpoint = 'mini%20apps/RateMe/rmsT.php';
   const csrfToken = <?= json_encode($tctCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-  const form = document.getElementById('tct-form');
-  const titleInput = document.getElementById('tct-title');
-  const taskTypeInput = document.getElementById('tct-task-type');
-  const statusEl = document.getElementById('tct-status');
-  const listBody = document.getElementById('tct-list-body');
+  const form = root.querySelector('#tct-form');
+  const titleInput = root.querySelector('#tct-title');
+  const taskTypeInput = root.querySelector('#tct-task-type');
+  const statusEl = root.querySelector('#tct-status');
+  const listBody = root.querySelector('#tct-list-body');
   if (!form || !titleInput || !taskTypeInput || !statusEl || !listBody) return;
 
   let tasks = [];
@@ -4484,4 +4487,5 @@ if (TCT_INCLUDE_ONLY) {
     });
 })();
 </script>
+</div>
 

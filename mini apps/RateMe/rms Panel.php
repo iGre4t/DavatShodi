@@ -621,7 +621,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/rmsTaskAccess.js') ?: time(
 
 <script src="mini%20apps/RateMe/rms-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php if ($tcCanMainPane): ?>
-<script src="mini%20apps/RateMe/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<script src="mini%20apps/RateMe/rms%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <script src="mini%20apps/RateMe/rmsSetting.js?v=<?= htmlspecialchars($tcSettingJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
 <?php if ($tcCanEventStylePane): ?>

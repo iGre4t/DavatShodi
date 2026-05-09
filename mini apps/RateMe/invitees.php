@@ -165,6 +165,7 @@ if ($rows) {
 }
 ?>
 
+<div data-rate-me-invitees-root>
 <div class="tc-task-top-shell" id="tc-invitees-top-shell">
   <div class="tc-task-top-nav" role="tablist" aria-label="Invitees Tabs">
     <button type="button" class="tc-task-top-item active" data-invitees-top-trigger="all-invitees" aria-selected="true">All Invitees</button>
@@ -559,61 +560,67 @@ if ($rows) {
   </div>
 </div>
 
+</div>
+
 <script src="mini%20apps/RateMe/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
+  const root = document.querySelector('[data-rate-me-invitees-root]');
+  if (!(root instanceof HTMLElement)) return;
+  const getEl = (id) => root.querySelector(`#${id}`);
+  const query = (selector) => root.querySelector(selector);
   const csrfToken = <?= json_encode($tcInviteesCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-  const pickBtn = document.getElementById('tc-invite-pick');
-  const fileInput = document.getElementById('tc-invite-file');
-  const fileNameEl = document.getElementById('tc-invite-file-name');
-  const mapBtn = document.getElementById('tc-invite-map');
-  const modal = document.getElementById('tc-invite-modal');
+  const pickBtn = getEl('tc-invite-pick');
+  const fileInput = getEl('tc-invite-file');
+  const fileNameEl = getEl('tc-invite-file-name');
+  const mapBtn = getEl('tc-invite-map');
+  const modal = getEl('tc-invite-modal');
   const closeBtns = modal ? modal.querySelectorAll('[data-close-invite-modal]') : [];
-  const mapWork = document.getElementById('tc-map-work');
-  const mapFirst = document.getElementById('tc-map-first');
-  const mapLast = document.getElementById('tc-map-last');
-  const mapNational = document.getElementById('tc-map-national');
-  const mapPhone = document.getElementById('tc-map-phone');
-  const uploadBtn = document.getElementById('tc-invite-upload');
-  const msgEl = document.getElementById('tc-invite-msg');
-  const progressEl = document.getElementById('tc-invite-progress');
+  const mapWork = getEl('tc-map-work');
+  const mapFirst = getEl('tc-map-first');
+  const mapLast = getEl('tc-map-last');
+  const mapNational = getEl('tc-map-national');
+  const mapPhone = getEl('tc-map-phone');
+  const uploadBtn = getEl('tc-invite-upload');
+  const msgEl = getEl('tc-invite-msg');
+  const progressEl = getEl('tc-invite-progress');
   const progressMsg = progressEl?.querySelector('[data-invite-progress-message]');
-  const addWorkIdEl = document.getElementById('tc-add-work-id');
-  const addFirstNameEl = document.getElementById('tc-add-first-name');
-  const addLastNameEl = document.getElementById('tc-add-last-name');
-  const addNationalIdEl = document.getElementById('tc-add-national-id');
-  const addPhoneNumberEl = document.getElementById('tc-add-phone-number');
-  const addInviteeBtn = document.getElementById('tc-add-invitee-btn');
-  const addInviteeMsgEl = document.getElementById('tc-add-invitee-msg');
-  const editModal = document.getElementById('tc-invite-edit-modal');
+  const addWorkIdEl = getEl('tc-add-work-id');
+  const addFirstNameEl = getEl('tc-add-first-name');
+  const addLastNameEl = getEl('tc-add-last-name');
+  const addNationalIdEl = getEl('tc-add-national-id');
+  const addPhoneNumberEl = getEl('tc-add-phone-number');
+  const addInviteeBtn = getEl('tc-add-invitee-btn');
+  const addInviteeMsgEl = getEl('tc-add-invitee-msg');
+  const editModal = getEl('tc-invite-edit-modal');
   const editCloseBtns = editModal ? editModal.querySelectorAll('[data-close-invite-edit-modal]') : [];
-  const editWorkIdEl = document.getElementById('tc-edit-work-id');
-  const editFirstNameEl = document.getElementById('tc-edit-first-name');
-  const editLastNameEl = document.getElementById('tc-edit-last-name');
-  const editNationalIdEl = document.getElementById('tc-edit-national-id');
-  const editPhoneNumberEl = document.getElementById('tc-edit-phone-number');
-  const editSaveBtn = document.getElementById('tc-edit-invitee-save');
-  const editMsgEl = document.getElementById('tc-edit-invitee-msg');
-  const authModal = document.getElementById('tc-invite-auth-modal');
+  const editWorkIdEl = getEl('tc-edit-work-id');
+  const editFirstNameEl = getEl('tc-edit-first-name');
+  const editLastNameEl = getEl('tc-edit-last-name');
+  const editNationalIdEl = getEl('tc-edit-national-id');
+  const editPhoneNumberEl = getEl('tc-edit-phone-number');
+  const editSaveBtn = getEl('tc-edit-invitee-save');
+  const editMsgEl = getEl('tc-edit-invitee-msg');
+  const authModal = getEl('tc-invite-auth-modal');
   const authCloseBtns = authModal ? authModal.querySelectorAll('[data-close-invite-auth-modal]') : [];
-  const authPasswordEl = document.getElementById('tc-invite-auth-password');
-  const authSubmitBtn = document.getElementById('tc-invite-auth-submit');
-  const authMsgEl = document.getElementById('tc-invite-auth-msg');
-  const passwordModal = document.getElementById('tc-invite-password-modal');
+  const authPasswordEl = getEl('tc-invite-auth-password');
+  const authSubmitBtn = getEl('tc-invite-auth-submit');
+  const authMsgEl = getEl('tc-invite-auth-msg');
+  const passwordModal = getEl('tc-invite-password-modal');
   const passwordCloseBtns = passwordModal ? passwordModal.querySelectorAll('[data-close-invite-password-modal]') : [];
-  const passwordTitleEl = document.getElementById('tc-invite-password-title');
-  const passwordValueEl = document.getElementById('tc-invite-password-value');
-  const passwordSaveBtn = document.getElementById('tc-invite-password-save');
-  const passwordMsgEl = document.getElementById('tc-invite-password-msg');
-  const resetModal = document.getElementById('tc-invite-reset-modal');
+  const passwordTitleEl = getEl('tc-invite-password-title');
+  const passwordValueEl = getEl('tc-invite-password-value');
+  const passwordSaveBtn = getEl('tc-invite-password-save');
+  const passwordMsgEl = getEl('tc-invite-password-msg');
+  const resetModal = getEl('tc-invite-reset-modal');
   const resetCloseBtns = resetModal ? resetModal.querySelectorAll('[data-close-invite-reset-modal]') : [];
-  const resetTextEl = document.getElementById('tc-invite-reset-text');
-  const resetMsgEl = document.getElementById('tc-invite-reset-msg');
-  const resetConfirmBtn = document.getElementById('tc-invite-reset-confirm');
-  const inviteesTopShell = document.getElementById('tc-invitees-top-shell');
-  const allInviteesSearchInput = document.getElementById('tc-all-invitees-search');
-  const allInviteesSearchMetaEl = document.getElementById('tc-all-invitees-search-meta');
-  const allInviteesTableBody = document.querySelector('[data-invitees-all-table-body]');
+  const resetTextEl = getEl('tc-invite-reset-text');
+  const resetMsgEl = getEl('tc-invite-reset-msg');
+  const resetConfirmBtn = getEl('tc-invite-reset-confirm');
+  const inviteesTopShell = getEl('tc-invitees-top-shell');
+  const allInviteesSearchInput = getEl('tc-all-invitees-search');
+  const allInviteesSearchMetaEl = getEl('tc-all-invitees-search-meta');
+  const allInviteesTableBody = query('[data-invitees-all-table-body]');
 
   let parsedRows = [];
   let headerRow = [];
@@ -897,6 +904,7 @@ if ($rows) {
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (!root.contains(target)) return;
 
     const revealTrigger = target.closest('[data-action="reveal-invitee-password"]');
     if (revealTrigger instanceof HTMLElement) {
