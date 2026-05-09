@@ -308,6 +308,7 @@ if ($action === 'reset_progress') {
     [['prize won'], ''],
     [['prize won at'], ''],
     [['answers'], ''],
+    [['inner score'], ''],
     [['score'], '0'],
     [['answered'], ''],
     [['task completed'], ''],

@@ -25,7 +25,8 @@ const TCQ_DEFAULT_SETTINGS = [
   'questionsPerAttempt' => 0,
   'proportionalMode' => false,
   'correctAnswersToScore' => 1,
-  'sharedAnswers' => ['', '', '', '', '']
+  'sharedAnswers' => ['', '', '', '', ''],
+  'sharedAnswerScores' => [0, 0, 0, 0, 0]
 ];
 
 function tcqReadCsv(string $path): array
@@ -95,7 +96,7 @@ function tcqEnsureInviteesColumns(string $path): void
     return;
   }
   $header = $rows[0];
-  $required = ['count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
+  $required = ['count of rolls', 'invitees', 'prize won', 'answers', 'inner score', 'score', 'Answered'];
   $changed = false;
   foreach ($required as $columnName) {
     $idx = tcqFindHeaderIndex($header, $columnName);
@@ -172,6 +173,16 @@ function tcqNormalizeSharedAnswers($value): array
   return array_map(static fn($entry) => trim((string)$entry), $answers);
 }
 
+function tcqNormalizeSharedAnswerScores($value): array
+{
+  $scores = is_array($value) ? array_values($value) : [];
+  while (count($scores) < 5) {
+    $scores[] = 0;
+  }
+  $scores = array_slice($scores, 0, 5);
+  return array_map(static fn($entry): int => tcqNormalizeScoreValue($entry), $scores);
+}
+
 function tcqNormalizeCorrectAnswerIndex($value): int
 {
   if (!is_scalar($value) || trim((string)$value) === '' || !is_numeric((string)$value)) {
@@ -198,6 +209,7 @@ function tcqNormalizeItem(array $item, bool $sharedAnswersTask = false, array $s
     $answers = array_filter($normalizedAnswers, static fn(string $value): bool => $value !== '')
       ? $normalizedAnswers
       : $normalizedSharedAnswers;
+    $correctAnswerIndex = 0;
   } elseif ($type === 'percentage') {
     $answers = ['', '', '', ''];
     $correctAnswerIndex = 0;
@@ -282,6 +294,16 @@ function tcqLoadSettings(string $path): array
     ? $storedCorrectAnswersToScore
     : (int)$settings['correctAnswersToScore'];
   $settings['sharedAnswers'] = tcqNormalizeSharedAnswers($decoded['sharedAnswers'] ?? ($decoded['shared_answers'] ?? $settings['sharedAnswers']));
+  $settings['sharedAnswerScores'] = tcqNormalizeSharedAnswerScores($decoded['sharedAnswerScores'] ?? ($decoded['shared_answer_scores'] ?? $settings['sharedAnswerScores']));
+  return $settings;
+}
+
+function tcqApplyTaskTypeSettings(array $settings, bool $sharedAnswersTask = false): array
+{
+  if ($sharedAnswersTask) {
+    $settings['answerTimeLimit'] = false;
+    $settings['randomOrder'] = false;
+  }
   return $settings;
 }
 
@@ -297,7 +319,8 @@ function tcqSaveSettings(string $path, array $settings): bool
     'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0)),
     'proportionalMode' => (bool)($settings['proportionalMode'] ?? false),
     'correctAnswersToScore' => max(1, (int)($settings['correctAnswersToScore'] ?? 1)),
-    'sharedAnswers' => tcqNormalizeSharedAnswers($settings['sharedAnswers'] ?? ($settings['shared_answers'] ?? []))
+    'sharedAnswers' => tcqNormalizeSharedAnswers($settings['sharedAnswers'] ?? ($settings['shared_answers'] ?? [])),
+    'sharedAnswerScores' => tcqNormalizeSharedAnswerScores($settings['sharedAnswerScores'] ?? ($settings['shared_answer_scores'] ?? []))
   ];
   $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
@@ -618,7 +641,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
 
   if ($action === 'list') {
     tcqEnsureInviteesColumns($tcqInviteesCsvPath);
-    $settings = tcqLoadSettings($tcqSettingsPath);
+    $settings = tcqApplyTaskTypeSettings(tcqLoadSettings($tcqSettingsPath), $tcqIsSharedAnswersTask);
     $items = tcqLoadStore($tcqStorePath, $tcqIsSharedAnswersTask, $settings['sharedAnswers'] ?? []);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
     $usedCodes = [];
@@ -641,35 +664,45 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
   }
 
   if ($action === 'save_settings') {
-    $answerTimeLimitRaw = trim((string)($_POST['answer_time_limit'] ?? '1'));
     $randomOrderRaw = trim((string)($_POST['random_order'] ?? '1'));
-    $questionsPerAttemptRaw = trim((string)($_POST['questions_per_attempt'] ?? '0'));
-    $proportionalModeRaw = trim((string)($_POST['proportional_mode'] ?? '0'));
-    $correctAnswersToScoreRaw = trim((string)($_POST['correct_answers_to_score'] ?? '1'));
-    if (!preg_match('/^\d+$/', $questionsPerAttemptRaw) || !preg_match('/^\d+$/', $correctAnswersToScoreRaw)) {
-      echo json_encode(['status' => 'error', 'message' => 'Question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
-    $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
-    $proportionalMode = in_array($proportionalModeRaw, ['1', 'true', 'on'], true);
-    $correctAnswersToScore = max(1, (int)$correctAnswersToScoreRaw);
-    if (!$proportionalMode && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
-      echo json_encode(['status' => 'error', 'message' => 'Required correct answers cannot be greater than questions per attempt.'], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
+    $existingSettings = tcqApplyTaskTypeSettings(tcqLoadSettings($tcqSettingsPath), $tcqIsSharedAnswersTask);
     $settings = [
-      'answerTimeLimit' => in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
-      'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true),
-      'questionsPerAttempt' => $questionsPerAttempt,
-      'proportionalMode' => $proportionalMode,
-      'correctAnswersToScore' => $correctAnswersToScore,
-      'sharedAnswers' => tcqLoadSettings($tcqSettingsPath)['sharedAnswers'] ?? []
+      'answerTimeLimit' => $tcqIsSharedAnswersTask
+        ? false
+        : in_array(trim((string)($_POST['answer_time_limit'] ?? '1')), ['1', 'true', 'on'], true),
+      'randomOrder' => $tcqIsSharedAnswersTask
+        ? false
+        : in_array($randomOrderRaw, ['1', 'true', 'on'], true),
+      'questionsPerAttempt' => $existingSettings['questionsPerAttempt'] ?? 0,
+      'proportionalMode' => $existingSettings['proportionalMode'] ?? false,
+      'correctAnswersToScore' => $existingSettings['correctAnswersToScore'] ?? 1,
+      'sharedAnswers' => $existingSettings['sharedAnswers'] ?? [],
+      'sharedAnswerScores' => $existingSettings['sharedAnswerScores'] ?? []
     ];
+    if (!$tcqIsSharedAnswersTask) {
+      $questionsPerAttemptRaw = trim((string)($_POST['questions_per_attempt'] ?? '0'));
+      $proportionalModeRaw = trim((string)($_POST['proportional_mode'] ?? '0'));
+      $correctAnswersToScoreRaw = trim((string)($_POST['correct_answers_to_score'] ?? '1'));
+      if (!preg_match('/^\d+$/', $questionsPerAttemptRaw) || !preg_match('/^\d+$/', $correctAnswersToScoreRaw)) {
+        echo json_encode(['status' => 'error', 'message' => 'Question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
+      $proportionalMode = in_array($proportionalModeRaw, ['1', 'true', 'on'], true);
+      $correctAnswersToScore = max(1, (int)$correctAnswersToScoreRaw);
+      if (!$proportionalMode && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
+        echo json_encode(['status' => 'error', 'message' => 'Required correct answers cannot be greater than questions per attempt.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $settings['questionsPerAttempt'] = $questionsPerAttempt;
+      $settings['proportionalMode'] = $proportionalMode;
+      $settings['correctAnswersToScore'] = $correctAnswersToScore;
+    }
     if (!tcqSaveSettings($tcqSettingsPath, $settings)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save general settings.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'General settings saved.', 'settings' => tcqLoadSettings($tcqSettingsPath)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'General settings saved.', 'settings' => tcqApplyTaskTypeSettings(tcqLoadSettings($tcqSettingsPath), $tcqIsSharedAnswersTask)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -682,8 +715,9 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       exit;
     }
 
-    $existingSettings = tcqLoadSettings($tcqSettingsPath);
+    $existingSettings = tcqApplyTaskTypeSettings(tcqLoadSettings($tcqSettingsPath), $tcqIsSharedAnswersTask);
     $sharedAnswers = tcqNormalizeSharedAnswers(json_decode((string)($_POST['shared_answers'] ?? '[]'), true));
+    $sharedAnswerScores = tcqNormalizeSharedAnswerScores(json_decode((string)($_POST['shared_answer_scores'] ?? '[]'), true));
     $oldItems = tcqLoadStore($tcqStorePath, $tcqIsSharedAnswersTask, $existingSettings['sharedAnswers'] ?? []);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
     $usedCodes = [];
@@ -736,6 +770,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
     }
     $nextSettings = $existingSettings;
     $nextSettings['sharedAnswers'] = $sharedAnswers;
+    $nextSettings['sharedAnswerScores'] = $sharedAnswerScores;
     if (!tcqSaveSettings($tcqSettingsPath, $nextSettings)) {
       tcqSaveStore($tcqStorePath, $oldItems);
       echo json_encode(['status' => 'error', 'message' => 'Failed to save shared answers.'], JSON_UNESCAPED_UNICODE);
@@ -788,13 +823,14 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     <h3>General Setting</h3>
   </div>
   <div class="tcq-settings-grid">
-    <label class="tcq-settings-row">
-      <span>Answer Time Limit</span>
-      <input id="tcq-setting-answer-time-limit" type="checkbox" checked />
-    </label>
+    <?php if (!$tcqIsSharedAnswersTask): ?>
     <label class="tcq-settings-row">
       <span>Random Order</span>
       <input id="tcq-setting-random-order" type="checkbox" checked />
+    </label>
+    <label class="tcq-settings-row">
+      <span>Answer Time Limit</span>
+      <input id="tcq-setting-answer-time-limit" type="checkbox" checked />
     </label>
     <label class="tcq-settings-row">
       <span>Questions Per Attempt (0 = All)</span>
@@ -808,6 +844,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <span>Correct Answers For Score</span>
       <input id="tcq-setting-correct-answers-to-score" type="number" min="1" step="1" value="1" />
     </label>
+    <?php endif; ?>
   </div>
   <div class="tcq-settings-actions">
     <button id="tcq-save-settings" type="button" class="btn primary">Save General Settings</button>
@@ -859,22 +896,35 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
           <input id="tcq-shared-answer-5" name="sharedAnswer5" type="text" autocomplete="off" />
         </label>
       </div>
-      <p class="muted small">These 5 answers are reused for every question in this task.</p>
+      <div class="form grid tcq-score-grid" style="margin-top:12px;">
+        <label class="field standard-width">
+          <span>Answer 1 Inner Score</span>
+          <input name="sharedAnswerScore1" type="number" step="1" value="0" />
+        </label>
+        <label class="field standard-width">
+          <span>Answer 2 Inner Score</span>
+          <input name="sharedAnswerScore2" type="number" step="1" value="0" />
+        </label>
+        <label class="field standard-width">
+          <span>Answer 3 Inner Score</span>
+          <input name="sharedAnswerScore3" type="number" step="1" value="0" />
+        </label>
+        <label class="field standard-width">
+          <span>Answer 4 Inner Score</span>
+          <input name="sharedAnswerScore4" type="number" step="1" value="0" />
+        </label>
+        <label class="field standard-width">
+          <span>Answer 5 Inner Score</span>
+          <input name="sharedAnswerScore5" type="number" step="1" value="0" />
+        </label>
+      </div>
+      <p class="muted small">These 5 answers are reused for every question in this task. The inner scores are tracked separately from the main task score and are summed on the invitee row after the user finishes the test.</p>
     </div>
     <label class="field standard-width">
       <span>Question</span>
       <input id="tcq-question-input" name="question" type="text" autocomplete="off" required />
     </label>
-    <label id="tcq-correct-option-field" class="field standard-width tcq-hidden">
-      <span>Correct Answer</span>
-      <select id="tcq-correct-option" name="correctAnswerIndex">
-        <option value="0">Answer 1</option>
-        <option value="1">Answer 2</option>
-        <option value="2">Answer 3</option>
-        <option value="3">Answer 4</option>
-        <option value="4">Answer 5</option>
-      </select>
-    </label>
+    <?php if (!$tcqIsSharedAnswersTask): ?>
     <div class="form grid tcq-score-grid">
       <label class="field standard-width">
         <span>Active Duration (Golden Time) Score</span>
@@ -886,6 +936,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       </label>
     </div>
     <p class="muted small">These per-question scores are used when Proportional Score Mode is enabled.</p>
+    <?php endif; ?>
     <div id="tcq-answer-grid" class="form grid tcq-answer-grid">
       <label class="field standard-width">
         <span>Answer 1 (Correct)</span>
@@ -960,8 +1011,6 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const settingsStatusEl = document.getElementById('tcq-settings-status');
   const questionTypeField = document.getElementById('tcq-question-type-field');
   const sharedAnswerSection = document.getElementById('tcq-shared-answer-section');
-  const correctOptionField = document.getElementById('tcq-correct-option-field');
-  const correctOptionSelect = document.getElementById('tcq-correct-option');
   const formAnswerGrid = document.getElementById('tcq-answer-grid');
   const formActiveDurationScoreInput = document.getElementById('tcq-active-duration-score-input');
   const formGoldenTimeEndedScoreInput = document.getElementById('tcq-golden-time-ended-score-input');
@@ -972,15 +1021,17 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     || !statusEl
     || !saveAllBtn
     || !formAnswerGrid
-    || !(formActiveDurationScoreInput instanceof HTMLInputElement)
-    || !(formGoldenTimeEndedScoreInput instanceof HTMLInputElement)
+    || (!isSharedAnswersTask && !(formActiveDurationScoreInput instanceof HTMLInputElement))
+    || (!isSharedAnswersTask && !(formGoldenTimeEndedScoreInput instanceof HTMLInputElement))
   ) return;
   const formTypeInputs = form.querySelectorAll('input[name="questionType"]');
   const formAnswerInputs = form.querySelectorAll('input[name="answer1"], input[name="answer2"], input[name="answer3"], input[name="answer4"]');
   const sharedAnswerInputs = Array.from(form.querySelectorAll('input[name="sharedAnswer1"], input[name="sharedAnswer2"], input[name="sharedAnswer3"], input[name="sharedAnswer4"], input[name="sharedAnswer5"]'));
+  const sharedAnswerScoreInputs = Array.from(form.querySelectorAll('input[name="sharedAnswerScore1"], input[name="sharedAnswerScore2"], input[name="sharedAnswerScore3"], input[name="sharedAnswerScore4"], input[name="sharedAnswerScore5"]'));
 
   let items = [];
   let sharedAnswers = ['', '', '', '', ''];
+  let sharedAnswerScores = [0, 0, 0, 0, 0];
   let draggedRowId = '';
 
   const esc = (value) => String(value ?? '')
@@ -1012,47 +1063,24 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   };
 
   const normalizeSharedAnswers = (list) => normalizeAnswers(list, 5);
-  const normalizeCorrectAnswerIndex = (value) => {
-    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return 0;
-    }
-    return Math.min(4, parsed);
+  const normalizeSharedAnswerScores = (list) => {
+    const scores = Array.isArray(list) ? list.slice(0, 5) : [];
+    while (scores.length < 5) scores.push(0);
+    return scores.map((value) => normalizeScoreValue(value));
   };
-
-  const resolveCorrectAnswerLabel = (index) => {
-    const label = String(sharedAnswers[index] ?? '').trim();
-    return label || `Answer ${index + 1}`;
-  };
-
-  const buildCorrectOptionOptions = (selectedIndex = 0) => {
-    const currentIndex = normalizeCorrectAnswerIndex(selectedIndex);
-    return normalizeSharedAnswers(sharedAnswers).map((answer, index) => {
-      const selected = index === currentIndex ? ' selected' : '';
-      return `<option value="${index}"${selected}>${esc(resolveCorrectAnswerLabel(index))}</option>`;
-    }).join('');
-  };
-
-  const updateCorrectOptionChoices = () => {
-    if (correctOptionSelect instanceof HTMLSelectElement) {
-      const currentValue = normalizeCorrectAnswerIndex(correctOptionSelect.value);
-      correctOptionSelect.innerHTML = buildCorrectOptionOptions(currentValue);
-      correctOptionSelect.value = String(currentValue);
-    }
-    Array.from(body.querySelectorAll('select[data-field="correctAnswerIndex"]')).forEach((selectNode) => {
-      if (!(selectNode instanceof HTMLSelectElement)) return;
-      const selectedValue = normalizeCorrectAnswerIndex(selectNode.value);
-      selectNode.innerHTML = buildCorrectOptionOptions(selectedValue);
-      selectNode.value = String(selectedValue);
-    });
-  };
+  const getNextSharedAnswerScores = () => (
+    sharedAnswerScoreInputs.length > 0
+      ? normalizeSharedAnswerScores(sharedAnswerScoreInputs.map((field) => field.value))
+      : normalizeSharedAnswerScores(sharedAnswerScores)
+  );
 
   const syncSharedAnswersIntoItems = () => {
     if (!isSharedAnswersTask) return;
     items = items.map((item) => ({
       ...item,
       type: 'shared_mcq',
-      answers: normalizeSharedAnswers(sharedAnswers)
+      answers: normalizeSharedAnswers(sharedAnswers),
+      correctAnswerIndex: 0
     }));
   };
 
@@ -1062,7 +1090,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     type: normalizeType(item.type),
     question: String(item.question || ''),
     answers: normalizeType(item.type) === 'shared_mcq' ? normalizeSharedAnswers(item.answers) : normalizeAnswers(item.answers),
-    correctAnswerIndex: normalizeCorrectAnswerIndex(item.correctAnswerIndex ?? item.correct_answer_index ?? 0),
+    correctAnswerIndex: 0,
     activeDurationScore: normalizeScoreValue(item.activeDurationScore ?? item.active_duration_score ?? item.score ?? 0),
     goldenTimeEndedScore: normalizeScoreValue(item.goldenTimeEndedScore ?? item.golden_time_ended_score ?? item.afterEndtimeScore ?? item.after_endtime_score ?? 0),
     createdAt: String(item.createdAt || '')
@@ -1085,9 +1113,6 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     if (sharedAnswerSection instanceof HTMLElement) {
       sharedAnswerSection.classList.toggle('tcq-hidden', !isSharedAnswersTask);
     }
-    if (correctOptionField instanceof HTMLElement) {
-      correctOptionField.classList.toggle('tcq-hidden', !isSharedAnswersTask);
-    }
     formAnswerGrid.classList.toggle('tcq-hidden', !isMcq);
     formAnswerInputs.forEach((field) => {
       field.required = isMcq;
@@ -1098,10 +1123,6 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     sharedAnswerInputs.forEach((field) => {
       field.required = isSharedAnswersTask;
     });
-    if (correctOptionSelect instanceof HTMLSelectElement) {
-      correctOptionSelect.required = isSharedAnswersTask;
-    }
-    updateCorrectOptionChoices();
   };
 
   const setStatus = (message, isError = false) => {
@@ -1128,26 +1149,30 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   }
 
   const applySettingsToForm = (settings) => {
-    if (
-      !(answerTimeLimitToggle instanceof HTMLInputElement)
-      || !(randomOrderToggle instanceof HTMLInputElement)
-      || !(questionsPerAttemptInput instanceof HTMLInputElement)
-      || !(proportionalModeToggle instanceof HTMLInputElement)
-      || !(correctAnswersToScoreInput instanceof HTMLInputElement)
-    ) {
-      return;
+    if (randomOrderToggle instanceof HTMLInputElement) {
+      randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
     }
-    answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
-    randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
-    questionsPerAttemptInput.value = String(Math.max(0, Number.parseInt(String(settings?.questionsPerAttempt ?? 0), 10) || 0));
-    proportionalModeToggle.checked = Boolean(settings?.proportionalMode ?? false);
-    correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
+    if (answerTimeLimitToggle instanceof HTMLInputElement) {
+      answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
+    }
+    if (questionsPerAttemptInput instanceof HTMLInputElement) {
+      questionsPerAttemptInput.value = String(Math.max(0, Number.parseInt(String(settings?.questionsPerAttempt ?? 0), 10) || 0));
+    }
+    if (proportionalModeToggle instanceof HTMLInputElement) {
+      proportionalModeToggle.checked = Boolean(settings?.proportionalMode ?? false);
+    }
+    if (correctAnswersToScoreInput instanceof HTMLInputElement) {
+      correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
+    }
     sharedAnswers = normalizeSharedAnswers(settings?.sharedAnswers ?? settings?.shared_answers ?? sharedAnswers);
+    sharedAnswerScores = normalizeSharedAnswerScores(settings?.sharedAnswerScores ?? settings?.shared_answer_scores ?? sharedAnswerScores);
     sharedAnswerInputs.forEach((field, index) => {
       field.value = sharedAnswers[index] ?? '';
     });
+    sharedAnswerScoreInputs.forEach((field, index) => {
+      field.value = String(sharedAnswerScores[index] ?? 0);
+    });
     syncSharedAnswersIntoItems();
-    updateCorrectOptionChoices();
     syncScoreModeControls();
   };
 
@@ -1198,7 +1223,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
           <div class="tcq-row-grid">
             <div class="muted small">Code: ${esc(item.code || 'Auto')}</div>
             ${isSharedAnswersTask
-              ? '<div class="muted small">Type: Shared Answers Quiz</div>'
+              ? '<div class="muted small">Type: Survey Score Response</div>'
               : `<div class="tcq-type-group">
                   <label class="tcq-type-option">
                     <input type="radio" name="row-type-${esc(item.id)}" data-field="type" value="mcq" ${isMcq ? 'checked' : ''} />
@@ -1210,15 +1235,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
                   </label>
                 </div>`}
             <input class="tcq-field" type="text" data-field="question" value="${esc(item.question)}" />
-            ${isSharedMcq
-              ? `<label class="field standard-width">
-                  <span>Correct Answer</span>
-                  <select class="tcq-field" data-field="correctAnswerIndex">
-                    ${buildCorrectOptionOptions(item.correctAnswerIndex)}
-                  </select>
-                </label>
-                ${sharedAnswersMarkup}`
-              : ''}
+            ${isSharedMcq ? sharedAnswersMarkup : ''}
+            ${isSharedAnswersTask ? '' : `
             <div class="form grid tcq-score-grid">
               <label class="field standard-width">
                 <span>Active Duration (Golden Time) Score</span>
@@ -1229,6 +1247,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
                 <input class="tcq-field" type="number" min="0" step="1" data-field="goldenTimeEndedScore" value="${esc(String(normalizeScoreValue(item.goldenTimeEndedScore)))}" />
               </label>
             </div>
+            `}
             <div class="tcq-answer-grid ${isMcq ? '' : 'tcq-hidden'}">
               <input class="tcq-field" type="text" data-field="answer0" value="${esc(answers[0])}" ${isMcq ? '' : 'disabled'} />
               <input class="tcq-field" type="text" data-field="answer1" value="${esc(answers[1])}" ${isMcq ? '' : 'disabled'} />
@@ -1315,7 +1334,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     try {
       const data = await postAction('save_all', {
         items: JSON.stringify(items),
-        shared_answers: JSON.stringify(sharedAnswers)
+        shared_answers: JSON.stringify(sharedAnswers),
+        shared_answer_scores: JSON.stringify(sharedAnswerScores)
       });
       items = Array.isArray(data.items) ? data.items.map((item) => normalizeItemRecord(item)) : items;
       render();
@@ -1335,10 +1355,11 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     const fd = new FormData(form);
     const type = normalizeType(fd.get('questionType'));
     const nextSharedAnswers = normalizeSharedAnswers(sharedAnswerInputs.map((field) => field.value));
+    const nextSharedAnswerScores = getNextSharedAnswerScores();
     if (isSharedAnswersTask) {
       sharedAnswers = nextSharedAnswers;
+      sharedAnswerScores = nextSharedAnswerScores;
       syncSharedAnswersIntoItems();
-      updateCorrectOptionChoices();
     }
     const next = {
       id: makeId(),
@@ -1351,11 +1372,9 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
         String(fd.get('answer3') ?? '').trim(),
         String(fd.get('answer4') ?? '').trim()
       ] : ['', '', '', '']),
-      correctAnswerIndex: type === 'shared_mcq'
-        ? normalizeCorrectAnswerIndex(fd.get('correctAnswerIndex') ?? 0)
-        : 0,
-      activeDurationScore: normalizeScoreValue(fd.get('activeDurationScore') ?? 0),
-      goldenTimeEndedScore: normalizeScoreValue(fd.get('goldenTimeEndedScore') ?? 0),
+      correctAnswerIndex: 0,
+      activeDurationScore: isSharedAnswersTask ? 0 : normalizeScoreValue(fd.get('activeDurationScore') ?? 0),
+      goldenTimeEndedScore: isSharedAnswersTask ? 0 : normalizeScoreValue(fd.get('goldenTimeEndedScore') ?? 0),
       createdAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
     };
     if (!next.question) {
@@ -1378,15 +1397,15 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       sharedAnswerInputs.forEach((field, index) => {
         field.value = sharedAnswers[index] ?? '';
       });
+      sharedAnswerScoreInputs.forEach((field, index) => {
+        field.value = String(sharedAnswerScores[index] ?? 0);
+      });
     }
     const defaultType = form.querySelector('input[name="questionType"][value="mcq"]');
     if (defaultType instanceof HTMLInputElement) {
       defaultType.checked = true;
     }
     syncAddFormTypeState();
-    if (correctOptionSelect instanceof HTMLSelectElement) {
-      correctOptionSelect.value = '0';
-    }
     input.focus();
   });
 
@@ -1407,10 +1426,6 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       items[idx][field] = normalizeScoreValue(target.value);
       return;
     }
-    if (field === 'correctAnswerIndex') {
-      items[idx].correctAnswerIndex = normalizeCorrectAnswerIndex(target.value);
-      return;
-    }
     if (field.startsWith('answer')) {
       const pos = Number.parseInt(field.replace('answer', ''), 10);
       if (Number.isInteger(pos) && pos >= 0 && pos < 4) {
@@ -1423,18 +1438,6 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
 
   body.addEventListener('change', (event) => {
     const target = event.target;
-    if (target instanceof HTMLSelectElement) {
-      const row = target.closest('tr[data-row-id]');
-      if (!row) return;
-      const id = row.getAttribute('data-row-id') || '';
-      const idx = items.findIndex((item) => item.id === id);
-      if (idx < 0) return;
-      if (target.dataset.field === 'correctAnswerIndex') {
-        items[idx].correctAnswerIndex = normalizeCorrectAnswerIndex(target.value);
-        void persistAllChanges('Correct answer updated and saved.');
-      }
-      return;
-    }
     if (!(target instanceof HTMLInputElement)) return;
     if (target.dataset.field !== 'type') return;
     const row = target.closest('tr[data-row-id]');
@@ -1536,7 +1539,12 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     field.addEventListener('input', () => {
       sharedAnswers[index] = String(field.value ?? '');
       syncSharedAnswersIntoItems();
-      updateCorrectOptionChoices();
+    });
+  });
+  sharedAnswerScoreInputs.forEach((field, index) => {
+    field.addEventListener('input', () => {
+      sharedAnswerScores[index] = normalizeScoreValue(field.value);
+      render();
     });
   });
   syncAddFormTypeState();
@@ -1548,31 +1556,31 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
 
   if (saveSettingsBtn instanceof HTMLButtonElement) {
     saveSettingsBtn.addEventListener('click', async () => {
+      const settingsPayload = {
+        random_order: randomOrderToggle instanceof HTMLInputElement && randomOrderToggle.checked ? '1' : '0'
+      };
       if (
-        !(answerTimeLimitToggle instanceof HTMLInputElement)
-        || !(randomOrderToggle instanceof HTMLInputElement)
-        || !(questionsPerAttemptInput instanceof HTMLInputElement)
-        || !(proportionalModeToggle instanceof HTMLInputElement)
-        || !(correctAnswersToScoreInput instanceof HTMLInputElement)
+        !isSharedAnswersTask
+        && answerTimeLimitToggle instanceof HTMLInputElement
+        && questionsPerAttemptInput instanceof HTMLInputElement
+        && proportionalModeToggle instanceof HTMLInputElement
+        && correctAnswersToScoreInput instanceof HTMLInputElement
       ) {
-        return;
-      }
-      const questionsPerAttempt = Math.max(0, Number.parseInt(questionsPerAttemptInput.value || '0', 10) || 0);
-      const proportionalMode = proportionalModeToggle.checked;
-      const correctAnswersToScore = Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0);
-      if (!proportionalMode && questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
-        setSettingsStatus('Required correct answers cannot be greater than questions per attempt.', true);
-        return;
+        const questionsPerAttempt = Math.max(0, Number.parseInt(questionsPerAttemptInput.value || '0', 10) || 0);
+        const proportionalMode = proportionalModeToggle.checked;
+        const correctAnswersToScore = Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0);
+        if (!proportionalMode && questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
+          setSettingsStatus('Required correct answers cannot be greater than questions per attempt.', true);
+          return;
+        }
+        settingsPayload.answer_time_limit = answerTimeLimitToggle.checked ? '1' : '0';
+        settingsPayload.questions_per_attempt = String(questionsPerAttempt);
+        settingsPayload.proportional_mode = proportionalMode ? '1' : '0';
+        settingsPayload.correct_answers_to_score = String(correctAnswersToScore);
       }
       saveSettingsBtn.disabled = true;
       try {
-        const data = await postAction('save_settings', {
-          answer_time_limit: answerTimeLimitToggle.checked ? '1' : '0',
-          random_order: randomOrderToggle.checked ? '1' : '0',
-          questions_per_attempt: String(questionsPerAttempt),
-          proportional_mode: proportionalMode ? '1' : '0',
-          correct_answers_to_score: String(correctAnswersToScore)
-        });
+        const data = await postAction('save_settings', settingsPayload);
         applySettingsToForm(data.settings || {});
         setSettingsStatus(data.message || 'General settings saved.');
       } catch (error) {

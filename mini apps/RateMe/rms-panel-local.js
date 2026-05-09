@@ -59,7 +59,10 @@
 
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
-    if (normalizedType === 'quiz' || normalizedType === 'shared_answers_quiz') {
+    if (normalizedType === 'shared_answers_quiz') {
+      return ['control', 'information', 'response-level', 'quiz'];
+    }
+    if (normalizedType === 'quiz') {
       return ['control', 'information', 'quiz'];
     }
     if (normalizedType === 'info') {
@@ -115,6 +118,41 @@
     return parsed;
   }
 
+  function normalizeSharedResponseLevels(value) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const seen = new Set();
+    const normalized = value.map((item) => {
+      const levelIdRaw = String(item?.id ?? '').trim();
+      let id = levelIdRaw;
+      if (!id || seen.has(id.toLowerCase())) {
+        id = `trl_${Math.random().toString(16).slice(2, 10)}`;
+      }
+      seen.add(id.toLowerCase());
+      const startScore = normalizeScoreValue(item?.startScore ?? item?.start_score ?? 0);
+      const endScore = normalizeScoreValue(item?.endScore ?? item?.end_score ?? startScore);
+      return {
+        id,
+        name: String(item?.name ?? '').trim(),
+        text: String(item?.text ?? item?.responseText ?? item?.response_text ?? '').replace(/\r\n?/g, '\n'),
+        startScore,
+        endScore,
+        createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
+      };
+    }).filter((item) => item.name !== '' && item.endScore >= item.startScore);
+    normalized.sort((a, b) => {
+      if (a.startScore === b.startScore) {
+        if (a.endScore === b.endScore) {
+          return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+        }
+        return a.endScore - b.endScore;
+      }
+      return a.startScore - b.startScore;
+    });
+    return normalized;
+  }
+
   function normalizeTask(task, index) {
     const raw = task && typeof task === 'object' ? task : {};
     const id = String(raw.id ?? '').trim();
@@ -166,6 +204,7 @@
           createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
         })).filter((item) => item.id)
         : [],
+      responseLevels: normalizeSharedResponseLevels(raw.responseLevels ?? raw.response_levels ?? []),
       order: Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : (index + 1)
     };
   }
@@ -556,6 +595,47 @@
       info_guide_prefix: String(controls.guidePrefixInput?.value || '').replace(/\r\n?/g, '\n'),
       info_guide_suffix: String(controls.guideSuffixInput?.value || '').replace(/\r\n?/g, '\n')
     };
+  }
+
+  function getSharedResponseLevelControls(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    if (normalizeTaskType(pane.dataset.taskType || 'quiz') !== 'shared_answers_quiz') return null;
+    return {
+      nameInput: pane.querySelector('[data-response-level-add-name]'),
+      startInput: pane.querySelector('[data-response-level-add-start]'),
+      endInput: pane.querySelector('[data-response-level-add-end]'),
+      textInput: pane.querySelector('[data-response-level-add-text]'),
+      addButton: pane.querySelector('[data-action="add-response-level"]'),
+      saveStatusEl: pane.querySelector('[data-response-level-save-status]'),
+      listStatusEl: pane.querySelector('[data-response-level-list-status]')
+    };
+  }
+
+  function setSharedResponseLevelStatus(pane, message, isError = false, target = 'list') {
+    const controls = getSharedResponseLevelControls(pane);
+    if (!controls) return;
+    const statusEl = target === 'save' ? controls.saveStatusEl : controls.listStatusEl;
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.textContent = message || '';
+    statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function collectSharedResponseLevelsFromPane(pane) {
+    if (!(pane instanceof HTMLElement)) return [];
+    const rows = Array.from(pane.querySelectorAll('tr[data-response-level-row]'));
+    return normalizeSharedResponseLevels(rows.map((row) => {
+      const nameInput = row.querySelector('[data-response-level-name]');
+      const startInput = row.querySelector('[data-response-level-start]');
+      const endInput = row.querySelector('[data-response-level-end]');
+      const textInput = row.querySelector('[data-response-level-text]');
+      return {
+        id: String(row.getAttribute('data-response-level-id') || '').trim(),
+        name: String(nameInput instanceof HTMLInputElement ? nameInput.value : '').trim(),
+        startScore: normalizeScoreValue(startInput instanceof HTMLInputElement ? startInput.value : 0),
+        endScore: normalizeScoreValue(endInput instanceof HTMLInputElement ? endInput.value : 0),
+        text: String(textInput instanceof HTMLTextAreaElement ? textInput.value : '').replace(/\r\n?/g, '\n')
+      };
+    }));
   }
 
   function collectTaskTeamSettingsFromPane(pane) {
@@ -2226,11 +2306,12 @@
     const isInfoTask = isInfoLikeTaskType(task.taskType);
     const hasInformationPane = hasInformationPaneTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
+    const isSharedResponseTask = taskTypeToken === 'shared_answers_quiz';
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
     const typeLabel = taskTypeToken === 'describe_photo'
       ? 'Describe Photo Task'
-      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : (taskTypeToken === 'shared_answers_quiz' ? 'Shared Answers Quiz Task' : 'Quiz Task')));
+      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : (taskTypeToken === 'shared_answers_quiz' ? 'Survey Score Response' : 'Quiz Task')));
     const quizSrc = `mini%20apps/RateMe/rmsQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
@@ -2242,13 +2323,16 @@
     const teamAdditionalNote = String(task.teamAdditionalNote || '');
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
+    const responseLevels = normalizeSharedResponseLevels(task?.responseLevels);
     const topTabsMarkup = isDescribePhotoTask
       ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">Photo</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
       : (isTeamTask
         ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">Challenge Storage</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">Team</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Teams Rate</button>'
-        : (isInfoTask
+        : (isSharedResponseTask
+          ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="response-level">Response Level</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'
+          : (isInfoTask
           ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
-          : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'));
+          : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>')));
     const informationSection = hasInformationPane
       ? `
           <div class="tc-task-top-section" data-task-top-section="information" hidden>
@@ -2301,6 +2385,72 @@
                 referrerpolicy="same-origin"
                 title="Task Quiz"
               ></iframe>
+            </div>
+          </div>
+        `
+      : '';
+    const sharedResponseLevelSection = isSharedResponseTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="response-level" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Add Response Level</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field standard-width">
+                  <span>Name</span>
+                  <input type="text" data-response-level-add-name autocomplete="off" placeholder="Response level name" />
+                </label>
+                <label class="field standard-width">
+                  <span>Inner Start Score</span>
+                  <input type="number" min="0" step="1" data-response-level-add-start />
+                </label>
+                <label class="field standard-width">
+                  <span>Inner End Score</span>
+                  <input type="number" min="0" step="1" data-response-level-add-end />
+                </label>
+                <label class="field full">
+                  <span>Text</span>
+                  <textarea data-response-level-add-text rows="6" placeholder="Response text"></textarea>
+                </label>
+                <div class="field full">
+                  <button type="button" class="btn primary standard-primary-button" data-action="add-response-level">Add</button>
+                </div>
+                <p class="muted small" data-response-level-save-status aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="section-header"><h3>Response Levels</h3></div>
+              <div class="table-wrapper">
+                <table class="tct-list-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Inner Start</th>
+                      <th>Inner End</th>
+                      <th>Text</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${responseLevels.length
+                      ? responseLevels.map((level) => `
+                        <tr data-response-level-row data-response-level-id="${escapeHtml(level.id)}">
+                          <td><input type="text" data-response-level-name value="${escapeHtml(level.name)}" /></td>
+                          <td><input type="number" min="0" step="1" data-response-level-start value="${escapeHtml(String(level.startScore))}" /></td>
+                          <td><input type="number" min="0" step="1" data-response-level-end value="${escapeHtml(String(level.endScore))}" /></td>
+                          <td><textarea data-response-level-text rows="4">${escapeHtml(level.text)}</textarea></td>
+                          <td>
+                            <div class="tct-action-wrap">
+                              <button type="button" class="btn ghost" data-action="save-response-level">Save</button>
+                              <button type="button" class="btn ghost" data-action="remove-response-level">Remove</button>
+                            </div>
+                          </td>
+                        </tr>
+                      `).join('')
+                      : '<tr><td colspan="5" class="muted">No response levels added yet.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted small" data-response-level-list-status aria-live="polite"></p>
             </div>
           </div>
         `
@@ -2559,12 +2709,19 @@
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-score-system">Save</button>
               </div>
-              ${isQuizLikeTaskType(taskTypeToken) ? '<p class="muted small">If Proportional Score Mode is enabled in the Quiz pane, these values are only shown on the TCM task card. The real awarded score comes from each question&#39;s own scores.</p>' : ''}
+              ${isQuizLikeTaskType(taskTypeToken)
+                ? `<p class="muted small">${
+                    taskTypeToken === 'shared_answers_quiz'
+                      ? 'For Survey Score Response, users get the score configured here after answering all questions. Shared answers do not use a correct-answer or per-answer score.'
+                      : 'If Proportional Score Mode is enabled in the Quiz pane, these values are only shown on the TCM task card. The real awarded score comes from each question&#39;s own scores.'
+                  }</p>`
+                : ''}
               <p class="muted small" data-task-score-save-status aria-live="polite"></p>
             </div>
           </div>
         </div>
         ${informationSection}
+        ${sharedResponseLevelSection}
         ${describePhotoSection}
         ${teamChallengeSection}
         ${teamSettingsSection}
@@ -2773,6 +2930,13 @@
       }
       if (fieldName === 'infoTitle' || fieldName === 'infoText' || fieldName === 'guidePrefix' || fieldName === 'guideSuffix') {
         setTaskInfoContentSaveStatus(pane, '');
+        return;
+      }
+      if (
+        target.matches('[data-response-level-add-name], [data-response-level-add-start], [data-response-level-add-end], [data-response-level-add-text], [data-response-level-name], [data-response-level-start], [data-response-level-end], [data-response-level-text]')
+      ) {
+        setSharedResponseLevelStatus(pane, '', false, 'save');
+        setSharedResponseLevelStatus(pane, '', false, 'list');
       }
     };
 
@@ -3300,6 +3464,144 @@
           setTaskInfoContentSaveStatus(pane, error?.message || 'Failed to save information.', true);
         } finally {
           saveInfoButton.disabled = false;
+        }
+        return;
+      }
+
+      const addResponseLevelButton = target.closest('[data-action="add-response-level"]');
+      if (addResponseLevelButton instanceof HTMLButtonElement) {
+        const pane = addResponseLevelButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const controls = getSharedResponseLevelControls(pane);
+        if (!taskId || !controls) return;
+        const nameInput = controls.nameInput;
+        const startInput = controls.startInput;
+        const endInput = controls.endInput;
+        const textInput = controls.textInput;
+        if (
+          !(nameInput instanceof HTMLInputElement) ||
+          !(startInput instanceof HTMLInputElement) ||
+          !(endInput instanceof HTMLInputElement) ||
+          !(textInput instanceof HTMLTextAreaElement)
+        ) {
+          return;
+        }
+
+        const nextName = String(nameInput.value || '').trim();
+        const nextStart = normalizeScoreValue(startInput.value);
+        const nextEnd = normalizeScoreValue(endInput.value);
+        const nextText = String(textInput.value || '').replace(/\r\n?/g, '\n');
+        if (!nextName) {
+          setSharedResponseLevelStatus(pane, 'Name is required.', true, 'save');
+          nameInput.focus();
+          return;
+        }
+        if (nextEnd < nextStart) {
+          setSharedResponseLevelStatus(pane, 'Inner end score must be equal to or greater than inner start score.', true, 'save');
+          endInput.focus();
+          return;
+        }
+
+        const nextLevels = [
+          ...collectSharedResponseLevelsFromPane(pane),
+          { id: '', name: nextName, startScore: nextStart, endScore: nextEnd, text: nextText }
+        ];
+        addResponseLevelButton.disabled = true;
+        setSharedResponseLevelStatus(pane, 'Saving...', false, 'save');
+        try {
+          const data = await postTaskAction('save_shared_response_levels', {
+            id: taskId,
+            levels_json: JSON.stringify(nextLevels)
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.RMS_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'response-level');
+            setSharedResponseLevelStatus(activePane, data.message || 'Response levels saved.', false, 'list');
+          }
+        } catch (error) {
+          setSharedResponseLevelStatus(pane, error?.message || 'Failed to save response levels.', true, 'save');
+        } finally {
+          addResponseLevelButton.disabled = false;
+        }
+        return;
+      }
+
+      const saveResponseLevelButton = target.closest('[data-action="save-response-level"]');
+      if (saveResponseLevelButton instanceof HTMLButtonElement) {
+        const pane = saveResponseLevelButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        if (!taskId) return;
+        saveResponseLevelButton.disabled = true;
+        setSharedResponseLevelStatus(pane, 'Saving...', false, 'list');
+        try {
+          const data = await postTaskAction('save_shared_response_levels', {
+            id: taskId,
+            levels_json: JSON.stringify(collectSharedResponseLevelsFromPane(pane))
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.RMS_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'response-level');
+            setSharedResponseLevelStatus(activePane, data.message || 'Response levels saved.', false, 'list');
+          }
+        } catch (error) {
+          setSharedResponseLevelStatus(pane, error?.message || 'Failed to save response levels.', true, 'list');
+        } finally {
+          saveResponseLevelButton.disabled = false;
+        }
+        return;
+      }
+
+      const removeResponseLevelButton = target.closest('[data-action="remove-response-level"]');
+      if (removeResponseLevelButton instanceof HTMLButtonElement) {
+        const pane = removeResponseLevelButton.closest('.sub-pane[data-task-pane="1"]');
+        const row = removeResponseLevelButton.closest('tr[data-response-level-row]');
+        if (!(pane instanceof HTMLElement) || !(row instanceof HTMLTableRowElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const targetLevelId = String(row.getAttribute('data-response-level-id') || '').trim();
+        if (!taskId || !targetLevelId) return;
+        const nextLevels = collectSharedResponseLevelsFromPane(pane).filter((item) => String(item.id || '').trim() !== targetLevelId);
+        removeResponseLevelButton.disabled = true;
+        setSharedResponseLevelStatus(pane, 'Removing...', false, 'list');
+        try {
+          const data = await postTaskAction('save_shared_response_levels', {
+            id: taskId,
+            levels_json: JSON.stringify(nextLevels)
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.RMS_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'response-level');
+            setSharedResponseLevelStatus(activePane, data.message || 'Response levels saved.', false, 'list');
+          }
+        } catch (error) {
+          setSharedResponseLevelStatus(pane, error?.message || 'Failed to save response levels.', true, 'list');
+        } finally {
+          removeResponseLevelButton.disabled = false;
         }
         return;
       }

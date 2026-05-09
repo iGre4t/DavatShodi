@@ -83,7 +83,10 @@ function tcTaskAccessNormalizeTaskType(string $value): string
 function tcTaskAccessResolvePaneKeys(string $taskType): array
 {
   $type = tcTaskAccessNormalizeTaskType($taskType);
-  if ($type === 'quiz' || $type === 'shared_answers_quiz') {
+  if ($type === 'shared_answers_quiz') {
+    return ['control', 'information', 'response-level', 'quiz'];
+  }
+  if ($type === 'quiz') {
     return ['control', 'information', 'quiz'];
   }
   if ($type === 'info') {
