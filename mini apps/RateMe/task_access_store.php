@@ -65,6 +65,9 @@ function tcTaskAccessNormalizeBool($value): bool
 function tcTaskAccessNormalizeTaskType(string $value): string
 {
   $token = tcTaskAccessNormalizeToken($value);
+  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz'], true)) {
+    return 'shared_answers_quiz';
+  }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
@@ -80,7 +83,7 @@ function tcTaskAccessNormalizeTaskType(string $value): string
 function tcTaskAccessResolvePaneKeys(string $taskType): array
 {
   $type = tcTaskAccessNormalizeTaskType($taskType);
-  if ($type === 'quiz') {
+  if ($type === 'quiz' || $type === 'shared_answers_quiz') {
     return ['control', 'information', 'quiz'];
   }
   if ($type === 'info') {
@@ -105,7 +108,7 @@ function tcTaskAccessLoadTasks(string $tasksStorePath): array
     return [];
   }
   $jsonPayload = '';
-  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $matches)) {
+  if (preg_match('/window\.(?:TC|RMS)_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $matches)) {
     $jsonPayload = (string)($matches[1] ?? '');
   } else {
     $start = strpos($content, '[');

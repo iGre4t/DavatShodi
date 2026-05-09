@@ -19,6 +19,9 @@
     if (token === 'quiz' || token === 'quiz-task' || token === 'quiz task') {
       return 'quiz';
     }
+    if (token === 'shared_answers_quiz' || token === 'shared-answers-quiz' || token === 'shared answers quiz' || token === 'shared_quiz' || token === 'shared-quiz' || token === 'shared quiz') {
+      return 'shared_answers_quiz';
+    }
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
@@ -31,6 +34,11 @@
     return 'quiz';
   }
 
+  function isQuizLikeTaskType(taskType) {
+    const type = normalizeTaskType(taskType);
+    return type === 'quiz' || type === 'shared_answers_quiz';
+  }
+
   function isInfoLikeTaskType(taskType) {
     const type = normalizeTaskType(taskType);
     return type === 'info' || type === 'team_task' || type === 'describe_photo';
@@ -38,7 +46,7 @@
 
   function hasInformationPaneTaskType(taskType) {
     const type = normalizeTaskType(taskType);
-    return type === 'quiz' || type === 'info' || type === 'team_task' || type === 'describe_photo';
+    return type === 'quiz' || type === 'shared_answers_quiz' || type === 'info' || type === 'team_task' || type === 'describe_photo';
   }
 
   function isDescribePhotoTaskType(taskType) {
@@ -51,7 +59,7 @@
 
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
-    if (normalizedType === 'quiz') {
+    if (normalizedType === 'quiz' || normalizedType === 'shared_answers_quiz') {
       return ['control', 'information', 'quiz'];
     }
     if (normalizedType === 'info') {
@@ -2222,7 +2230,7 @@
     const isTeamTask = taskTypeToken === 'team_task';
     const typeLabel = taskTypeToken === 'describe_photo'
       ? 'Describe Photo Task'
-      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : 'Quiz Task'));
+      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : (taskTypeToken === 'shared_answers_quiz' ? 'Shared Answers Quiz Task' : 'Quiz Task')));
     const quizSrc = `mini%20apps/RateMe/rmsQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
@@ -2551,7 +2559,7 @@
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-score-system">Save</button>
               </div>
-              ${taskTypeToken === 'quiz' ? '<p class="muted small">If Proportional Score Mode is enabled in the Quiz pane, these values are only shown on the TCM task card. The real awarded score comes from each question&#39;s own scores.</p>' : ''}
+              ${isQuizLikeTaskType(taskTypeToken) ? '<p class="muted small">If Proportional Score Mode is enabled in the Quiz pane, these values are only shown on the TCM task card. The real awarded score comes from each question&#39;s own scores.</p>' : ''}
               <p class="muted small" data-task-score-save-status aria-live="polite"></p>
             </div>
           </div>

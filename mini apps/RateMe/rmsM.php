@@ -328,15 +328,27 @@ function readQuestionStore(string $path): array
       continue;
     }
     $type = trim(mb_strtolower((string)($row['type'] ?? 'mcq'), 'UTF-8'));
-    if ($type !== 'percentage') {
+    if ($type !== 'percentage' && $type !== 'shared_mcq' && $type !== 'shared-mcq' && $type !== 'shared mcq') {
       $type = 'mcq';
+    }
+    if ($type === 'shared-mcq' || $type === 'shared mcq') {
+      $type = 'shared_mcq';
     }
     $question = trim((string)($row['question'] ?? ''));
     $answers = is_array($row['answers'] ?? null) ? array_values($row['answers']) : [];
+    $correctAnswerIndex = max(0, min(4, (int)($row['correctAnswerIndex'] ?? ($row['correct_answer_index'] ?? 0))));
     if ($question === '') {
       continue;
     }
-    if ($type === 'mcq') {
+    if ($type === 'shared_mcq') {
+      if (count($answers) < 5) {
+        continue;
+      }
+      $answers = array_map(static fn($value) => trim((string)$value), array_slice($answers, 0, 5));
+      if (count(array_filter($answers, static fn($value) => $value !== '')) < 5) {
+        continue;
+      }
+    } elseif ($type === 'mcq') {
       if (count($answers) < 4) {
         continue;
       }
@@ -354,6 +366,7 @@ function readQuestionStore(string $path): array
       'question' => $question,
       // Answer at index 0 is the correct answer.
       'answers' => $answers,
+      'correctAnswerIndex' => $type === 'shared_mcq' ? $correctAnswerIndex : 0,
       'activeDurationScore' => normalizeTaskScoreValue($row['activeDurationScore'] ?? ($row['active_duration_score'] ?? ($row['score'] ?? 0))),
       'goldenTimeEndedScore' => normalizeTaskScoreValue($row['goldenTimeEndedScore'] ?? ($row['golden_time_ended_score'] ?? ($row['afterEndtimeScore'] ?? ($row['after_endtime_score'] ?? 0))))
     ];
@@ -760,7 +773,7 @@ function readTaskTitlesFromJsStore(string $storePath): array
   }
 
   $jsonPayload = '';
-  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
+  if (preg_match('/window\.(?:TC|RMS)_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
     $jsonPayload = (string)($m[1] ?? '');
   } else {
     $start = strpos($content, '[');
@@ -860,6 +873,9 @@ function normalizeTaskTypeValue($value): string
   if ($token === 'quiz' || $token === 'quiz-task' || $token === 'quiz task') {
     return 'quiz';
   }
+  if ($token === 'shared_answers_quiz' || $token === 'shared-answers-quiz' || $token === 'shared answers quiz' || $token === 'shared_quiz' || $token === 'shared-quiz' || $token === 'shared quiz') {
+    return 'shared_answers_quiz';
+  }
   if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
     return 'info';
   }
@@ -872,6 +888,12 @@ function normalizeTaskTypeValue($value): string
   return 'quiz';
 }
 
+function isQuizLikeTaskTypeValue($value): bool
+{
+  $type = normalizeTaskTypeValue($value);
+  return $type === 'quiz' || $type === 'shared_answers_quiz';
+}
+
 function readTasksStoreItems(string $storePath): array
 {
   if (!is_file($storePath)) {
@@ -882,7 +904,7 @@ function readTasksStoreItems(string $storePath): array
     return [];
   }
   $jsonPayload = '';
-  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
+  if (preg_match('/window\.(?:TC|RMS)_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
     $jsonPayload = (string)($m[1] ?? '');
   } else {
     $start = strpos($content, '[');
@@ -2343,6 +2365,11 @@ function isTaskQuizAnswerCorrect(array $question, string $answer): bool
     return preg_match('/^\d{1,3}$/', trim($answer)) === 1;
   }
   $answers = is_array($question['answers'] ?? null) ? array_values($question['answers']) : [];
+  if ($type === 'shared_mcq') {
+    $correctAnswerIndex = max(0, min(4, (int)($question['correctAnswerIndex'] ?? ($question['correct_answer_index'] ?? 0))));
+    $correctAnswer = trim((string)($answers[$correctAnswerIndex] ?? ''));
+    return $correctAnswer !== '' && trim($answer) === $correctAnswer;
+  }
   $correctAnswer = trim((string)($answers[0] ?? ''));
   return $correctAnswer !== '' && trim($answer) === $correctAnswer;
 }
@@ -3029,7 +3056,7 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     $taskScoreMap = parseTaskScoreMap((string)($row[$taskScoreMapIndex] ?? ''));
   }
   $taskScore = 0;
-  if ($taskType === 'quiz' && array_key_exists($taskId, $taskScoreMap)) {
+  if (isQuizLikeTaskTypeValue($taskType) && array_key_exists($taskId, $taskScoreMap)) {
     $taskScore = max(0, (int)($taskScoreMap[$taskId] ?? 0));
     if ($taskScore > 0) {
       $isCompleted = true;
@@ -3137,7 +3164,7 @@ function buildTaskPayloadForView(
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
     $isActive = $status === 'active';
-    $isEndedQuiz = $taskType === 'quiz' && $status === 'ended';
+    $isEndedQuiz = isQuizLikeTaskTypeValue($taskType) && $status === 'ended';
     $progress = readTaskUserProgress($task, $inviteesPath, $inviteesMapPath, $workId);
     $completed = (bool)($progress['completed'] ?? false);
     $describeSubmitted = (bool)($progress['describeSubmitted'] ?? false);
@@ -3951,18 +3978,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    $available = $status === 'active' || ($taskType === 'quiz' && $status === 'ended');
+    $available = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
     $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
     $tagCode = (string)($quizAssets['tagCode'] ?? '');
     $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
     $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : TCQ_DEFAULT_SETTINGS;
     $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
-    if ($taskType !== 'quiz' || !$available || !empty($progress['completed'])) {
+    if (!isQuizLikeTaskTypeValue($taskType) || !$available || !empty($progress['completed'])) {
       clearTaskQuizAttemptState($sessionWorkId, $taskId);
     }
     $questionsPayload = $questions;
     $settingsPayload = $settings;
-    if ($taskType === 'quiz' && $available && empty($progress['completed'])) {
+    if (isQuizLikeTaskTypeValue($taskType) && $available && empty($progress['completed'])) {
       $attempt = startTaskQuizAttempt($sessionWorkId, $taskId, $questions, $settings);
       $questionsPayload = is_array($attempt['questions'] ?? null) ? $attempt['questions'] : [];
       $settingsPayload = is_array($attempt['settings'] ?? null) ? $attempt['settings'] : $settings;
@@ -4043,7 +4070,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    if ($taskType !== 'quiz') {
+    if (!isQuizLikeTaskTypeValue($taskType)) {
       echo json_encode(['status' => 'ok']);
       exit;
     }
@@ -4953,12 +4980,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    $canComplete = $status === 'active' || ($taskType === 'quiz' && $status === 'ended');
+    $canComplete = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
     if (!$canComplete) {
       echo json_encode(['status' => 'error', 'message' => 'This task is not available right now.']);
       exit;
     }
-    if ($taskType === 'quiz') {
+    if (isQuizLikeTaskTypeValue($taskType)) {
       $attemptState = readTaskQuizAttemptState($sessionWorkId, $taskId);
       if (!is_array($attemptState) || !($attemptState['questionCodes'] ?? [])) {
         echo json_encode(['status' => 'error', 'message' => 'تلاش فعلی ماموریت منقضی شده است. دوباره وارد ماموریت شوید.']);
@@ -5013,11 +5040,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $activeScore = max(0, (int)($task['score'] ?? 0));
     $afterEndScore = max(0, (int)($task['afterEndtimeScore'] ?? 0));
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
-    $isProportionalQuizCompletion = $taskType === 'quiz'
+    $isProportionalQuizCompletion = isQuizLikeTaskTypeValue($taskType)
       && isset($attemptState)
       && is_array($attemptState)
       && max(0, (int)($attemptState['requiredCorrectAnswers'] ?? 1)) === 0;
-    $awardedScoreBase = (($taskType === 'quiz') && $status === 'ended')
+    $awardedScoreBase = (isQuizLikeTaskTypeValue($taskType) && $status === 'ended')
       ? $afterEndScore
       : $activeScore;
     $awardedScore = $awardedScoreBase;
@@ -5067,7 +5094,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'userTaskScore' => $awardedScore,
       'scoreMode' => $isProportionalQuizCompletion
         ? 'proportional'
-        : (($taskType === 'quiz' && $status === 'ended') ? 'after_endtime' : 'active'),
+        : ((isQuizLikeTaskTypeValue($taskType) && $status === 'ended') ? 'after_endtime' : 'active'),
       'totalScore' => $newTotalScore
     ]);
     exit;
@@ -9896,14 +9923,19 @@ $sessionPayload = [
           return token === '1' || token === 'true' || token === 'on' || token === 'yes';
         };
 
+        const isQuizLikeTaskType = (taskType) => {
+          const token = String(taskType ?? '').trim().toLowerCase();
+          return token === 'quiz' || token === 'shared_answers_quiz';
+        };
+
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
           if (completed) return 'تکمیل شده';
           if (status === 'active') {
-            return (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
+            return (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
           }
           if (status === 'upcoming') return 'به‌زودی';
           if (status === 'ended') {
-            return taskType === 'quiz'
+            return isQuizLikeTaskType(taskType)
               ? 'مهلت طلایی تمام شده؛ پاسخ دهید و امتیاز کمتر بگیرید'
               : 'پایان‌یافته';
           }
@@ -9913,7 +9945,7 @@ $sessionPayload = [
         const taskAvailableScoreNow = (button, status, taskType) => {
           const activeScore = Math.max(0, Number.parseInt(button?.dataset?.taskScore || '0', 10) || 0);
           const afterEndScore = Math.max(0, Number.parseInt(button?.dataset?.taskAfterEndScore || '0', 10) || 0);
-          if (taskType === 'quiz' && status === 'ended') {
+          if (isQuizLikeTaskType(taskType) && status === 'ended') {
             return afterEndScore;
           }
           return activeScore;
@@ -9927,7 +9959,7 @@ $sessionPayload = [
           .replaceAll("'", '&#39;');
 
         const isNonQuizPendingScore = (button, taskType) => {
-          if (taskType === 'quiz') return false;
+          if (isQuizLikeTaskType(taskType)) return false;
           const configuredScore = Math.max(0, Number.parseInt(button?.dataset?.taskScore || '0', 10) || 0);
           return configuredScore <= 0;
         };
@@ -10053,7 +10085,7 @@ $sessionPayload = [
 
         const canOpenTaskByStatus = (status, taskType) => {
           if (status === 'active') return true;
-          if (taskType === 'quiz' && status === 'ended') return true;
+          if (isQuizLikeTaskType(taskType) && status === 'ended') return true;
           return false;
         };
 
@@ -10094,7 +10126,7 @@ $sessionPayload = [
           const isUpcoming = status === 'upcoming';
           const scoreNow = taskAvailableScoreNow(button, status, taskType);
           const isGoldenAppearance = status === 'active'
-            && (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')
+            && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')
             && !editableSubmittedDone;
           button.disabled = !available;
           button.classList.toggle('is-disabled', !available && !isUpcoming);
@@ -10135,7 +10167,7 @@ $sessionPayload = [
               } else {
                 setMetaWithScoreBlock(metaEl, `${doneLabel} | ${editLabel}`, button, taskType, scoreNow);
               }
-            } else if (status === 'active' && (taskType === 'quiz' || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')) {
+            } else if (status === 'active' && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
@@ -10692,7 +10724,7 @@ $sessionPayload = [
             if (currentTaskType === 'describe_photo') {
               taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
               taskInfoAckBtnEl.textContent = 'ادامه';
-            } else if (currentTaskType === 'quiz') {
+            } else if (isQuizLikeTaskType(currentTaskType)) {
               taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
               taskInfoAckBtnEl.textContent = 'ادامه';
             } else if (currentTaskType === 'team_task') {
@@ -12532,8 +12564,15 @@ $sessionPayload = [
             return;
           }
 
+          const answerLimit = item.type === 'shared_mcq' ? 5 : 4;
+          const correctAnswerIndex = item.type === 'shared_mcq'
+            ? Math.max(0, Math.min(4, Number.parseInt(String(item.correctAnswerIndex ?? 0), 10) || 0))
+            : 0;
           const answers = Array.isArray(item.answers)
-            ? item.answers.slice(0, 4).map((answer, index) => ({ text: String(answer ?? '').trim(), isCorrect: index === 0 }))
+            ? item.answers.slice(0, answerLimit).map((answer, index) => ({
+                text: String(answer ?? '').trim(),
+                isCorrect: index === correctAnswerIndex
+              }))
             : [];
           const validAnswers = answers.filter((answer) => answer.text !== '');
           for (let i = validAnswers.length - 1; i > 0; i -= 1) {
@@ -12563,13 +12602,26 @@ $sessionPayload = [
           return list
             .map((item) => ({
               code: String(item?.code ?? '').trim(),
-              type: String(item?.type ?? 'mcq').toLowerCase() === 'percentage' ? 'percentage' : 'mcq',
+              type: (() => {
+                const token = String(item?.type ?? 'mcq').toLowerCase().trim();
+                if (token === 'percentage') return 'percentage';
+                if (token === 'shared_mcq' || token === 'shared-mcq' || token === 'shared mcq') return 'shared_mcq';
+                return 'mcq';
+              })(),
               question: String(item?.question ?? '').trim(),
-              answers: Array.isArray(item?.answers) ? item.answers.slice(0, 4).map((ans) => String(ans ?? '').trim()) : []
+              answers: Array.isArray(item?.answers)
+                ? item.answers
+                  .slice(0, (String(item?.type ?? 'mcq').toLowerCase().trim() === 'shared_mcq' || String(item?.type ?? 'mcq').toLowerCase().trim() === 'shared-mcq' || String(item?.type ?? 'mcq').toLowerCase().trim() === 'shared mcq') ? 5 : 4)
+                  .map((ans) => String(ans ?? '').trim())
+                : [],
+              correctAnswerIndex: Math.max(0, Math.min(4, Number.parseInt(String(item?.correctAnswerIndex ?? item?.correct_answer_index ?? 0), 10) || 0))
             }))
             .filter((item) => {
               if (!item.code || !item.question) return false;
               if (item.type === 'percentage') return true;
+              if (item.type === 'shared_mcq') {
+                return item.answers.length >= 5 && item.answers.slice(0, 5).every((ans) => ans !== '');
+              }
               return item.answers.length >= 4 && item.answers.slice(0, 4).every((ans) => ans !== '');
             });
         };
@@ -12634,7 +12686,7 @@ $sessionPayload = [
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
             currentTaskId = taskId;
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
-            currentTaskType = 'quiz';
+            currentTaskType = fetchedTaskType;
             currentQuestions = normalizedQuestions.slice();
             currentQuestionIndex = 0;
             currentCorrectAnswers = 0;
@@ -12664,7 +12716,7 @@ $sessionPayload = [
               currentTaskTitle,
               String(payload?.task?.infoTitle ?? '').trim(),
               String(payload?.task?.infoText ?? '').trim(),
-              { taskType: 'quiz' }
+              { taskType: fetchedTaskType }
             );
           } catch (error) {
             openTaskResultDialog(0, error?.message || 'دریافت سوالات ماموریت ناموفق بود.');
@@ -12715,7 +12767,7 @@ $sessionPayload = [
               }
               return;
             }
-            if (currentTaskType === 'quiz') {
+            if (isQuizLikeTaskType(currentTaskType)) {
               if (!currentQuestions.length) {
                 closeQuizOverlay();
                 return;

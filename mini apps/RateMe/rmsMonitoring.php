@@ -247,6 +247,9 @@ function tcMonitoringNormalizeTaskType(string $value): string
   if (in_array($token, ['quiz', 'quiz-task', 'quiz task'], true)) {
     return 'quiz';
   }
+  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz'], true)) {
+    return 'shared_answers_quiz';
+  }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
@@ -288,7 +291,7 @@ function tcMonitoringReadTasks(string $storePath, string $tasksDir): array
     return [];
   }
   $jsonText = $content;
-  if (preg_match('/window\.TC_TASKS\s*=\s*(.*?);\s*$/s', $content, $matches)) {
+  if (preg_match('/window\.(?:TC|RMS)_TASKS\s*=\s*(.*?);\s*$/s', $content, $matches)) {
     $jsonText = trim((string)($matches[1] ?? ''));
   }
   $decoded = json_decode($jsonText, true);

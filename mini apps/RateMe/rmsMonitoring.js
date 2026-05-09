@@ -38,6 +38,7 @@
 
   function taskTypeLabel(taskType) {
     const token = String(taskType || '').trim().toLowerCase();
+    if (token === 'shared_answers_quiz') return 'کوییز پاسخ مشترک';
     if (token === 'describe_photo') return 'توصیف تصویر';
     if (token === 'team_task') return 'تیمی';
     if (token === 'info') return 'اطلاعاتی';
