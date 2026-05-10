@@ -19,7 +19,22 @@
     if (token === 'quiz' || token === 'quiz-task' || token === 'quiz task') {
       return 'quiz';
     }
-    if (token === 'shared_answers_quiz' || token === 'shared-answers-quiz' || token === 'shared answers quiz' || token === 'shared_quiz' || token === 'shared-quiz' || token === 'shared quiz') {
+    if (
+      token === 'shared_answers_quiz'
+      || token === 'shared-answers-quiz'
+      || token === 'shared answers quiz'
+      || token === 'shared_quiz'
+      || token === 'shared-quiz'
+      || token === 'shared quiz'
+      || token === 'survey_score_response'
+      || token === 'survey-score-response'
+      || token === 'survey score response'
+      || token === 'survey score'
+      || token === 'surevy_score_response'
+      || token === 'surevy-score-response'
+      || token === 'surevy score response'
+      || token === 'surevy score'
+    ) {
       return 'shared_answers_quiz';
     }
     if (token === 'info' || token === 'info-task' || token === 'info task') {

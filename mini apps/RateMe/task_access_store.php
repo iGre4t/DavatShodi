@@ -65,7 +65,22 @@ function tcTaskAccessNormalizeBool($value): bool
 function tcTaskAccessNormalizeTaskType(string $value): string
 {
   $token = tcTaskAccessNormalizeToken($value);
-  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz'], true)) {
+  if (in_array($token, [
+    'shared_answers_quiz',
+    'shared-answers-quiz',
+    'shared answers quiz',
+    'shared_quiz',
+    'shared-quiz',
+    'shared quiz',
+    'survey_score_response',
+    'survey-score-response',
+    'survey score response',
+    'survey score',
+    'surevy_score_response',
+    'surevy-score-response',
+    'surevy score response',
+    'surevy score'
+  ], true)) {
     return 'shared_answers_quiz';
   }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {

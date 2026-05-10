@@ -905,7 +905,22 @@ function normalizeTaskTypeValue($value): string
   if ($token === 'quiz' || $token === 'quiz-task' || $token === 'quiz task') {
     return 'quiz';
   }
-  if ($token === 'shared_answers_quiz' || $token === 'shared-answers-quiz' || $token === 'shared answers quiz' || $token === 'shared_quiz' || $token === 'shared-quiz' || $token === 'shared quiz') {
+  if (
+    $token === 'shared_answers_quiz'
+    || $token === 'shared-answers-quiz'
+    || $token === 'shared answers quiz'
+    || $token === 'shared_quiz'
+    || $token === 'shared-quiz'
+    || $token === 'shared quiz'
+    || $token === 'survey_score_response'
+    || $token === 'survey-score-response'
+    || $token === 'survey score response'
+    || $token === 'survey score'
+    || $token === 'surevy_score_response'
+    || $token === 'surevy-score-response'
+    || $token === 'surevy score response'
+    || $token === 'surevy score'
+  ) {
     return 'shared_answers_quiz';
   }
   if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
@@ -2515,6 +2530,12 @@ function readTaskQuizAttemptState(string $workId, string $taskId): ?array
     if (array_key_exists('awardedScore', $entry) || array_key_exists('awarded_score', $entry)) {
       $normalizedEntry['awardedScore'] = max(0, normalizeTaskScoreValue($entry['awardedScore'] ?? ($entry['awarded_score'] ?? 0)));
     }
+    if (array_key_exists('answerChoiceIndex', $entry) || array_key_exists('answer_choice_index', $entry)) {
+      $normalizedEntry['answerChoiceIndex'] = max(0, (int)($entry['answerChoiceIndex'] ?? ($entry['answer_choice_index'] ?? 0)));
+    }
+    if (array_key_exists('innerScore', $entry) || array_key_exists('inner_score', $entry)) {
+      $normalizedEntry['innerScore'] = max(0, (int)($entry['innerScore'] ?? ($entry['inner_score'] ?? 0)));
+    }
     $answered[$normalizedCode] = $normalizedEntry;
   }
 
@@ -2606,6 +2627,45 @@ function isTaskQuizAttemptCompleted(array $attemptState): bool
     return $questionCount > 0 && $answeredCount >= $questionCount;
   }
   return $correctCount >= $requiredCorrectAnswers;
+}
+
+function resolveEffectiveTaskTypeForRuntime(array $task, array $questions = [], array $settings = []): string
+{
+  $taskType = normalizeTaskTypeValue($task['taskType'] ?? ($task['task_type'] ?? 'quiz'));
+  if ($taskType !== 'quiz') {
+    return $taskType;
+  }
+
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ($task['tag_code'] ?? '')));
+  if ($tagCode !== '' && readTaskSharedResponseLevels(TASKS_DIR_PATH, $tagCode)) {
+    return 'shared_answers_quiz';
+  }
+
+  $sharedQuestionCount = 0;
+  $questionCount = 0;
+  foreach ($questions as $question) {
+    if (!is_array($question)) {
+      continue;
+    }
+    $questionCount += 1;
+    if (isTaskQuizSharedChoiceQuestion($question)) {
+      $sharedQuestionCount += 1;
+    }
+  }
+  if ($questionCount > 0 && $sharedQuestionCount === $questionCount) {
+    return 'shared_answers_quiz';
+  }
+
+  $sharedAnswerScores = is_array($settings['sharedAnswerScores'] ?? ($settings['shared_answer_scores'] ?? null))
+    ? array_values($settings['sharedAnswerScores'] ?? $settings['shared_answer_scores'])
+    : [];
+  foreach ($sharedAnswerScores as $score) {
+    if (normalizeTaskScoreValue($score) > 0) {
+      return 'shared_answers_quiz';
+    }
+  }
+
+  return $taskType;
 }
 
 function isTaskQuizSharedChoiceQuestion(array $question): bool
@@ -4196,7 +4256,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 
   if ($action === 'login') {
-    $tcqSettings = applyTaskTypeQuizSettings(loadWfqSettings($tcqSettingsPath), isSharedAnswersQuizTaskTypeValue($taskType));
+    $tcqSettings = applyTaskTypeQuizSettings(loadWfqSettings($tcqSettingsPath));
     $maxAttempts = 5;
     $maxAttemptsPerIp = 30;
     $windowSeconds = 10 * 60;
@@ -4409,12 +4469,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $status = deriveTaskAvailabilityStatus($task);
-    $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    $available = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
     $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
     $tagCode = (string)($quizAssets['tagCode'] ?? '');
     $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
     $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : TCQ_DEFAULT_SETTINGS;
+    $taskType = resolveEffectiveTaskTypeForRuntime($task, $questions, $settings);
+    $available = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
     $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
     if (!isQuizLikeTaskTypeValue($taskType) || !$available || !empty($progress['completed'])) {
       clearTaskQuizAttemptState($sessionWorkId, $taskId);
@@ -4506,7 +4566,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+    $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
+    $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
+    $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : TCQ_DEFAULT_SETTINGS;
+    $taskType = resolveEffectiveTaskTypeForRuntime($task, $questions, $settings);
     if (!isQuizLikeTaskTypeValue($taskType)) {
       echo json_encode(['status' => 'ok']);
       exit;
@@ -4518,8 +4581,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
-    $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
     $questionLookup = buildQuestionLookupByCode($questions);
     $attemptState = readTaskQuizAttemptState($sessionWorkId, $taskId);
     if (!is_array($attemptState) || !($attemptState['questionCodes'] ?? [])) {
@@ -5425,7 +5486,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $status = deriveTaskAvailabilityStatus($task);
-    $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+    $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
+    $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
+    $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : TCQ_DEFAULT_SETTINGS;
+    $taskType = resolveEffectiveTaskTypeForRuntime($task, $questions, $settings);
+    if ($taskType === 'shared_answers_quiz') {
+      $task['responseLevels'] = readTaskSharedResponseLevels(TASKS_DIR_PATH, normalizeTaskTagCode((string)($task['tagCode'] ?? '')));
+    }
     $canComplete = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
     if (!$canComplete) {
       echo json_encode(['status' => 'error', 'message' => 'This task is not available right now.']);
@@ -5516,8 +5583,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     if ($usesPerQuestionScoreSum) {
-      $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
-      $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
       $questionLookup = buildQuestionLookupByCode($questions);
       $awardedScore = calculateTaskQuizQuestionScoreSum($attemptState, $questionLookup, $status);
     }
@@ -6166,7 +6231,7 @@ $sessionQuizOrder = [];
 $sessionAnswered = 0;
 $sessionIsAdmin = false;
 if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
-  $tcqSettings = applyTaskTypeQuizSettings(loadWfqSettings($tcqSettingsPath), isSharedAnswersQuizTaskTypeValue($taskType));
+  $tcqSettings = applyTaskTypeQuizSettings(loadWfqSettings($tcqSettingsPath));
   $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
   $rows = $table['rows'];
   $workIdIndex = $table['workIdIndex'];
@@ -6224,7 +6289,7 @@ $sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
 if ($sessionFirstName === '') {
   $sessionFirstName = 'کاربر';
 }
-$tcqSettingsForPayload = applyTaskTypeQuizSettings(loadWfqSettings($tcqSettingsPath), isSharedAnswersQuizTaskTypeValue($taskType));
+$tcqSettingsForPayload = applyTaskTypeQuizSettings(loadWfqSettings($tcqSettingsPath));
 $sessionPayload = [
   'authed' => $sessionAuthed,
   'workId' => $sessionWorkId,
@@ -10428,13 +10493,36 @@ $sessionPayload = [
           return token === '1' || token === 'true' || token === 'on' || token === 'yes';
         };
 
-        const isQuizLikeTaskType = (taskType) => {
+        const normalizeClientTaskType = (taskType) => {
           const token = String(taskType ?? '').trim().toLowerCase();
+          if (
+            token === 'shared_answers_quiz'
+            || token === 'shared-answers-quiz'
+            || token === 'shared answers quiz'
+            || token === 'shared_quiz'
+            || token === 'shared-quiz'
+            || token === 'shared quiz'
+            || token === 'survey_score_response'
+            || token === 'survey-score-response'
+            || token === 'survey score response'
+            || token === 'survey score'
+            || token === 'surevy_score_response'
+            || token === 'surevy-score-response'
+            || token === 'surevy score response'
+            || token === 'surevy score'
+          ) {
+            return 'shared_answers_quiz';
+          }
+          return token || 'quiz';
+        };
+
+        const isQuizLikeTaskType = (taskType) => {
+          const token = normalizeClientTaskType(taskType);
           return token === 'quiz' || token === 'shared_answers_quiz';
         };
 
         const isSharedAnswersTaskType = (taskType) => {
-          const token = String(taskType ?? '').trim().toLowerCase();
+          const token = normalizeClientTaskType(taskType);
           return token === 'shared_answers_quiz';
         };
 
@@ -12001,7 +12089,7 @@ $sessionPayload = [
 
         const openInfoTaskView = (taskTitle, infoTitle, infoText, options = {}) => {
           pushInPageHistoryState();
-          currentTaskType = String(options?.taskType || 'info').trim().toLowerCase() || 'info';
+          currentTaskType = normalizeClientTaskType(options?.taskType || 'info');
           describePhotoChoices = normalizeDescribePhotoChoices(options?.describePhotos || []);
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
@@ -12781,6 +12869,9 @@ $sessionPayload = [
         };
 
         const isProportionalQuizScoreMode = (value = currentQuizScoreMode) => String(value || '').trim().toLowerCase() === 'proportional';
+        const usesAnsweredAllCompletionMode = () => (
+          isSharedAnswersTaskType(currentTaskType) || isProportionalQuizScoreMode()
+        );
         const getDisplayedQuizQuestionCount = () => Array.isArray(currentQuestions) ? currentQuestions.length : 0;
 
         const syncQuizAttemptProgress = (payload, fallbackIsCorrect = false) => {
@@ -12804,10 +12895,10 @@ $sessionPayload = [
 
         const isQuizAttemptReadyToComplete = (payload = null) => {
           const displayedQuestionCount = getDisplayedQuizQuestionCount();
-          const targetQuestionCount = isProportionalQuizScoreMode() && displayedQuestionCount > 0
+          const targetQuestionCount = usesAnsweredAllCompletionMode() && displayedQuestionCount > 0
             ? displayedQuestionCount
             : currentQuestionCount;
-          const readyByClientState = isProportionalQuizScoreMode()
+          const readyByClientState = usesAnsweredAllCompletionMode()
             ? (targetQuestionCount > 0 && currentAnsweredQuestions >= targetQuestionCount)
             : (currentCorrectAnswers >= currentRequiredCorrectAnswers);
           if (payload?.attemptCompleted === true) {
@@ -12835,6 +12926,9 @@ $sessionPayload = [
 
         const completeCurrentTask = async (item, answerText = '') => {
           const completedTaskId = currentTaskId;
+          const completedTaskTitle = currentTaskTitle;
+          const completedTaskType = currentTaskType;
+          const isSharedAnswersTask = isSharedAnswersTaskType(completedTaskType);
           let payload;
           try {
             payload = await postJson({
@@ -12865,10 +12959,9 @@ $sessionPayload = [
           }
 
           closeQuizOverlay();
-          const isSharedAnswersTask = isSharedAnswersTaskType(currentTaskType);
           if (payload?.alreadyCompleted) {
-            if (isSharedAnswersTask && payload?.sharedResponse) {
-              openSharedResponseTaskView(currentTaskTitle, payload.sharedResponse);
+            if (isSharedAnswersTask) {
+              openSharedResponseTaskView(completedTaskTitle, payload?.sharedResponse || {});
               return;
             }
             openTaskResultDialog(payload?.userTaskScore ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
@@ -12879,8 +12972,8 @@ $sessionPayload = [
             openTaskResultDialog(0, 'این تلاش امتیازی نگرفت. ماموریت برای تلاش دوباره همچنان در دسترس است.');
             return;
           }
-          if (isSharedAnswersTask && payload?.sharedResponse) {
-            openSharedResponseTaskView(currentTaskTitle, payload.sharedResponse);
+          if (isSharedAnswersTask) {
+            openSharedResponseTaskView(completedTaskTitle, payload?.sharedResponse || {});
             return;
           }
           openTaskResultDialog(
@@ -12898,7 +12991,7 @@ $sessionPayload = [
           currentQuestionIndex += 1;
           quizLocked = false;
           if (currentQuestionIndex >= currentQuestions.length) {
-            if (isProportionalQuizScoreMode() && isQuizAttemptReadyToComplete()) {
+            if (usesAnsweredAllCompletionMode() && isQuizAttemptReadyToComplete()) {
               quizLocked = true;
               void completeCurrentTask(currentQuestions[currentQuestions.length - 1] || null, '');
               return;
@@ -13194,11 +13287,11 @@ $sessionPayload = [
               button.dataset.taskCompleted = '1';
               button.dataset.taskUserScore = String(Number.parseInt(progress?.score ?? 0, 10) || 0);
               setTaskButtonState(button, 'completed');
-              if (String(payload?.task?.taskType || button?.dataset?.taskType || 'quiz').trim().toLowerCase() === 'shared_answers_quiz' && payload?.task?.sharedResponse) {
+              if (isSharedAnswersTaskType(payload?.task?.taskType || button?.dataset?.taskType || 'quiz')) {
                 currentTaskId = taskId;
                 currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'پاسخ شما').trim();
                 closeTaskResultDialog();
-                openSharedResponseTaskView(currentTaskTitle, payload.task.sharedResponse);
+                openSharedResponseTaskView(currentTaskTitle, payload?.task?.sharedResponse || {});
                 return;
               }
               openTaskResultDialog(progress?.score ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
@@ -13211,7 +13304,7 @@ $sessionPayload = [
               return;
             }
 
-            const fetchedTaskType = String(payload?.task?.taskType || button?.dataset?.taskType || 'quiz').trim().toLowerCase();
+            const fetchedTaskType = normalizeClientTaskType(payload?.task?.taskType || button?.dataset?.taskType || 'quiz');
             if (fetchedTaskType === 'info' || fetchedTaskType === 'team_task' || fetchedTaskType === 'describe_photo') {
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
@@ -13254,15 +13347,18 @@ $sessionPayload = [
                 ?? 0
               ), 10) || 0
             );
-            currentQuizScoreMode = String(payload?.settings?.scoreMode ?? '').trim().toLowerCase() === 'proportional'
+            const isSharedAnswersTask = isSharedAnswersTaskType(fetchedTaskType);
+            currentQuizScoreMode = (isSharedAnswersTask || String(payload?.settings?.scoreMode ?? '').trim().toLowerCase() === 'proportional')
               ? 'proportional'
               : 'threshold';
             currentRequiredCorrectAnswers = Math.max(
               0,
               Number.parseInt(String(
-                payload?.settings?.resolvedCorrectAnswersToScore
+                isSharedAnswersTask
+                ? 0
+                : (payload?.settings?.resolvedCorrectAnswersToScore
                 ?? payload?.settings?.correctAnswersToScore
-                ?? (currentQuizScoreMode === 'proportional' ? 0 : 1)
+                ?? (currentQuizScoreMode === 'proportional' ? 0 : 1))
               ), 10) || 0
             );
             quizLocked = false;

@@ -136,7 +136,22 @@ function tcqNormalizeScoreValue($value): int
 function tcqNormalizeTaskType(string $value): string
 {
   $token = trim(mb_strtolower($value, 'UTF-8'));
-  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz'], true)) {
+  if (in_array($token, [
+    'shared_answers_quiz',
+    'shared-answers-quiz',
+    'shared answers quiz',
+    'shared_quiz',
+    'shared-quiz',
+    'shared quiz',
+    'survey_score_response',
+    'survey-score-response',
+    'survey score response',
+    'survey score',
+    'surevy_score_response',
+    'surevy-score-response',
+    'surevy score response',
+    'surevy score'
+  ], true)) {
     return 'shared_answers_quiz';
   }
   if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
@@ -994,7 +1009,29 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     $tcqEndpointBase . ($tcqTaskId !== '' ? ('?task_id=' . rawurlencode($tcqTaskId)) : ''),
     JSON_UNESCAPED_UNICODE
   ); ?>;
-  const taskType = <?= json_encode($tcqTaskType, JSON_UNESCAPED_UNICODE); ?>;
+  const normalizeTaskType = (value) => {
+    const token = String(value ?? '').trim().toLowerCase();
+    if (
+      token === 'shared_answers_quiz'
+      || token === 'shared-answers-quiz'
+      || token === 'shared answers quiz'
+      || token === 'shared_quiz'
+      || token === 'shared-quiz'
+      || token === 'shared quiz'
+      || token === 'survey_score_response'
+      || token === 'survey-score-response'
+      || token === 'survey score response'
+      || token === 'survey score'
+      || token === 'surevy_score_response'
+      || token === 'surevy-score-response'
+      || token === 'surevy score response'
+      || token === 'surevy score'
+    ) {
+      return 'shared_answers_quiz';
+    }
+    return token || 'quiz';
+  };
+  const taskType = normalizeTaskType(<?= json_encode($tcqTaskType, JSON_UNESCAPED_UNICODE); ?>);
   const isSharedAnswersTask = taskType === 'shared_answers_quiz';
   const csrfToken = <?= json_encode($tcqCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const form = document.getElementById('tcq-form');
