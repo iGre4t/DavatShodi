@@ -2965,6 +2965,24 @@ function buildTaskQuizQuestionLookupByPureAnswerToken(array $questions): array
   return $lookup;
 }
 
+function resolveTaskQuizQuestionsForStoredAttempt(array $questions, array $attemptState): array
+{
+  $questionLookup = buildQuestionLookupByCode($questions);
+  $questionCodes = is_array($attemptState['questionCodes'] ?? null) ? array_values($attemptState['questionCodes']) : [];
+  if (!$questionCodes) {
+    return [];
+  }
+  $resolved = [];
+  foreach ($questionCodes as $rawCode) {
+    $code = strtoupper(trim((string)$rawCode));
+    if ($code === '' || !isset($questionLookup[$code]) || !is_array($questionLookup[$code])) {
+      return [];
+    }
+    $resolved[] = $questionLookup[$code];
+  }
+  return $resolved;
+}
+
 function calculateTaskQuizInnerScoreFromPureAnswersValue(string $answersValue, array $questions): int
 {
   $answerMap = parseTaskQuizPureAnswersValue($answersValue);
@@ -3050,21 +3068,6 @@ function recordTaskQuizAttemptAnswer(array $attemptState, string $questionCode, 
   $question = $questionLookup[$normalizedCode];
 
   $answered = is_array($attemptState['answered'] ?? null) ? $attemptState['answered'] : [];
-  if (isset($answered[$normalizedCode]) && is_array($answered[$normalizedCode])) {
-    $correctCount = 0;
-    foreach ($answered as $entry) {
-      if (!empty($entry['correct'])) {
-        $correctCount += 1;
-      }
-    }
-    return [
-      'ok' => true,
-      'state' => $attemptState,
-      'wasCorrect' => !empty($answered[$normalizedCode]['correct']),
-      'correctCount' => $correctCount,
-      'questionScoreAwarded' => max(0, normalizeTaskScoreValue($answered[$normalizedCode]['awardedScore'] ?? ($answered[$normalizedCode]['awarded_score'] ?? 0)))
-    ];
-  }
   if (isTaskQuizSharedChoiceQuestion($question) && !doesTaskQuizAnswerMatchQuestionChoice($question, $answer)) {
     return [
       'ok' => false,
@@ -4661,10 +4664,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
     $questionsPayload = $questions;
     $settingsPayload = $settings;
+    $attemptStatePayload = null;
     if (isQuizLikeTaskTypeValue($taskType) && $available && empty($progress['completed'])) {
-      $attempt = startTaskQuizAttempt($sessionWorkId, $taskId, $questions, $settings, $taskType);
-      $questionsPayload = is_array($attempt['questions'] ?? null) ? $attempt['questions'] : [];
-      $settingsPayload = is_array($attempt['settings'] ?? null) ? $attempt['settings'] : $settings;
+      $existingAttempt = readTaskQuizAttemptState($sessionWorkId, $taskId);
+      $resumeQuestions = is_array($existingAttempt) ? resolveTaskQuizQuestionsForStoredAttempt($questions, $existingAttempt) : [];
+      if (is_array($existingAttempt) && $resumeQuestions && !isTaskQuizAttemptCompleted($existingAttempt)) {
+        $questionsPayload = $resumeQuestions;
+        $settingsPayload = resolveTaskQuizSettingsForAttempt(
+          $settings,
+          count($resumeQuestions),
+          isSharedAnswersQuizTaskTypeValue($taskType)
+        );
+        $settingsPayload['selectedQuestionCount'] = count($resumeQuestions);
+        $settingsPayload['resolvedCorrectAnswersToScore'] = max(0, (int)($existingAttempt['requiredCorrectAnswers'] ?? ($settingsPayload['resolvedCorrectAnswersToScore'] ?? 0)));
+        $settingsPayload['scoreMode'] = (string)($existingAttempt['scoreMode'] ?? ($settingsPayload['scoreMode'] ?? 'threshold'));
+        $attemptStatePayload = $existingAttempt;
+      } else {
+        $attempt = startTaskQuizAttempt($sessionWorkId, $taskId, $questions, $settings, $taskType);
+        $questionsPayload = is_array($attempt['questions'] ?? null) ? $attempt['questions'] : [];
+        $settingsPayload = is_array($attempt['settings'] ?? null) ? $attempt['settings'] : $settings;
+        $attemptStatePayload = readTaskQuizAttemptState($sessionWorkId, $taskId);
+      }
     }
     $sharedResponse = null;
     if ($taskType === 'shared_answers_quiz' && !empty($progress['completed'])) {
@@ -4708,6 +4728,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       ],
       'questions' => $questionsPayload,
       'settings' => $settingsPayload,
+      'attemptState' => $attemptStatePayload,
       'progress' => $progress
     ]);
     exit;
@@ -7534,6 +7555,18 @@ $sessionPayload = [
         color: #29416b;
         font-size: 1rem;
         font-weight: 700;
+        flex: 1;
+        text-align: center;
+      }
+
+      .quiz-nav-next {
+        width: min(360px, calc(100% - 8px));
+        margin-top: 4px;
+      }
+
+      .quiz-nav-next:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
       }
 
       #tc-task-quiz-area .quiz-counter {
@@ -9776,6 +9809,7 @@ $sessionPayload = [
           <div id="tc-task-quiz-question" class="quiz-question-box">-</div>
           <div id="tc-task-quiz-answers" class="quiz-answers-grid"></div>
           <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
+          <button id="tc-task-quiz-next" class="login-btn info-task-ack quiz-nav-next quiz-hidden" type="button" disabled>ثبت و ادامه</button>
         </div>
         <div id="tc-task-info-area" class="info-task-area quiz-hidden">
           <div id="tc-task-info-head" class="info-task-head">
@@ -10375,6 +10409,7 @@ $sessionPayload = [
         const quizQuestionEl = document.getElementById('tc-task-quiz-question');
         const quizAnswersEl = document.getElementById('tc-task-quiz-answers');
         const quizTimerFillEl = document.getElementById('tc-task-quiz-timer-fill');
+        const quizNextBtnEl = document.getElementById('tc-task-quiz-next');
         const taskInfoHeadEl = document.getElementById('tc-task-info-head');
         const resultDialogEl = document.getElementById('tc-task-result-dialog');
         const resultValueEl = document.getElementById('tc-task-result-value');
@@ -10405,6 +10440,8 @@ $sessionPayload = [
         let currentAnsweredQuestions = 0;
         let currentQuestionCount = 0;
         let currentQuizScoreMode = 'threshold';
+        let currentQuizSelections = {};
+        let currentAnsweredMap = {};
         let infoTaskViewOpen = false;
         let infoTaskCurrentStep = 'info';
         let describePhotoChoices = [];
@@ -11076,6 +11113,8 @@ $sessionPayload = [
           }
         };
 
+        const isManualSurveyQuizFlow = () => isSharedAnswersTaskType(currentTaskType);
+
         const setQuizTimerProgress = (remainingMs) => {
           if (!quizTimerFillEl) return;
           if (!answerTimeLimitEnabled) {
@@ -11121,6 +11160,15 @@ $sessionPayload = [
             quizAnswersEl.classList.remove('quiz-answers-grid--single');
             quizAnswersEl.innerHTML = '';
           }
+          if (quizNextBtnEl) {
+            quizNextBtnEl.classList.add('quiz-hidden');
+            quizNextBtnEl.disabled = true;
+            quizNextBtnEl.textContent = 'ثبت و ادامه';
+          }
+          if (quizTimerFillEl?.parentElement) {
+            quizTimerFillEl.parentElement.classList.remove('quiz-hidden');
+          }
+          currentQuizSelections = {};
           if (taskInfoAreaEl) {
             taskInfoAreaEl.classList.add('quiz-hidden');
           }
@@ -11250,6 +11298,8 @@ $sessionPayload = [
           currentAnsweredQuestions = 0;
           currentQuestionCount = 0;
           currentQuizScoreMode = 'threshold';
+          currentQuizSelections = {};
+          currentAnsweredMap = {};
           describePhotoChoices = [];
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
@@ -13257,6 +13307,20 @@ $sessionPayload = [
         };
 
         const handleChoiceAnswer = async (button, item, isCorrect, answerText) => {
+          if (isManualSurveyQuizFlow()) {
+            const questionCode = String(item?.code ?? '').trim().toUpperCase();
+            if (!questionCode) return;
+            currentQuizSelections[questionCode] = String(answerText ?? '').trim();
+            Array.from(quizAnswersEl?.querySelectorAll('button') || []).forEach((node) => {
+              if (node instanceof HTMLButtonElement) {
+                node.classList.toggle('is-selected', node === button);
+              }
+            });
+            if (quizNextBtnEl) {
+              quizNextBtnEl.disabled = false;
+            }
+            return;
+          }
           if (quizLocked) return;
           quizLocked = true;
           clearQuizTimer();
@@ -13352,6 +13416,42 @@ $sessionPayload = [
           }, QUIZ_FEEDBACK_DELAY_MS);
         };
 
+        const submitCurrentSurveyAnswer = async () => {
+          if (!isManualSurveyQuizFlow()) return;
+          if (quizLocked) return;
+          const item = currentQuestions[currentQuestionIndex] || null;
+          const questionCode = String(item?.code ?? '').trim().toUpperCase();
+          if (!item || !questionCode) return;
+          const selectedAnswer = String(currentQuizSelections[questionCode] ?? '').trim();
+          if (!selectedAnswer) return;
+
+          quizLocked = true;
+          if (quizNextBtnEl instanceof HTMLButtonElement) {
+            quizNextBtnEl.disabled = true;
+          }
+          let answerPayload;
+          try {
+            answerPayload = await sendTaskAnswer(item, selectedAnswer);
+          } catch (error) {
+            quizLocked = false;
+            if (quizNextBtnEl instanceof HTMLButtonElement) {
+              quizNextBtnEl.disabled = false;
+            }
+            openTaskResultDialog(0, error?.message || 'ثبت پاسخ ناموفق بود.');
+            return;
+          }
+
+          syncQuizAttemptProgress(answerPayload, false);
+          const isLastDisplayedQuestion = currentQuestionIndex >= Math.max(0, currentQuestions.length - 1);
+          if (isQuizAttemptReadyToComplete(answerPayload) || isLastDisplayedQuestion) {
+            void completeCurrentTask(item, selectedAnswer);
+            return;
+          }
+          currentQuestionIndex += 1;
+          quizLocked = false;
+          renderQuizQuestion();
+        };
+
         const renderQuizQuestion = () => {
           if (!quizCounterEl || !quizQuestionEl || !quizAnswersEl) {
             return;
@@ -13377,6 +13477,15 @@ $sessionPayload = [
           if (quizAreaEl) {
             Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
             quizAreaEl.classList.toggle('quiz-area--percentage', item.type === 'percentage');
+          }
+          if (quizNextBtnEl) {
+            const showManualNav = isManualSurveyQuizFlow() && item.type !== 'percentage';
+            quizNextBtnEl.classList.toggle('quiz-hidden', !showManualNav);
+            quizNextBtnEl.textContent = currentQuestionIndex >= Math.max(0, total - 1) ? 'ثبت نهایی' : 'ثبت و ادامه';
+            quizNextBtnEl.disabled = true;
+          }
+          if (quizTimerFillEl?.parentElement) {
+            quizTimerFillEl.parentElement.classList.toggle('quiz-hidden', isManualSurveyQuizFlow());
           }
 
           if (item.type === 'percentage') {
@@ -13448,10 +13557,27 @@ $sessionPayload = [
             button.addEventListener('click', () => {
               void handleChoiceAnswer(button, item, answerItem.isCorrect, answerItem.text);
             });
+            const questionCode = String(item?.code ?? '').trim().toUpperCase();
+            const selectedAnswer = String(
+              currentQuizSelections[questionCode] ?? currentAnsweredMap[questionCode]?.answer ?? ''
+            ).trim();
+            if (selectedAnswer !== '' && selectedAnswer === answerItem.text) {
+              button.classList.add('is-selected');
+              if (quizNextBtnEl) {
+                quizNextBtnEl.disabled = false;
+              }
+            }
+            if (isManualSurveyQuizFlow()) {
+              currentQuizSelections[questionCode] = selectedAnswer;
+            }
             quizAnswersEl.appendChild(button);
           });
 
-          startQuizTimer();
+          if (!isManualSurveyQuizFlow()) {
+            startQuizTimer();
+          } else {
+            clearQuizTimer();
+          }
         };
 
         const normalizeQuestions = (list) => {
@@ -13552,19 +13678,39 @@ $sessionPayload = [
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
             currentTaskType = fetchedTaskType;
             currentQuestions = normalizedQuestions.slice();
-            currentQuestionIndex = 0;
-            currentCorrectAnswers = 0;
-            currentAnsweredQuestions = 0;
+            const attemptState = payload?.attemptState && typeof payload.attemptState === 'object'
+              ? payload.attemptState
+              : {};
+            currentAnsweredMap = attemptState?.answered && typeof attemptState.answered === 'object'
+              ? attemptState.answered
+              : {};
+            currentQuizSelections = {};
+            Object.entries(currentAnsweredMap).forEach(([code, entry]) => {
+              const normalizedCode = String(code || '').trim().toUpperCase();
+              const answerText = String(entry?.answer ?? '').trim();
+              if (normalizedCode && answerText) {
+                currentQuizSelections[normalizedCode] = answerText;
+              }
+            });
             currentQuestionCount = Math.max(
               0,
               Number.parseInt(String(
-                payload?.settings?.selectedQuestionCount
+                attemptState?.questionCount
+                ?? payload?.settings?.selectedQuestionCount
                 ?? normalizedQuestions.length
                 ?? 0
               ), 10) || 0
             );
+            currentAnsweredQuestions = Math.min(
+              currentQuestionCount,
+              Math.max(0, Number.parseInt(String(attemptState?.answeredCount ?? 0), 10) || 0)
+            );
+            currentQuestionIndex = currentQuestions.length > 0
+              ? Math.min(currentAnsweredQuestions, currentQuestions.length - 1)
+              : 0;
+            currentCorrectAnswers = Math.max(0, Number.parseInt(String(attemptState?.correctCount ?? 0), 10) || 0);
             const isSharedAnswersTask = isSharedAnswersTaskType(fetchedTaskType);
-            currentQuizScoreMode = (isSharedAnswersTask || String(payload?.settings?.scoreMode ?? '').trim().toLowerCase() === 'proportional')
+            currentQuizScoreMode = (isSharedAnswersTask || String(attemptState?.scoreMode ?? payload?.settings?.scoreMode ?? '').trim().toLowerCase() === 'proportional')
               ? 'proportional'
               : 'threshold';
             currentRequiredCorrectAnswers = Math.max(
@@ -13572,7 +13718,8 @@ $sessionPayload = [
               Number.parseInt(String(
                 isSharedAnswersTask
                 ? 0
-                : (payload?.settings?.resolvedCorrectAnswersToScore
+                : (attemptState?.requiredCorrectAnswers
+                ?? payload?.settings?.resolvedCorrectAnswersToScore
                 ?? payload?.settings?.correctAnswersToScore
                 ?? (currentQuizScoreMode === 'proportional' ? 0 : 1))
               ), 10) || 0
@@ -13643,6 +13790,12 @@ $sessionPayload = [
               return;
             }
             closeQuizOverlay();
+          });
+        }
+
+        if (quizNextBtnEl) {
+          quizNextBtnEl.addEventListener('click', () => {
+            void submitCurrentSurveyAnswer();
           });
         }
 
@@ -13935,6 +14088,11 @@ $sessionPayload = [
             return true;
           }
           if (infoTaskViewOpen) {
+            if (isManualSurveyQuizFlow() && currentQuestionIndex > 0) {
+              currentQuestionIndex -= 1;
+              renderQuizQuestion();
+              return true;
+            }
             if (currentTaskType === 'describe_photo') {
               if (infoTaskCurrentStep === 'editor') {
                 setInfoTaskStep('photo');
