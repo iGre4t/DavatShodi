@@ -521,8 +521,78 @@ function tcqExtractCodeFromAnswerHeader(string $headerCell): string
   return strtoupper(trim((string)$m[1]));
 }
 
-function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newItems): bool
+function tcqFormatPureAnswerQuestionToken(string $questionCode): string
 {
+  $normalizedCode = strtoupper(trim($questionCode));
+  if ($normalizedCode === '') {
+    return '';
+  }
+  if (preg_match('/^Q0*(\d+)$/', $normalizedCode, $matches)) {
+    return (string)((int)($matches[1] ?? 0));
+  }
+  return $normalizedCode;
+}
+
+function tcqBuildSharedAnswersSummaryFromLegacyRow(array $header, array $row): string
+{
+  $parts = [];
+  foreach ($header as $index => $name) {
+    if ((int)$index === 0) {
+      continue;
+    }
+    $code = tcqExtractCodeFromAnswerHeader((string)$name);
+    if ($code === '') {
+      continue;
+    }
+    $answer = trim((string)($row[$index] ?? ''));
+    if ($answer === '') {
+      continue;
+    }
+    $token = tcqFormatPureAnswerQuestionToken($code);
+    if ($token === '') {
+      continue;
+    }
+    $parts[] = $token . '::' . $answer;
+  }
+  return implode(', ', $parts);
+}
+
+function tcqSyncSharedAnswersSheet(string $answersPath): bool
+{
+  $rows = tcqReadCsv($answersPath);
+  $header = isset($rows[0]) && is_array($rows[0]) ? $rows[0] : ['Work ID'];
+  $workIdIndex = tcqFindHeaderIndex($header, 'Work ID');
+  if ($workIdIndex < 0) {
+    $header = array_merge(['Work ID'], array_values($header));
+    $workIdIndex = 0;
+  }
+  $answersIndex = tcqFindHeaderIndex($header, 'answers');
+  $innerScoreIndex = tcqFindHeaderIndex($header, 'inner score');
+
+  $syncedRows = [['Work ID', 'answers', 'inner score']];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i]) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $answersValue = $answersIndex >= 0
+      ? trim((string)($row[$answersIndex] ?? ''))
+      : tcqBuildSharedAnswersSummaryFromLegacyRow($header, $row);
+    $innerScoreValue = $innerScoreIndex >= 0
+      ? trim((string)($row[$innerScoreIndex] ?? ''))
+      : '';
+    $syncedRows[] = [$workId, $answersValue, $innerScoreValue];
+  }
+
+  return tcqWriteCsv($answersPath, $syncedRows);
+}
+
+function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newItems, bool $sharedAnswersTask = false): bool
+{
+  if ($sharedAnswersTask) {
+    return tcqSyncSharedAnswersSheet($answersPath);
+  }
   $rows = tcqReadCsv($answersPath);
   $header = isset($rows[0]) && is_array($rows[0]) ? $rows[0] : ['Work ID'];
   $workIdIndex = tcqFindHeaderIndex($header, 'Work ID');
@@ -670,7 +740,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       tcqSaveStore($tcqStorePath, $items);
       tcqSaveCodeState($tcqCodeStatePath, $codeState);
     }
-    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $items, $items)) {
+    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $items, $items, $tcqIsSharedAnswersTask)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with questions.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -791,7 +861,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       echo json_encode(['status' => 'error', 'message' => 'Failed to save shared answers.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $oldItems, $items)) {
+    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $oldItems, $items, $tcqIsSharedAnswersTask)) {
       tcqSaveStore($tcqStorePath, $oldItems);
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with saved questions.'], JSON_UNESCAPED_UNICODE);
       exit;

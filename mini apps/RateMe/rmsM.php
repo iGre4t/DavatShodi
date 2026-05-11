@@ -594,6 +594,116 @@ function syncAnswersSheet(string $path, array $questionColumns): bool
   return writeInviteesCsv($path, $syncedRows);
 }
 
+function buildSharedSurveyAnswersSummaryFromLegacyRow(array $header, array $row): string
+{
+  $parts = [];
+  foreach ($header as $index => $name) {
+    if ((int)$index === 0) {
+      continue;
+    }
+    $code = extractCodeFromAnswersHeader((string)$name);
+    if ($code === '') {
+      continue;
+    }
+    $answer = trim((string)($row[$index] ?? ''));
+    if ($answer === '') {
+      continue;
+    }
+    $questionToken = formatTaskQuizPureAnswerQuestionToken($code);
+    if ($questionToken === '') {
+      continue;
+    }
+    $parts[] = $questionToken . '::' . $answer;
+  }
+  return implode(', ', $parts);
+}
+
+function syncSharedSurveyAnswersSheet(string $path): bool
+{
+  $rows = readInviteesCsv($path);
+  $header = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : ['Work ID'];
+  $workIdIndex = findHeaderIndex($header, 'Work ID');
+  if ($workIdIndex < 0) {
+    $header = array_merge(['Work ID'], array_values($header));
+    $workIdIndex = 0;
+  }
+  $answersIndex = findHeaderIndex($header, 'answers');
+  $innerScoreIndex = findHeaderIndex($header, 'inner score');
+
+  $syncedRows = [['Work ID', 'answers', 'inner score']];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i]) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $answersValue = $answersIndex >= 0
+      ? trim((string)($row[$answersIndex] ?? ''))
+      : buildSharedSurveyAnswersSummaryFromLegacyRow($header, $row);
+    $innerScoreValue = $innerScoreIndex >= 0
+      ? trim((string)($row[$innerScoreIndex] ?? ''))
+      : '';
+    $syncedRows[] = [$workId, $answersValue, $innerScoreValue];
+  }
+
+  return writeInviteesCsv($path, $syncedRows);
+}
+
+function persistSharedSurveyAnswersCsvState(
+  string $answersPath,
+  string $workId,
+  array $attemptState,
+  bool $persistInnerScore = false,
+  array $questions = []
+): ?int {
+  $normalizedWorkId = trim($workId);
+  if ($answersPath === '' || $normalizedWorkId === '') {
+    return null;
+  }
+  if (!syncSharedSurveyAnswersSheet($answersPath)) {
+    return null;
+  }
+
+  $rows = readInviteesCsv($answersPath);
+  $header = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : ['Work ID', 'answers', 'inner score'];
+  $workIdIndex = findHeaderIndex($header, 'Work ID');
+  $answersIndex = findHeaderIndex($header, 'answers');
+  $innerScoreIndex = findHeaderIndex($header, 'inner score');
+  if ($workIdIndex < 0 || $answersIndex < 0 || $innerScoreIndex < 0) {
+    return null;
+  }
+
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $normalizedWorkId);
+  if ($rowIndex < 0) {
+    $rows[] = array_fill(0, count($header), '');
+    $rowIndex = count($rows) - 1;
+    $rows[$rowIndex][$workIdIndex] = $normalizedWorkId;
+  }
+  if (!isset($rows[$rowIndex]) || !is_array($rows[$rowIndex])) {
+    $rows[$rowIndex] = [];
+  }
+  if (count($rows[$rowIndex]) < count($header)) {
+    $rows[$rowIndex] = array_pad($rows[$rowIndex], count($header), '');
+  }
+
+  $answersValue = buildTaskQuizPureAnswersValue($attemptState);
+  $rows[$rowIndex][$answersIndex] = $answersValue;
+
+  $innerScore = null;
+  if ($persistInnerScore) {
+    $innerScore = calculateTaskQuizInnerScoreFromPureAnswersValue($answersValue, $questions);
+    $rows[$rowIndex][$innerScoreIndex] = (string)$innerScore;
+  } else {
+    $rows[$rowIndex][$innerScoreIndex] = '';
+  }
+
+  if (!writeInviteesCsv($answersPath, $rows)) {
+    return null;
+  }
+
+  return $innerScore;
+}
+
 function logAnswerValue(string $answersPath, string $questionsPath, string $workId, string $questionCode, string $question, string $answer): bool
 {
   $workId = trim($workId);
@@ -2800,9 +2910,79 @@ function buildTaskQuizPureAnswersValue(array $attemptState): string
     if ($questionToken === '') {
       continue;
     }
-    $parts[] = $questionToken . '::' . $choiceIndex;
+    $answer = trim((string)($answered[$questionCode]['answer'] ?? ''));
+    if ($answer === '') {
+      continue;
+    }
+    $parts[] = $questionToken . '::' . $answer;
   }
-  return implode(',', $parts);
+  return implode(', ', $parts);
+}
+
+function parseTaskQuizPureAnswersValue(string $raw): array
+{
+  $entries = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($entries)) {
+    return [];
+  }
+  $answers = [];
+  foreach ($entries as $entry) {
+    $token = trim((string)$entry);
+    if ($token === '') {
+      continue;
+    }
+    $parts = explode('::', $token, 2);
+    if (count($parts) !== 2) {
+      continue;
+    }
+    $questionToken = strtoupper(trim((string)($parts[0] ?? '')));
+    $answer = trim((string)($parts[1] ?? ''));
+    if ($questionToken === '' || $answer === '') {
+      continue;
+    }
+    $answers[$questionToken] = $answer;
+  }
+  return $answers;
+}
+
+function buildTaskQuizQuestionLookupByPureAnswerToken(array $questions): array
+{
+  $lookup = [];
+  foreach ($questions as $question) {
+    if (!is_array($question)) {
+      continue;
+    }
+    $questionCode = strtoupper(trim((string)($question['code'] ?? '')));
+    if ($questionCode === '') {
+      continue;
+    }
+    $lookup[$questionCode] = $question;
+    $questionToken = strtoupper(formatTaskQuizPureAnswerQuestionToken($questionCode));
+    if ($questionToken !== '') {
+      $lookup[$questionToken] = $question;
+    }
+  }
+  return $lookup;
+}
+
+function calculateTaskQuizInnerScoreFromPureAnswersValue(string $answersValue, array $questions): int
+{
+  $answerMap = parseTaskQuizPureAnswersValue($answersValue);
+  if (!$answerMap) {
+    return 0;
+  }
+  $questionLookup = buildTaskQuizQuestionLookupByPureAnswerToken($questions);
+  $total = 0;
+  foreach ($answerMap as $questionToken => $answerText) {
+    $lookupKey = strtoupper(trim((string)$questionToken));
+    if ($lookupKey === '' || !isset($questionLookup[$lookupKey]) || !is_array($questionLookup[$lookupKey])) {
+      continue;
+    }
+    $question = $questionLookup[$lookupKey];
+    $choiceIndex = resolveTaskQuizAnswerChoiceIndex($question, $answerText);
+    $total += resolveTaskQuizQuestionInnerScore($question, $choiceIndex);
+  }
+  return max(0, $total);
 }
 
 function calculateTaskQuizInnerScoreSum(array $attemptState): int
@@ -4599,7 +4779,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $answersPath = (string)($quizAssets['answersPath'] ?? '');
     $questionsPath = (string)($quizAssets['questionsPath'] ?? '');
-    if ($answersPath !== '' && $questionsPath !== '') {
+    if (isSharedAnswersQuizTaskTypeValue($taskType ?? 'quiz')) {
+      persistSharedSurveyAnswersCsvState(
+        $answersPath,
+        $sessionWorkId,
+        $nextState,
+        isTaskQuizAttemptCompleted($nextState),
+        $questions
+      );
+    } elseif ($answersPath !== '' && $questionsPath !== '') {
       logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $questionText, $answer);
     }
     if (isSharedAnswersQuizTaskTypeValue($taskType ?? 'quiz')) {
@@ -5595,9 +5783,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $rows[$rowIndex][$taskScoreMapIndex] = serializeTaskScoreMap($taskScoreMap);
     $sharedResponse = null;
     if (isSharedAnswersQuizTaskTypeValue($taskType)) {
+      $answersPath = (string)($quizAssets['answersPath'] ?? '');
       $answersIndex = (int)($columns['answers'] ?? -1);
       $innerScoreIndex = (int)($columns['inner score'] ?? -1);
-      $innerScore = calculateTaskQuizInnerScoreSum($attemptState);
+      $innerScoreFromAnswersCsv = persistSharedSurveyAnswersCsvState(
+        $answersPath,
+        $sessionWorkId,
+        $attemptState,
+        true,
+        $questions
+      );
+      $innerScore = $innerScoreFromAnswersCsv !== null
+        ? $innerScoreFromAnswersCsv
+        : calculateTaskQuizInnerScoreSum($attemptState);
       if ($answersIndex >= 0) {
         $rows[$rowIndex][$answersIndex] = buildTaskQuizPureAnswersValue($attemptState);
       }
