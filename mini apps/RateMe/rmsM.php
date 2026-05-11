@@ -7652,6 +7652,12 @@ $sessionPayload = [
         grid-template-columns: 1fr;
         padding-bottom: 98px;
       }
+      .quiz-answers-grid--shared-layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .quiz-answers-grid--shared-layout .quiz-answer-btn--shared-row-wide {
+        grid-column: 1 / -1;
+      }
 
       .quiz-timer-track {
         position: absolute;
@@ -9688,7 +9694,7 @@ $sessionPayload = [
                   $taskTypeToken = (string)($taskItem['taskType'] ?? 'quiz');
                   $taskStatusToken = (string)($taskItem['status'] ?? 'inactive');
                   $buttonClass = 'task-item-btn';
-                  if (!$isAvailable) {
+                  if (!$isAvailable && !$isCompleted) {
                     $buttonClass .= ' is-disabled';
                   }
                   if ($isCompleted) {
@@ -9699,7 +9705,7 @@ $sessionPayload = [
                   ) {
                     $buttonClass .= ' is-describe-submitted';
                   }
-                  $disabledAttr = $isAvailable ? '' : 'disabled';
+                  $disabledAttr = ($isAvailable || $isCompleted) ? '' : 'disabled';
                 ?>
                 <button
                   class="<?= htmlspecialchars($buttonClass, ENT_QUOTES, 'UTF-8') ?>"
@@ -10901,7 +10907,7 @@ $sessionPayload = [
           const editableSubmittedDone = describeEditableDone || teamEditableDone;
 
           if (completed) {
-            button.disabled = true;
+            button.disabled = false;
             button.classList.remove('is-disabled');
             button.classList.add('is-completed');
             button.classList.remove('is-describe-submitted');
@@ -13189,6 +13195,11 @@ $sessionPayload = [
           currentQuestionIndex += 1;
           quizLocked = false;
           if (currentQuestionIndex >= currentQuestions.length) {
+            if (isSharedAnswersTaskType(currentTaskType)) {
+              quizLocked = true;
+              void completeCurrentTask(currentQuestions[currentQuestions.length - 1] || null, '');
+              return;
+            }
             if (usesAnsweredAllCompletionMode() && isQuizAttemptReadyToComplete()) {
               quizLocked = true;
               void completeCurrentTask(currentQuestions[currentQuestions.length - 1] || null, '');
@@ -13250,6 +13261,7 @@ $sessionPayload = [
           quizLocked = true;
           clearQuizTimer();
           const isSharedAnswersQuestion = String(item?.type ?? '').trim().toLowerCase() === 'shared_mcq';
+          const isLastDisplayedQuestion = currentQuestionIndex >= Math.max(0, currentQuestions.length - 1);
           Array.from(quizAnswersEl?.querySelectorAll('button') || []).forEach((node) => {
             if (node instanceof HTMLButtonElement) {
               node.disabled = true;
@@ -13270,7 +13282,7 @@ $sessionPayload = [
               button.classList.add('is-selected');
             }
             setTimeout(() => {
-              if (isQuizAttemptReadyToComplete(answerPayload)) {
+              if (isQuizAttemptReadyToComplete(answerPayload) || isLastDisplayedQuestion) {
                 void completeCurrentTask(item, answerText);
                 return;
               }
@@ -13361,6 +13373,7 @@ $sessionPayload = [
           quizQuestionEl.textContent = String(item.question || '').trim() || '-';
           quizAnswersEl.innerHTML = '';
           quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
+          quizAnswersEl.classList.toggle('quiz-answers-grid--shared-layout', item.type === 'shared_mcq');
           if (quizAreaEl) {
             Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
             quizAreaEl.classList.toggle('quiz-area--percentage', item.type === 'percentage');
@@ -13414,17 +13427,22 @@ $sessionPayload = [
               }))
             : [];
           const validAnswers = answers.filter((answer) => answer.text !== '');
-          for (let i = validAnswers.length - 1; i > 0; i -= 1) {
-            const j = Math.floor(Math.random() * (i + 1));
-            const tmp = validAnswers[i];
-            validAnswers[i] = validAnswers[j];
-            validAnswers[j] = tmp;
+          if (!isSharedAnswersQuestion) {
+            for (let i = validAnswers.length - 1; i > 0; i -= 1) {
+              const j = Math.floor(Math.random() * (i + 1));
+              const tmp = validAnswers[i];
+              validAnswers[i] = validAnswers[j];
+              validAnswers[j] = tmp;
+            }
           }
 
-          validAnswers.forEach((answerItem) => {
+          validAnswers.forEach((answerItem, answerIndex) => {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'quiz-answer-btn';
+            if (isSharedAnswersQuestion && answerIndex === 2) {
+              button.classList.add('quiz-answer-btn--shared-row-wide');
+            }
             button.textContent = answerItem.text;
             button.dataset.correct = answerItem.isCorrect ? '1' : '0';
             button.addEventListener('click', () => {
