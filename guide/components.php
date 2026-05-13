@@ -49,16 +49,16 @@ requireTabPermissionFromSession('features', false);
             <h3>اطلاع‌رسانی‌ها</h3>
           </div>
           <div class="section-footer notifications-footer">
-            <button type="button" class="btn secondary" data-test-toast aria-label="تست توست">
+            <button type="button" class="btn secondary" data-test-toast aria-label="خودارزیابی توست">
               آزمایش توست
             </button>
             <button
               type="button"
               class="btn secondary"
               data-test-snackbar
-              aria-label="تست اسنک‌بار"
+              aria-label="خودارزیابی اسنک‌بار"
             >
-              تست اسنک‌بار
+              خودارزیابی اسنک‌بار
             </button>
             <button
               type="button"
@@ -69,7 +69,7 @@ requireTabPermissionFromSession('features', false);
               اسنک‌بار خطا
             </button>
           </div>
-          <p class="hint">نمایش یک اعلان تست برای تست.</p>
+          <p class="hint">نمایش یک اعلان خودارزیابی برای خودارزیابی.</p>
         </div>
       </div>
       <div class="sub-pane cards-pane" data-pane="cards" dir="rtl">

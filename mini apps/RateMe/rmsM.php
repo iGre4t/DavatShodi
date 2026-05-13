@@ -12613,7 +12613,10 @@ $sessionPayload = [
           openInfoTaskView(taskTitle, title, bodyParts.join('\n\n'), { taskType: 'shared_answers_result' });
         };
 
-        const startCurrentQuizTaskView = () => {
+        const startCurrentQuizTaskView = (options = {}) => {
+          if (options?.pushHistory !== false) {
+            pushInPageHistoryState();
+          }
           syncActiveQuizResumeState('quiz');
           openQuizOverlay();
           renderQuizQuestion();
@@ -13469,6 +13472,9 @@ $sessionPayload = [
 
         const continueQuiz = () => {
           clearQuizTimer();
+          if (isManualSurveyQuizFlow()) {
+            pushInPageHistoryState();
+          }
           currentQuestionIndex += 1;
           quizLocked = false;
           if (currentQuestionIndex >= currentQuestions.length) {
@@ -13674,6 +13680,7 @@ $sessionPayload = [
             void completeCurrentTask(item, selectedAnswer);
             return;
           }
+          pushInPageHistoryState();
           currentQuestionIndex += 1;
           quizLocked = false;
           renderQuizQuestion();

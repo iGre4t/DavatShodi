@@ -7484,7 +7484,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const testToastTrigger = qs('[data-test-toast]');
   testToastTrigger?.addEventListener('click', () => {
-    showDefaultToast('این اعلان تست سبک پیش‌فرض است.', {
+    showDefaultToast('این اعلان خودارزیابی سبک پیش‌فرض است.', {
       duration: DEFAULT_TOAST_DURATION
     });
   });
