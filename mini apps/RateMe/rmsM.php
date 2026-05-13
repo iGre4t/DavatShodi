@@ -2945,6 +2945,106 @@ function parseTaskQuizPureAnswersValue(string $raw): array
   return $answers;
 }
 
+function rebuildTaskQuizAttemptStateFromAnswersValue(array $questions, string $answersValue, int $requiredCorrectAnswers = 0): ?array
+{
+  $questionLookup = buildQuestionLookupByCode($questions);
+  if (!$questionLookup) {
+    return null;
+  }
+
+  $parsedAnswers = parseTaskQuizPureAnswersValue($answersValue);
+  if (!$parsedAnswers) {
+    return null;
+  }
+
+  $questionCodes = [];
+  foreach ($questions as $question) {
+    if (!is_array($question)) {
+      continue;
+    }
+    $code = strtoupper(trim((string)($question['code'] ?? '')));
+    if ($code !== '' && !in_array($code, $questionCodes, true)) {
+      $questionCodes[] = $code;
+    }
+  }
+  if (!$questionCodes) {
+    return null;
+  }
+
+  $answered = [];
+  $correctCount = 0;
+  foreach ($questionCodes as $questionCode) {
+    if (!isset($questionLookup[$questionCode]) || !is_array($questionLookup[$questionCode])) {
+      continue;
+    }
+    $question = $questionLookup[$questionCode];
+    $questionToken = strtoupper(formatTaskQuizPureAnswerQuestionToken($questionCode));
+    $answer = trim((string)($parsedAnswers[$questionCode] ?? ($parsedAnswers[$questionToken] ?? '')));
+    if ($answer === '') {
+      continue;
+    }
+
+    $answerChoiceIndex = resolveTaskQuizAnswerChoiceIndex($question, $answer);
+    $isCorrect = isTaskQuizAnswerCorrect($question, $answer);
+    $answered[$questionCode] = [
+      'answer' => $answer,
+      'correct' => $isCorrect,
+      'answeredAt' => 0,
+      'awardedScore' => $isCorrect ? resolveTaskQuizQuestionAwardScore($question, 'active') : 0,
+      'answerChoiceIndex' => $answerChoiceIndex,
+      'innerScore' => isTaskQuizSharedChoiceQuestion($question)
+        ? resolveTaskQuizQuestionInnerScore($question, $answerChoiceIndex)
+        : 0
+    ];
+    if ($isCorrect) {
+      $correctCount += 1;
+    }
+  }
+
+  if (!$answered) {
+    return null;
+  }
+
+  $normalizedRequiredCorrectAnswers = max(0, $requiredCorrectAnswers);
+  if ($normalizedRequiredCorrectAnswers > 0) {
+    $normalizedRequiredCorrectAnswers = min($normalizedRequiredCorrectAnswers, count($questionCodes));
+  }
+
+  return [
+    'questionCodes' => $questionCodes,
+    'questionCount' => count($questionCodes),
+    'requiredCorrectAnswers' => $normalizedRequiredCorrectAnswers,
+    'scoreMode' => $normalizedRequiredCorrectAnswers === 0 ? 'proportional' : 'threshold',
+    'correctCount' => $correctCount,
+    'answeredCount' => count($answered),
+    'answered' => $answered,
+    'startedAt' => 0
+  ];
+}
+
+function readSharedSurveyAnswersValue(string $answersPath, string $workId): string
+{
+  $normalizedWorkId = trim($workId);
+  if ($answersPath === '' || $normalizedWorkId === '' || !is_file($answersPath)) {
+    return '';
+  }
+
+  $rows = readInviteesCsv($answersPath);
+  $header = (isset($rows[0]) && is_array($rows[0])) ? $rows[0] : ['Work ID', 'answers', 'inner score'];
+  $workIdIndex = findHeaderIndex($header, 'Work ID');
+  $answersIndex = findHeaderIndex($header, 'answers');
+  if ($workIdIndex < 0 || $answersIndex < 0) {
+    return '';
+  }
+
+  $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $normalizedWorkId);
+  if ($rowIndex < 0) {
+    return '';
+  }
+
+  return trim((string)($rows[$rowIndex][$answersIndex] ?? ''));
+}
+
 function buildTaskQuizQuestionLookupByPureAnswerToken(array $questions): array
 {
   $lookup = [];
@@ -4667,8 +4767,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $attemptStatePayload = null;
     if (isQuizLikeTaskTypeValue($taskType) && $available && empty($progress['completed'])) {
       $existingAttempt = readTaskQuizAttemptState($sessionWorkId, $taskId);
+      if (
+        !is_array($existingAttempt)
+        && isSharedAnswersQuizTaskTypeValue($taskType)
+      ) {
+        $persistedAnswersValue = readSharedSurveyAnswersValue((string)($quizAssets['answersPath'] ?? ''), $sessionWorkId);
+        $rebuiltAttempt = rebuildTaskQuizAttemptStateFromAnswersValue($questions, $persistedAnswersValue, 0);
+        if (is_array($rebuiltAttempt)) {
+          writeTaskQuizAttemptState($sessionWorkId, $taskId, $rebuiltAttempt);
+          $existingAttempt = $rebuiltAttempt;
+        }
+      }
       $resumeQuestions = is_array($existingAttempt) ? resolveTaskQuizQuestionsForStoredAttempt($questions, $existingAttempt) : [];
-      if (is_array($existingAttempt) && $resumeQuestions && !isTaskQuizAttemptCompleted($existingAttempt)) {
+      if (
+        is_array($existingAttempt)
+        && $resumeQuestions
+        && (
+          !isTaskQuizAttemptCompleted($existingAttempt)
+          || isSharedAnswersQuizTaskTypeValue($taskType)
+        )
+      ) {
         $questionsPayload = $resumeQuestions;
         $settingsPayload = resolveTaskQuizSettingsForAttempt(
           $settings,
@@ -6532,7 +6650,7 @@ $sessionPayload = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>کمپین به‌نام‌خدا</title>
+    <title>زندگی ادامه دارد</title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <link rel="stylesheet" href="../../style/remixicon.css" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
@@ -7560,8 +7678,14 @@ $sessionPayload = [
       }
 
       .quiz-nav-next {
-        width: min(360px, calc(100% - 8px));
-        margin-top: 4px;
+        width: min(360px, calc(100vw - 56px));
+        margin: 0 auto;
+        display: block;
+        background: #2f8fff;
+        border-color: #2f8fff;
+        color: #ffffff;
+        font-weight: 700;
+        box-shadow: 0 10px 22px rgba(47, 143, 255, 0.35);
       }
 
       .quiz-nav-next:disabled {
@@ -7618,6 +7742,23 @@ $sessionPayload = [
         overflow-y: auto;
         overflow-x: hidden;
         -webkit-overflow-scrolling: touch;
+      }
+
+      .quiz-area--manual-nav {
+        padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+      }
+
+      .tc-task-quiz-footer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 12px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(248, 251, 255, 0.78) 28%, rgba(248, 251, 255, 0.97) 100%);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 -12px 26px rgba(34, 63, 110, 0.08);
+        z-index: 4;
       }
 
       .quiz-area::before {
@@ -9679,7 +9820,7 @@ $sessionPayload = [
                 <span>?</span>
               </div>
             <?php endif; ?>
-            <h2 class="login-title">کمپین «به نام خدا»</h2>
+            <h2 class="login-title">زندگی ادامه دارد</h2>
           </div>
           <form id="tc-login-form" class="login-form" autocomplete="on">
             <label class="login-field">
@@ -9708,8 +9849,8 @@ $sessionPayload = [
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-tasks-title" class="tasks-title">چالش‌های کمپین «به نام خدا»</h2>
-          <div class="user-score-chip">
+          <h2 id="tc-tasks-title" class="tasks-title">چالش‌های زندگی ادامه دارد</h2>
+          <div class="user-score-chip" hidden aria-hidden="true">
             <span>امتیاز شما</span>
             <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
@@ -9770,7 +9911,7 @@ $sessionPayload = [
             <?php endif; ?>
           </div>
         </div>
-        <div id="tc-bottom-cta" class="tc-bottom-cta">
+        <div id="tc-bottom-cta" class="tc-bottom-cta" hidden aria-hidden="true">
           <button id="tc-open-rewards-btn" class="tc-bottom-cta-btn" type="button">دریافت جایزه</button>
         </div>
         <div id="tc-rewards-view" class="main-area rewards-view hidden" aria-hidden="true">
@@ -9778,7 +9919,7 @@ $sessionPayload = [
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
           <h2 id="tc-rewards-title" class="tasks-title">خوان‌های جوایز</h2>
-          <div class="user-score-chip">
+          <div class="user-score-chip" hidden aria-hidden="true">
             <span>امتیاز شما</span>
             <strong id="tc-reward-user-score-chip-value"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
@@ -9809,6 +9950,8 @@ $sessionPayload = [
           <div id="tc-task-quiz-question" class="quiz-question-box">-</div>
           <div id="tc-task-quiz-answers" class="quiz-answers-grid"></div>
           <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
+        </div>
+        <div id="tc-task-quiz-footer" class="tc-bottom-cta tc-task-quiz-footer quiz-hidden">
           <button id="tc-task-quiz-next" class="login-btn info-task-ack quiz-nav-next quiz-hidden" type="button" disabled>ثبت و ادامه</button>
         </div>
         <div id="tc-task-info-area" class="info-task-area quiz-hidden">
@@ -10053,14 +10196,11 @@ $sessionPayload = [
         const watchdog = setTimeout(() => {
           const body = document.body;
           if (!body || !body.classList.contains('page-loading')) return;
-          try {
-            const url = new URL(window.location.href);
-            if (url.searchParams.get('force_logout') !== '1') {
-              url.searchParams.set('force_logout', '1');
-              window.location.replace(url.toString());
-            }
-          } catch {
-            window.location.replace(`${window.location.pathname}?force_logout=1`);
+          body.classList.remove('page-loading');
+          const loader = document.getElementById('tc-loader');
+          if (loader instanceof HTMLElement) {
+            loader.classList.add('loader-hidden');
+            window.setTimeout(() => loader.remove(), 450);
           }
         }, 9000);
         window.__tcClearLoaderWatchdog = () => clearTimeout(watchdog);
@@ -10183,6 +10323,40 @@ $sessionPayload = [
         target.remove();
       };
 
+      const activeQuizResumeStorageKey = `tc_active_quiz_task_${String(sessionInfo?.workId || 'guest')}`;
+      const clearActiveQuizResumeState = () => {
+        try {
+          window.sessionStorage.removeItem(activeQuizResumeStorageKey);
+        } catch {}
+      };
+      const readActiveQuizResumeState = () => {
+        try {
+          const raw = window.sessionStorage.getItem(activeQuizResumeStorageKey);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          const taskId = String(parsed?.taskId || '').trim();
+          const view = String(parsed?.view || 'info').trim().toLowerCase() === 'quiz' ? 'quiz' : 'info';
+          if (taskId === '') return null;
+          return { taskId, view };
+        } catch {
+          return null;
+        }
+      };
+      const writeActiveQuizResumeState = (taskId, view = 'info') => {
+        const normalizedTaskId = String(taskId || '').trim();
+        if (normalizedTaskId === '') {
+          clearActiveQuizResumeState();
+          return;
+        }
+        const normalizedView = String(view || 'info').trim().toLowerCase() === 'quiz' ? 'quiz' : 'info';
+        try {
+          window.sessionStorage.setItem(activeQuizResumeStorageKey, JSON.stringify({
+            taskId: normalizedTaskId,
+            view: normalizedView
+          }));
+        } catch {}
+      };
+
       const withTransitionLoader = async (work, {
         primaryText = 'در حال آماده‌سازی',
         secondaryText = 'لطفا چند لحظه صبر کنید',
@@ -10227,6 +10401,7 @@ $sessionPayload = [
         }
       };
       const performLogout = async ({ loaderText = '', loaderSubtext = '' } = {}) => {
+        clearActiveQuizResumeState();
         if (loaderText) {
           createRuntimeLoader(loaderText, loaderSubtext);
         }
@@ -10409,6 +10584,7 @@ $sessionPayload = [
         const quizQuestionEl = document.getElementById('tc-task-quiz-question');
         const quizAnswersEl = document.getElementById('tc-task-quiz-answers');
         const quizTimerFillEl = document.getElementById('tc-task-quiz-timer-fill');
+        const quizFooterEl = document.getElementById('tc-task-quiz-footer');
         const quizNextBtnEl = document.getElementById('tc-task-quiz-next');
         const taskInfoHeadEl = document.getElementById('tc-task-info-head');
         const resultDialogEl = document.getElementById('tc-task-result-dialog');
@@ -10432,6 +10608,8 @@ $sessionPayload = [
         const rewardCardsLockedPrizes = new Map();
         let currentTaskId = '';
         let currentTaskTitle = '';
+        let currentTaskInfoTitle = '';
+        let currentTaskInfoText = '';
         let currentTaskType = 'quiz';
         let currentQuestions = [];
         let currentQuestionIndex = 0;
@@ -10765,6 +10943,15 @@ $sessionPayload = [
         const isSharedAnswersTaskType = (taskType) => {
           const token = normalizeClientTaskType(taskType);
           return token === 'shared_answers_quiz';
+        };
+
+        const syncActiveQuizResumeState = (view = 'info') => {
+          const taskId = String(currentTaskId || '').trim();
+          if (taskId === '' || !isQuizLikeTaskType(currentTaskType)) {
+            clearActiveQuizResumeState();
+            return;
+          }
+          writeActiveQuizResumeState(taskId, view);
         };
 
         const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
@@ -11141,6 +11328,36 @@ $sessionPayload = [
           if (taskInfoAreaEl) {
             taskInfoAreaEl.classList.add('quiz-hidden');
           }
+          setTopbarMode('task');
+        };
+
+        const returnToCurrentTaskInfoSlide = () => {
+          clearQuizTimer();
+          if (timerAreaEl) {
+            timerAreaEl.classList.add('quiz-hidden');
+          }
+          if (bottomCtaEl) {
+            bottomCtaEl.classList.add('quiz-hidden');
+          }
+          if (quizAreaEl) {
+            quizAreaEl.classList.add('quiz-hidden');
+          }
+          if (quizFooterEl) {
+            quizFooterEl.classList.add('quiz-hidden');
+          }
+          if (taskInfoAreaEl) {
+            taskInfoAreaEl.classList.remove('quiz-hidden');
+          }
+          if (taskInfoTitleEl) {
+            taskInfoTitleEl.textContent = currentTaskInfoTitle || currentTaskTitle || 'اطلاعات ماموریت';
+          }
+          if (taskInfoContentEl) {
+            taskInfoContentEl.innerHTML = buildInfoTaskContentHtml(currentTaskInfoText);
+          }
+          setInfoTaskStep('info', { pushHistory: false });
+          infoTaskViewOpen = true;
+          syncActiveQuizResumeState('info');
+          setTopbarMode('task');
         };
 
         const closeQuizOverlay = () => {
@@ -11148,7 +11365,11 @@ $sessionPayload = [
           if (quizAreaEl) {
             quizAreaEl.classList.add('quiz-hidden');
             quizAreaEl.classList.remove('quiz-area--percentage');
+            quizAreaEl.classList.remove('quiz-area--manual-nav');
             Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
+          }
+          if (quizFooterEl) {
+            quizFooterEl.classList.add('quiz-hidden');
           }
           if (timerAreaEl) {
             timerAreaEl.classList.remove('quiz-hidden');
@@ -11290,6 +11511,8 @@ $sessionPayload = [
           describePhotoBusy = false;
           currentTaskId = '';
           currentTaskTitle = '';
+          currentTaskInfoTitle = '';
+          currentTaskInfoText = '';
           currentTaskType = 'quiz';
           currentQuestions = [];
           currentQuestionIndex = 0;
@@ -12344,6 +12567,8 @@ $sessionPayload = [
         const openInfoTaskView = (taskTitle, infoTitle, infoText, options = {}) => {
           pushInPageHistoryState();
           currentTaskType = normalizeClientTaskType(options?.taskType || 'info');
+          currentTaskInfoTitle = String(infoTitle || taskTitle || 'اطلاعات ماموریت').trim() || 'اطلاعات ماموریت';
+          currentTaskInfoText = String(infoText || '').trim();
           describePhotoChoices = normalizeDescribePhotoChoices(options?.describePhotos || []);
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
@@ -12358,10 +12583,10 @@ $sessionPayload = [
           if (taskInfoAreaEl) taskInfoAreaEl.classList.remove('quiz-hidden');
           setTopbarMode('task');
           if (taskInfoTitleEl) {
-            taskInfoTitleEl.textContent = String(infoTitle || taskTitle || 'اطلاعات ماموریت').trim() || 'اطلاعات ماموریت';
+            taskInfoTitleEl.textContent = currentTaskInfoTitle;
           }
           if (taskInfoContentEl) {
-            taskInfoContentEl.innerHTML = buildInfoTaskContentHtml(infoText);
+            taskInfoContentEl.innerHTML = buildInfoTaskContentHtml(currentTaskInfoText);
           }
           if (currentTaskType === 'describe_photo') {
             renderDescribePhotoChoice();
@@ -12389,6 +12614,7 @@ $sessionPayload = [
         };
 
         const startCurrentQuizTaskView = () => {
+          syncActiveQuizResumeState('quiz');
           openQuizOverlay();
           renderQuizQuestion();
         };
@@ -13212,6 +13438,7 @@ $sessionPayload = [
             setTaskButtonState(targetButton, taskCompleted ? 'completed' : deriveTaskStatusFromButton(targetButton));
           }
 
+          clearActiveQuizResumeState();
           closeQuizOverlay();
           if (payload?.alreadyCompleted) {
             if (isSharedAnswersTask) {
@@ -13474,15 +13701,19 @@ $sessionPayload = [
           quizAnswersEl.innerHTML = '';
           quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
           quizAnswersEl.classList.toggle('quiz-answers-grid--shared-layout', item.type === 'shared_mcq');
+          const showManualNav = isManualSurveyQuizFlow() && item.type !== 'percentage';
           if (quizAreaEl) {
             Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
             quizAreaEl.classList.toggle('quiz-area--percentage', item.type === 'percentage');
+            quizAreaEl.classList.toggle('quiz-area--manual-nav', showManualNav);
           }
           if (quizNextBtnEl) {
-            const showManualNav = isManualSurveyQuizFlow() && item.type !== 'percentage';
             quizNextBtnEl.classList.toggle('quiz-hidden', !showManualNav);
             quizNextBtnEl.textContent = currentQuestionIndex >= Math.max(0, total - 1) ? 'ثبت نهایی' : 'ثبت و ادامه';
             quizNextBtnEl.disabled = true;
+          }
+          if (quizFooterEl) {
+            quizFooterEl.classList.toggle('quiz-hidden', !showManualNav);
           }
           if (quizTimerFillEl?.parentElement) {
             quizTimerFillEl.parentElement.classList.toggle('quiz-hidden', isManualSurveyQuizFlow());
@@ -13549,7 +13780,7 @@ $sessionPayload = [
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'quiz-answer-btn';
-            if (isSharedAnswersQuestion && answerIndex === 2) {
+            if (isSharedAnswersQuestion && answerIndex === 0) {
               button.classList.add('quiz-answer-btn--shared-row-wide');
             }
             button.textContent = answerItem.text;
@@ -13609,10 +13840,12 @@ $sessionPayload = [
             });
         };
 
-        const startTaskQuiz = async (button) => {
+        const startTaskQuiz = async (button, options = {}) => {
           const taskId = String(button?.dataset?.taskId || '').trim();
+          const requestedResumeView = String(options?.resumeView || '').trim().toLowerCase() === 'quiz' ? 'quiz' : 'info';
+          const skipClientEventGate = options?.skipClientEventGate === true;
           if (!taskId) return;
-          if (globalEventStatus === 'inactive') {
+          if (!skipClientEventGate && globalEventStatus === 'inactive') {
             openTaskResultDialog(0, 'فعلا رویداد فعالی وجود ندارد.');
             return;
           }
@@ -13626,6 +13859,7 @@ $sessionPayload = [
             button.dataset.taskTeamStartedPending = teamStartedPending ? '1' : '0';
             setTaskButtonState(button, deriveTaskStatusFromButton(button));
             if (progress?.completed) {
+              clearActiveQuizResumeState();
               button.dataset.taskCompleted = '1';
               button.dataset.taskUserScore = String(Number.parseInt(progress?.score ?? 0, 10) || 0);
               setTaskButtonState(button, 'completed');
@@ -13641,6 +13875,7 @@ $sessionPayload = [
             }
 
             if (!payload?.task?.available) {
+              clearActiveQuizResumeState();
               setTaskButtonState(button, String(payload?.task?.status || 'inactive'));
               openTaskResultDialog(0, 'این ماموریت در حال حاضر فعال نیست.');
               return;
@@ -13648,6 +13883,7 @@ $sessionPayload = [
 
             const fetchedTaskType = normalizeClientTaskType(payload?.task?.taskType || button?.dataset?.taskType || 'quiz');
             if (fetchedTaskType === 'info' || fetchedTaskType === 'team_task' || fetchedTaskType === 'describe_photo') {
+              clearActiveQuizResumeState();
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
               const describePhotos = Array.isArray(payload?.task?.describePhotos) ? payload.task.describePhotos : [];
@@ -13669,6 +13905,7 @@ $sessionPayload = [
 
             const normalizedQuestions = normalizeQuestions(payload?.questions || []);
             if (!normalizedQuestions.length) {
+              clearActiveQuizResumeState();
               openTaskResultDialog(0, 'برای این ماموریت سوالی تنظیم نشده است.');
               return;
             }
@@ -13676,6 +13913,8 @@ $sessionPayload = [
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
             currentTaskId = taskId;
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
+            currentTaskInfoTitle = String(payload?.task?.infoTitle ?? '').trim() || currentTaskTitle || 'اطلاعات ماموریت';
+            currentTaskInfoText = String(payload?.task?.infoText ?? '').trim();
             currentTaskType = fetchedTaskType;
             currentQuestions = normalizedQuestions.slice();
             const attemptState = payload?.attemptState && typeof payload.attemptState === 'object'
@@ -13726,6 +13965,13 @@ $sessionPayload = [
             );
             quizLocked = false;
             closeTaskResultDialog();
+            const hasAttemptProgress = currentAnsweredQuestions > 0 || Object.keys(currentAnsweredMap).length > 0;
+            const shouldResumeQuizImmediately = requestedResumeView === 'quiz' || hasAttemptProgress;
+            if (shouldResumeQuizImmediately) {
+              startCurrentQuizTaskView();
+              return;
+            }
+            syncActiveQuizResumeState('info');
             openInfoTaskView(
               currentTaskTitle,
               String(payload?.task?.infoTitle ?? '').trim(),
@@ -14087,12 +14333,22 @@ $sessionPayload = [
             closeRewardsView();
             return true;
           }
-          if (infoTaskViewOpen) {
-            if (isManualSurveyQuizFlow() && currentQuestionIndex > 0) {
+          const isQuizOverlayOpen = quizAreaEl instanceof HTMLElement && !quizAreaEl.classList.contains('quiz-hidden');
+          if (isQuizOverlayOpen && isManualSurveyQuizFlow()) {
+            if (currentQuestionIndex > 0) {
               currentQuestionIndex -= 1;
+              quizLocked = false;
               renderQuizQuestion();
               return true;
             }
+            if (infoTaskViewOpen || currentTaskInfoTitle !== '' || currentTaskInfoText !== '') {
+              returnToCurrentTaskInfoSlide();
+              return true;
+            }
+            closeQuizOverlay();
+            return true;
+          }
+          if (infoTaskViewOpen) {
             if (currentTaskType === 'describe_photo') {
               if (infoTaskCurrentStep === 'editor') {
                 setInfoTaskStep('photo');
@@ -14388,6 +14644,28 @@ $sessionPayload = [
           });
         });
 
+        const restoreActiveQuizAfterReload = () => {
+          const resumeState = readActiveQuizResumeState();
+          if (!resumeState?.taskId) return;
+          const targetButton = taskButtons.find((button) => (
+            String(button?.dataset?.taskId || '').trim() === resumeState.taskId
+          ));
+          if (!(targetButton instanceof HTMLButtonElement)) {
+            clearActiveQuizResumeState();
+            return;
+          }
+          void withTransitionLoader(
+            () => startTaskQuiz(targetButton, { resumeView: resumeState.view, skipClientEventGate: true }),
+            {
+              primaryText: 'در حال بازگردانی ماموریت',
+              secondaryText: 'در حال بازیابی آخرین سوال پاسخ‌داده‌نشده',
+              delayMs: 120
+            }
+          ).catch(() => {
+            clearActiveQuizResumeState();
+          });
+        };
+
         window.addEventListener('storage', (event) => {
           if (event.key === 'tcSettingsUpdated') {
             refreshStatus();
@@ -14413,8 +14691,11 @@ $sessionPayload = [
         initInPageHistoryState();
         setTopbarMode('tasks');
         loadLockedRewardCards();
-        refreshStatus();
-        refreshTaskButtonsStatus();
+        void (async () => {
+          await refreshStatus();
+          refreshTaskButtonsStatus();
+          restoreActiveQuizAfterReload();
+        })();
         scheduleHourlyStatusCheck();
         taskStatusTimer = setInterval(refreshStatus, 30 * 1000);
         taskCountdownTickTimer = setInterval(refreshTaskButtonsStatus, 1000);
