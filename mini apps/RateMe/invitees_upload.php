@@ -86,6 +86,47 @@ if (!defined('TCQ_INCLUDE_ONLY')) {
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'rmsQ.php';
 
 tcqEnsureInviteesColumns($filePath);
+$uploadedRows = [];
+if (($handle = fopen($filePath, 'r')) !== false) {
+  while (($row = fgetcsv($handle)) !== false) {
+    $uploadedRows[] = is_array($row) ? $row : [];
+  }
+  fclose($handle);
+}
+if ($uploadedRows && is_array($uploadedRows[0] ?? null)) {
+  $header = $uploadedRows[0];
+  $anyPasswordIndex = -1;
+  foreach ($header as $index => $value) {
+    $token = strtolower(trim(str_replace(['-', '_'], ' ', (string)$value)));
+    if ($token === 'any password') {
+      $anyPasswordIndex = (int)$index;
+      break;
+    }
+  }
+  if ($anyPasswordIndex < 0) {
+    $header[] = 'any password';
+    $anyPasswordIndex = count($header) - 1;
+    $uploadedRows[0] = $header;
+    for ($i = 1; $i < count($uploadedRows); $i += 1) {
+      $row = is_array($uploadedRows[$i] ?? null) ? $uploadedRows[$i] : [];
+      $row[$anyPasswordIndex] = '';
+      $uploadedRows[$i] = $row;
+    }
+    $rewrite = fopen($filePath, 'w');
+    if ($rewrite === false) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to update invitees schema.']);
+      exit;
+    }
+    foreach ($uploadedRows as $row) {
+      if (fputcsv($rewrite, is_array($row) ? $row : []) === false) {
+        fclose($rewrite);
+        echo json_encode(['status' => 'error', 'message' => 'Failed to update invitees schema.']);
+        exit;
+      }
+    }
+    fclose($rewrite);
+  }
+}
 $questions = tcqLoadStore(__DIR__ . DIRECTORY_SEPARATOR . 'rmsQ list.json');
 if (!tcqSyncAnswersSheet($answersPath, $questions, $questions)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to rebuild answers table.']);

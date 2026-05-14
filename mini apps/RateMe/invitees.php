@@ -93,6 +93,21 @@ function resolveMappedInviteColumnIndex(array $header, array $mapping, string $k
   return findInviteHeaderIndex($header, $fallbackNames);
 }
 
+function parseInviteeAnyPasswordValue($value): bool {
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_int($value) || is_float($value)) {
+    return ((float)$value) > 0;
+  }
+  $token = trim((string)$value);
+  if ($token === '') {
+    return false;
+  }
+  $normalized = function_exists('mb_strtolower') ? mb_strtolower($token, 'UTF-8') : strtolower($token);
+  return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
+}
+
 $mapping = readMappedConfig($mapFile);
 $rows = readCsvRows($mappedFile);
 if ($rows) {
@@ -103,6 +118,7 @@ if ($rows) {
   $nationalIdIndex = resolveMappedInviteColumnIndex($header, $mapping, 'nationalId', ['national id']);
   $phoneNumberIndex = resolveMappedInviteColumnIndex($header, $mapping, 'phoneNumber', ['phone number', 'phone', 'mobile']);
   $passwordIndex = findInviteHeaderIndex($header, ['password']);
+  $anyPasswordIndex = findInviteHeaderIndex($header, ['any password']);
   $stats['total'] = max(0, count($rows) - 1);
   $stats['columns'] = [
     'workId' => ($workIdIndex >= 0 && isset($header[$workIdIndex])) ? (string)$header[$workIdIndex] : '',
@@ -128,6 +144,7 @@ if ($rows) {
     $nationalId = trim((string)($row[$nationalIdIndex] ?? ''));
     $phoneNumber = trim((string)($row[$phoneNumberIndex] ?? ''));
     $password = trim((string)($row[$passwordIndex] ?? ''));
+    $anyPassword = parseInviteeAnyPasswordValue($row[$anyPasswordIndex] ?? '');
 
     if ($workId !== '' || $nationalId !== '' || $phoneNumber !== '' || $first !== '' || $last !== '') {
       $allInvitees[] = [
@@ -137,7 +154,8 @@ if ($rows) {
         'workId' => $workId,
         'nationalId' => $nationalId,
         'phoneNumber' => $phoneNumber,
-        'password' => $password
+        'password' => $password,
+        'anyPassword' => $anyPassword
       ];
     }
 
@@ -245,6 +263,7 @@ if ($rows) {
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-national-id="<?= htmlspecialchars((string)($invitee['nationalId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-phone-number="<?= htmlspecialchars((string)($invitee['phoneNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-any-password="<?= !empty($invitee['anyPassword']) ? '1' : '0' ?>"
                         >Edit</button>
                         <?php endif; ?>
                         <?php if ($tcInviteesCanReveal): ?>
@@ -331,6 +350,10 @@ if ($rows) {
     <label class="field">
       <span>Phone Number</span>
       <input id="tc-add-phone-number" type="text" placeholder="Phone Number" />
+    </label>
+    <label class="field" style="justify-content:flex-end;">
+      <span>any password</span>
+      <input id="tc-add-any-password" type="checkbox" />
     </label>
     <div class="field full">
       <button type="button" class="btn primary standard-primary-button" id="tc-add-invitee-btn">Add Invitee</button>
@@ -483,6 +506,10 @@ if ($rows) {
           <span>Phone Number</span>
           <input id="tc-edit-phone-number" type="text" />
         </label>
+        <label class="field" style="justify-content:flex-end;">
+          <span>any password</span>
+          <input id="tc-edit-any-password" type="checkbox" />
+        </label>
       </div>
       <p id="tc-edit-invitee-msg" class="hint" aria-live="polite"></p>
     </div>
@@ -590,6 +617,7 @@ if ($rows) {
   const addLastNameEl = getEl('tc-add-last-name');
   const addNationalIdEl = getEl('tc-add-national-id');
   const addPhoneNumberEl = getEl('tc-add-phone-number');
+  const addAnyPasswordEl = getEl('tc-add-any-password');
   const addInviteeBtn = getEl('tc-add-invitee-btn');
   const addInviteeMsgEl = getEl('tc-add-invitee-msg');
   const editModal = getEl('tc-invite-edit-modal');
@@ -599,6 +627,7 @@ if ($rows) {
   const editLastNameEl = getEl('tc-edit-last-name');
   const editNationalIdEl = getEl('tc-edit-national-id');
   const editPhoneNumberEl = getEl('tc-edit-phone-number');
+  const editAnyPasswordEl = getEl('tc-edit-any-password');
   const editSaveBtn = getEl('tc-edit-invitee-save');
   const editMsgEl = getEl('tc-edit-invitee-msg');
   const authModal = getEl('tc-invite-auth-modal');
@@ -950,6 +979,7 @@ if ($rows) {
     if (editLastNameEl) editLastNameEl.value = String(editTrigger.getAttribute('data-last-name') || '').trim();
     if (editNationalIdEl) editNationalIdEl.value = String(editTrigger.getAttribute('data-national-id') || '').trim();
     if (editPhoneNumberEl) editPhoneNumberEl.value = String(editTrigger.getAttribute('data-phone-number') || '').trim();
+    if (editAnyPasswordEl) editAnyPasswordEl.checked = String(editTrigger.getAttribute('data-any-password') || '') === '1';
     setEditMsg('');
     openEditModal();
   });
@@ -966,6 +996,7 @@ if ($rows) {
     const lastName = String(editLastNameEl?.value || '').trim();
     const nationalId = String(editNationalIdEl?.value || '').trim();
     const phoneNumber = String(editPhoneNumberEl?.value || '').trim();
+    const anyPassword = !!editAnyPasswordEl?.checked;
 
     if (!workId || !firstName || !lastName || !nationalId || !phoneNumber) {
       setEditMsg('Please fill all fields.', true);
@@ -986,7 +1017,8 @@ if ($rows) {
             firstName,
             lastName,
             nationalId,
-            phoneNumber
+            phoneNumber,
+            anyPassword
           }
         })
       });
@@ -1257,6 +1289,7 @@ if ($rows) {
     const lastName = String(addLastNameEl?.value || '').trim();
     const nationalId = String(addNationalIdEl?.value || '').trim();
     const phoneNumber = String(addPhoneNumberEl?.value || '').trim();
+    const anyPassword = !!addAnyPasswordEl?.checked;
 
     if (!workId || !firstName || !lastName || !nationalId || !phoneNumber) {
       setAddMsg('Please fill all fields.', true);
@@ -1276,7 +1309,8 @@ if ($rows) {
             firstName,
             lastName,
             nationalId,
-            phoneNumber
+            phoneNumber,
+            anyPassword
           }
         })
       });
@@ -1288,6 +1322,7 @@ if ($rows) {
         if (addLastNameEl) addLastNameEl.value = '';
         if (addNationalIdEl) addNationalIdEl.value = '';
         if (addPhoneNumberEl) addPhoneNumberEl.value = '';
+        if (addAnyPasswordEl) addAnyPasswordEl.checked = false;
         setTimeout(() => window.location.reload(), 350);
       } else {
         setAddMsg(result?.message || 'Failed to add invitee.', true);

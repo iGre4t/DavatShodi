@@ -148,6 +148,24 @@ function writeCsvRowsLocked(string $path, array $rows): bool
   return true;
 }
 
+function ensureColumn(array &$rows, string $columnName): int
+{
+  $header = is_array($rows[0] ?? null) ? $rows[0] : [];
+  $index = findHeaderIndexByNames($header, [$columnName]);
+  if ($index >= 0) {
+    return $index;
+  }
+  $header[] = $columnName;
+  $index = count($header) - 1;
+  $rows[0] = $header;
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
+    $row[$index] = (string)($row[$index] ?? '');
+    $rows[$i] = $row;
+  }
+  return $index;
+}
+
 function generateInviteePassword(int $length = 5): string
 {
   $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -174,6 +192,7 @@ $firstName = trim((string)($invitee['firstName'] ?? $invitee['first_name'] ?? ''
 $lastName = trim((string)($invitee['lastName'] ?? $invitee['last_name'] ?? ''));
 $nationalId = trim((string)($invitee['nationalId'] ?? $invitee['national_id'] ?? ''));
 $phoneNumber = trim((string)($invitee['phoneNumber'] ?? $invitee['phone_number'] ?? ''));
+$anyPassword = !empty($invitee['anyPassword']) || !empty($invitee['any_password']);
 
 if ($workId === '' || $firstName === '' || $lastName === '' || $nationalId === '' || $phoneNumber === '') {
   echo json_encode(['status' => 'error', 'message' => 'All fields are required.']);
@@ -198,6 +217,19 @@ if ($width <= 0) {
   exit;
 }
 
+for ($i = 0; $i < count($rows); $i += 1) {
+  $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
+  if (count($row) < $width) {
+    $row = array_pad($row, $width, '');
+  } elseif (count($row) > $width) {
+    $row = array_slice($row, 0, $width);
+  }
+  $rows[$i] = $row;
+}
+
+$anyPasswordIndex = ensureColumn($rows, 'any password');
+$header = $rows[0];
+$width = count($header);
 for ($i = 0; $i < count($rows); $i += 1) {
   $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
   if (count($row) < $width) {
@@ -269,6 +301,7 @@ $setRowValue($newRow, $lastNameIndex, $lastName);
 $setRowValue($newRow, $nationalIdIndex, $nationalId);
 $setRowValue($newRow, $phoneNumberIndex, $phoneNumber);
 $setRowValue($newRow, $workIdIndex, $workId);
+$setRowValue($newRow, $anyPasswordIndex, $anyPassword ? '1' : '');
 
 $passwordIndex = findHeaderIndexByNames($header, ['password']);
 if ($passwordIndex >= 0) {

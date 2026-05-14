@@ -148,6 +148,24 @@ function writeCsvRowsLocked(string $path, array $rows): bool
   return true;
 }
 
+function ensureColumn(array &$rows, string $columnName): int
+{
+  $header = is_array($rows[0] ?? null) ? $rows[0] : [];
+  $index = findHeaderIndexByNames($header, [$columnName]);
+  if ($index >= 0) {
+    return $index;
+  }
+  $header[] = $columnName;
+  $index = count($header) - 1;
+  $rows[0] = $header;
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
+    $row[$index] = (string)($row[$index] ?? '');
+    $rows[$i] = $row;
+  }
+  return $index;
+}
+
 $rowNumber = (int)($input['row'] ?? 0);
 $invitee = is_array($input['invitee'] ?? null) ? $input['invitee'] : $input;
 
@@ -156,6 +174,7 @@ $firstName = trim((string)($invitee['firstName'] ?? $invitee['first_name'] ?? ''
 $lastName = trim((string)($invitee['lastName'] ?? $invitee['last_name'] ?? ''));
 $nationalId = trim((string)($invitee['nationalId'] ?? $invitee['national_id'] ?? ''));
 $phoneNumber = trim((string)($invitee['phoneNumber'] ?? $invitee['phone_number'] ?? ''));
+$anyPassword = !empty($invitee['anyPassword']) || !empty($invitee['any_password']);
 
 if ($rowNumber <= 1) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid invitee row.']);
@@ -205,6 +224,8 @@ $firstNameIndex = resolveMappedIndex($header, $mapping, 'firstName', ['First Nam
 $lastNameIndex = resolveMappedIndex($header, $mapping, 'lastName', ['Last Name', 'last name', 'family', 'surname']);
 $nationalIdIndex = resolveMappedIndex($header, $mapping, 'nationalId', ['National ID', 'national id']);
 $phoneNumberIndex = resolveMappedIndex($header, $mapping, 'phoneNumber', ['Phone Number', 'phone number', 'phone', 'mobile']);
+$anyPasswordIndex = ensureColumn($rows, 'any password');
+$header = $rows[0];
 
 if ($workIdIndex < 0 || $firstNameIndex < 0 || $lastNameIndex < 0 || $nationalIdIndex < 0 || $phoneNumberIndex < 0) {
   echo json_encode(['status' => 'error', 'message' => 'Mapped columns are incomplete.']);
@@ -255,6 +276,7 @@ $rows[$rowIndex][$firstNameIndex] = $firstName;
 $rows[$rowIndex][$lastNameIndex] = $lastName;
 $rows[$rowIndex][$nationalIdIndex] = $nationalId;
 $rows[$rowIndex][$phoneNumberIndex] = $phoneNumber;
+$rows[$rowIndex][$anyPasswordIndex] = $anyPassword ? '1' : '';
 
 if (!writeCsvRowsLocked($mappedFile, $rows)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to update Invitees mapped CSV.']);

@@ -4275,7 +4275,8 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'Each Level Won Prize',
     'Total Prize Won',
     'Reward Level Won IDs',
-    'Out of Value Rewards'
+    'Out of Value Rewards',
+    'any password'
   ]);
   $header = $rows[0];
   $workIdIndex = (int)($mapping['workId'] ?? -1);
@@ -4289,6 +4290,22 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'header' => $header,
     'workIdIndex' => $workIdIndex
   ];
+}
+
+function parseInviteeAnyPasswordValue($value): bool
+{
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_int($value) || is_float($value)) {
+    return ((float)$value) > 0;
+  }
+  $token = trim((string)$value);
+  if ($token === '') {
+    return false;
+  }
+  $normalized = function_exists('mb_strtolower') ? mb_strtolower($token, 'UTF-8') : strtolower($token);
+  return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
 }
 
 function findInviteeRowIndex(array $rows, int $workIdIndex, string $workId): int
@@ -4609,7 +4626,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $rowPassword = normalizeCredentialToken((string)($rows[$rowIndex][$passwordIndex] ?? ''));
-    if ($rowPassword === '' || $rowPassword !== $password) {
+    $anyPasswordIndex = $columns['any password'] ?? findHeaderIndex($table['header'], 'any password');
+    $allowAnyPassword = $anyPasswordIndex >= 0 && parseInviteeAnyPasswordValue($rows[$rowIndex][$anyPasswordIndex] ?? '');
+    if ((!$allowAnyPassword && $rowPassword === '') || (!$allowAnyPassword && $rowPassword !== $password)) {
       $recordFail();
       echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
       exit;
