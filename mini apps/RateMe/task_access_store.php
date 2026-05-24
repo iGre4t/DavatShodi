@@ -99,7 +99,7 @@ function tcTaskAccessResolvePaneKeys(string $taskType): array
 {
   $type = tcTaskAccessNormalizeTaskType($taskType);
   if ($type === 'shared_answers_quiz') {
-    return ['control', 'information', 'response-level', 'quiz'];
+    return ['control', 'information', 'response-level', 'quiz', 'monitoring'];
   }
   if ($type === 'quiz') {
     return ['control', 'information', 'quiz'];

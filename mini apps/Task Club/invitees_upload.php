@@ -46,12 +46,43 @@ if (!is_dir($baseDir)) {
   mkdir($baseDir, 0777, true);
 }
 
+function tcInviteesUploadWriteTextLocked(string $path, string $content): bool
+{
+  $handle = fopen($path, 'c+');
+  if ($handle === false) {
+    return false;
+  }
+  if (!flock($handle, LOCK_EX)) {
+    fclose($handle);
+    return false;
+  }
+  if (!ftruncate($handle, 0) || fseek($handle, 0) !== 0) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
+    return false;
+  }
+  $remaining = $content;
+  while ($remaining !== '') {
+    $written = fwrite($handle, $remaining);
+    if (!is_int($written) || $written <= 0) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
+    $remaining = (string)substr($remaining, $written);
+  }
+  fflush($handle);
+  flock($handle, LOCK_UN);
+  fclose($handle);
+  return true;
+}
+
 $filePath = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $mapPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Mapped.json';
 $answersPath = $baseDir . DIRECTORY_SEPARATOR . 'Answers.csv';
 $loginAttemptsPath = $baseDir . DIRECTORY_SEPARATOR . 'login_attempts.json';
 
-if (file_put_contents($filePath, $csv) === false) {
+if (!tcInviteesUploadWriteTextLocked($filePath, $csv)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to save file.']);
   exit;
 }
@@ -64,18 +95,19 @@ $mapPayload = [
   'phoneNumber' => (int)($mapping['phoneNumber'] ?? -1)
 ];
 
-if (file_put_contents($mapPath, json_encode($mapPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) === false) {
+$mapJson = json_encode($mapPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+if (!is_string($mapJson) || !tcInviteesUploadWriteTextLocked($mapPath, $mapJson)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to save mapping.']);
   exit;
 }
 
 $emptyAttempts = json_encode(new stdClass(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-if ($emptyAttempts === false || file_put_contents($loginAttemptsPath, $emptyAttempts . PHP_EOL, LOCK_EX) === false) {
+if ($emptyAttempts === false || !tcInviteesUploadWriteTextLocked($loginAttemptsPath, $emptyAttempts . PHP_EOL)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to reset login attempts.']);
   exit;
 }
 
-if (file_put_contents($answersPath, '', LOCK_EX) === false) {
+if (!tcInviteesUploadWriteTextLocked($answersPath, '')) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to reset answers table.']);
   exit;
 }

@@ -45,9 +45,14 @@ function readCsvFileRows(string $path): array
   if ($handle === false) {
     return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
   while (($row = fgetcsv($handle)) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
+  flock($handle, LOCK_UN);
   fclose($handle);
   return $rows;
 }
@@ -58,16 +63,28 @@ function writeCsvFileRows(string $path, array $rows): bool
   if ($dir !== '' && !is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'w');
+  $handle = fopen($path, 'c+');
   if ($handle === false) {
+    return false;
+  }
+  if (!flock($handle, LOCK_EX)) {
+    fclose($handle);
+    return false;
+  }
+  if (!ftruncate($handle, 0) || fseek($handle, 0) !== 0) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
     return false;
   }
   foreach ($rows as $row) {
     if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+      flock($handle, LOCK_UN);
       fclose($handle);
       return false;
     }
   }
+  fflush($handle);
+  flock($handle, LOCK_UN);
   fclose($handle);
   return true;
 }

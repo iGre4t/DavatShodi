@@ -66,7 +66,7 @@ if (!$maintenanceMode) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>کمپین به نام خدا - در حال بروزرسانی</title>
+  <title>کمپین به دست آوردیم - در حال بروزرسانی</title>
   <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
   <style>
     :root {

@@ -489,6 +489,221 @@
     };
   }
 
+  function setRewardGuideStatus(message, isError = false) {
+    const statusEl = getEl("tc-reward-guide-status");
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.textContent = String(message || "").trim();
+    statusEl.style.color = isError ? "#d1434a" : "";
+  }
+
+  function isShortcutLetterKey(event, letter) {
+    const token = String(letter || "").trim().toUpperCase();
+    if (!/^[A-Z]$/.test(token)) return false;
+    const byKey = String(event?.key || "").toLowerCase() === token.toLowerCase();
+    const byCode = String(event?.code || "").toUpperCase() === `KEY${token}`;
+    return byKey || byCode;
+  }
+
+  function replaceTextareaRange(textarea, start, end, replacement, selectionStart = null, selectionEnd = null) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || "");
+    const safeStart = Math.max(0, Math.min(value.length, Number.isFinite(start) ? start : 0));
+    const safeEnd = Math.max(safeStart, Math.min(value.length, Number.isFinite(end) ? end : safeStart));
+    const nextValue = `${value.slice(0, safeStart)}${replacement}${value.slice(safeEnd)}`;
+    textarea.value = nextValue;
+    const defaultCaret = safeStart + String(replacement || "").length;
+    const nextSelectionStart = Number.isFinite(selectionStart) ? Math.max(0, Math.min(nextValue.length, selectionStart)) : defaultCaret;
+    const nextSelectionEnd = Number.isFinite(selectionEnd) ? Math.max(nextSelectionStart, Math.min(nextValue.length, selectionEnd)) : nextSelectionStart;
+    textarea.selectionStart = nextSelectionStart;
+    textarea.selectionEnd = nextSelectionEnd;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function applyBoldShortcutToTextarea(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || "");
+    const start = Math.max(0, textarea.selectionStart ?? 0);
+    const end = Math.max(start, textarea.selectionEnd ?? start);
+    if (start === end) {
+      const wrapped = "<b></b>";
+      const caret = start + 3;
+      replaceTextareaRange(textarea, start, end, wrapped, caret, caret);
+      return;
+    }
+    const selectedText = value.slice(start, end);
+    const wrapped = `<b>${selectedText}</b>`;
+    replaceTextareaRange(textarea, start, end, wrapped, start + 3, start + 3 + selectedText.length);
+  }
+
+  function applyListShortcutToTextarea(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || "");
+    const rawStart = Math.max(0, textarea.selectionStart ?? 0);
+    const rawEnd = Math.max(rawStart, textarea.selectionEnd ?? rawStart);
+    const lineStart = value.lastIndexOf("\n", Math.max(0, rawStart - 1)) + 1;
+    const lineEndIndex = value.indexOf("\n", rawEnd);
+    const lineEnd = lineEndIndex >= 0 ? lineEndIndex : value.length;
+    const selectedBlock = value.slice(lineStart, lineEnd);
+    const lines = selectedBlock
+      .split("\n")
+      .map((line) => String(line || "").trim())
+      .filter((line) => line !== "");
+    if (!lines.length) return;
+    const listBody = lines.map((line) => `  <li>${line}</li>`).join("\n");
+    replaceTextareaRange(textarea, lineStart, lineEnd, `<ul>\n${listBody}\n</ul>`);
+  }
+
+  function applyHeaderShortcutToTextarea(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || "");
+    const start = Math.max(0, textarea.selectionStart ?? 0);
+    const end = Math.max(start, textarea.selectionEnd ?? start);
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const lineEndIndex = value.indexOf("\n", end);
+    const lineEnd = lineEndIndex >= 0 ? lineEndIndex : value.length;
+    const line = value.slice(lineStart, lineEnd);
+    const lineTrimmedLeft = line.replace(/^\s+/, "");
+    const leftPaddingLength = line.length - lineTrimmedLeft.length;
+    const leftPadding = line.slice(0, leftPaddingLength);
+    const raw = lineTrimmedLeft.replace(/^#\s+/, "");
+    const nextLine = `${leftPadding}# ${raw}`;
+    textarea.value = `${value.slice(0, lineStart)}${nextLine}${value.slice(lineEnd)}`;
+    const caret = lineStart + nextLine.length;
+    textarea.selectionStart = caret;
+    textarea.selectionEnd = caret;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function applyRewardGuideEditorShortcut(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement) || target.id !== "tc-reward-guide-text") return;
+    const hasCtrl = event.ctrlKey || event.metaKey;
+    if (hasCtrl && !event.altKey && isShortcutLetterKey(event, "B")) {
+      event.preventDefault();
+      event.stopPropagation();
+      applyBoldShortcutToTextarea(target);
+      return;
+    }
+    if (hasCtrl && !event.altKey && isShortcutLetterKey(event, "L")) {
+      event.preventDefault();
+      event.stopPropagation();
+      applyListShortcutToTextarea(target);
+      return;
+    }
+    const isOneKey = event.key === "1" || event.code === "Digit1" || event.code === "Numpad1";
+    if (event.ctrlKey && event.altKey && isOneKey) {
+      event.preventDefault();
+      applyHeaderShortcutToTextarea(target);
+    }
+  }
+
+  async function initRewardGuide(initialSettings = {}) {
+    const pane = document.querySelector('[data-pane="tc-rewards-config"]');
+    if (!(pane instanceof HTMLElement)) return;
+    if (pane.dataset.rewardGuideInitialized === "1") return;
+    pane.dataset.rewardGuideInitialized = "1";
+
+    const triggers = Array.from(pane.querySelectorAll("[data-tc-reward-config-trigger]"));
+    const sections = Array.from(pane.querySelectorAll("[data-tc-reward-config-section]"));
+    const activate = (key) => {
+      const activeKey = String(key || "guide").trim() || "guide";
+      triggers.forEach((trigger) => {
+        if (!(trigger instanceof HTMLElement)) return;
+        const isActive = String(trigger.getAttribute("data-tc-reward-config-trigger") || "") === activeKey;
+        trigger.classList.toggle("active", isActive);
+        trigger.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      sections.forEach((section) => {
+        if (!(section instanceof HTMLElement)) return;
+        section.hidden = String(section.getAttribute("data-tc-reward-config-section") || "") !== activeKey;
+      });
+    };
+    triggers.forEach((trigger) => {
+      trigger.addEventListener("click", () => {
+        activate(trigger.getAttribute("data-tc-reward-config-trigger") || "guide");
+      });
+    });
+    activate("guide");
+
+    const titleInput = getEl("tc-reward-guide-title");
+    const textInput = getEl("tc-reward-guide-text");
+    if (!(titleInput instanceof HTMLInputElement) || !(textInput instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    const initialGuide = initialSettings?.rewardGuide && typeof initialSettings.rewardGuide === "object"
+      ? initialSettings.rewardGuide
+      : {};
+    titleInput.value = String(initialGuide?.title || "راهنمای دریافت جایزه");
+    textInput.value = String(initialGuide?.text || "");
+
+    let rewardGuideDirty = false;
+    [titleInput, textInput].forEach((field) => {
+      field.addEventListener("input", () => {
+        rewardGuideDirty = true;
+        setRewardGuideStatus("");
+      });
+    });
+    textInput.addEventListener("keydown", applyRewardGuideEditorShortcut);
+
+    try {
+      const guide = await requestStoreGet("get_reward_guide");
+      if (!rewardGuideDirty) {
+        titleInput.value = String(guide?.title || titleInput.value || "راهنمای دریافت جایزه");
+        textInput.value = String(guide?.text || "");
+      }
+    } catch (error) {
+      if (!rewardGuideDirty && (!initialGuide || Object.keys(initialGuide).length === 0)) {
+        setRewardGuideStatus(error?.message || "Failed to load reward guide.", true);
+      }
+    }
+  }
+
+  async function saveRewardGuideFromDom(saveBtn) {
+    const titleInput = getEl("tc-reward-guide-title");
+    const textInput = getEl("tc-reward-guide-text");
+    if (!(titleInput instanceof HTMLInputElement) || !(textInput instanceof HTMLTextAreaElement)) {
+      setRewardGuideStatus("Reward guide fields were not found.", true);
+      return;
+    }
+    if (saveBtn instanceof HTMLButtonElement) {
+      saveBtn.disabled = true;
+    }
+    setRewardGuideStatus("Saving...");
+    try {
+      const rewardGuide = {
+        title: titleInput.value,
+        text: textInput.value
+      };
+      let saveError = null;
+      try {
+        await requestStorePost("save_reward_guide", { rewardGuide });
+      } catch (error) {
+        saveError = error;
+      }
+      if (saveError) {
+        await requestStorePost("save_settings", { settings: { rewardGuide } });
+      } else {
+        await saveSettings({ rewardGuide });
+      }
+      setRewardGuideStatus("Saved.");
+    } catch (error) {
+      setRewardGuideStatus(error?.message || "Failed to save reward guide.", true);
+    } finally {
+      if (saveBtn instanceof HTMLButtonElement) {
+        saveBtn.disabled = false;
+      }
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest("#tc-reward-guide-save");
+    if (!(button instanceof HTMLButtonElement)) return;
+    event.preventDefault();
+    void saveRewardGuideFromDom(button);
+  });
+
   async function initSettings() {
     const saveBtn = getEl("tc-settings-save");
     const activeToggle = getEl("tc-active-toggle");
@@ -498,7 +713,9 @@
     const endDate = getEl("tc-duration-end");
     const endTime = getEl("tc-duration-end-time");
 
-    applySettings(await loadSettings());
+    initRewardGuide();
+    const settings = await loadSettings();
+    applySettings(settings);
     initAssignAdmin();
     activeToggle?.addEventListener("change", () => {
       syncToggles({ activeToggle, durationToggle });

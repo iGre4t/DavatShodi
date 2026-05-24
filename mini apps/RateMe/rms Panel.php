@@ -543,6 +543,14 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/rmsTaskAccess.js') ?: time(
             rel="noopener"
           >Export Login Data</a>
         </div>
+        <div class="field">
+          <a
+            class="btn primary standard-primary-button"
+            href="mini%20apps/RateMe/export_participants.php"
+            target="_blank"
+            rel="noopener"
+          >Participants</a>
+        </div>
       </div>
     </div>
     <?php endif; ?>

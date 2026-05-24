@@ -1778,9 +1778,14 @@ function tctReadCsvRows(string $path): array
   if ($handle === false) {
     return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
   while (($row = fgetcsv($handle)) !== false) {
     $rows[] = $row;
   }
+  flock($handle, LOCK_UN);
   fclose($handle);
   return $rows;
 }
@@ -1799,10 +1804,17 @@ function tctWriteCsvRows(string $path, array $rows): bool
     fclose($handle);
     return false;
   }
-  ftruncate($handle, 0);
-  rewind($handle);
+  if (!ftruncate($handle, 0) || rewind($handle) === false) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
+    return false;
+  }
   foreach ($rows as $row) {
-    fputcsv($handle, is_array($row) ? $row : []);
+    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
   }
   fflush($handle);
   flock($handle, LOCK_UN);
@@ -1851,6 +1863,356 @@ function tctReadJsonArrayFromFile(string $path): array
   }
   $decoded = json_decode($content, true);
   return is_array($decoded) ? $decoded : [];
+}
+
+function tctParseSurveyAnswersValue(string $raw): array
+{
+  $entries = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($entries)) {
+    return [];
+  }
+  $answers = [];
+  foreach ($entries as $entry) {
+    $parts = explode('::', trim((string)$entry), 2);
+    if (count($parts) !== 2) {
+      continue;
+    }
+    $questionToken = strtoupper(trim((string)($parts[0] ?? '')));
+    $answer = trim((string)($parts[1] ?? ''));
+    if ($questionToken !== '' && $answer !== '') {
+      $answers[$questionToken] = $answer;
+    }
+  }
+  return $answers;
+}
+
+function tctSurveyQuestionToken(string $code): string
+{
+  $normalized = strtoupper(trim($code));
+  if ($normalized === '') {
+    return '';
+  }
+  if (preg_match('/^Q0*(\d+)$/', $normalized, $matches)) {
+    return (string)((int)($matches[1] ?? 0));
+  }
+  return $normalized;
+}
+
+function tctResolveSurveyLevel(array $levels, int $innerScore): array
+{
+  foreach ($levels as $index => $level) {
+    if (!is_array($level)) {
+      continue;
+    }
+    $startScore = max(0, (int)($level['startScore'] ?? ($level['start_score'] ?? 0)));
+    $endScore = max($startScore, (int)($level['endScore'] ?? ($level['end_score'] ?? $startScore)));
+    if ($innerScore >= $startScore && $innerScore <= $endScore) {
+      return [
+        'number' => $index + 1,
+        'id' => trim((string)($level['id'] ?? '')),
+        'name' => trim((string)($level['name'] ?? '')),
+        'startScore' => $startScore,
+        'endScore' => $endScore
+      ];
+    }
+  }
+  return ['number' => 0, 'id' => '', 'name' => '', 'startScore' => 0, 'endScore' => 0];
+}
+
+function tctResolveSurveyInviteeDirectory(string $inviteesPath, string $mapPath): array
+{
+  $rows = tctReadCsvRows($inviteesPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return [];
+  }
+  $header = $rows[0];
+  $mapping = tctReadJsonArrayFromFile($mapPath);
+  $mapped = static function (array $keys) use ($mapping): int {
+    foreach ($keys as $key) {
+      if (isset($mapping[$key]) && is_numeric($mapping[$key])) {
+        return (int)$mapping[$key];
+      }
+    }
+    return -1;
+  };
+  $workIdIndex = $mapped(['workId', 'username']);
+  if ($workIdIndex < 0) {
+    $workIdIndex = tctFindFirstHeaderIndex($header, ['Work ID', 'work id', 'workid', 'username', 'user name']);
+  }
+  if ($workIdIndex < 0) {
+    return [];
+  }
+  $firstNameIndex = $mapped(['firstName', 'first_name']);
+  if ($firstNameIndex < 0) {
+    $firstNameIndex = tctFindFirstHeaderIndex($header, ['first name', 'firstname', 'name']);
+  }
+  $lastNameIndex = $mapped(['lastName', 'last_name']);
+  if ($lastNameIndex < 0) {
+    $lastNameIndex = tctFindFirstHeaderIndex($header, ['last name', 'lastname', 'family', 'surname']);
+  }
+  $fullNameIndex = $mapped(['fullName', 'fullname', 'full_name']);
+  if ($fullNameIndex < 0) {
+    $fullNameIndex = tctFindFirstHeaderIndex($header, ['full name', 'fullname', 'name']);
+  }
+  $phoneIndex = $mapped(['phoneNumber', 'phone', 'mobile']);
+  if ($phoneIndex < 0) {
+    $phoneIndex = tctFindFirstHeaderIndex($header, ['phone number', 'phone', 'mobile', 'cell']);
+  }
+  $nationalIdIndex = $mapped(['nationalId', 'national_id']);
+  if ($nationalIdIndex < 0) {
+    $nationalIdIndex = tctFindFirstHeaderIndex($header, ['National ID', 'national id', 'nationalid', 'mellicode', 'melli code']);
+  }
+
+  $directory = [];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $firstName = $firstNameIndex >= 0 ? trim((string)($row[$firstNameIndex] ?? '')) : '';
+    $lastName = $lastNameIndex >= 0 ? trim((string)($row[$lastNameIndex] ?? '')) : '';
+    $fullName = $fullNameIndex >= 0 ? trim((string)($row[$fullNameIndex] ?? '')) : '';
+    $name = trim($firstName . ' ' . $lastName);
+    if ($name === '') {
+      $name = $fullName !== '' ? $fullName : $workId;
+    }
+    $directory[$workId] = [
+      'fullName' => $name,
+      'workId' => $workId,
+      'phoneNumber' => $phoneIndex >= 0 ? trim((string)($row[$phoneIndex] ?? '')) : '',
+      'nationalId' => $nationalIdIndex >= 0 ? trim((string)($row[$nationalIdIndex] ?? '')) : ''
+    ];
+  }
+  return $directory;
+}
+
+function tctResolveLegacySurveyRowsFromMappedCsv(string $inviteesPath, string $mapPath, string $taskId): array
+{
+  $rows = tctReadCsvRows($inviteesPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return [];
+  }
+  $header = $rows[0];
+  $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $mapPath);
+  if ($workIdIndex < 0) {
+    return [];
+  }
+  $answersIndex = tctFindFirstHeaderIndex($header, ['answers']);
+  $innerScoreIndex = tctFindFirstHeaderIndex($header, ['inner score']);
+  $taskCompletedIndex = tctFindFirstHeaderIndex($header, ['task completed', 'task completed ids', 'task completed id']);
+  $taskScoreMapIndex = tctFindFirstHeaderIndex($header, ['task score map']);
+  $legacyRows = [];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $answersValue = $answersIndex >= 0 ? trim((string)($row[$answersIndex] ?? '')) : '';
+    $innerScore = $innerScoreIndex >= 0 ? max(0, (int)($row[$innerScoreIndex] ?? 0)) : 0;
+    $completedIds = $taskCompletedIndex >= 0 ? preg_split('/\s*,\s*/', trim((string)($row[$taskCompletedIndex] ?? ''))) : [];
+    $completedLookup = is_array($completedIds) ? array_flip(array_filter(array_map('trim', $completedIds))) : [];
+    $taskScoreMap = $taskScoreMapIndex >= 0 ? tctParseTaskScoreMap((string)($row[$taskScoreMapIndex] ?? '')) : [];
+    $hasTaskCompletion = $taskId !== '' && (isset($completedLookup[$taskId]) || array_key_exists($taskId, $taskScoreMap));
+    if (!$hasTaskCompletion) {
+      continue;
+    }
+    $legacyRows[$workId] = [
+      'answers' => tctParseSurveyAnswersValue($answersValue),
+      'innerScore' => $innerScore,
+      'completedAt' => ''
+    ];
+  }
+  return $legacyRows;
+}
+
+function tctBuildSurveyMonitoringData(array $task, string $tasksDir, string $inviteesPath, string $mapPath): array
+{
+  $tagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
+  $taskDir = $tagCode !== '' ? ($tasksDir . DIRECTORY_SEPARATOR . $tagCode) : '';
+  $questions = $taskDir !== '' ? tctReadJsonArrayFromFile($taskDir . DIRECTORY_SEPARATOR . 'rmsQ list.json') : [];
+  $levels = $taskDir !== '' ? tctReadJsonArrayFromFile($taskDir . DIRECTORY_SEPARATOR . TCT_SHARED_RESPONSE_LEVELS_FILE) : [];
+  $results = $taskDir !== '' ? tctReadJsonArrayFromFile($taskDir . DIRECTORY_SEPARATOR . TCT_SHARED_RESPONSE_RESULTS_FILE) : [];
+  $answersRows = $taskDir !== '' ? tctReadCsvRows($taskDir . DIRECTORY_SEPARATOR . 'Answers.csv') : [];
+  $invitees = tctResolveSurveyInviteeDirectory($inviteesPath, $mapPath);
+  $taskId = trim((string)($task['id'] ?? ''));
+  $legacyMappedRows = tctResolveLegacySurveyRowsFromMappedCsv($inviteesPath, $mapPath, $taskId);
+
+  $answersByWorkId = [];
+  $innerScoreByWorkId = [];
+  $completedAtByWorkId = [];
+  if ($answersRows && isset($answersRows[0]) && is_array($answersRows[0])) {
+    $answerHeader = $answersRows[0];
+    $workIdIndex = tctFindFirstHeaderIndex($answerHeader, ['Work ID', 'work id', 'workid']);
+    $answersIndex = tctFindFirstHeaderIndex($answerHeader, ['answers']);
+    $innerScoreIndex = tctFindFirstHeaderIndex($answerHeader, ['inner score']);
+    for ($i = 1; $i < count($answersRows); $i += 1) {
+      $row = is_array($answersRows[$i] ?? null) ? $answersRows[$i] : [];
+      $workId = $workIdIndex >= 0 ? trim((string)($row[$workIdIndex] ?? '')) : '';
+      if ($workId === '') {
+        continue;
+      }
+      $answersByWorkId[$workId] = $answersIndex >= 0 ? tctParseSurveyAnswersValue((string)($row[$answersIndex] ?? '')) : [];
+      $innerScoreByWorkId[$workId] = $innerScoreIndex >= 0 ? max(0, (int)($row[$innerScoreIndex] ?? 0)) : 0;
+    }
+  }
+  foreach ($legacyMappedRows as $workId => $legacyRow) {
+    if (!is_array($legacyRow)) {
+      continue;
+    }
+    if (!isset($answersByWorkId[$workId]) || !$answersByWorkId[$workId]) {
+      $answersByWorkId[$workId] = is_array($legacyRow['answers'] ?? null) ? $legacyRow['answers'] : [];
+    }
+    if (!isset($innerScoreByWorkId[$workId]) || (int)$innerScoreByWorkId[$workId] <= 0) {
+      $innerScoreByWorkId[$workId] = max(0, (int)($legacyRow['innerScore'] ?? 0));
+    }
+    $completedAtByWorkId[$workId] = trim((string)($legacyRow['completedAt'] ?? ''));
+  }
+
+  $questionStats = [];
+  foreach ($questions as $index => $question) {
+    if (!is_array($question)) {
+      continue;
+    }
+    $code = strtoupper(trim((string)($question['code'] ?? '')));
+    $token = tctSurveyQuestionToken($code);
+    if ($token === '') {
+      continue;
+    }
+    $choices = [];
+    foreach (array_values(is_array($question['answers'] ?? null) ? $question['answers'] : []) as $choiceIndex => $choice) {
+      $choiceText = trim((string)$choice);
+      if ($choiceText !== '') {
+        $choices[$choiceText] = ['answer' => $choiceText, 'count' => 0, 'rate' => 0.0, 'choiceNumber' => $choiceIndex + 1];
+      }
+    }
+    $questionStats[$token] = [
+      'code' => $code !== '' ? $code : $token,
+      'question' => trim((string)($question['question'] ?? ('Question ' . ($index + 1)))),
+      'answeredCount' => 0,
+      'choices' => $choices
+    ];
+  }
+
+  $participants = [];
+  $levelStats = [];
+  foreach ($levels as $index => $level) {
+    if (!is_array($level)) {
+      continue;
+    }
+    $levelName = trim((string)($level['name'] ?? ''));
+    if ($levelName === '') {
+      continue;
+    }
+    $levelStats[$levelName] = [
+      'name' => $levelName,
+      'number' => $index + 1,
+      'count' => 0,
+      'rate' => 0.0
+    ];
+  }
+  $innerScoreSum = 0;
+  $levelNumberSum = 0;
+  $matchedLevelCount = 0;
+  $unmatchedLevelCount = 0;
+  $participantWorkIds = [];
+  foreach ($results as $workIdRaw => $result) {
+    $workId = trim((string)$workIdRaw);
+    if ($workId === '') {
+      continue;
+    }
+    $participantWorkIds[$workId] = true;
+    if (is_array($result)) {
+      $completedAtByWorkId[$workId] = trim((string)($result['completedAt'] ?? ($result['completed_at'] ?? ($completedAtByWorkId[$workId] ?? ''))));
+    }
+  }
+  foreach ($answersByWorkId as $workId => $answers) {
+    if (is_array($answers) && $answers) {
+      $participantWorkIds[(string)$workId] = true;
+    }
+  }
+  foreach ($innerScoreByWorkId as $workId => $innerScore) {
+    if ((int)$innerScore > 0) {
+      $participantWorkIds[(string)$workId] = true;
+    }
+  }
+
+  foreach (array_keys($participantWorkIds) as $workId) {
+    $result = is_array($results[$workId] ?? null) ? $results[$workId] : [];
+    $innerScore = max(0, (int)($result['innerScore'] ?? ($result['inner_score'] ?? ($innerScoreByWorkId[$workId] ?? 0))));
+    $level = tctResolveSurveyLevel($levels, $innerScore);
+    $levelName = trim((string)($result['levelName'] ?? ($result['level_name'] ?? '')));
+    if ($levelName === '') {
+      $levelName = (string)($level['name'] ?? '');
+    }
+    $levelNumber = max(0, (int)($level['number'] ?? 0));
+    $base = is_array($invitees[$workId] ?? null) ? $invitees[$workId] : ['fullName' => $workId, 'workId' => $workId, 'phoneNumber' => '', 'nationalId' => ''];
+    $participants[] = $base + [
+      'responseLevelName' => $levelName,
+      'responseLevelNumber' => $levelNumber,
+      'innerScore' => $innerScore,
+      'completedAt' => trim((string)($result['completedAt'] ?? ($result['completed_at'] ?? ($completedAtByWorkId[$workId] ?? ''))))
+    ];
+    $innerScoreSum += $innerScore;
+    if ($levelNumber > 0) {
+      $levelNumberSum += $levelNumber;
+      $matchedLevelCount += 1;
+    }
+    if ($levelName !== '' && isset($levelStats[$levelName])) {
+      $levelStats[$levelName]['count'] = (int)$levelStats[$levelName]['count'] + 1;
+    } elseif ($levelName !== '') {
+      $levelStats[$levelName] = ['name' => $levelName, 'number' => $levelNumber, 'count' => 1, 'rate' => 0.0];
+    } else {
+      $unmatchedLevelCount += 1;
+    }
+
+    $userAnswers = is_array($answersByWorkId[$workId] ?? null) ? $answersByWorkId[$workId] : [];
+    foreach ($questionStats as $token => &$stat) {
+      $answer = trim((string)($userAnswers[$token] ?? ($userAnswers[strtoupper((string)($stat['code'] ?? ''))] ?? '')));
+      if ($answer === '') {
+        continue;
+      }
+      $stat['answeredCount'] = (int)$stat['answeredCount'] + 1;
+      if (!isset($stat['choices'][$answer])) {
+        $stat['choices'][$answer] = ['answer' => $answer, 'count' => 0, 'rate' => 0.0, 'choiceNumber' => 0];
+      }
+      $stat['choices'][$answer]['count'] = (int)$stat['choices'][$answer]['count'] + 1;
+    }
+    unset($stat);
+  }
+
+  $participantCount = count($participants);
+  foreach ($levelStats as &$levelStat) {
+    $levelStat['rate'] = $participantCount > 0 ? round(((int)$levelStat['count'] * 100) / $participantCount, 2) : 0.0;
+  }
+  unset($levelStat);
+  foreach ($questionStats as &$questionStat) {
+    $answeredCount = max(0, (int)($questionStat['answeredCount'] ?? 0));
+    $choices = array_values(is_array($questionStat['choices'] ?? null) ? $questionStat['choices'] : []);
+    foreach ($choices as &$choice) {
+      $choice['rate'] = $answeredCount > 0 ? round(((int)$choice['count'] * 100) / $answeredCount, 2) : 0.0;
+    }
+    unset($choice);
+    $questionStat['choices'] = $choices;
+  }
+  unset($questionStat);
+
+  usort($participants, static fn(array $a, array $b): int => strcasecmp((string)($a['fullName'] ?? ''), (string)($b['fullName'] ?? '')));
+  return [
+    'summary' => [
+      'participants' => $participantCount,
+      'questionCount' => count($questionStats),
+      'responseLevelCount' => count($levels),
+      'averageInnerScore' => $participantCount > 0 ? round($innerScoreSum / $participantCount, 2) : 0.0,
+      'averageResponseLevelNumber' => $matchedLevelCount > 0 ? round($levelNumberSum / $matchedLevelCount, 2) : 0.0,
+      'unmatchedResponseLevelCount' => $unmatchedLevelCount
+    ],
+    'levels' => array_values($levelStats),
+    'questions' => array_values($questionStats),
+    'participants' => $participants,
+    'generatedAt' => gmdate('c')
+  ];
 }
 
 function tctResolveInviteesForRateTable(string $inviteesPath, string $mapPath = ''): array
@@ -2089,7 +2451,7 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
   if ($normalizedType === 'shared_answers_quiz') {
-    return ['control', 'information', 'response-level', 'quiz'];
+    return ['control', 'information', 'response-level', 'quiz', 'monitoring'];
   }
   if ($normalizedType === 'quiz') {
     return ['control', 'information', 'quiz'];
@@ -2542,6 +2904,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     'save_team_task_challenge' => 'challenge-storage',
     'save_team_task_challenge_guide' => 'challenge-storage',
     'remove_team_task_challenge' => 'challenge-storage',
+    'get_survey_monitoring' => 'monitoring',
     'get_info_task_rate_data' => 'invitees-rate',
     'team_task_admin_get_team' => 'invitees-rate',
     'team_task_admin_update_team' => 'invitees-rate',
@@ -2960,6 +3323,43 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       'message' => 'Response levels saved.',
       'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'get_survey_monitoring') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $targetTask = null;
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetTask = $task;
+        break;
+      }
+    }
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz')) !== 'shared_answers_quiz') {
+      echo json_encode(['status' => 'error', 'message' => 'Monitoring is only available for Survey Score Response tasks.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $monitoringPayload = json_encode([
+      'status' => 'ok',
+      'data' => tctBuildSurveyMonitoringData($targetTask, $tctTasksDir, $tctEventInviteesPath, $tctEventInviteesMapPath)
+    ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($monitoringPayload === false) {
+      http_response_code(500);
+      echo json_encode([
+        'status' => 'error',
+        'message' => 'Failed to encode survey monitoring data.'
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo $monitoringPayload;
     exit;
   }
 
@@ -4419,7 +4819,7 @@ if (TCT_INCLUDE_ONLY) {
   const resolveDefaultTopPanes = (taskType) => {
     const token = normalizeTaskType(taskType);
     if (token === 'shared_answers_quiz') {
-      return ['control', 'information', 'response-level', 'quiz'];
+      return ['control', 'information', 'response-level', 'quiz', 'monitoring'];
     }
     if (token === 'quiz') {
       return ['control', 'information', 'quiz'];

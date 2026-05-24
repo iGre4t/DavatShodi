@@ -75,7 +75,7 @@
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
     if (normalizedType === 'shared_answers_quiz') {
-      return ['control', 'information', 'response-level', 'quiz'];
+      return ['control', 'information', 'response-level', 'quiz', 'monitoring'];
     }
     if (normalizedType === 'quiz') {
       return ['control', 'information', 'quiz'];
@@ -1215,6 +1215,7 @@
   }
 
   const infoRateStateByTaskId = new Map();
+  const surveyMonitoringStateByTaskId = new Map();
 
   function getInfoRateTableColspanForPane(pane) {
     if (!(pane instanceof HTMLElement)) return 7;
@@ -2316,6 +2317,302 @@
     setTaskScoreSaveStatus(pane, '');
   }
 
+  function getSurveyMonitoringElements(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    const kpis = pane.querySelector('[data-survey-monitoring-kpis]');
+    const levels = pane.querySelector('[data-survey-monitoring-levels]');
+    const questions = pane.querySelector('[data-survey-monitoring-questions]');
+    const participants = pane.querySelector('[data-survey-monitoring-participants]');
+    const statusEl = pane.querySelector('[data-survey-monitoring-status]');
+    if (!(kpis instanceof HTMLElement) || !(levels instanceof HTMLElement) || !(questions instanceof HTMLElement) || !(participants instanceof HTMLElement)) {
+      return null;
+    }
+    return {
+      kpis,
+      levels,
+      questions,
+      participants,
+      statusEl: statusEl instanceof HTMLElement ? statusEl : null
+    };
+  }
+
+  function setSurveyMonitoringStatus(pane, message, isError = false) {
+    const controls = getSurveyMonitoringElements(pane);
+    if (!controls?.statusEl) return;
+    controls.statusEl.textContent = message || '';
+    controls.statusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function getSurveyMonitoringState(taskId) {
+    const key = String(taskId || '').trim();
+    if (!key) return null;
+    if (!surveyMonitoringStateByTaskId.has(key)) {
+      surveyMonitoringStateByTaskId.set(key, { data: null });
+    }
+    return surveyMonitoringStateByTaskId.get(key);
+  }
+
+  function formatPercent(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '0%';
+    return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+  }
+
+  function renderSurveyMonitoringPane(pane, data) {
+    const controls = getSurveyMonitoringElements(pane);
+    if (!controls) return;
+    const summary = data?.summary || {};
+    const participants = Array.isArray(data?.participants) ? data.participants : [];
+    const levels = Array.isArray(data?.levels) ? data.levels : [];
+    const questions = Array.isArray(data?.questions) ? data.questions : [];
+    const kpis = [
+      ['Participated', summary.participants ?? participants.length ?? 0],
+      ['Avg Response Level', summary.averageResponseLevelNumber ?? 0],
+      ['Avg Inner Score', summary.averageInnerScore ?? 0],
+      ['Questions', summary.questionCount ?? questions.length ?? 0]
+    ];
+    controls.kpis.innerHTML = kpis.map(([label, value]) => `
+      <article class="card tc-monitoring-kpi">
+        <div class="tc-monitoring-kpi-label">${escapeHtml(label)}</div>
+        <div class="tc-monitoring-kpi-value">${escapeHtml(String(value))}</div>
+      </article>
+    `).join('');
+    controls.levels.innerHTML = levels.length
+      ? levels.map((level) => `
+        <div class="tc-monitoring-bar-row">
+          <div class="tc-monitoring-bar-head">
+            <span class="tc-monitoring-bar-title">${escapeHtml(level.name || 'Unmatched')} <span class="tc-monitoring-badge">#${escapeHtml(String(level.number || '-'))}</span></span>
+            <span class="tc-monitoring-bar-meta">${escapeHtml(String(level.count || 0))} (${escapeHtml(formatPercent(level.rate || 0))})</span>
+          </div>
+          <div class="tc-monitoring-bar-track"><span class="tc-monitoring-bar-fill" style="width:${Math.max(0, Math.min(100, Number(level.rate) || 0))}%"></span></div>
+        </div>
+      `).join('')
+      : '<p class="muted small">No response level data yet.</p>';
+    controls.questions.innerHTML = questions.length
+      ? questions.map((question) => `
+        <div class="tc-survey-question-stat">
+          <div class="tc-monitoring-bar-head">
+            <span class="tc-monitoring-bar-title">${escapeHtml(question.code || '')} - ${escapeHtml(question.question || 'Question')}</span>
+            <span class="tc-monitoring-bar-meta">${escapeHtml(String(question.answeredCount || 0))} answers</span>
+          </div>
+          <div class="tc-monitoring-bars">
+            ${(Array.isArray(question.choices) ? question.choices : []).map((choice) => `
+              <div class="tc-monitoring-bar-row">
+                <div class="tc-monitoring-bar-head">
+                  <span class="tc-monitoring-bar-title">${escapeHtml(choice.answer || '-')}</span>
+                  <span class="tc-monitoring-bar-meta">${escapeHtml(String(choice.count || 0))} (${escapeHtml(formatPercent(choice.rate || 0))})</span>
+                </div>
+                <div class="tc-monitoring-bar-track"><span class="tc-monitoring-bar-fill tc-monitoring-bar-fill--alt" style="width:${Math.max(0, Math.min(100, Number(choice.rate) || 0))}%"></span></div>
+              </div>
+            `).join('') || '<p class="muted small">No answers yet.</p>'}
+          </div>
+        </div>
+      `).join('')
+      : '<p class="muted small">No questions found for this task.</p>';
+    controls.participants.innerHTML = participants.length
+      ? participants.slice(0, 10).map((row) => `
+        <tr>
+          <td>${escapeHtml(row.fullName || '')}</td>
+          <td>${escapeHtml(row.workId || '')}</td>
+          <td>${escapeHtml(row.responseLevelName || '')}</td>
+          <td>${escapeHtml(String(row.responseLevelNumber || 0))}</td>
+          <td>${escapeHtml(String(row.innerScore || 0))}</td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="5" class="muted">No participants yet.</td></tr>';
+  }
+
+  async function loadSurveyMonitoringIntoPane(pane, { silent = false } = {}) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    if (!taskId) return;
+    const controls = getSurveyMonitoringElements(pane);
+    if (!controls) return;
+    if (!silent) {
+      controls.kpis.innerHTML = '<p class="muted small">Loading monitoring...</p>';
+      controls.levels.innerHTML = '';
+      controls.questions.innerHTML = '';
+      controls.participants.innerHTML = '<tr><td colspan="5" class="muted">Loading...</td></tr>';
+    }
+    try {
+      const response = await postTaskAction('get_survey_monitoring', { id: taskId });
+      const state = getSurveyMonitoringState(taskId);
+      if (state) {
+        state.data = response.data || null;
+      }
+      renderSurveyMonitoringPane(pane, response.data || {});
+      setSurveyMonitoringStatus(pane, '');
+    } catch (error) {
+      setSurveyMonitoringStatus(pane, error?.message || 'Failed to load monitoring.', true);
+    }
+  }
+
+  function ensureXlsxLibrary() {
+    if (window.XLSX && window.XLSX.utils) {
+      return Promise.resolve(window.XLSX);
+    }
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-rms-xlsx-loader="1"]');
+      if (existing instanceof HTMLScriptElement) {
+        existing.addEventListener('load', () => resolve(window.XLSX), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Excel export library failed to load.')), { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'mini%20apps/RateMe/vendor/xlsx/xlsx.full.min.js';
+      script.async = true;
+      script.dataset.rmsXlsxLoader = '1';
+      script.addEventListener('load', () => {
+        if (window.XLSX && window.XLSX.utils) {
+          resolve(window.XLSX);
+        } else {
+          reject(new Error('Excel export library is not available.'));
+        }
+      }, { once: true });
+      script.addEventListener('error', () => reject(new Error('Excel export library failed to load.')), { once: true });
+      document.head.appendChild(script);
+    });
+  }
+
+  function sanitizeExcelFilenamePart(value) {
+    const cleaned = String(value || '')
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .replace(/\s+/g, ' ')
+      .replace(/^-+|-+$/g, '');
+    return cleaned || 'survey-task';
+  }
+
+  function formatCompactDate(date = new Date()) {
+    const year = String(date.getFullYear());
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  }
+
+  function getSurveyMonitoringTaskName(pane) {
+    if (!(pane instanceof HTMLElement)) return 'survey-task';
+    const titleInput = pane.querySelector('[data-task-field="taskTitle"]');
+    if (titleInput instanceof HTMLInputElement && titleInput.value.trim() !== '') {
+      return titleInput.value.trim();
+    }
+    const titleEl = pane.querySelector('.tc-task-top-section[data-task-top-section="control"] .section-header h3');
+    return titleEl instanceof HTMLElement && titleEl.textContent?.trim()
+      ? titleEl.textContent.trim()
+      : 'survey-task';
+  }
+
+  async function exportSurveyMonitoringParticipants(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const state = getSurveyMonitoringState(taskId);
+    const participants = Array.isArray(state?.data?.participants) ? state.data.participants : [];
+    if (!participants.length) {
+      setSurveyMonitoringStatus(pane, 'No participants to export.', true);
+      return;
+    }
+    const header = ['fullname', 'Work ID', 'Phone Number', 'National ID', 'Response Level Name', 'Response Level Number', 'Inner Score'];
+    const rows = participants.map((row) => [
+      row.fullName || '',
+      row.workId || '',
+      row.phoneNumber || '',
+      row.nationalId || '',
+      row.responseLevelName || '',
+      row.responseLevelNumber || '',
+      row.innerScore || ''
+    ]);
+    const xlsx = await ensureXlsxLibrary();
+    const workbook = xlsx.utils.book_new();
+    const worksheet = xlsx.utils.aoa_to_sheet([header, ...rows]);
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Users');
+    const taskName = sanitizeExcelFilenamePart(getSurveyMonitoringTaskName(pane));
+    xlsx.writeFile(workbook, `${taskName}-${formatCompactDate()}.xlsx`);
+    setSurveyMonitoringStatus(pane, 'Export prepared.');
+  }
+
+  async function exportSurveyMonitoringStats(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const state = getSurveyMonitoringState(taskId);
+    const data = state?.data || null;
+    if (!data || !data.summary) {
+      setSurveyMonitoringStatus(pane, 'No stats to export.', true);
+      return;
+    }
+    const summary = data.summary || {};
+    const levels = Array.isArray(data.levels) ? data.levels : [];
+    const questions = Array.isArray(data.questions) ? data.questions : [];
+    const xlsx = await ensureXlsxLibrary();
+    const workbook = xlsx.utils.book_new();
+    const summaryRows = [
+      ['Metric', 'Value'],
+      ['Number of Participants', summary.participants ?? 0],
+      ['Avg Response Level', summary.averageResponseLevelNumber ?? 0],
+      ['Avg Inner Score', summary.averageInnerScore ?? 0],
+      [],
+      ['Response Level', 'Number', 'Count', 'Percentage']
+    ];
+    levels.forEach((level) => {
+      summaryRows.push([
+        level.name || '',
+        level.number || '',
+        level.count || 0,
+        `${Number(level.rate || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
+      ]);
+    });
+    if (Number(summary.unmatchedResponseLevelCount || 0) > 0) {
+      summaryRows.push(['Unmatched Response Level', '', summary.unmatchedResponseLevelCount, '']);
+    }
+    const questionRows = [['Question Code', 'Question', 'Answer', 'Count', 'Percentage']];
+    questions.forEach((question) => {
+      const choices = Array.isArray(question.choices) ? question.choices : [];
+      if (!choices.length) {
+        questionRows.push([question.code || '', question.question || '', '', 0, '0%']);
+        return;
+      }
+      choices.forEach((choice) => {
+        questionRows.push([
+          question.code || '',
+          question.question || '',
+          choice.answer || '',
+          choice.count || 0,
+          `${Number(choice.rate || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
+        ]);
+      });
+    });
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(summaryRows), 'General Info');
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(questionRows), 'Question Stats');
+    const taskName = sanitizeExcelFilenamePart(getSurveyMonitoringTaskName(pane));
+    xlsx.writeFile(workbook, `${taskName}-stats-${formatCompactDate()}.xlsx`);
+    setSurveyMonitoringStatus(pane, 'Stats export prepared.');
+  }
+
+  async function exportSurveyMonitoringCheckedInParticipants(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const state = getSurveyMonitoringState(taskId);
+    const participants = Array.isArray(state?.data?.participants) ? state.data.participants : [];
+    if (!participants.length) {
+      setSurveyMonitoringStatus(pane, 'No participants to export.', true);
+      return;
+    }
+    const xlsx = await ensureXlsxLibrary();
+    const workbook = xlsx.utils.book_new();
+    const rows = [
+      ['fullname', 'Work ID', 'Phone Number', 'National ID'],
+      ...participants.map((row) => [
+        row.fullName || '',
+        row.workId || '',
+        row.phoneNumber || '',
+        row.nationalId || ''
+      ])
+    ];
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(rows), 'Participants');
+    const taskName = sanitizeExcelFilenamePart(getSurveyMonitoringTaskName(pane));
+    xlsx.writeFile(workbook, `${taskName}-checkedin-${formatCompactDate()}.xlsx`);
+    setSurveyMonitoringStatus(pane, 'Checked-in export prepared.');
+  }
+
   function buildTaskControlCardMarkup(task) {
     const titleText = task.title || task.tagCode;
     const isInfoTask = isInfoLikeTaskType(task.taskType);
@@ -2344,7 +2641,7 @@
       : (isTeamTask
         ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">Challenge Storage</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">Team</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Teams Rate</button>'
         : (isSharedResponseTask
-          ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="response-level">Response Level</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'
+          ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="response-level">Response Level</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="monitoring">Monitoring</button>'
           : (isInfoTask
           ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
           : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>')));
@@ -2466,6 +2763,52 @@
                 </table>
               </div>
               <p class="muted small" data-response-level-list-status aria-live="polite"></p>
+            </div>
+          </div>
+        `
+      : '';
+    const surveyMonitoringSection = isSharedResponseTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="monitoring" hidden>
+            <div class="card">
+              <div class="section-header">
+                <h3>Monitoring</h3>
+                <div class="tct-action-wrap">
+                  <button type="button" class="btn ghost" data-action="survey-monitoring-refresh">Refresh</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="survey-monitoring-export">User Export</button>
+                  <button type="button" class="btn secondary" data-action="survey-monitoring-stats-export">Export Stats</button>
+                  <button type="button" class="btn secondary" data-action="survey-monitoring-checkedin-export">Exports Participants no Survey</button>
+                </div>
+              </div>
+              <p class="muted small" data-survey-monitoring-status aria-live="polite"></p>
+            </div>
+            <div data-survey-monitoring-kpis class="tc-monitoring-kpi-grid"></div>
+            <div class="card">
+              <div class="section-header"><h3>Response Levels</h3></div>
+              <div data-survey-monitoring-levels class="tc-monitoring-bars"></div>
+            </div>
+            <div class="card">
+              <div class="section-header"><h3>Question Stats</h3></div>
+              <div data-survey-monitoring-questions class="tc-survey-question-stats"></div>
+            </div>
+            <div class="card">
+              <div class="section-header"><h3>Participants Preview</h3></div>
+              <div class="table-wrapper">
+                <table class="tc-monitoring-table">
+                  <thead>
+                    <tr>
+                      <th>Fullname</th>
+                      <th>Work ID</th>
+                      <th>Response Level</th>
+                      <th>Level #</th>
+                      <th>Inner Score</th>
+                    </tr>
+                  </thead>
+                  <tbody data-survey-monitoring-participants>
+                    <tr><td colspan="5" class="muted">Open monitoring to load data.</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         `
@@ -2737,6 +3080,7 @@
         </div>
         ${informationSection}
         ${sharedResponseLevelSection}
+        ${surveyMonitoringSection}
         ${describePhotoSection}
         ${teamChallengeSection}
         ${teamSettingsSection}
@@ -2871,9 +3215,19 @@
       body: formData,
       credentials: 'same-origin'
     });
-    const data = await response.json();
+    const rawText = await response.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      const preview = rawText.trim().slice(0, 180);
+      throw new Error(preview || 'Server returned an empty response.');
+    }
     if (!response.ok || data?.status !== 'ok') {
-      throw new Error(data?.message || 'Request failed.');
+      const statusText = response.status ? `HTTP ${response.status}` : '';
+      const payloadStatus = data && typeof data === 'object' && data.status ? `status: ${String(data.status)}` : '';
+      const detail = [statusText, payloadStatus].filter(Boolean).join(' - ');
+      throw new Error(data?.message || (detail ? `Request failed (${detail}).` : 'Request failed.'));
     }
     return data;
   }
@@ -3101,12 +3455,74 @@
         if (sectionKey === 'invitees-rate' && isInfoLikeTaskType(pane.dataset.taskType || 'quiz')) {
           void loadInfoRateDataIntoPane(pane);
         }
+        if (sectionKey === 'monitoring' && normalizeTaskType(pane.dataset.taskType || 'quiz') === 'shared_answers_quiz') {
+          void loadSurveyMonitoringIntoPane(pane);
+        }
         if (sectionKey === 'photo') {
           renderDescribePhotoUploadCard(pane);
           renderDescribePhotoList(pane);
         }
         if (sectionKey === 'challenge-storage') {
           renderTeamChallengeList(pane);
+        }
+        return;
+      }
+
+      const surveyMonitoringRefreshButton = target.closest('[data-action="survey-monitoring-refresh"]');
+      if (surveyMonitoringRefreshButton instanceof HTMLButtonElement) {
+        const pane = surveyMonitoringRefreshButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        void loadSurveyMonitoringIntoPane(pane);
+        return;
+      }
+
+      const surveyMonitoringExportButton = target.closest('[data-action="survey-monitoring-export"]');
+      if (surveyMonitoringExportButton instanceof HTMLButtonElement) {
+        const pane = surveyMonitoringExportButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const state = getSurveyMonitoringState(taskId);
+        if (!state?.data) {
+          await loadSurveyMonitoringIntoPane(pane, { silent: true });
+        }
+        try {
+          await exportSurveyMonitoringParticipants(pane);
+        } catch (error) {
+          setSurveyMonitoringStatus(pane, error?.message || 'Excel export failed.', true);
+        }
+        return;
+      }
+
+      const surveyMonitoringStatsExportButton = target.closest('[data-action="survey-monitoring-stats-export"]');
+      if (surveyMonitoringStatsExportButton instanceof HTMLButtonElement) {
+        const pane = surveyMonitoringStatsExportButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const state = getSurveyMonitoringState(taskId);
+        if (!state?.data) {
+          await loadSurveyMonitoringIntoPane(pane, { silent: true });
+        }
+        try {
+          await exportSurveyMonitoringStats(pane);
+        } catch (error) {
+          setSurveyMonitoringStatus(pane, error?.message || 'Stats export failed.', true);
+        }
+        return;
+      }
+
+      const surveyMonitoringCheckedInExportButton = target.closest('[data-action="survey-monitoring-checkedin-export"]');
+      if (surveyMonitoringCheckedInExportButton instanceof HTMLButtonElement) {
+        const pane = surveyMonitoringCheckedInExportButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const state = getSurveyMonitoringState(taskId);
+        if (!state?.data) {
+          await loadSurveyMonitoringIntoPane(pane, { silent: true });
+        }
+        try {
+          await exportSurveyMonitoringCheckedInParticipants(pane);
+        } catch (error) {
+          setSurveyMonitoringStatus(pane, error?.message || 'Checked-in export failed.', true);
         }
         return;
       }

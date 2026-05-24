@@ -41,12 +41,19 @@ function readCsvRows(string $path): array {
     return [];
   }
   $rows = [];
-  if (($handle = fopen($path, 'r')) !== false) {
-    while (($data = fgetcsv($handle)) !== false) {
-      $rows[] = $data;
-    }
-    fclose($handle);
+  $handle = fopen($path, 'r');
+  if ($handle === false) {
+    return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
+  while (($data = fgetcsv($handle)) !== false) {
+    $rows[] = $data;
+  }
+  flock($handle, LOCK_UN);
+  fclose($handle);
   return $rows;
 }
 

@@ -33,9 +33,14 @@ function tcMonitoringReadCsvRows(string $path): array
   if ($handle === false) {
     return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
   while (($row = fgetcsv($handle)) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
+  flock($handle, LOCK_UN);
   fclose($handle);
   return $rows;
 }

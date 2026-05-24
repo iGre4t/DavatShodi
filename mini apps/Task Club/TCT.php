@@ -94,6 +94,9 @@ function tctNormalizeTaskType(string $value): string
   if (in_array($token, ['quiz', 'quiz-task', 'quiz task'], true)) {
     return 'quiz';
   }
+  if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
+    return 'conditional_quiz';
+  }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
@@ -1431,7 +1434,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
     $task['score'] = $scoreSettings['score'];
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
-    if ($taskType === 'quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
+    if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
@@ -1601,9 +1604,14 @@ function tctReadCsvRows(string $path): array
   if ($handle === false) {
     return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
   while (($row = fgetcsv($handle)) !== false) {
     $rows[] = $row;
   }
+  flock($handle, LOCK_UN);
   fclose($handle);
   return $rows;
 }
@@ -1622,10 +1630,17 @@ function tctWriteCsvRows(string $path, array $rows): bool
     fclose($handle);
     return false;
   }
-  ftruncate($handle, 0);
-  rewind($handle);
+  if (!ftruncate($handle, 0) || rewind($handle) === false) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
+    return false;
+  }
   foreach ($rows as $row) {
-    fputcsv($handle, is_array($row) ? $row : []);
+    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
   }
   fflush($handle);
   flock($handle, LOCK_UN);
@@ -1911,7 +1926,7 @@ function tctResolveTaskScoreColumnByType(string $taskType): string
 function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
-  if ($normalizedType === 'quiz') {
+  if ($normalizedType === 'quiz' || $normalizedType === 'conditional_quiz') {
     return ['control', 'information', 'quiz'];
   }
   if ($normalizedType === 'info') {
@@ -2118,7 +2133,6 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       'answerTimeLimit' => true,
       'randomOrder' => true,
       'questionsPerAttempt' => 0,
-      'proportionalMode' => false,
       'correctAnswersToScore' => 1
     ],
     TCT_SCORE_SETTINGS_FILE => [
@@ -2171,9 +2185,16 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       fclose($handle);
       return false;
     }
-    ftruncate($handle, 0);
-    rewind($handle);
-    fputcsv($handle, $header);
+    if (!ftruncate($handle, 0) || rewind($handle) === false) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
+    if (fputcsv($handle, $header) === false) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
     fflush($handle);
     flock($handle, LOCK_UN);
     fclose($handle);
@@ -2697,7 +2718,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'conditional_quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for tasks with information pane.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -4080,6 +4101,7 @@ if (TCT_INCLUDE_ONLY) {
       <span>Task Type</span>
       <select id="tct-task-type" name="task_type" required>
         <option value="quiz">Quiz Task</option>
+        <option value="conditional_quiz">Conditional Quiz</option>
         <option value="info">Info Task</option>
         <option value="team_task">Team Task</option>
         <option value="describe_photo">Describe Photo Task</option>
@@ -4139,6 +4161,9 @@ if (TCT_INCLUDE_ONLY) {
     if (token === 'quiz' || token === 'quiz-task' || token === 'quiz task') {
       return 'quiz';
     }
+    if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') {
+      return 'conditional_quiz';
+    }
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
@@ -4161,7 +4186,7 @@ if (TCT_INCLUDE_ONLY) {
 
   const resolveDefaultTopPanes = (taskType) => {
     const token = normalizeTaskType(taskType);
-    if (token === 'quiz') {
+    if (token === 'quiz' || token === 'conditional_quiz') {
       return ['control', 'information', 'quiz'];
     }
     if (token === 'info') {

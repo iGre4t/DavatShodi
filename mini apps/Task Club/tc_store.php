@@ -45,9 +45,14 @@ function readCsvFileRows(string $path): array
   if ($handle === false) {
     return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
   while (($row = fgetcsv($handle)) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
+  flock($handle, LOCK_UN);
   fclose($handle);
   return $rows;
 }
@@ -58,16 +63,28 @@ function writeCsvFileRows(string $path, array $rows): bool
   if ($dir !== '' && !is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'w');
+  $handle = fopen($path, 'c+');
   if ($handle === false) {
+    return false;
+  }
+  if (!flock($handle, LOCK_EX)) {
+    fclose($handle);
+    return false;
+  }
+  if (!ftruncate($handle, 0) || fseek($handle, 0) !== 0) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
     return false;
   }
   foreach ($rows as $row) {
     if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+      flock($handle, LOCK_UN);
       fclose($handle);
       return false;
     }
   }
+  fflush($handle);
+  flock($handle, LOCK_UN);
   fclose($handle);
   return true;
 }
@@ -398,6 +415,8 @@ $tcStoreMainActions = [
   'save_prizes',
   'get_prize_levels',
   'save_prize_levels',
+  'get_reward_guide',
+  'save_reward_guide',
   'search_invitee_admin',
   'get_admin_assignments',
   'set_admin_assignment'
@@ -602,6 +621,45 @@ if ($action === 'save_prize_levels') {
     exit;
   }
   echo json_encode(['status' => 'ok']);
+  exit;
+}
+
+if ($action === 'get_reward_guide') {
+  $settings = readJsonFile($settingsFile, []);
+  $guide = is_array($settings['rewardGuide'] ?? null) ? $settings['rewardGuide'] : [];
+  echo json_encode([
+    'status' => 'ok',
+    'data' => [
+      'title' => trim((string)($guide['title'] ?? 'راهنمای دریافت جایزه')),
+      'text' => trim((string)($guide['text'] ?? ''))
+    ]
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'save_reward_guide') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  $guide = is_array($payload['rewardGuide'] ?? null) ? $payload['rewardGuide'] : [];
+  $settings = readJsonFile($settingsFile, []);
+  $settings['rewardGuide'] = [
+    'title' => trim((string)($guide['title'] ?? 'راهنمای دریافت جایزه')),
+    'text' => trim((string)($guide['text'] ?? ''))
+  ];
+  if (!writeJsonFile($settingsFile, $settings)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save reward guide.']);
+    exit;
+  }
+  echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
   exit;
 }
 

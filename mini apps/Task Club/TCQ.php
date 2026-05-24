@@ -18,11 +18,11 @@ $tcqSettingsPath = __DIR__ . '/TCQ settings.json';
 $tcqTaskId = '';
 $tcqTaskTagCode = '';
 $tcqTaskTitle = '';
+$tcqTaskType = 'quiz';
 const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
   'randomOrder' => true,
   'questionsPerAttempt' => 0,
-  'proportionalMode' => false,
   'correctAnswersToScore' => 1
 ];
 
@@ -36,9 +36,14 @@ function tcqReadCsv(string $path): array
   if ($handle === false) {
     return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
   while (($row = fgetcsv($handle)) !== false) {
     $rows[] = $row;
   }
+  flock($handle, LOCK_UN);
   fclose($handle);
   return $rows;
 }
@@ -57,10 +62,17 @@ function tcqWriteCsv(string $path, array $rows): bool
     fclose($handle);
     return false;
   }
-  ftruncate($handle, 0);
-  rewind($handle);
+  if (!ftruncate($handle, 0) || rewind($handle) === false) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
+    return false;
+  }
   foreach ($rows as $row) {
-    fputcsv($handle, $row);
+    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
   }
   fflush($handle);
   flock($handle, LOCK_UN);
@@ -130,7 +142,7 @@ function tcqNormalizeScoreValue($value): int
   return $number > 0 ? $number : 0;
 }
 
-function tcqNormalizeItem(array $item): array
+function tcqNormalizeItem(array $item, bool $includeQuestionScores = true): array
 {
   $type = trim(mb_strtolower((string)($item['type'] ?? 'mcq'), 'UTF-8'));
   if ($type !== 'percentage') {
@@ -150,13 +162,13 @@ function tcqNormalizeItem(array $item): array
     'type' => $type,
     'question' => trim((string)($item['question'] ?? '')),
     'answers' => array_map(static fn($v) => trim((string)$v), $answers),
-    'activeDurationScore' => tcqNormalizeScoreValue($item['activeDurationScore'] ?? ($item['active_duration_score'] ?? ($item['score'] ?? 0))),
-    'goldenTimeEndedScore' => tcqNormalizeScoreValue($item['goldenTimeEndedScore'] ?? ($item['golden_time_ended_score'] ?? ($item['afterEndtimeScore'] ?? ($item['after_endtime_score'] ?? 0)))),
+    'activeDurationScore' => $includeQuestionScores ? tcqNormalizeScoreValue($item['activeDurationScore'] ?? ($item['active_duration_score'] ?? ($item['score'] ?? 0))) : 0,
+    'goldenTimeEndedScore' => $includeQuestionScores ? tcqNormalizeScoreValue($item['goldenTimeEndedScore'] ?? ($item['golden_time_ended_score'] ?? ($item['afterEndtimeScore'] ?? ($item['after_endtime_score'] ?? 0)))) : 0,
     'createdAt' => trim((string)($item['createdAt'] ?? '')) ?: date('Y-m-d H:i:s')
   ];
 }
 
-function tcqLoadStore(string $path): array
+function tcqLoadStore(string $path, bool $includeQuestionScores = true): array
 {
   if (!is_file($path)) {
     return [];
@@ -172,7 +184,7 @@ function tcqLoadStore(string $path): array
   $items = [];
   foreach ($decoded as $row) {
     if (is_array($row)) {
-      $items[] = tcqNormalizeItem($row);
+      $items[] = tcqNormalizeItem($row, $includeQuestionScores);
     }
   }
   return $items;
@@ -206,20 +218,16 @@ function tcqLoadSettings(string $path): array
     return $settings;
   }
   $storedCorrectAnswersToScore = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
-  $legacyProportionalMode = $storedCorrectAnswersToScore === 0;
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
   $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
-  $settings['proportionalMode'] = array_key_exists('proportionalMode', $decoded)
-    ? (bool)$decoded['proportionalMode']
-    : $legacyProportionalMode;
   $settings['correctAnswersToScore'] = $storedCorrectAnswersToScore > 0
     ? $storedCorrectAnswersToScore
     : (int)$settings['correctAnswersToScore'];
   return $settings;
 }
 
-function tcqSaveSettings(string $path, array $settings): bool
+function tcqSaveSettings(string $path, array $settings, bool $includeCorrectAnswersToScore = true): bool
 {
   $dir = dirname($path);
   if (!is_dir($dir)) {
@@ -228,15 +236,29 @@ function tcqSaveSettings(string $path, array $settings): bool
   $payload = [
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
-    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0)),
-    'proportionalMode' => (bool)($settings['proportionalMode'] ?? false),
-    'correctAnswersToScore' => max(1, (int)($settings['correctAnswersToScore'] ?? 1))
+    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0))
   ];
+  if ($includeCorrectAnswersToScore) {
+    $payload['correctAnswersToScore'] = max(1, (int)($settings['correctAnswersToScore'] ?? 1));
+  }
   $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
     return false;
   }
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tcqSettingsForTaskType(array $settings, bool $includeCorrectAnswersToScore = true): array
+{
+  $payload = [
+    'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
+    'randomOrder' => (bool)($settings['randomOrder'] ?? true),
+    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0))
+  ];
+  if ($includeCorrectAnswersToScore) {
+    $payload['correctAnswersToScore'] = max(1, (int)($settings['correctAnswersToScore'] ?? 1));
+  }
+  return $payload;
 }
 
 function tcqLoadCodeState(string $path): array
@@ -278,6 +300,15 @@ function tcqNormalizeTaskTagCode(string $value): string
   $upper = strtoupper(trim($value));
   $clean = preg_replace('/[^A-Z0-9_-]+/', '', $upper);
   return is_string($clean) ? $clean : '';
+}
+
+function tcqNormalizeTaskType(string $value): string
+{
+  $token = trim(strtolower($value));
+  if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
+    return 'conditional_quiz';
+  }
+  return 'quiz';
 }
 
 function tcqReadTasksStore(string $path): array
@@ -328,7 +359,8 @@ function tcqFindTaskById(string $taskId, string $tasksStorePath): ?array
     return [
       'id' => $id,
       'tagCode' => $tagCode,
-      'title' => trim((string)($task['title'] ?? ''))
+      'title' => trim((string)($task['title'] ?? '')),
+      'taskType' => tcqNormalizeTaskType((string)($task['taskType'] ?? ($task['task_type'] ?? 'quiz')))
     ];
   }
   return null;
@@ -374,7 +406,7 @@ function tcqReserveOrCreateCode(string $candidateCode, array &$usedCodes, array 
   }
 }
 
-function tcqBuildItemByIdMap(array $items): array
+function tcqBuildItemByIdMap(array $items, bool $includeQuestionScores = true): array
 {
   $map = [];
   foreach ($items as $item) {
@@ -385,7 +417,7 @@ function tcqBuildItemByIdMap(array $items): array
     if ($id === '') {
       continue;
     }
-    $map[$id] = tcqNormalizeItem($item);
+    $map[$id] = tcqNormalizeItem($item, $includeQuestionScores);
   }
   return $map;
 }
@@ -415,7 +447,7 @@ function tcqExtractCodeFromAnswerHeader(string $headerCell): string
   return strtoupper(trim((string)$m[1]));
 }
 
-function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newItems): bool
+function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newItems, bool $includeQuestionScores = true): bool
 {
   $rows = tcqReadCsv($answersPath);
   $header = isset($rows[0]) && is_array($rows[0]) ? $rows[0] : ['Work ID'];
@@ -439,7 +471,7 @@ function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newIte
     }
   }
 
-  $oldById = tcqBuildItemByIdMap($oldItems);
+  $oldById = tcqBuildItemByIdMap($oldItems, $includeQuestionScores);
   $newHeader = tcqBuildAnswersHeader($newItems);
   $columnSources = [];
   for ($i = 1; $i < count($newHeader); $i += 1) {
@@ -508,6 +540,7 @@ if ($tcqRequestedTaskId !== '') {
     $tcqTaskId = (string)($task['id'] ?? '');
     $tcqTaskTagCode = tcqNormalizeTaskTagCode((string)($task['tagCode'] ?? ''));
     $tcqTaskTitle = trim((string)($task['title'] ?? ''));
+    $tcqTaskType = tcqNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
     if ($tcqTaskId !== '' && $tcqTaskTagCode !== '') {
       $tcqTaskDir = __DIR__ . '/tasks/' . $tcqTaskTagCode;
       $tcqStorePath = $tcqTaskDir . '/TCQ list.json';
@@ -522,6 +555,8 @@ if ($tcqRequestedTaskId !== '') {
     $tcqTaskLookupFailed = true;
   }
 }
+
+$tcqIsConditionalQuizTask = $tcqTaskType === 'conditional_quiz';
 
 if ($tcqTaskLookupFailed) {
   if (!TCQ_INCLUDE_ONLY && $tcqIsJsonRequest) {
@@ -547,7 +582,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
 
   if ($action === 'list') {
     tcqEnsureInviteesColumns($tcqInviteesCsvPath);
-    $items = tcqLoadStore($tcqStorePath);
+    $items = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
     $usedCodes = [];
     $repaired = [];
@@ -560,11 +595,11 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       tcqSaveStore($tcqStorePath, $items);
       tcqSaveCodeState($tcqCodeStatePath, $codeState);
     }
-    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $items, $items)) {
+    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $items, $items, !$tcqIsConditionalQuizTask)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with questions.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    $settings = tcqLoadSettings($tcqSettingsPath);
+    $settings = tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath), !$tcqIsConditionalQuizTask);
     echo json_encode(['status' => 'ok', 'items' => $items, 'settings' => $settings], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -573,16 +608,14 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
     $answerTimeLimitRaw = trim((string)($_POST['answer_time_limit'] ?? '1'));
     $randomOrderRaw = trim((string)($_POST['random_order'] ?? '1'));
     $questionsPerAttemptRaw = trim((string)($_POST['questions_per_attempt'] ?? '0'));
-    $proportionalModeRaw = trim((string)($_POST['proportional_mode'] ?? '0'));
     $correctAnswersToScoreRaw = trim((string)($_POST['correct_answers_to_score'] ?? '1'));
-    if (!preg_match('/^\d+$/', $questionsPerAttemptRaw) || !preg_match('/^\d+$/', $correctAnswersToScoreRaw)) {
+    if (!preg_match('/^\d+$/', $questionsPerAttemptRaw) || (!$tcqIsConditionalQuizTask && !preg_match('/^\d+$/', $correctAnswersToScoreRaw))) {
       echo json_encode(['status' => 'error', 'message' => 'Question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
-    $proportionalMode = in_array($proportionalModeRaw, ['1', 'true', 'on'], true);
-    $correctAnswersToScore = max(1, (int)$correctAnswersToScoreRaw);
-    if (!$proportionalMode && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
+    $correctAnswersToScore = $tcqIsConditionalQuizTask ? 0 : max(1, (int)$correctAnswersToScoreRaw);
+    if (!$tcqIsConditionalQuizTask && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
       echo json_encode(['status' => 'error', 'message' => 'Required correct answers cannot be greater than questions per attempt.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -590,14 +623,17 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       'answerTimeLimit' => in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
       'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true),
       'questionsPerAttempt' => $questionsPerAttempt,
-      'proportionalMode' => $proportionalMode,
       'correctAnswersToScore' => $correctAnswersToScore
     ];
-    if (!tcqSaveSettings($tcqSettingsPath, $settings)) {
+    if (!tcqSaveSettings($tcqSettingsPath, $settings, !$tcqIsConditionalQuizTask)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save general settings.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'General settings saved.', 'settings' => tcqLoadSettings($tcqSettingsPath)], JSON_UNESCAPED_UNICODE);
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'General settings saved.',
+      'settings' => tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath), !$tcqIsConditionalQuizTask)
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -610,7 +646,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       exit;
     }
 
-    $oldItems = tcqLoadStore($tcqStorePath);
+    $oldItems = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
     $usedCodes = [];
     $items = [];
@@ -619,7 +655,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
         echo json_encode(['status' => 'error', 'message' => 'Invalid row data.'], JSON_UNESCAPED_UNICODE);
         exit;
       }
-      $item = tcqNormalizeItem($row);
+      $item = tcqNormalizeItem($row, !$tcqIsConditionalQuizTask);
       if ($item['question'] === '') {
         $num = $index + 1;
         echo json_encode(['status' => 'error', 'message' => "Question in row {$num} is required."], JSON_UNESCAPED_UNICODE);
@@ -647,7 +683,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       echo json_encode(['status' => 'error', 'message' => 'Failed to save question code state.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $oldItems, $items)) {
+    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $oldItems, $items, !$tcqIsConditionalQuizTask)) {
       tcqSaveStore($tcqStorePath, $oldItems);
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with saved questions.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -706,14 +742,12 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <span>Questions Per Attempt (0 = All)</span>
       <input id="tcq-setting-questions-per-attempt" type="number" min="0" step="1" value="0" />
     </label>
-    <label class="tcq-settings-row">
-      <span>Proportional Score Mode</span>
-      <input id="tcq-setting-proportional-mode" type="checkbox" />
-    </label>
+    <?php if (!$tcqIsConditionalQuizTask): ?>
     <label class="tcq-settings-row">
       <span>Correct Answers For Score</span>
       <input id="tcq-setting-correct-answers-to-score" type="number" min="1" step="1" value="1" />
     </label>
+    <?php endif; ?>
   </div>
   <div class="tcq-settings-actions">
     <button id="tcq-save-settings" type="button" class="btn primary">Save General Settings</button>
@@ -745,6 +779,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <span>Question</span>
       <input id="tcq-question-input" name="question" type="text" autocomplete="off" required />
     </label>
+    <?php if (!$tcqIsConditionalQuizTask): ?>
     <div class="form grid tcq-score-grid">
       <label class="field standard-width">
         <span>Active Duration (Golden Time) Score</span>
@@ -756,6 +791,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       </label>
     </div>
     <p class="muted small">These per-question scores are used when Proportional Score Mode is enabled.</p>
+    <?php endif; ?>
     <div id="tcq-answer-grid" class="form grid tcq-answer-grid">
       <label class="field standard-width">
         <span>Answer 1 (Correct)</span>
@@ -814,6 +850,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     JSON_UNESCAPED_UNICODE
   ); ?>;
   const csrfToken = <?= json_encode($tcqCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+  const isConditionalQuizTask = <?= $tcqIsConditionalQuizTask ? 'true' : 'false'; ?>;
   const form = document.getElementById('tcq-form');
   const input = document.getElementById('tcq-question-input');
   const body = document.getElementById('tcq-list-body');
@@ -822,7 +859,6 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const answerTimeLimitToggle = document.getElementById('tcq-setting-answer-time-limit');
   const randomOrderToggle = document.getElementById('tcq-setting-random-order');
   const questionsPerAttemptInput = document.getElementById('tcq-setting-questions-per-attempt');
-  const proportionalModeToggle = document.getElementById('tcq-setting-proportional-mode');
   const correctAnswersToScoreInput = document.getElementById('tcq-setting-correct-answers-to-score');
   const saveSettingsBtn = document.getElementById('tcq-save-settings');
   const settingsStatusEl = document.getElementById('tcq-settings-status');
@@ -836,8 +872,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     || !statusEl
     || !saveAllBtn
     || !formAnswerGrid
-    || !(formActiveDurationScoreInput instanceof HTMLInputElement)
-    || !(formGoldenTimeEndedScoreInput instanceof HTMLInputElement)
+    || (!isConditionalQuizTask && !(formActiveDurationScoreInput instanceof HTMLInputElement))
+    || (!isConditionalQuizTask && !(formGoldenTimeEndedScoreInput instanceof HTMLInputElement))
   ) return;
   const formTypeInputs = form.querySelectorAll('input[name="questionType"]');
   const formAnswerInputs = form.querySelectorAll('input[name="answer1"], input[name="answer2"], input[name="answer3"], input[name="answer4"]');
@@ -874,8 +910,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     type: normalizeType(item.type),
     question: String(item.question || ''),
     answers: normalizeAnswers(item.answers),
-    activeDurationScore: normalizeScoreValue(item.activeDurationScore ?? item.active_duration_score ?? item.score ?? 0),
-    goldenTimeEndedScore: normalizeScoreValue(item.goldenTimeEndedScore ?? item.golden_time_ended_score ?? item.afterEndtimeScore ?? item.after_endtime_score ?? 0),
+    activeDurationScore: isConditionalQuizTask ? 0 : normalizeScoreValue(item.activeDurationScore ?? item.active_duration_score ?? item.score ?? 0),
+    goldenTimeEndedScore: isConditionalQuizTask ? 0 : normalizeScoreValue(item.goldenTimeEndedScore ?? item.golden_time_ended_score ?? item.afterEndtimeScore ?? item.after_endtime_score ?? 0),
     createdAt: String(item.createdAt || '')
   });
 
@@ -907,34 +943,21 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     settingsStatusEl.style.color = isError ? '#d1434a' : '';
   };
 
-  function syncScoreModeControls() {
-    if (
-      !(proportionalModeToggle instanceof HTMLInputElement)
-      || !(correctAnswersToScoreInput instanceof HTMLInputElement)
-    ) {
-      return;
-    }
-    const proportionalEnabled = proportionalModeToggle.checked;
-    correctAnswersToScoreInput.disabled = proportionalEnabled;
-    correctAnswersToScoreInput.setAttribute('aria-disabled', proportionalEnabled ? 'true' : 'false');
-  }
-
   const applySettingsToForm = (settings) => {
     if (
       !(answerTimeLimitToggle instanceof HTMLInputElement)
       || !(randomOrderToggle instanceof HTMLInputElement)
       || !(questionsPerAttemptInput instanceof HTMLInputElement)
-      || !(proportionalModeToggle instanceof HTMLInputElement)
-      || !(correctAnswersToScoreInput instanceof HTMLInputElement)
+      || (!isConditionalQuizTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
     ) {
       return;
     }
     answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
     randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
     questionsPerAttemptInput.value = String(Math.max(0, Number.parseInt(String(settings?.questionsPerAttempt ?? 0), 10) || 0));
-    proportionalModeToggle.checked = Boolean(settings?.proportionalMode ?? false);
-    correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
-    syncScoreModeControls();
+    if (correctAnswersToScoreInput instanceof HTMLInputElement) {
+      correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
+    }
   };
 
   const validateAll = () => {
@@ -980,7 +1003,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
               </label>
             </div>
             <input class="tcq-field" type="text" data-field="question" value="${esc(item.question)}" />
-            <div class="form grid tcq-score-grid">
+            ${isConditionalQuizTask ? '' : `<div class="form grid tcq-score-grid">
               <label class="field standard-width">
                 <span>Active Duration (Golden Time) Score</span>
                 <input class="tcq-field" type="number" min="0" step="1" data-field="activeDurationScore" value="${esc(String(normalizeScoreValue(item.activeDurationScore)))}" />
@@ -989,7 +1012,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
                 <span>Golden Time Ended Score</span>
                 <input class="tcq-field" type="number" min="0" step="1" data-field="goldenTimeEndedScore" value="${esc(String(normalizeScoreValue(item.goldenTimeEndedScore)))}" />
               </label>
-            </div>
+            </div>`}
             <div class="tcq-answer-grid ${isMcq ? '' : 'tcq-hidden'}">
               <input class="tcq-field" type="text" data-field="answer0" value="${esc(answers[0])}" ${isMcq ? '' : 'disabled'} />
               <input class="tcq-field" type="text" data-field="answer1" value="${esc(answers[1])}" ${isMcq ? '' : 'disabled'} />
@@ -1099,8 +1122,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
         String(fd.get('answer3') ?? '').trim(),
         String(fd.get('answer4') ?? '').trim()
       ] : ['', '', '', ''],
-      activeDurationScore: normalizeScoreValue(fd.get('activeDurationScore') ?? 0),
-      goldenTimeEndedScore: normalizeScoreValue(fd.get('goldenTimeEndedScore') ?? 0),
+      activeDurationScore: isConditionalQuizTask ? 0 : normalizeScoreValue(fd.get('activeDurationScore') ?? 0),
+      goldenTimeEndedScore: isConditionalQuizTask ? 0 : normalizeScoreValue(fd.get('goldenTimeEndedScore') ?? 0),
       createdAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
     };
     if (!next.question) {
@@ -1251,26 +1274,21 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   });
   syncAddFormTypeState();
 
-  if (proportionalModeToggle instanceof HTMLInputElement) {
-    proportionalModeToggle.addEventListener('change', syncScoreModeControls);
-  }
-  syncScoreModeControls();
-
   if (saveSettingsBtn instanceof HTMLButtonElement) {
     saveSettingsBtn.addEventListener('click', async () => {
       if (
         !(answerTimeLimitToggle instanceof HTMLInputElement)
         || !(randomOrderToggle instanceof HTMLInputElement)
         || !(questionsPerAttemptInput instanceof HTMLInputElement)
-        || !(proportionalModeToggle instanceof HTMLInputElement)
-        || !(correctAnswersToScoreInput instanceof HTMLInputElement)
+        || (!isConditionalQuizTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
       ) {
         return;
       }
       const questionsPerAttempt = Math.max(0, Number.parseInt(questionsPerAttemptInput.value || '0', 10) || 0);
-      const proportionalMode = proportionalModeToggle.checked;
-      const correctAnswersToScore = Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0);
-      if (!proportionalMode && questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
+      const correctAnswersToScore = correctAnswersToScoreInput instanceof HTMLInputElement
+        ? Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0)
+        : 0;
+      if (!isConditionalQuizTask && questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
         setSettingsStatus('Required correct answers cannot be greater than questions per attempt.', true);
         return;
       }
@@ -1280,7 +1298,6 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
           answer_time_limit: answerTimeLimitToggle.checked ? '1' : '0',
           random_order: randomOrderToggle.checked ? '1' : '0',
           questions_per_attempt: String(questionsPerAttempt),
-          proportional_mode: proportionalMode ? '1' : '0',
           correct_answers_to_score: String(correctAnswersToScore)
         });
         applySettingsToForm(data.settings || {});

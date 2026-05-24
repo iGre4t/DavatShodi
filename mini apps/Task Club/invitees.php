@@ -17,6 +17,7 @@ $tcInviteesHasRowAction = $tcInviteesCanEdit || $tcInviteesCanReveal || $tcInvit
 $baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';
 $mappedFile = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $mapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Mapped.json';
+$anyPasswordSettingsFile = $baseDir . DIRECTORY_SEPARATOR . 'any-password-login.json';
 $stats = [
   'total' => 0,
   'columns' => [],
@@ -27,6 +28,25 @@ $stats = [
   ]
 ];
 $allInvitees = [];
+
+function readAnyPasswordLoginSettings(string $path): array {
+  $defaults = [
+    'anyPassword' => false,
+    'minLength' => 3
+  ];
+  if (!is_file($path)) {
+    return $defaults;
+  }
+  $data = json_decode((string)file_get_contents($path), true);
+  if (!is_array($data)) {
+    return $defaults;
+  }
+  $minLength = (int)($data['minLength'] ?? ($data['min_length'] ?? $defaults['minLength']));
+  return [
+    'anyPassword' => !empty($data['anyPassword']) || !empty($data['any_password']),
+    'minLength' => max(1, min(128, $minLength))
+  ];
+}
 
 function readMappedConfig(string $path): array {
   if (!is_file($path)) {
@@ -41,12 +61,19 @@ function readCsvRows(string $path): array {
     return [];
   }
   $rows = [];
-  if (($handle = fopen($path, 'r')) !== false) {
-    while (($data = fgetcsv($handle)) !== false) {
-      $rows[] = $data;
-    }
-    fclose($handle);
+  $handle = fopen($path, 'r');
+  if ($handle === false) {
+    return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
+  while (($data = fgetcsv($handle)) !== false) {
+    $rows[] = $data;
+  }
+  flock($handle, LOCK_UN);
+  fclose($handle);
   return $rows;
 }
 
@@ -94,6 +121,7 @@ function resolveMappedInviteColumnIndex(array $header, array $mapping, string $k
 }
 
 $mapping = readMappedConfig($mapFile);
+$anyPasswordLoginSettings = readAnyPasswordLoginSettings($anyPasswordSettingsFile);
 $rows = readCsvRows($mappedFile);
 if ($rows) {
   $header = $rows[0] ?? [];
@@ -302,6 +330,26 @@ if ($rows) {
     </div>
     <div class="field full">
       <button type="button" class="btn primary standard-primary-button" id="tc-invite-map">Map and Upload</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-header">
+    <h3>Any Password Login</h3>
+  </div>
+  <div class="form grid two-columns">
+    <label class="field">
+      <span>Min Length</span>
+      <input id="tc-any-password-min-length" type="number" min="1" max="128" step="1" value="<?= htmlspecialchars((string)$anyPasswordLoginSettings['minLength'], ENT_QUOTES, 'UTF-8') ?>" />
+    </label>
+    <label class="field checkbox-field">
+      <span>Any Password</span>
+      <input id="tc-any-password-enabled" type="checkbox" <?= !empty($anyPasswordLoginSettings['anyPassword']) ? 'checked' : '' ?> />
+    </label>
+    <div class="field full">
+      <button type="button" class="btn primary standard-primary-button" id="tc-any-password-save">Save</button>
+      <p id="tc-any-password-msg" class="hint" aria-live="polite"></p>
     </div>
   </div>
 </div>
@@ -585,6 +633,10 @@ if ($rows) {
   const addPhoneNumberEl = document.getElementById('tc-add-phone-number');
   const addInviteeBtn = document.getElementById('tc-add-invitee-btn');
   const addInviteeMsgEl = document.getElementById('tc-add-invitee-msg');
+  const anyPasswordEnabledEl = document.getElementById('tc-any-password-enabled');
+  const anyPasswordMinLengthEl = document.getElementById('tc-any-password-min-length');
+  const anyPasswordSaveBtn = document.getElementById('tc-any-password-save');
+  const anyPasswordMsgEl = document.getElementById('tc-any-password-msg');
   const editModal = document.getElementById('tc-invite-edit-modal');
   const editCloseBtns = editModal ? editModal.querySelectorAll('[data-close-invite-edit-modal]') : [];
   const editWorkIdEl = document.getElementById('tc-edit-work-id');
@@ -668,6 +720,12 @@ if ($rows) {
     if (!addInviteeMsgEl) return;
     addInviteeMsgEl.textContent = text;
     addInviteeMsgEl.style.color = isError ? '#e11d2e' : '';
+  };
+
+  const setAnyPasswordMsg = (text, isError = false) => {
+    if (!anyPasswordMsgEl) return;
+    anyPasswordMsgEl.textContent = text;
+    anyPasswordMsgEl.style.color = isError ? '#e11d2e' : '';
   };
 
   const setEditMsg = (text, isError = false) => {
@@ -1240,6 +1298,44 @@ if ($rows) {
       setMsg('خطا در آپلود.', true);
     } finally {
       hideProgress();
+    }
+  });
+
+  anyPasswordSaveBtn?.addEventListener('click', async () => {
+    const minLength = Number.parseInt(String(anyPasswordMinLengthEl?.value || ''), 10);
+    if (!Number.isFinite(minLength) || minLength < 1 || minLength > 128) {
+      setAnyPasswordMsg('Min Length must be between 1 and 128.', true);
+      return;
+    }
+
+    anyPasswordSaveBtn.disabled = true;
+    setAnyPasswordMsg('Saving settings...');
+    try {
+      const response = await fetch('mini%20apps/Task%20Club/invitees_login_settings.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          csrf: csrfToken,
+          anyPassword: Boolean(anyPasswordEnabledEl?.checked),
+          minLength
+        })
+      });
+      const result = await response.json();
+      if (response.ok && result?.status === 'ok') {
+        setAnyPasswordMsg(result?.message || 'Settings saved.');
+        if (anyPasswordMinLengthEl) {
+          anyPasswordMinLengthEl.value = String(result?.settings?.minLength ?? minLength);
+        }
+        if (anyPasswordEnabledEl) {
+          anyPasswordEnabledEl.checked = Boolean(result?.settings?.anyPassword);
+        }
+      } else {
+        setAnyPasswordMsg(result?.message || 'Failed to save settings.', true);
+      }
+    } catch {
+      setAnyPasswordMsg('Failed to save settings.', true);
+    } finally {
+      anyPasswordSaveBtn.disabled = false;
     }
   });
 

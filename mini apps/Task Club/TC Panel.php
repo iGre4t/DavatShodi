@@ -78,6 +78,7 @@ $tcHasAnyPane = $tcCanMainPane
 $tcInitialPane = '';
 foreach ([
   'tc-main' => $tcCanMainPane,
+  'tc-rewards-config' => $tcCanMainPane,
   'tc-invitees' => $tcCanInviteesPane,
   'tc-manage-tasks' => $tcCanManageTasksPane,
   'tc-task-access' => $tcCanTaskAccessPane,
@@ -110,6 +111,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
     <div class="sub-nav">
       <?php if ($tcCanMainPane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">Main Panel</button>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config">جوایز</button>
       <?php endif; ?>
       <?php if ($tcCanInviteesPane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">Invitees</button>
@@ -431,6 +433,41 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
 </div>
     </div>
     <?php endif; ?>
+    <?php if ($tcCanMainPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config">
+      <div class="tc-task-top-nav" role="tablist" aria-label="Reward Tabs">
+        <button type="button" class="tc-task-top-item active" aria-selected="true" data-tc-reward-config-trigger="guide">راهنمای دریافت جایزه</button>
+        <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="levels">سطح بندی جوایز</button>
+      </div>
+
+      <section data-tc-reward-config-section="guide">
+        <div class="card">
+          <div class="section-header"><h3>Information Card</h3></div>
+          <div class="form" style="gap:12px;">
+            <label class="field standard-width">
+              <span>Title</span>
+              <input type="text" id="tc-reward-guide-title" value="راهنمای دریافت جایزه" />
+            </label>
+            <label class="field full">
+              <span>Text</span>
+              <textarea id="tc-reward-guide-text" rows="8"></textarea>
+            </label>
+            <div class="field full">
+              <button type="button" class="btn primary standard-primary-button" id="tc-reward-guide-save">Save</button>
+            </div>
+            <p class="muted small" id="tc-reward-guide-status" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+
+      <section data-tc-reward-config-section="levels" hidden>
+        <div class="card">
+          <div class="section-header"><h3>سطح بندی جوایز</h3></div>
+          <p class="muted">این بخش فعلا خالی است.</p>
+        </div>
+      </section>
+    </div>
+    <?php endif; ?>
     <?php if ($tcCanInviteesPane): ?>
     <div class="sub-pane<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">
       <?php include __DIR__ . '/invitees.php'; ?>
@@ -542,6 +579,14 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
             target="_blank"
             rel="noopener"
           >Export Login Data</a>
+        </div>
+        <div class="field">
+          <a
+            class="btn primary standard-primary-button"
+            href="mini%20apps/Task%20Club/export_participants.php"
+            target="_blank"
+            rel="noopener"
+          >Participants</a>
         </div>
       </div>
     </div>

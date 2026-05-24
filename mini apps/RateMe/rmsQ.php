@@ -39,9 +39,14 @@ function tcqReadCsv(string $path): array
   if ($handle === false) {
     return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
   while (($row = fgetcsv($handle)) !== false) {
     $rows[] = $row;
   }
+  flock($handle, LOCK_UN);
   fclose($handle);
   return $rows;
 }
@@ -60,10 +65,17 @@ function tcqWriteCsv(string $path, array $rows): bool
     fclose($handle);
     return false;
   }
-  ftruncate($handle, 0);
-  rewind($handle);
+  if (!ftruncate($handle, 0) || rewind($handle) === false) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
+    return false;
+  }
   foreach ($rows as $row) {
-    fputcsv($handle, $row);
+    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
   }
   fflush($handle);
   flock($handle, LOCK_UN);

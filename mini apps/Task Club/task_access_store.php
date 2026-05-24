@@ -65,6 +65,9 @@ function tcTaskAccessNormalizeBool($value): bool
 function tcTaskAccessNormalizeTaskType(string $value): string
 {
   $token = tcTaskAccessNormalizeToken($value);
+  if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
+    return 'conditional_quiz';
+  }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
@@ -80,7 +83,7 @@ function tcTaskAccessNormalizeTaskType(string $value): string
 function tcTaskAccessResolvePaneKeys(string $taskType): array
 {
   $type = tcTaskAccessNormalizeTaskType($taskType);
-  if ($type === 'quiz') {
+  if ($type === 'quiz' || $type === 'conditional_quiz') {
     return ['control', 'information', 'quiz'];
   }
   if ($type === 'info') {

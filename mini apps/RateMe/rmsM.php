@@ -780,8 +780,18 @@ function loadJsonPayload(string $path): array
   if (!is_file($path)) {
     return [];
   }
-  $content = file_get_contents($path);
-  if ($content === false) {
+  $handle = fopen($path, 'r');
+  if ($handle === false) {
+    return [];
+  }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
+  $content = stream_get_contents($handle);
+  flock($handle, LOCK_UN);
+  fclose($handle);
+  if (!is_string($content) || $content === '') {
     return [];
   }
   $decoded = json_decode($content, true);
@@ -3987,33 +3997,47 @@ function readInviteesCsv(string $path): array
     return [];
   }
   $rows = [];
-  if (($handle = fopen($path, 'r')) !== false) {
-    while (($data = fgetcsv($handle)) !== false) {
-      $rows[] = $data;
-    }
-    fclose($handle);
+  $handle = fopen($path, 'r');
+  if ($handle === false) {
+    return [];
   }
+  if (!flock($handle, LOCK_SH)) {
+    fclose($handle);
+    return [];
+  }
+  while (($data = fgetcsv($handle)) !== false) {
+    $rows[] = $data;
+  }
+  flock($handle, LOCK_UN);
+  fclose($handle);
   return $rows;
 }
 
 function writeInviteesCsv(string $path, array $rows): bool
 {
   $dir = dirname($path);
-  if (!is_dir($dir)) {
-    mkdir($dir, 0777, true);
+  if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
+    return false;
   }
   $handle = fopen($path, 'c+');
-  if ($handle == false) {
+  if ($handle === false) {
     return false;
   }
   if (!flock($handle, LOCK_EX)) {
     fclose($handle);
     return false;
   }
-  ftruncate($handle, 0);
-  rewind($handle);
+  if (!ftruncate($handle, 0) || rewind($handle) === false) {
+    flock($handle, LOCK_UN);
+    fclose($handle);
+    return false;
+  }
   foreach ($rows as $row) {
-    fputcsv($handle, $row);
+    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+      return false;
+    }
   }
   fflush($handle);
   flock($handle, LOCK_UN);
@@ -4023,20 +4047,12 @@ function writeInviteesCsv(string $path, array $rows): bool
 
 function readInviteesMapping(string $path): array
 {
-  if (!is_file($path)) {
-    return [];
-  }
-  $data = json_decode(file_get_contents($path), true);
-  return is_array($data) ? $data : [];
+  return loadJsonPayload($path);
 }
 
 function readLoginAttempts(string $path): array
 {
-  if (!is_file($path)) {
-    return [];
-  }
-  $data = json_decode(file_get_contents($path), true);
-  return is_array($data) ? $data : [];
+  return loadJsonPayload($path);
 }
 
 function writeLoginAttempts(string $path, array $payload): bool
@@ -4594,9 +4610,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $attempts[$ipAttemptKey] = ['fails' => $ipFails];
       writeLoginAttempts($loginAttemptsPath, $attempts);
     };
-    if ($username === '' || $password === '') {
+    if ($username === '') {
       $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Please enter both username and password.']);
+      echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
+      exit;
+    }
+    $passwordLength = function_exists('mb_strlen')
+      ? mb_strlen($password, 'UTF-8')
+      : strlen($password);
+    if ($passwordLength < 3) {
+      $recordFail();
+      echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
       exit;
     }
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
@@ -4613,22 +4637,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $columns = $table['columns']['index'] ?? [];
-    $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
-    if ($passwordIndex < 0) {
-      $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'رمز عبور column is missing.']);
-      exit;
-    }
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $username);
     if ($rowIndex < 0) {
-      $recordFail();
-      echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
-      exit;
-    }
-    $rowPassword = normalizeCredentialToken((string)($rows[$rowIndex][$passwordIndex] ?? ''));
-    $anyPasswordIndex = $columns['any password'] ?? findHeaderIndex($table['header'], 'any password');
-    $allowAnyPassword = $anyPasswordIndex >= 0 && parseInviteeAnyPasswordValue($rows[$rowIndex][$anyPasswordIndex] ?? '');
-    if ((!$allowAnyPassword && $rowPassword === '') || (!$allowAnyPassword && $rowPassword !== $password)) {
       $recordFail();
       echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
       exit;
@@ -5899,7 +5909,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $activeScore = max(0, (int)($task['score'] ?? 0));
     $afterEndScore = max(0, (int)($task['afterEndtimeScore'] ?? 0));
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
-    $usesPerQuestionScoreSum = isQuizLikeTaskTypeValue($taskType)
+    $isProportionalQuizCompletion = isQuizLikeTaskTypeValue($taskType)
       && !isSharedAnswersQuizTaskTypeValue($taskType)
       && isset($attemptState)
       && is_array($attemptState)
@@ -5926,11 +5936,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'sharedResponse' => $sharedResponse
       ]);
       exit;
-    }
-
-    if ($usesPerQuestionScoreSum) {
-      $questionLookup = buildQuestionLookupByCode($questions);
-      $awardedScore = calculateTaskQuizQuestionScoreSum($attemptState, $questionLookup, $status);
     }
 
     $completedTaskIds[] = $taskId;
@@ -6011,7 +6016,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'taskCompleted' => true,
       'awardedScore' => $awardedScore,
       'userTaskScore' => $awardedScore,
-      'scoreMode' => $usesPerQuestionScoreSum
+      'scoreMode' => $isProportionalQuizCompletion
         ? 'proportional'
         : ((isQuizLikeTaskTypeValue($taskType) && $status === 'ended') ? 'after_endtime' : 'active'),
       'totalScore' => $newTotalScore,
@@ -9937,7 +9942,7 @@ $sessionPayload = [
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-rewards-title" class="tasks-title">خوان‌های جوایز</h2>
+          <h2 id="tc-rewards-title" class="tasks-title">مراحل دریافت جوایز</h2>
           <div class="user-score-chip" hidden aria-hidden="true">
             <span>امتیاز شما</span>
             <strong id="tc-reward-user-score-chip-value"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>

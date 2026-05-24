@@ -19,6 +19,9 @@
     if (token === 'quiz' || token === 'quiz-task' || token === 'quiz task') {
       return 'quiz';
     }
+    if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') {
+      return 'conditional_quiz';
+    }
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
@@ -36,9 +39,14 @@
     return type === 'info' || type === 'team_task' || type === 'describe_photo';
   }
 
+  function isQuizLikeTaskType(taskType) {
+    const type = normalizeTaskType(taskType);
+    return type === 'quiz' || type === 'conditional_quiz';
+  }
+
   function hasInformationPaneTaskType(taskType) {
     const type = normalizeTaskType(taskType);
-    return type === 'quiz' || type === 'info' || type === 'team_task' || type === 'describe_photo';
+    return isQuizLikeTaskType(type) || type === 'info' || type === 'team_task' || type === 'describe_photo';
   }
 
   function isDescribePhotoTaskType(taskType) {
@@ -51,7 +59,7 @@
 
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
-    if (normalizedType === 'quiz') {
+    if (isQuizLikeTaskType(normalizedType)) {
       return ['control', 'information', 'quiz'];
     }
     if (normalizedType === 'info') {
@@ -2220,9 +2228,10 @@
     const taskTypeToken = normalizeTaskType(task.taskType);
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
+    const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
     const typeLabel = taskTypeToken === 'describe_photo'
       ? 'Describe Photo Task'
-      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : 'Quiz Task'));
+      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : (isConditionalQuizTask ? 'Conditional Quiz' : 'Quiz Task')));
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
@@ -2535,23 +2544,22 @@
           </div>
           <div class="card">
             <div class="section-header">
-              <h3>Score System</h3>
+              <h3>${isConditionalQuizTask ? 'Score System Answer Base' : 'Score System'}</h3>
             </div>
             <div class="form" style="gap:12px;">
               <label class="field standard-width">
-                <span>${isInfoTask ? 'Total Score' : 'Active Duration (Golden Time)'}</span>
+                <span>${isConditionalQuizTask ? 'Correct Answer Score' : (isInfoTask ? 'Total Score' : 'Active Duration (Golden Time)')}</span>
                 <input type="number" min="0" step="1" data-task-field="score" />
               </label>
               ${isInfoTask ? '' : `
                 <label class="field standard-width">
-                  <span>Golden Time Ended, you can answer with lower score</span>
+                  <span>${isConditionalQuizTask ? 'Golden Time Correct Answer Score' : 'Golden Time Ended, you can answer with lower score'}</span>
                   <input type="number" min="0" step="1" data-task-field="afterEndtimeScore" />
                 </label>
               `}
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-score-system">Save</button>
               </div>
-              ${taskTypeToken === 'quiz' ? '<p class="muted small">If Proportional Score Mode is enabled in the Quiz pane, these values are only shown on the TCM task card. The real awarded score comes from each question&#39;s own scores.</p>' : ''}
               <p class="muted small" data-task-score-save-status aria-live="polite"></p>
             </div>
           </div>
