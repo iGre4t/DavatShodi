@@ -12,6 +12,7 @@ $tcCanTaskAccessPane = isset($tcAllowedChildSet['task-club:task-access']);
 $tcCanMonitoringPane = isset($tcAllowedChildSet['task-club:monitoring']);
 $tcCanExportPane = isset($tcAllowedChildSet['task-club:export']);
 $tcCanEventStylePane = isset($tcAllowedChildSet['task-club:event-style']);
+$tcCanControlPanel = $tcCanMainPane || $tcCanTaskAccessPane || $tcCanExportPane || $tcCanEventStylePane;
 $tcNormalizeBool = static function ($value): bool {
   if (is_bool($value)) {
     return $value;
@@ -77,14 +78,11 @@ $tcHasAnyPane = $tcCanMainPane
   || $tcCanEventStylePane;
 $tcInitialPane = '';
 foreach ([
-  'tc-main' => $tcCanMainPane,
+  'tc-main' => $tcCanControlPanel,
   'tc-rewards-config' => $tcCanMainPane,
   'tc-invitees' => $tcCanInviteesPane,
   'tc-manage-tasks' => $tcCanManageTasksPane,
-  'tc-task-access' => $tcCanTaskAccessPane,
   'tc-monitoring' => $tcCanMonitoringPane,
-  'tc-export' => $tcCanExportPane,
-  'tc-event-style' => $tcCanEventStylePane
 ] as $paneKey => $allowed) {
   if ($allowed) {
     $tcInitialPane = $paneKey;
@@ -109,27 +107,20 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
   <aside class="sub-sidebar">
     <div class="sub-header">Task Club</div>
     <div class="sub-nav">
+      <?php if ($tcCanControlPanel): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">کنترل پنل</button>
+      <?php endif; ?>
       <?php if ($tcCanMainPane): ?>
-        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">Main Panel</button>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config">جوایز</button>
       <?php endif; ?>
       <?php if ($tcCanInviteesPane): ?>
-        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">Invitees</button>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">دعوت‌شدگان</button>
       <?php endif; ?>
       <?php if ($tcCanManageTasksPane): ?>
-        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">Manage Tasks</button>
-      <?php endif; ?>
-      <?php if ($tcCanTaskAccessPane): ?>
-        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-task-access' ? ' active' : '' ?>" data-pane="tc-task-access">دسترسی تسک‌ها</button>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">مدیریت تسک‌ها</button>
       <?php endif; ?>
       <?php if ($tcCanMonitoringPane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">مانیتورینگ</button>
-      <?php endif; ?>
-      <?php if ($tcCanExportPane): ?>
-        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-export' ? ' active' : '' ?>" data-pane="tc-export">Export</button>
-      <?php endif; ?>
-      <?php if ($tcCanEventStylePane): ?>
-        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-event-style' ? ' active' : '' ?>" data-pane="tc-event-style">Event Style</button>
       <?php endif; ?>
       <?php if ($tcCanTaskSubtabs): ?>
         <div data-tc-task-subtab-nav></div>
@@ -137,50 +128,68 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
     </div>
   </aside>
   <div class="sub-content">
-    <?php if ($tcCanMainPane): ?>
+    <?php if ($tcCanControlPanel): ?>
     <div class="sub-pane<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">
+      <?php $tcControlInitialSection = $tcCanMainPane ? 'general' : ($tcCanTaskAccessPane ? 'admin-access' : ($tcCanExportPane ? 'export' : 'event-style')); ?>
+      <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های کنترل پنل">
+        <?php if ($tcCanMainPane): ?>
+          <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'general' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'general' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="general">عمومی</button>
+        <?php endif; ?>
+        <?php if ($tcCanMainPane || $tcCanTaskAccessPane): ?>
+          <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'admin-access' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'admin-access' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="admin-access">دسترسی ادمین</button>
+        <?php endif; ?>
+        <?php if ($tcCanExportPane): ?>
+          <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'export' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'export' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="export">خروجی</button>
+        <?php endif; ?>
+        <?php if ($tcCanEventStylePane): ?>
+          <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'event-style' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'event-style' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="event-style">استایل رویداد</button>
+        <?php endif; ?>
+      </div>
+
+      <?php if ($tcCanMainPane): ?>
+      <section data-tc-control-panel-section="general"<?= $tcControlInitialSection === 'general' ? '' : ' hidden' ?>>
       <div class="card">
   <div class="section-header">
-    <h3>Status</h3>
+    <h3>وضعیت</h3>
   </div>
   <div class="field">
-    <a class="btn primary standard-primary-button" href="mini%20apps/Task%20Club/TCM.php" target="_blank" rel="noopener">Open Task Club</a>
+    <a class="btn primary standard-primary-button" href="mini%20apps/Task%20Club/TCM.php" target="_blank" rel="noopener">باز کردن تسک کلاب</a>
   </div>
 </div>
 
 <div class="card" id="tc-texts-card">
   <div class="section-header">
-    <h3>Control Panel</h3>
+    <h3>کنترل پنل</h3>
   </div>
   <div class="form" style="gap:12px;">
-    <div id="tc-status-text" class="tc-status tc-status--inactive">Not Active</div>
+    <div id="tc-status-text" class="tc-status tc-status--inactive">غیرفعال</div>
     <div class="tc-switch-grid">
       <label class="switch tc-switch">
-        <span class="switch-label">Active</span>
+        <span class="switch-label">فعال</span>
         <span class="switch-toggle">
-          <input type="checkbox" id="tc-active-toggle" aria-label="Active" />
+          <input type="checkbox" id="tc-active-toggle" aria-label="فعال" />
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </span>
       </label>
       <label class="switch tc-switch">
-        <span class="switch-label">Duration</span>
+        <span class="switch-label">زمان‌بندی</span>
         <span class="switch-toggle">
-          <input type="checkbox" id="tc-duration-toggle" aria-label="Duration" />
+          <input type="checkbox" id="tc-duration-toggle" aria-label="زمان‌بندی" />
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </span>
       </label>
       <label class="switch tc-switch">
-        <span class="switch-label">Maintenance Mode</span>
+        <span class="switch-label">حالت تعمیرات</span>
         <span class="switch-toggle">
-          <input type="checkbox" id="tc-maintenance-toggle" aria-label="Maintenance Mode" />
+          <input type="checkbox" id="tc-maintenance-toggle" aria-label="حالت تعمیرات" />
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </span>
       </label>
     </div>
     <div class="form grid two-column-fields tc-datetime-grid">
-      <div class="tc-datetime-title tc-datetime-title--start">Start</div>
+      <div class="tc-datetime-title tc-datetime-title--start">شروع</div>
       <label class="field standard-width tc-datetime-start">
-        <span>Date</span>
+        <span>تاریخ</span>
         <input
           type="date"
           id="tc-duration-start"
@@ -188,9 +197,9 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
         />
       </label>
       <label class="field standard-width tc-datetime-start-time">
-        <span>Time</span>
+        <span>ساعت</span>
         <select id="tc-duration-start-time">
-          <option value="">Select time</option>
+          <option value="">انتخاب ساعت</option>
           <option value="00:00">00:00</option>
           <option value="01:00">01:00</option>
           <option value="02:00">02:00</option>
@@ -217,9 +226,9 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           <option value="23:00">23:00</option>
         </select>
       </label>
-      <div class="tc-datetime-title tc-datetime-title--end">End</div>
+      <div class="tc-datetime-title tc-datetime-title--end">پایان</div>
       <label class="field standard-width tc-datetime-end">
-        <span>Date</span>
+        <span>تاریخ</span>
         <input
           type="date"
           id="tc-duration-end"
@@ -227,9 +236,9 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
         />
       </label>
       <label class="field standard-width tc-datetime-end-time">
-        <span>Time</span>
+        <span>ساعت</span>
         <select id="tc-duration-end-time">
-          <option value="">Select time</option>
+          <option value="">انتخاب ساعت</option>
           <option value="00:00">00:00</option>
           <option value="01:00">01:00</option>
           <option value="02:00">02:00</option>
@@ -259,22 +268,28 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
       <div class="tc-datetime-empty" aria-hidden="true"></div>
     </div>
     <div class="field full">
-      <button type="button" class="btn primary standard-primary-button" id="tc-settings-save">Save</button>
+      <button type="button" class="btn primary standard-primary-button" id="tc-settings-save">ذخیره</button>
     </div>
   </div>
 </div>
 
+      </section>
+      <?php endif; ?>
+
+      <?php if ($tcCanMainPane || $tcCanTaskAccessPane): ?>
+      <section data-tc-control-panel-section="admin-access"<?= $tcControlInitialSection === 'admin-access' ? '' : ' hidden' ?>>
+      <?php if ($tcCanMainPane): ?>
 <div class="card" id="tc-assign-admin-card">
   <div class="section-header">
-    <h3>Assign Admin</h3>
+    <h3>تعیین ادمین</h3>
   </div>
   <div class="form" style="gap:12px;">
     <label class="field standard-width">
-      <span>Work ID</span>
-      <input id="tc-admin-workid" type="text" autocomplete="off" placeholder="Enter Work ID" />
+      <span>شناسه کاری</span>
+      <input id="tc-admin-workid" type="text" autocomplete="off" placeholder="شناسه کاری را وارد کنید" />
     </label>
     <div class="field full tc-form-action">
-      <button type="button" class="btn primary standard-primary-button" id="tc-admin-search-btn">Search User</button>
+      <button type="button" class="btn primary standard-primary-button" id="tc-admin-search-btn">جستجوی کاربر</button>
     </div>
     <div id="tc-admin-search-result" class="tc-admin-search-result hidden" aria-live="polite"></div>
     <p id="tc-admin-status" class="muted small" aria-live="polite"></p>
@@ -282,204 +297,24 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
       <table class="tc-admin-table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Work ID</th>
-            <th>Phone Number</th>
-            <th>Action</th>
+            <th>نام</th>
+            <th>شناسه کاری</th>
+            <th>شماره تلفن</th>
+            <th>عملیات</th>
           </tr>
         </thead>
         <tbody id="tc-admin-list">
           <tr>
-            <td colspan="4" class="muted">No admins assigned yet.</td>
+            <td colspan="4" class="muted">هنوز ادمینی تعیین نشده است.</td>
           </tr>
         </tbody>
       </table>
     </div>
   </div>
 </div>
+      <?php endif; ?>
 
-<div class="card">
-  <div class="section-header">
-    <h3>Fake Items</h3>
-  </div>
-  <form id="tc-fake-form" class="form">
-    <label class="field standard-width">
-      <span>Fake Item Name</span>
-      <input id="tc-fake-name" name="fake-name" type="text" autocomplete="off" required />
-    </label>
-    <div class="field full">
-      <button type="submit" class="btn primary standard-primary-button">Add</button>
-    </div>
-  </form>
-  <div class="table-wrapper tc-fake-table">
-    <table class="tc-prize-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="tc-fake-list"></tbody>
-    </table>
-  </div>
-</div>
-
-<div id="tc-prize-section">
-  <div class="card">
-  <div class="section-header">
-    <h3>Add Prize</h3>
-  </div>
-  <form id="tc-prize-form" class="form">
-    <div class="form grid tc-prize-grid">
-      <label class="field standard-width">
-        <span>Name</span>
-        <input id="tc-prize-name" name="name" type="text" autocomplete="off" required />
-      </label>
-      <label class="field tc-standard-third">
-        <span>Quantity</span>
-        <input
-          id="tc-prize-quantity"
-          name="quantity"
-          type="number"
-          min="1"
-          step="1"
-          value="1"
-          required
-        />
-      </label>
-      <label class="field standard-width">
-        <span>Value</span>
-        <input
-          id="tc-prize-value"
-          name="value"
-          type="text"
-          inputmode="decimal"
-          placeholder="0"
-          autocomplete="off"
-          required
-        />
-      </label>
-    </div>
-    <div class="field full tc-form-action">
-      <button type="submit" class="btn primary standard-primary-button">Add</button>
-    </div>
-  </form>
-</div>
-
-  <div class="card">
-  <div class="section-header">
-    <h3>Prizes</h3>
-  </div>
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>On Wheel Name</th>
-          <th>Status</th>
-          <th>Quantity</th>
-          <th>Value</th>
-          <th>Count Control</th>
-          <th>Action Bar</th>
-        </tr>
-      </thead>
-      <tbody id="tc-prize-list"></tbody>
-</table>
-</div>
-</div>
-
-<div class="card">
-  <div class="section-header">
-    <h3>Prize Levels</h3>
-  </div>
-  <form id="tc-prize-level-form" class="form" style="gap:12px;">
-    <label class="field standard-width">
-      <span>Name</span>
-      <input id="tc-prize-level-name" name="name" type="text" autocomplete="off" required />
-    </label>
-    <label class="field standard-width">
-      <span>Type</span>
-      <select id="tc-prize-level-type" name="type" required>
-        <option value="value_sum">Value Sum</option>
-        <option value="out_of_value">Out of Value</option>
-      </select>
-    </label>
-    <label class="field standard-width">
-      <span>Score</span>
-      <input id="tc-prize-level-score" name="score" type="number" min="1" step="1" inputmode="numeric" required />
-    </label>
-    <div class="field full">
-      <button type="submit" class="btn primary standard-primary-button">Add Level</button>
-    </div>
-    <p id="tc-prize-level-status" class="muted small" aria-live="polite"></p>
-  </form>
-  <div class="table-wrapper">
-    <table class="tc-prize-level-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Score</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="tc-prize-level-list">
-        <tr><td colspan="5" class="muted">No levels added yet.</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-</div>
-    </div>
-    <?php endif; ?>
-    <?php if ($tcCanMainPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config">
-      <div class="tc-task-top-nav" role="tablist" aria-label="Reward Tabs">
-        <button type="button" class="tc-task-top-item active" aria-selected="true" data-tc-reward-config-trigger="guide">راهنمای دریافت جایزه</button>
-        <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="levels">سطح بندی جوایز</button>
-      </div>
-
-      <section data-tc-reward-config-section="guide">
-        <div class="card">
-          <div class="section-header"><h3>Information Card</h3></div>
-          <div class="form" style="gap:12px;">
-            <label class="field standard-width">
-              <span>Title</span>
-              <input type="text" id="tc-reward-guide-title" value="راهنمای دریافت جایزه" />
-            </label>
-            <label class="field full">
-              <span>Text</span>
-              <textarea id="tc-reward-guide-text" rows="8"></textarea>
-            </label>
-            <div class="field full">
-              <button type="button" class="btn primary standard-primary-button" id="tc-reward-guide-save">Save</button>
-            </div>
-            <p class="muted small" id="tc-reward-guide-status" aria-live="polite"></p>
-          </div>
-        </div>
-      </section>
-
-      <section data-tc-reward-config-section="levels" hidden>
-        <div class="card">
-          <div class="section-header"><h3>سطح بندی جوایز</h3></div>
-          <p class="muted">این بخش فعلا خالی است.</p>
-        </div>
-      </section>
-    </div>
-    <?php endif; ?>
-    <?php if ($tcCanInviteesPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">
-      <?php include __DIR__ . '/invitees.php'; ?>
-    </div>
-    <?php endif; ?>
-    <?php if ($tcCanManageTasksPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">
-      <?php include __DIR__ . '/TCT.php'; ?>
-    </div>
-    <?php endif; ?>
-    <?php if ($tcCanTaskAccessPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-task-access' ? ' active' : '' ?>" data-pane="tc-task-access">
+      <?php if ($tcCanTaskAccessPane): ?>
       <div class="card">
         <div class="section-header">
           <h3>دسترسی تسک‌ها</h3>
@@ -516,7 +351,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           <p class="hint">دسترسی هر کاربر به تب‌ها و زیربخش‌های هر تسک از این بخش مدیریت می‌شود.</p>
           <label class="tc-task-access-manage-row">
             <input type="checkbox" id="tc-task-access-manage-tasks" />
-            <span>دسترسی به تب Manage Tasks</span>
+            <span>دسترسی به تب مدیریت تسک‌ها</span>
           </label>
           <p class="muted small" id="tc-task-access-status" aria-live="polite"></p>
           <div id="tc-task-access-tree" class="tc-task-access-tree"></div>
@@ -533,23 +368,23 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
             <h3 id="tc-task-special-access-modal-title">دسترسی‌های خاص</h3>
             <button type="button" class="icon-btn" data-tc-task-special-close aria-label="بستن">×</button>
           </div>
-          <p class="hint">این دسترسی‌ها مربوط به تب «Invitees» هستند.</p>
+          <p class="hint">این دسترسی‌ها مربوط به تب «دعوت‌شدگان» هستند.</p>
           <div class="tc-task-special-access-grid">
             <label class="tc-task-access-manage-row">
               <input type="checkbox" id="tc-special-invitees-manage" />
-              <span>Manage Invitees</span>
+              <span>مدیریت دعوت‌شدگان</span>
             </label>
             <label class="tc-task-access-manage-row">
               <input type="checkbox" id="tc-special-invitees-reset" />
-              <span>Rest Invitee</span>
+              <span>بازنشانی دعوت‌شده</span>
             </label>
             <label class="tc-task-access-manage-row">
               <input type="checkbox" id="tc-special-invitees-reveal" />
-              <span>Reveal Password</span>
+              <span>نمایش رمز عبور</span>
             </label>
             <label class="tc-task-access-manage-row">
               <input type="checkbox" id="tc-special-invitees-edit" />
-              <span>Edit Invitee</span>
+              <span>ویرایش دعوت‌شده</span>
             </label>
           </div>
           <p class="muted small" id="tc-task-special-access-status" aria-live="polite"></p>
@@ -559,18 +394,15 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           </div>
         </div>
       </div>
-    </div>
-    <?php endif; ?>
-    <?php if ($tcCanMonitoringPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">
-      <?php include __DIR__ . '/TCMonitoring.php'; ?>
-    </div>
-    <?php endif; ?>
-    <?php if ($tcCanExportPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-export' ? ' active' : '' ?>" data-pane="tc-export">
+      <?php endif; ?>
+      </section>
+      <?php endif; ?>
+
+      <?php if ($tcCanExportPane): ?>
+      <section data-tc-control-panel-section="export"<?= $tcControlInitialSection === 'export' ? '' : ' hidden' ?>>
       <div class="card">
         <div class="section-header">
-          <h3>Export</h3>
+          <h3>خروجی گرفتن</h3>
         </div>
         <div class="field">
           <a
@@ -578,7 +410,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
             href="mini%20apps/Task%20Club/export_login_data.php"
             target="_blank"
             rel="noopener"
-          >Export Login Data</a>
+          >خروجی اطلاعات ورود</a>
         </div>
         <div class="field">
           <a
@@ -586,26 +418,27 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
             href="mini%20apps/Task%20Club/export_participants.php"
             target="_blank"
             rel="noopener"
-          >Participants</a>
+          >خروجی شرکت‌کنندگان</a>
         </div>
       </div>
-    </div>
-    <?php endif; ?>
-    <?php if ($tcCanEventStylePane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-event-style' ? ' active' : '' ?>" data-pane="tc-event-style">
+      </section>
+      <?php endif; ?>
+
+      <?php if ($tcCanEventStylePane): ?>
+      <section data-tc-control-panel-section="event-style"<?= $tcControlInitialSection === 'event-style' ? '' : ' hidden' ?>>
       <div class="card">
         <div class="section-header">
-          <h3>Upload Logo</h3>
+          <h3>لوگوی رویداد</h3>
         </div>
         <div class="form">
           <div class="photo-uploader tc-event-logo-uploader">
             <div class="photo-preview" aria-live="polite">
-              <img id="tc-event-logo-image" class="hidden" alt="Event logo preview" />
-              <div id="tc-event-logo-placeholder" class="photo-placeholder">No image selected</div>
+              <img id="tc-event-logo-image" class="hidden" alt="پیش‌نمایش لوگوی رویداد" />
+              <div id="tc-event-logo-placeholder" class="photo-placeholder">تصویری انتخاب نشده است</div>
             </div>
             <div class="photo-actions">
-              <button type="button" class="btn" id="tc-event-logo-pick">Choose photo</button>
-              <button type="button" class="btn ghost" id="tc-event-logo-clear" disabled>Clear</button>
+              <button type="button" class="btn" id="tc-event-logo-pick">انتخاب تصویر</button>
+              <button type="button" class="btn ghost" id="tc-event-logo-clear" disabled>حذف تصویر</button>
             </div>
             <p id="tc-event-style-logo-status" class="hint muted small" aria-live="polite"></p>
           </div>
@@ -614,39 +447,223 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
 
       <div class="card">
         <div class="section-header">
-          <h3>Colors</h3>
+          <h3>رنگ‌ها</h3>
         </div>
         <div class="form" style="gap:12px;">
           <div class="appearance-row">
-            <span class="appearance-label">Secondary</span>
+            <span class="appearance-label">رنگ دوم</span>
             <div class="appearance-input-group">
               <input id="tc-event-color-secondary" class="appearance-hex-field" type="text" maxlength="7" value="#2F8FFF" />
-              <button type="button" class="appearance-preview" id="tc-event-preview-secondary" aria-label="Choose secondary color"></button>
-              <button type="button" class="btn ghost" id="tc-event-picker-secondary">Choose</button>
+              <button type="button" class="appearance-preview" id="tc-event-preview-secondary" aria-label="انتخاب رنگ دوم"></button>
+              <button type="button" class="btn ghost" id="tc-event-picker-secondary">انتخاب</button>
             </div>
           </div>
           <div class="appearance-row">
-            <span class="appearance-label">Highlight</span>
+            <span class="appearance-label">رنگ برجسته</span>
             <div class="appearance-input-group">
               <input id="tc-event-color-highlight" class="appearance-hex-field" type="text" maxlength="7" value="#20C997" />
-              <button type="button" class="appearance-preview" id="tc-event-preview-highlight" aria-label="Choose highlight color"></button>
-              <button type="button" class="btn ghost" id="tc-event-picker-highlight">Choose</button>
+              <button type="button" class="appearance-preview" id="tc-event-preview-highlight" aria-label="انتخاب رنگ برجسته"></button>
+              <button type="button" class="btn ghost" id="tc-event-picker-highlight">انتخاب</button>
             </div>
           </div>
           <div class="appearance-row">
-            <span class="appearance-label">Soft Accent</span>
+            <span class="appearance-label">رنگ تاکیدی ملایم</span>
             <div class="appearance-input-group">
               <input id="tc-event-color-accent-soft" class="appearance-hex-field" type="text" maxlength="7" value="#FFB347" />
-              <button type="button" class="appearance-preview" id="tc-event-preview-accent-soft" aria-label="Choose soft accent color"></button>
-              <button type="button" class="btn ghost" id="tc-event-picker-accent-soft">Choose</button>
+              <button type="button" class="appearance-preview" id="tc-event-preview-accent-soft" aria-label="انتخاب رنگ تاکیدی ملایم"></button>
+              <button type="button" class="btn ghost" id="tc-event-picker-accent-soft">انتخاب</button>
             </div>
           </div>
           <div class="field full">
-            <button type="button" class="btn primary standard-primary-button" id="tc-event-style-save">Save</button>
+            <button type="button" class="btn primary standard-primary-button" id="tc-event-style-save">ذخیره</button>
           </div>
           <p id="tc-event-style-save-status" class="hint muted small" aria-live="polite"></p>
         </div>
       </div>
+      </section>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($tcCanMainPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config">
+      <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های جوایز">
+        <button type="button" class="tc-task-top-item active" aria-selected="true" data-tc-reward-config-trigger="guide">راهنمای دریافت جایزه</button>
+        <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="levels">سطح بندی جوایز</button>
+        <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="storage">انبار جوایز</button>
+      </div>
+
+      <section data-tc-reward-config-section="guide">
+        <div class="card">
+          <div class="section-header"><h3>کارت راهنما</h3></div>
+          <div class="form" style="gap:12px;">
+            <label class="field standard-width">
+              <span>عنوان</span>
+              <input type="text" id="tc-reward-guide-title" value="راهنمای دریافت جایزه" />
+            </label>
+            <label class="field full">
+              <span>متن راهنما</span>
+              <textarea id="tc-reward-guide-text" rows="8"></textarea>
+            </label>
+            <div class="field full">
+              <button type="button" class="btn primary standard-primary-button" id="tc-reward-guide-save">ذخیره</button>
+            </div>
+            <p class="muted small" id="tc-reward-guide-status" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+
+      <section data-tc-reward-config-section="levels" hidden>
+        <div class="card">
+          <div class="section-header">
+            <h3>سطح بندی جوایز</h3>
+          </div>
+          <form id="tc-prize-level-form" class="form" style="gap:12px;">
+            <label class="field standard-width">
+              <span>نام سطح</span>
+              <input id="tc-prize-level-name" name="name" type="text" autocomplete="off" required />
+            </label>
+            <label class="field standard-width">
+              <span>نوع محاسبه</span>
+              <select id="tc-prize-level-type" name="type" required>
+                <option value="value_sum">مجموع ارزش جوایز</option>
+                <option value="out_of_value">خارج از ارزش جایزه</option>
+              </select>
+            </label>
+            <label class="field standard-width">
+              <span>امتیاز</span>
+              <input id="tc-prize-level-score" name="score" type="number" min="1" step="1" inputmode="numeric" required />
+            </label>
+            <div class="field full">
+              <button type="submit" class="btn primary standard-primary-button">افزودن سطح</button>
+            </div>
+            <p id="tc-prize-level-status" class="muted small" aria-live="polite"></p>
+          </form>
+          <div class="table-wrapper">
+            <table class="tc-prize-level-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>نام سطح</th>
+                  <th>نوع محاسبه</th>
+                  <th>امتیاز</th>
+                  <th>عملیات</th>
+                </tr>
+              </thead>
+              <tbody id="tc-prize-level-list">
+                <tr><td colspan="5" class="muted">هنوز سطحی اضافه نشده است.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section data-tc-reward-config-section="storage" hidden>
+        <div id="tc-prize-section">
+          <div class="card">
+            <div class="section-header">
+              <h3>افزودن جایزه</h3>
+            </div>
+            <form id="tc-prize-form" class="form">
+              <div class="form grid tc-prize-grid">
+                <label class="field standard-width">
+                  <span>نام جایزه</span>
+                  <input id="tc-prize-name" name="name" type="text" autocomplete="off" required />
+                </label>
+                <label class="field tc-standard-third">
+                  <span>تعداد</span>
+                  <input
+                    id="tc-prize-quantity"
+                    name="quantity"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="1"
+                    required
+                  />
+                </label>
+                <label class="field standard-width">
+                  <span>ارزش</span>
+                  <input
+                    id="tc-prize-value"
+                    name="value"
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="0"
+                    autocomplete="off"
+                    required
+                  />
+                </label>
+              </div>
+              <div class="field full tc-form-action">
+                <button type="submit" class="btn primary standard-primary-button">افزودن</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
+              <h3>جوایز</h3>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>نام جایزه</th>
+                    <th>نام نمایشی</th>
+                    <th>وضعیت موجودی</th>
+                    <th>تعداد کل</th>
+                    <th>ارزش</th>
+                    <th>کنترل تعداد</th>
+                    <th>عملیات</th>
+                  </tr>
+                </thead>
+                <tbody id="tc-prize-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
+              <h3>آیتم‌های نمایشی</h3>
+            </div>
+            <form id="tc-fake-form" class="form">
+              <label class="field standard-width">
+                <span>نام آیتم نمایشی</span>
+                <input id="tc-fake-name" name="fake-name" type="text" autocomplete="off" required />
+              </label>
+              <div class="field full">
+                <button type="submit" class="btn primary standard-primary-button">افزودن</button>
+              </div>
+            </form>
+            <div class="table-wrapper tc-fake-table">
+              <table class="tc-prize-table">
+                <thead>
+                  <tr>
+                    <th>نام آیتم</th>
+                    <th>عملیات</th>
+                  </tr>
+                </thead>
+                <tbody id="tc-fake-list"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <?php endif; ?>
+    <?php if ($tcCanInviteesPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">
+      <?php include __DIR__ . '/invitees.php'; ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($tcCanManageTasksPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">
+      <?php include __DIR__ . '/TCT.php'; ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($tcCanMonitoringPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">
+      <?php include __DIR__ . '/TCMonitoring.php'; ?>
     </div>
     <?php endif; ?>
     <?php if ($tcCanTaskSubtabs): ?>
@@ -667,6 +684,8 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
 <script src="mini%20apps/Task%20Club/tc-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php if ($tcCanMainPane): ?>
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php endif; ?>
+<?php if ($tcCanControlPanel): ?>
 <script src="mini%20apps/Task%20Club/TCSetting.js?v=<?= htmlspecialchars($tcSettingJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
 <?php if ($tcCanEventStylePane): ?>

@@ -7204,6 +7204,58 @@ $sessionPayload = [
         padding: 14px 16px;
       }
 
+      .quiz-area--card-pending .quiz-question-box {
+        min-height: 190px;
+        padding: 0;
+        background: linear-gradient(155deg, #ffffff 0%, #eef5ff 58%, #f8fbff 100%);
+        overflow: hidden;
+        perspective: 900px;
+      }
+
+      .quiz-card-swapper-card {
+        width: 100%;
+        min-height: 190px;
+        border: 0;
+        background: transparent;
+        color: #29416b;
+        font: inherit;
+        font-weight: 800;
+        display: grid;
+        place-items: center;
+        gap: 10px;
+        padding: 18px;
+        cursor: pointer;
+        transform-style: preserve-3d;
+        transition: transform 0.42s ease, opacity 0.28s ease;
+      }
+
+      .quiz-card-swapper-card.is-swapping {
+        transform: rotateY(92deg) scale(0.98);
+        opacity: 0.2;
+      }
+
+      .quiz-card-swapper-logo {
+        width: auto;
+        height: 96px;
+        max-width: min(240px, 78%);
+        object-fit: contain;
+        display: block;
+      }
+
+      .quiz-card-swapper-label {
+        color: #526b94;
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+
+      .quiz-area--card-pending .quiz-answers-grid {
+        display: none;
+      }
+
+      .quiz-area--card-pending .quiz-timer-track {
+        opacity: 0;
+      }
+
       .quiz-answers-grid {
         width: min(360px, calc(100% - 8px));
         display: grid;
@@ -10043,6 +10095,7 @@ $sessionPayload = [
         let currentAnsweredQuestions = 0;
         let currentQuestionCount = 0;
         let currentQuizScoreMode = 'threshold';
+        let quizCardSwapPending = false;
         let infoTaskViewOpen = false;
         let infoTaskCurrentStep = 'info';
         let describePhotoChoices = [];
@@ -10743,6 +10796,7 @@ $sessionPayload = [
           if (quizAreaEl) {
             quizAreaEl.classList.add('quiz-hidden');
             quizAreaEl.classList.remove('quiz-area--percentage');
+            quizAreaEl.classList.remove('quiz-area--card-pending');
             Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
           }
           if (timerAreaEl) {
@@ -10896,6 +10950,7 @@ $sessionPayload = [
           currentAnsweredQuestions = 0;
           currentQuestionCount = 0;
           currentQuizScoreMode = 'threshold';
+          quizCardSwapPending = false;
           quizCompletionInFlight = false;
           describePhotoChoices = [];
           describePhotoCurrentIndex = 0;
@@ -12008,6 +12063,9 @@ $sessionPayload = [
 
         const isCurrentQuizQuestionPainted = () => {
           if (!quizQuestionEl || !quizAnswersEl) return false;
+          if (currentTaskType === 'conditional_quiz' && quizCardSwapPending) {
+            return Boolean(quizQuestionEl.querySelector('.quiz-card-swapper-card'));
+          }
           const hasQuestion = String(quizQuestionEl.textContent || '').trim() !== '';
           const hasAnswerControl = Boolean(
             quizAnswersEl.querySelector('.quiz-answer-btn, .quiz-percentage-slider')
@@ -12031,7 +12089,9 @@ $sessionPayload = [
             }
             quizLocked = false;
             openQuizOverlay();
-            startQuizTimer();
+            if (currentTaskType !== 'conditional_quiz') {
+              startQuizTimer();
+            }
           } finally {
             quizStarting = false;
           }
@@ -12992,6 +13052,7 @@ $sessionPayload = [
           clearQuizTimer();
           currentQuestionIndex += 1;
           quizLocked = false;
+          quizCardSwapPending = false;
           if (currentQuestionIndex >= currentQuestions.length) {
             if (currentTaskType === 'conditional_quiz' || isQuizAttemptReadyToComplete()) {
               quizLocked = true;
@@ -13131,7 +13192,57 @@ $sessionPayload = [
           }, QUIZ_FEEDBACK_DELAY_MS);
         };
 
-        const renderQuizQuestion = ({ startTimer = true, closeOnMissing = true } = {}) => {
+        const revealConditionalQuizCard = (button) => {
+          if (currentTaskType !== 'conditional_quiz' || !quizCardSwapPending || quizLocked) return;
+          if (button instanceof HTMLElement) {
+            button.classList.add('is-swapping');
+          }
+          quizCardSwapPending = false;
+          window.setTimeout(() => {
+            renderQuizQuestion({ startTimer: true, closeOnMissing: false, revealCard: true });
+          }, 260);
+        };
+
+        const renderConditionalQuizCardBack = () => {
+          if (!quizQuestionEl || !quizAnswersEl) return false;
+          quizCardSwapPending = true;
+          quizQuestionEl.innerHTML = '';
+          quizAnswersEl.innerHTML = '';
+          quizAnswersEl.classList.remove('quiz-answers-grid--single');
+          if (quizAreaEl) {
+            Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
+            quizAreaEl.classList.remove('quiz-area--percentage');
+            quizAreaEl.classList.add('quiz-area--card-pending');
+          }
+          setQuizTimerProgress(getCurrentQuestionTimeLimitMs(), getCurrentQuestionTimeLimitMs());
+
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'quiz-card-swapper-card';
+          card.setAttribute('aria-label', 'نمایش سوال');
+          if (rewardCardLogoUrl) {
+            const logo = document.createElement('img');
+            logo.className = 'quiz-card-swapper-logo';
+            logo.src = rewardCardLogoUrl;
+            logo.alt = 'لوگوی رویداد';
+            card.appendChild(logo);
+          } else {
+            const fallback = document.createElement('span');
+            fallback.textContent = currentTaskTitle || 'ماموریت';
+            card.appendChild(fallback);
+          }
+          const label = document.createElement('span');
+          label.className = 'quiz-card-swapper-label';
+          label.textContent = 'برای دیدن سوال لمس کنید';
+          card.appendChild(label);
+          card.addEventListener('click', () => {
+            revealConditionalQuizCard(card);
+          });
+          quizQuestionEl.appendChild(card);
+          return true;
+        };
+
+        const renderQuizQuestion = ({ startTimer = true, closeOnMissing = true, revealCard = false } = {}) => {
           if (!quizCounterEl || !quizQuestionEl || !quizAnswersEl) {
             return false;
           }
@@ -13151,12 +13262,17 @@ $sessionPayload = [
 
           const baseCounter = `${currentQuestionIndex + 1} / ${total}`;
           quizCounterEl.textContent = baseCounter;
+          if (currentTaskType === 'conditional_quiz' && !revealCard) {
+            return renderConditionalQuizCardBack();
+          }
+          quizCardSwapPending = false;
           quizQuestionEl.textContent = String(item.question || '').trim() || '-';
           quizAnswersEl.innerHTML = '';
           quizAnswersEl.classList.toggle('quiz-answers-grid--single', item.type === 'percentage');
           if (quizAreaEl) {
             Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
             quizAreaEl.classList.toggle('quiz-area--percentage', item.type === 'percentage');
+            quizAreaEl.classList.remove('quiz-area--card-pending');
           }
 
           if (item.type === 'percentage') {

@@ -147,7 +147,7 @@
       return;
     }
     if (!prizes.length) {
-      listEl.innerHTML = '<tr><td colspan="7" class="muted">No prizes added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="7" class="muted">هنوز جایزه‌ای اضافه نشده است.</td></tr>';
       return;
     }
     listEl.innerHTML = prizes
@@ -188,21 +188,21 @@
             </td>
             <td>
               <div class="tc-count-control">
-                <button type="button" class="btn tc-btn-count-add" data-action="add-count" title="Add" aria-label="Add">
+                <button type="button" class="btn tc-btn-count-add" data-action="add-count" title="افزودن به موجودی" aria-label="افزودن به موجودی">
                   <span class="ri ri-add-line" aria-hidden="true"></span>
                 </button>
-                <button type="button" class="btn tc-btn-count-sub" data-action="sub-count" title="Sub" aria-label="Sub">
+                <button type="button" class="btn tc-btn-count-sub" data-action="sub-count" title="کم کردن از موجودی" aria-label="کم کردن از موجودی">
                   <span class="ri ri-subtract-line" aria-hidden="true"></span>
                 </button>
-                <button type="button" class="btn tc-btn-count-reset" data-action="reset-count" title="Reset" aria-label="Reset">
+                <button type="button" class="btn tc-btn-count-reset" data-action="reset-count" title="بازنشانی موجودی" aria-label="بازنشانی موجودی">
                   <span class="ri ri-refresh-line" aria-hidden="true"></span>
                 </button>
               </div>
             </td>
             <td>
               <div class="tc-action-bar">
-                <button type="button" class="btn tc-btn-danger" data-action="delete">Delete</button>
-                <button type="button" class="btn primary" data-action="save">Save</button>
+                <button type="button" class="btn tc-btn-danger" data-action="delete">حذف</button>
+                <button type="button" class="btn primary" data-action="save">ذخیره</button>
               </div>
             </td>
           </tr>
@@ -551,7 +551,7 @@
       return;
     }
     if (!levels.length) {
-      listEl.innerHTML = '<tr><td colspan="5" class="muted">No levels added yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="5" class="muted">هنوز سطحی اضافه نشده است.</td></tr>';
       return;
     }
     listEl.innerHTML = levels
@@ -563,13 +563,13 @@
               type="text"
               class="tc-prize-level-control"
               data-field="level-name"
-              value="${escapeHtml(level.name || `Level ${level.score || ""}`)}"
+              value="${escapeHtml(level.name || `سطح ${level.score || ""}`)}"
             />
           </td>
           <td>
             <select class="tc-prize-level-control" data-field="level-type">
-              <option value="value_sum" ${normalizeLevelType(level.type) === "value_sum" ? "selected" : ""}>Value Sum</option>
-              <option value="out_of_value" ${normalizeLevelType(level.type) === "out_of_value" ? "selected" : ""}>Out of Value</option>
+              <option value="value_sum" ${normalizeLevelType(level.type) === "value_sum" ? "selected" : ""}>مجموع ارزش جوایز</option>
+              <option value="out_of_value" ${normalizeLevelType(level.type) === "out_of_value" ? "selected" : ""}>خارج از ارزش جایزه</option>
             </select>
           </td>
           <td>
@@ -584,7 +584,7 @@
           </td>
           <td>
             <div class="tct-action-wrap">
-              <button type="button" class="btn ghost" data-action="remove-level">Remove</button>
+              <button type="button" class="btn ghost" data-action="remove-level">حذف</button>
             </div>
           </td>
         </tr>
@@ -611,7 +611,7 @@
     let levels = await loadPrizeLevels();
     renderPrizeLevels(levels, listEl);
 
-    const persistLevels = async (nextLevels, successMessage = "Levels saved.") => {
+    const persistLevels = async (nextLevels, successMessage = "سطح‌ها ذخیره شدند.") => {
       const normalized = nextLevels
         .map((item) => ({
           id: String(item?.id ?? "").trim() || makeLevelId(),
@@ -623,7 +623,7 @@
         .sort((a, b) => a.score - b.score);
       const saved = await savePrizeLevels(normalized);
       if (!saved) {
-        setStatus("Failed to save levels.", true);
+        setStatus("ذخیره سطح‌ها ناموفق بود.", true);
         return false;
       }
       const refreshed = await loadPrizeLevels();
@@ -637,19 +637,19 @@
       event.preventDefault();
       const name = normalizeLevelName(nameInput.value);
       if (!name) {
-        setStatus("Name is required.", true);
+        setStatus("نام سطح الزامی است.", true);
         nameInput.focus();
         return;
       }
       const type = normalizeLevelType(typeInput.value);
       const score = normalizeLevelScore(scoreInput.value);
       if (score <= 0) {
-        setStatus("Score must be greater than zero.", true);
+        setStatus("امتیاز باید بیشتر از صفر باشد.", true);
         scoreInput.focus();
         return;
       }
       const nextLevels = [...levels, { id: makeLevelId(), name, type, score }];
-      const saved = await persistLevels(nextLevels, "Level added.");
+      const saved = await persistLevels(nextLevels, "سطح اضافه شد.");
       if (saved) {
         nameInput.value = "";
         typeInput.value = "value_sum";
@@ -667,7 +667,7 @@
       const index = Number.parseInt(row?.dataset?.index ?? "", 10);
       if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
       const nextLevels = levels.filter((_, itemIndex) => itemIndex !== index);
-      await persistLevels(nextLevels, "Level removed.");
+      await persistLevels(nextLevels, "سطح حذف شد.");
     });
 
     listEl.addEventListener("change", async (event) => {
@@ -681,12 +681,12 @@
       const nameField = row?.querySelector('[data-field="level-name"]');
       const typeField = row?.querySelector('[data-field="level-type"]');
       const scoreField = row?.querySelector('[data-field="level-score"]');
-      const nextName = normalizeLevelName(nameField?.value ?? "", `Level ${levels[index]?.score || ""}`.trim());
+      const nextName = normalizeLevelName(nameField?.value ?? "", `سطح ${levels[index]?.score || ""}`.trim());
       if (!nextName) {
         if (nameField) {
           nameField.value = String(levels[index].name || "");
         }
-        setStatus("Name is required.", true);
+        setStatus("نام سطح الزامی است.", true);
         return;
       }
       const nextType = normalizeLevelType(typeField?.value ?? levels[index]?.type ?? "value_sum");
@@ -695,14 +695,14 @@
         if (scoreField) {
           scoreField.value = String(levels[index].score);
         }
-        setStatus("Score must be greater than zero.", true);
+        setStatus("امتیاز باید بیشتر از صفر باشد.", true);
         return;
       }
       const nextLevels = levels.map((item, itemIndex) => {
         if (itemIndex !== index) return item;
         return { ...item, name: nextName, type: nextType, score: nextScore };
       });
-      await persistLevels(nextLevels, "Level updated.");
+      await persistLevels(nextLevels, "سطح به‌روزرسانی شد.");
     });
   }
 
@@ -711,7 +711,7 @@
       return;
     }
     if (!fakeItems.length) {
-      listEl.innerHTML = '<tr><td colspan="2" class="muted">No fake items yet.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="2" class="muted">هنوز آیتم نمایشی اضافه نشده است.</td></tr>';
       return;
     }
     listEl.innerHTML = fakeItems
@@ -724,8 +724,8 @@
           </td>
           <td>
             <div class="tc-action-bar">
-              <button type="button" class="btn primary" data-action="save">Save</button>
-              <button type="button" class="btn tc-btn-danger" data-action="delete">Delete</button>
+              <button type="button" class="btn primary" data-action="save">ذخیره</button>
+              <button type="button" class="btn tc-btn-danger" data-action="delete">حذف</button>
             </div>
           </td>
         </tr>

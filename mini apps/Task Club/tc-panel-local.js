@@ -704,7 +704,7 @@
     if (!state || !controls) return;
 
     if (!Array.isArray(state.photos) || !state.photos.length) {
-      controls.listBody.innerHTML = '<tr><td colspan="3" class="muted">No photos added yet.</td></tr>';
+      controls.listBody.innerHTML = '<tr><td colspan="3" class="muted">هنوز عکسی اضافه نشده است.</td></tr>';
       return;
     }
 
@@ -2230,8 +2230,8 @@
     const isTeamTask = taskTypeToken === 'team_task';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
     const typeLabel = taskTypeToken === 'describe_photo'
-      ? 'Describe Photo Task'
-      : (taskTypeToken === 'team_task' ? 'Team Task' : (isInfoTask ? 'Info Task' : (isConditionalQuizTask ? 'Conditional Quiz' : 'Quiz Task')));
+      ? 'تسک توصیف عکس'
+      : (taskTypeToken === 'team_task' ? 'تسک تیمی' : (isInfoTask ? 'تسک اطلاعاتی' : (isConditionalQuizTask ? 'کوئیز شرطی' : 'تسک کوئیز')));
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
@@ -2244,12 +2244,12 @@
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
     const topTabsMarkup = isDescribePhotoTask
-      ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">Photo</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
+      ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">عکس‌ها</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
       : (isTeamTask
-        ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">Challenge Storage</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">Team</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Teams Rate</button>'
+        ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">انبار چالش‌ها</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">تیم</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی تیم‌ها</button>'
         : (isInfoTask
-          ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">Invitees Rate</button>'
-          : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Quiz</button>'));
+          ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
+          : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">کوئیز</button>'));
     const informationSection = hasInformationPane
       ? `
           <div class="tc-task-top-section" data-task-top-section="information" hidden>
@@ -2310,39 +2310,39 @@
       ? `
           <div class="tc-task-top-section" data-task-top-section="photo" hidden>
             <div class="card">
-              <div class="section-header"><h3>Upload Photo</h3></div>
+              <div class="section-header"><h3>بارگذاری عکس</h3></div>
               <div class="form" style="gap:12px;">
                 <label class="field standard-width">
-                  <span>Name</span>
-                  <input type="text" data-task-photo-name placeholder="Photo name" />
+                  <span>نام</span>
+                  <input type="text" data-task-photo-name placeholder="نام عکس" />
                 </label>
                 <div class="photo-uploader tc-task-photo-uploader">
                   <div class="photo-preview" aria-live="polite">
-                    <img data-task-photo-preview-image class="hidden" alt="Selected task photo" />
-                    <div data-task-photo-preview-placeholder class="photo-placeholder">No photo selected</div>
+                    <img data-task-photo-preview-image class="hidden" alt="عکس انتخاب‌شده تسک" />
+                    <div data-task-photo-preview-placeholder class="photo-placeholder">عکسی انتخاب نشده است</div>
                   </div>
                   <div class="photo-actions">
-                    <button type="button" class="btn" data-action="pick-task-photo">Choose photo</button>
-                    <button type="button" class="btn ghost" data-action="clear-task-photo" disabled>Clear</button>
-                    <button type="button" class="btn primary standard-primary-button" data-action="add-task-photo" disabled>Add Photo</button>
+                    <button type="button" class="btn" data-action="pick-task-photo">انتخاب عکس</button>
+                    <button type="button" class="btn ghost" data-action="clear-task-photo" disabled>حذف انتخاب</button>
+                    <button type="button" class="btn primary standard-primary-button" data-action="add-task-photo" disabled>افزودن عکس</button>
                   </div>
                 </div>
                 <p class="muted small" data-task-photo-upload-status aria-live="polite"></p>
               </div>
             </div>
             <div class="card">
-              <div class="section-header"><h3>Photo List</h3></div>
+              <div class="section-header"><h3>فهرست عکس‌ها</h3></div>
               <div class="table-wrapper tc-task-photo-table-wrap">
                 <table class="tct-list-table tc-task-photo-table">
                   <thead>
                     <tr>
-                      <th>Photo</th>
-                      <th>Name</th>
-                      <th>Action</th>
+                      <th>عکس</th>
+                      <th>نام</th>
+                      <th>عملیات</th>
                     </tr>
                   </thead>
                   <tbody data-task-photo-list-body>
-                    ${taskPhotos.length ? '' : '<tr><td colspan="3" class="muted">No photos added yet.</td></tr>'}
+                    ${taskPhotos.length ? '' : '<tr><td colspan="3" class="muted">هنوز عکسی اضافه نشده است.</td></tr>'}
                   </tbody>
                 </table>
               </div>
@@ -2471,8 +2471,8 @@
     const inviteesRateLoadingText = isTeamTask ? 'Loading teams...' : 'Loading invitees...';
     return `
       <div class="tc-task-top-shell" data-task-top-shell>
-        <div class="tc-task-top-nav" role="tablist" aria-label="Task Tabs">
-          <button type="button" class="tc-task-top-item active" aria-selected="true" data-task-top-trigger="control">Control Pane</button>
+        <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های تسک">
+          <button type="button" class="tc-task-top-item active" aria-selected="true" data-task-top-trigger="control">کنترل</button>
           ${topTabsMarkup}
         </div>
 
@@ -2481,7 +2481,7 @@
             <div class="section-header">
               <h3>${escapeHtml(titleText)}</h3>
             </div>
-            <p class="muted small">Tag Code: <code>${escapeHtml(task.tagCode)}</code> - Type: ${escapeHtml(typeLabel)}</p>
+            <p class="muted small">کد تگ: <code>${escapeHtml(task.tagCode)}</code> - نوع: ${escapeHtml(typeLabel)}</p>
             <div class="form" style="gap:12px;">
               <label class="field standard-width">
                 <span>Task Name</span>
@@ -2958,7 +2958,7 @@
               controls.nameInput.value = selected.title || '';
             }
             renderDescribePhotoUploadCard(pane);
-            setDescribePhotoUploadStatus(pane, 'Photo selected. Click Add Photo to save.');
+            setDescribePhotoUploadStatus(pane, 'عکس انتخاب شد. برای ذخیره روی افزودن عکس کلیک کنید.');
           }
         });
         return;

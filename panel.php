@@ -66,6 +66,73 @@ function normalizeUserValue($value): string {
   return ($trimmed === '' || $trimmed === '0') ? '' : $trimmed;
 }
 
+function panelMissionRootPath(): string {
+  return __DIR__ . '/mini apps/missions';
+}
+
+function panelMissionReadJson(string $path): array {
+  if (!is_file($path)) {
+    return [];
+  }
+  $content = file_get_contents($path);
+  if ($content === false) {
+    return [];
+  }
+  $decoded = json_decode($content, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function panelMissionWebPath(string $folderName): string {
+  return 'mini%20apps/missions/' . rawurlencode($folderName);
+}
+
+function panelMissionTabId(string $folderName): string {
+  return 'task-club-mission-' . substr(hash('sha256', $folderName), 0, 12);
+}
+
+function panelMissionTabs(): array {
+  $root = panelMissionRootPath();
+  if (!is_dir($root)) {
+    return [];
+  }
+  $missions = [];
+  foreach (new DirectoryIterator($root) as $entry) {
+    if ($entry->isDot() || !$entry->isDir()) {
+      continue;
+    }
+    $folder = $entry->getFilename();
+    if ($folder === 'generate' || strncmp($folder, '.', 1) === 0) {
+      continue;
+    }
+    $missionDir = $entry->getPathname();
+    if (!is_file($missionDir . DIRECTORY_SEPARATOR . 'TC Panel.php')) {
+      continue;
+    }
+    $meta = panelMissionReadJson($missionDir . DIRECTORY_SEPARATOR . 'mission.json');
+    $name = trim((string)($meta['name'] ?? $folder));
+    if ($name === '') {
+      $name = $folder;
+    }
+    $webPath = panelMissionWebPath($folder);
+    $missions[] = [
+      'id' => panelMissionTabId($folder),
+      'name' => $name,
+      'folder' => $folder,
+      'source' => $webPath . '/TC%20Panel.php',
+      'createdAt' => trim((string)($meta['createdAt'] ?? ''))
+    ];
+  }
+  usort($missions, static function (array $left, array $right): int {
+    $leftCreated = (string)($left['createdAt'] ?? '');
+    $rightCreated = (string)($right['createdAt'] ?? '');
+    if ($leftCreated !== $rightCreated) {
+      return strcmp($leftCreated, $rightCreated);
+    }
+    return strcasecmp((string)($left['name'] ?? ''), (string)($right['name'] ?? ''));
+  });
+  return $missions;
+}
+
 $panelSettings = loadPanelSettings();
 $panelTitle = $panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName'];
 if (!is_string($panelTitle) || $panelTitle === '') {
@@ -113,8 +180,21 @@ $permissionTree = getPanelPermissionTreeForFrontend();
 $childPermissionMap = getPanelChildTabIdsByParent();
 $taskClubCreatorEnabled = in_array('task-club', $allowedTabs, true);
 $rateMeCreatorEnabled = in_array('rate-me', $allowedTabs, true);
+$taskClubMissionTabs = $taskClubCreatorEnabled ? panelMissionTabs() : [];
 $panelTabCatalog = $tabCatalog;
 $panelAllowedTabs = array_values($allowedTabs);
+foreach ($taskClubMissionTabs as $missionTab) {
+  $missionTabId = (string)($missionTab['id'] ?? '');
+  if ($missionTabId === '') {
+    continue;
+  }
+  $panelTabCatalog[] = [
+    'id' => $missionTabId,
+    'label' => (string)($missionTab['name'] ?? $missionTabId),
+    'title' => (string)($missionTab['name'] ?? $missionTabId)
+  ];
+  $panelAllowedTabs[] = $missionTabId;
+}
 if ($taskClubCreatorEnabled) {
   $panelTabCatalog[] = [
     'id' => 'task-club-creator',
@@ -130,6 +210,10 @@ if ($rateMeCreatorEnabled) {
     'title' => 'Create RateMe'
   ];
   $panelAllowedTabs[] = 'rate-me-creator';
+}
+$requestedInitialTab = normalizeUserValue($_GET['tab'] ?? '');
+if ($requestedInitialTab !== '' && in_array($requestedInitialTab, $panelAllowedTabs, true)) {
+  $initialTab = $requestedInitialTab;
 }
 $sidebarName = normalizeUserValue($currentUser['fullname'] ?? '');
 if ($sidebarName === '') {
@@ -241,6 +325,19 @@ $accountEmail = $currentUser['email'] ?? '';
               <span>باشگاه تعاملی</span>
             </button>
           <?php endif; ?>
+          <?php foreach ($taskClubMissionTabs as $missionTab): ?>
+            <?php
+              $missionTabId = (string)($missionTab['id'] ?? '');
+              $missionTabName = (string)($missionTab['name'] ?? $missionTabId);
+              if ($missionTabId === '') {
+                continue;
+              }
+            ?>
+            <button class="nav-item<?= $initialTab === $missionTabId ? ' active' : '' ?>" data-tab="<?= htmlspecialchars($missionTabId, ENT_QUOTES, 'UTF-8') ?>"<?= $initialTab === $missionTabId ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-group-line" aria-hidden="true"></span>
+              <span><?= htmlspecialchars($missionTabName, ENT_QUOTES, 'UTF-8') ?></span>
+            </button>
+          <?php endforeach; ?>
           <?php if ($taskClubCreatorEnabled): ?>
             <button class="nav-item<?= $initialTab === 'task-club-creator' ? ' active' : '' ?>" data-tab="task-club-creator"<?= $initialTab === 'task-club-creator' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-add-circle-line" aria-hidden="true"></span>
@@ -435,6 +532,20 @@ $accountEmail = $currentUser['email'] ?? '';
             data-tab-source="mini%20apps/Task%20Club/TC%20Panel.php"
           ></section>
         <?php endif; ?>
+        <?php foreach ($taskClubMissionTabs as $missionTab): ?>
+          <?php
+            $missionTabId = (string)($missionTab['id'] ?? '');
+            $missionTabSource = (string)($missionTab['source'] ?? '');
+            if ($missionTabId === '' || $missionTabSource === '') {
+              continue;
+            }
+          ?>
+          <section
+            id="tab-<?= htmlspecialchars($missionTabId, ENT_QUOTES, 'UTF-8') ?>"
+            class="tab<?= $initialTab === $missionTabId ? ' active' : '' ?>"
+            data-tab-source="<?= htmlspecialchars($missionTabSource, ENT_QUOTES, 'UTF-8') ?>"
+          ></section>
+        <?php endforeach; ?>
         <?php if ($taskClubCreatorEnabled): ?>
           <section
             id="tab-task-club-creator"

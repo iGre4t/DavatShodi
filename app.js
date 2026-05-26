@@ -4768,6 +4768,29 @@ function getExternalTabHost(tab) {
   return qs(`#tab-${tab}[data-tab-source]`);
 }
 
+function isTaskClubRuntimeTab(tab) {
+  const normalized = normalizeTabToken(tab);
+  return normalized === "task-club" || normalized.startsWith("task-club-mission-");
+}
+
+function clearInactiveTaskClubRuntimeTabs(activeTab) {
+  const active = normalizeTabToken(activeTab);
+  if (!isTaskClubRuntimeTab(active)) {
+    return;
+  }
+  qsa('.tab[id^="tab-task-club"]').forEach((section) => {
+    if (!(section instanceof HTMLElement)) {
+      return;
+    }
+    const tabId = normalizeTabToken(String(section.id || "").replace(/^tab-/, ""));
+    if (!isTaskClubRuntimeTab(tabId) || tabId === active) {
+      return;
+    }
+    section.replaceChildren();
+    delete section.dataset.tabLoaded;
+  });
+}
+
 function buildExternalTabRequestUrl(source) {
   const divider = source.includes("?") ? "&" : "?";
   return `${source}${divider}_tab_reload=${Date.now()}`;
@@ -4901,6 +4924,7 @@ async function reloadExternalTab(tab) {
   if (!host || !source) {
     return;
   }
+  clearInactiveTaskClubRuntimeTabs(tab);
   const cacheEnabled = host.dataset.tabCache === "1";
   if (cacheEnabled && host.dataset.tabLoaded === "1") {
     runExternalTabInitializers(tab);

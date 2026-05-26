@@ -131,7 +131,7 @@
     const response = await fetch(`${API_URL}?action=get_settings`, { credentials: 'same-origin' });
     const payload = await response.json();
     if (!response.ok || payload?.status !== 'ok') {
-      throw new Error(payload?.message || 'Failed to load settings.');
+      throw new Error(payload?.message || 'بارگذاری تنظیمات ناموفق بود.');
     }
     return payload.data && typeof payload.data === 'object' ? payload.data : {};
   }
@@ -145,14 +145,14 @@
     });
     const payload = await response.json();
     if (!response.ok || payload?.status !== 'ok') {
-      throw new Error(payload?.message || 'Failed to save settings.');
+      throw new Error(payload?.message || 'ذخیره تنظیمات ناموفق بود.');
     }
     return payload;
   }
 
   function openLogoChooser() {
     if (typeof window.openPhotoChooserModal !== 'function') {
-      setLogoStatus('Photo chooser is not available.', true);
+      setLogoStatus('انتخاب‌گر تصویر در دسترس نیست.', true);
       return;
     }
 
@@ -166,12 +166,12 @@
         }
         const filename = normalizeLogoPath(photo.filename || photo.url || '');
         if (!filename) {
-          setLogoStatus('Invalid photo selected.', true);
+          setLogoStatus('تصویر انتخاب‌شده معتبر نیست.', true);
           return;
         }
         state.logo = filename;
         updateLogoPreview();
-        void persistLogoOnly('Logo saved.');
+        void persistLogoOnly('لوگو ذخیره شد.');
       }
     });
   }
@@ -191,7 +191,7 @@
       return;
     }
 
-    const fallbackColor = window.prompt('Enter hex color (#RRGGBB)', current);
+    const fallbackColor = window.prompt('کد رنگ را وارد کنید (#RRGGBB)', current);
     state.colors[key] = normalizeHex(fallbackColor, current);
     updateColorPreview(key);
   }
@@ -200,7 +200,7 @@
     if (!(refs.saveBtn instanceof HTMLButtonElement)) return;
 
     refs.saveBtn.disabled = true;
-    setStatus('Saving...');
+    setStatus('در حال ذخیره...');
 
     try {
       const current = await getSettings();
@@ -214,18 +214,18 @@
         }
       };
       await saveSettings(merged);
-      setStatus('Event style saved.');
+      setStatus('استایل رویداد ذخیره شد.');
       if (typeof window.showDefaultToast === 'function') {
-        window.showDefaultToast('Event style saved.');
+        window.showDefaultToast('استایل رویداد ذخیره شد.');
       }
     } catch (error) {
-      setStatus(error?.message || 'Failed to save settings.', true);
+      setStatus(error?.message || 'ذخیره تنظیمات ناموفق بود.', true);
     } finally {
       refs.saveBtn.disabled = false;
     }
   }
 
-  async function persistLogoOnly(successMessage = 'Logo saved.') {
+  async function persistLogoOnly(successMessage = 'لوگو ذخیره شد.') {
     try {
       const current = await getSettings();
       const merged = {
@@ -235,7 +235,7 @@
       await saveSettings(merged);
       setLogoStatus(successMessage);
     } catch (error) {
-      setLogoStatus(error?.message || 'Failed to save logo.', true);
+      setLogoStatus(error?.message || 'ذخیره لوگو ناموفق بود.', true);
     }
   }
 
@@ -257,16 +257,16 @@
     refs.logoClearBtn?.addEventListener('click', () => {
       state.logo = '';
       updateLogoPreview();
-      void persistLogoOnly('Logo removed.');
+      void persistLogoOnly('لوگو حذف شد.');
     });
 
-    refs.colorPickers.secondary?.addEventListener('click', () => openColorPicker('secondary', 'Choose secondary color'));
-    refs.colorPickers.highlight?.addEventListener('click', () => openColorPicker('highlight', 'Choose highlight color'));
-    refs.colorPickers.accentSoft?.addEventListener('click', () => openColorPicker('accentSoft', 'Choose soft accent color'));
+    refs.colorPickers.secondary?.addEventListener('click', () => openColorPicker('secondary', 'انتخاب رنگ دوم'));
+    refs.colorPickers.highlight?.addEventListener('click', () => openColorPicker('highlight', 'انتخاب رنگ برجسته'));
+    refs.colorPickers.accentSoft?.addEventListener('click', () => openColorPicker('accentSoft', 'انتخاب رنگ تاکیدی ملایم'));
 
-    refs.colorPreviews.secondary?.addEventListener('click', () => openColorPicker('secondary', 'Choose secondary color'));
-    refs.colorPreviews.highlight?.addEventListener('click', () => openColorPicker('highlight', 'Choose highlight color'));
-    refs.colorPreviews.accentSoft?.addEventListener('click', () => openColorPicker('accentSoft', 'Choose soft accent color'));
+    refs.colorPreviews.secondary?.addEventListener('click', () => openColorPicker('secondary', 'انتخاب رنگ دوم'));
+    refs.colorPreviews.highlight?.addEventListener('click', () => openColorPicker('highlight', 'انتخاب رنگ برجسته'));
+    refs.colorPreviews.accentSoft?.addEventListener('click', () => openColorPicker('accentSoft', 'انتخاب رنگ تاکیدی ملایم'));
 
     refs.saveBtn?.addEventListener('click', () => {
       void handleSave();
@@ -314,7 +314,7 @@
       setLogoStatus('');
     } catch (error) {
       applySettings({});
-      setStatus(error?.message || 'Failed to load settings.', true);
+      setStatus(error?.message || 'بارگذاری تنظیمات ناموفق بود.', true);
     }
   }
 

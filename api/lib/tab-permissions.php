@@ -29,13 +29,13 @@ function getPanelChildTabDefinitionsByParent(): array
     }
     $children = [
         'task-club' => [
-            ['id' => 'task-club:main', 'label' => 'Main Panel'],
-            ['id' => 'task-club:invitees', 'label' => 'Invitees'],
-            ['id' => 'task-club:manage-tasks', 'label' => 'Manage Tasks'],
-            ['id' => 'task-club:task-access', 'label' => 'دسترسی تسک‌ها'],
-            ['id' => 'task-club:monitoring', 'label' => 'Monitoring'],
-            ['id' => 'task-club:export', 'label' => 'Export'],
-            ['id' => 'task-club:event-style', 'label' => 'Event Style']
+            ['id' => 'task-club:main', 'label' => 'کنترل پنل'],
+            ['id' => 'task-club:invitees', 'label' => 'دعوت‌شدگان'],
+            ['id' => 'task-club:manage-tasks', 'label' => 'مدیریت تسک‌ها'],
+            ['id' => 'task-club:task-access', 'label' => 'دسترسی ادمین'],
+            ['id' => 'task-club:monitoring', 'label' => 'مانیتورینگ'],
+            ['id' => 'task-club:export', 'label' => 'خروجی'],
+            ['id' => 'task-club:event-style', 'label' => 'استایل رویداد']
         ],
         'rate-me' => [
             ['id' => 'rate-me:main', 'label' => 'Main Panel'],

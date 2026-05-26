@@ -95,7 +95,7 @@
     const renderAdminList = (admins) => {
       const rows = Array.isArray(admins) ? admins : [];
       if (!rows.length) {
-        adminListEl.innerHTML = '<tr><td colspan="4" class="muted">No admins assigned yet.</td></tr>';
+        adminListEl.innerHTML = '<tr><td colspan="4" class="muted">هنوز ادمینی تعیین نشده است.</td></tr>';
         return;
       }
       adminListEl.innerHTML = rows.map((item) => {
@@ -110,7 +110,7 @@
           <td>${escapeHtml(phone)}</td>
           <td>
             <div class="tc-admin-action">
-              <button type="button" class="btn ghost" data-action="remove-admin" data-work-id="${escapeHtml(workId)}">Remove</button>
+              <button type="button" class="btn ghost" data-action="remove-admin" data-work-id="${escapeHtml(workId)}">حذف</button>
             </div>
           </td>
         </tr>`;
@@ -130,7 +130,7 @@
       const workId = String(currentInvitee.workId || "").trim();
       const phone = String(currentInvitee.phone || "").trim() || "-";
       const isAdmin = Boolean(currentInvitee.isAdmin);
-      const buttonLabel = isAdmin ? "Already Admin" : "Add as Admin";
+      const buttonLabel = isAdmin ? "ادمین است" : "افزودن به عنوان ادمین";
       const buttonDisabled = isAdmin ? " disabled" : "";
       searchResultEl.innerHTML = `<div class="tc-admin-search-meta">
           <strong>${escapeHtml(fullName)}</strong>
@@ -149,7 +149,7 @@
     const applyAssignment = async (workId, isAdmin) => {
       const normalizedWorkId = String(workId || "").trim();
       if (!normalizedWorkId) return;
-      setStatus("Saving...");
+      setStatus("در حال ذخیره...");
       const payload = await requestStorePost("set_admin_assignment", {
         workId: normalizedWorkId,
         isAdmin: Boolean(isAdmin)
@@ -160,30 +160,30 @@
       if (invitee && String(invitee.workId || "").trim() === normalizedWorkId) {
         renderSearchResult(invitee);
       }
-      setStatus(payload?.message || (isAdmin ? "Admin assigned." : "Admin removed."));
+      setStatus(payload?.message || (isAdmin ? "ادمین تعیین شد." : "ادمین حذف شد."));
     };
 
     const searchInvitee = async () => {
       const workId = String(workIdInput.value || "").trim();
       if (!workId) {
-        setStatus("Please enter Work ID.", true);
+        setStatus("لطفا شناسه کاری را وارد کنید.", true);
         renderSearchResult(null);
         return;
       }
-      setStatus("Searching...");
+      setStatus("در حال جستجو...");
       try {
         const data = await requestStoreGet("search_invitee_admin", { work_id: workId });
         const invitee = data?.invitee && typeof data.invitee === "object" ? data.invitee : null;
         if (!invitee) {
           renderSearchResult(null);
-          setStatus("User not found.", true);
+          setStatus("کاربر پیدا نشد.", true);
           return;
         }
         renderSearchResult(invitee);
-        setStatus("User found.");
+        setStatus("کاربر پیدا شد.");
       } catch (error) {
         renderSearchResult(null);
-        setStatus(error?.message || "Search failed.", true);
+        setStatus(error?.message || "جستجو ناموفق بود.", true);
       }
     };
 
@@ -206,7 +206,7 @@
       if (!workId) return;
       button.disabled = true;
       void applyAssignment(workId, true).catch((error) => {
-        setStatus(error?.message || "Failed to assign admin.", true);
+        setStatus(error?.message || "تعیین ادمین ناموفق بود.", true);
       }).finally(() => {
         button.disabled = false;
       });
@@ -221,7 +221,7 @@
       if (!workId) return;
       button.disabled = true;
       void applyAssignment(workId, false).catch((error) => {
-        setStatus(error?.message || "Failed to remove admin.", true);
+        setStatus(error?.message || "حذف ادمین ناموفق بود.", true);
       }).finally(() => {
         button.disabled = false;
       });
@@ -229,7 +229,7 @@
 
     void loadAdmins().catch((error) => {
       renderAdminList([]);
-      setStatus(error?.message || "Failed to load admins.", true);
+      setStatus(error?.message || "بارگذاری ادمین‌ها ناموفق بود.", true);
     });
   }
 
@@ -311,15 +311,15 @@
     const endSeconds = parseTimeToSeconds(endTime);
 
     if (endSeconds !== null && nowSeconds >= endSeconds) {
-      return "Ended";
+      return "پایان یافته";
     }
     if (startSeconds !== null && nowSeconds >= startSeconds) {
-      return "Active";
+      return "فعال";
     }
     if (startSeconds !== null && nowSeconds < startSeconds) {
-      return "Upcoming";
+      return "در انتظار شروع";
     }
-    return "Upcoming";
+    return "در انتظار شروع";
   }
 
   function getCurrentTehranSeconds() {
@@ -373,19 +373,19 @@
       const endRelation = compareGregorianDates(normalizedEndDate, todayParts.date);
 
       if (!normalizedStartDate || !todayParts.date) {
-        setStatus("Not Active", "inactive");
+        setStatus("غیرفعال", "inactive");
         setPrizeAccess(true);
         return;
       }
 
       if (startRelation === 1) {
-        setStatus("Upcoming", "upcoming");
+        setStatus("در انتظار شروع", "upcoming");
         setPrizeAccess(true);
         return;
       }
 
       if (endRelation !== null && endRelation === -1) {
-        setStatus("Ended", "ended");
+        setStatus("پایان یافته", "ended");
         setPrizeAccess(true);
         return;
       }
@@ -395,10 +395,10 @@
           startTime?.value ?? "",
           endTime?.value ?? ""
         );
-        if (state === "Ended") {
+        if (state === "پایان یافته") {
           setStatus(state, "ended");
           setPrizeAccess(true);
-        } else if (state === "Active") {
+        } else if (state === "فعال") {
           setStatus(state, "active");
           setPrizeAccess(false);
         } else {
@@ -413,10 +413,10 @@
           startTime?.value ?? "",
           endTime?.value ?? ""
         );
-        if (state === "Ended") {
+        if (state === "پایان یافته") {
           setStatus(state, "ended");
           setPrizeAccess(true);
-        } else if (state === "Active") {
+        } else if (state === "فعال") {
           setStatus(state, "active");
           setPrizeAccess(false);
         } else {
@@ -426,13 +426,13 @@
         return;
       }
 
-      setStatus("Active", "active");
+      setStatus("فعال", "active");
       setPrizeAccess(false);
       return;
     }
 
     const isActive = Boolean(activeToggle?.checked);
-    setStatus(isActive ? "Active" : "Not Active", isActive ? "active" : "inactive");
+    setStatus(isActive ? "فعال" : "غیرفعال", isActive ? "active" : "inactive");
     setPrizeAccess(true);
   }
 
@@ -597,8 +597,43 @@
     }
   }
 
+  function initControlPanelTabs() {
+    const pane = document.querySelector('.sub-pane[data-pane="tc-main"]');
+    if (!(pane instanceof HTMLElement)) return;
+    if (pane.dataset.controlPanelTabsInitialized === "1") return;
+    pane.dataset.controlPanelTabsInitialized = "1";
+
+    const triggers = Array.from(pane.querySelectorAll("[data-tc-control-panel-trigger]"));
+    const sections = Array.from(pane.querySelectorAll("[data-tc-control-panel-section]"));
+    if (!triggers.length || !sections.length) return;
+
+    const activate = (key) => {
+      const fallbackKey = String(triggers[0]?.getAttribute("data-tc-control-panel-trigger") || "general").trim() || "general";
+      const activeKey = String(key || fallbackKey).trim() || fallbackKey;
+      triggers.forEach((trigger) => {
+        if (!(trigger instanceof HTMLElement)) return;
+        const isActive = String(trigger.getAttribute("data-tc-control-panel-trigger") || "") === activeKey;
+        trigger.classList.toggle("active", isActive);
+        trigger.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      sections.forEach((section) => {
+        if (!(section instanceof HTMLElement)) return;
+        section.hidden = String(section.getAttribute("data-tc-control-panel-section") || "") !== activeKey;
+      });
+    };
+
+    triggers.forEach((trigger) => {
+      trigger.addEventListener("click", () => {
+        activate(trigger.getAttribute("data-tc-control-panel-trigger") || "");
+      });
+    });
+
+    const activeTrigger = triggers.find((trigger) => trigger instanceof HTMLElement && trigger.classList.contains("active"));
+    activate(activeTrigger?.getAttribute("data-tc-control-panel-trigger") || "");
+  }
+
   async function initRewardGuide(initialSettings = {}) {
-    const pane = document.querySelector('[data-pane="tc-rewards-config"]');
+    const pane = document.querySelector('.sub-pane[data-pane="tc-rewards-config"]');
     if (!(pane instanceof HTMLElement)) return;
     if (pane.dataset.rewardGuideInitialized === "1") return;
     pane.dataset.rewardGuideInitialized = "1";
@@ -653,7 +688,7 @@
       }
     } catch (error) {
       if (!rewardGuideDirty && (!initialGuide || Object.keys(initialGuide).length === 0)) {
-        setRewardGuideStatus(error?.message || "Failed to load reward guide.", true);
+        setRewardGuideStatus(error?.message || "بارگذاری راهنمای جایزه ناموفق بود.", true);
       }
     }
   }
@@ -662,13 +697,13 @@
     const titleInput = getEl("tc-reward-guide-title");
     const textInput = getEl("tc-reward-guide-text");
     if (!(titleInput instanceof HTMLInputElement) || !(textInput instanceof HTMLTextAreaElement)) {
-      setRewardGuideStatus("Reward guide fields were not found.", true);
+      setRewardGuideStatus("فیلدهای راهنمای جایزه پیدا نشدند.", true);
       return;
     }
     if (saveBtn instanceof HTMLButtonElement) {
       saveBtn.disabled = true;
     }
-    setRewardGuideStatus("Saving...");
+    setRewardGuideStatus("در حال ذخیره...");
     try {
       const rewardGuide = {
         title: titleInput.value,
@@ -685,9 +720,9 @@
       } else {
         await saveSettings({ rewardGuide });
       }
-      setRewardGuideStatus("Saved.");
+      setRewardGuideStatus("ذخیره شد.");
     } catch (error) {
-      setRewardGuideStatus(error?.message || "Failed to save reward guide.", true);
+      setRewardGuideStatus(error?.message || "ذخیره راهنمای جایزه ناموفق بود.", true);
     } finally {
       if (saveBtn instanceof HTMLButtonElement) {
         saveBtn.disabled = false;
@@ -713,6 +748,7 @@
     const endDate = getEl("tc-duration-end");
     const endTime = getEl("tc-duration-end-time");
 
+    initControlPanelTabs();
     initRewardGuide();
     const settings = await loadSettings();
     applySettings(settings);
