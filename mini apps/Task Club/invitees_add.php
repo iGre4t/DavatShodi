@@ -155,7 +155,7 @@ function writeCsvRowsLocked(string $path, array $rows): bool
 
 function generateInviteePassword(int $length = 5): string
 {
-  $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  $chars = '0123456789';
   $max = strlen($chars) - 1;
   if ($max < 0) {
     return '';

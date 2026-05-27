@@ -59,7 +59,10 @@
 
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
-    if (isQuizLikeTaskType(normalizedType)) {
+    if (normalizedType === 'conditional_quiz') {
+      return ['control', 'information', 'quiz', 'crisis-control'];
+    }
+    if (normalizedType === 'quiz') {
       return ['control', 'information', 'quiz'];
     }
     if (normalizedType === 'info') {
@@ -138,6 +141,7 @@
       endTime: normalizeTime(raw.endTime ?? raw.end_time ?? ''),
       score: normalizeScoreValue(raw.score ?? raw.taskScore ?? 0),
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
+      anotherChanceIfZero: normalizeBool(raw.anotherChanceIfZero ?? raw.another_chance_if_zero ?? false),
       infoTitle: String(raw.infoTitle ?? raw.info_title ?? '').trim(),
       infoText: String(raw.infoText ?? raw.info_text ?? '').trim(),
       guidePrefix: String(raw.guidePrefix ?? raw.guide_prefix ?? '').replace(/\r\n?/g, '\n'),
@@ -287,10 +291,15 @@
       }
 
       if (startRelation === 0 || endRelation === 0) {
-        const state = describeSameDayDurationState(startTime, endTime);
-        if (state === 'Ended') return { label: 'Ended', tone: 'ended' };
-        if (state === 'Active') return { label: 'Active', tone: 'active' };
-        return { label: 'Upcoming', tone: 'upcoming' };
+        const nowSeconds = getCurrentTehranSeconds();
+        const startSeconds = parseTimeToSeconds(startTime);
+        const endSeconds = parseTimeToSeconds(endTime);
+        if (startRelation === 0 && startSeconds !== null && nowSeconds < startSeconds) {
+          return { label: 'Upcoming', tone: 'upcoming' };
+        }
+        if (endRelation === 0 && endSeconds !== null && nowSeconds >= endSeconds) {
+          return { label: 'Ended', tone: 'ended' };
+        }
       }
 
       return { label: 'Active', tone: 'active' };
@@ -474,6 +483,22 @@
     };
   }
 
+  function getTaskCrisisControls(pane) {
+    if (!(pane instanceof HTMLElement)) return null;
+    if (normalizeTaskType(pane.dataset.taskType || 'quiz') !== 'conditional_quiz') return null;
+    const anotherChanceIfZeroToggle = pane.querySelector('[data-task-field="anotherChanceIfZero"]');
+    const saveStatusEl = pane.querySelector('[data-task-crisis-save-status]');
+    const saveButton = pane.querySelector('[data-action="save-conditional-quiz-crisis-control"]');
+    if (!(anotherChanceIfZeroToggle instanceof HTMLInputElement)) {
+      return null;
+    }
+    return {
+      anotherChanceIfZeroToggle,
+      saveStatusEl: saveStatusEl instanceof HTMLElement ? saveStatusEl : null,
+      saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null
+    };
+  }
+
   function getTaskTeamSettingsControls(pane) {
     if (!(pane instanceof HTMLElement)) return null;
     if (!isTeamTaskType(pane.dataset.taskType || 'quiz')) return null;
@@ -507,6 +532,13 @@
 
   function setTaskScoreSaveStatus(pane, message, isError = false) {
     const controls = getTaskScoreControls(pane);
+    if (!controls?.saveStatusEl) return;
+    controls.saveStatusEl.textContent = message || '';
+    controls.saveStatusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setTaskCrisisSaveStatus(pane, message, isError = false) {
+    const controls = getTaskCrisisControls(pane);
     if (!controls?.saveStatusEl) return;
     controls.saveStatusEl.textContent = message || '';
     controls.saveStatusEl.style.color = isError ? '#d1434a' : '';
@@ -2145,6 +2177,14 @@
     };
   }
 
+  function collectTaskCrisisControlFromPane(pane) {
+    const controls = getTaskCrisisControls(pane);
+    if (!controls) return null;
+    return {
+      another_chance_if_zero: controls.anotherChanceIfZeroToggle.checked ? '1' : '0'
+    };
+  }
+
   function updateTaskPaneStatus(pane) {
     const settings = collectTaskSettingsFromPane(pane);
     if (!settings) return;
@@ -2189,6 +2229,11 @@
         scoreControls.afterEndtimeScoreInput.value = String(normalizeScoreValue(task?.afterEndtimeScore));
       }
     }
+    const crisisControls = getTaskCrisisControls(pane);
+    if (crisisControls) {
+      crisisControls.anotherChanceIfZeroToggle.checked = normalizeBool(task?.anotherChanceIfZero);
+      setTaskCrisisSaveStatus(pane, '');
+    }
     const teamSettingsControls = getTaskTeamSettingsControls(pane);
     if (teamSettingsControls) {
       const nextTeamMin = Math.max(1, normalizeScoreValue(task?.teamMin));
@@ -2219,6 +2264,7 @@
     syncTaskPaneToggleState(pane);
     setTaskSaveStatus(pane, '');
     setTaskScoreSaveStatus(pane, '');
+    setTaskCrisisSaveStatus(pane, '');
   }
 
   function buildTaskControlCardMarkup(task) {
@@ -2241,6 +2287,7 @@
     const teamMaxRaw = Math.max(1, normalizeScoreValue(task.teamMax ?? teamMin));
     const teamMax = Math.max(teamMin, teamMaxRaw);
     const teamAdditionalNote = String(task.teamAdditionalNote || '');
+    const anotherChanceIfZero = normalizeBool(task.anotherChanceIfZero);
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
     const topTabsMarkup = isDescribePhotoTask
@@ -2302,6 +2349,28 @@
                 referrerpolicy="same-origin"
                 title="Task Quiz"
               ></iframe>
+            </div>
+          </div>
+        `
+      : '';
+    const crisisControlSection = isConditionalQuizTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="crisis-control" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Return Chance</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="switch tc-switch">
+                  <span class="switch-label">Another Chance if 0</span>
+                  <span class="switch-toggle">
+                    <input type="checkbox" data-task-field="anotherChanceIfZero" aria-label="Another Chance if 0" ${anotherChanceIfZero ? 'checked' : ''} />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
+                <div class="field full">
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-conditional-quiz-crisis-control">Save</button>
+                </div>
+                <p class="muted small" data-task-crisis-save-status aria-live="polite"></p>
+              </div>
             </div>
           </div>
         `
@@ -2474,6 +2543,7 @@
         <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های تسک">
           <button type="button" class="tc-task-top-item active" aria-selected="true" data-task-top-trigger="control">کنترل</button>
           ${topTabsMarkup}
+          ${isConditionalQuizTask ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="crisis-control">Crisis Control</button>' : ''}
         </div>
 
         <div class="tc-task-top-section active" data-task-top-section="control">
@@ -2568,6 +2638,7 @@
         ${describePhotoSection}
         ${teamChallengeSection}
         ${teamSettingsSection}
+        ${crisisControlSection}
         ${isInfoTask ? `
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
@@ -2761,6 +2832,10 @@
       }
       if (fieldName === 'score' || fieldName === 'afterEndtimeScore') {
         setTaskScoreSaveStatus(pane, '');
+        return;
+      }
+      if (fieldName === 'anotherChanceIfZero') {
+        setTaskCrisisSaveStatus(pane, '');
         return;
       }
       if (fieldName === 'teamMin' || fieldName === 'teamMax') {
@@ -3483,6 +3558,54 @@
             refreshedButton.disabled = false;
           } else {
             teamSaveButton.disabled = false;
+          }
+        }
+        return;
+      }
+
+      const crisisSaveButton = target.closest('[data-action="save-conditional-quiz-crisis-control"]');
+      if (crisisSaveButton instanceof HTMLButtonElement) {
+        const pane = crisisSaveButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        if (!taskId) return;
+
+        const crisisSettings = collectTaskCrisisControlFromPane(pane);
+        if (!crisisSettings) return;
+
+        crisisSaveButton.disabled = true;
+        setTaskCrisisSaveStatus(pane, 'Saving...');
+        try {
+          const data = await postTaskAction('save_conditional_quiz_crisis_control', {
+            id: taskId,
+            ...crisisSettings
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try {
+              window.TC_TASKS = returnedTasks;
+            } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'crisis-control');
+            setTaskCrisisSaveStatus(activePane, data.message || 'Crisis Control settings saved.');
+          }
+        } catch (error) {
+          setTaskCrisisSaveStatus(pane, error?.message || 'Failed to save Crisis Control settings.', true);
+        } finally {
+          const refreshedPane = pane.dataset.pane
+            ? findPaneByKey(layout, pane.dataset.pane)
+            : null;
+          const refreshedButton = refreshedPane instanceof HTMLElement
+            ? refreshedPane.querySelector('[data-action="save-conditional-quiz-crisis-control"]')
+            : null;
+          if (refreshedButton instanceof HTMLButtonElement) {
+            refreshedButton.disabled = false;
+          } else {
+            crisisSaveButton.disabled = false;
           }
         }
         return;

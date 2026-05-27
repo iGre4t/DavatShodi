@@ -279,7 +279,8 @@ function tctLoadTaskScoreSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = [
     'score' => 0,
-    'afterEndtimeScore' => 0
+    'afterEndtimeScore' => 0,
+    'anotherChanceIfZero' => false
   ];
   $path = tctBuildTaskScoreSettingsPath($tasksDir, $tagCode);
   if ($path === '' || !is_file($path)) {
@@ -295,7 +296,8 @@ function tctLoadTaskScoreSettings(string $tasksDir, string $tagCode): array
   }
   return [
     'score' => tctNormalizeScoreValue($decoded['score'] ?? 0),
-    'afterEndtimeScore' => tctNormalizeScoreValue($decoded['afterEndtimeScore'] ?? ($decoded['after_endtime_score'] ?? 0))
+    'afterEndtimeScore' => tctNormalizeScoreValue($decoded['afterEndtimeScore'] ?? ($decoded['after_endtime_score'] ?? 0)),
+    'anotherChanceIfZero' => tctNormalizeBoolValue($decoded['anotherChanceIfZero'] ?? ($decoded['another_chance_if_zero'] ?? false))
   ];
 }
 
@@ -310,7 +312,8 @@ function tctSaveTaskScoreSettings(string $tasksDir, string $tagCode, array $sett
   }
   $payload = [
     'score' => tctNormalizeScoreValue($settings['score'] ?? 0),
-    'afterEndtimeScore' => tctNormalizeScoreValue($settings['afterEndtimeScore'] ?? ($settings['after_endtime_score'] ?? 0))
+    'afterEndtimeScore' => tctNormalizeScoreValue($settings['afterEndtimeScore'] ?? ($settings['after_endtime_score'] ?? 0)),
+    'anotherChanceIfZero' => tctNormalizeBoolValue($settings['anotherChanceIfZero'] ?? ($settings['another_chance_if_zero'] ?? false))
   ];
   $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
   if ($json === false) {
@@ -1434,6 +1437,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
     $task['score'] = $scoreSettings['score'];
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
+    $task['anotherChanceIfZero'] = (bool)($scoreSettings['anotherChanceIfZero'] ?? false);
     if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
@@ -1927,6 +1931,9 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
   if ($normalizedType === 'quiz' || $normalizedType === 'conditional_quiz') {
+    if ($normalizedType === 'conditional_quiz') {
+      return ['control', 'information', 'quiz', 'crisis-control'];
+    }
     return ['control', 'information', 'quiz'];
   }
   if ($normalizedType === 'info') {
@@ -2137,7 +2144,8 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
     ],
     TCT_SCORE_SETTINGS_FILE => [
       'score' => 0,
-      'afterEndtimeScore' => 0
+      'afterEndtimeScore' => 0,
+      'anotherChanceIfZero' => false
     ],
     TCT_TEAM_SETTINGS_FILE => [
       'teamMin' => 1,
@@ -2371,6 +2379,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     'save_task_title' => 'control',
     'save_task_settings' => 'control',
     'save_task_score_system' => 'control',
+    'save_conditional_quiz_crisis_control' => 'crisis-control',
     'save_team_task_settings' => 'team',
     'save_info_task_content' => 'information',
     'add_describe_task_photo' => 'photo',
@@ -2632,16 +2641,59 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     if ($targetTaskType === 'info' || $targetTaskType === 'team_task' || $targetTaskType === 'describe_photo') {
       $afterEndtimeScore = 0;
     }
+    $existingScoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $targetTagCode);
 
     if (!tctSaveTaskScoreSettings($tctTasksDir, $targetTagCode, [
       'score' => $score,
-      'afterEndtimeScore' => $afterEndtimeScore
+      'afterEndtimeScore' => $afterEndtimeScore,
+      'anotherChanceIfZero' => (bool)($existingScoreSettings['anotherChanceIfZero'] ?? false)
     ])) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save score settings.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
     echo json_encode(['status' => 'ok', 'message' => 'Score settings saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_conditional_quiz_crisis_control') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetTagCode = '';
+    $targetTaskType = 'quiz';
+    foreach ($tasks as $task) {
+      if ((string)($task['id'] ?? '') !== $id) {
+        continue;
+      }
+      $targetTagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
+      $targetTaskType = tctNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
+      break;
+    }
+    if ($targetTagCode === '') {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($targetTaskType !== 'conditional_quiz') {
+      echo json_encode(['status' => 'error', 'message' => 'Crisis Control is only available for Conditional Quiz tasks.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $existingScoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $targetTagCode);
+    $anotherChanceIfZero = tctNormalizeBoolValue($_POST['another_chance_if_zero'] ?? false);
+    if (!tctSaveTaskScoreSettings($tctTasksDir, $targetTagCode, [
+      'score' => tctNormalizeScoreValue($existingScoreSettings['score'] ?? 0),
+      'afterEndtimeScore' => tctNormalizeScoreValue($existingScoreSettings['afterEndtimeScore'] ?? 0),
+      'anotherChanceIfZero' => $anotherChanceIfZero
+    ])) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save Crisis Control settings.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    echo json_encode(['status' => 'ok', 'message' => 'Crisis Control settings saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -4187,6 +4239,9 @@ if (TCT_INCLUDE_ONLY) {
   const resolveDefaultTopPanes = (taskType) => {
     const token = normalizeTaskType(taskType);
     if (token === 'quiz' || token === 'conditional_quiz') {
+      if (token === 'conditional_quiz') {
+        return ['control', 'information', 'quiz', 'crisis-control'];
+      }
       return ['control', 'information', 'quiz'];
     }
     if (token === 'info') {
@@ -4238,6 +4293,7 @@ if (TCT_INCLUDE_ONLY) {
       endTime: String(task.endTime || ''),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
+      anotherChanceIfZero: Boolean(task.anotherChanceIfZero),
       order: Number.parseInt(task.order, 10) || (index + 1),
       createdAt: String(task.createdAt || '')
     }));
@@ -4267,6 +4323,7 @@ if (TCT_INCLUDE_ONLY) {
       endTime: String(task.endTime || ''),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
+      anotherChanceIfZero: Boolean(task.anotherChanceIfZero),
       order: Number.parseInt(task.order, 10) || (index + 1),
       createdAt: String(task.createdAt || '')
     }));

@@ -294,9 +294,14 @@ if ($rows) {
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                         >Rest</button>
                         <?php endif; ?>
-                        <?php if (!$tcInviteesHasRowAction): ?>
-                        <span class="muted">&mdash;</span>
-                        <?php endif; ?>
+                        <button
+                          type="button"
+                          class="btn ghost"
+                          data-action="view-invitee-participation"
+                          data-row="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                          data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
+                          data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                        >Participate</button>
                       </div>
                     </td>
                   </tr>
@@ -607,10 +612,30 @@ if ($rows) {
   </div>
 </div>
 
+<div id="tc-invite-participation-modal" class="modal hidden" aria-hidden="true">
+  <div class="modal-card tc-participation-modal-card">
+    <div class="modal-card-header">
+      <div class="modal-card-header-start">
+        <h3 id="tc-invite-participation-title">Invitee Participation</h3>
+      </div>
+      <button type="button" class="icon-btn" data-close-invite-participation-modal aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-card-body">
+      <div id="tc-invite-participation-summary" class="tc-participation-summary"></div>
+      <p id="tc-invite-participation-msg" class="hint" aria-live="polite"></p>
+      <div id="tc-invite-participation-tasks" class="tc-participation-tasks"></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost" data-close-invite-participation-modal>Close</button>
+    </div>
+  </div>
+</div>
+
 <script src="mini%20apps/Task%20Club/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
   const csrfToken = <?= json_encode($tcInviteesCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+  const canResetInviteeTasks = <?= $tcInviteesCanReset ? 'true' : 'false' ?>;
   const pickBtn = document.getElementById('tc-invite-pick');
   const fileInput = document.getElementById('tc-invite-file');
   const fileNameEl = document.getElementById('tc-invite-file-name');
@@ -662,6 +687,12 @@ if ($rows) {
   const resetTextEl = document.getElementById('tc-invite-reset-text');
   const resetMsgEl = document.getElementById('tc-invite-reset-msg');
   const resetConfirmBtn = document.getElementById('tc-invite-reset-confirm');
+  const participationModal = document.getElementById('tc-invite-participation-modal');
+  const participationCloseBtns = participationModal ? participationModal.querySelectorAll('[data-close-invite-participation-modal]') : [];
+  const participationTitleEl = document.getElementById('tc-invite-participation-title');
+  const participationSummaryEl = document.getElementById('tc-invite-participation-summary');
+  const participationMsgEl = document.getElementById('tc-invite-participation-msg');
+  const participationTasksEl = document.getElementById('tc-invite-participation-tasks');
   const inviteesTopShell = document.getElementById('tc-invitees-top-shell');
   const allInviteesSearchInput = document.getElementById('tc-all-invitees-search');
   const allInviteesSearchMetaEl = document.getElementById('tc-all-invitees-search-meta');
@@ -672,12 +703,25 @@ if ($rows) {
   let editingInviteeRow = 0;
   let revealPasswordContext = null;
   let resetProgressContext = null;
+  let participationContext = null;
   let pendingSensitiveAction = '';
 
   const normalizeSearchValue = (value) => String(value || '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const formatStatValue = (value) => {
+    const text = String(value ?? '').trim();
+    return text !== '' ? text : '-';
+  };
 
   const applyAllInviteesSearch = () => {
     if (!(allInviteesTableBody instanceof HTMLElement)) return;
@@ -750,6 +794,12 @@ if ($rows) {
     if (!resetMsgEl) return;
     resetMsgEl.textContent = text;
     resetMsgEl.style.color = isError ? '#e11d2e' : '';
+  };
+
+  const setParticipationMsg = (text, isError = false) => {
+    if (!participationMsgEl) return;
+    participationMsgEl.textContent = text;
+    participationMsgEl.style.color = isError ? '#e11d2e' : '';
   };
 
   const openModal = () => {
@@ -845,6 +895,23 @@ if ($rows) {
     resetProgressContext = null;
   };
 
+  const openParticipationModal = () => {
+    if (!participationModal) return;
+    participationModal.classList.remove('hidden');
+    participationModal.setAttribute('aria-hidden', 'false');
+    setParticipationMsg('');
+  };
+
+  const closeParticipationModal = () => {
+    if (!participationModal) return;
+    participationModal.classList.add('hidden');
+    participationModal.setAttribute('aria-hidden', 'true');
+    setParticipationMsg('');
+    if (participationSummaryEl) participationSummaryEl.innerHTML = '';
+    if (participationTasksEl) participationTasksEl.innerHTML = '';
+    participationContext = null;
+  };
+
   const postRevealAction = async (action, payload = {}) => {
     const response = await fetch('mini%20apps/Task%20Club/invitees_password_guard.php', {
       method: 'POST',
@@ -862,6 +929,182 @@ if ($rows) {
       message: String(result?.message || ''),
       data: result
     };
+  };
+
+  const renderParticipationLoading = () => {
+    if (participationSummaryEl) {
+      participationSummaryEl.innerHTML = '<div class="muted">Loading participation...</div>';
+    }
+    if (participationTasksEl) {
+      participationTasksEl.innerHTML = '';
+    }
+    setParticipationMsg('');
+  };
+
+  const renderParticipationStats = (participation) => {
+    const data = participation && typeof participation === 'object' ? participation : {};
+    const invitee = data.invitee && typeof data.invitee === 'object' ? data.invitee : {};
+    const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
+    const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    const displayName = String(invitee.displayName || invitee.workId || '').trim();
+
+    if (participationTitleEl) {
+      participationTitleEl.textContent = displayName !== '' ? `Invitee Participation - ${displayName}` : 'Invitee Participation';
+    }
+
+    if (participationSummaryEl) {
+      const summaryCards = [
+        ['Total Score', summary.totalScore ?? 0],
+        ['Completed Tasks', `${summary.completedTasks ?? 0} / ${summary.taskCount ?? tasks.length}`],
+        ['Started Tasks', summary.startedTasks ?? 0],
+        ['Login Count', summary.loginCount ?? 0],
+        ['Roll Count', summary.rollCount ?? 0],
+        ['Card Flips', summary.cardFlipsCount ?? 0],
+        ['Prize Won', summary.prizeWon || '-'],
+        ['Total Prize Won', summary.totalPrizeWon || '-']
+      ];
+      const extraRows = [
+        ['Work ID', invitee.workId || '-'],
+        ['Phone Number', invitee.phoneNumber || '-'],
+        ['National ID', invitee.nationalId || '-'],
+        ['Logins', summary.logins || '-'],
+        ['Prize Won At', summary.prizeWonAt || '-'],
+        ['Out of Value Rewards', summary.outOfValueRewards || '-'],
+        ['Level Prizes', summary.eachLevelWonPrize || '-'],
+        ['Legacy Answered', summary.legacyAnswered || '-'],
+        ['Legacy Answers', summary.legacyAnswers || '-']
+      ];
+      participationSummaryEl.innerHTML = `
+        <div class="tc-participation-stat-grid">
+          ${summaryCards.map(([label, value]) => `
+            <div class="tc-participation-stat">
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(formatStatValue(value))}</strong>
+            </div>
+          `).join('')}
+        </div>
+        <div class="tc-participation-meta-grid">
+          ${extraRows.map(([label, value]) => `
+            <div class="tc-participation-meta-row">
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(formatStatValue(value))}</strong>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    if (!participationTasksEl) return;
+    if (!tasks.length) {
+      participationTasksEl.innerHTML = '<div class="muted">No task activity is available.</div>';
+      return;
+    }
+
+    const renderAnswers = (task) => {
+      const answers = Array.isArray(task.answers) ? task.answers : [];
+      if (!answers.length) return '';
+      return `
+        <details class="tc-participation-answer-details">
+          <summary>${escapeHtml(String(answers.length))} saved answer${answers.length === 1 ? '' : 's'}</summary>
+          <div class="tc-participation-answer-list">
+            ${answers.map((answer) => {
+              const correct = answer.correct === true ? 'Correct' : (answer.correct === false ? 'Incorrect' : '');
+              return `
+                <div class="tc-participation-answer-row">
+                  <span>${escapeHtml(answer.question || answer.code || 'Question')}</span>
+                  <strong>${escapeHtml(answer.answer || '-')}</strong>
+                  ${correct ? `<em>${escapeHtml(correct)}</em>` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </details>
+      `;
+    };
+
+    const renderDescribeStats = (task) => {
+      const stats = task.describePhotoStats && typeof task.describePhotoStats === 'object'
+        ? task.describePhotoStats
+        : null;
+      if (!stats || !Array.isArray(stats.photos) || !stats.photos.length) return '';
+      return `
+        <details class="tc-participation-answer-details">
+          <summary>${escapeHtml(String(stats.photos.length))} photo item${stats.photos.length === 1 ? '' : 's'}</summary>
+          <div class="tc-participation-answer-list">
+            ${stats.photos.map((photo) => `
+              <div class="tc-participation-answer-row">
+                <span>${escapeHtml(photo.photoName || photo.photoId || 'Photo')}</span>
+                <strong>${escapeHtml(`${photo.wordCount ?? 0} words`)}</strong>
+              </div>
+            `).join('')}
+          </div>
+        </details>
+      `;
+    };
+
+    participationTasksEl.innerHTML = `
+      <div class="table-wrapper tc-participation-table-wrap">
+        <table class="tct-list-table tc-participation-task-table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Score</th>
+              <th>Activity</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tasks.map((task) => {
+              const taskId = String(task.id || '').trim();
+              const details = Array.isArray(task.details) ? task.details : [];
+              const score = `${task.score ?? 0} / ${task.configuredScore ?? 0}`;
+              const canResetTask = canResetInviteeTasks && taskId !== '';
+              return `
+                <tr>
+                  <td>
+                    <div class="tc-participation-task-title">${escapeHtml(task.title || taskId || 'Untitled Task')}</div>
+                    <div class="muted small">${escapeHtml(task.tagCode || taskId || '')}</div>
+                  </td>
+                  <td>${escapeHtml(task.typeLabel || task.taskType || '-')}</td>
+                  <td><span class="tc-participation-status tc-participation-status--${escapeHtml(task.status || 'not_started')}">${escapeHtml(task.statusLabel || '-')}</span></td>
+                  <td>${escapeHtml(score)}</td>
+                  <td>
+                    ${details.length ? `<div class="tc-participation-detail-list">${details.map((detail) => `<span>${escapeHtml(detail)}</span>`).join('')}</div>` : '<span class="muted">No saved activity.</span>'}
+                    ${renderAnswers(task)}
+                    ${renderDescribeStats(task)}
+                  </td>
+                  <td>
+                    ${canResetTask ? `<button type="button" class="btn ghost tc-btn-danger" data-action="reset-invitee-task-progress" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(task.title || taskId)}">Reset</button>` : '<span class="muted">-</span>'}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  const loadParticipationStats = async () => {
+    if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
+      setParticipationMsg('Invalid invitee row.', true);
+      return;
+    }
+    renderParticipationLoading();
+    try {
+      const response = await postRevealAction('get_participation', { row: participationContext.row });
+      if (response.ok) {
+        renderParticipationStats(response.data?.participation || {});
+      } else {
+        setParticipationMsg(response.message || 'Failed to load participation.', true);
+        if (participationSummaryEl) participationSummaryEl.innerHTML = '';
+        if (participationTasksEl) participationTasksEl.innerHTML = '';
+      }
+    } catch {
+      setParticipationMsg('Failed to load participation.', true);
+    }
   };
 
   const requestRevealPassword = async () => {
@@ -901,14 +1144,17 @@ if ($rows) {
       const label = String(resetProgressContext.displayName || resetProgressContext.workId || '').trim();
       if (resetTextEl) {
         const suffix = label !== '' ? ` (${label})` : '';
-        resetTextEl.textContent = `This action will reset logins, score, mission progress, and rewards for this invitee${suffix}.`;
+        const taskTitle = String(resetProgressContext.taskTitle || '').trim();
+        resetTextEl.textContent = taskTitle !== ''
+          ? `This action will reset the task "${taskTitle}" for this invitee${suffix}.`
+          : `This action will reset logins, score, mission progress, and rewards for this invitee${suffix}.`;
       }
       setResetMsg('');
       openResetModal();
       return;
     }
     if (check.status === 'auth_required') {
-      pendingSensitiveAction = 'reset';
+      pendingSensitiveAction = resetProgressContext.taskId ? 'reset_task' : 'reset';
       openAuthModal();
       return;
     }
@@ -955,6 +1201,45 @@ if ($rows) {
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+
+    const participationTrigger = target.closest('[data-action="view-invitee-participation"]');
+    if (participationTrigger instanceof HTMLElement) {
+      const rowValue = Number(participationTrigger.getAttribute('data-row') || '0');
+      if (!Number.isFinite(rowValue) || rowValue <= 1) {
+        return;
+      }
+      participationContext = {
+        row: Math.trunc(rowValue),
+        displayName: String(participationTrigger.getAttribute('data-display-name') || '').trim(),
+        workId: String(participationTrigger.getAttribute('data-work-id') || '').trim()
+      };
+      openParticipationModal();
+      void loadParticipationStats();
+      return;
+    }
+
+    const resetTaskTrigger = target.closest('[data-action="reset-invitee-task-progress"]');
+    if (resetTaskTrigger instanceof HTMLElement) {
+      if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
+        setParticipationMsg('Invalid invitee row.', true);
+        return;
+      }
+      const taskId = String(resetTaskTrigger.getAttribute('data-task-id') || '').trim();
+      if (!taskId) {
+        setParticipationMsg('Invalid task id.', true);
+        return;
+      }
+      pendingSensitiveAction = 'reset_task';
+      resetProgressContext = {
+        row: participationContext.row,
+        displayName: participationContext.displayName,
+        workId: participationContext.workId,
+        taskId,
+        taskTitle: String(resetTaskTrigger.getAttribute('data-task-title') || '').trim()
+      };
+      void requestResetAccess();
+      return;
+    }
 
     const revealTrigger = target.closest('[data-action="reveal-invitee-password"]');
     if (revealTrigger instanceof HTMLElement) {
@@ -1057,6 +1342,7 @@ if ($rows) {
   authCloseBtns.forEach((btn) => btn.addEventListener('click', closeAuthModal));
   passwordCloseBtns.forEach((btn) => btn.addEventListener('click', closePasswordModal));
   resetCloseBtns.forEach((btn) => btn.addEventListener('click', closeResetModal));
+  participationCloseBtns.forEach((btn) => btn.addEventListener('click', closeParticipationModal));
 
   authSubmitBtn?.addEventListener('click', async () => {
     const password = String(authPasswordEl?.value || '');
@@ -1076,6 +1362,8 @@ if ($rows) {
         if (nextAction === 'reveal' && revealPasswordContext) {
           await requestRevealPassword();
         } else if (nextAction === 'reset' && resetProgressContext) {
+          await requestResetAccess();
+        } else if (nextAction === 'reset_task' && resetProgressContext) {
           await requestResetAccess();
         }
       } else {
@@ -1133,22 +1421,35 @@ if ($rows) {
       return;
     }
     resetConfirmBtn.disabled = true;
-    setResetMsg('Resetting invitee progress...');
+    const isTaskReset = Boolean(resetProgressContext.taskId);
+    setResetMsg(isTaskReset ? 'Resetting task progress...' : 'Resetting invitee progress...');
     try {
-      const response = await postRevealAction('reset_progress', { row: resetProgressContext.row });
+      const response = await postRevealAction(isTaskReset ? 'reset_task_progress' : 'reset_progress', {
+        row: resetProgressContext.row,
+        ...(isTaskReset ? { task_id: resetProgressContext.taskId } : {})
+      });
       if (response.ok) {
-        setResetMsg(response.message || 'Invitee progress reset.');
-        setTimeout(() => window.location.reload(), 500);
+        setResetMsg(response.message || (isTaskReset ? 'Task progress reset.' : 'Invitee progress reset.'));
+        if (isTaskReset) {
+          if (response.data?.participation) {
+            renderParticipationStats(response.data.participation);
+          } else {
+            await loadParticipationStats();
+          }
+          setTimeout(closeResetModal, 450);
+        } else {
+          setTimeout(() => window.location.reload(), 500);
+        }
       } else if (response.status === 'auth_required') {
         setResetMsg('Authorization expired. Please verify again.', true);
-        pendingSensitiveAction = 'reset';
+        pendingSensitiveAction = isTaskReset ? 'reset_task' : 'reset';
         closeResetModal();
         openAuthModal();
       } else {
-        setResetMsg(response.message || 'Failed to reset invitee progress.', true);
+        setResetMsg(response.message || (isTaskReset ? 'Failed to reset task progress.' : 'Failed to reset invitee progress.'), true);
       }
     } catch {
-      setResetMsg('Failed to reset invitee progress.', true);
+      setResetMsg(isTaskReset ? 'Failed to reset task progress.' : 'Failed to reset invitee progress.', true);
     } finally {
       resetConfirmBtn.disabled = false;
     }
@@ -1163,7 +1464,7 @@ if ($rows) {
   };
 
   const generatePassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const chars = '0123456789';
     let out = '';
     for (let i = 0; i < 5; i += 1) {
       out += chars[Math.floor(Math.random() * chars.length)];

@@ -2,6 +2,7 @@
 
 $campaigns = [
     'zendegi' => '/mini%20apps/RateMe/index.php',
+    'dastavard' => '/mini%20apps/Task%20Club/index.php',
 ];
 
 $slug = trim((string)($_GET['campaign'] ?? ''), '/');

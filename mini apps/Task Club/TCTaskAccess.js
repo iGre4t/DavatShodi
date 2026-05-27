@@ -46,6 +46,7 @@
   }
 
   const paneLabelMap = {
+    'crisis-control': 'Crisis Control',
     control: 'کنترل پنل',
     quiz: 'کوئیز',
     information: 'اطلاعات',
