@@ -12,6 +12,7 @@ $tcCanTaskAccessPane = isset($tcAllowedChildSet['task-club:task-access']);
 $tcCanMonitoringPane = isset($tcAllowedChildSet['task-club:monitoring']);
 $tcCanExportPane = isset($tcAllowedChildSet['task-club:export']);
 $tcCanEventStylePane = isset($tcAllowedChildSet['task-club:event-style']);
+$tcCanLogsPane = isset($tcAllowedChildSet['task-club:logs']);
 $tcCanControlPanel = $tcCanMainPane || $tcCanTaskAccessPane || $tcCanExportPane || $tcCanEventStylePane;
 $tcNormalizeBool = static function ($value): bool {
   if (is_bool($value)) {
@@ -75,7 +76,8 @@ $tcHasAnyPane = $tcCanMainPane
   || $tcCanTaskAccessPane
   || $tcCanMonitoringPane
   || $tcCanExportPane
-  || $tcCanEventStylePane;
+  || $tcCanEventStylePane
+  || $tcCanLogsPane;
 $tcInitialPane = '';
 foreach ([
   'tc-main' => $tcCanControlPanel,
@@ -83,6 +85,7 @@ foreach ([
   'tc-invitees' => $tcCanInviteesPane,
   'tc-manage-tasks' => $tcCanManageTasksPane,
   'tc-monitoring' => $tcCanMonitoringPane,
+  'tc-logs' => $tcCanLogsPane,
 ] as $paneKey => $allowed) {
   if ($allowed) {
     $tcInitialPane = $paneKey;
@@ -121,6 +124,9 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
       <?php endif; ?>
       <?php if ($tcCanMonitoringPane): ?>
         <button type="button" class="sub-item<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">مانیتورینگ</button>
+      <?php endif; ?>
+      <?php if ($tcCanLogsPane): ?>
+        <button type="button" class="sub-item<?= $tcInitialPane === 'tc-logs' ? ' active' : '' ?>" data-pane="tc-logs">Logs</button>
       <?php endif; ?>
       <?php if ($tcCanTaskSubtabs): ?>
         <div data-tc-task-subtab-nav></div>
@@ -664,6 +670,45 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
     <?php if ($tcCanMonitoringPane): ?>
     <div class="sub-pane<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">
       <?php include __DIR__ . '/TCMonitoring.php'; ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($tcCanLogsPane): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-logs' ? ' active' : '' ?>" data-pane="tc-logs" data-tc-logs-pane="1">
+      <div class="card tc-logs-card">
+        <div class="section-header">
+          <h3>Logs</h3>
+        </div>
+        <div class="tc-logs-toolbar">
+          <label class="field tc-logs-search-field">
+            <span>Search username</span>
+            <input id="tc-logs-search" type="search" placeholder="Type username, user id, action..." autocomplete="off" />
+          </label>
+          <label class="field tc-logs-day-field">
+            <span>Day</span>
+            <select id="tc-logs-day"></select>
+          </label>
+          <button type="button" class="btn ghost" id="tc-logs-refresh">Refresh</button>
+        </div>
+        <p class="muted tc-logs-status" id="tc-logs-status" aria-live="polite">Open this tab to load logs.</p>
+        <div class="table-wrapper tc-logs-table-wrap">
+          <table class="tc-logs-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Level</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Message</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody id="tc-logs-body">
+              <tr><td colspan="7" class="muted">Logs are loaded separately when this tab opens.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
     <?php endif; ?>
     <?php if ($tcCanTaskSubtabs): ?>

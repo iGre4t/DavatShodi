@@ -242,6 +242,18 @@ function inviteePasswordNormalizeScoreValue($value): int
   return $score > 0 ? $score : 0;
 }
 
+function inviteePasswordNormalizeBoolValue($value): bool
+{
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_numeric($value)) {
+    return (int)$value === 1;
+  }
+  $token = strtolower(trim((string)$value));
+  return in_array($token, ['1', 'true', 'yes', 'on', 'active', 'enabled'], true);
+}
+
 function inviteePasswordBuildTaskDirPath(string $tasksDir, string $tagCode): string
 {
   $safeTag = strtoupper(trim($tagCode));
@@ -316,6 +328,12 @@ function inviteePasswordReadTasks(string $tasksPath, string $tasksDir): array
       'title' => trim((string)($rawTask['title'] ?? ('Task ' . ((int)$index + 1)))),
       'tagCode' => $tagCode,
       'taskType' => inviteePasswordNormalizeTaskType((string)($rawTask['taskType'] ?? ($rawTask['task_type'] ?? 'quiz'))),
+      'active' => inviteePasswordNormalizeBoolValue($rawTask['active'] ?? true),
+      'duration' => inviteePasswordNormalizeBoolValue($rawTask['duration'] ?? false),
+      'startDate' => trim((string)($rawTask['startDate'] ?? ($rawTask['start_date'] ?? ''))),
+      'startTime' => trim((string)($rawTask['startTime'] ?? ($rawTask['start_time'] ?? ''))),
+      'endDate' => trim((string)($rawTask['endDate'] ?? ($rawTask['end_date'] ?? ''))),
+      'endTime' => trim((string)($rawTask['endTime'] ?? ($rawTask['end_time'] ?? ''))),
       'score' => (int)$scoreSettings['score'],
       'afterEndtimeScore' => (int)$scoreSettings['afterEndtimeScore'],
       'order' => max(1, (int)($rawTask['order'] ?? ((int)$index + 1)))
@@ -525,6 +543,15 @@ function inviteePasswordReadQuestionLookup(string $questionsPath): array
   return $lookup;
 }
 
+function inviteePasswordReadTaskQuestionLookup(string $tasksDir, string $taskDir): array
+{
+  $lookup = inviteePasswordReadQuestionLookup($taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json');
+  if ($lookup) {
+    return $lookup;
+  }
+  return inviteePasswordReadQuestionLookup(dirname($tasksDir) . DIRECTORY_SEPARATOR . 'TCQ list.json');
+}
+
 function inviteePasswordReadTaskAnswers(string $tasksDir, array $task, string $workId): array
 {
   $tagCode = trim((string)($task['tagCode'] ?? ''));
@@ -554,7 +581,7 @@ function inviteePasswordReadTaskAnswers(string $tasksDir, array $task, string $w
     return ['count' => 0, 'correctCount' => 0, 'answers' => []];
   }
 
-  $questionLookup = inviteePasswordReadQuestionLookup($taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json');
+  $questionLookup = inviteePasswordReadTaskQuestionLookup($tasksDir, $taskDir);
   $answers = [];
   $correctCount = 0;
   foreach ($header as $index => $label) {
@@ -792,6 +819,118 @@ function inviteePasswordUpdateInfoScoreStore(string $tasksDir, string $tagCode, 
   return inviteePasswordWriteJsonPayload($path, $scores);
 }
 
+function inviteePasswordSetInfoScoreStore(string $tasksDir, string $tagCode, string $workId, int $score): bool
+{
+  $taskDir = inviteePasswordBuildTaskDirPath($tasksDir, $tagCode);
+  if ($taskDir === '' || trim($workId) === '') {
+    return true;
+  }
+  $path = $taskDir . DIRECTORY_SEPARATOR . 'info-task-scores.json';
+  $scores = inviteePasswordReadJsonPayload($path);
+  $scores[trim($workId)] = max(0, $score);
+  return inviteePasswordWriteJsonPayload($path, $scores);
+}
+
+function inviteePasswordTaskDateTimeTimestamp(array $task, string $dateKey, string $timeKey): ?int
+{
+  $date = trim((string)($task[$dateKey] ?? ''));
+  if ($date === '') {
+    return null;
+  }
+  $time = trim((string)($task[$timeKey] ?? ''));
+  if ($time === '') {
+    $time = '00:00:00';
+  }
+  $timestamp = strtotime(trim($date . ' ' . $time));
+  return is_int($timestamp) ? $timestamp : null;
+}
+
+function inviteePasswordTaskCurrentStatus(array $task): string
+{
+  if (!inviteePasswordNormalizeBoolValue($task['active'] ?? true)) {
+    return 'inactive';
+  }
+  if (!inviteePasswordNormalizeBoolValue($task['duration'] ?? false)) {
+    return 'active';
+  }
+  $now = time();
+  $startAt = inviteePasswordTaskDateTimeTimestamp($task, 'startDate', 'startTime');
+  $endAt = inviteePasswordTaskDateTimeTimestamp($task, 'endDate', 'endTime');
+  if ($startAt !== null && $now < $startAt) {
+    return 'upcoming';
+  }
+  if ($endAt !== null && $now > $endAt) {
+    return 'ended';
+  }
+  return 'active';
+}
+
+function inviteePasswordResolveConditionalQuizStats(array $task, int $score, array $answers): array
+{
+  $answerCount = max(0, (int)($answers['count'] ?? 0));
+  $correctCount = max(0, (int)($answers['correctCount'] ?? 0));
+  $activeScore = inviteePasswordNormalizeScoreValue($task['score'] ?? 0);
+  $afterEndScore = inviteePasswordNormalizeScoreValue($task['afterEndtimeScore'] ?? 0);
+  $currentStatus = inviteePasswordTaskCurrentStatus($task);
+
+  $perCorrectScore = 0;
+  $scoreWindow = '';
+  $scoreWindowLabel = '';
+  $inferred = false;
+
+  if ($correctCount > 0) {
+    $activeExpected = $activeScore * $correctCount;
+    $afterExpected = $afterEndScore * $correctCount;
+    if ($activeScore > 0 && $score === $activeExpected) {
+      $perCorrectScore = $activeScore;
+      $scoreWindow = 'golden';
+      $scoreWindowLabel = 'Golden time';
+    } elseif ($afterEndScore > 0 && $score === $afterExpected) {
+      $perCorrectScore = $afterEndScore;
+      $scoreWindow = 'after_endtime';
+      $scoreWindowLabel = 'After golden time';
+    } elseif ($score > 0 && $score % $correctCount === 0) {
+      $perCorrectScore = max(0, intdiv($score, $correctCount));
+      $inferred = true;
+      if ($perCorrectScore === $activeScore && $activeScore > 0) {
+        $scoreWindow = 'golden';
+        $scoreWindowLabel = 'Golden time';
+      } elseif ($perCorrectScore === $afterEndScore && $afterEndScore > 0) {
+        $scoreWindow = 'after_endtime';
+        $scoreWindowLabel = 'After golden time';
+      } else {
+        $scoreWindow = 'stored';
+        $scoreWindowLabel = 'Stored score';
+      }
+    }
+  }
+
+  if ($perCorrectScore <= 0) {
+    if ($currentStatus === 'ended') {
+      $perCorrectScore = $afterEndScore;
+      $scoreWindow = 'after_endtime';
+      $scoreWindowLabel = 'After golden time';
+    } else {
+      $perCorrectScore = $activeScore;
+      $scoreWindow = 'golden';
+      $scoreWindowLabel = 'Golden time';
+    }
+  }
+
+  $possibleScore = max(0, $answerCount * $perCorrectScore);
+  $correctAnswerScore = max(0, $correctCount * $perCorrectScore);
+  return [
+    'answerCount' => $answerCount,
+    'correctCount' => $correctCount,
+    'perCorrectScore' => $perCorrectScore,
+    'possibleScore' => $possibleScore,
+    'correctAnswerScore' => $correctAnswerScore,
+    'scoreWindow' => $scoreWindow,
+    'scoreWindowLabel' => $scoreWindowLabel,
+    'inferred' => $inferred
+  ];
+}
+
 function inviteePasswordBuildTaskParticipationItem(
   array $task,
   string $workId,
@@ -806,6 +945,8 @@ function inviteePasswordBuildTaskParticipationItem(
   $taskId = trim((string)($task['id'] ?? ''));
   $taskType = inviteePasswordNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
   $score = 0;
+  $possibleScore = inviteePasswordNormalizeScoreValue($task['score'] ?? 0);
+  $conditionalStats = null;
   $details = [];
   $answers = ['count' => 0, 'correctCount' => 0, 'answers' => []];
   $completed = in_array($taskId, $completedIds, true);
@@ -857,9 +998,31 @@ function inviteePasswordBuildTaskParticipationItem(
     $answers = inviteePasswordReadTaskAnswers($tasksDir, $task, $workId);
     if ((int)($answers['count'] ?? 0) > 0) {
       $started = true;
-      $details[] = 'Answered questions: ' . (string)(int)$answers['count'];
-      if ((int)($answers['correctCount'] ?? 0) > 0) {
+      if ($taskType !== 'conditional_quiz') {
+        $details[] = 'Answered questions: ' . (string)(int)$answers['count'];
+      }
+      if ($taskType !== 'conditional_quiz' && (int)($answers['correctCount'] ?? 0) > 0) {
         $details[] = 'Correct answers: ' . (string)(int)$answers['correctCount'];
+      }
+    }
+    if ($taskType === 'conditional_quiz') {
+      $conditionalStats = inviteePasswordResolveConditionalQuizStats($task, $score, $answers);
+      $possibleScore = (int)($conditionalStats['possibleScore'] ?? 0);
+      $answerCount = (int)($conditionalStats['answerCount'] ?? 0);
+      $correctCount = (int)($conditionalStats['correctCount'] ?? 0);
+      $perCorrectScore = (int)($conditionalStats['perCorrectScore'] ?? 0);
+      $correctAnswerScore = (int)($conditionalStats['correctAnswerScore'] ?? 0);
+      if ($answerCount > 0) {
+        $details[] = 'Questions shown: ' . (string)$answerCount;
+        $details[] = 'Correct answers: ' . (string)$correctCount . ' / ' . (string)$answerCount;
+      }
+      $scoreWindowLabel = trim((string)($conditionalStats['scoreWindowLabel'] ?? ''));
+      if ($scoreWindowLabel !== '') {
+        $details[] = 'Score window: ' . $scoreWindowLabel;
+      }
+      if ($perCorrectScore > 0) {
+        $details[] = 'Score per correct answer: ' . (string)$perCorrectScore;
+        $details[] = 'Correct answer score: ' . (string)$correctAnswerScore;
       }
     }
   }
@@ -881,6 +1044,8 @@ function inviteePasswordBuildTaskParticipationItem(
     'typeLabel' => inviteePasswordTaskTypeLabel($taskType),
     'configuredScore' => inviteePasswordNormalizeScoreValue($task['score'] ?? 0),
     'afterEndtimeScore' => inviteePasswordNormalizeScoreValue($task['afterEndtimeScore'] ?? 0),
+    'possibleScore' => $possibleScore,
+    'scoreLabel' => (string)$score . ' / ' . (string)$possibleScore,
     'score' => $score,
     'completed' => $completed,
     'started' => $started,
@@ -890,6 +1055,7 @@ function inviteePasswordBuildTaskParticipationItem(
     'answers' => $answers['answers'] ?? [],
     'answerCount' => (int)($answers['count'] ?? 0),
     'correctAnswerCount' => (int)($answers['correctCount'] ?? 0),
+    'conditionalQuizStats' => $conditionalStats,
     'describePhotoStats' => is_array($task['describePhotoStats'] ?? null) ? $task['describePhotoStats'] : null
   ];
 }
@@ -1165,6 +1331,170 @@ function inviteePasswordResetTaskProgressForRow(
   ];
 }
 
+function inviteePasswordFindTaskById(array $tasks, string $taskId): ?array
+{
+  $normalizedTaskId = trim($taskId);
+  if ($normalizedTaskId === '') {
+    return null;
+  }
+  foreach ($tasks as $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    if (trim((string)($task['id'] ?? '')) === $normalizedTaskId) {
+      return $task;
+    }
+  }
+  return null;
+}
+
+function inviteePasswordSaveTaskScoreForRow(
+  array &$rows,
+  int $rowIndex,
+  array $header,
+  string $taskId,
+  int $newScore,
+  string $workId,
+  array $tasks,
+  string $tasksDir
+): array {
+  $normalizedTaskId = trim($taskId);
+  if ($normalizedTaskId === '') {
+    return ['ok' => false, 'message' => 'Invalid task id.'];
+  }
+  if ($rowIndex < 1 || !is_array($rows[$rowIndex] ?? null)) {
+    return ['ok' => false, 'message' => 'Invitee row was not found.'];
+  }
+  $rowWidth = count($header);
+  if (count($rows[$rowIndex]) < $rowWidth) {
+    $rows[$rowIndex] = array_pad($rows[$rowIndex], $rowWidth, '');
+  }
+
+  $task = inviteePasswordFindTaskById($tasks, $normalizedTaskId);
+  $scoreIndex = inviteePasswordFindHeaderIndexByNames($header, ['score', 'total score']);
+  $completedIndex = inviteePasswordFindHeaderIndexByNames($header, ['task completed ids', 'task completed id', 'task completed']);
+  $taskScoreMapIndex = inviteePasswordFindHeaderIndexByNames($header, ['task score map']);
+  $infoTasksIndex = inviteePasswordFindHeaderIndexByNames($header, ['info tasks']);
+  $teamTaskIndex = inviteePasswordFindHeaderIndexByNames($header, ['team task']);
+  $describeTaskIndex = inviteePasswordFindHeaderIndexByNames($header, ['describe photo task']);
+
+  if ($scoreIndex < 0) {
+    return ['ok' => false, 'message' => 'Total score column is not available.'];
+  }
+
+  $taskScoreMap = $taskScoreMapIndex >= 0
+    ? inviteePasswordParseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''))
+    : [];
+  $infoMap = $infoTasksIndex >= 0
+    ? inviteePasswordParseInfoTaskMap((string)($rows[$rowIndex][$infoTasksIndex] ?? ''))
+    : [];
+  $teamMap = $teamTaskIndex >= 0
+    ? inviteePasswordParseTeamTaskMap((string)($rows[$rowIndex][$teamTaskIndex] ?? ''))
+    : [];
+  $describeMap = $describeTaskIndex >= 0
+    ? inviteePasswordParseInfoTaskMap((string)($rows[$rowIndex][$describeTaskIndex] ?? ''))
+    : [];
+
+  $taskType = is_array($task)
+    ? inviteePasswordNormalizeTaskType((string)($task['taskType'] ?? 'quiz'))
+    : '';
+  if ($taskType === '') {
+    if (array_key_exists($normalizedTaskId, $teamMap)) {
+      $taskType = 'team_task';
+    } elseif (array_key_exists($normalizedTaskId, $describeMap)) {
+      $taskType = 'describe_photo';
+    } elseif (array_key_exists($normalizedTaskId, $infoMap)) {
+      $taskType = 'info';
+    } else {
+      $taskType = 'quiz';
+    }
+  }
+
+  $previousScore = 0;
+  foreach ([
+    $taskScoreMap[$normalizedTaskId] ?? null,
+    $infoMap[$normalizedTaskId] ?? null,
+    is_array($teamMap[$normalizedTaskId] ?? null) ? ($teamMap[$normalizedTaskId]['score'] ?? null) : null,
+    $describeMap[$normalizedTaskId] ?? null
+  ] as $candidateScore) {
+    if ($candidateScore !== null) {
+      $previousScore = max($previousScore, inviteePasswordNormalizeScoreValue($candidateScore));
+    }
+  }
+
+  unset($taskScoreMap[$normalizedTaskId], $infoMap[$normalizedTaskId], $describeMap[$normalizedTaskId]);
+  $existingTeamEntry = is_array($teamMap[$normalizedTaskId] ?? null) ? $teamMap[$normalizedTaskId] : [];
+  unset($teamMap[$normalizedTaskId]);
+
+  if ($taskType === 'info') {
+    if ($infoTasksIndex < 0) {
+      return ['ok' => false, 'message' => 'Info task score column is not available.'];
+    }
+    $infoMap[$normalizedTaskId] = max(0, $newScore);
+  } elseif ($taskType === 'team_task') {
+    if ($teamTaskIndex < 0) {
+      return ['ok' => false, 'message' => 'Team task score column is not available.'];
+    }
+    $teamName = trim((string)($existingTeamEntry['teamName'] ?? ''));
+    $status = trim((string)($existingTeamEntry['status'] ?? ''));
+    $teamMap[$normalizedTaskId] = [
+      'teamName' => $teamName,
+      'status' => $status !== '' ? $status : 'scored',
+      'score' => max(0, $newScore)
+    ];
+  } elseif ($taskType === 'describe_photo') {
+    if ($describeTaskIndex < 0) {
+      return ['ok' => false, 'message' => 'Describe photo task score column is not available.'];
+    }
+    $describeMap[$normalizedTaskId] = max(0, $newScore);
+  } else {
+    if ($taskScoreMapIndex < 0) {
+      return ['ok' => false, 'message' => 'Task score map column is not available.'];
+    }
+    $taskScoreMap[$normalizedTaskId] = max(0, $newScore);
+  }
+
+  if ($taskScoreMapIndex >= 0) {
+    $rows[$rowIndex][$taskScoreMapIndex] = inviteePasswordSerializeTaskScoreMap($taskScoreMap);
+  }
+  if ($infoTasksIndex >= 0) {
+    $rows[$rowIndex][$infoTasksIndex] = inviteePasswordSerializeInfoTaskMap($infoMap);
+  }
+  if ($teamTaskIndex >= 0) {
+    $rows[$rowIndex][$teamTaskIndex] = inviteePasswordSerializeTeamTaskMap($teamMap);
+  }
+  if ($describeTaskIndex >= 0) {
+    $rows[$rowIndex][$describeTaskIndex] = inviteePasswordSerializeInfoTaskMap($describeMap);
+  }
+
+  if ($completedIndex >= 0) {
+    $completedIds = inviteePasswordParseList((string)($rows[$rowIndex][$completedIndex] ?? ''));
+    if (!in_array($normalizedTaskId, $completedIds, true)) {
+      $completedIds[] = $normalizedTaskId;
+      $rows[$rowIndex][$completedIndex] = inviteePasswordSerializeList($completedIds);
+    }
+  }
+
+  $currentTotalScore = inviteePasswordNormalizeScoreValue($rows[$rowIndex][$scoreIndex] ?? 0);
+  $delta = max(0, $newScore) - $previousScore;
+  $rows[$rowIndex][$scoreIndex] = (string)max(0, $currentTotalScore + $delta);
+
+  $tagCode = is_array($task) ? trim((string)($task['tagCode'] ?? '')) : '';
+  if ($tagCode !== '' && in_array($taskType, ['info', 'team_task', 'describe_photo'], true)) {
+    if (!inviteePasswordSetInfoScoreStore($tasksDir, $tagCode, $workId, max(0, $newScore))) {
+      return ['ok' => false, 'message' => 'Failed to save task score store.'];
+    }
+  }
+
+  return [
+    'ok' => true,
+    'previousScore' => $previousScore,
+    'score' => max(0, $newScore),
+    'delta' => $delta,
+    'message' => 'Task score updated successfully.'
+  ];
+}
+
 function inviteePasswordSessionKeyForUser(string $userCode): string
 {
   return inviteePasswordNormalizeToken($userCode);
@@ -1206,7 +1536,7 @@ $canResetInvitee = !empty($tcInviteesSensitiveAccess['resetInvitee']);
 $canUseSensitiveAuth = $canRevealPassword || $canResetInvitee;
 $isRevealAction = in_array($action, ['get_password', 'save_password'], true);
 $isParticipationAction = ($action === 'get_participation');
-$isResetAction = in_array($action, ['reset_progress', 'reset_task_progress'], true);
+$isResetAction = in_array($action, ['reset_progress', 'reset_task_progress', 'save_task_score'], true);
 $isAuthAction = in_array($action, ['verify_unlock', 'check_unlock'], true);
 
 if ($isRevealAction && !$canRevealPassword) {
@@ -1427,6 +1757,67 @@ if ($action === 'reset_task_progress') {
     'status' => 'ok',
     'message' => (string)($resetResult['message'] ?? 'Task progress reset successfully.'),
     'removedScore' => (int)($resetResult['removedScore'] ?? 0),
+    'participation' => $participation
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'save_task_score') {
+  $taskId = trim((string)($input['task_id'] ?? ($input['taskId'] ?? '')));
+  $scoreRaw = trim((string)($input['score'] ?? ''));
+  if ($taskId === '') {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid task id.']);
+    exit;
+  }
+  if ($scoreRaw === '' || !preg_match('/^\d+$/', $scoreRaw)) {
+    echo json_encode(['status' => 'error', 'message' => 'Score must be a non-negative whole number.']);
+    exit;
+  }
+
+  $mapping = inviteePasswordReadMappedConfig($mapFile);
+  $workIdIndex = inviteePasswordResolveMappedColumnIndex(
+    $header,
+    $mapping,
+    ['workId', 'work_id', 'username'],
+    ['Work ID', 'work id', 'workid', 'username']
+  );
+  $workId = $workIdIndex >= 0 ? trim((string)($rows[$rowIndex][$workIdIndex] ?? '')) : '';
+  $tasks = inviteePasswordReadTasks($tasksFile, $tasksDir);
+  $saveResult = inviteePasswordSaveTaskScoreForRow(
+    $rows,
+    $rowIndex,
+    $header,
+    $taskId,
+    max(0, (int)$scoreRaw),
+    $workId,
+    $tasks,
+    $tasksDir
+  );
+  if (!($saveResult['ok'] ?? false)) {
+    echo json_encode([
+      'status' => 'error',
+      'message' => (string)($saveResult['message'] ?? 'Failed to update task score.')
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  if (!inviteePasswordWriteCsvRowsLocked($mappedFile, $rows)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save task score in mapped CSV.']);
+    exit;
+  }
+  $participation = inviteePasswordBuildParticipationPayload(
+    $rows,
+    $rowIndex,
+    is_array($rows[0] ?? null) ? $rows[0] : $header,
+    $mapFile,
+    $tasksFile,
+    $tasksDir
+  );
+  echo json_encode([
+    'status' => 'ok',
+    'message' => (string)($saveResult['message'] ?? 'Task score updated successfully.'),
+    'previousScore' => (int)($saveResult['previousScore'] ?? 0),
+    'score' => (int)($saveResult['score'] ?? 0),
+    'delta' => (int)($saveResult['delta'] ?? 0),
     'participation' => $participation
   ], JSON_UNESCAPED_UNICODE);
   exit;

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 require_once __DIR__ . '/tc-security.php';
 $tcStoreSessionUser = requireTabPermissionFromSession('task-club', true);
 tcSecurityGetCsrfToken();
@@ -851,6 +852,20 @@ if ($action === 'set_admin_assignment') {
     $adminIndex
   );
   $admins = collectAssignedAdmins($inviteesMappedFile, $inviteesMapFile);
+  tcActivityLogUserActivity([
+    'level' => 'info',
+    'action' => 'taskclub.admin_assignment_changed',
+    'entity_type' => 'taskclub_user',
+    'entity_id' => $workId,
+    'status' => 'success',
+    'message' => $isAdmin ? 'Task Club admin assigned.' : 'Task Club admin removed.',
+    'metadata' => [
+      'work_id' => $workId,
+      'is_admin' => $isAdmin,
+      'full_name' => $updatedItem['fullName'] ?? null
+    ],
+    'audit' => true
+  ]);
   echo json_encode([
     'status' => 'ok',
     'message' => $isAdmin ? 'Admin assigned successfully.' : 'Admin removed successfully.',

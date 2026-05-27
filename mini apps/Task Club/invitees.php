@@ -703,6 +703,7 @@ if ($rows) {
   let editingInviteeRow = 0;
   let revealPasswordContext = null;
   let resetProgressContext = null;
+  let scoreEditContext = null;
   let participationContext = null;
   let pendingSensitiveAction = '';
 
@@ -909,6 +910,7 @@ if ($rows) {
     setParticipationMsg('');
     if (participationSummaryEl) participationSummaryEl.innerHTML = '';
     if (participationTasksEl) participationTasksEl.innerHTML = '';
+    scoreEditContext = null;
     participationContext = null;
   };
 
@@ -1059,12 +1061,15 @@ if ($rows) {
             ${tasks.map((task) => {
               const taskId = String(task.id || '').trim();
               const details = Array.isArray(task.details) ? task.details : [];
-              const score = `${task.score ?? 0} / ${task.configuredScore ?? 0}`;
-              const canResetTask = canResetInviteeTasks && taskId !== '';
+              const possibleScore = task.possibleScore ?? task.configuredScore ?? 0;
+              const score = task.scoreLabel || `${task.score ?? 0} / ${possibleScore}`;
+              const canManageTask = canResetInviteeTasks && taskId !== '';
+              const taskTitle = task.title || taskId || 'Untitled Task';
+              const currentScore = Math.max(0, Number.parseInt(String(task.score ?? 0), 10) || 0);
               return `
                 <tr>
                   <td>
-                    <div class="tc-participation-task-title">${escapeHtml(task.title || taskId || 'Untitled Task')}</div>
+                    <div class="tc-participation-task-title">${escapeHtml(taskTitle)}</div>
                     <div class="muted small">${escapeHtml(task.tagCode || taskId || '')}</div>
                   </td>
                   <td>${escapeHtml(task.typeLabel || task.taskType || '-')}</td>
@@ -1076,7 +1081,15 @@ if ($rows) {
                     ${renderDescribeStats(task)}
                   </td>
                   <td>
-                    ${canResetTask ? `<button type="button" class="btn ghost tc-btn-danger" data-action="reset-invitee-task-progress" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(task.title || taskId)}">Reset</button>` : '<span class="muted">-</span>'}
+                    ${canManageTask ? `
+                      <div class="tc-participation-action-stack">
+                        <div class="tc-participation-score-edit">
+                          <input type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml(String(currentScore))}" data-task-score-input data-task-id="${escapeHtml(taskId)}" aria-label="Task score" />
+                          <button type="button" class="btn ghost" data-action="save-invitee-task-score" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(taskTitle)}">Save</button>
+                        </div>
+                        <button type="button" class="btn ghost tc-btn-danger" data-action="reset-invitee-task-progress" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(taskTitle)}">Reset</button>
+                      </div>
+                    ` : '<span class="muted">-</span>'}
                   </td>
                 </tr>
               `;
@@ -1104,6 +1117,52 @@ if ($rows) {
       }
     } catch {
       setParticipationMsg('Failed to load participation.', true);
+    }
+  };
+
+  const saveTaskScore = async () => {
+    if (!scoreEditContext || !Number.isFinite(scoreEditContext.row) || scoreEditContext.row <= 1) {
+      setParticipationMsg('Invalid invitee row.', true);
+      return;
+    }
+    const taskId = String(scoreEditContext.taskId || '').trim();
+    const score = Math.max(0, Number.parseInt(String(scoreEditContext.score ?? 0), 10) || 0);
+    if (!taskId) {
+      setParticipationMsg('Invalid task id.', true);
+      return;
+    }
+    const button = scoreEditContext.button;
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = true;
+    }
+    setParticipationMsg('Saving task score...');
+    try {
+      const response = await postRevealAction('save_task_score', {
+        row: scoreEditContext.row,
+        task_id: taskId,
+        score
+      });
+      if (response.ok) {
+        pendingSensitiveAction = '';
+        if (response.data?.participation) {
+          renderParticipationStats(response.data.participation);
+        } else {
+          await loadParticipationStats();
+        }
+        setParticipationMsg(response.message || 'Task score updated.');
+      } else if (response.status === 'auth_required') {
+        setParticipationMsg('Authorization required. Please verify your panel password.', true);
+        pendingSensitiveAction = 'save_task_score';
+        openAuthModal();
+      } else {
+        setParticipationMsg(response.message || 'Failed to save task score.', true);
+      }
+    } catch {
+      setParticipationMsg('Failed to save task score.', true);
+    } finally {
+      if (button instanceof HTMLButtonElement && button.isConnected) {
+        button.disabled = false;
+      }
     }
   };
 
@@ -1215,6 +1274,41 @@ if ($rows) {
       };
       openParticipationModal();
       void loadParticipationStats();
+      return;
+    }
+
+    const saveScoreTrigger = target.closest('[data-action="save-invitee-task-score"]');
+    if (saveScoreTrigger instanceof HTMLButtonElement) {
+      if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
+        setParticipationMsg('Invalid invitee row.', true);
+        return;
+      }
+      const taskId = String(saveScoreTrigger.getAttribute('data-task-id') || '').trim();
+      if (!taskId) {
+        setParticipationMsg('Invalid task id.', true);
+        return;
+      }
+      const row = saveScoreTrigger.closest('tr');
+      const input = row instanceof HTMLElement
+        ? Array.from(row.querySelectorAll('input[data-task-score-input]'))
+          .find((candidate) => candidate instanceof HTMLInputElement && String(candidate.getAttribute('data-task-id') || '').trim() === taskId)
+        : null;
+      const rawScore = input instanceof HTMLInputElement ? String(input.value || '').trim() : '';
+      if (rawScore === '' || !/^\d+$/.test(rawScore)) {
+        setParticipationMsg('Score must be a non-negative whole number.', true);
+        return;
+      }
+      scoreEditContext = {
+        row: participationContext.row,
+        displayName: participationContext.displayName,
+        workId: participationContext.workId,
+        taskId,
+        taskTitle: String(saveScoreTrigger.getAttribute('data-task-title') || '').trim(),
+        score: Math.max(0, Number.parseInt(rawScore, 10) || 0),
+        button: saveScoreTrigger
+      };
+      pendingSensitiveAction = 'save_task_score';
+      void saveTaskScore();
       return;
     }
 
@@ -1365,6 +1459,8 @@ if ($rows) {
           await requestResetAccess();
         } else if (nextAction === 'reset_task' && resetProgressContext) {
           await requestResetAccess();
+        } else if (nextAction === 'save_task_score' && scoreEditContext) {
+          await saveTaskScore();
         }
       } else {
         setAuthMsg(response.message || 'Password verification failed.', true);

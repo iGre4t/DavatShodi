@@ -1,4 +1,6 @@
 ﻿<?php
+require_once __DIR__ . '/useractivitylogs/activity-logger.php';
+
 function tcStartIsolatedSession(): void
 {
   if (session_status() === PHP_SESSION_ACTIVE) {
@@ -32,6 +34,20 @@ if (empty($_SESSION['tc_csrf'])) {
   $_SESSION['tc_csrf'] = bin2hex(random_bytes(16));
 }
 if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
+  $forceLogoutWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
+  tcActivityLogUserActivity([
+    'level' => 'info',
+    'user_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
+    'action' => 'taskclub.user.logout',
+    'entity_type' => 'taskclub_user',
+    'entity_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
+    'status' => 'success',
+    'message' => 'Task Club user force logged out.',
+    'metadata' => [
+      'forced' => true
+    ],
+    'audit' => true
+  ]);
   $_SESSION = [];
   if (ini_get('session.use_cookies')) {
     $params = session_get_cookie_params();
@@ -898,6 +914,19 @@ function isQuizLikeTaskTypeValue(string $taskType): bool
 {
   $normalized = normalizeTaskTypeValue($taskType);
   return $normalized === 'quiz' || $normalized === 'conditional_quiz';
+}
+
+function resolveTaskScoreForStatus(array $task, string $taskStatus): int
+{
+  $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+  $baseScore = max(0, (int)($task['score'] ?? 0));
+  $afterEndtimeScore = max(0, (int)($task['afterEndtimeScore'] ?? 0));
+  if ($taskType === 'conditional_quiz') {
+    return $taskStatus === 'active' ? $afterEndtimeScore : $baseScore;
+  }
+  return isQuizLikeTaskTypeValue($taskType) && $taskStatus === 'ended'
+    ? $afterEndtimeScore
+    : $baseScore;
 }
 
 function readTasksStoreItems(string $storePath): array
@@ -4005,6 +4034,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
     $username = normalizeCredentialToken((string)($payload['username'] ?? ''));
     $password = normalizeCredentialToken((string)($payload['password'] ?? ''));
+    $logLoginFailure = static function (string $reason, string $message = 'Task Club login failed.') use ($username): void {
+      tcActivityLogUserActivity([
+        'level' => 'warning',
+        'user_id' => $username !== '' ? $username : null,
+        'action' => 'taskclub.user.login_failed',
+        'entity_type' => 'taskclub_user',
+        'entity_id' => $username !== '' ? $username : null,
+        'status' => 'failed',
+        'message' => $message,
+        'metadata' => [
+          'username' => $username,
+          'reason' => $reason
+        ],
+        'audit' => true
+      ]);
+    };
     $attemptKey = $ip . '|' . $username;
     $ipAttemptKey = '__ip__' . $ip;
     $attempts = readLoginAttempts($loginAttemptsPath);
@@ -4022,10 +4067,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $ipEntry = is_array($attempts[$ipAttemptKey] ?? null) ? $attempts[$ipAttemptKey] : ['fails' => []];
     $ipFails = $collectRecentFails($ipEntry['fails'] ?? []);
     if (count($ipFails) >= $maxAttemptsPerIp) {
+      $logLoginFailure('too_many_attempts_ip', 'Task Club login blocked by IP rate limit.');
       echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts from this IP. Please try again later.']);
       exit;
     }
     if (count($fails) >= $maxAttempts) {
+      $logLoginFailure('too_many_attempts_user', 'Task Club login blocked by user rate limit.');
       echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts. Please try again later.']);
       exit;
     }
@@ -4038,6 +4085,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     };
     if ($username === '' || $password === '') {
       $recordFail();
+      $logLoginFailure('missing_credentials');
       echo json_encode(['status' => 'error', 'message' => 'Please enter both username and password.']);
       exit;
     }
@@ -4045,12 +4093,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $rows = $table['rows'];
     if (!$rows) {
       $recordFail();
+      $logLoginFailure('invitees_table_missing');
       echo json_encode(['status' => 'error', 'message' => 'کاربری یافت نشد.']);
       exit;
     }
     $workIdIndex = $table['workIdIndex'];
     if ($workIdIndex < 0) {
       $recordFail();
+      $logLoginFailure('work_id_column_missing');
       echo json_encode(['status' => 'error', 'message' => 'نام کاربری column is missing.']);
       exit;
     }
@@ -4058,6 +4108,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $username);
     if ($rowIndex < 0) {
       $recordFail();
+      $logLoginFailure('unknown_user');
       echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
       exit;
     }
@@ -4068,6 +4119,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         : strlen($password);
       if ($passwordLength < (int)$anyPasswordLoginSettings['minLength']) {
         $recordFail();
+        $logLoginFailure('password_too_short');
         echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
         exit;
       }
@@ -4075,12 +4127,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
       if ($passwordIndex < 0) {
         $recordFail();
+        $logLoginFailure('password_column_missing');
         echo json_encode(['status' => 'error', 'message' => 'رمز عبور column is missing.']);
         exit;
       }
       $rowPassword = normalizeCredentialToken((string)($rows[$rowIndex][$passwordIndex] ?? ''));
       if ($rowPassword === '' || $rowPassword !== $password) {
         $recordFail();
+        $logLoginFailure('bad_credentials');
         echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
         exit;
       }
@@ -4100,6 +4154,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       writeInviteesCsv($inviteesFilePath, $rows);
     } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       $recordFail();
+      $logLoginFailure('login_metadata_write_failed');
       echo json_encode(['status' => 'error', 'message' => 'ذخیره اطلاعات ورود ناموفق بود.']);
       exit;
     }
@@ -4145,6 +4200,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $wheelAngle = (float)$angleValue;
       }
     }
+    tcActivityLogUserActivity([
+      'level' => 'info',
+      'user_id' => $resolvedWorkId,
+      'action' => 'taskclub.user.login',
+      'entity_type' => 'taskclub_user',
+      'entity_id' => $resolvedWorkId,
+      'status' => 'success',
+      'message' => 'Task Club user logged in successfully.',
+      'metadata' => [
+        'username' => $username,
+        'full_name' => $fullName
+      ],
+      'audit' => true
+    ]);
     echo json_encode([
       'status' => 'ok',
       'fullName' => $fullName,
@@ -4158,6 +4227,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'logout') {
+    $logoutWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
+    tcActivityLogUserActivity([
+      'level' => 'info',
+      'user_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
+      'action' => 'taskclub.user.logout',
+      'entity_type' => 'taskclub_user',
+      'entity_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
+      'status' => 'success',
+      'message' => 'Task Club user logged out.',
+      'metadata' => [],
+      'audit' => true
+    ]);
     session_unset();
     session_destroy();
     echo json_encode(['status' => 'ok']);
@@ -4477,9 +4558,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     if ($taskType === 'conditional_quiz') {
-      $conditionalCorrectAnswerScore = $taskStatus === 'ended'
-        ? max(0, (int)($task['afterEndtimeScore'] ?? 0))
-        : max(0, (int)($task['score'] ?? 0));
+      $conditionalCorrectAnswerScore = resolveTaskScoreForStatus($task, $taskStatus);
     } else {
       $conditionalCorrectAnswerScore = null;
     }
@@ -5449,12 +5528,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $currentTotalScore = max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0));
     $completedTaskIds = parseTaskCompletedIds((string)($rows[$rowIndex][$taskCompletedIndex] ?? ''));
-    $activeScore = max(0, (int)($task['score'] ?? 0));
-    $afterEndScore = max(0, (int)($task['afterEndtimeScore'] ?? 0));
     $taskScoreMap = parseTaskScoreMap((string)($rows[$rowIndex][$taskScoreMapIndex] ?? ''));
-    $awardedScoreBase = (isQuizLikeTaskTypeValue($taskType) && $status === 'ended')
-      ? $afterEndScore
-      : $activeScore;
+    $awardedScoreBase = resolveTaskScoreForStatus($task, $status);
     $awardedScore = $awardedScoreBase;
 
     if (in_array($taskId, $completedTaskIds, true)) {
@@ -10638,7 +10713,7 @@ $sessionPayload = [
           const activeScore = Math.max(0, Number.parseInt(button?.dataset?.taskScore || '0', 10) || 0);
           const afterEndScore = Math.max(0, Number.parseInt(button?.dataset?.taskAfterEndScore || '0', 10) || 0);
           if (normalizeTaskTypeToken(taskType) === 'conditional_quiz') {
-            return status === 'ended' ? afterEndScore : activeScore;
+            return status === 'ended' ? activeScore : afterEndScore;
           }
           if (isQuizLikeTaskType(taskType) && status === 'ended') {
             return afterEndScore;

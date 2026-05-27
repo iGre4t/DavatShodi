@@ -1,6 +1,32 @@
 <?php
 session_start();
 
+$sessionUser = is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [];
+$userId = trim((string)($sessionUser['code'] ?? $sessionUser['username'] ?? ''));
+
+require_once __DIR__ . '/api/lib/common.php';
+require_once __DIR__ . '/api/lib/activity-logger.php';
+
+$pdo = null;
+$configFile = __DIR__ . '/api/config.php';
+if (is_file($configFile)) {
+  $pdo = connectDatabase(loadConfig($configFile));
+}
+
+panelLogUserActivity([
+  'level' => 'info',
+  'user_id' => $userId !== '' ? $userId : null,
+  'action' => 'user.logout',
+  'entity_type' => 'user',
+  'entity_id' => $userId !== '' ? $userId : null,
+  'status' => 'success',
+  'message' => 'User logged out.',
+  'metadata' => [
+    'username' => $sessionUser['username'] ?? null
+  ],
+  'audit' => true
+], $pdo);
+
 // remove all session data
 $_SESSION = [];
 

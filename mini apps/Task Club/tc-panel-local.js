@@ -1,5 +1,6 @@
 (() => {
   const TASKS_ENDPOINT = 'mini%20apps/Task%20Club/TCT.php';
+  const LOGS_ENDPOINT = 'mini%20apps/Task%20Club/tc_logs.php';
   const tcShellEl = document.querySelector('.tc-shell');
   const TASK_CLUB_CSRF = tcShellEl instanceof HTMLElement
     ? String(tcShellEl.dataset.tcCsrf || '').trim()
@@ -341,6 +342,9 @@
       if (!(pane instanceof HTMLElement)) return;
       pane.classList.toggle('active', pane.dataset.pane === targetPane);
     });
+    if (targetPane === 'tc-logs') {
+      loadTaskClubLogs(layout);
+    }
   }
 
   function ensureAnyActivePane(layout, preferredPane = '') {
@@ -3658,6 +3662,152 @@
     });
   }
 
+  const tcLogsState = {
+    loading: false,
+    debounceTimer: 0,
+    abortController: null
+  };
+
+  function formatLogTimestamp(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw;
+    return date.toLocaleString('en-GB', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  }
+
+  function setTaskClubLogsStatus(pane, message, isError = false) {
+    const statusEl = pane?.querySelector?.('#tc-logs-status');
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.textContent = String(message || '');
+    statusEl.classList.toggle('error', Boolean(isError));
+  }
+
+  function renderTaskClubLogRows(pane, items) {
+    const body = pane?.querySelector?.('#tc-logs-body');
+    if (!(body instanceof HTMLElement)) return;
+    const logs = Array.isArray(items) ? items : [];
+    if (!logs.length) {
+      body.innerHTML = '<tr><td colspan="7" class="muted">No logs found.</td></tr>';
+      return;
+    }
+    body.innerHTML = logs.map((item) => {
+      const userLabel = String(item?.username || item?.user_id || '').trim() || '-';
+      const message = String(item?.message || '').trim() || '-';
+      const entity = [item?.entity_type, item?.entity_id]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .join(': ');
+      const action = entity
+        ? `${String(item?.action || '').trim()} (${entity})`
+        : String(item?.action || '').trim();
+      const level = String(item?.level || 'info').toLowerCase();
+      return `
+        <tr>
+          <td>${escapeHtml(formatLogTimestamp(item?.timestamp))}</td>
+          <td><span class="tc-log-level tc-log-level--${escapeHtml(level)}">${escapeHtml(item?.level || 'info')}</span></td>
+          <td>${escapeHtml(userLabel)}</td>
+          <td><code>${escapeHtml(action || '-')}</code></td>
+          <td>${escapeHtml(item?.status || '-')}</td>
+          <td>${escapeHtml(message)}</td>
+          <td><code>${escapeHtml(item?.ip_address || '-')}</code></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function syncTaskClubLogDays(pane, days, selectedDay) {
+    const select = pane?.querySelector?.('#tc-logs-day');
+    if (!(select instanceof HTMLSelectElement)) return;
+    const current = String(selectedDay || select.value || '').trim();
+    const options = Array.isArray(days) ? days : [];
+    select.innerHTML = options.length
+      ? options.map((day) => `<option value="${escapeHtml(day)}"${day === current ? ' selected' : ''}>${escapeHtml(day)}</option>`).join('')
+      : `<option value="${escapeHtml(current || '')}">${escapeHtml(current || 'No log files')}</option>`;
+  }
+
+  async function fetchTaskClubLogs(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const searchInput = pane.querySelector('#tc-logs-search');
+    const daySelect = pane.querySelector('#tc-logs-day');
+    const query = searchInput instanceof HTMLInputElement ? searchInput.value.trim() : '';
+    const day = daySelect instanceof HTMLSelectElement ? daySelect.value.trim() : '';
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (day) params.set('day', day);
+    params.set('limit', '150');
+
+    if (tcLogsState.abortController) {
+      tcLogsState.abortController.abort();
+    }
+    const controller = new AbortController();
+    tcLogsState.abortController = controller;
+    tcLogsState.loading = true;
+    setTaskClubLogsStatus(pane, query ? 'Searching logs...' : 'Loading logs...');
+
+    try {
+      const response = await fetch(`${LOGS_ENDPOINT}?${params.toString()}`, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.status !== 'ok') {
+        throw new Error(payload?.message || 'Failed to load logs.');
+      }
+      syncTaskClubLogDays(pane, payload.days, payload.day);
+      renderTaskClubLogRows(pane, payload.items);
+      const count = Array.isArray(payload.items) ? payload.items.length : 0;
+      const suffix = query ? ` for "${query}"` : '';
+      setTaskClubLogsStatus(pane, `Showing ${count} log entr${count === 1 ? 'y' : 'ies'}${suffix}.`);
+      pane.dataset.tcLogsLoaded = '1';
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      renderTaskClubLogRows(pane, []);
+      setTaskClubLogsStatus(pane, error?.message || 'Failed to load logs.', true);
+    } finally {
+      if (tcLogsState.abortController === controller) {
+        tcLogsState.abortController = null;
+      }
+      tcLogsState.loading = false;
+    }
+  }
+
+  function loadTaskClubLogs(layout, force = false) {
+    const pane = layout?.querySelector?.('[data-tc-logs-pane="1"]');
+    if (!(pane instanceof HTMLElement)) return;
+    if (!force && pane.dataset.tcLogsLoaded === '1') return;
+    fetchTaskClubLogs(pane);
+  }
+
+  function setupTaskClubLogsPane(layout) {
+    const pane = layout?.querySelector?.('[data-tc-logs-pane="1"]');
+    if (!(pane instanceof HTMLElement) || pane.dataset.tcLogsReady === '1') return;
+    pane.dataset.tcLogsReady = '1';
+    const searchInput = pane.querySelector('#tc-logs-search');
+    const daySelect = pane.querySelector('#tc-logs-day');
+    const refreshButton = pane.querySelector('#tc-logs-refresh');
+
+    if (searchInput instanceof HTMLInputElement) {
+      searchInput.addEventListener('input', () => {
+        window.clearTimeout(tcLogsState.debounceTimer);
+        tcLogsState.debounceTimer = window.setTimeout(() => fetchTaskClubLogs(pane), 220);
+      });
+    }
+    if (daySelect instanceof HTMLSelectElement) {
+      daySelect.addEventListener('change', () => fetchTaskClubLogs(pane));
+    }
+    if (refreshButton instanceof HTMLButtonElement) {
+      refreshButton.addEventListener('click', () => fetchTaskClubLogs(pane));
+    }
+  }
+
   function initWheelSubLayouts() {
     const layouts = document.querySelectorAll('[data-tc-sub-layout]');
     layouts.forEach((layout) => {
@@ -3679,6 +3829,7 @@
         activatePane(layout, targetPane);
       });
 
+      setupTaskClubLogsPane(layout);
       setupTaskPaneInteractions(layout);
 
       window.addEventListener('tcTasksChanged', (event) => {
@@ -3691,6 +3842,9 @@
       });
 
       refreshTaskSubtabs(layout);
+      if (layout.querySelector('[data-tc-logs-pane="1"].active')) {
+        loadTaskClubLogs(layout);
+      }
     });
   }
 

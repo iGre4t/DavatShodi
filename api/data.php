@@ -23,6 +23,7 @@ function renderApiException(Throwable $exception): void
 require_once __DIR__ . '/lib/common.php';
 require_once __DIR__ . '/lib/users.php';
 require_once __DIR__ . '/lib/tab-permissions.php';
+require_once __DIR__ . '/lib/activity-logger.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 // This single handler responds with the normalized payload used by both the users and gallery tabs.
@@ -456,6 +457,20 @@ if ($method === 'POST') {
             sendJsonResponse(['status' => 'error', 'message' => 'Failed to insert user into the database.']);
         }
         $data['users'][] = $newUser;
+        panelLogUserActivity([
+            'level' => 'info',
+            'action' => 'admin.user_created',
+            'entity_type' => 'user',
+            'entity_id' => $newUser['code'],
+            'status' => 'success',
+            'message' => 'Admin created a user.',
+            'metadata' => [
+                'username' => $newUser['username'],
+                'active' => $newUser['active'],
+                'permissions' => $newUser['permissions']
+            ],
+            'audit' => true
+        ], $pdo);
         $postResponse['message'] = 'User saved successfully.';
     } elseif ($action === 'update_user' && !empty($payload['user'])) {
         // Handles edits submitted from the user modal while keeping validations centralized.
@@ -551,12 +566,34 @@ if ($method === 'POST') {
         if ($permissionsIncluded) {
             $storeUpdate['permissions'] = $permissions;
         }
+        $previousUserIndex = findUserIndexByCode($data, $code);
+        $previousStoreUser = $previousUserIndex >= 0 && is_array($data['users'][$previousUserIndex] ?? null)
+            ? $data['users'][$previousUserIndex]
+            : [];
         if (!updateUserInStore($data, $code, $storeUpdate)) {
             sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
         }
         if ($permissionsIncluded && $code !== '' && $code === $currentUserCode) {
             $_SESSION['user']['permissions'] = $permissions;
         }
+        $previousActive = !empty($previousStoreUser['active']);
+        $nextActive = !empty($storeUpdate['active']);
+        panelLogUserActivity([
+            'level' => 'info',
+            'action' => $previousActive !== $nextActive ? 'admin.user_status_changed' : 'admin.user_updated',
+            'entity_type' => 'user',
+            'entity_id' => $code,
+            'status' => 'success',
+            'message' => $previousActive !== $nextActive ? 'Admin changed user status.' : 'Admin updated a user.',
+            'metadata' => [
+                'username' => $username,
+                'fields' => array_values(array_keys($storeUpdate)),
+                'previous_active' => $previousActive,
+                'new_active' => $nextActive,
+                'permissions_changed' => $permissionsIncluded
+            ],
+            'audit' => true
+        ], $pdo);
         $postResponse['message'] = 'User updated successfully.';
     } elseif ($action === 'update_user_permissions') {
         $code = trim((string)($payload['code'] ?? ''));
@@ -582,6 +619,18 @@ if ($method === 'POST') {
             $_SESSION['user']['permissions'] = $permissions;
             $currentAllowedTabs = $permissions;
         }
+        panelLogUserActivity([
+            'level' => 'info',
+            'action' => 'admin.user_permissions_updated',
+            'entity_type' => 'user',
+            'entity_id' => $code,
+            'status' => 'success',
+            'message' => 'Admin updated user permissions.',
+            'metadata' => [
+                'permissions' => $permissions
+            ],
+            'audit' => true
+        ], $pdo);
         $postResponse['message'] = 'Permissions updated successfully.';
         $postResponse['permissions'] = $permissions;
     } elseif ($action === 'delete_user' && !empty($payload['code'])) {
@@ -596,6 +645,16 @@ if ($method === 'POST') {
         if (!removeUserFromStore($data, $code)) {
             sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
         }
+        panelLogUserActivity([
+            'level' => 'warning',
+            'action' => 'admin.user_deleted',
+            'entity_type' => 'user',
+            'entity_id' => $code,
+            'status' => 'success',
+            'message' => 'Admin deleted a user.',
+            'metadata' => [],
+            'audit' => true
+        ], $pdo);
         $postResponse['message'] = 'User deleted successfully.';
     } elseif ($action === 'save_settings' && !empty($payload['settings'])) {
         $settings = $payload['settings'];
@@ -1423,6 +1482,19 @@ function handleUserUpdatePersonal(array $payload, ?PDO $pdo, string $userCode): 
         sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
     }
     refreshSessionUser($user);
+    panelLogUserActivity([
+        'level' => 'info',
+        'user_id' => $userCode,
+        'action' => 'user.profile_updated',
+        'entity_type' => 'user',
+        'entity_id' => $userCode,
+        'status' => 'success',
+        'message' => 'User updated their profile name.',
+        'metadata' => [
+            'fields' => ['fullname']
+        ],
+        'audit' => true
+    ], $pdo);
     sendJsonResponse([
         'status' => 'ok',
         'message' => 'Full name updated successfully.',
@@ -1464,6 +1536,19 @@ function handleUserUpdateAccount(array $payload, ?PDO $pdo, string $userCode): v
         sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
     }
     refreshSessionUser($user);
+    panelLogUserActivity([
+        'level' => 'info',
+        'user_id' => $userCode,
+        'action' => 'user.account_updated',
+        'entity_type' => 'user',
+        'entity_id' => $userCode,
+        'status' => 'success',
+        'message' => 'User updated account information.',
+        'metadata' => [
+            'fields' => ['username', 'phone', 'email']
+        ],
+        'audit' => true
+    ], $pdo);
     sendJsonResponse([
         'status' => 'ok',
         'message' => 'Account information updated successfully.',
@@ -1504,6 +1589,17 @@ function handleUserUpdatePassword(array $payload, ?PDO $pdo, string $userCode): 
         sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
     }
     refreshSessionUser($user);
+    panelLogUserActivity([
+        'level' => 'info',
+        'user_id' => $userCode,
+        'action' => 'user.password_updated',
+        'entity_type' => 'user',
+        'entity_id' => $userCode,
+        'status' => 'success',
+        'message' => 'User changed their password.',
+        'metadata' => [],
+        'audit' => true
+    ], $pdo);
     sendJsonResponse(['status' => 'ok', 'message' => 'Password updated successfully.']);
 }
 
@@ -1531,6 +1627,18 @@ function handleAdminResetUserPassword(array $payload, ?PDO $pdo, bool $isAuthent
     if ($hash === false || !updateUserByCode($pdo, $code, ['password_hash' => $hash])) {
         sendJsonResponse(['status' => 'error', 'message' => 'An error occurred while saving the password.']);
     }
+    panelLogUserActivity([
+        'level' => 'info',
+        'action' => 'admin.user_password_reset',
+        'entity_type' => 'user',
+        'entity_id' => $code,
+        'status' => 'success',
+        'message' => 'Admin reset a user password.',
+        'metadata' => [
+            'target_username' => $user['username'] ?? null
+        ],
+        'audit' => true
+    ], $pdo);
     sendJsonResponse(['status' => 'ok', 'message' => 'User password updated successfully.']);
 }
 

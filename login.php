@@ -4,6 +4,7 @@ declare(strict_types=1);
 session_start();
 require_once __DIR__ . '/api/lib/common.php';
 require_once __DIR__ . '/api/lib/users.php';
+require_once __DIR__ . '/api/lib/activity-logger.php';
 
 $configFile = __DIR__ . '/api/config.php';
 if (!empty($_SESSION['authenticated'])) {
@@ -39,6 +40,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($username === '' || $password === '') {
     $errors[] = 'نام کاربری و رمز عبور الزامی است.';
+    panelLogUserActivity([
+      'level' => 'warning',
+      'action' => 'user.login_failed',
+      'status' => 'failed',
+      'message' => 'Login failed because username or password was empty.',
+      'metadata' => [
+        'username' => $username,
+        'reason' => 'missing_credentials'
+      ],
+      'audit' => true
+    ], $pdo);
   } else {
     if (!$connectionError && $pdo) {
       try {
@@ -65,6 +77,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           ];
           $sessionUser['display_name'] = buildUserDisplayName($sessionUser);
           $_SESSION['user'] = $sessionUser;
+          panelLogUserActivity([
+            'level' => 'info',
+            'user_id' => $user['code'],
+            'action' => 'user.login',
+            'entity_type' => 'user',
+            'entity_id' => $user['code'],
+            'status' => 'success',
+            'message' => 'User logged in successfully.',
+            'metadata' => [
+              'username' => $user['username']
+            ],
+            'audit' => true
+          ], $pdo);
           header('Location: panel.php');
           exit;
         }
@@ -72,6 +97,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $connectionError = 'اجرای پرس وجوی پایگاه داده ناموفق بود.';
       }
     }
+
+    panelLogUserActivity([
+      'level' => $connectionError ? 'error' : 'warning',
+      'action' => 'user.login_failed',
+      'status' => 'failed',
+      'message' => $connectionError ? 'Login failed because authentication storage was unavailable.' : 'Invalid username or password.',
+      'metadata' => [
+        'username' => $username,
+        'reason' => $connectionError ? 'storage_error' : 'bad_credentials'
+      ],
+      'audit' => true
+    ], $pdo);
 
     $errors[] = $connectionError ?? 'نام کاربری یا رمز عبور نادرست است.';
   }

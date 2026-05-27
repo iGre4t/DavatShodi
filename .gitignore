@@ -18,3 +18,5 @@ api/config.php
 /bots/telegram bot/bot.json
 /bots/telegram bot/state.json
 /bots/telegram bot/*.log
+/system/useractivitylogs/logs/*.log
+/mini apps/Task Club/useractivitylogs/logs/*.log

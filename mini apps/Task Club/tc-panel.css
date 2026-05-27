@@ -897,8 +897,15 @@
 }
 
 .tc-shell .tc-participation-modal-card {
-  width: min(1080px, calc(100vw - 32px));
+  width: min(1480px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
   max-height: min(860px, calc(100vh - 32px));
+}
+
+#tc-invite-auth-modal.modal,
+#tc-invite-reset-modal.modal,
+#tc-invite-password-modal.modal {
+  z-index: 90;
 }
 
 .tc-shell .tc-participation-modal-card .modal-card-body {
@@ -960,6 +967,26 @@
 .tc-shell .tc-participation-task-title {
   font-weight: 700;
   color: #111827;
+}
+
+.tc-shell .tc-participation-action-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 170px;
+}
+
+.tc-shell .tc-participation-score-edit {
+  display: grid;
+  grid-template-columns: minmax(74px, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.tc-shell .tc-participation-score-edit input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
 }
 
 .tc-shell .tc-participation-status {
@@ -1469,9 +1496,88 @@
   unicode-bidi: plaintext;
 }
 
+.tc-shell .tc-logs-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 12px 0;
+}
+
+.tc-shell .tc-logs-status {
+  margin: 8px 0 12px;
+}
+
+.tc-shell .tc-logs-status.error {
+  color: #c0262d;
+}
+
+.tc-shell .tc-logs-table-wrap {
+  max-height: 620px;
+  overflow: auto;
+}
+
+.tc-shell .tc-logs-table {
+  min-width: 980px;
+  table-layout: auto;
+}
+
+.tc-shell .tc-logs-table th,
+.tc-shell .tc-logs-table td {
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.tc-shell .tc-logs-table td:nth-child(6) {
+  min-width: 220px;
+  white-space: normal;
+}
+
+.tc-shell .tc-logs-table code {
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+
+.tc-shell .tc-log-level {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid #c8dcff;
+  background: #e8f0ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-transform: lowercase;
+}
+
+.tc-shell .tc-log-level--warning {
+  border-color: #f7d774;
+  background: #fff7d6;
+  color: #9a6700;
+}
+
+.tc-shell .tc-log-level--error {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #c0262d;
+}
+
+.tc-shell .tc-log-level--critical {
+  border-color: #ef4444;
+  background: #7f1d1d;
+  color: #ffffff;
+}
+
 @media (max-width: 900px) {
   .tc-shell .tc-monitoring-kpi--wide {
     grid-column: span 1;
+  }
+
+  .tc-shell .tc-logs-toolbar {
+    grid-template-columns: 1fr;
   }
 }
 

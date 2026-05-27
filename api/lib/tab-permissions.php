@@ -35,7 +35,8 @@ function getPanelChildTabDefinitionsByParent(): array
             ['id' => 'task-club:task-access', 'label' => 'دسترسی ادمین'],
             ['id' => 'task-club:monitoring', 'label' => 'مانیتورینگ'],
             ['id' => 'task-club:export', 'label' => 'خروجی'],
-            ['id' => 'task-club:event-style', 'label' => 'استایل رویداد']
+            ['id' => 'task-club:event-style', 'label' => 'استایل رویداد'],
+            ['id' => 'task-club:logs', 'label' => 'Logs']
         ],
         'rate-me' => [
             ['id' => 'rate-me:main', 'label' => 'Main Panel'],
