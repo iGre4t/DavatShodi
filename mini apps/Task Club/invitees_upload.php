@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/tc-security-loader.php';
 require_once __DIR__ . '/invitees_special_access.php';
 $tcInviteesUploadSessionUser = requireTabPermissionFromSession('task-club', true);
 if (!userHasPermissionId($tcInviteesUploadSessionUser, 'task-club:invitees')) {

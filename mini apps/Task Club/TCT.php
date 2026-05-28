@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/tc-security-loader.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
 $tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));

@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/tc-security-loader.php';
 require_once __DIR__ . '/invitees_special_access.php';
 $tcInviteesSessionUser = requireTabPermissionFromSession('task-club', false);
 if (!userHasPermissionId($tcInviteesSessionUser, 'task-club:invitees')) {

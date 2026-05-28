@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+$tcSecurityFile = __DIR__ . '/tc-security.php';
+if (is_file($tcSecurityFile)) {
+  require_once $tcSecurityFile;
+}
+
 if (!function_exists('tcSecurityEnsureSessionStarted')) {
   function tcSecurityEnsureSessionStarted(): void
   {

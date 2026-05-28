@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/tc-security-loader.php';
 $tcStoreSessionUser = requireTabPermissionFromSession('task-club', true);
 tcSecurityGetCsrfToken();
 

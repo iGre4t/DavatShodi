@@ -92,7 +92,7 @@ foreach ([
     break;
   }
 }
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/tc-security-loader.php';
 $tcPanelCsrfToken = tcSecurityGetCsrfToken();
 
 $tcPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
