@@ -15,6 +15,9 @@ api/config.php
 /mini apps/Wheel of Fortune/*.log
 /mini apps/Wheel of Fortune/*.tmp
 /mini apps/**/*.json
+/mini apps/Task Club/TC Event/*.csv
+/mini apps/Task Club/tasks/tasks.js
+/mini apps/Task Club/tasks/**/*.csv
 /bots/telegram bot/bot.json
 /bots/telegram bot/state.json
 /bots/telegram bot/*.log
