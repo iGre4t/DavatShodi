@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $tcSecurityFile = __DIR__ . '/tc-security.php';
-if (is_file($tcSecurityFile)) {
+if (is_readable($tcSecurityFile)) {
   require_once $tcSecurityFile;
 }
 
