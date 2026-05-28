@@ -3695,12 +3695,29 @@
     if (!(body instanceof HTMLElement)) return;
     const logs = Array.isArray(items) ? items : [];
     if (!logs.length) {
-      body.innerHTML = '<tr><td colspan="7" class="muted">No logs found.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="muted">No logs found.</td></tr>';
       return;
     }
     body.innerHTML = logs.map((item) => {
       const userLabel = String(item?.username || item?.user_id || '').trim() || '-';
       const message = String(item?.message || '').trim() || '-';
+      const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+      const detailKeys = [
+        'requestAction',
+        'answerText',
+        'seconds_waited',
+        'quiz_duration_seconds',
+        'questionCode',
+        'questionIndex',
+        'taskTitle',
+        'slide',
+        'durationMs',
+        'reason'
+      ];
+      const details = detailKeys
+        .filter((key) => metadata[key] !== undefined && metadata[key] !== null && String(metadata[key]).trim() !== '')
+        .map((key) => `${key}: ${String(metadata[key])}`)
+        .join(' | ');
       const entity = [item?.entity_type, item?.entity_id]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
@@ -3717,6 +3734,7 @@
           <td><code>${escapeHtml(action || '-')}</code></td>
           <td>${escapeHtml(item?.status || '-')}</td>
           <td>${escapeHtml(message)}</td>
+          <td>${escapeHtml(details || '-')}</td>
           <td><code>${escapeHtml(item?.ip_address || '-')}</code></td>
         </tr>
       `;

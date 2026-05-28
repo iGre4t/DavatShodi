@@ -1518,7 +1518,7 @@
 }
 
 .tc-shell .tc-logs-table {
-  min-width: 980px;
+  min-width: 1180px;
   table-layout: auto;
 }
 
@@ -1528,7 +1528,8 @@
   white-space: nowrap;
 }
 
-.tc-shell .tc-logs-table td:nth-child(6) {
+.tc-shell .tc-logs-table td:nth-child(6),
+.tc-shell .tc-logs-table td:nth-child(7) {
   min-width: 220px;
   white-space: normal;
 }

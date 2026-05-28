@@ -700,11 +700,12 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
                 <th>Action</th>
                 <th>Status</th>
                 <th>Message</th>
+                <th>Details</th>
                 <th>IP</th>
               </tr>
             </thead>
             <tbody id="tc-logs-body">
-              <tr><td colspan="7" class="muted">Logs are loaded separately when this tab opens.</td></tr>
+              <tr><td colspan="8" class="muted">Logs are loaded separately when this tab opens.</td></tr>
             </tbody>
           </table>
         </div>

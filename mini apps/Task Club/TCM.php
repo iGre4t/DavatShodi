@@ -44,7 +44,22 @@ if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
     'status' => 'success',
     'message' => 'Task Club user force logged out.',
     'metadata' => [
-      'forced' => true
+      'forced' => true,
+      'session_duration_seconds' => tcActivitySessionDurationSeconds()
+    ],
+    'audit' => true
+  ]);
+  tcActivityLogUserActivity([
+    'level' => 'info',
+    'user_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
+    'action' => 'taskclub.session.end',
+    'entity_type' => 'taskclub_session',
+    'entity_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
+    'status' => 'success',
+    'message' => 'Task Club session ended by force logout.',
+    'metadata' => [
+      'reason' => 'force_logout',
+      'session_duration_seconds' => tcActivitySessionDurationSeconds()
     ],
     'audit' => true
   ]);
@@ -4003,6 +4018,121 @@ function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns,
   return ['order' => $order, 'answered' => $answered, 'changed' => $changed];
 }
 
+function tcActivitySessionStartedAt(): int
+{
+  $startedAt = (int)($_SESSION['tc_session_started_at'] ?? 0);
+  if ($startedAt <= 0) {
+    $startedAt = time();
+    $_SESSION['tc_session_started_at'] = $startedAt;
+  }
+  return $startedAt;
+}
+
+function tcActivitySessionDurationSeconds(): int
+{
+  return max(0, time() - tcActivitySessionStartedAt());
+}
+
+function tcNormalizeActivityMetadata($value, int $depth = 0)
+{
+  if ($depth > 5) {
+    return '[max_depth]';
+  }
+  if ($value === null || is_bool($value) || is_int($value) || is_float($value) || is_string($value)) {
+    return $value;
+  }
+  if (is_array($value)) {
+    $normalized = [];
+    foreach ($value as $key => $item) {
+      if (is_int($key) || is_string($key)) {
+        $normalized[$key] = tcNormalizeActivityMetadata($item, $depth + 1);
+      }
+    }
+    return $normalized;
+  }
+  return (string)gettype($value);
+}
+
+function tcLogClientActivity(array $payload, string $fallbackWorkId = ''): void
+{
+  $eventType = strtolower(trim((string)($payload['eventType'] ?? 'activity')));
+  $allowedEvents = [
+    'page_refresh' => true,
+    'page_load' => true,
+    'heartbeat' => true,
+    'interface_active' => true,
+    'interface_inactive' => true,
+    'session_end' => true,
+    'session_time' => true,
+    'session_expire' => true,
+    'slide_enter' => true,
+    'slide_leave' => true,
+    'slide_time' => true,
+    'task_action' => true
+  ];
+  if (!isset($allowedEvents[$eventType])) {
+    $eventType = 'activity';
+  }
+  $workId = trim($fallbackWorkId);
+  if ($workId === '') {
+    $workId = trim((string)($payload['workId'] ?? ''));
+  }
+  $metadata = is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [];
+  $metadata['client_event_type'] = $eventType;
+  $metadata['session_duration_seconds'] = tcActivitySessionDurationSeconds();
+  foreach (['slide', 'previousSlide', 'taskId', 'taskType', 'taskTitle', 'questionCode', 'durationMs', 'visible', 'focused', 'reason'] as $key) {
+    if (array_key_exists($key, $payload)) {
+      $metadata[$key] = $payload[$key];
+    }
+  }
+  tcActivityLogUserActivity([
+    'level' => $eventType === 'session_expire' ? 'warning' : 'info',
+    'user_id' => $workId !== '' ? $workId : null,
+    'action' => 'taskclub.' . $eventType,
+    'entity_type' => !empty($payload['taskId']) ? 'taskclub_task' : 'taskclub_session',
+    'entity_id' => trim((string)($payload['taskId'] ?? '')) ?: ($workId !== '' ? $workId : null),
+    'status' => $eventType === 'session_expire' ? 'expired' : 'success',
+    'message' => trim((string)($payload['message'] ?? '')),
+    'metadata' => tcNormalizeActivityMetadata($metadata)
+  ]);
+}
+
+function tcLogTaskRequestActivity(string $action, array $payload, string $sessionWorkId): void
+{
+  if ($sessionWorkId === '' || $action === '' || $action === 'activity_log') {
+    return;
+  }
+  $isTaskAction = in_array($action, ['reward_state', 'reward_flip', 'log_roll', 'log_answer', 'update_answered', 'log_prize'], true);
+  foreach (['task_', 'describe_photo_', 'team_task_'] as $prefix) {
+    if (strncmp($action, $prefix, strlen($prefix)) === 0) {
+      $isTaskAction = true;
+      break;
+    }
+  }
+  if (!$isTaskAction) {
+    return;
+  }
+  tcActivityLogUserActivity([
+    'level' => 'info',
+    'user_id' => $sessionWorkId,
+    'action' => 'taskclub.task.action',
+    'entity_type' => !empty($payload['taskId']) ? 'taskclub_task' : 'taskclub_action',
+    'entity_id' => trim((string)($payload['taskId'] ?? '')) ?: $action,
+    'status' => 'requested',
+    'message' => 'Task Club user action requested.',
+    'metadata' => tcNormalizeActivityMetadata([
+      'request_action' => $action,
+      'mode' => $payload['mode'] ?? null,
+      'task_id' => $payload['taskId'] ?? null,
+      'question_code' => $payload['questionCode'] ?? null,
+      'target_work_id' => $payload['targetWorkId'] ?? null,
+      'team_id' => $payload['teamId'] ?? null,
+      'photo_id' => $payload['photoId'] ?? null,
+      'level_id' => $payload['levelId'] ?? null
+    ])
+  ]);
+}
+
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   header('Content-Type: application/json; charset=UTF-8');
@@ -4015,6 +4145,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $sessionCsrf = bin2hex(random_bytes(16));
     $_SESSION['tc_csrf'] = $sessionCsrf;
   }
+  $sessionWorkIdForActivity = trim((string)($_SESSION['tc_work_id'] ?? ''));
+  if ($action === 'activity_log') {
+    $csrfOk = $csrfToken !== '' && $sessionCsrf !== '' && hash_equals($sessionCsrf, $csrfToken);
+    $eventType = strtolower(trim((string)($payload['eventType'] ?? '')));
+    $preCsrfAllowed = in_array($eventType, ['session_expire', 'session_end', 'session_time', 'page_refresh'], true);
+    if ($csrfOk || $preCsrfAllowed) {
+      tcLogClientActivity(is_array($payload) ? $payload : [], $sessionWorkIdForActivity);
+      echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+  }
   if ($csrfToken === '' || $sessionCsrf === '' || !hash_equals($sessionCsrf, $csrfToken)) {
     echo json_encode([
       'status' => 'error',
@@ -4023,6 +4164,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'csrf' => $sessionCsrf
     ], JSON_UNESCAPED_UNICODE);
     exit;
+  }
+  if ($sessionWorkIdForActivity !== '') {
+    tcLogTaskRequestActivity($action, is_array($payload) ? $payload : [], $sessionWorkIdForActivity);
   }
 
 
@@ -4180,6 +4324,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $_SESSION['tc_authed'] = true;
     $_SESSION['tc_work_id'] = $resolvedWorkId;
     session_regenerate_id(true);
+    $_SESSION['tc_session_started_at'] = time();
     $_SESSION['tc_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
     $prizeIndex = $columns['prize won'] ?? -1;
     $prizeWonAtIndex = $columns['prize won at'] ?? -1;
@@ -4214,6 +4359,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       ],
       'audit' => true
     ]);
+    tcActivityLogUserActivity([
+      'level' => 'info',
+      'user_id' => $resolvedWorkId,
+      'action' => 'taskclub.session.start',
+      'entity_type' => 'taskclub_session',
+      'entity_id' => $resolvedWorkId,
+      'status' => 'success',
+      'message' => 'Task Club session started.',
+      'metadata' => [
+        'username' => $username,
+        'full_name' => $fullName,
+        'session_started_at' => $_SESSION['tc_session_started_at']
+      ],
+      'audit' => true
+    ]);
     echo json_encode([
       'status' => 'ok',
       'fullName' => $fullName,
@@ -4236,7 +4396,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'entity_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
       'status' => 'success',
       'message' => 'Task Club user logged out.',
-      'metadata' => [],
+      'metadata' => [
+        'session_duration_seconds' => tcActivitySessionDurationSeconds()
+      ],
+      'audit' => true
+    ]);
+    tcActivityLogUserActivity([
+      'level' => 'info',
+      'user_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
+      'action' => 'taskclub.session.end',
+      'entity_type' => 'taskclub_session',
+      'entity_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
+      'status' => 'success',
+      'message' => 'Task Club session ended by logout.',
+      'metadata' => [
+        'session_duration_seconds' => tcActivitySessionDurationSeconds(),
+        'reason' => 'logout'
+      ],
       'audit' => true
     ]);
     session_unset();
@@ -6155,6 +6331,21 @@ $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlig
 $inviteesMtime = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
 $sessionAuthed = isset($_SESSION['tc_authed']) && $_SESSION['tc_authed'] === true;
 if ($sessionAuthed && $inviteesMtime === null) {
+  $expiredWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
+  tcActivityLogUserActivity([
+    'level' => 'warning',
+    'user_id' => $expiredWorkId !== '' ? $expiredWorkId : null,
+    'action' => 'taskclub.session.expire',
+    'entity_type' => 'taskclub_session',
+    'entity_id' => $expiredWorkId !== '' ? $expiredWorkId : null,
+    'status' => 'expired',
+    'message' => 'Task Club session expired because invitees data is unavailable.',
+    'metadata' => [
+      'reason' => 'invitees_missing',
+      'session_duration_seconds' => tcActivitySessionDurationSeconds()
+    ],
+    'audit' => true
+  ]);
   unset($_SESSION['tc_authed'], $_SESSION['tc_work_id'], $_SESSION['tc_invitees_mtime'], $_SESSION['tc_task_quiz_attempts']);
   $sessionAuthed = false;
 }
@@ -6186,6 +6377,20 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   }
   $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
   if ($rowIndex < 0) {
+    tcActivityLogUserActivity([
+      'level' => 'warning',
+      'user_id' => $sessionWorkId !== '' ? $sessionWorkId : null,
+      'action' => 'taskclub.session.expire',
+      'entity_type' => 'taskclub_session',
+      'entity_id' => $sessionWorkId !== '' ? $sessionWorkId : null,
+      'status' => 'expired',
+      'message' => 'Task Club session expired because user row was not found.',
+      'metadata' => [
+        'reason' => 'user_row_missing',
+        'session_duration_seconds' => tcActivitySessionDurationSeconds()
+      ],
+      'audit' => true
+    ]);
     unset($_SESSION['tc_authed'], $_SESSION['tc_work_id'], $_SESSION['tc_invitees_mtime'], $_SESSION['tc_task_quiz_attempts']);
     $sessionAuthed = false;
     $sessionWorkId = '';
@@ -10164,6 +10369,12 @@ $sessionPayload = [
         if (loaderText) {
           createRuntimeLoader(loaderText, loaderSubtext);
         }
+        if (typeof tcFlushCurrentSlide === 'function') {
+          tcFlushCurrentSlide('logout', { beacon: true });
+        }
+        if (typeof tcLogActivity === 'function') {
+          tcLogActivity('session_time', { reason: 'logout' }, { beacon: true });
+        }
         try {
           await fetch(window.location.href, {
             method: 'POST',
@@ -10383,6 +10594,9 @@ $sessionPayload = [
         let currentTaskType = 'quiz';
         let currentQuestions = [];
         let currentQuestionIndex = 0;
+        let currentQuestionShownAt = 0;
+        let currentQuizStartedAt = 0;
+        let currentTaskOpenedAt = 0;
         let currentCorrectAnswers = 0;
         let currentRequiredCorrectAnswers = 1;
         let currentAnsweredQuestions = 0;
@@ -10414,6 +10628,14 @@ $sessionPayload = [
         const QUIZ_TIME_LIMIT_MS = 14000;
         const CONDITIONAL_QUIZ_QUESTION_TIME_LIMIT_MS = 30000;
         const QUIZ_FEEDBACK_DELAY_MS = 1000;
+
+        const getTaskButtonMeta = (button) => ({
+          taskId: String(button?.dataset?.taskId || '').trim(),
+          taskType: String(button?.dataset?.taskType || '').trim(),
+          taskTitle: String(button?.dataset?.taskTitle || button?.textContent || '').trim(),
+          taskCompleted: String(button?.dataset?.taskCompleted || '') === '1',
+          taskStatus: String(button?.dataset?.taskStatus || '').trim()
+        });
 
         const parseHistoryDepth = (state) => {
           if (!state || typeof state !== 'object') return null;
@@ -11097,6 +11319,12 @@ $sessionPayload = [
         };
 
         const openQuizOverlay = () => {
+          tcTrackSlide(`quiz:${currentTaskId || 'unknown'}`, {
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            reason: 'quiz_open'
+          });
           if (timerAreaEl) {
             timerAreaEl.classList.add('quiz-hidden');
           }
@@ -11112,6 +11340,7 @@ $sessionPayload = [
         };
 
         const closeQuizOverlay = () => {
+          tcTrackSlide('task_list', { reason: 'quiz_close' });
           clearQuizTimer();
           hideConditionalQuizNextButton();
           if (quizAreaEl) {
@@ -11522,6 +11751,13 @@ $sessionPayload = [
           const isTeamSettingsStep = next === 'team_settings';
           const isTeamChallengeStep = next === 'team_challenge';
           infoTaskCurrentStep = next;
+          tcTrackSlide(`task:${currentTaskId || 'unknown'}:${currentTaskType}:${next}`, {
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            slideStep: next,
+            reason: 'task_step'
+          });
           if (taskInfoHeadEl) {
             taskInfoHeadEl.classList.toggle('hidden', !isInfoStep);
           }
@@ -12399,6 +12635,14 @@ $sessionPayload = [
         const startCurrentQuizTaskView = async () => {
           if (quizStarting) return;
           quizStarting = true;
+          currentQuizStartedAt = Date.now();
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_start',
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            seconds_since_task_opened: currentTaskOpenedAt > 0 ? Math.round((Date.now() - currentTaskOpenedAt) / 100) / 10 : null
+          });
           try {
             clearQuizTimer();
             if (!currentQuestions.length) {
@@ -12446,6 +12690,19 @@ $sessionPayload = [
         };
 
         const postJson = async (body, retriedOnCsrf = false) => {
+          const requestAction = String(body?.action || '').trim();
+          const isTrackedAction = /^(task_|describe_photo_|team_task_)/.test(requestAction)
+            || ['reward_state', 'reward_flip', 'log_roll', 'log_answer', 'update_answered', 'log_prize'].includes(requestAction);
+          if (!retriedOnCsrf && isTrackedAction) {
+            tcLogActivity('task_action', {
+              requestAction,
+              taskId: body?.taskId || currentTaskId,
+              taskType: currentTaskType,
+              taskTitle: currentTaskTitle,
+              questionCode: body?.questionCode || '',
+              mode: body?.mode || ''
+            });
+          }
           const response = await fetch(window.location.href, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -12461,11 +12718,125 @@ $sessionPayload = [
             csrfToken = payload.csrf.trim();
             return postJson(body, true);
           }
+          if (payload?.status === 'error' && String(payload?.message || '').includes('ابتدا وارد شوید')) {
+            tcLogActivity('session_expire', { reason: 'server_requires_login', requestAction: body?.action || '' }, { beacon: true });
+          }
           if (!response.ok || payload?.status !== 'ok') {
             throw new Error(payload?.message || 'درخواست ناموفق بود.');
           }
           return payload;
         };
+
+        const tcActivityClientId = (() => {
+          try {
+            const key = `tc_activity_client_${String(sessionInfo?.workId || 'guest')}`;
+            const existing = sessionStorage.getItem(key);
+            if (existing) return existing;
+            const generated = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+            sessionStorage.setItem(key, generated);
+            return generated;
+          } catch {
+            return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+          }
+        })();
+        const tcActivityStartedAt = Date.now();
+        let tcCurrentSlide = null;
+
+        const tcBuildActivityPayload = (eventType, metadata = {}) => ({
+          action: 'activity_log',
+          csrf: csrfToken,
+          eventType,
+          workId: String(sessionInfo?.workId || ''),
+          taskId: String(metadata?.taskId ?? currentTaskId ?? ''),
+          taskType: String(metadata?.taskType ?? currentTaskType ?? ''),
+          taskTitle: String(metadata?.taskTitle ?? currentTaskTitle ?? ''),
+          slide: metadata?.slide,
+          previousSlide: metadata?.previousSlide,
+          questionCode: metadata?.questionCode,
+          durationMs: metadata?.durationMs,
+          visible: document.visibilityState === 'visible',
+          focused: document.hasFocus(),
+          reason: metadata?.reason,
+          metadata: {
+            ...metadata,
+            client_id: tcActivityClientId,
+            client_session_ms: Math.max(0, Date.now() - tcActivityStartedAt),
+            path: window.location.pathname
+          }
+        });
+
+        const tcLogActivity = (eventType, metadata = {}, options = {}) => {
+          const payload = tcBuildActivityPayload(eventType, metadata);
+          const body = JSON.stringify(payload);
+          if (options?.beacon && navigator.sendBeacon) {
+            try {
+              const blob = new Blob([body], { type: 'application/json' });
+              if (navigator.sendBeacon(window.location.href, blob)) return;
+            } catch {}
+          }
+          fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: Boolean(options?.beacon)
+          }).catch(() => {});
+        };
+
+        const tcFlushCurrentSlide = (reason = 'leave', options = {}) => {
+          if (!tcCurrentSlide) return;
+          const durationMs = Math.max(0, Date.now() - tcCurrentSlide.startedAt);
+          tcLogActivity('slide_time', {
+            ...tcCurrentSlide.metadata,
+            slide: tcCurrentSlide.name,
+            durationMs,
+            reason
+          }, options);
+        };
+
+        const tcTrackSlide = (name, metadata = {}) => {
+          const nextName = String(name || '').trim();
+          if (!nextName) return;
+          if (tcCurrentSlide?.name === nextName) return;
+          const previousSlide = tcCurrentSlide?.name || '';
+          tcFlushCurrentSlide('switch');
+          tcCurrentSlide = {
+            name: nextName,
+            startedAt: Date.now(),
+            metadata: { ...metadata, slide: nextName, previousSlide }
+          };
+          tcLogActivity('slide_enter', tcCurrentSlide.metadata);
+        };
+
+        const tcLogInterfaceState = (reason = 'heartbeat') => {
+          const isActive = document.visibilityState === 'visible' && document.hasFocus();
+          tcLogActivity(isActive ? 'interface_active' : 'interface_inactive', {
+            slide: tcCurrentSlide?.name || 'task_list',
+            reason
+          });
+        };
+
+        try {
+          const navigationEntry = performance.getEntriesByType?.('navigation')?.[0];
+          if (navigationEntry?.type === 'reload' || performance.navigation?.type === 1) {
+            tcLogActivity('page_refresh', { reason: 'navigation_reload' });
+          }
+        } catch {}
+        tcLogActivity('page_load', { reason: 'interface_loaded' });
+        window.setTimeout(() => tcTrackSlide('task_list', { reason: 'initial' }), 0);
+        window.setInterval(() => {
+          tcLogInterfaceState('heartbeat');
+          tcLogActivity('heartbeat', { slide: tcCurrentSlide?.name || 'task_list' });
+        }, 30000);
+        document.addEventListener('visibilitychange', () => {
+          tcLogInterfaceState(document.visibilityState === 'visible' ? 'visibility_visible' : 'visibility_hidden');
+        });
+        window.addEventListener('focus', () => tcLogInterfaceState('window_focus'));
+        window.addEventListener('blur', () => tcLogInterfaceState('window_blur'));
+        window.addEventListener('pagehide', () => {
+          tcFlushCurrentSlide('pagehide', { beacon: true });
+          tcLogActivity('session_time', { reason: 'pagehide' }, { beacon: true });
+          tcLogActivity('session_end', { reason: 'pagehide' }, { beacon: true });
+        });
 
         const formatRewardNumber = (value) => {
           const n = Number(value || 0);
@@ -13115,6 +13486,10 @@ $sessionPayload = [
         };
 
         const openRewardCardsSlide = async (levelId, options = {}) => {
+          tcTrackSlide(`reward_cards:${String(levelId || '')}`, {
+            levelId: String(levelId || ''),
+            reason: 'reward_cards_open'
+          });
           const shouldPushHistory = options?.pushHistory !== false;
           if (!(rewardCardsViewEl instanceof HTMLElement)) return;
           const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
@@ -13153,6 +13528,7 @@ $sessionPayload = [
         };
 
         const closeRewardCardsSlide = () => {
+          tcTrackSlide('rewards', { reason: 'reward_cards_close' });
           rewardsCardsViewOpen = false;
           selectedRewardLevelId = '';
           if (rewardCardsViewEl) {
@@ -13163,6 +13539,7 @@ $sessionPayload = [
         };
 
         const openRewardsView = async (options = {}) => {
+          tcTrackSlide('rewards', { reason: 'rewards_open' });
           const shouldPushHistory = options?.pushHistory !== false;
           if (shouldPushHistory && !rewardsViewOpen) {
             pushInPageHistoryState();
@@ -13188,6 +13565,7 @@ $sessionPayload = [
         };
 
         const closeRewardsView = () => {
+          tcTrackSlide('task_list', { reason: 'rewards_close' });
           rewardsViewOpen = false;
           rewardsCardsViewOpen = false;
           clearRewardEventTick();
@@ -13313,6 +13691,15 @@ $sessionPayload = [
             return;
           }
           quizCompletionInFlight = true;
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_complete_started',
+            taskId: completedTaskId,
+            taskType: completingTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item?.code ?? '').trim(),
+            answerText: String(answerText ?? '').trim(),
+            quiz_duration_seconds: currentQuizStartedAt > 0 ? Math.round((Date.now() - currentQuizStartedAt) / 100) / 10 : null
+          });
           let payload;
           try {
             payload = await withTransitionLoader(() => postJson({
@@ -13355,6 +13742,16 @@ $sessionPayload = [
           }
 
           applyTaskCompletionPayload(completedTaskId, payload);
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_complete_finished',
+            taskId: completedTaskId,
+            taskType: completingTaskType,
+            taskTitle: currentTaskTitle,
+            awardedScore: Number.parseInt(payload?.awardedScore ?? 0, 10) || 0,
+            userTaskScore: Number.parseInt(payload?.userTaskScore ?? payload?.score ?? 0, 10) || 0,
+            taskCompleted: Boolean(payload?.taskCompleted ?? true),
+            quiz_duration_seconds: currentQuizStartedAt > 0 ? Math.round((Date.now() - currentQuizStartedAt) / 100) / 10 : null
+          });
 
           closeQuizOverlay();
           if (payload?.alreadyCompleted) {
@@ -13415,6 +13812,15 @@ $sessionPayload = [
           if (quizLocked) return;
           quizLocked = true;
           const item = currentQuestions[currentQuestionIndex] || null;
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_question_timeout',
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item?.code || ''),
+            questionIndex: currentQuestionIndex + 1,
+            seconds_waited: currentQuestionShownAt > 0 ? Math.round((Date.now() - currentQuestionShownAt) / 100) / 10 : null
+          });
           try {
             const payload = await sendTaskAnswer(item, '');
             syncQuizAttemptProgress(payload, false);
@@ -13458,6 +13864,19 @@ $sessionPayload = [
           if (quizLocked) return;
           quizLocked = true;
           clearQuizTimer();
+          const secondsWaited = currentQuestionShownAt > 0 ? Math.round((Date.now() - currentQuestionShownAt) / 100) / 10 : null;
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_answer_selected',
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item?.code || ''),
+            questionIndex: currentQuestionIndex + 1,
+            answerType: 'choice',
+            answerText: String(answerText ?? ''),
+            clientMarkedCorrect: Boolean(isCorrect),
+            seconds_waited: secondsWaited
+          });
           Array.from(quizAnswersEl?.querySelectorAll('button') || []).forEach((node) => {
             if (node instanceof HTMLButtonElement) {
               node.disabled = true;
@@ -13474,6 +13893,18 @@ $sessionPayload = [
           }
           syncQuizAttemptProgress(answerPayload, isCorrect);
           const wasCorrect = Boolean(answerPayload?.wasCorrect ?? isCorrect);
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_answer_recorded',
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item?.code || ''),
+            questionIndex: currentQuestionIndex + 1,
+            answerType: 'choice',
+            answerText: String(answerText ?? ''),
+            serverMarkedCorrect: wasCorrect,
+            seconds_waited: secondsWaited
+          });
 
           if (wasCorrect) {
             if (button instanceof HTMLButtonElement) {
@@ -13521,6 +13952,18 @@ $sessionPayload = [
           quizLocked = true;
           clearQuizTimer();
           const value = Math.max(0, Math.min(100, Number.parseInt(slider.value || '0', 10)));
+          const secondsWaited = currentQuestionShownAt > 0 ? Math.round((Date.now() - currentQuestionShownAt) / 100) / 10 : null;
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_answer_selected',
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item?.code || ''),
+            questionIndex: currentQuestionIndex + 1,
+            answerType: 'percentage',
+            answerText: String(value),
+            seconds_waited: secondsWaited
+          });
           let answerPayload;
           try {
             answerPayload = await sendTaskAnswer(item, String(value));
@@ -13530,6 +13973,18 @@ $sessionPayload = [
             return;
           }
           syncQuizAttemptProgress(answerPayload, Boolean(answerPayload?.wasCorrect ?? true));
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_answer_recorded',
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item?.code || ''),
+            questionIndex: currentQuestionIndex + 1,
+            answerType: 'percentage',
+            answerText: String(value),
+            serverMarkedCorrect: Boolean(answerPayload?.wasCorrect ?? true),
+            seconds_waited: secondsWaited
+          });
           if (submitButton instanceof HTMLButtonElement) {
             submitButton.classList.add('is-correct');
             submitButton.disabled = true;
@@ -13615,6 +14070,27 @@ $sessionPayload = [
             }
             return false;
           }
+          currentQuestionShownAt = Date.now();
+          tcTrackSlide(`quiz:${currentTaskId || 'unknown'}:${String(item.code || currentQuestionIndex + 1)}`, {
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item.code || ''),
+            questionIndex: currentQuestionIndex + 1,
+            questionTotal: total,
+            reason: revealCard ? 'question_revealed' : 'question_loaded'
+          });
+          tcLogActivity('task_action', {
+            requestAction: 'quiz_question_shown',
+            taskId: currentTaskId,
+            taskType: currentTaskType,
+            taskTitle: currentTaskTitle,
+            questionCode: String(item.code || ''),
+            questionIndex: currentQuestionIndex + 1,
+            questionTotal: total,
+            questionType: String(item.type || ''),
+            revealCard: Boolean(revealCard)
+          });
 
           const baseCounter = `${currentQuestionIndex + 1} / ${total}`;
           quizCounterEl.textContent = baseCounter;
@@ -13720,6 +14196,12 @@ $sessionPayload = [
         const startTaskQuiz = async (button) => {
           const taskId = String(button?.dataset?.taskId || '').trim();
           if (!taskId) return;
+          const clickedMeta = getTaskButtonMeta(button);
+          currentTaskOpenedAt = Date.now();
+          tcLogActivity('task_action', {
+            requestAction: 'task_open_started',
+            ...clickedMeta
+          });
           if (globalEventStatus === 'inactive') {
             openTaskResultDialog(0, 'فعلا رویداد فعالی وجود ندارد.');
             return;
@@ -13751,6 +14233,14 @@ $sessionPayload = [
             if (fetchedTaskType === 'info' || fetchedTaskType === 'team_task' || fetchedTaskType === 'describe_photo') {
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
+              tcLogActivity('task_action', {
+                requestAction: 'task_opened',
+                taskId: currentTaskId,
+                taskType: fetchedTaskType,
+                taskTitle: currentTaskTitle,
+                taskAvailable: Boolean(payload?.task?.available),
+                seconds_to_open: currentTaskOpenedAt > 0 ? Math.round((Date.now() - currentTaskOpenedAt) / 100) / 10 : null
+              });
               const describePhotos = Array.isArray(payload?.task?.describePhotos) ? payload.task.describePhotos : [];
               const teamContext = payload?.task?.teamContext && typeof payload.task.teamContext === 'object'
                 ? payload.task.teamContext
@@ -13778,6 +14268,15 @@ $sessionPayload = [
             currentTaskId = taskId;
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
             currentTaskType = normalizeTaskTypeToken(fetchedTaskType);
+            tcLogActivity('task_action', {
+              requestAction: 'task_opened',
+              taskId: currentTaskId,
+              taskType: currentTaskType,
+              taskTitle: currentTaskTitle,
+              taskAvailable: Boolean(payload?.task?.available),
+              questionCount: normalizedQuestions.length,
+              seconds_to_open: currentTaskOpenedAt > 0 ? Math.round((Date.now() - currentTaskOpenedAt) / 100) / 10 : null
+            });
             currentQuestions = normalizedQuestions.slice();
             currentQuestionIndex = 0;
             currentCorrectAnswers = 0;
@@ -13810,6 +14309,11 @@ $sessionPayload = [
               { taskType: currentTaskType }
             );
           } catch (error) {
+            tcLogActivity('task_action', {
+              requestAction: 'task_open_failed',
+              ...clickedMeta,
+              errorMessage: error?.message || ''
+            });
             openTaskResultDialog(0, error?.message || 'دریافت سوالات ماموریت ناموفق بود.');
           }
         };
@@ -13828,6 +14332,12 @@ $sessionPayload = [
         }
         if (taskInfoAckBtnEl) {
           taskInfoAckBtnEl.addEventListener('click', async () => {
+            tcLogActivity('task_action', {
+              requestAction: 'task_info_ack',
+              taskId: currentTaskId,
+              taskType: currentTaskType,
+              taskTitle: currentTaskTitle
+            });
             if (currentTaskType === 'describe_photo') {
               if (!describePhotoChoices.length) {
                 await openInfoDialog('برای این ماموریت تصویری ثبت نشده است.', 'ماموریت تصویر');
@@ -13898,6 +14408,12 @@ $sessionPayload = [
         if (describePhotoChangeBtnEl) {
           describePhotoChangeBtnEl.addEventListener('click', () => {
             if (!describePhotoChoices.length) return;
+            tcLogActivity('task_action', {
+              requestAction: 'describe_photo_change',
+              taskId: currentTaskId,
+              taskType: currentTaskType,
+              taskTitle: currentTaskTitle
+            });
             describePhotoCurrentIndex = (describePhotoCurrentIndex + 1) % describePhotoChoices.length;
             renderDescribePhotoChoice();
           });
@@ -13905,6 +14421,12 @@ $sessionPayload = [
 
         if (describePhotoSelectBtnEl) {
           describePhotoSelectBtnEl.addEventListener('click', () => {
+            tcLogActivity('task_action', {
+              requestAction: 'describe_photo_select',
+              taskId: currentTaskId,
+              taskType: currentTaskType,
+              taskTitle: currentTaskTitle
+            });
             void withTransitionLoader(
               () => openDescribePhotoEditor(),
               {
@@ -14469,7 +14991,16 @@ $sessionPayload = [
 
         taskButtons.forEach((button) => {
           button.addEventListener('click', () => {
+            const clickedMeta = getTaskButtonMeta(button);
+            tcLogActivity('task_action', {
+              requestAction: 'task_clicked',
+              ...clickedMeta
+            });
             if (button.disabled) {
+              tcLogActivity('task_action', {
+                requestAction: 'task_click_ignored_disabled',
+                ...clickedMeta
+              });
               return;
             }
             void withTransitionLoader(
