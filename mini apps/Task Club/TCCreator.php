@@ -281,6 +281,27 @@ function tcCreatorInitializeMission(string $targetDir, string $name, string $fol
   if (file_put_contents($targetDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Answers.csv', "Work ID\n", LOCK_EX) === false) {
     throw new RuntimeException('Failed to initialize answers store.');
   }
+  tcCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'Setting.json', [
+    'active' => false,
+    'duration' => false,
+    'maintenanceMode' => false,
+    'startDate' => '',
+    'startTime' => '',
+    'endDate' => '',
+    'endTime' => '',
+    'eventName' => $name,
+    'eventLogo' => '',
+    'eventColors' => [
+      'secondary' => '#2F8FFF',
+      'highlight' => '#20C997',
+      'accentSoft' => '#FFB347'
+    ],
+    'landing' => [
+      'title' => $name,
+      'subtitle' => '',
+      'sections' => []
+    ]
+  ]);
 
   tcCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'mission.json', [
     'name' => $name,

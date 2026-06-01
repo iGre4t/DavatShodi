@@ -36,6 +36,67 @@ function normalizeHexColor($value, string $fallback): string
   return strtoupper($fallback);
 }
 
+function normalizeLandingSection($section, int $index): ?array
+{
+  if (!is_array($section)) {
+    return null;
+  }
+  $title = trim((string)($section['title'] ?? ''));
+  $text = trim(str_replace(["\r\n", "\r"], "\n", (string)($section['text'] ?? ($section['html'] ?? ''))));
+  if ($title === '' && $text === '') {
+    return null;
+  }
+  return [
+    'id' => trim((string)($section['id'] ?? ('landing_section_' . ($index + 1)))),
+    'title' => $title,
+    'text' => $text
+  ];
+}
+
+function normalizeLandingSettings($value): array
+{
+  $source = is_array($value) ? $value : [];
+  $sections = [];
+  foreach ((array)($source['sections'] ?? []) as $index => $section) {
+    $normalized = normalizeLandingSection($section, (int)$index);
+    if ($normalized !== null) {
+      $sections[] = $normalized;
+    }
+  }
+  return [
+    'title' => trim((string)($source['title'] ?? '')),
+    'subtitle' => trim(str_replace(["\r\n", "\r"], "\n", (string)($source['subtitle'] ?? ''))),
+    'sections' => $sections
+  ];
+}
+
+function sanitizeLandingHtml(string $html): string
+{
+  $clean = strip_tags($html, '<b><strong><i><em><u><a><ul><ol><li><br><p><h3>');
+  $clean = preg_replace('/\s+on[a-z]+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $clean);
+  $clean = preg_replace('/\s+style\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $clean);
+  $clean = preg_replace_callback('/<a\b([^>]*)>/i', static function (array $matches): string {
+    $attrs = (string)($matches[1] ?? '');
+    if (!preg_match('/\bhref\s*=\s*([\'"])(.*?)\1/i', $attrs, $hrefMatch)) {
+      return '<a>';
+    }
+    $href = trim((string)($hrefMatch[2] ?? ''));
+    if ($href === '' || !preg_match('/^(?:https?:\/\/|mailto:|tel:|#|\/)/i', $href)) {
+      return '<a>';
+    }
+    return '<a href="' . htmlspecialchars($href, ENT_QUOTES, 'UTF-8') . '" rel="noopener noreferrer">';
+  }, $clean);
+  return is_string($clean) ? $clean : '';
+}
+
+function formatLandingBodyHtml(string $text): string
+{
+  if (preg_match('/<\s*[a-z][\s\S]*>/i', $text)) {
+    return sanitizeLandingHtml($text);
+  }
+  return nl2br(htmlspecialchars($text, ENT_QUOTES, 'UTF-8'), false);
+}
+
 function loadPanelSettings(): array
 {
   $defaults = ['siteIcon' => ''];
@@ -46,6 +107,8 @@ function loadPanelSettings(): array
 
 $settings = loadJsonPayload(__DIR__ . '/Setting.json');
 $panelSettings = loadPanelSettings();
+$landing = normalizeLandingSettings($settings['landing'] ?? []);
+$landingHasCustom = $landing['title'] !== '' || $landing['subtitle'] !== '' || count($landing['sections']) > 0;
 $eventColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
 $eventSecondary = normalizeHexColor($eventColors['secondary'] ?? '', '#2F8FFF');
 $eventHighlight = normalizeHexColor($eventColors['highlight'] ?? '', '#20C997');
@@ -311,7 +374,8 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
       font-weight: 700;
     }
 
-    .section p {
+    .section p,
+    .section .section-body {
       margin: 0;
       color: #334b74;
       font-size: .87rem;
@@ -326,7 +390,14 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
       line-height: 1.95;
     }
 
+    .section .section-body ul,
+    .section .section-body ol {
+      margin: 0;
+      padding-right: 18px;
+    }
+
     .list li { margin-bottom: 6px; }
+    .section .section-body li { margin-bottom: 6px; }
 
     .cta-wrap {
       padding: 4px 16px 16px;
@@ -391,18 +462,40 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
         <?php if ($eventLogoUrl !== ''): ?>
           <img class="event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
         <?php endif; ?>
+        <?php if ($landingHasCustom && $landing['title'] !== ''): ?>
+        <h1 class="title"><?= nl2br(htmlspecialchars($landing['title'], ENT_QUOTES, 'UTF-8'), false) ?></h1>
+        <?php else: ?>
         <h1 class="title">
   <span class="ohterparts">مسابقه</span>
   <span class="highlight">«به‌دست آوردیم»</span>
   <br>
   <span class="ohterparts">به دنیای دستاوردها خوش آمدید…</span>
 </h1>
+        <?php endif; ?>
+        <?php if ($landingHasCustom && $landing['subtitle'] !== ''): ?>
+        <p class="subtitle">
+          <?= nl2br(htmlspecialchars($landing['subtitle'], ENT_QUOTES, 'UTF-8'), false) ?>
+        </p>
+        <?php else: ?>
         <p class="subtitle">
           در این مسابقه، هر محتوا فقط یک روایت نیست؛ یک فرصت برای ساختن امتیاز و نزدیک‌تر شدن به کارت‌های جایزه است.
         </p>
+        <?php endif; ?>
       </section>
 
       <div class="content">
+        <?php if ($landingHasCustom && count($landing['sections']) > 0): ?>
+          <?php foreach ($landing['sections'] as $section): ?>
+            <section class="section">
+              <?php if ($section['title'] !== ''): ?>
+                <h3><?= htmlspecialchars($section['title'], ENT_QUOTES, 'UTF-8') ?></h3>
+              <?php endif; ?>
+              <?php if ($section['text'] !== ''): ?>
+                <div class="section-body"><?= formatLandingBodyHtml((string)$section['text']) ?></div>
+              <?php endif; ?>
+            </section>
+          <?php endforeach; ?>
+        <?php else: ?>
         <section class="section">
           <h3>چگونه شرکت کنیم؟</h3>
           <ul class="list">
@@ -464,6 +557,7 @@ $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
             <b>@ero_admin</b>
           </p>
         </section>
+        <?php endif; ?>
 
         <div class="cta-wrap">
           <a class="cta" href="TCM.php">شرکت در چالش</a>

@@ -17,6 +17,14 @@
     logoPickBtn: null,
     logoClearBtn: null,
     logoStatus: null,
+    eventNameInput: null,
+    eventNameSaveBtn: null,
+    eventNameStatus: null,
+    missionLinkCard: null,
+    missionLinkInput: null,
+    missionLinkSaveBtn: null,
+    missionLinkPreview: null,
+    missionLinkStatus: null,
     colorInputs: {},
     colorPreviews: {},
     colorPickers: {},
@@ -25,6 +33,9 @@
   };
 
   const state = {
+    eventName: '',
+    missionLinkCode: '',
+    missionLinkAvailable: false,
     logo: '',
     colors: { ...DEFAULT_COLORS }
   };
@@ -42,6 +53,19 @@
 
   function normalizeLogoPath(value) {
     return String(value || '').trim();
+  }
+
+  function normalizeEventName(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  }
+
+  function normalizeMissionCode(value) {
+    return String(value || '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^[.-]+|[.-]+$/g, '')
+      .slice(0, 80);
   }
 
   function normalizeLogoStoredValue(value) {
@@ -71,6 +95,24 @@
     if (!(refs.logoStatus instanceof HTMLElement)) return;
     refs.logoStatus.textContent = String(message || '').trim();
     refs.logoStatus.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setEventNameStatus(message, isError = false) {
+    if (!(refs.eventNameStatus instanceof HTMLElement)) return;
+    refs.eventNameStatus.textContent = String(message || '').trim();
+    refs.eventNameStatus.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setMissionLinkStatus(message, isError = false) {
+    if (!(refs.missionLinkStatus instanceof HTMLElement)) return;
+    refs.missionLinkStatus.textContent = String(message || '').trim();
+    refs.missionLinkStatus.style.color = isError ? '#d1434a' : '';
+  }
+
+  function updateMissionLinkPreview() {
+    if (!(refs.missionLinkPreview instanceof HTMLElement)) return;
+    const code = normalizeMissionCode(refs.missionLinkInput instanceof HTMLInputElement ? refs.missionLinkInput.value : state.missionLinkCode);
+    refs.missionLinkPreview.textContent = code ? `/missions/${code}` : '';
   }
 
   function updateLogoPreview() {
@@ -113,6 +155,10 @@
 
   function applySettings(settings) {
     const source = settings && typeof settings === 'object' ? settings : {};
+    state.eventName = normalizeEventName(source.eventName || '');
+    if (refs.eventNameInput instanceof HTMLInputElement) {
+      refs.eventNameInput.value = state.eventName;
+    }
     state.logo = normalizeLogoPath(source.eventLogo || '');
     const sourceColors = source.eventColors && typeof source.eventColors === 'object'
       ? source.eventColors
@@ -146,6 +192,29 @@
     const payload = await response.json();
     if (!response.ok || payload?.status !== 'ok') {
       throw new Error(payload?.message || 'ذخیره تنظیمات ناموفق بود.');
+    }
+    return payload;
+  }
+
+  async function getMissionLink() {
+    const response = await fetch(`${API_URL}?action=get_mission_link`, { credentials: 'same-origin' });
+    const payload = await response.json();
+    if (!response.ok || payload?.status !== 'ok') {
+      throw new Error(payload?.message || 'بارگذاری لینک باشگاه ناموفق بود.');
+    }
+    return payload.data && typeof payload.data === 'object' ? payload.data : {};
+  }
+
+  async function saveMissionLink(code) {
+    const response = await fetch(`${API_URL}?action=save_mission_link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ code, csrf: csrfToken })
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.status !== 'ok') {
+      throw new Error(payload?.message || 'ذخیره لینک باشگاه ناموفق بود.');
     }
     return payload;
   }
@@ -206,6 +275,7 @@
       const current = await getSettings();
       const merged = {
         ...current,
+        eventName: normalizeEventName(state.eventName),
         eventLogo: normalizeLogoStoredValue(state.logo),
         eventColors: {
           secondary: normalizeHex(state.colors.secondary, DEFAULT_COLORS.secondary),
@@ -239,6 +309,67 @@
     }
   }
 
+  async function handleEventNameSave() {
+    if (!(refs.eventNameSaveBtn instanceof HTMLButtonElement)) return;
+
+    state.eventName = normalizeEventName(refs.eventNameInput instanceof HTMLInputElement ? refs.eventNameInput.value : '');
+    if (refs.eventNameInput instanceof HTMLInputElement) {
+      refs.eventNameInput.value = state.eventName;
+    }
+
+    refs.eventNameSaveBtn.disabled = true;
+    setEventNameStatus('در حال ذخیره...');
+
+    try {
+      const current = await getSettings();
+      await saveSettings({
+        ...current,
+        eventName: state.eventName
+      });
+      setEventNameStatus('نام رویداد ذخیره شد.');
+      if (typeof window.showDefaultToast === 'function') {
+        window.showDefaultToast('نام رویداد ذخیره شد.');
+      }
+    } catch (error) {
+      setEventNameStatus(error?.message || 'ذخیره نام رویداد ناموفق بود.', true);
+    } finally {
+      refs.eventNameSaveBtn.disabled = false;
+    }
+  }
+
+  async function handleMissionLinkSave() {
+    if (!(refs.missionLinkSaveBtn instanceof HTMLButtonElement) || !state.missionLinkAvailable) return;
+    const code = normalizeMissionCode(refs.missionLinkInput instanceof HTMLInputElement ? refs.missionLinkInput.value : '');
+    if (!code) {
+      setMissionLinkStatus('یک کد لینک معتبر وارد کنید.', true);
+      return;
+    }
+    if (refs.missionLinkInput instanceof HTMLInputElement) {
+      refs.missionLinkInput.value = code;
+    }
+    updateMissionLinkPreview();
+
+    refs.missionLinkSaveBtn.disabled = true;
+    setMissionLinkStatus('در حال ذخیره...');
+    try {
+      const payload = await saveMissionLink(code);
+      const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+      state.missionLinkCode = normalizeMissionCode(data.code || code);
+      if (refs.missionLinkInput instanceof HTMLInputElement) {
+        refs.missionLinkInput.value = state.missionLinkCode;
+      }
+      updateMissionLinkPreview();
+      setMissionLinkStatus(`لینک باشگاه ذخیره شد: /missions/${state.missionLinkCode}`);
+      if (typeof window.showDefaultToast === 'function') {
+        window.showDefaultToast('لینک باشگاه ذخیره شد.');
+      }
+    } catch (error) {
+      setMissionLinkStatus(error?.message || 'ذخیره لینک باشگاه ناموفق بود.', true);
+    } finally {
+      refs.missionLinkSaveBtn.disabled = false;
+    }
+  }
+
   function bindInputs() {
     Object.entries(refs.colorInputs).forEach(([key, input]) => {
       if (!(input instanceof HTMLInputElement)) return;
@@ -258,6 +389,31 @@
       state.logo = '';
       updateLogoPreview();
       void persistLogoOnly('لوگو حذف شد.');
+    });
+    refs.eventNameInput?.addEventListener('input', () => {
+      state.eventName = normalizeEventName(refs.eventNameInput.value);
+    });
+    refs.eventNameInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      void handleEventNameSave();
+    });
+    refs.eventNameSaveBtn?.addEventListener('click', () => {
+      void handleEventNameSave();
+    });
+    refs.missionLinkInput?.addEventListener('input', updateMissionLinkPreview);
+    refs.missionLinkInput?.addEventListener('blur', () => {
+      if (!(refs.missionLinkInput instanceof HTMLInputElement)) return;
+      refs.missionLinkInput.value = normalizeMissionCode(refs.missionLinkInput.value);
+      updateMissionLinkPreview();
+    });
+    refs.missionLinkInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      void handleMissionLinkSave();
+    });
+    refs.missionLinkSaveBtn?.addEventListener('click', () => {
+      void handleMissionLinkSave();
     });
 
     refs.colorPickers.secondary?.addEventListener('click', () => openColorPicker('secondary', 'انتخاب رنگ دوم'));
@@ -279,6 +435,14 @@
     refs.logoPickBtn = document.getElementById('tc-event-logo-pick');
     refs.logoClearBtn = document.getElementById('tc-event-logo-clear');
     refs.logoStatus = document.getElementById('tc-event-style-logo-status');
+    refs.eventNameInput = document.getElementById('tc-event-name');
+    refs.eventNameSaveBtn = document.getElementById('tc-event-name-save');
+    refs.eventNameStatus = document.getElementById('tc-event-name-status');
+    refs.missionLinkCard = document.getElementById('tc-mission-link-card');
+    refs.missionLinkInput = document.getElementById('tc-mission-link-code');
+    refs.missionLinkSaveBtn = document.getElementById('tc-mission-link-save');
+    refs.missionLinkPreview = document.getElementById('tc-mission-link-preview');
+    refs.missionLinkStatus = document.getElementById('tc-mission-link-status');
 
     refs.colorInputs = {
       secondary: document.getElementById('tc-event-color-secondary'),
@@ -310,8 +474,32 @@
     try {
       const settings = await getSettings();
       applySettings(settings);
+      try {
+        const missionLink = await getMissionLink();
+        state.missionLinkAvailable = Boolean(missionLink.isMission);
+        state.missionLinkCode = normalizeMissionCode(missionLink.code || '');
+        if (refs.missionLinkCard instanceof HTMLElement) {
+          refs.missionLinkCard.classList.toggle('hidden', !state.missionLinkAvailable);
+        }
+        if (refs.missionLinkInput instanceof HTMLInputElement) {
+          refs.missionLinkInput.value = state.missionLinkCode;
+          refs.missionLinkInput.disabled = !state.missionLinkAvailable;
+        }
+        if (refs.missionLinkSaveBtn instanceof HTMLButtonElement) {
+          refs.missionLinkSaveBtn.disabled = !state.missionLinkAvailable;
+        }
+        updateMissionLinkPreview();
+        setMissionLinkStatus(state.missionLinkAvailable ? '' : 'لینک فقط برای باشگاه‌های ساخته‌شده در /missions قابل تغییر است.');
+      } catch (linkError) {
+        state.missionLinkAvailable = false;
+        if (refs.missionLinkCard instanceof HTMLElement) {
+          refs.missionLinkCard.classList.add('hidden');
+        }
+        setMissionLinkStatus(linkError?.message || 'بارگذاری لینک باشگاه ناموفق بود.', true);
+      }
       setStatus('');
       setLogoStatus('');
+      setEventNameStatus('');
     } catch (error) {
       applySettings({});
       setStatus(error?.message || 'بارگذاری تنظیمات ناموفق بود.', true);

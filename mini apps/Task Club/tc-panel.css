@@ -1572,6 +1572,49 @@
   color: #ffffff;
 }
 
+.tc-shell .tc-landing-sections {
+  display: grid;
+  gap: 12px;
+}
+
+.tc-shell .tc-landing-sections-head,
+.tc-shell .tc-landing-section-toolbar,
+.tc-shell .tc-rich-text-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tc-shell .tc-landing-sections-head,
+.tc-shell .tc-landing-section-toolbar {
+  justify-content: space-between;
+}
+
+.tc-shell .tc-landing-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e5ecf7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.tc-shell .tc-landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tc-shell .tc-rich-text-tools {
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.tc-shell .tc-rich-text-tools .btn {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
 @media (max-width: 900px) {
   .tc-shell .tc-monitoring-kpi--wide {
     grid-column: span 1;
@@ -1579,6 +1622,12 @@
 
   .tc-shell .tc-logs-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .tc-shell .tc-landing-sections-head,
+  .tc-shell .tc-landing-section-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

@@ -489,6 +489,249 @@
     };
   }
 
+  function normalizeLandingSection(section, index = 0, options = {}) {
+    if (!section || typeof section !== "object") {
+      return null;
+    }
+    const title = String(section.title ?? "").trim();
+    const text = String(section.text ?? section.html ?? "").replace(/\r\n?/g, "\n").trim();
+    if (!options.keepEmpty && !title && !text) {
+      return null;
+    }
+    return {
+      id: String(section.id ?? `landing_section_${Date.now()}_${index}`).trim() || `landing_section_${Date.now()}_${index}`,
+      title,
+      text
+    };
+  }
+
+  function normalizeLandingPayload(raw) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    const sections = Array.isArray(source.sections)
+      ? source.sections.map(normalizeLandingSection).filter(Boolean)
+      : [];
+    return {
+      title: String(source.title ?? "").trim(),
+      subtitle: String(source.subtitle ?? "").replace(/\r\n?/g, "\n").trim(),
+      sections
+    };
+  }
+
+  function landingSectionTemplate(section, index, total) {
+    const safe = normalizeLandingSection(section, index, { keepEmpty: true }) || { id: `landing_section_${Date.now()}_${index}`, title: "", text: "" };
+    return `
+      <div class="tc-landing-section" data-landing-section-id="${escapeHtml(safe.id)}">
+        <div class="tc-landing-section-toolbar">
+          <strong>Section ${index + 1}</strong>
+          <div class="tc-landing-actions">
+            <button type="button" class="btn ghost" data-landing-action="move-up" ${index <= 0 ? "disabled" : ""}>Up</button>
+            <button type="button" class="btn ghost" data-landing-action="move-down" ${index >= total - 1 ? "disabled" : ""}>Down</button>
+            <button type="button" class="btn ghost" data-landing-action="remove">Remove</button>
+          </div>
+        </div>
+        <label class="field full">
+          <span>Section title</span>
+          <input type="text" data-landing-field="title" value="${escapeHtml(safe.title)}" autocomplete="off" />
+        </label>
+        <label class="field full">
+          <span>Section text</span>
+          <div class="tc-rich-text-tools" aria-label="Section text tools">
+            <button type="button" class="btn ghost" data-landing-format="bold">B</button>
+            <button type="button" class="btn ghost" data-landing-format="list">List</button>
+            <button type="button" class="btn ghost" data-landing-format="header">H</button>
+            <button type="button" class="btn ghost" data-landing-format="link">Link</button>
+          </div>
+          <textarea data-landing-field="text" rows="7">${escapeHtml(safe.text)}</textarea>
+        </label>
+      </div>
+    `;
+  }
+
+  function getLandingEditorElements() {
+    const titleInput = getEl("tc-landing-title");
+    const subtitleInput = getEl("tc-landing-subtitle");
+    const sectionsEl = getEl("tc-landing-sections");
+    const addButton = getEl("tc-landing-add-section");
+    const saveButton = getEl("tc-landing-save");
+    const statusEl = getEl("tc-landing-status");
+    if (
+      !(titleInput instanceof HTMLInputElement) ||
+      !(subtitleInput instanceof HTMLTextAreaElement) ||
+      !(sectionsEl instanceof HTMLElement)
+    ) {
+      return null;
+    }
+    return {
+      titleInput,
+      subtitleInput,
+      sectionsEl,
+      addButton: addButton instanceof HTMLButtonElement ? addButton : null,
+      saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null,
+      statusEl: statusEl instanceof HTMLElement ? statusEl : null
+    };
+  }
+
+  function setLandingStatus(message, isError = false) {
+    const statusEl = getEl("tc-landing-status");
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.textContent = String(message || "").trim();
+    statusEl.style.color = isError ? "#d1434a" : "";
+  }
+
+  function renderLandingSections(sections) {
+    const elements = getLandingEditorElements();
+    if (!elements) return;
+    const items = Array.isArray(sections)
+      ? sections.map((section, index) => normalizeLandingSection(section, index, { keepEmpty: true })).filter(Boolean)
+      : [];
+    elements.sectionsEl.innerHTML = items
+      .map((section, index) => landingSectionTemplate(section, index, items.length))
+      .join("");
+  }
+
+  function collectLandingFromDom(options = {}) {
+    const elements = getLandingEditorElements();
+    if (!elements) return null;
+    const sections = Array.from(elements.sectionsEl.querySelectorAll("[data-landing-section-id]"))
+      .map((sectionEl, index) => {
+        if (!(sectionEl instanceof HTMLElement)) return null;
+        const titleField = sectionEl.querySelector('[data-landing-field="title"]');
+        const textField = sectionEl.querySelector('[data-landing-field="text"]');
+        return normalizeLandingSection({
+          id: sectionEl.dataset.landingSectionId || `landing_section_${Date.now()}_${index}`,
+          title: titleField instanceof HTMLInputElement ? titleField.value : "",
+          text: textField instanceof HTMLTextAreaElement ? textField.value : ""
+        }, index, options);
+      })
+      .filter(Boolean);
+    return {
+      title: elements.titleInput.value,
+      subtitle: elements.subtitleInput.value,
+      sections
+    };
+  }
+
+  function applyLinkShortcutToTextarea(textarea) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || "");
+    const start = Math.max(0, textarea.selectionStart ?? 0);
+    const end = Math.max(start, textarea.selectionEnd ?? start);
+    const selectedText = value.slice(start, end) || "link text";
+    const markup = `<a href="">${selectedText}</a>`;
+    const labelStart = start + '<a href="">'.length;
+    replaceTextareaRange(textarea, start, end, markup, labelStart, labelStart + selectedText.length);
+  }
+
+  function applyLandingFormat(textarea, format) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    if (format === "bold") {
+      applyBoldShortcutToTextarea(textarea);
+      return;
+    }
+    if (format === "list") {
+      applyListShortcutToTextarea(textarea);
+      return;
+    }
+    if (format === "header") {
+      applyHeaderShortcutToTextarea(textarea);
+      return;
+    }
+    if (format === "link") {
+      applyLinkShortcutToTextarea(textarea);
+    }
+  }
+
+  function initLandingEditor(initialSettings = {}) {
+    const elements = getLandingEditorElements();
+    if (!elements || elements.sectionsEl.dataset.landingReady === "1") return;
+    elements.sectionsEl.dataset.landingReady = "1";
+    const initialLanding = normalizeLandingPayload(initialSettings?.landing || {});
+    elements.titleInput.value = initialLanding.title;
+    elements.subtitleInput.value = initialLanding.subtitle;
+    renderLandingSections(initialLanding.sections);
+
+    elements.addButton?.addEventListener("click", () => {
+      const current = collectLandingFromDom({ keepEmpty: true }) || { sections: [] };
+      current.sections.push({
+        id: `landing_section_${Date.now()}`,
+        title: "",
+        text: ""
+      });
+      renderLandingSections(current.sections);
+      setLandingStatus("");
+    });
+
+    elements.sectionsEl.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const formatButton = target.closest("[data-landing-format]");
+      if (formatButton instanceof HTMLElement) {
+        const sectionEl = formatButton.closest("[data-landing-section-id]");
+        const textarea = sectionEl?.querySelector('[data-landing-field="text"]');
+        if (textarea instanceof HTMLTextAreaElement) {
+          textarea.focus();
+          applyLandingFormat(textarea, String(formatButton.getAttribute("data-landing-format") || ""));
+          setLandingStatus("");
+        }
+        return;
+      }
+      const actionButton = target.closest("[data-landing-action]");
+      if (!(actionButton instanceof HTMLElement)) return;
+      const action = String(actionButton.getAttribute("data-landing-action") || "");
+      const sectionEl = actionButton.closest("[data-landing-section-id]");
+      const current = collectLandingFromDom({ keepEmpty: true });
+      if (!sectionEl || !current) return;
+      const index = Array.from(elements.sectionsEl.querySelectorAll("[data-landing-section-id]")).indexOf(sectionEl);
+      if (index < 0) return;
+      if (action === "remove") {
+        current.sections.splice(index, 1);
+      } else if (action === "move-up" && index > 0) {
+        [current.sections[index - 1], current.sections[index]] = [current.sections[index], current.sections[index - 1]];
+      } else if (action === "move-down" && index < current.sections.length - 1) {
+        [current.sections[index + 1], current.sections[index]] = [current.sections[index], current.sections[index + 1]];
+      }
+      renderLandingSections(current.sections);
+      setLandingStatus("");
+    });
+
+    elements.sectionsEl.addEventListener("keydown", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement) || !target.matches('[data-landing-field="text"]')) return;
+      const hasCtrl = event.ctrlKey || event.metaKey;
+      if (hasCtrl && !event.altKey && isShortcutLetterKey(event, "B")) {
+        event.preventDefault();
+        applyBoldShortcutToTextarea(target);
+        return;
+      }
+      if (hasCtrl && !event.altKey && isShortcutLetterKey(event, "L")) {
+        event.preventDefault();
+        applyListShortcutToTextarea(target);
+        return;
+      }
+      const isOneKey = event.key === "1" || event.code === "Digit1" || event.code === "Numpad1";
+      if (event.ctrlKey && event.altKey && isOneKey) {
+        event.preventDefault();
+        applyHeaderShortcutToTextarea(target);
+      }
+    });
+
+    elements.saveButton?.addEventListener("click", async () => {
+      const landing = collectLandingFromDom();
+      if (!landing) return;
+      elements.saveButton.disabled = true;
+      setLandingStatus("Saving...");
+      try {
+        await requestStorePost("save_settings", { settings: { landing } });
+        Object.assign(settingsCache, { landing });
+        setLandingStatus("Saved.");
+      } catch (error) {
+        setLandingStatus(error?.message || "Failed to save landing.", true);
+      } finally {
+        elements.saveButton.disabled = false;
+      }
+    });
+  }
+
   function setRewardGuideStatus(message, isError = false) {
     const statusEl = getEl("tc-reward-guide-status");
     if (!(statusEl instanceof HTMLElement)) return;
@@ -752,6 +995,7 @@
     initRewardGuide();
     const settings = await loadSettings();
     applySettings(settings);
+    initLandingEditor(settings);
     initAssignAdmin();
     activeToggle?.addEventListener("change", () => {
       syncToggles({ activeToggle, durationToggle });

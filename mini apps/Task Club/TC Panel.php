@@ -140,6 +140,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
       <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های کنترل پنل">
         <?php if ($tcCanMainPane): ?>
           <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'general' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'general' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="general">عمومی</button>
+          <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-control-panel-trigger="landing">Landing</button>
         <?php endif; ?>
         <?php if ($tcCanMainPane || $tcCanTaskAccessPane): ?>
           <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'admin-access' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'admin-access' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="admin-access">دسترسی ادمین</button>
@@ -279,6 +280,38 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
   </div>
 </div>
 
+      </section>
+      <?php endif; ?>
+
+      <?php if ($tcCanMainPane): ?>
+      <section data-tc-control-panel-section="landing" hidden>
+      <div class="card tc-landing-editor-card">
+        <div class="section-header">
+          <h3>Landing</h3>
+        </div>
+        <div class="form" style="gap:12px;">
+          <label class="field standard-width">
+            <span>Title</span>
+            <input type="text" id="tc-landing-title" autocomplete="off" />
+          </label>
+          <label class="field full">
+            <span>Subtitle</span>
+            <textarea id="tc-landing-subtitle" rows="3"></textarea>
+          </label>
+          <div class="tc-landing-sections-head">
+            <div>
+              <strong>Text sections</strong>
+              <p class="muted small">Use the editor buttons or Ctrl+B, Ctrl+L, and Ctrl+Alt+1 inside a section text area.</p>
+            </div>
+            <button type="button" class="btn ghost" id="tc-landing-add-section">Add section</button>
+          </div>
+          <div id="tc-landing-sections" class="tc-landing-sections"></div>
+          <div class="field full">
+            <button type="button" class="btn primary standard-primary-button" id="tc-landing-save">Save landing</button>
+          </div>
+          <p class="muted small" id="tc-landing-status" aria-live="polite"></p>
+        </div>
+      </div>
       </section>
       <?php endif; ?>
 
@@ -432,6 +465,37 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
 
       <?php if ($tcCanEventStylePane): ?>
       <section data-tc-control-panel-section="event-style"<?= $tcControlInitialSection === 'event-style' ? '' : ' hidden' ?>>
+      <div class="card">
+        <div class="section-header">
+          <h3>نام رویداد</h3>
+        </div>
+        <div class="form" style="gap:12px;">
+          <label class="field standard-width">
+            <span>نام رویداد</span>
+            <input id="tc-event-name" type="text" maxlength="120" autocomplete="off" />
+          </label>
+          <div class="field full">
+            <button type="button" class="btn primary standard-primary-button" id="tc-event-name-save">ذخیره</button>
+          </div>
+          <p id="tc-event-name-status" class="hint muted small" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="card" id="tc-mission-link-card">
+        <div class="section-header">
+          <h3>لینک باشگاه</h3>
+        </div>
+        <div class="form" style="gap:12px;">
+          <label class="field standard-width">
+            <span>کد لینک</span>
+            <input id="tc-mission-link-code" type="text" maxlength="80" autocomplete="off" dir="ltr" placeholder="club-code" />
+          </label>
+          <p id="tc-mission-link-preview" class="hint muted small" aria-live="polite"></p>
+          <div class="field full">
+            <button type="button" class="btn primary standard-primary-button" id="tc-mission-link-save">ذخیره لینک</button>
+          </div>
+          <p id="tc-mission-link-status" class="hint muted small" aria-live="polite"></p>
+        </div>
+      </div>
       <div class="card">
         <div class="section-header">
           <h3>لوگوی رویداد</h3>

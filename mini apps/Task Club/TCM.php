@@ -3096,6 +3096,11 @@ function completeConditionalQuizAttempt(
   if ($taskId === '' || $normalizedWorkId === '') {
     return ['ok' => false, 'message' => 'اطلاعات ماموریت نامعتبر است.'];
   }
+  $questionCount = max(0, (int)($attemptState['questionCount'] ?? count((array)($attemptState['questionCodes'] ?? []))));
+  $answeredCount = max(0, (int)($attemptState['answeredCount'] ?? count((array)($attemptState['answered'] ?? []))));
+  if ($questionCount <= 0 || $answeredCount < $questionCount) {
+    return ['ok' => false, 'message' => 'برای تکمیل این ماموریت باید به همه سوالات پاسخ بدهید.'];
+  }
 
   $table = loadInviteesTable($inviteesPath, $inviteesMapPath);
   $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
@@ -4439,6 +4444,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'startTime' => trim((string)($settings['startTime'] ?? '')),
         'endDate' => trim((string)($settings['endDate'] ?? '')),
         'endTime' => trim((string)($settings['endTime'] ?? '')),
+        'eventName' => trim((string)($settings['eventName'] ?? '')),
         'eventLogo' => trim((string)($settings['eventLogo'] ?? '')),
         'eventColors' => [
           'secondary' => trim((string)($eventColors['secondary'] ?? '')),
@@ -4496,10 +4502,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $questionCount = is_array($attemptState) ? max(0, (int)($attemptState['questionCount'] ?? count((array)($attemptState['questionCodes'] ?? [])))) : 0;
       if (
         is_array($attemptState)
-        && (
-          ($quizStarted && $startedAt > 0 && time() - $startedAt >= CONDITIONAL_QUIZ_TIME_LIMIT_SECONDS)
-          || ($questionCount > 0 && $answeredCount >= $questionCount)
-        )
+        && $questionCount > 0
+        && $answeredCount >= $questionCount
       ) {
         $completed = completeConditionalQuizAttempt($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath, $prizeLevelsPath, $attemptState);
         if (!($completed['ok'] ?? false)) {
@@ -4507,6 +4511,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           exit;
         }
         $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+      } elseif (
+        is_array($attemptState)
+        && $quizStarted
+        && $startedAt > 0
+        && time() - $startedAt >= CONDITIONAL_QUIZ_TIME_LIMIT_SECONDS
+      ) {
+        clearTaskQuizAttemptState($sessionWorkId, $taskId);
       }
     }
     if (!isQuizLikeTaskTypeValue($taskType) || !$available || !empty($progress['completed'])) {
@@ -6267,6 +6278,9 @@ $eventColors = is_array($wheelSettings['eventColors'] ?? null) ? $wheelSettings[
 $eventSecondary = normalizeHexColorForTheme($eventColors['secondary'] ?? '', '#2F8FFF');
 $eventHighlight = normalizeHexColorForTheme($eventColors['highlight'] ?? '', '#20C997');
 $eventAccentSoft = normalizeHexColorForTheme($eventColors['accentSoft'] ?? '', '#FFB347');
+$eventName = trim((string)($wheelSettings['eventName'] ?? ''));
+$loginEventTitle = $eventName !== '' ? $eventName : 'کمپین «به دست آوردیم»';
+$tasksEventTitle = $eventName !== '' ? $eventName : 'ماموریت‌های چالش به دست آوردیم';
 $rewardGuideSettings = is_array($wheelSettings['rewardGuide'] ?? null) ? $wheelSettings['rewardGuide'] : [];
 $rewardGuidePayload = [
   'title' => trim((string)($rewardGuideSettings['title'] ?? 'راهنمای دریافت جایزه')),
@@ -9801,7 +9815,7 @@ $sessionPayload = [
                 <span>?</span>
               </div>
             <?php endif; ?>
-            <h2 class="login-title">کمپین «به دست آوردیم»</h2>
+            <h2 class="login-title"><?= htmlspecialchars($loginEventTitle, ENT_QUOTES, 'UTF-8') ?></h2>
           </div>
           <form id="tc-login-form" class="login-form" autocomplete="on">
             <label class="login-field">
@@ -9835,7 +9849,7 @@ $sessionPayload = [
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-tasks-title" class="tasks-title">ماموریت‌های چالش به دست آوردیم</h2>
+          <h2 id="tc-tasks-title" class="tasks-title"><?= htmlspecialchars($tasksEventTitle, ENT_QUOTES, 'UTF-8') ?></h2>
           <div class="user-score-chip">
             <span>امتیاز شما</span>
             <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
@@ -13619,17 +13633,14 @@ $sessionPayload = [
         };
 
         const isQuizAttemptReadyToComplete = (payload = null) => {
+          if (payload && Object.prototype.hasOwnProperty.call(payload, 'attemptCompleted')) {
+            return payload.attemptCompleted === true;
+          }
           const displayedQuestionCount = getDisplayedQuizQuestionCount();
           const targetQuestionCount = displayedQuestionCount > 0
             ? displayedQuestionCount
             : currentQuestionCount;
           const readyByClientState = targetQuestionCount > 0 && currentAnsweredQuestions >= targetQuestionCount;
-          if (payload?.attemptCompleted === true) {
-            return true;
-          }
-          if (currentTaskType === 'conditional_quiz' && readyByClientState) {
-            return true;
-          }
           return readyByClientState;
         };
 

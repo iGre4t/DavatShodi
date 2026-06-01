@@ -16,6 +16,132 @@ $settingsFile = $baseDir . DIRECTORY_SEPARATOR . 'Setting.json';
 $inviteesMappedFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
 
+function tcStoreNormalizeMissionCode(string $value): string
+{
+  $code = str_replace(["\r", "\n", "\t"], ' ', trim($value));
+  $code = preg_replace('/\s+/u', '-', $code);
+  if (!is_string($code)) {
+    $code = '';
+  }
+  $code = preg_replace('/[^A-Za-z0-9._-]+/', '-', $code);
+  if (!is_string($code)) {
+    $code = '';
+  }
+  $code = trim($code, ".-\t\n\r\0\x0B");
+  if ($code === '') {
+    return '';
+  }
+  $code = substr($code, 0, 80);
+  $code = trim($code, ".-\t\n\r\0\x0B");
+  $reserved = [
+    'generate', 'con', 'prn', 'aux', 'nul',
+    'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+    'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'
+  ];
+  return in_array(strtolower($code), $reserved, true) ? '' : $code;
+}
+
+function tcStoreMissionContext(string $baseDir): array
+{
+  $missionDir = realpath($baseDir);
+  $missionsRoot = realpath(dirname($baseDir));
+  if (!is_string($missionDir) || !is_string($missionsRoot) || basename($missionsRoot) !== 'missions') {
+    return ['isMission' => false];
+  }
+  $folder = basename($missionDir);
+  if ($folder === '' || $folder === 'generate') {
+    return ['isMission' => false];
+  }
+  return [
+    'isMission' => true,
+    'folder' => $folder,
+    'missionDir' => $missionDir,
+    'missionsRoot' => $missionsRoot,
+    'webPath' => 'mini%20apps/missions/' . rawurlencode($folder),
+    'directory' => 'mini apps/missions/' . $folder
+  ];
+}
+
+function tcStoreMissionMetadataPath(string $missionDir): string
+{
+  return rtrim($missionDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'mission.json';
+}
+
+function tcStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, string $newFolder): void
+{
+  $oldWebPath = 'mini%20apps/missions/' . rawurlencode($oldFolder);
+  $newWebPath = 'mini%20apps/missions/' . rawurlencode($newFolder);
+  $oldDirectory = 'mini apps/missions/' . $oldFolder;
+  $newDirectory = 'mini apps/missions/' . $newFolder;
+  $iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($missionDir, FilesystemIterator::SKIP_DOTS),
+    RecursiveIteratorIterator::SELF_FIRST
+  );
+  foreach ($iterator as $item) {
+    if (!$item->isFile()) {
+      continue;
+    }
+    $path = $item->getPathname();
+    $name = $item->getFilename();
+    if (!preg_match('/\.(php|js|css|json|htaccess)$/i', $name) && $name !== '.htaccess') {
+      continue;
+    }
+    $content = file_get_contents($path);
+    if (!is_string($content)) {
+      continue;
+    }
+    $patched = str_replace([$oldWebPath, $oldDirectory], [$newWebPath, $newDirectory], $content);
+    if ($patched !== $content) {
+      file_put_contents($path, $patched, LOCK_EX);
+    }
+  }
+}
+
+function tcStoreSyncMissionRegistry(string $missionsRoot): void
+{
+  $clubs = [];
+  if (is_dir($missionsRoot)) {
+    foreach (new DirectoryIterator($missionsRoot) as $entry) {
+      if ($entry->isDot() || !$entry->isDir()) {
+        continue;
+      }
+      $folder = $entry->getFilename();
+      if ($folder === 'generate' || strncmp($folder, '.', 1) === 0) {
+        continue;
+      }
+      $meta = readJsonFile($entry->getPathname() . DIRECTORY_SEPARATOR . 'mission.json', []);
+      $webPath = 'mini%20apps/missions/' . rawurlencode($folder);
+      $createdAt = trim((string)($meta['createdAt'] ?? ''));
+      $clubs[] = [
+        'name' => trim((string)($meta['name'] ?? $folder)) ?: $folder,
+        'folder' => $folder,
+        'tabId' => 'task-club-mission-' . substr(hash('sha256', $folder), 0, 12),
+        'directory' => 'mini apps/missions/' . $folder,
+        'webPath' => $webPath,
+        'appUrl' => $webPath . '/TCM.php',
+        'panelUrl' => 'panel.php?tab=' . rawurlencode('task-club-mission-' . substr(hash('sha256', $folder), 0, 12)),
+        'createdAt' => $createdAt,
+        'createdAtLabel' => $createdAt !== '' ? $createdAt : '-'
+      ];
+    }
+  }
+  usort($clubs, static function (array $left, array $right): int {
+    $leftCreated = (string)($left['createdAt'] ?? '');
+    $rightCreated = (string)($right['createdAt'] ?? '');
+    if ($leftCreated !== $rightCreated) {
+      return strcmp($rightCreated, $leftCreated);
+    }
+    return strcasecmp((string)($left['name'] ?? ''), (string)($right['name'] ?? ''));
+  });
+  $generateRoot = rtrim($missionsRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'generate';
+  if (is_dir($generateRoot)) {
+    writeJsonFile($generateRoot . DIRECTORY_SEPARATOR . 'clubs.json', [
+      'updatedAt' => gmdate('c'),
+      'clubs' => $clubs
+    ]);
+  }
+}
+
 function readJsonFile($path, $fallback) {
   if (!is_file($path)) {
     return $fallback;
@@ -34,6 +160,82 @@ function writeJsonFile($path, $data) {
     return false;
   }
   return file_put_contents($path, $encoded, LOCK_EX) !== false;
+}
+
+function normalizeLandingSettings($value): array
+{
+  $source = is_array($value) ? $value : [];
+  $sections = [];
+  $rawSections = is_array($source['sections'] ?? null) ? $source['sections'] : [];
+  foreach ($rawSections as $index => $rawSection) {
+    if (!is_array($rawSection)) {
+      continue;
+    }
+    $title = trim((string)($rawSection['title'] ?? ''));
+    $text = trim(str_replace(["\r\n", "\r"], "\n", (string)($rawSection['text'] ?? ($rawSection['html'] ?? ''))));
+    if ($title === '' && $text === '') {
+      continue;
+    }
+    $id = trim((string)($rawSection['id'] ?? ''));
+    if ($id === '') {
+      $id = 'landing_section_' . ((int)$index + 1);
+    }
+    $sections[] = [
+      'id' => preg_replace('/[^A-Za-z0-9._-]+/', '_', $id) ?: ('landing_section_' . ((int)$index + 1)),
+      'title' => $title,
+      'text' => $text
+    ];
+  }
+  return [
+    'title' => trim((string)($source['title'] ?? '')),
+    'subtitle' => trim(str_replace(["\r\n", "\r"], "\n", (string)($source['subtitle'] ?? ''))),
+    'sections' => array_values($sections)
+  ];
+}
+
+function defaultLandingSettings(): array
+{
+  return [
+    'title' => "مسابقه «به‌دست آوردیم»\nبه دنیای دستاوردها خوش آمدید…",
+    'subtitle' => 'در این مسابقه، هر محتوا فقط یک روایت نیست؛ یک فرصت برای ساختن امتیاز و نزدیک‌تر شدن به کارت‌های جایزه است.',
+    'sections' => [
+      [
+        'id' => 'how-to-join',
+        'title' => 'چگونه شرکت کنیم؟',
+        'text' => "<ul>\n  <li>ویدیوها و پست‌های هر بخش را با دقت ببینید.</li>\n  <li>به سوالات مسابقه پاسخ دهید.</li>\n  <li>امتیاز جمع کنید و جایگاه خود را ارتقا دهید.</li>\n  <li>هرچه امتیاز بیشتری کسب کنید، شانس شما برای باز کردن کارت‌های جایزه بیشتر می‌شود.</li>\n</ul>"
+      ],
+      [
+        'id' => 'scoring-system',
+        'title' => 'سیستم امتیازدهی',
+        'text' => "برای پاسخ دادن به هر چالش، ۲ روز فرصت طلایی در نظر گرفته شده است. اگر در این مدت به سوالات پاسخ دهید، می‌توانید امتیاز کامل آن چالش را دریافت کنید.\n\nدر هر چالش، ۳ سوال از شما پرسیده می‌شود و هر پاسخ صحیح، ۱۰ امتیاز دارد.\n\nدر صورتی که در فرصت طلایی به سوالات پاسخ ندهید، همچنان می‌توانید در چالش شرکت کنید؛ اما برای هر پاسخ صحیح، تنها ۵ امتیاز دریافت خواهید کرد."
+      ],
+      [
+        'id' => 'questions-plan',
+        'title' => 'طرح سوالات',
+        'text' => "سوالات هر چالش با دقت و به‌صورت ریزبینانه، فقط از ویدیوی مربوط به «به دست آوردیم» معاونت‌ها طراحی می‌شود.\n\nپس قبل از شروع هر چالش، حتما ویدیوی «به دست آوردیم» آن معاونت را از طریق کانال ارتباطات کارکنان همراه اول با دقت مشاهده کنید."
+      ],
+      [
+        'id' => 'prizes',
+        'title' => 'نحوه دریافت جوایز',
+        'text' => 'در این مسابقه، شما می‌توانید ۳ کارت اعتباری دریافت کنید. همچنین اگر به تمام سوالات در فرصت طلایی پاسخ صحیح بدهید، وارد قرعه‌کشی ویژه «به دست آوردیم» خواهید شد.'
+      ],
+      [
+        'id' => 'ready',
+        'title' => 'آماده‌ای؟',
+        'text' => "ویدیوها را با دقت دنبال کنید، به سوالات درست پاسخ دهید و شانس خود را برای رسیدن به کارت‌های جایزه افزایش دهید.\n\nبه دست آوردیم… و حالا نوبت شماست."
+      ],
+      [
+        'id' => 'account-info',
+        'title' => 'ورود و اطلاعات حساب',
+        'text' => 'نام کاربری و رمز عبور اختصاصی هر فرد از طریق سرشماره <b>8919</b> به شماره تلفن همراه ثبت‌شده در سازمان پیامک می‌شود.اطلاعات ورود کاملاً محرمانه و شخصی است و استفاده مشترک از حساب کاربری مجاز نیست.'
+      ],
+      [
+        'id' => 'support',
+        'title' => 'پشتیبانی',
+        'text' => "در صورت وجود سوال یا ابهام، از طریق روبیکا با آیدی زیر با همکاران پشتیبان در ارتباط باشید.\n<b>@ero_admin</b>"
+      ]
+    ]
+  ];
 }
 
 function readCsvFileRows(string $path): array
@@ -427,7 +629,7 @@ if (in_array($action, $tcStoreMainActions, true) && !userHasPermissionId($tcStor
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
 }
 
-if (in_array($action, ['get_settings', 'save_settings'], true)) {
+if (in_array($action, ['get_settings', 'save_settings', 'get_mission_link', 'save_mission_link'], true)) {
   $canMain = userHasPermissionId($tcStoreSessionUser, 'task-club:main');
   $canEventStyle = userHasPermissionId($tcStoreSessionUser, 'task-club:event-style');
   if (!$canMain && !$canEventStyle) {
@@ -664,6 +866,99 @@ if ($action === 'save_reward_guide') {
   exit;
 }
 
+if ($action === 'get_mission_link') {
+  $context = tcStoreMissionContext($baseDir);
+  echo json_encode([
+    'status' => 'ok',
+    'data' => [
+      'isMission' => !empty($context['isMission']),
+      'code' => (string)($context['folder'] ?? ''),
+      'path' => (string)($context['webPath'] ?? ''),
+      'appUrl' => !empty($context['webPath']) ? ((string)$context['webPath'] . '/TCM.php') : ''
+    ]
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'save_mission_link') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  $context = tcStoreMissionContext($baseDir);
+  if (empty($context['isMission'])) {
+    echo json_encode(['status' => 'error', 'message' => 'This Task Club link can only be changed for generated clubs.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $currentCode = (string)($context['folder'] ?? '');
+  $nextCode = tcStoreNormalizeMissionCode((string)($payload['code'] ?? ''));
+  if ($nextCode === '') {
+    echo json_encode(['status' => 'error', 'message' => 'Enter a valid link code using letters, numbers, dash, underscore, or dot.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  if (strcasecmp($nextCode, $currentCode) === 0) {
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Club link is unchanged.',
+      'data' => [
+        'code' => $currentCode,
+        'path' => (string)$context['webPath'],
+        'appUrl' => (string)$context['webPath'] . '/TCM.php'
+      ]
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+  $missionsRoot = (string)$context['missionsRoot'];
+  $targetDir = $missionsRoot . DIRECTORY_SEPARATOR . $nextCode;
+  foreach (new DirectoryIterator($missionsRoot) as $entry) {
+    if ($entry->isDot()) {
+      continue;
+    }
+    if (strcasecmp($entry->getFilename(), $nextCode) === 0) {
+      echo json_encode(['status' => 'error', 'message' => 'This /missions link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+  }
+  if (file_exists($targetDir)) {
+    echo json_encode(['status' => 'error', 'message' => 'This /missions link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $missionDir = (string)$context['missionDir'];
+  if (!rename($missionDir, $targetDir)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to rename the club folder.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $metaPath = tcStoreMissionMetadataPath($targetDir);
+  $meta = readJsonFile($metaPath, []);
+  $meta['folder'] = $nextCode;
+  $meta['directory'] = 'mini apps/missions/' . $nextCode;
+  $meta['webPath'] = 'mini%20apps/missions/' . rawurlencode($nextCode);
+  $meta['updatedAt'] = gmdate('c');
+  writeJsonFile($metaPath, $meta);
+  tcStorePatchMissionLinkStrings($targetDir, $currentCode, $nextCode);
+  tcStoreSyncMissionRegistry($missionsRoot);
+
+  $nextWebPath = 'mini%20apps/missions/' . rawurlencode($nextCode);
+  echo json_encode([
+    'status' => 'ok',
+    'message' => 'Club link updated.',
+    'data' => [
+      'code' => $nextCode,
+      'path' => $nextWebPath,
+      'appUrl' => $nextWebPath . '/TCM.php'
+    ]
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 if ($action === 'get_settings') {
   $defaults = [
     'active' => false,
@@ -676,23 +971,31 @@ if ($action === 'get_settings') {
     'hint' => 'شانس خودت رو امتحان کن و جایزه ببر',
     'hintHtml' => '',
     'hintAlign' => 'right',
+    'eventName' => '',
     'eventLogo' => '',
     'eventColors' => [
       'secondary' => '#2F8FFF',
       'highlight' => '#20C997',
       'accentSoft' => '#FFB347'
+    ],
+    'landing' => [
+      'title' => '',
+      'subtitle' => '',
+      'sections' => []
     ]
   ];
   $stored = readJsonFile($settingsFile, []);
   $settings = array_merge($defaults, is_array($stored) ? $stored : []);
   $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
   $storedColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
+  $settings['eventName'] = is_string($settings['eventName'] ?? null) ? trim(preg_replace('/\s+/u', ' ', $settings['eventName'])) : '';
   $settings['eventLogo'] = trim((string)($settings['eventLogo'] ?? ''));
   $settings['eventColors'] = [
     'secondary' => normalizeHexColor($storedColors['secondary'] ?? '', $defaults['eventColors']['secondary']),
     'highlight' => normalizeHexColor($storedColors['highlight'] ?? '', $defaults['eventColors']['highlight']),
     'accentSoft' => normalizeHexColor($storedColors['accentSoft'] ?? '', $defaults['eventColors']['accentSoft'])
   ];
+  $settings['landing'] = normalizeLandingSettings($settings['landing'] ?? []);
   echo json_encode(['status' => 'ok', 'data' => $settings], JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -721,12 +1024,17 @@ if ($action === 'save_settings') {
   $settings['hintAlign'] = is_string($settings['hintAlign'] ?? null) ? trim($settings['hintAlign']) : 'right';
   $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
   $incomingColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
+  $eventName = is_string($settings['eventName'] ?? null) ? trim(preg_replace('/\s+/u', ' ', $settings['eventName'])) : '';
+  $settings['eventName'] = function_exists('mb_substr') ? mb_substr($eventName, 0, 120, 'UTF-8') : substr($eventName, 0, 120);
   $settings['eventLogo'] = is_string($settings['eventLogo'] ?? null) ? trim($settings['eventLogo']) : '';
   $settings['eventColors'] = [
     'secondary' => normalizeHexColor($incomingColors['secondary'] ?? '', '#2F8FFF') ?: '#2F8FFF',
     'highlight' => normalizeHexColor($incomingColors['highlight'] ?? '', '#20C997') ?: '#20C997',
     'accentSoft' => normalizeHexColor($incomingColors['accentSoft'] ?? '', '#FFB347') ?: '#FFB347'
   ];
+  if (array_key_exists('landing', $settings)) {
+    $settings['landing'] = normalizeLandingSettings($settings['landing']);
+  }
   if (!writeJsonFile($settingsFile, $settings)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save settings.']);
     exit;
