@@ -8,5 +8,5 @@ Options -Indexes
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  RewriteRule ^([^/]+)/?$ index.php?campaign=$1 [L,QSA]
+  RewriteRule ^(.+?)/?$ index.php?campaign=$1 [L,QSA]
 </IfModule>

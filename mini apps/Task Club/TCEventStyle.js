@@ -109,6 +109,14 @@
     refs.missionLinkStatus.style.color = isError ? '#d1434a' : '';
   }
 
+  function updateGeneratedPanelTabName(eventName) {
+    const tabName = normalizeEventName(eventName);
+    if (!tabName || typeof window.updatePanelTabLabel !== 'function') return;
+    const activeNavItem = document.querySelector('.nav-item.active[data-tab^="task-club-mission-"]');
+    if (!(activeNavItem instanceof HTMLElement)) return;
+    window.updatePanelTabLabel(activeNavItem.dataset.tab || '', tabName);
+  }
+
   function updateMissionLinkPreview() {
     if (!(refs.missionLinkPreview instanceof HTMLElement)) return;
     const code = normalizeMissionCode(refs.missionLinkInput instanceof HTMLInputElement ? refs.missionLinkInput.value : state.missionLinkCode);
@@ -284,6 +292,7 @@
         }
       };
       await saveSettings(merged);
+      updateGeneratedPanelTabName(merged.eventName);
       setStatus('استایل رویداد ذخیره شد.');
       if (typeof window.showDefaultToast === 'function') {
         window.showDefaultToast('استایل رویداد ذخیره شد.');
@@ -326,6 +335,7 @@
         ...current,
         eventName: state.eventName
       });
+      updateGeneratedPanelTabName(state.eventName);
       setEventNameStatus('نام رویداد ذخیره شد.');
       if (typeof window.showDefaultToast === 'function') {
         window.showDefaultToast('نام رویداد ذخیره شد.');

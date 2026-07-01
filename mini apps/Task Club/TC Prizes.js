@@ -55,10 +55,69 @@
 
   function normalizeLevelType(rawValue) {
     const token = String(rawValue ?? "").trim().toLowerCase();
-    if (token === "out_of_value") {
-      return "out_of_value";
+    if (token === "out_of_value" || token === "pot") {
+      return token;
     }
     return "value_sum";
+  }
+
+  function normalizePotSettings(rawValue = {}, fallbackTitle = "") {
+    const source = rawValue && typeof rawValue === "object" ? rawValue : {};
+    const winnerLimit = Number.parseInt(source.winnerLimit ?? source.winner_limit ?? 1, 10);
+    return {
+      title: String(source.title ?? fallbackTitle ?? "").trim().slice(0, 160),
+      winnerLimit: Math.max(1, Math.min(1000, Number.isFinite(winnerLimit) ? winnerLimit : 1)),
+      prizeName: String(source.prizeName ?? source.prize_name ?? "").trim().slice(0, 160),
+      locked: Boolean(source.locked)
+    };
+  }
+
+  function normalizeLevelDescription(rawValue) {
+    return String(rawValue ?? "").replace(/\r\n?/g, "\n").trim();
+  }
+
+  function normalizeLevelButtonText(rawValue) {
+    return String(rawValue ?? "").trim().slice(0, 80);
+  }
+
+  function replaceDescriptionRange(textarea, start, end, replacement, selectionStart = null, selectionEnd = null) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || "");
+    const safeStart = Math.max(0, Math.min(value.length, Number.isFinite(start) ? start : 0));
+    const safeEnd = Math.max(safeStart, Math.min(value.length, Number.isFinite(end) ? end : safeStart));
+    const nextValue = `${value.slice(0, safeStart)}${replacement}${value.slice(safeEnd)}`;
+    textarea.value = nextValue;
+    const defaultCaret = safeStart + replacement.length;
+    textarea.selectionStart = Number.isFinite(selectionStart) ? selectionStart : defaultCaret;
+    textarea.selectionEnd = Number.isFinite(selectionEnd) ? selectionEnd : textarea.selectionStart;
+    textarea.focus();
+    textarea.dispatchEvent(new Event("input", {bubbles: true}));
+  }
+
+  function applyDescriptionFormat(textarea, format) {
+    if (!(textarea instanceof HTMLTextAreaElement)) return;
+    const value = String(textarea.value || "");
+    const start = Math.max(0, textarea.selectionStart ?? 0);
+    const end = Math.max(start, textarea.selectionEnd ?? start);
+    if (format === "bold") {
+      const selected = value.slice(start, end);
+      const replacement = `<b>${selected}</b>`;
+      const contentStart = start + 3;
+      replaceDescriptionRange(textarea, start, end, replacement, contentStart, contentStart + selected.length);
+      return;
+    }
+    if (format === "list") {
+      const lineStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+      const lineEndIndex = value.indexOf("\n", end);
+      const lineEnd = lineEndIndex >= 0 ? lineEndIndex : value.length;
+      const lines = value.slice(lineStart, lineEnd)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (!lines.length) return;
+      const list = `<ul>\n${lines.map((line) => `  <li>${line}</li>`).join("\n")}\n</ul>`;
+      replaceDescriptionRange(textarea, lineStart, lineEnd, list);
+    }
   }
 
   function makeLevelId() {
@@ -119,7 +178,10 @@
               `Level ${score || ""}`.trim()
             );
             const type = normalizeLevelType(item?.type ?? item?.levelType ?? item?.level_type ?? "value_sum");
-            return { id, name, type, score };
+            const description = normalizeLevelDescription(item?.description ?? item?.describe ?? item?.infoText ?? item?.info_text ?? "");
+            const buttonText = normalizeLevelButtonText(item?.buttonText ?? item?.button_text ?? "");
+            const potSettings = normalizePotSettings(item?.potSettings ?? item?.pot_settings, name);
+            return { id, name, type, score, description, buttonText, potSettings };
           })
           .filter((item) => item.score > 0 && item.name !== "")
           .sort((a, b) => a.score - b.score);
@@ -555,7 +617,10 @@
       return;
     }
     listEl.innerHTML = levels
-      .map((level, index) => `
+      .map((level, index) => {
+        const isOutOfValue = normalizeLevelType(level.type) === "out_of_value";
+        const isPot = normalizeLevelType(level.type) === "pot";
+        return `
         <tr data-index="${index}" data-level-id="${escapeHtml(level.id)}">
           <td>${index + 1}</td>
           <td>
@@ -570,6 +635,7 @@
             <select class="tc-prize-level-control" data-field="level-type">
               <option value="value_sum" ${normalizeLevelType(level.type) === "value_sum" ? "selected" : ""}>مجموع ارزش جوایز</option>
               <option value="out_of_value" ${normalizeLevelType(level.type) === "out_of_value" ? "selected" : ""}>خارج از ارزش جایزه</option>
+              <option value="pot" ${isPot ? "selected" : ""}>Pot</option>
             </select>
           </td>
           <td>
@@ -584,11 +650,17 @@
           </td>
           <td>
             <div class="tct-action-wrap">
+              ${isOutOfValue || isPot ? '<button type="button" class="btn ghost" data-action="edit-level-description">توضیحات</button>' : ''}
+              ${isPot ? '<button type="button" class="btn ghost" data-action="edit-pot-settings">Pot Settings</button>' : ''}
+              ${isPot ? `<a class="btn ghost" href="mini%20apps/Task%20Club/pot_draw.php?level_id=${encodeURIComponent(level.id)}" target="_blank" rel="noopener">Open Draw</a>` : ''}
+              ${isPot ? `<a class="btn ghost" href="mini%20apps/Task%20Club/pot_export.php?level_id=${encodeURIComponent(level.id)}">Export</a>` : ''}
+              ${isPot ? '<button type="button" class="btn ghost" data-action="reset-pot-winners">Reset Winners</button>' : ''}
               <button type="button" class="btn ghost" data-action="remove-level">حذف</button>
             </div>
           </td>
         </tr>
-      `)
+      `;
+      })
       .join("");
   }
 
@@ -611,13 +683,165 @@
     let levels = await loadPrizeLevels();
     renderPrizeLevels(levels, listEl);
 
+    const openPotSettingsDialog = (index) => {
+      if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
+      const level = levels[index] || {};
+      const settings = normalizePotSettings(level.potSettings, level.name);
+      const overlay = document.createElement("div");
+      overlay.className = "tc-prize-level-modal";
+      overlay.innerHTML = `
+        <div class="tc-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="Pot settings">
+          <div class="section-header"><h3>Pot Settings</h3></div>
+          <label class="field full"><span>Draw title</span><input type="text" data-pot-field="title" maxlength="160" value="${escapeHtml(settings.title)}" /></label>
+          <label class="field full"><span>Maximum winners</span><input type="number" data-pot-field="winnerLimit" min="1" max="1000" step="1" value="${settings.winnerLimit}" /></label>
+          <label class="field full"><span>Prize name</span><input type="text" data-pot-field="prizeName" maxlength="160" value="${escapeHtml(settings.prizeName)}" /></label>
+          <label class="switch tc-switch">
+            <span class="switch-label">Lock draw and publish the final result</span>
+            <span class="switch-toggle">
+              <input type="checkbox" data-pot-field="locked" ${settings.locked ? "checked" : ""} />
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </span>
+          </label>
+          <p class="muted small" data-pot-status aria-live="polite"></p>
+          <div class="tc-action-bar">
+            <button type="button" class="btn primary standard-primary-button" data-action="save-pot-settings">Save</button>
+            <button type="button" class="btn ghost" data-action="close-pot-settings">Close</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target === overlay || target.closest('[data-action="close-pot-settings"]')) {
+          overlay.remove();
+          return;
+        }
+        if (!target.closest('[data-action="save-pot-settings"]')) return;
+        const titleField = overlay.querySelector('[data-pot-field="title"]');
+        const limitField = overlay.querySelector('[data-pot-field="winnerLimit"]');
+        const prizeNameField = overlay.querySelector('[data-pot-field="prizeName"]');
+        const lockedField = overlay.querySelector('[data-pot-field="locked"]');
+        const nextSettings = normalizePotSettings({
+          title: titleField?.value ?? "",
+          winnerLimit: limitField?.value ?? 1,
+          prizeName: prizeNameField?.value ?? "",
+          locked: lockedField?.checked ?? false
+        }, level.name);
+        const dialogStatus = overlay.querySelector("[data-pot-status]");
+        if (nextSettings.locked && !nextSettings.prizeName) {
+          if (dialogStatus) dialogStatus.textContent = "Prize name is required before locking the draw.";
+          prizeNameField?.focus();
+          return;
+        }
+        if (nextSettings.locked) {
+          try {
+            const response = await fetch("mini%20apps/Task%20Club/pot_api.php", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({action: "state", levelId: level.id, csrf: csrfToken})
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.status !== "ok") {
+              throw new Error(payload?.message || "Unable to check Pot winners.");
+            }
+            if (!Array.isArray(payload.winners) || payload.winners.length < 1) {
+              if (dialogStatus) dialogStatus.textContent = "Confirm at least one winner before locking the draw.";
+              return;
+            }
+          } catch (error) {
+            if (dialogStatus) dialogStatus.textContent = error?.message || "Unable to check Pot winners.";
+            return;
+          }
+        }
+        const nextLevels = levels.map((item, itemIndex) => itemIndex === index
+          ? { ...item, potSettings: nextSettings }
+          : item);
+        if (await persistLevels(nextLevels, "Pot settings saved.")) {
+          overlay.remove();
+        }
+      });
+      overlay.querySelector('[data-pot-field="title"]')?.focus();
+    };
+
+    const openDescriptionDialog = (index) => {
+      if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
+      const level = levels[index] || {};
+      const overlay = document.createElement("div");
+      overlay.className = "tc-prize-level-modal";
+      overlay.innerHTML = `
+        <div class="tc-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="توضیحات سطح جایزه">
+          <div class="section-header">
+            <h3>توضیحات</h3>
+          </div>
+          <label class="field full">
+            <span>Button Text</span>
+            <input type="text" data-level-description-field="buttonText" autocomplete="off" maxlength="80" value="${escapeHtml(level.buttonText || "")}" />
+          </label>
+          <label class="field full">
+            <span>توضیحات</span>
+            <div class="tc-rich-text-tools" aria-label="ابزارهای ویرایش توضیحات">
+              <button type="button" class="btn ghost" data-level-description-format="bold" title="ضخیم" aria-label="ضخیم"><strong>B</strong></button>
+              <button type="button" class="btn ghost" data-level-description-format="list" title="فهرست" aria-label="فهرست">List</button>
+            </div>
+            <textarea data-level-description-field="description" rows="9">${escapeHtml(level.description || "")}</textarea>
+          </label>
+          <p class="muted small" data-level-description-status aria-live="polite"></p>
+          <div class="tc-action-bar">
+            <button type="button" class="btn primary standard-primary-button" data-action="save-level-description">ذخیره</button>
+            <button type="button" class="btn ghost" data-action="close-level-description">بستن</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      const buttonTextField = overlay.querySelector('[data-level-description-field="buttonText"]');
+      const descriptionField = overlay.querySelector('[data-level-description-field="description"]');
+      const status = overlay.querySelector("[data-level-description-status]");
+      const close = () => overlay.remove();
+      overlay.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const formatButton = target.closest("[data-level-description-format]");
+        if (formatButton instanceof HTMLButtonElement) {
+          applyDescriptionFormat(descriptionField, formatButton.dataset.levelDescriptionFormat || "");
+          return;
+        }
+        if (target === overlay || target.closest('[data-action="close-level-description"]')) {
+          close();
+          return;
+        }
+        if (!target.closest('[data-action="save-level-description"]')) return;
+        const nextLevels = levels.map((item, itemIndex) => {
+          if (itemIndex !== index) return item;
+          return {
+            ...item,
+            description: normalizeLevelDescription(descriptionField?.value ?? ""),
+            buttonText: normalizeLevelButtonText(buttonTextField?.value ?? "")
+          };
+        });
+        const saved = await persistLevels(nextLevels, "توضیحات سطح ذخیره شد.");
+        if (saved) {
+          close();
+        } else if (status instanceof HTMLElement) {
+          status.textContent = "ذخیره توضیحات ناموفق بود.";
+          status.style.color = "#d1434a";
+        }
+      });
+      if (buttonTextField instanceof HTMLInputElement) {
+        buttonTextField.focus();
+      }
+    };
+
     const persistLevels = async (nextLevels, successMessage = "سطح‌ها ذخیره شدند.") => {
       const normalized = nextLevels
         .map((item) => ({
           id: String(item?.id ?? "").trim() || makeLevelId(),
           name: normalizeLevelName(item?.name ?? item?.levelName ?? item?.label ?? ""),
           type: normalizeLevelType(item?.type ?? "value_sum"),
-          score: normalizeLevelScore(item?.score ?? item?.levelScore ?? 0)
+          score: normalizeLevelScore(item?.score ?? item?.levelScore ?? 0),
+          description: normalizeLevelDescription(item?.description ?? item?.describe ?? item?.infoText ?? ""),
+          buttonText: normalizeLevelButtonText(item?.buttonText ?? item?.button_text ?? ""),
+          potSettings: normalizePotSettings(item?.potSettings ?? item?.pot_settings, item?.name ?? "")
         }))
         .filter((item) => item.score > 0 && item.name !== "")
         .sort((a, b) => a.score - b.score);
@@ -648,7 +872,15 @@
         scoreInput.focus();
         return;
       }
-      const nextLevels = [...levels, { id: makeLevelId(), name, type, score }];
+      const nextLevels = [...levels, {
+        id: makeLevelId(),
+        name,
+        type,
+        score,
+        description: "",
+        buttonText: "",
+        potSettings: normalizePotSettings({}, name)
+      }];
       const saved = await persistLevels(nextLevels, "سطح اضافه شد.");
       if (saved) {
         nameInput.value = "";
@@ -662,10 +894,43 @@
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       const removeBtn = target.closest('[data-action="remove-level"]');
-      if (!removeBtn) return;
-      const row = removeBtn.closest("tr[data-index]");
+      const descriptionBtn = target.closest('[data-action="edit-level-description"]');
+      const potSettingsBtn = target.closest('[data-action="edit-pot-settings"]');
+      const resetPotBtn = target.closest('[data-action="reset-pot-winners"]');
+      if (!removeBtn && !descriptionBtn && !potSettingsBtn && !resetPotBtn) return;
+      const row = (removeBtn || descriptionBtn || potSettingsBtn || resetPotBtn).closest("tr[data-index]");
       const index = Number.parseInt(row?.dataset?.index ?? "", 10);
       if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
+      if (descriptionBtn) {
+        openDescriptionDialog(index);
+        return;
+      }
+      if (potSettingsBtn) {
+        openPotSettingsDialog(index);
+        return;
+      }
+      if (resetPotBtn) {
+        if (!window.confirm("Clear every confirmed winner for this Pot? This cannot be undone.")) return;
+        resetPotBtn.disabled = true;
+        try {
+          const response = await fetch("mini%20apps/Task%20Club/pot_api.php", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "reset", levelId: levels[index].id, csrf: csrfToken })
+          });
+          const payload = await response.json();
+          if (!response.ok || payload?.status !== "ok") {
+            throw new Error(payload?.message || "Failed to reset Pot winners.");
+          }
+          setStatus("Pot winners cleared.");
+        } catch (error) {
+          setStatus(error?.message || "Failed to reset Pot winners.", true);
+        } finally {
+          resetPotBtn.disabled = false;
+        }
+        return;
+      }
       const nextLevels = levels.filter((_, itemIndex) => itemIndex !== index);
       await persistLevels(nextLevels, "سطح حذف شد.");
     });

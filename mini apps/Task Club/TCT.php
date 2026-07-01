@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
 $tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
@@ -280,6 +281,7 @@ function tctLoadTaskScoreSettings(string $tasksDir, string $tagCode): array
   $defaults = [
     'score' => 0,
     'afterEndtimeScore' => 0,
+    'hasGoldenTime' => true,
     'anotherChanceIfZero' => false
   ];
   $path = tctBuildTaskScoreSettingsPath($tasksDir, $tagCode);
@@ -297,6 +299,9 @@ function tctLoadTaskScoreSettings(string $tasksDir, string $tagCode): array
   return [
     'score' => tctNormalizeScoreValue($decoded['score'] ?? 0),
     'afterEndtimeScore' => tctNormalizeScoreValue($decoded['afterEndtimeScore'] ?? ($decoded['after_endtime_score'] ?? 0)),
+    'hasGoldenTime' => array_key_exists('hasGoldenTime', $decoded) || array_key_exists('has_golden_time', $decoded)
+      ? tctNormalizeBoolValue($decoded['hasGoldenTime'] ?? ($decoded['has_golden_time'] ?? true))
+      : true,
     'anotherChanceIfZero' => tctNormalizeBoolValue($decoded['anotherChanceIfZero'] ?? ($decoded['another_chance_if_zero'] ?? false))
   ];
 }
@@ -313,6 +318,9 @@ function tctSaveTaskScoreSettings(string $tasksDir, string $tagCode, array $sett
   $payload = [
     'score' => tctNormalizeScoreValue($settings['score'] ?? 0),
     'afterEndtimeScore' => tctNormalizeScoreValue($settings['afterEndtimeScore'] ?? ($settings['after_endtime_score'] ?? 0)),
+    'hasGoldenTime' => array_key_exists('hasGoldenTime', $settings) || array_key_exists('has_golden_time', $settings)
+      ? tctNormalizeBoolValue($settings['hasGoldenTime'] ?? ($settings['has_golden_time'] ?? true))
+      : true,
     'anotherChanceIfZero' => tctNormalizeBoolValue($settings['anotherChanceIfZero'] ?? ($settings['another_chance_if_zero'] ?? false))
   ];
   $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
@@ -1437,6 +1445,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
     $task['score'] = $scoreSettings['score'];
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
+    $task['hasGoldenTime'] = (bool)($scoreSettings['hasGoldenTime'] ?? true);
     $task['anotherChanceIfZero'] = (bool)($scoreSettings['anotherChanceIfZero'] ?? false);
     if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
@@ -1600,6 +1609,9 @@ function tctSaveStoreTasks(string $storePath, array $tasks): bool
 
 function tctReadCsvRows(string $path): array
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsForUpdate($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -1622,6 +1634,9 @@ function tctReadCsvRows(string $path): array
 
 function tctWriteCsvRows(string $path, array $rows): bool
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvCommitRows($path, $rows);
+  }
   $dir = dirname($path);
   if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
@@ -2145,6 +2160,7 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
     TCT_SCORE_SETTINGS_FILE => [
       'score' => 0,
       'afterEndtimeScore' => 0,
+      'hasGoldenTime' => true,
       'anotherChanceIfZero' => false
     ],
     TCT_TEAM_SETTINGS_FILE => [
@@ -2183,6 +2199,12 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
   foreach ($defaultCsvFiles as $fileName => $header) {
     $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
     if (is_file($filePath)) {
+      continue;
+    }
+    if (tcInviteesCsvIsManagedPath($filePath)) {
+      if (!tctWriteCsvRows($filePath, [$header])) {
+        return false;
+      }
       continue;
     }
     $handle = fopen($filePath, 'c+');
@@ -2437,7 +2459,10 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     foreach ($tasks as $task) {
       tctEnsureTaskFolder($tctTasksDir, (string)($task['tagCode'] ?? ''));
     }
-    tctSaveStoreTasks($tctStorePath, $tasks);
+    if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to persist normalized task data.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     echo json_encode(['status' => 'ok', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2622,6 +2647,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
     $score = tctNormalizeScoreValue($_POST['score'] ?? 0);
     $afterEndtimeScore = tctNormalizeScoreValue($_POST['after_endtime_score'] ?? 0);
+    $hasGoldenTime = tctNormalizeBoolValue($_POST['has_golden_time'] ?? true);
 
     $targetTagCode = '';
     $targetTaskType = 'quiz';
@@ -2638,6 +2664,12 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
 
+    if ($targetTaskType === 'conditional_quiz' && !$hasGoldenTime) {
+      $afterEndtimeScore = 0;
+    } elseif ($targetTaskType !== 'conditional_quiz') {
+      $hasGoldenTime = true;
+    }
+
     if ($targetTaskType === 'info' || $targetTaskType === 'team_task' || $targetTaskType === 'describe_photo') {
       $afterEndtimeScore = 0;
     }
@@ -2646,6 +2678,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     if (!tctSaveTaskScoreSettings($tctTasksDir, $targetTagCode, [
       'score' => $score,
       'afterEndtimeScore' => $afterEndtimeScore,
+      'hasGoldenTime' => $hasGoldenTime,
       'anotherChanceIfZero' => (bool)($existingScoreSettings['anotherChanceIfZero'] ?? false)
     ])) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save score settings.'], JSON_UNESCAPED_UNICODE);
@@ -2687,6 +2720,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     if (!tctSaveTaskScoreSettings($tctTasksDir, $targetTagCode, [
       'score' => tctNormalizeScoreValue($existingScoreSettings['score'] ?? 0),
       'afterEndtimeScore' => tctNormalizeScoreValue($existingScoreSettings['afterEndtimeScore'] ?? 0),
+      'hasGoldenTime' => (bool)($existingScoreSettings['hasGoldenTime'] ?? true),
       'anotherChanceIfZero' => $anotherChanceIfZero
     ])) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save Crisis Control settings.'], JSON_UNESCAPED_UNICODE);
@@ -3685,8 +3719,10 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)) {
-      tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams);
+    if (is_file($tctEventInviteesPath)
+      && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
+      echo json_encode(['status' => 'error', 'message' => 'Team runtime was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
+      exit;
     }
 
     echo json_encode([
@@ -3743,8 +3779,10 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to update challenge accepted state.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)) {
-      tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams);
+    if (is_file($tctEventInviteesPath)
+      && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
+      echo json_encode(['status' => 'error', 'message' => 'Challenge state was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
+      exit;
     }
 
     echo json_encode([
@@ -3826,8 +3864,10 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)) {
-      tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams);
+    if (is_file($tctEventInviteesPath)
+      && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
+      echo json_encode(['status' => 'error', 'message' => 'Team runtime was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
+      exit;
     }
 
     echo json_encode([
@@ -4293,6 +4333,7 @@ if (TCT_INCLUDE_ONLY) {
       endTime: String(task.endTime || ''),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
+      hasGoldenTime: task.hasGoldenTime !== false,
       anotherChanceIfZero: Boolean(task.anotherChanceIfZero),
       order: Number.parseInt(task.order, 10) || (index + 1),
       createdAt: String(task.createdAt || '')
@@ -4323,6 +4364,7 @@ if (TCT_INCLUDE_ONLY) {
       endTime: String(task.endTime || ''),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
+      hasGoldenTime: task.hasGoldenTime !== false,
       anotherChanceIfZero: Boolean(task.anotherChanceIfZero),
       order: Number.parseInt(task.order, 10) || (index + 1),
       createdAt: String(task.createdAt || '')

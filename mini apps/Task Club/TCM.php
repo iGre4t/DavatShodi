@@ -1,5 +1,7 @@
 ﻿<?php
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
+require_once __DIR__ . '/pot_service.php';
 
 function tcStartIsolatedSession(): void
 {
@@ -127,10 +129,13 @@ $loginAttemptsPath = __DIR__ . '/TC Event/login_attempts.json';
 $anyPasswordLoginSettingsPath = __DIR__ . '/TC Event/any-password-login.json';
 const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
+  'answerTimeLimitMs' => 14000,
   'randomOrder' => true,
   'questionsPerAttempt' => 0,
   'correctAnswersToScore' => 1
 ];
+const DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS = 14000;
+const DEFAULT_CONDITIONAL_QUIZ_ANSWER_TIME_LIMIT_MS = 30000;
 const CONDITIONAL_QUIZ_TIME_LIMIT_SECONDS = 600;
 
 function readPrizeStore(string $path): array
@@ -211,10 +216,57 @@ function resolveAllowedRollCountByScore(int $score, array $levels): ?int
 function normalizePrizeLevelTypeValue($value): string
 {
   $token = strtolower(trim((string)$value));
-  if ($token === 'out_of_value') {
-    return 'out_of_value';
+  if (in_array($token, ['out_of_value', 'pot'], true)) {
+    return $token;
   }
   return 'value_sum';
+}
+
+function normalizePrizeLevelPotSettings($value): array
+{
+  $source = is_array($value) ? $value : [];
+  return [
+    'locked' => !empty($source['locked']),
+    'prizeName' => trim((string)($source['prizeName'] ?? ($source['prize_name'] ?? '')))
+  ];
+}
+
+function buildPotLevelUserState(
+  array $level,
+  string $sessionWorkId,
+  array $rows,
+  int $workIdIndex,
+  int $scoreIndex
+): array {
+  $requiredScore = max(0, (int)($level['score'] ?? 0));
+  $participantCount = 0;
+  for ($index = 1; $index < count($rows); $index++) {
+    $row = is_array($rows[$index] ?? null) ? $rows[$index] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    $score = $scoreIndex >= 0 ? max(0, (int)($row[$scoreIndex] ?? 0)) : 0;
+    if ($workId !== '' && $score >= $requiredScore) $participantCount++;
+  }
+
+  $normalizedSessionWorkId = normalizeCredentialToken($sessionWorkId);
+  $isWinner = false;
+  $winners = tcPotReadWinners((string)($level['id'] ?? ''));
+  foreach ($winners as $winner) {
+    $participant = is_array($winner['participant'] ?? null) ? $winner['participant'] : [];
+    $winnerWorkId = trim((string)($participant['workId'] ?? ($winner['participantKey'] ?? '')));
+    if ($winnerWorkId !== '' && normalizeCredentialToken($winnerWorkId) === $normalizedSessionWorkId) {
+      $isWinner = true;
+      break;
+    }
+  }
+
+  $settings = normalizePrizeLevelPotSettings($level['potSettings'] ?? []);
+  return [
+    'locked' => $settings['locked'],
+    'prizeName' => $settings['prizeName'],
+    'participantCount' => $participantCount,
+    'confirmedWinnerCount' => count($winners),
+    'isWinner' => $isWinner
+  ];
 }
 
 function readPrizeLevelRecords(string $path): array
@@ -252,7 +304,10 @@ function readPrizeLevelRecords(string $path): array
       'id' => $id,
       'name' => $name,
       'type' => $type,
-      'score' => $score
+      'score' => $score,
+      'description' => trim((string)($item['description'] ?? ($item['describe'] ?? ($item['infoText'] ?? ($item['info_text'] ?? ''))))),
+      'buttonText' => trim((string)($item['buttonText'] ?? ($item['button_text'] ?? ''))),
+      'potSettings' => normalizePrizeLevelPotSettings($item['potSettings'] ?? ($item['pot_settings'] ?? []))
     ];
   }
   usort($records, static function ($a, $b) {
@@ -352,6 +407,24 @@ function normalizeFloatValue($value): float
   return (float)$normalized;
 }
 
+function normalizeRewardPrizeDisplaySettings($value): array
+{
+  $source = is_array($value) ? $value : [];
+  $hiddenText = trim((string)($source['hiddenText'] ?? ($source['hidden_text'] ?? '')));
+  if (function_exists('mb_substr')) {
+    $hiddenText = mb_substr($hiddenText, 0, 160, 'UTF-8');
+  } else {
+    $hiddenText = substr($hiddenText, 0, 160);
+  }
+  return [
+    'nonValuePrizeDescribe' => !empty($source['nonValuePrizeDescribe']) || !empty($source['non_value_prize_describe']),
+    'showPrize' => array_key_exists('showPrize', $source) || array_key_exists('show_prize', $source)
+      ? (bool)($source['showPrize'] ?? $source['show_prize'])
+      : true,
+    'hiddenText' => $hiddenText
+  ];
+}
+
 function readQuestionStore(string $path): array
 {
   if (!is_file($path)) {
@@ -432,9 +505,10 @@ function extractCodeFromAnswersHeader(string $headerCell): string
   return strtoupper(trim((string)$m[1]));
 }
 
-function loadWfqSettings(string $path): array
+function loadWfqSettings(string $path, int $defaultAnswerTimeLimitMs = DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS): array
 {
   $settings = TCQ_DEFAULT_SETTINGS;
+  $settings['answerTimeLimitMs'] = $defaultAnswerTimeLimitMs;
   if (!is_file($path)) {
     return $settings;
   }
@@ -448,6 +522,7 @@ function loadWfqSettings(string $path): array
   }
   $storedCorrectAnswersToScore = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
+  $settings['answerTimeLimitMs'] = normalizeAnswerTimeLimitMs($decoded['answerTimeLimitMs'] ?? ($decoded['answer_time_limit_ms'] ?? $settings['answerTimeLimitMs']), $defaultAnswerTimeLimitMs);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
   $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
   $settings['correctAnswersToScore'] = $storedCorrectAnswersToScore > 0
@@ -472,6 +547,7 @@ function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuesti
     : $correctAnswersToScore);
   return [
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
+    'answerTimeLimitMs' => normalizeAnswerTimeLimitMs($settings['answerTimeLimitMs'] ?? TCQ_DEFAULT_SETTINGS['answerTimeLimitMs'], (int)TCQ_DEFAULT_SETTINGS['answerTimeLimitMs']),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => $questionsPerAttempt,
     'correctAnswersToScore' => $correctAnswersToScore,
@@ -904,6 +980,18 @@ function normalizeTaskScoreValue($value): int
   return $number > 0 ? $number : 0;
 }
 
+function normalizeAnswerTimeLimitMs($value, int $fallback): int
+{
+  if (!is_scalar($value)) {
+    return $fallback;
+  }
+  $parsed = (int)$value;
+  if ($parsed < 1000) {
+    return $fallback;
+  }
+  return min($parsed, 600000);
+}
+
 function normalizeTaskTypeValue($value): string
 {
   $token = strtolower(trim((string)$value));
@@ -931,12 +1019,37 @@ function isQuizLikeTaskTypeValue(string $taskType): bool
   return $normalized === 'quiz' || $normalized === 'conditional_quiz';
 }
 
+function taskHasGoldenTime(array $task): bool
+{
+  if (normalizeTaskTypeValue($task['taskType'] ?? 'quiz') !== 'conditional_quiz') {
+    return true;
+  }
+  if (!array_key_exists('hasGoldenTime', $task) && !array_key_exists('has_golden_time', $task)) {
+    return true;
+  }
+  return normalizeTaskBoolValue($task['hasGoldenTime'] ?? ($task['has_golden_time'] ?? true));
+}
+
+function canOpenTaskByAvailabilityStatus(string $status, string $taskType, array $task): bool
+{
+  if ($status === 'active') {
+    return true;
+  }
+  if (!isQuizLikeTaskTypeValue($taskType) || $status !== 'ended') {
+    return false;
+  }
+  return normalizeTaskTypeValue($taskType) !== 'conditional_quiz' || taskHasGoldenTime($task);
+}
+
 function resolveTaskScoreForStatus(array $task, string $taskStatus): int
 {
   $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
   $baseScore = max(0, (int)($task['score'] ?? 0));
   $afterEndtimeScore = max(0, (int)($task['afterEndtimeScore'] ?? 0));
   if ($taskType === 'conditional_quiz') {
+    if (!taskHasGoldenTime($task)) {
+      return $baseScore;
+    }
     return $taskStatus === 'active' ? $afterEndtimeScore : $baseScore;
   }
   return isQuizLikeTaskTypeValue($taskType) && $taskStatus === 'ended'
@@ -975,6 +1088,7 @@ function readTaskScoreSettings(string $tasksDir, string $tagCode): array
   $defaults = [
     'score' => 0,
     'afterEndtimeScore' => 0,
+    'hasGoldenTime' => true,
     'anotherChanceIfZero' => false
   ];
   $normalizedTag = normalizeTaskTagCode($tagCode);
@@ -996,6 +1110,9 @@ function readTaskScoreSettings(string $tasksDir, string $tagCode): array
   return [
     'score' => normalizeTaskScoreValue($decoded['score'] ?? 0),
     'afterEndtimeScore' => normalizeTaskScoreValue($decoded['afterEndtimeScore'] ?? ($decoded['after_endtime_score'] ?? 0)),
+    'hasGoldenTime' => array_key_exists('hasGoldenTime', $decoded) || array_key_exists('has_golden_time', $decoded)
+      ? normalizeTaskBoolValue($decoded['hasGoldenTime'] ?? ($decoded['has_golden_time'] ?? true))
+      : true,
     'anotherChanceIfZero' => normalizeTaskBoolValue($decoded['anotherChanceIfZero'] ?? ($decoded['another_chance_if_zero'] ?? false))
   ];
 }
@@ -1982,6 +2099,7 @@ function loadTaskRecords(string $storePath, string $tasksDir): array
     $task['order'] = $nextOrder;
     $task['score'] = (int)$scoreSettings['score'];
     $task['afterEndtimeScore'] = (int)$scoreSettings['afterEndtimeScore'];
+    $task['hasGoldenTime'] = (bool)($scoreSettings['hasGoldenTime'] ?? true);
     $task['anotherChanceIfZero'] = (bool)($scoreSettings['anotherChanceIfZero'] ?? false);
     $infoSettings = readTaskInfoSettings($tasksDir, $tagCode);
     $task['infoTitle'] = (string)($infoSettings['title'] ?? '');
@@ -2061,6 +2179,9 @@ function compareEventDates(string $left, string $right): ?int
 
 function deriveGlobalEventStatus(array $settings): string
 {
+  if (normalizeTaskBoolValue($settings['eventAccessLocked'] ?? false)) {
+    return 'locked';
+  }
   $active = normalizeTaskBoolValue($settings['active'] ?? false);
   $duration = normalizeTaskBoolValue($settings['duration'] ?? false);
   if (!$duration) {
@@ -2107,6 +2228,20 @@ function loadGlobalEventStatus(): string
   return deriveGlobalEventStatus($settings);
 }
 
+function resolveGlobalEventUnavailableMessage(string $status): string
+{
+  if ($status === 'upcoming') {
+    return 'رویداد هنوز شروع نشده است.';
+  }
+  if ($status === 'ended') {
+    return 'مهلت انجام ماموریت‌ها به پایان رسیده است.';
+  }
+  if ($status === 'locked') {
+    return 'دسترسی به ماموریت‌ها و کارت‌های جایزه موقتا متوقف شده است.';
+  }
+  return 'فعلا رویداد فعالی وجود ندارد.';
+}
+
 function deriveTaskAvailabilityStatus(array $task): string
 {
   $active = normalizeTaskBoolValue($task['active'] ?? false);
@@ -2149,15 +2284,24 @@ function deriveTaskAvailabilityStatus(array $task): string
   return 'active';
 }
 
-function resolveTaskStatusLabel(string $status): string
+function resolveTaskStatusLabel(string $status, string $taskType = '', bool $hasGoldenTime = true): string
 {
   if ($status === 'active') {
+    if (normalizeTaskTypeValue($taskType) === 'conditional_quiz' && !$hasGoldenTime) {
+      return 'مهلت زمان پاسخگویی';
+    }
     return 'فعال';
   }
   if ($status === 'upcoming') {
     return 'به‌زودی';
   }
   if ($status === 'ended') {
+    if (normalizeTaskTypeValue($taskType) === 'conditional_quiz') {
+      if (!$hasGoldenTime) {
+        return 'مهلت پاسخ‌گویی این ماموریت پایان یافته است';
+      }
+      return 'مهلت طلایی پایان یافته برای امتیاز کمتر پاسخ دهید';
+    }
     return 'پایان‌یافته';
   }
   return 'غیرفعال';
@@ -2213,7 +2357,12 @@ function loadTaskQuizAssets(array $task, string $sharedQuestionsStorePath): arra
     'settingsPath' => $settingsPath,
     'answersPath' => $answersPath,
     'questions' => $questions,
-    'settings' => loadWfqSettings($settingsPath)
+    'settings' => loadWfqSettings(
+      $settingsPath,
+      normalizeTaskTypeValue($task['taskType'] ?? 'quiz') === 'conditional_quiz'
+        ? DEFAULT_CONDITIONAL_QUIZ_ANSWER_TIME_LIMIT_MS
+        : DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS
+    )
   ];
 }
 
@@ -3411,7 +3560,8 @@ function buildTaskPayloadForView(
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
     $isActive = $status === 'active';
-    $isEndedQuiz = isQuizLikeTaskTypeValue($taskType) && $status === 'ended';
+    $hasGoldenTime = taskHasGoldenTime($task);
+    $isEndedQuiz = canOpenTaskByAvailabilityStatus($status, $taskType, $task);
     $progress = readTaskUserProgress($task, $inviteesPath, $inviteesMapPath, $workId);
     $completed = (bool)($progress['completed'] ?? false);
     $describeSubmitted = (bool)($progress['describeSubmitted'] ?? false);
@@ -3440,7 +3590,7 @@ function buildTaskPayloadForView(
           && $teamStartedPending
         ))
         ? ($taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده')
-        : resolveTaskStatusLabel($status));
+        : resolveTaskStatusLabel($status, $taskType, $hasGoldenTime));
     $items[] = [
       'id' => (string)($task['id'] ?? ''),
       'title' => (string)($task['title'] ?? ''),
@@ -3454,6 +3604,7 @@ function buildTaskPayloadForView(
       'endTime' => (string)($task['endTime'] ?? ''),
       'score' => (int)($task['score'] ?? 0),
       'afterEndtimeScore' => (int)($task['afterEndtimeScore'] ?? 0),
+      'hasGoldenTime' => $hasGoldenTime,
       'maxScoreQuestionCount' => $maxScoreQuestionCount,
       'status' => $status,
       'statusLabel' => $statusLabel,
@@ -3469,6 +3620,9 @@ function buildTaskPayloadForView(
 
 function readInviteesCsv(string $path): array
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsForUpdate($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -3491,6 +3645,9 @@ function readInviteesCsv(string $path): array
 
 function writeInviteesCsv(string $path, array $rows): bool
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvCommitRows($path, $rows);
+  }
   $dir = dirname($path);
   if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
@@ -3590,13 +3747,29 @@ function normalizeUnicodeDigitsToAscii(string $value): string
     '٦' => '6',
     '٧' => '7',
     '٨' => '8',
-    '٩' => '9'
+    '٩' => '9',
+    '０' => '0',
+    '１' => '1',
+    '２' => '2',
+    '３' => '3',
+    '４' => '4',
+    '５' => '5',
+    '６' => '6',
+    '７' => '7',
+    '８' => '8',
+    '９' => '9'
   ]);
 }
 
 function normalizeCredentialToken(string $value): string
 {
-  return trim(normalizeUnicodeDigitsToAscii($value));
+  $normalized = normalizeUnicodeDigitsToAscii($value);
+  $withoutInvisibleMarks = preg_replace('/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}-\x{206F}\x{FEFF}]/u', '', $normalized);
+  if (is_string($withoutInvisibleMarks)) {
+    $normalized = $withoutInvisibleMarks;
+  }
+  $trimmed = preg_replace('/^[\p{Z}\s]+|[\p{Z}\s]+$/u', '', $normalized);
+  return is_string($trimmed) ? $trimmed : trim($normalized);
 }
 
 function findHeaderIndex(array $header, string $needle): int
@@ -4299,9 +4472,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $existing = trim((string)($rows[$rowIndex][$loginListIndex] ?? ''));
       $rows[$rowIndex][$loginListIndex] = $existing !== '' ? ($existing . ', ' . $stamp) : $stamp;
     }
-    if (($table['columns']['added'] ?? false) && $rows) {
-      writeInviteesCsv($inviteesFilePath, $rows);
-    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+    if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       $recordFail();
       $logLoginFailure('login_metadata_write_failed');
       echo json_encode(['status' => 'error', 'message' => 'ذخیره اطلاعات ورود ناموفق بود.']);
@@ -4434,12 +4605,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
     $settings = loadJsonPayload(__DIR__ . '/Setting.json');
     $eventColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
+    $rewardPrizeDisplay = normalizeRewardPrizeDisplaySettings($settings['rewardPrizeDisplay'] ?? []);
     echo json_encode([
       'status' => 'ok',
       'data' => [
         'active' => (bool)($settings['active'] ?? false),
         'duration' => (bool)($settings['duration'] ?? false),
         'maintenanceMode' => (bool)($settings['maintenanceMode'] ?? false),
+        'eventAccessLocked' => (bool)($settings['eventAccessLocked'] ?? false),
         'startDate' => trim((string)($settings['startDate'] ?? '')),
         'startTime' => trim((string)($settings['startTime'] ?? '')),
         'endDate' => trim((string)($settings['endDate'] ?? '')),
@@ -4450,7 +4623,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           'secondary' => trim((string)($eventColors['secondary'] ?? '')),
           'highlight' => trim((string)($eventColors['highlight'] ?? '')),
           'accentSoft' => trim((string)($eventColors['accentSoft'] ?? ''))
-        ]
+        ],
+        'rewardPrizeDisplay' => $rewardPrizeDisplay
       ]
     ], JSON_UNESCAPED_UNICODE);
     exit;
@@ -4463,8 +4637,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
-    if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+    if ($eventStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       exit;
     }
 
@@ -4488,7 +4662,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    $available = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
+    $hasGoldenTime = taskHasGoldenTime($task);
+    $available = canOpenTaskByAvailabilityStatus($status, $taskType, $task);
     $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
     $tagCode = (string)($quizAssets['tagCode'] ?? '');
     $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
@@ -4593,9 +4768,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'taskType' => $taskType,
         'score' => (int)($task['score'] ?? 0),
         'afterEndtimeScore' => (int)($task['afterEndtimeScore'] ?? 0),
+        'hasGoldenTime' => $hasGoldenTime,
         'status' => $status,
         'available' => $available,
-        'statusLabel' => resolveTaskStatusLabel($status),
+        'statusLabel' => resolveTaskStatusLabel($status, $taskType, $hasGoldenTime),
         'infoTitle' => (string)($task['infoTitle'] ?? ''),
         'infoText' => (string)($task['infoText'] ?? ''),
         'guidePrefix' => (string)($task['guidePrefix'] ?? ''),
@@ -4621,8 +4797,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
-    if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+    if ($eventStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       exit;
     }
 
@@ -4646,7 +4822,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    $available = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
+    $hasGoldenTime = taskHasGoldenTime($task);
+    $available = canOpenTaskByAvailabilityStatus($status, $taskType, $task);
     if (!isQuizLikeTaskTypeValue($taskType) || !$available) {
       echo json_encode(['status' => 'error', 'message' => 'این ماموریت در حال حاضر فعال نیست.']);
       exit;
@@ -4692,8 +4869,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
-    if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+    if ($eventStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       exit;
     }
 
@@ -4725,7 +4902,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $taskStatus = deriveTaskAvailabilityStatus($task);
-    if ($taskStatus !== 'active' && $taskStatus !== 'ended') {
+    if (!canOpenTaskByAvailabilityStatus($taskStatus, $taskType, $task)) {
       echo json_encode(['status' => 'error', 'message' => 'این ماموریت در حال حاضر فعال نیست.']);
       exit;
     }
@@ -4789,8 +4966,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
-    if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+    if ($eventStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       exit;
     }
 
@@ -4847,8 +5024,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
-    if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+    if ($eventStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       exit;
     }
 
@@ -4905,8 +5082,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
-    if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+    if ($eventStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       exit;
     }
 
@@ -5614,8 +5791,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $eventStatus = loadGlobalEventStatus();
-    if ($eventStatus === 'inactive') {
-      echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
+    if ($eventStatus !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       exit;
     }
 
@@ -5639,7 +5816,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    $canComplete = $status === 'active' || (isQuizLikeTaskTypeValue($taskType) && $status === 'ended');
+    $canComplete = canOpenTaskByAvailabilityStatus($status, $taskType, $task);
     if (!$canComplete) {
       echo json_encode(['status' => 'error', 'message' => 'This task is not available right now.']);
       exit;
@@ -5778,9 +5955,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $eventSettings = loadJsonPayload(__DIR__ . '/Setting.json');
     $eventStatus = deriveGlobalEventStatus($eventSettings);
     $durationMode = normalizeTaskBoolValue($eventSettings['duration'] ?? false);
+    $rewardPrizeDisplay = normalizeRewardPrizeDisplaySettings($eventSettings['rewardPrizeDisplay'] ?? []);
     $rewardFlipAllowed = $durationMode
       ? $eventStatus === 'ended'
       : $eventStatus === 'active';
+    if ($eventStatus === 'upcoming' || $eventStatus === 'inactive') {
+      echo json_encode([
+        'status' => 'ok',
+        'data' => [
+          'score' => 0,
+          'cardFlipsCount' => 0,
+          'eachLevelWonPrize' => '',
+          'totalPrizeWon' => 0,
+          'eventStatus' => $eventStatus,
+          'durationMode' => $durationMode,
+          'rewardFlipAllowed' => false,
+          'rewardPrizeDisplay' => $rewardPrizeDisplay,
+          'levels' => [],
+          'availablePrizeNames' => [],
+          'message' => resolveGlobalEventUnavailableMessage($eventStatus)
+        ]
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $table = loadInviteesTable($inviteesFilePath, $inviteesMapPath);
     $rows = $table['rows'];
     $workIdIndex = (int)($table['workIdIndex'] ?? -1);
@@ -5832,9 +6029,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 
     $levels = readPrizeLevelRecords($prizeLevelsPath);
-    $outOfValueChanged = syncOutOfValueRewardsForUser($rows, $rowIndex, $columns, $levels, $userScore);
-    if ((($table['columns']['added'] ?? false) || $outOfValueChanged) && $rows) {
-      writeInviteesCsv($inviteesFilePath, $rows);
+    $outOfValueChanged = $eventStatus === 'locked'
+      ? false
+      : syncOutOfValueRewardsForUser($rows, $rowIndex, $columns, $levels, $userScore);
+    if ((($table['columns']['added'] ?? false) || $outOfValueChanged) && $rows
+      && !writeInviteesCsv($inviteesFilePath, $rows)) {
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره وضعیت جایزه ناموفق بود.']);
+      exit;
     }
     $levelPayload = [];
     foreach ($levels as $level) {
@@ -5848,10 +6049,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'name' => (string)($level['name'] ?? ''),
         'type' => $type,
         'score' => (int)($level['score'] ?? 0),
+        'description' => (string)($level['description'] ?? ''),
+        'buttonText' => (string)($level['buttonText'] ?? ''),
         'reached' => $reached,
         'won' => $won,
         'wonPrize' => (string)($wonPrizeByLevelId[$levelId] ?? ''),
-        'canFlip' => $canFlip
+        'canFlip' => $canFlip,
+        'potStatus' => $type === 'pot'
+          ? buildPotLevelUserState($level, $sessionWorkId, $rows, $workIdIndex, $scoreIndex)
+          : null
       ];
     }
 
@@ -5883,6 +6089,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'eventStatus' => $eventStatus,
         'durationMode' => $durationMode,
         'rewardFlipAllowed' => $rewardFlipAllowed,
+        'rewardPrizeDisplay' => $rewardPrizeDisplay,
         'levels' => $levelPayload,
         'availablePrizeNames' => $availablePrizeNames
       ]
@@ -5899,6 +6106,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $eventSettings = loadJsonPayload(__DIR__ . '/Setting.json');
     $eventStatus = deriveGlobalEventStatus($eventSettings);
     $durationMode = normalizeTaskBoolValue($eventSettings['duration'] ?? false);
+    $rewardPrizeDisplay = normalizeRewardPrizeDisplaySettings($eventSettings['rewardPrizeDisplay'] ?? []);
     $rewardFlipAllowed = $durationMode
       ? $eventStatus === 'ended'
       : $eventStatus === 'active';
@@ -5909,6 +6117,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         echo json_encode(['status' => 'error', 'message' => 'فعلا رویداد فعالی وجود ندارد.']);
       } elseif ($eventStatus === 'upcoming') {
         echo json_encode(['status' => 'error', 'message' => 'زمان دریافت جوایز هنوز شروع نشده است.']);
+      } elseif ($eventStatus === 'locked') {
+        echo json_encode(['status' => 'error', 'message' => resolveGlobalEventUnavailableMessage($eventStatus)]);
       } else {
         echo json_encode(['status' => 'error', 'message' => 'رویداد به پایان رسیده است.']);
       }
@@ -6062,10 +6272,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'name' => (string)($level['name'] ?? ''),
         'type' => $type,
         'score' => (int)($level['score'] ?? 0),
+        'description' => (string)($level['description'] ?? ''),
+        'buttonText' => (string)($level['buttonText'] ?? ''),
         'reached' => $reached,
         'won' => $won,
         'wonPrize' => (string)($wonPrizeByLevelId[$levelId] ?? ''),
-        'canFlip' => $canFlip
+        'canFlip' => $canFlip,
+        'potStatus' => $type === 'pot'
+          ? buildPotLevelUserState($level, $sessionWorkId, $rows, $workIdIndex, (int)($columns['score'] ?? -1))
+          : null
       ];
     }
 
@@ -6078,6 +6293,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'prizeValue' => $selectedPrizeValue,
         'cardFlipsCount' => $currentFlipCount + 1,
         'totalPrizeWon' => $currentTotalPrizeWon + $selectedPrizeValue,
+        'rewardPrizeDisplay' => $rewardPrizeDisplay,
         'eachLevelWonPrize' => $rows[$rowIndex][$wonPrizeIndex],
         'levels' => $levelPayload
       ]
@@ -6126,9 +6342,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
     $rows[$rowIndex][$rollIndex] = (string)($rolls + 1);
-    if (($table['columns']['added'] ?? false) && $rows) {
-      writeInviteesCsv($inviteesFilePath, $rows);
-    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+    if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       echo json_encode(['status' => 'error', 'message' => 'ذخیره تعداد چرخش ناموفق بود.']);
       exit;
     }
@@ -6166,9 +6380,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $questionCount = count(readQuestionStore($questionsStorePath));
     $answered = clampAnsweredCount($answeredRaw, $questionCount);
     $rows[$rowIndex][$answeredIndex] = (string)$answered;
-    if (($table['columns']['added'] ?? false) && $rows) {
-      writeInviteesCsv($inviteesFilePath, $rows);
-    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+    if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       echo json_encode(['status' => 'error', 'message' => 'ذخیره وضعیت پاسخ ناموفق بود.']);
       exit;
     }
@@ -6208,9 +6420,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($angleIndex >= 0 && $wheelAngle !== null) {
       $rows[$rowIndex][$angleIndex] = (string)$wheelAngle;
     }
-    if (($table['columns']['added'] ?? false) && $rows) {
-      writeInviteesCsv($inviteesFilePath, $rows);
-    } else if (!writeInviteesCsv($inviteesFilePath, $rows)) {
+    if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       echo json_encode(['status' => 'error', 'message' => 'ذخیره جایزه ناموفق بود.']);
       exit;
     }
@@ -6265,10 +6475,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   exit;
 }
 
-$initialPrizes = readPrizeStore($prizeStorePath);
-$initialQuestions = readQuestionStore($questionsStorePath);
-$taskRecords = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
+$globalEventStatus = deriveGlobalEventStatus($wheelSettings);
+$tcTasksVisibleInitial = in_array($globalEventStatus, ['active', 'locked'], true);
+$tcRewardsEntryVisibleInitial = in_array($globalEventStatus, ['active', 'ended', 'locked'], true);
+$tcTasksInteractableInitial = $globalEventStatus === 'active';
+$taskRecords = $tcTasksVisibleInitial ? loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH) : [];
 $panelSettings = loadPanelSettings();
 $eventLogoRaw = (string)($wheelSettings['eventLogo'] ?? '');
 $eventLogoUrl = formatSiteIconUrlForHtml($eventLogoRaw);
@@ -6286,6 +6498,12 @@ $rewardGuidePayload = [
   'title' => trim((string)($rewardGuideSettings['title'] ?? 'راهنمای دریافت جایزه')),
   'text' => trim((string)($rewardGuideSettings['text'] ?? ''))
 ];
+$rewardPrizeDisplayPayload = normalizeRewardPrizeDisplaySettings($wheelSettings['rewardPrizeDisplay'] ?? []);
+$initialRewardCardsTotalDisplay = !empty($rewardPrizeDisplayPayload['showPrize'])
+  ? '۰ تومان'
+  : (trim((string)($rewardPrizeDisplayPayload['hiddenText'] ?? '')) !== ''
+    ? trim((string)$rewardPrizeDisplayPayload['hiddenText'])
+    : 'Prize won');
 function sanitizeHintHtml(string $html): string
 {
   $allowed = '<br><b><strong><em><a><div><span><p>';
@@ -6386,11 +6604,12 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   $angleIndex = $columns['wheel angle'] ?? -1;
   $questions = readQuestionStore($questionsStorePath);
   $questionCodes = array_values(array_map(static fn($item) => (string)($item['code'] ?? ''), $questions));
-  if (($table['columns']['added'] ?? false) && $rows) {
-    writeInviteesCsv($inviteesFilePath, $rows);
-  }
+  $sessionRowsChanged = !empty($table['columns']['added']) && !empty($rows);
   $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
   if ($rowIndex < 0) {
+    if ($sessionRowsChanged && !writeInviteesCsv($inviteesFilePath, $rows)) {
+      error_log('Task Club failed to persist required invitee columns while loading a user session.');
+    }
     tcActivityLogUserActivity([
       'level' => 'warning',
       'user_id' => $sessionWorkId !== '' ? $sessionWorkId : null,
@@ -6419,7 +6638,10 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     $sessionQuizOrder = $quizState['order'];
     $sessionAnswered = $quizState['answered'];
     if ($quizState['changed']) {
-      writeInviteesCsv($inviteesFilePath, $rows);
+      $sessionRowsChanged = true;
+    }
+    if ($sessionRowsChanged && !writeInviteesCsv($inviteesFilePath, $rows)) {
+      error_log('Task Club failed to persist invitee columns or quiz progress while loading a user session.');
     }
     if ($prizeIndex >= 0) {
       $sessionPrizeWon = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
@@ -6435,14 +6657,16 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     }
   }
 }
-$taskItemsForView = buildTaskPayloadForView(
-  $taskRecords,
-  $inviteesFilePath,
-  $inviteesMapPath,
-  $sessionAuthed ? $sessionWorkId : '',
-  $questionsStorePath,
-  $sessionIsAdmin
-);
+$taskItemsForView = $tcTasksVisibleInitial
+  ? buildTaskPayloadForView(
+    $taskRecords,
+    $inviteesFilePath,
+    $inviteesMapPath,
+    $sessionAuthed ? $sessionWorkId : '',
+    $questionsStorePath,
+    $sessionIsAdmin
+  )
+  : [];
 $sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
   ? computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)
   : 0;
@@ -6461,7 +6685,9 @@ $sessionPayload = [
   'quizOrder' => $sessionQuizOrder,
   'answered' => $sessionAnswered,
   'taskTotalScore' => $sessionTaskTotalScore,
+  'eventStatus' => $globalEventStatus,
   'answerTimeLimit' => (bool)($tcqSettingsForPayload['answerTimeLimit'] ?? true),
+  'answerTimeLimitMs' => normalizeAnswerTimeLimitMs($tcqSettingsForPayload['answerTimeLimitMs'] ?? DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS, DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS),
   'randomOrder' => (bool)($tcqSettingsForPayload['randomOrder'] ?? true),
   'questionsPerAttempt' => max(0, (int)($tcqSettingsForPayload['questionsPerAttempt'] ?? 0)),
   'correctAnswersToScore' => max(1, (int)($tcqSettingsForPayload['correctAnswersToScore'] ?? 1))
@@ -6472,7 +6698,7 @@ $sessionPayload = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>کمپین به دست آوردیم</title>
+    <title><?= htmlspecialchars($loginEventTitle, ENT_QUOTES, 'UTF-8') ?></title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <link rel="stylesheet" href="../../style/remixicon.css" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
@@ -7055,6 +7281,28 @@ $sessionPayload = [
         border-top-color: rgba(155, 90, 0, 0.35);
       }
 
+      .task-item-btn.is-golden-ended {
+        border-color: #f2c36b;
+        background: linear-gradient(145deg, #fffaf0, #fff4dc);
+        color: #5f4718;
+        box-shadow: 0 6px 16px rgba(205, 139, 28, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.88);
+      }
+
+      .task-item-btn.is-golden-ended:hover {
+        border-color: #e5aa43;
+        background: linear-gradient(145deg, #fff6e4, #ffedc2);
+      }
+
+      .task-item-btn.is-golden-ended .task-item-meta {
+        color: #8a5a0a;
+        font-weight: 700;
+      }
+
+      .task-item-btn.is-golden-ended .task-check-box {
+        border-color: #e6b65a;
+        background: #fff6e4;
+      }
+
       .task-item-btn.is-golden-live {
         border-color: #ff9b1c;
         background: #fff2d6;
@@ -7088,6 +7336,10 @@ $sessionPayload = [
 
       .tc-bottom-cta.quiz-hidden {
         display: none;
+      }
+
+      body.tc-rewards-slide-open #tc-bottom-cta {
+        display: none !important;
       }
 
       .tc-bottom-cta-btn {
@@ -7207,6 +7459,20 @@ $sessionPayload = [
         z-index: 6;
         margin-top: 0;
         margin-bottom: 10px;
+      }
+
+      .reward-description-cta {
+        width: min(360px, calc(100vw - 56px));
+        margin: 0 0 14px;
+      }
+
+      #tc-non-value-prize-describe-wrap {
+        display: none !important;
+      }
+
+      .reward-description-view {
+        padding: 16px 16px calc(22px + env(safe-area-inset-bottom, 0px));
+        gap: 12px;
       }
 
       .rewards-roadmap-main {
@@ -8065,6 +8331,20 @@ $sessionPayload = [
 
       .info-task-section.info-task-rich p + p {
         margin-top: 10px;
+      }
+
+      .pot-description-body {
+        margin-top: 1.8em;
+        color: #4a5e86;
+        line-height: 1.8;
+      }
+
+      .pot-status-message {
+        font-weight: 700;
+      }
+
+      .pot-description-body > :first-child {
+        margin-top: 0;
       }
 
       .info-task-section.info-task-rich ul,
@@ -9849,14 +10129,14 @@ $sessionPayload = [
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-tasks-title" class="tasks-title"><?= htmlspecialchars($tasksEventTitle, ENT_QUOTES, 'UTF-8') ?></h2>
-          <div class="user-score-chip">
+          <h2 id="tc-tasks-title" class="tasks-title<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>"><?= htmlspecialchars($tasksEventTitle, ENT_QUOTES, 'UTF-8') ?></h2>
+          <div id="tc-user-score-chip" class="user-score-chip<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>">
             <span>امتیاز شما</span>
             <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
-          <p class="tasks-list-label">ماموریت‌ها</p>
-          <p id="tc-event-notice" class="tasks-empty hidden" aria-live="polite"></p>
-          <div id="tc-tasks-list" class="tasks-list" aria-label="فهرست ماموریت‌ها">
+          <p id="tc-tasks-list-label" class="tasks-list-label<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>">ماموریت‌ها</p>
+          <p id="tc-event-notice" class="tasks-empty<?= $globalEventStatus === 'active' ? ' hidden' : '' ?>" aria-live="polite"><?= $globalEventStatus === 'active' ? '' : htmlspecialchars(resolveGlobalEventUnavailableMessage($globalEventStatus), ENT_QUOTES, 'UTF-8') ?></p>
+          <div id="tc-tasks-list" class="tasks-list<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>" aria-label="فهرست ماموریت‌ها">
             <?php if ($taskItemsForView): ?>
               <?php foreach ($taskItemsForView as $taskItem): ?>
                 <?php
@@ -9868,19 +10148,22 @@ $sessionPayload = [
                   $isTeamStartedPending = (bool)($taskItem['teamStartedPending'] ?? false);
                   $taskTypeToken = (string)($taskItem['taskType'] ?? 'quiz');
                   $taskStatusToken = (string)($taskItem['status'] ?? 'inactive');
+                  $isButtonInteractable = $tcTasksInteractableInitial && $isAvailable;
                   $buttonClass = 'task-item-btn';
-                  if (!$isAvailable) {
+                  if (!$isButtonInteractable) {
                     $buttonClass .= ' is-disabled';
                   }
                   if ($isCompleted) {
                     $buttonClass .= ' is-completed';
+                  } elseif ($taskTypeToken === 'conditional_quiz' && $taskStatusToken === 'ended' && $isButtonInteractable) {
+                    $buttonClass .= ' is-golden-ended';
                   } elseif (
                     ($taskTypeToken === 'describe_photo' && $taskStatusToken === 'active' && $isDescribeSubmitted)
                     || ($taskTypeToken === 'team_task' && $taskStatusToken === 'active' && $isTeamStartedPending)
                   ) {
                     $buttonClass .= ' is-describe-submitted';
                   }
-                  $disabledAttr = $isAvailable ? '' : 'disabled';
+                  $disabledAttr = $isButtonInteractable ? '' : 'disabled';
                 ?>
                 <button
                   class="<?= htmlspecialchars($buttonClass, ENT_QUOTES, 'UTF-8') ?>"
@@ -9896,6 +10179,7 @@ $sessionPayload = [
                   data-task-end-time="<?= htmlspecialchars((string)($taskItem['endTime'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                   data-task-score="<?= (int)($taskItem['score'] ?? 0) ?>"
                   data-task-after-end-score="<?= (int)($taskItem['afterEndtimeScore'] ?? 0) ?>"
+                  data-task-has-golden-time="<?= !empty($taskItem['hasGoldenTime']) ? '1' : '0' ?>"
                   data-task-max-score-question-count="<?= (int)($taskItem['maxScoreQuestionCount'] ?? 1) ?>"
                   data-task-status="<?= htmlspecialchars($taskStatusToken, ENT_QUOTES, 'UTF-8') ?>"
                   data-task-completed="<?= $isCompleted ? '1' : '0' ?>"
@@ -9919,7 +10203,7 @@ $sessionPayload = [
             <?php endif; ?>
           </div>
         </div>
-        <div id="tc-bottom-cta" class="tc-bottom-cta">
+        <div id="tc-bottom-cta" class="tc-bottom-cta<?= $tcRewardsEntryVisibleInitial ? '' : ' hidden' ?>">
           <button id="tc-open-rewards-btn" class="tc-bottom-cta-btn" type="button">دریافت جایزه</button>
         </div>
         <div id="tc-rewards-view" class="main-area rewards-view hidden" aria-hidden="true">
@@ -9938,6 +10222,9 @@ $sessionPayload = [
             <span id="tc-reward-time-label" class="result-label">مجموع جوایز برنده شده</span>
             <p id="tc-reward-time-value" class="result-value">—</p>
           </div>
+          <div id="tc-non-value-prize-describe-wrap" class="reward-description-cta hidden">
+            <button id="tc-non-value-prize-describe-btn" class="tc-bottom-cta-btn" type="button">توضیحات</button>
+          </div>
           <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
         </div>
         <div id="tc-reward-cards-view" class="main-area rewards-view hidden" aria-hidden="true">
@@ -9947,8 +10234,15 @@ $sessionPayload = [
           </section>
           <div class="result rewards-time-box">
             <span class="result-label">مجموع جوایز برنده شده</span>
-            <p id="tc-reward-cards-total-value" class="result-value">۰ تومان</p>
+            <p id="tc-reward-cards-total-value" class="result-value"><?= htmlspecialchars($initialRewardCardsTotalDisplay, ENT_QUOTES, 'UTF-8') ?></p>
           </div>
+        </div>
+        <div id="tc-reward-description-view" class="main-area rewards-view reward-description-view hidden" aria-hidden="true">
+          <div class="info-task-head">
+            <h3 id="tc-reward-description-title" class="tc-task-info-title">توضیحات</h3>
+          </div>
+          <div id="tc-reward-description-content" class="info-task-content"></div>
+          <button id="tc-reward-description-close" class="login-btn info-task-ack" type="button">متوجه شدم</button>
         </div>
         <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
           <div class="tc-task-quiz-head">
@@ -10268,6 +10562,7 @@ $sessionPayload = [
       const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       let csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const rewardGuideInfo = <?= json_encode($rewardGuidePayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+      const rewardPrizeDisplayInfo = <?= json_encode($rewardPrizeDisplayPayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const isCsrfMismatchPayload = (payload) => (
         payload &&
         payload.code === 'csrf_mismatch' &&
@@ -10472,8 +10767,10 @@ $sessionPayload = [
         const timeCounterEl = document.getElementById('tc-time-counter');
         const statusEl = document.getElementById('tc-status');
         const userScoreEl = document.getElementById('tc-user-score');
+        const userScoreChipEl = document.getElementById('tc-user-score-chip');
         const timerAreaEl = document.getElementById('tc-timer-area');
         const tasksTitleEl = document.getElementById('tc-tasks-title');
+        const tasksListLabelEl = document.getElementById('tc-tasks-list-label');
         const tasksListEl = document.getElementById('tc-tasks-list');
         const eventNoticeEl = document.getElementById('tc-event-notice');
         const bottomCtaEl = document.getElementById('tc-bottom-cta');
@@ -10492,6 +10789,12 @@ $sessionPayload = [
         const rewardCardsHintEl = document.getElementById('tc-reward-cards-hint');
         const rewardStatusLineEl = document.getElementById('tc-reward-status-line');
         const rewardCardsTotalValueEl = document.getElementById('tc-reward-cards-total-value');
+        const nonValuePrizeDescribeWrapEl = document.getElementById('tc-non-value-prize-describe-wrap');
+        const nonValuePrizeDescribeBtnEl = document.getElementById('tc-non-value-prize-describe-btn');
+        const rewardDescriptionViewEl = document.getElementById('tc-reward-description-view');
+        const rewardDescriptionTitleEl = document.getElementById('tc-reward-description-title');
+        const rewardDescriptionContentEl = document.getElementById('tc-reward-description-content');
+        const rewardDescriptionCloseEl = document.getElementById('tc-reward-description-close');
         const rewardWinDialogEl = document.getElementById('tc-reward-win-dialog');
         const rewardWinConfettiEl = document.getElementById('tc-reward-win-confetti');
         const rewardWinValueEl = document.getElementById('tc-reward-win-value');
@@ -10596,6 +10899,7 @@ $sessionPayload = [
         let quizCompletionInFlight = false;
         let rewardsViewOpen = false;
         let rewardsCardsViewOpen = false;
+        let rewardsDescriptionViewOpen = false;
         let rewardsRoundBusy = false;
         let rewardsState = null;
         let rewardEventTickTimer = null;
@@ -10616,6 +10920,7 @@ $sessionPayload = [
         let currentAnsweredQuestions = 0;
         let currentQuestionCount = 0;
         let currentQuizScoreMode = 'threshold';
+        let currentQuestionTimeLimitMs = 14000;
         let quizCardSwapPending = false;
         let conditionalQuizPendingNext = null;
         let infoTaskViewOpen = false;
@@ -10633,7 +10938,7 @@ $sessionPayload = [
         let teamTaskBusy = false;
         let answerTimeLimitEnabled = true;
         let quizStarting = false;
-        let globalEventStatus = 'inactive';
+        let globalEventStatus = String(sessionInfo?.eventStatus || 'inactive');
         let tcmInPageHistoryDepth = 0;
         let tcmHistoryReady = false;
         let tcmHistorySyncLocked = false;
@@ -10642,6 +10947,17 @@ $sessionPayload = [
         const QUIZ_TIME_LIMIT_MS = 14000;
         const CONDITIONAL_QUIZ_QUESTION_TIME_LIMIT_MS = 30000;
         const QUIZ_FEEDBACK_DELAY_MS = 1000;
+
+        const normalizeQuestionTimeLimitMs = (value, taskType = currentTaskType) => {
+          const fallback = normalizeTaskTypeToken(taskType) === 'conditional_quiz'
+            ? CONDITIONAL_QUIZ_QUESTION_TIME_LIMIT_MS
+            : QUIZ_TIME_LIMIT_MS;
+          const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+          if (!Number.isFinite(parsed) || parsed < 1000) {
+            return fallback;
+          }
+          return Math.min(parsed, 600000);
+        };
 
         const getTaskButtonMeta = (button) => ({
           taskId: String(button?.dataset?.taskId || '').trim(),
@@ -10798,6 +11114,9 @@ $sessionPayload = [
         };
 
         const describeStatus = (settings) => {
+          if (Boolean(settings?.eventAccessLocked)) {
+            return 'locked';
+          }
           const active = Boolean(settings?.active);
           const duration = Boolean(settings?.duration);
           if (!duration) {
@@ -10843,6 +11162,10 @@ $sessionPayload = [
             setTimeCounter('وضعیت', 'غیرفعال');
             return;
           }
+          if (status === 'locked') {
+            setTimeCounter('وضعیت', 'دسترسی متوقف شده');
+            return;
+          }
           setTimeCounter('وضعیت', 'پایان‌یافته');
         };
 
@@ -10851,6 +11174,11 @@ $sessionPayload = [
           if (status === 'inactive') {
             showStatus(status, 'غیرفعال');
             setTimeCounter('وضعیت', 'غیرفعال');
+            return;
+          }
+          if (status === 'locked') {
+            showStatus(status, 'دسترسی متوقف شده');
+            setTimeCounter('وضعیت', 'دسترسی متوقف شده');
             return;
           }
           if (status === 'ended') {
@@ -10904,14 +11232,20 @@ $sessionPayload = [
 
         const refreshStatus = async () => {
           const settings = await loadWheelSettings();
+          const previousStatus = globalEventStatus;
           const status = describeStatus(settings);
           globalEventStatus = status;
+          if (previousStatus === 'upcoming' && status === 'active' && taskButtons.length === 0) {
+            window.location.reload();
+            return;
+          }
           updateTimerByStatus(status, settings);
           applyEventGate(status);
           refreshTaskButtonsStatus();
           if (rewardsViewOpen && !rewardsRoundBusy) {
             await refreshRewardState();
           }
+          keepBottomCtaHiddenOnRewardsSlide();
         };
 
         const readTaskBool = (value) => {
@@ -10931,15 +11265,20 @@ $sessionPayload = [
           return token === 'quiz' || token === 'conditional_quiz';
         };
 
-        const taskStatusLabel = (status, completed = false, taskType = 'quiz') => {
+        const taskHasGoldenTimeButton = (button) => String(button?.dataset?.taskHasGoldenTime || '1') !== '0';
+
+        const taskStatusLabel = (status, completed = false, taskType = 'quiz', hasGoldenTime = true) => {
           if (completed) return 'تکمیل شده';
           if (status === 'active') {
+            if (normalizeTaskTypeToken(taskType) === 'conditional_quiz' && !hasGoldenTime) {
+              return 'مهلت زمان پاسخگویی';
+            }
             return (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
           }
           if (status === 'upcoming') return 'به‌زودی';
           if (status === 'ended') {
-            return isQuizLikeTaskType(taskType)
-              ? 'مهلت طلایی تمام شده؛ پاسخ دهید و امتیاز کمتر بگیرید'
+            return normalizeTaskTypeToken(taskType) === 'conditional_quiz'
+              ? (hasGoldenTime ? 'مهلت طلایی پایان یافته برای امتیاز کمتر پاسخ دهید' : 'مهلت پاسخ‌گویی این ماموریت پایان یافته است')
               : 'پایان‌یافته';
           }
           return 'غیرفعال';
@@ -10949,6 +11288,9 @@ $sessionPayload = [
           const activeScore = Math.max(0, Number.parseInt(button?.dataset?.taskScore || '0', 10) || 0);
           const afterEndScore = Math.max(0, Number.parseInt(button?.dataset?.taskAfterEndScore || '0', 10) || 0);
           if (normalizeTaskTypeToken(taskType) === 'conditional_quiz') {
+            if (!taskHasGoldenTimeButton(button)) {
+              return activeScore;
+            }
             return status === 'ended' ? activeScore : afterEndScore;
           }
           if (isQuizLikeTaskType(taskType) && status === 'ended') {
@@ -11084,6 +11426,15 @@ $sessionPayload = [
           return `تا پایان مهلت طلایی پاسخ به سوال\n${formatFaDuration(diffSeconds, { includeSeconds: true })}`;
         };
 
+        const formatResponseTimeCountdown = (targetDate, targetTime) => {
+          const target = getTehranTargetDate(targetDate, normalizeGoldenEndTime(targetTime));
+          if (!target) {
+            return '';
+          }
+          const diffSeconds = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
+          return `تا پایان مهلت زمان پاسخگویی\n${formatFaDuration(diffSeconds, { includeSeconds: true })}`;
+        };
+
         const formatDescribeEditCountdown = (targetDate, targetTime) => {
           const target = getTehranTargetDate(targetDate, normalizeGoldenEndTime(targetTime));
           if (!target) {
@@ -11093,8 +11444,9 @@ $sessionPayload = [
           return `تا پایان مهلت ویرایش\n${formatFaDuration(diffSeconds, { includeSeconds: true })}`;
         };
 
-        const canOpenTaskByStatus = (status, taskType) => {
+        const canOpenTaskByStatus = (status, taskType, button = null) => {
           if (status === 'active') return true;
+          if (normalizeTaskTypeToken(taskType) === 'conditional_quiz' && !taskHasGoldenTimeButton(button)) return false;
           if (isQuizLikeTaskType(taskType) && status === 'ended') return true;
           return false;
         };
@@ -11107,6 +11459,7 @@ $sessionPayload = [
           const completed = String(button.dataset.taskCompleted || '') === '1';
           const taskScore = Number.parseInt(button.dataset.taskUserScore || '0', 10);
           const taskType = normalizeTaskTypeToken(button.dataset.taskType || 'quiz') || 'quiz';
+          const hasGoldenTime = taskHasGoldenTimeButton(button);
           const describeSubmitted = String(button.dataset.taskDescribeSubmitted || '') === '1';
           const teamStartedPending = String(button.dataset.taskTeamStartedPending || '') === '1';
           const infoEndedNoScore = (taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') && status === 'ended' && !completed;
@@ -11121,6 +11474,7 @@ $sessionPayload = [
             button.classList.remove('is-describe-submitted');
             button.classList.remove('is-golden');
             button.classList.remove('is-golden-live');
+            button.classList.remove('is-golden-ended');
             button.classList.remove('is-info-ended');
             button.dataset.taskStatus = 'completed';
             if (metaEl) {
@@ -11131,13 +11485,15 @@ $sessionPayload = [
             return;
           }
 
-          const globallyBlocked = globalEventStatus === 'inactive';
-          const available = !globallyBlocked && canOpenTaskByStatus(status, taskType);
+          const globallyBlocked = globalEventStatus !== 'active';
+          const available = !globallyBlocked && canOpenTaskByStatus(status, taskType, button);
           const isUpcoming = status === 'upcoming';
           const scoreNow = taskAvailableScoreNow(button, status, taskType);
           const isGoldenAppearance = status === 'active'
             && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')
+            && (taskType !== 'conditional_quiz' || hasGoldenTime)
             && !editableSubmittedDone;
+          const isGoldenEndedAppearance = taskType === 'conditional_quiz' && status === 'ended' && available;
           button.disabled = !available;
           button.classList.toggle('is-disabled', !available && !isUpcoming);
           button.classList.toggle('is-upcoming', isUpcoming);
@@ -11145,6 +11501,7 @@ $sessionPayload = [
           button.classList.toggle('is-describe-submitted', editableSubmittedDone);
           button.classList.toggle('is-info-ended', infoEndedNoScore);
           button.classList.toggle('is-golden', isGoldenAppearance);
+          button.classList.toggle('is-golden-ended', isGoldenEndedAppearance);
           button.classList.toggle('is-golden-live', false);
           button.dataset.taskStatus = status;
           if (metaEl) {
@@ -11156,7 +11513,7 @@ $sessionPayload = [
                 const countdown = formatTaskCountdown(startDate, startTime);
                 const fallbackText = startDate
                   ? `شروع از: ${startDate} ${normalizeUpcomingStartTime(startTime)}`
-                  : taskStatusLabel(status, false, taskType);
+                  : taskStatusLabel(status, false, taskType, hasGoldenTime);
                 setMetaText(metaEl, withScoreHint(countdown || fallbackText, button, taskType, scoreNow), false);
               } else if (taskId !== '' && taskId === secondUpcomingTaskId) {
                 setMetaText(metaEl, withScoreHint('به‌زودی', button, taskType, scoreNow), false);
@@ -11180,15 +11537,17 @@ $sessionPayload = [
             } else if (status === 'active' && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
-              const goldenCountdown = formatGoldenTimeCountdown(endDate, endTime);
-              if (goldenCountdown) {
-                setMetaWithScoreBlock(metaEl, goldenCountdown, button, taskType, scoreNow);
+              const activeCountdown = taskType === 'conditional_quiz' && !hasGoldenTime
+                ? formatResponseTimeCountdown(endDate, endTime)
+                : formatGoldenTimeCountdown(endDate, endTime);
+              if (activeCountdown) {
+                setMetaWithScoreBlock(metaEl, activeCountdown, button, taskType, scoreNow);
                 button.classList.add('is-golden-live');
               } else {
-                setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType), button, taskType, scoreNow), false);
+                setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType, hasGoldenTime), button, taskType, scoreNow), false);
               }
             } else {
-              setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType), button, taskType, scoreNow), false);
+              setMetaText(metaEl, withScoreHint(taskStatusLabel(status, false, taskType, hasGoldenTime), button, taskType, scoreNow), false);
             }
           }
         };
@@ -11234,46 +11593,82 @@ $sessionPayload = [
           bottomCtaBtnEl.classList.toggle('is-attention', shouldAnimate);
         };
 
+        const isRewardsSlideOpen = () => rewardsViewOpen || rewardsCardsViewOpen || rewardsDescriptionViewOpen;
+
+        const keepBottomCtaHiddenOnRewardsSlide = () => {
+          if (!isRewardsSlideOpen()) return;
+          document.body.classList.add('tc-rewards-slide-open');
+          if (bottomCtaEl) {
+            bottomCtaEl.classList.add('hidden');
+            bottomCtaEl.classList.add('quiz-hidden');
+          }
+          if (bottomCtaBtnEl instanceof HTMLElement) {
+            bottomCtaBtnEl.classList.remove('is-attention');
+          }
+        };
+
         const applyEventGate = (status) => {
-          if (rewardsViewOpen || rewardsCardsViewOpen) {
+          if (isRewardsSlideOpen()) {
             if (timerAreaEl) timerAreaEl.classList.add('hidden');
-            if (bottomCtaEl) bottomCtaEl.classList.add('hidden');
-            if (rewardsViewEl && rewardsViewOpen && !rewardsCardsViewOpen) rewardsViewEl.classList.remove('hidden');
+            keepBottomCtaHiddenOnRewardsSlide();
+            if (rewardsViewEl && rewardsViewOpen && !rewardsCardsViewOpen && !rewardsDescriptionViewOpen) rewardsViewEl.classList.remove('hidden');
             if (rewardCardsViewEl && rewardsCardsViewOpen) rewardCardsViewEl.classList.remove('hidden');
+            if (rewardDescriptionViewEl && rewardsDescriptionViewOpen) rewardDescriptionViewEl.classList.remove('hidden');
           }
           if (eventNoticeEl) {
             eventNoticeEl.classList.add('hidden');
             eventNoticeEl.textContent = '';
           }
-          if (!rewardsViewOpen && !rewardsCardsViewOpen) {
-            if (tasksListEl) tasksListEl.classList.remove('hidden');
-            if (tasksTitleEl) tasksTitleEl.classList.remove('hidden');
-            if (bottomCtaEl) bottomCtaEl.classList.remove('hidden');
+          const tasksVisible = status === 'active' || status === 'locked';
+          const rewardsEntryVisible = status === 'active' || status === 'ended' || status === 'locked';
+          if (!isRewardsSlideOpen()) {
+            if (tasksListEl) tasksListEl.classList.toggle('hidden', !tasksVisible);
+            if (tasksTitleEl) tasksTitleEl.classList.toggle('hidden', !tasksVisible);
+            if (tasksListLabelEl) tasksListLabelEl.classList.toggle('hidden', !tasksVisible);
+            if (userScoreChipEl) userScoreChipEl.classList.toggle('hidden', !tasksVisible);
+            if (bottomCtaEl) bottomCtaEl.classList.toggle('hidden', !rewardsEntryVisible);
           }
           updateBottomCtaAttention(status);
-          if (status === 'inactive') {
+          if (status !== 'active') {
             closeQuizOverlay();
-            if (tasksListEl) {
-              tasksListEl.classList.add('hidden');
-            }
-            if (tasksTitleEl) {
-              tasksTitleEl.classList.add('hidden');
-            }
-            if (bottomCtaEl) {
-              bottomCtaEl.classList.add('hidden');
+            if (isRewardsSlideOpen()) {
+              if (timerAreaEl) timerAreaEl.classList.add('hidden');
+              keepBottomCtaHiddenOnRewardsSlide();
+            } else {
+              if (tasksListEl) {
+                tasksListEl.classList.toggle('hidden', !tasksVisible);
+              }
+              if (tasksTitleEl) {
+                tasksTitleEl.classList.toggle('hidden', !tasksVisible);
+              }
+              if (tasksListLabelEl) {
+                tasksListLabelEl.classList.toggle('hidden', !tasksVisible);
+              }
+              if (userScoreChipEl) {
+                userScoreChipEl.classList.toggle('hidden', !tasksVisible);
+              }
+              if (bottomCtaEl) {
+                bottomCtaEl.classList.toggle('hidden', !rewardsEntryVisible);
+              }
             }
             updateBottomCtaAttention('inactive');
             if (eventNoticeEl) {
-              eventNoticeEl.textContent = 'متاسفیم، فعلا رویدادی در حال اجرا نیست.';
+              if (status === 'upcoming') {
+                eventNoticeEl.textContent = 'رویداد هنوز شروع نشده است. ماموریت‌ها و جوایز بعد از شروع نمایش داده می‌شوند.';
+              } else if (status === 'ended') {
+                eventNoticeEl.textContent = 'مهلت انجام ماموریت‌ها به پایان رسیده است.';
+              } else if (status === 'locked') {
+                eventNoticeEl.textContent = 'دسترسی به ماموریت‌ها و کارت‌های جایزه موقتا متوقف شده است.';
+              } else {
+                eventNoticeEl.textContent = 'متاسفیم، فعلا رویدادی در حال اجرا نیست.';
+              }
               eventNoticeEl.classList.remove('hidden');
             }
             return;
           }
-          if (status === 'ended') {
-            if (eventNoticeEl) {
-              eventNoticeEl.textContent = '';
-              eventNoticeEl.classList.add('hidden');
-            }
+          if (eventNoticeEl) {
+            eventNoticeEl.textContent = '';
+            eventNoticeEl.classList.add('hidden');
           }
         };
 
@@ -11284,15 +11679,11 @@ $sessionPayload = [
           }
         };
 
-        const getCurrentQuestionTimeLimitMs = () => (
-          currentTaskType === 'conditional_quiz'
-            ? CONDITIONAL_QUIZ_QUESTION_TIME_LIMIT_MS
-            : QUIZ_TIME_LIMIT_MS
-        );
+        const getCurrentQuestionTimeLimitMs = () => currentQuestionTimeLimitMs;
 
         const setQuizTimerProgress = (remainingMs, totalMs = QUIZ_TIME_LIMIT_MS) => {
           if (!quizTimerFillEl) return;
-          if (!answerTimeLimitEnabled && currentTaskType !== 'conditional_quiz') {
+          if (!answerTimeLimitEnabled) {
             quizTimerFillEl.style.width = '100%';
             quizTimerFillEl.classList.remove('is-danger');
             return;
@@ -11364,16 +11755,29 @@ $sessionPayload = [
             Array.from(quizAreaEl.querySelectorAll('.quiz-percentage-submit-bottom[data-dynamic="1"]')).forEach((node) => node.remove());
           }
           if (timerAreaEl) {
-            timerAreaEl.classList.remove('quiz-hidden');
+            timerAreaEl.classList.toggle('quiz-hidden', isRewardsSlideOpen());
           }
+          const tasksVisibleAfterClose = globalEventStatus === 'active' || globalEventStatus === 'locked';
+          const rewardsEntryVisibleAfterClose = globalEventStatus === 'active' || globalEventStatus === 'ended' || globalEventStatus === 'locked';
           if (tasksTitleEl) {
-            tasksTitleEl.classList.remove('hidden');
+            tasksTitleEl.classList.toggle('hidden', !tasksVisibleAfterClose);
+          }
+          if (tasksListLabelEl) {
+            tasksListLabelEl.classList.toggle('hidden', !tasksVisibleAfterClose);
+          }
+          if (userScoreChipEl) {
+            userScoreChipEl.classList.toggle('hidden', !tasksVisibleAfterClose);
           }
           if (tasksListEl) {
-            tasksListEl.classList.remove('hidden');
+            tasksListEl.classList.toggle('hidden', !tasksVisibleAfterClose);
           }
           if (bottomCtaEl) {
-            bottomCtaEl.classList.remove('quiz-hidden');
+            if (isRewardsSlideOpen()) {
+              keepBottomCtaHiddenOnRewardsSlide();
+            } else {
+              bottomCtaEl.classList.remove('quiz-hidden');
+              bottomCtaEl.classList.toggle('hidden', !rewardsEntryVisibleAfterClose);
+            }
           }
           if (quizAnswersEl) {
             quizAnswersEl.classList.remove('quiz-answers-grid--single');
@@ -11520,7 +11924,7 @@ $sessionPayload = [
           describePhotoChoices = [];
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
-          if (rewardsViewOpen || rewardsCardsViewOpen) {
+          if (rewardsViewOpen || rewardsCardsViewOpen || rewardsDescriptionViewOpen) {
             setTopbarMode('rewards');
           } else {
             setTopbarMode('tasks');
@@ -12859,6 +13263,27 @@ $sessionPayload = [
         };
 
         const formatToman = (value) => `${formatRewardNumber(value)} تومان`;
+        const getRewardPrizeDisplaySetting = () => {
+          const source = rewardsState?.rewardPrizeDisplay && typeof rewardsState.rewardPrizeDisplay === 'object'
+            ? rewardsState.rewardPrizeDisplay
+            : rewardPrizeDisplayInfo;
+          return {
+            nonValuePrizeDescribe: Object.prototype.hasOwnProperty.call(source || {}, 'nonValuePrizeDescribe')
+              ? Boolean(source.nonValuePrizeDescribe)
+              : Boolean(source?.non_value_prize_describe),
+            showPrize: Object.prototype.hasOwnProperty.call(source || {}, 'showPrize')
+              ? Boolean(source.showPrize)
+              : true,
+            hiddenText: String(source?.hiddenText ?? source?.hidden_text ?? '').trim()
+          };
+        };
+        const formatRewardPrizeDisplay = (value) => {
+          const setting = getRewardPrizeDisplaySetting();
+          if (setting.showPrize) {
+            return formatToman(value);
+          }
+          return setting.hiddenText || 'Prize won';
+        };
 
         const shuffleArray = (list) => {
           const arr = Array.isArray(list) ? list.slice() : [];
@@ -12954,6 +13379,28 @@ $sessionPayload = [
           if (rewardTimeValueEl) rewardTimeValueEl.textContent = value;
         };
 
+        const getReachedNonValueDescriptionLevel = () => {
+          const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
+          return levels
+            .filter((level) => (
+              level
+              && String(level?.type || '') === 'out_of_value'
+              && Boolean(level?.reached)
+            ))
+            .sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0))[0] || null;
+        };
+
+        const renderNonValuePrizeDescriptionCta = () => {
+          if (rewardsTotalBarEl instanceof HTMLElement) {
+            rewardsTotalBarEl.classList.remove('hidden');
+          }
+          if (!(nonValuePrizeDescribeWrapEl instanceof HTMLElement) || !(nonValuePrizeDescribeBtnEl instanceof HTMLButtonElement)) {
+            return;
+          }
+          nonValuePrizeDescribeWrapEl.classList.add('hidden');
+          nonValuePrizeDescribeBtnEl.removeAttribute('data-level-id');
+        };
+
         const updateRewardsTotalBarPlacement = () => {
           if (!(rewardRoadmapEl instanceof HTMLElement) || !(rewardsTotalBarEl instanceof HTMLElement)) return;
           const isScrollable = rewardRoadmapEl.scrollHeight > (rewardRoadmapEl.clientHeight + 2);
@@ -12991,6 +13438,12 @@ $sessionPayload = [
           const durationMode = Boolean(rewardsState?.durationMode);
           const eventStatus = String(rewardsState?.eventStatus || globalEventStatus || 'inactive');
           if (!rewardFlipAllowed) {
+            if (eventStatus === 'locked') {
+              return {
+                message: 'دسترسی به انتخاب کارت‌ها موقتا متوقف شده است',
+                disableUnchosen: true
+              };
+            }
             if (durationMode && eventStatus === 'active') {
               return {
                 message: 'کارت‌ها پس از پایان بازه رویداد قابل انتخاب می‌شوند',
@@ -13066,10 +13519,11 @@ $sessionPayload = [
         const renderRewardSummary = () => {
           if (!rewardsState) return;
           if (rewardScoreChipEl) rewardScoreChipEl.textContent = formatRewardNumber(rewardsState.score || 0);
-          setRewardTimeBox('مجموع جوایز برنده شده', formatToman(rewardsState.totalPrizeWon || 0));
+          setRewardTimeBox('مجموع جوایز برنده شده', formatRewardPrizeDisplay(rewardsState.totalPrizeWon || 0));
           if (rewardCardsTotalValueEl) {
-            rewardCardsTotalValueEl.textContent = formatToman(rewardsState.totalPrizeWon || 0);
+            rewardCardsTotalValueEl.textContent = formatRewardPrizeDisplay(rewardsState.totalPrizeWon || 0);
           }
+          renderNonValuePrizeDescriptionCta();
         };
 
         const getWonPrizeNames = () => {
@@ -13097,18 +13551,29 @@ $sessionPayload = [
             return;
           }
           rewardRoadmapEl.innerHTML = levels.map((level) => {
-            const target = Number(level?.score ?? 0);
-            const reached = score >= target;
-            const left = Math.max(0, target - score);
-            const isOutOfValue = String(level?.type || '') === 'out_of_value';
+             const target = Number(level?.score ?? 0);
+             const reached = score >= target;
+             const left = Math.max(0, target - score);
+             const levelType = String(level?.type || '');
+             const isOutOfValue = levelType === 'out_of_value';
+             const isPot = levelType === 'pot';
             const rowClasses = ['roadmap-item'];
             if (reached) rowClasses.push('reached');
-            let stateClass = 'locked';
-            let stateText = 'قفل';
-            const levelId = String(level?.id || '');
-            const levelName = String(level?.name || 'سطح جایزه');
-            const wonPrize = String(level?.wonPrize || '').trim();
-            const isClickable = Boolean(level?.reached) && String(level?.type || '') === 'value_sum';
+             let stateClass = 'locked';
+             let stateText = 'قفل';
+             const levelId = String(level?.id || '');
+             const potStatus = level?.potStatus && typeof level.potStatus === 'object' ? level.potStatus : {};
+             const potLocked = Boolean(potStatus.locked);
+             const potIsWinner = Boolean(potStatus.isWinner);
+             const potConfirmedWinnerCount = Math.max(0, Number.parseInt(potStatus.confirmedWinnerCount ?? 0, 10) || 0);
+             let levelName = String(level?.name || 'سطح جایزه');
+             if (isPot && potLocked) {
+               levelName = potIsWinner ? 'شما برنده شدید!' : 'قرعه کشی انجام شد';
+             } else if (isPot && potConfirmedWinnerCount > 0) {
+               levelName = 'قرعه کشی در حال انجام است';
+             }
+             const wonPrize = String(level?.wonPrize || '').trim();
+             const isClickable = isPot || (Boolean(level?.reached) && levelType === 'value_sum');
             if (level?.won) {
               stateClass = 'won';
               stateText = wonPrize ? `برنده ${wonPrize}` : 'برنده شدی';
@@ -13117,6 +13582,9 @@ $sessionPayload = [
               stateClass = 'can-flip';
               stateText = 'برای دریافت جایزه کلیک کنید';
               rowClasses.push('can-flip');
+            } else if (level?.reached && !level?.won && String(level?.type || '') === 'value_sum' && eventStatus === 'locked') {
+              stateClass = 'locked';
+              stateText = 'دسترسی موقتا متوقف شده است';
             } else if (level?.reached && !level?.won && isOutOfValue) {
               stateClass = 'won';
               stateText = 'این جایزه به شما تعلق گرفته';
@@ -13214,16 +13682,16 @@ $sessionPayload = [
                 setRewardTimeBox('زمان باقی‌مانده تا پایان رویداد', countdown || 'به‌زودی تمام می‌شود');
                 return;
               }
-              setRewardTimeBox('مجموع جوایز برنده شده', formatToman(rewardsState?.totalPrizeWon || 0));
+              setRewardTimeBox('مجموع جوایز برنده شده', formatRewardPrizeDisplay(rewardsState?.totalPrizeWon || 0));
               return;
             }
 
             if (eventStatus === 'ended') {
-              setRewardTimeBox('مجموع جوایز برنده شده', formatToman(rewardsState?.totalPrizeWon || 0));
+              setRewardTimeBox('مجموع جوایز برنده شده', formatRewardPrizeDisplay(rewardsState?.totalPrizeWon || 0));
               return;
             }
 
-            setRewardTimeBox('مجموع جوایز برنده شده', formatToman(rewardsState?.totalPrizeWon || 0));
+            setRewardTimeBox('مجموع جوایز برنده شده', formatRewardPrizeDisplay(rewardsState?.totalPrizeWon || 0));
           };
 
           updateEventStateText();
@@ -13260,9 +13728,12 @@ $sessionPayload = [
             renderRewardCards();
             updateRewardsTotalBarPlacement();
             await applyRewardEventState(String(rewardsState?.eventStatus || globalEventStatus || 'inactive'));
+            keepBottomCtaHiddenOnRewardsSlide();
             const level = getCurrentFlippableLevel();
             if (!level) {
-              if (Boolean(rewardsState?.durationMode) && String(rewardsState?.eventStatus || '') === 'active') {
+              if (String(rewardsState?.eventStatus || globalEventStatus || '') === 'locked') {
+                setRewardStatusLine('سطح‌های جایزه قابل مشاهده‌اند؛ انتخاب کارت‌ها موقتا متوقف شده است.');
+              } else if (Boolean(rewardsState?.durationMode) && String(rewardsState?.eventStatus || '') === 'active') {
                 setRewardStatusLine('سطح‌های جایزه قابل مشاهده‌اند؛ انتخاب کارت پس از پایان رویداد فعال می‌شود.');
               } else {
                 setRewardStatusLine('برای باز شدن کارت‌های بیشتر امتیاز جمع کنید.');
@@ -13272,6 +13743,7 @@ $sessionPayload = [
             }
           } catch (error) {
             setRewardStatusLine(error?.message || 'بارگذاری وضعیت جوایز ناموفق بود.', true);
+            keepBottomCtaHiddenOnRewardsSlide();
           }
         };
 
@@ -13521,7 +13993,7 @@ $sessionPayload = [
             await openInfoDialog(`زمان دریافت جوایز فرا نرسیده، لطفا صبر کنید.\n${countdown || 'به‌زودی'}`);
             return;
           }
-          if (eventStatus !== 'active' && eventStatus !== 'ended') {
+          if (eventStatus !== 'active' && eventStatus !== 'ended' && eventStatus !== 'locked') {
             await openInfoDialog('کارت‌ها در حال حاضر قابل مشاهده نیستند.');
             return;
           }
@@ -13552,16 +14024,114 @@ $sessionPayload = [
           if (rewardsViewEl) rewardsViewEl.classList.remove('hidden');
         };
 
+        const openRewardDescriptionSlide = async (levelId = '', options = {}) => {
+          const levels = Array.isArray(rewardsState?.levels) ? rewardsState.levels : [];
+          const level = levels.find((item) => String(item?.id || '') === String(levelId || '')) || getReachedNonValueDescriptionLevel();
+          const levelType = String(level?.type || '');
+          const canOpen = levelType === 'pot' || (levelType === 'out_of_value' && Boolean(level?.reached));
+          if (!level || !canOpen) {
+             await openInfoDialog('توضیحات این سطح هنوز در دسترس نیست.');
+             return;
+           }
+          const shouldPushHistory = options?.pushHistory !== false;
+          if (shouldPushHistory) {
+            pushInPageHistoryState();
+          }
+          tcTrackSlide(`reward_description:${String(level?.id || '')}`, {
+            levelId: String(level?.id || ''),
+            reason: 'reward_description_open'
+          });
+          rewardsDescriptionViewOpen = true;
+          rewardsCardsViewOpen = false;
+          selectedRewardLevelId = String(level?.id || '');
+          if (rewardsViewEl) rewardsViewEl.classList.add('hidden');
+          if (rewardCardsViewEl) {
+            rewardCardsViewEl.classList.add('hidden');
+            rewardCardsViewEl.setAttribute('aria-hidden', 'true');
+          }
+          if (rewardDescriptionTitleEl instanceof HTMLElement) {
+            rewardDescriptionTitleEl.textContent = String(level?.name || 'توضیحات').trim() || 'توضیحات';
+          }
+          if (rewardDescriptionContentEl instanceof HTMLElement) {
+            const description = String(level?.description || '').trim();
+            let contentHtml = '';
+            if (levelType === 'pot') {
+              const potStatus = level?.potStatus && typeof level.potStatus === 'object' ? level.potStatus : {};
+              const participantCount = Math.max(0, Number.parseInt(potStatus.participantCount ?? 0, 10) || 0);
+              const confirmedWinnerCount = Math.max(0, Number.parseInt(potStatus.confirmedWinnerCount ?? 0, 10) || 0);
+              const locked = Boolean(potStatus.locked);
+              const isWinner = Boolean(potStatus.isWinner);
+              const reached = Boolean(level?.reached);
+              const prizeName = String(potStatus.prizeName || '').trim();
+              let statusMessage = '';
+              if (!locked && confirmedWinnerCount > 0) {
+                statusMessage = 'قرعه‌کشی در حال انجام است. نتایج پس از پایان قرعه‌کشی اعلام خواهند شد.';
+              } else if (!locked && participantCount === 0) {
+                statusMessage = 'هنوز کسی به این مرحله نرسیده است.';
+              } else if (!locked && reached) {
+                const otherParticipants = Math.max(0, participantCount - 1);
+                statusMessage = `شما به همراه ${formatRewardNumber(otherParticipants)} نفر به این مرحله رسیده‌اید و در قرعه‌کشی حضور خواهید داشت`;
+              } else if (!locked) {
+                statusMessage = `تعداد ${formatRewardNumber(participantCount)} نفر به این مرحله رسیده‌اند و در قرعه‌کشی حضور خواهند داشت`;
+              } else if (isWinner) {
+                statusMessage = `شما در این قرعه کشی برنده جایزه ${prizeName} شدید. نحوه دریافت جایزه به شما اطلاع داده خواهد شد یا می‌توانید با پشتیبانی تماس بگیرید.`;
+              } else {
+                statusMessage = 'قرعه‌کشی انجام شد و برنده‌ها مشخص شدند. متاسفانه شما در این قرعه‌کشی برنده نشدید.';
+              }
+              const descriptionBody = buildInlineInfoRichHtml(description);
+              contentHtml = `<section class="info-task-section info-task-rich">
+                <p class="pot-status-message">${escapeHtml(statusMessage)}</p>
+                ${descriptionBody !== '' ? `<div class="pot-description-body">${descriptionBody}</div>` : ''}
+              </section>`;
+            } else {
+              contentHtml = buildInfoTaskContentHtml(description);
+            }
+            rewardDescriptionContentEl.innerHTML = contentHtml;
+          }
+          if (rewardDescriptionViewEl) {
+            rewardDescriptionViewEl.classList.remove('hidden');
+            rewardDescriptionViewEl.setAttribute('aria-hidden', 'false');
+          }
+          setTopbarMode('rewards');
+        };
+
+        const closeRewardDescriptionSlide = () => {
+          tcTrackSlide('rewards', { reason: 'reward_description_close' });
+          rewardsDescriptionViewOpen = false;
+          selectedRewardLevelId = '';
+          if (rewardDescriptionViewEl) {
+            rewardDescriptionViewEl.classList.add('hidden');
+            rewardDescriptionViewEl.setAttribute('aria-hidden', 'true');
+          }
+          if (rewardsViewEl) rewardsViewEl.classList.remove('hidden');
+        };
+
         const openRewardsView = async (options = {}) => {
           tcTrackSlide('rewards', { reason: 'rewards_open' });
+          const eventStatus = String(globalEventStatus || 'inactive');
+          if (eventStatus === 'upcoming') {
+            const settings = await loadWheelSettings();
+            const countdown = formatEventCountdown(
+              String(settings?.startDate ?? '').trim(),
+              String(settings?.startTime ?? '').trim()
+            );
+            await openInfoDialog(`رویداد هنوز شروع نشده است. ماموریت‌ها و جوایز بعد از شروع نمایش داده می‌شوند.${countdown ? `\n${countdown}` : ''}`);
+            return;
+          }
+          if (eventStatus === 'inactive') {
+            await openInfoDialog('فعلا رویداد فعالی وجود ندارد.');
+            return;
+          }
           const shouldPushHistory = options?.pushHistory !== false;
           if (shouldPushHistory && !rewardsViewOpen) {
             pushInPageHistoryState();
           }
           rewardsViewOpen = true;
           rewardsCardsViewOpen = false;
+          rewardsDescriptionViewOpen = false;
+          document.body.classList.add('tc-rewards-slide-open');
           if (timerAreaEl) timerAreaEl.classList.add('hidden');
-          if (bottomCtaEl) bottomCtaEl.classList.add('hidden');
+          keepBottomCtaHiddenOnRewardsSlide();
           if (quizAreaEl) quizAreaEl.classList.add('hidden');
           if (taskInfoAreaEl) taskInfoAreaEl.classList.add('quiz-hidden');
           if (tasksTitleEl) tasksTitleEl.classList.add('hidden');
@@ -13574,6 +14144,10 @@ $sessionPayload = [
             rewardCardsViewEl.classList.add('hidden');
             rewardCardsViewEl.setAttribute('aria-hidden', 'true');
           }
+          if (rewardDescriptionViewEl) {
+            rewardDescriptionViewEl.classList.add('hidden');
+            rewardDescriptionViewEl.setAttribute('aria-hidden', 'true');
+          }
           setTopbarMode('rewards');
           await refreshRewardState();
         };
@@ -13582,6 +14156,8 @@ $sessionPayload = [
           tcTrackSlide('task_list', { reason: 'rewards_close' });
           rewardsViewOpen = false;
           rewardsCardsViewOpen = false;
+          rewardsDescriptionViewOpen = false;
+          document.body.classList.remove('tc-rewards-slide-open');
           clearRewardEventTick();
           if (rewardsViewEl) {
             rewardsViewEl.classList.add('hidden');
@@ -13591,10 +14167,33 @@ $sessionPayload = [
             rewardCardsViewEl.classList.add('hidden');
             rewardCardsViewEl.setAttribute('aria-hidden', 'true');
           }
+          if (rewardDescriptionViewEl) {
+            rewardDescriptionViewEl.classList.add('hidden');
+            rewardDescriptionViewEl.setAttribute('aria-hidden', 'true');
+          }
           if (timerAreaEl) timerAreaEl.classList.remove('hidden');
-          if (tasksTitleEl) tasksTitleEl.classList.remove('hidden');
-          if (tasksListEl) tasksListEl.classList.remove('hidden');
-          if (bottomCtaEl) bottomCtaEl.classList.remove('hidden');
+          const tasksVisible = globalEventStatus === 'active' || globalEventStatus === 'locked';
+          const rewardsEntryVisible = globalEventStatus === 'active' || globalEventStatus === 'ended' || globalEventStatus === 'locked';
+          if (tasksTitleEl) tasksTitleEl.classList.toggle('hidden', !tasksVisible);
+          if (tasksListLabelEl) tasksListLabelEl.classList.toggle('hidden', !tasksVisible);
+          if (userScoreChipEl) userScoreChipEl.classList.toggle('hidden', !tasksVisible);
+          if (tasksListEl) tasksListEl.classList.toggle('hidden', !tasksVisible);
+          if (bottomCtaEl) {
+            bottomCtaEl.classList.remove('quiz-hidden');
+            bottomCtaEl.classList.toggle('hidden', !rewardsEntryVisible);
+          }
+          if (eventNoticeEl) {
+            if (tasksVisible && globalEventStatus === 'active') {
+              eventNoticeEl.textContent = '';
+              eventNoticeEl.classList.add('hidden');
+            } else if (globalEventStatus === 'ended') {
+              eventNoticeEl.textContent = 'مهلت انجام ماموریت‌ها به پایان رسیده است.';
+              eventNoticeEl.classList.remove('hidden');
+            } else if (globalEventStatus === 'locked') {
+              eventNoticeEl.textContent = 'دسترسی به ماموریت‌ها و کارت‌های جایزه موقتا متوقف شده است.';
+              eventNoticeEl.classList.remove('hidden');
+            }
+          }
           setTopbarMode('tasks');
         };
 
@@ -13854,7 +14453,7 @@ $sessionPayload = [
         const startQuizTimer = () => {
           clearQuizTimer();
           const timeLimitMs = getCurrentQuestionTimeLimitMs();
-          if (!answerTimeLimitEnabled && currentTaskType !== 'conditional_quiz') {
+          if (!answerTimeLimitEnabled) {
             setQuizTimerProgress(timeLimitMs, timeLimitMs);
             return;
           }
@@ -14213,8 +14812,17 @@ $sessionPayload = [
             requestAction: 'task_open_started',
             ...clickedMeta
           });
-          if (globalEventStatus === 'inactive') {
-            openTaskResultDialog(0, 'فعلا رویداد فعالی وجود ندارد.');
+          if (globalEventStatus !== 'active') {
+            openTaskResultDialog(
+              0,
+              globalEventStatus === 'upcoming'
+                ? 'رویداد هنوز شروع نشده است.'
+                : (globalEventStatus === 'ended'
+                  ? 'مهلت انجام ماموریت‌ها به پایان رسیده است.'
+                  : (globalEventStatus === 'locked'
+                    ? 'دسترسی به ماموریت‌ها و کارت‌های جایزه موقتا متوقف شده است.'
+                    : 'فعلا رویداد فعالی وجود ندارد.'))
+            );
             return;
           }
 
@@ -14225,6 +14833,9 @@ $sessionPayload = [
             button.dataset.taskDescribeSubmitted = describeSubmitted ? '1' : '0';
             const teamStartedPending = Boolean(progress?.teamStartedPending);
             button.dataset.taskTeamStartedPending = teamStartedPending ? '1' : '0';
+            if (Object.prototype.hasOwnProperty.call(payload?.task || {}, 'hasGoldenTime')) {
+              button.dataset.taskHasGoldenTime = payload.task.hasGoldenTime ? '1' : '0';
+            }
             setTaskButtonState(button, deriveTaskStatusFromButton(button));
             if (progress?.completed) {
               button.dataset.taskCompleted = '1';
@@ -14236,7 +14847,7 @@ $sessionPayload = [
 
             if (!payload?.task?.available) {
               setTaskButtonState(button, String(payload?.task?.status || 'inactive'));
-              openTaskResultDialog(0, 'این ماموریت در حال حاضر فعال نیست.');
+              openTaskResultDialog(0, String(payload?.task?.statusLabel || 'این ماموریت در حال حاضر فعال نیست.'));
               return;
             }
 
@@ -14275,10 +14886,11 @@ $sessionPayload = [
               return;
             }
 
-            answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
             currentTaskId = taskId;
             currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت کوییز').trim();
             currentTaskType = normalizeTaskTypeToken(fetchedTaskType);
+            answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
+            currentQuestionTimeLimitMs = normalizeQuestionTimeLimitMs(payload?.settings?.answerTimeLimitMs ?? payload?.settings?.answer_time_limit_ms, currentTaskType);
             tcLogActivity('task_action', {
               requestAction: 'task_opened',
               taskId: currentTaskId,
@@ -14708,6 +15320,10 @@ $sessionPayload = [
         }
 
         const performInternalBackAction = () => {
+          if (rewardsDescriptionViewOpen) {
+            closeRewardDescriptionSlide();
+            return true;
+          }
           if (rewardsCardsViewOpen) {
             closeRewardCardsSlide();
             return true;
@@ -14977,9 +15593,15 @@ $sessionPayload = [
             if (!(target instanceof Element)) return;
             const button = target.closest('.roadmap-level-btn');
             if (!(button instanceof HTMLButtonElement) || button.disabled) return;
-            const levelId = String(button.dataset.levelId || '').trim();
-            if (!levelId) return;
-            void withTransitionLoader(
+             const levelId = String(button.dataset.levelId || '').trim();
+             if (!levelId) return;
+            const level = (Array.isArray(rewardsState?.levels) ? rewardsState.levels : [])
+              .find((item) => String(item?.id || '') === levelId);
+            if (String(level?.type || '') === 'pot') {
+              void openRewardDescriptionSlide(levelId);
+              return;
+            }
+             void withTransitionLoader(
               () => openRewardCardsSlide(levelId),
               {
                 primaryText: 'در حال آماده‌سازی کارت‌ها',
@@ -14997,6 +15619,22 @@ $sessionPayload = [
             const button = target.closest('.flip-card');
             if (!(button instanceof HTMLButtonElement)) return;
             void performRewardFlip(button);
+          });
+        }
+
+        if (nonValuePrizeDescribeBtnEl instanceof HTMLButtonElement) {
+          nonValuePrizeDescribeBtnEl.addEventListener('click', () => {
+            const levelId = String(nonValuePrizeDescribeBtnEl.dataset.levelId || '').trim();
+            void openRewardDescriptionSlide(levelId);
+          });
+        }
+
+        if (rewardDescriptionCloseEl instanceof HTMLButtonElement) {
+          rewardDescriptionCloseEl.addEventListener('click', () => {
+            if (requestInPageBackByHistory()) {
+              return;
+            }
+            closeRewardDescriptionSlide();
           });
         }
 

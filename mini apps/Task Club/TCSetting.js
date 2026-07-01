@@ -12,7 +12,10 @@
       .replace(/'/g, "&#39;");
   }
 
-  const API_URL = "mini%20apps/Task%20Club/tc_store.php";
+  const currentScriptSrc = document.currentScript instanceof HTMLScriptElement
+    ? document.currentScript.src
+    : "";
+  const API_URL = new URL("tc_store.php", currentScriptSrc || window.location.href).toString();
   const tcShellEl = document.querySelector(".tc-shell");
   const csrfToken = tcShellEl instanceof HTMLElement
     ? String(tcShellEl.dataset.tcCsrf || "").trim()
@@ -47,14 +50,86 @@
     return payload;
   }
 
+  let settingsLoadErrorMessage = "";
+
+  function looksLikeSettingsPayload(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return false;
+    }
+    return [
+      "active",
+      "duration",
+      "maintenanceMode",
+      "eventAccessLocked",
+      "startDate",
+      "startTime",
+      "endDate",
+      "endTime",
+      "eventName",
+      "landing",
+      "eventColors"
+    ].some(key => Object.prototype.hasOwnProperty.call(value, key));
+  }
+
+  function extractSettingsPayload(payload) {
+    if (payload?.status === "ok" && payload.data && typeof payload.data === "object") {
+      return payload.data;
+    }
+    if (payload?.settings && typeof payload.settings === "object") {
+      return payload.settings;
+    }
+    if (payload?.data?.settings && typeof payload.data.settings === "object") {
+      return payload.data.settings;
+    }
+    if (looksLikeSettingsPayload(payload)) {
+      return payload;
+    }
+    return null;
+  }
+
   async function loadSettings() {
     try {
-      const response = await fetch(`${API_URL}?action=get_settings`, { credentials: "same-origin" });
-      const payload = await response.json();
-      if (payload?.status === "ok" && payload.data && typeof payload.data === "object") {
-        return payload.data;
+      settingsLoadErrorMessage = "";
+      const url = new URL(API_URL);
+      url.searchParams.set("action", "get_settings");
+      const response = await fetch(url.toString(), { credentials: "same-origin" });
+      const contentType = response.headers.get("content-type") || "";
+      const responseText = await response.text().catch(() => "");
+      const payload = contentType.includes("application/json")
+        ? (() => {
+            try {
+              return JSON.parse(responseText || "{}");
+            } catch {
+              return {};
+            }
+          })()
+        : {};
+      const settings = extractSettingsPayload(payload);
+      if (settings) {
+        return settings;
       }
-    } catch {}
+      const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload)
+        ? Object.keys(payload).join(", ")
+        : "";
+      const responsePreview = responseText.slice(0, 220).replace(/\s+/g, " ").trim();
+      console.error("Task Club settings response was not recognized:", {
+        url: url.pathname,
+        status: response.status,
+        contentType,
+        payloadKeys: payloadKeys || "none",
+        responsePreview: responsePreview || "empty"
+      });
+      throw new Error(payload?.message || `Failed to load settings (${response.status}).`);
+    } catch (error) {
+      settingsLoadErrorMessage = error?.message || "Failed to load settings.";
+      const statusEl = getEl("tc-status-text");
+      if (statusEl) {
+        statusEl.textContent = settingsLoadErrorMessage;
+        statusEl.classList.remove("tc-status--active", "tc-status--ended", "tc-status--upcoming");
+        statusEl.classList.add("tc-status--inactive");
+      }
+      console.error("Task Club settings load failed:", error);
+    }
     return {};
   }
 
@@ -365,6 +440,12 @@
       }
     };
 
+    if (settingsLoadErrorMessage) {
+      setStatus(settingsLoadErrorMessage, "inactive");
+      setPrizeAccess(true);
+      return;
+    }
+
     if (durationToggle?.checked) {
       const normalizedStartDate = (startDate?.value || "").trim();
       const normalizedEndDate = (endDate?.value || "").trim();
@@ -453,6 +534,7 @@
     const activeToggle = getEl("tc-active-toggle");
     const durationToggle = getEl("tc-duration-toggle");
     const maintenanceToggle = getEl("tc-maintenance-toggle");
+    const eventAccessLockToggle = getEl("tc-event-access-lock-toggle");
     const startDate = getEl("tc-duration-start");
     const startTime = getEl("tc-duration-start-time");
     const endDate = getEl("tc-duration-end");
@@ -462,6 +544,7 @@
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
     if (maintenanceToggle) maintenanceToggle.checked = Boolean(settings.maintenanceMode);
+    if (eventAccessLockToggle) eventAccessLockToggle.checked = Boolean(settings.eventAccessLocked);
     if (startDate && typeof settings.startDate === "string") startDate.value = settings.startDate;
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
@@ -473,6 +556,7 @@
     const activeToggle = getEl("tc-active-toggle");
     const durationToggle = getEl("tc-duration-toggle");
     const maintenanceToggle = getEl("tc-maintenance-toggle");
+    const eventAccessLockToggle = getEl("tc-event-access-lock-toggle");
     const startDate = getEl("tc-duration-start");
     const startTime = getEl("tc-duration-start-time");
     const endDate = getEl("tc-duration-end");
@@ -482,6 +566,7 @@
       active: Boolean(activeToggle?.checked),
       duration: Boolean(durationToggle?.checked),
       maintenanceMode: Boolean(maintenanceToggle?.checked),
+      eventAccessLocked: Boolean(eventAccessLockToggle?.checked),
       startDate: startDate?.value ?? "",
       startTime: startTime?.value ?? "",
       endDate: endDate?.value ?? "",
@@ -739,6 +824,40 @@
     statusEl.style.color = isError ? "#d1434a" : "";
   }
 
+  function normalizeRewardPrizeDisplay(raw = {}) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    return {
+      nonValuePrizeDescribe: Object.prototype.hasOwnProperty.call(source, "nonValuePrizeDescribe")
+        ? Boolean(source.nonValuePrizeDescribe)
+        : Boolean(source.non_value_prize_describe),
+      showPrize: Object.prototype.hasOwnProperty.call(source, "showPrize")
+        ? Boolean(source.showPrize)
+        : true,
+      hiddenText: String(source.hiddenText ?? source.hidden_text ?? "").trim()
+    };
+  }
+
+  function setRewardAdvancedStatus(message, isError = false) {
+    const statusEl = getEl("tc-reward-advanced-status");
+    if (!(statusEl instanceof HTMLElement)) return;
+    statusEl.textContent = String(message || "").trim();
+    statusEl.style.color = isError ? "#d1434a" : "";
+  }
+
+  function syncRewardAdvancedFields() {
+    const nonValueDescribeToggle = getEl("tc-reward-non-value-describe-toggle");
+    const showPrizeToggle = getEl("tc-reward-show-prize-toggle");
+    const hiddenTextInput = getEl("tc-reward-hidden-prize-text");
+    if (!(showPrizeToggle instanceof HTMLInputElement) || !(hiddenTextInput instanceof HTMLInputElement)) {
+      return;
+    }
+    const isDescribeMode = nonValueDescribeToggle instanceof HTMLInputElement && nonValueDescribeToggle.checked;
+    showPrizeToggle.disabled = isDescribeMode;
+    const isHiddenMode = !isDescribeMode && !showPrizeToggle.checked;
+    hiddenTextInput.disabled = !isHiddenMode;
+    hiddenTextInput.required = isHiddenMode;
+  }
+
   function isShortcutLetterKey(event, letter) {
     const token = String(letter || "").trim().toUpperCase();
     if (!/^[A-Z]$/.test(token)) return false;
@@ -875,6 +994,184 @@
     activate(activeTrigger?.getAttribute("data-tc-control-panel-trigger") || "");
   }
 
+  function initCampaignLinker() {
+    const card = getEl("tc-campaign-linker-card");
+    if (!(card instanceof HTMLElement) || card.dataset.tcLinkerInitialized === "1") return;
+    card.dataset.tcLinkerInitialized = "1";
+
+    const pathInput = getEl("tc-linker-path");
+    const checkBtn = getEl("tc-linker-check");
+    const createBtn = getEl("tc-linker-create");
+    const previewEl = getEl("tc-linker-preview");
+    const statusEl = getEl("tc-linker-status");
+    const bodyEl = getEl("tc-linker-current-body");
+    if (
+      !(pathInput instanceof HTMLInputElement) ||
+      !(checkBtn instanceof HTMLButtonElement) ||
+      !(createBtn instanceof HTMLButtonElement) ||
+      !(previewEl instanceof HTMLElement) ||
+      !(statusEl instanceof HTMLElement) ||
+      !(bodyEl instanceof HTMLElement)
+    ) {
+      return;
+    }
+
+    let lastCheckedPath = "";
+    let lastCanCreate = false;
+
+    const normalizeCampaignPath = (value) => String(value ?? "")
+      .trim()
+      .replace(/\\/g, "/")
+      .replace(/^https?:\/\/[^/]+\/campaigns\//i, "")
+      .replace(/^\/?campaigns\//i, "")
+      .replace(/^\/+|\/+$/g, "")
+      .replace(/\/+/g, "/");
+
+    const setStatus = (message, isError = false) => {
+      statusEl.textContent = String(message || "").trim();
+      statusEl.style.color = isError ? "#d1434a" : "";
+    };
+
+    const setBusy = (busy) => {
+      pathInput.disabled = busy;
+      checkBtn.disabled = busy;
+      createBtn.disabled = busy || !lastCanCreate;
+    };
+
+    const renderLinkState = (data = null) => {
+      bodyEl.replaceChildren();
+      if (!data || typeof data !== "object") {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 4;
+        cell.className = "muted";
+        cell.textContent = "Check a campaign path to see whether it is available.";
+        row.appendChild(cell);
+        bodyEl.appendChild(row);
+        return;
+      }
+
+      const existing = data.existing && typeof data.existing === "object" ? data.existing : null;
+      const row = document.createElement("tr");
+      const campaignCell = document.createElement("td");
+      const typeCell = document.createElement("td");
+      const targetCell = document.createElement("td");
+      const statusCell = document.createElement("td");
+      const campaignUrl = String(data.campaign_url || `/campaigns/${data.path || ""}`);
+      if (existing) {
+        const link = document.createElement("a");
+        link.href = campaignUrl.replace(/^\/+/, "");
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = campaignUrl;
+        campaignCell.appendChild(link);
+        typeCell.textContent = String(existing.redirect_type_label || "Normal Redirect");
+        targetCell.textContent = String(existing.target || "");
+        statusCell.textContent = data.owned_by_task_club
+          ? "Already points to Task Club"
+          : "Occupied";
+      } else {
+        campaignCell.textContent = campaignUrl;
+        typeCell.textContent = String(data.redirect_type_label || "Logger Redirect");
+        targetCell.textContent = String(data.target || "/mini%20apps/Task%20Club/index.php");
+        statusCell.textContent = "Available";
+      }
+      row.append(campaignCell, typeCell, targetCell, statusCell);
+      bodyEl.appendChild(row);
+    };
+
+    const updatePreview = () => {
+      const path = normalizeCampaignPath(pathInput.value);
+      previewEl.textContent = path ? `/campaigns/${path}` : "";
+      lastCanCreate = false;
+      createBtn.disabled = true;
+      renderLinkState(null);
+    };
+
+    const checkLink = async () => {
+      const path = normalizeCampaignPath(pathInput.value);
+      pathInput.value = path;
+      lastCheckedPath = "";
+      lastCanCreate = false;
+      createBtn.disabled = true;
+      renderLinkState(null);
+      if (!path) {
+        setStatus("Enter a campaign path.", true);
+        return;
+      }
+      setBusy(true);
+      setStatus("Checking campaign path...");
+      try {
+        const payload = await requestStorePost("check_campaign_link", { path });
+        const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
+        renderLinkState(data);
+        lastCheckedPath = String(data.path || path);
+        lastCanCreate = Boolean(data.can_create);
+        createBtn.disabled = !lastCanCreate;
+        if (data.available) {
+          setStatus(`${data.campaign_url || `/campaigns/${path}`} is available.`);
+        } else if (data.owned_by_task_club) {
+          setStatus(`${data.campaign_url || `/campaigns/${path}`} already points to Task Club.`);
+        } else {
+          setStatus(`${data.campaign_url || `/campaigns/${path}`} is already used by another redirect.`, true);
+        }
+      } catch (error) {
+        renderLinkState(null);
+        setStatus(error?.message || "Failed to check campaign path.", true);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const createLink = async () => {
+      const path = normalizeCampaignPath(pathInput.value);
+      if (!path) {
+        setStatus("Enter a campaign path.", true);
+        return;
+      }
+      if (path !== lastCheckedPath || !lastCanCreate) {
+        await checkLink();
+        if (!lastCanCreate) return;
+      }
+      setBusy(true);
+      setStatus("Creating redirect...");
+      try {
+        const payload = await requestStorePost("create_campaign_link", { path });
+        const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
+        renderLinkState(data);
+        lastCheckedPath = String(data.path || path);
+        lastCanCreate = Boolean(data.can_create);
+        createBtn.disabled = true;
+        setStatus(payload?.message || "Task Club campaign redirect created.");
+        if (typeof window.showDefaultToast === "function") {
+          window.showDefaultToast("Task Club campaign redirect created.");
+        }
+      } catch (error) {
+        setStatus(error?.message || "Failed to create campaign redirect.", true);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    pathInput.addEventListener("input", updatePreview);
+    pathInput.addEventListener("blur", () => {
+      pathInput.value = normalizeCampaignPath(pathInput.value);
+      updatePreview();
+    });
+    pathInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      void checkLink();
+    });
+    checkBtn.addEventListener("click", () => {
+      void checkLink();
+    });
+    createBtn.addEventListener("click", () => {
+      void createLink();
+    });
+    updatePreview();
+  }
+
   async function initRewardGuide(initialSettings = {}) {
     const pane = document.querySelector('.sub-pane[data-pane="tc-rewards-config"]');
     if (!(pane instanceof HTMLElement)) return;
@@ -936,6 +1233,94 @@
     }
   }
 
+  async function initRewardPrizeDisplay(initialSettings = {}) {
+    const pane = document.querySelector('.sub-pane[data-pane="tc-rewards-config"]');
+    if (!(pane instanceof HTMLElement)) return;
+    if (pane.dataset.rewardPrizeDisplayInitialized === "1") return;
+    pane.dataset.rewardPrizeDisplayInitialized = "1";
+
+    const showPrizeToggle = getEl("tc-reward-show-prize-toggle");
+    const nonValueDescribeToggle = getEl("tc-reward-non-value-describe-toggle");
+    const hiddenTextInput = getEl("tc-reward-hidden-prize-text");
+    if (!(showPrizeToggle instanceof HTMLInputElement) || !(hiddenTextInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const applyDisplaySettings = (raw) => {
+      const settings = normalizeRewardPrizeDisplay(raw);
+      if (nonValueDescribeToggle instanceof HTMLInputElement) {
+        nonValueDescribeToggle.checked = Boolean(settings.nonValuePrizeDescribe);
+      }
+      showPrizeToggle.checked = Boolean(settings.showPrize);
+      hiddenTextInput.value = settings.hiddenText;
+      syncRewardAdvancedFields();
+    };
+
+    applyDisplaySettings(initialSettings?.rewardPrizeDisplay || {});
+    let dirty = false;
+    [nonValueDescribeToggle, showPrizeToggle, hiddenTextInput].forEach((field) => {
+      if (!(field instanceof HTMLInputElement)) return;
+      field.addEventListener("input", () => {
+        dirty = true;
+        setRewardAdvancedStatus("");
+        syncRewardAdvancedFields();
+      });
+      field.addEventListener("change", () => {
+        dirty = true;
+        setRewardAdvancedStatus("");
+        syncRewardAdvancedFields();
+      });
+    });
+
+    try {
+      const display = await requestStoreGet("get_reward_prize_display");
+      if (!dirty) {
+        applyDisplaySettings(display);
+      }
+    } catch (error) {
+      if (!dirty) {
+        setRewardAdvancedStatus(error?.message || "Failed to load advanced prize setting.", true);
+      }
+    }
+  }
+
+  async function saveRewardPrizeDisplayFromDom(saveBtn) {
+    const nonValueDescribeToggle = getEl("tc-reward-non-value-describe-toggle");
+    const showPrizeToggle = getEl("tc-reward-show-prize-toggle");
+    const hiddenTextInput = getEl("tc-reward-hidden-prize-text");
+    if (!(showPrizeToggle instanceof HTMLInputElement) || !(hiddenTextInput instanceof HTMLInputElement)) {
+      setRewardAdvancedStatus("Advanced prize fields were not found.", true);
+      return;
+    }
+    const rewardPrizeDisplay = {
+      nonValuePrizeDescribe: nonValueDescribeToggle instanceof HTMLInputElement
+        ? Boolean(nonValueDescribeToggle.checked)
+        : false,
+      showPrize: Boolean(showPrizeToggle.checked),
+      hiddenText: hiddenTextInput.value
+    };
+    if (!rewardPrizeDisplay.nonValuePrizeDescribe && !rewardPrizeDisplay.showPrize && String(rewardPrizeDisplay.hiddenText || "").trim() === "") {
+      setRewardAdvancedStatus("Enter replacement text before hiding prize values.", true);
+      hiddenTextInput.focus();
+      return;
+    }
+    if (saveBtn instanceof HTMLButtonElement) {
+      saveBtn.disabled = true;
+    }
+    setRewardAdvancedStatus("Saving...");
+    try {
+      await requestStorePost("save_reward_prize_display", { rewardPrizeDisplay });
+      Object.assign(settingsCache, { rewardPrizeDisplay: normalizeRewardPrizeDisplay(rewardPrizeDisplay) });
+      setRewardAdvancedStatus("Saved.");
+    } catch (error) {
+      setRewardAdvancedStatus(error?.message || "Failed to save advanced prize setting.", true);
+    } finally {
+      if (saveBtn instanceof HTMLButtonElement) {
+        saveBtn.disabled = false;
+      }
+    }
+  }
+
   async function saveRewardGuideFromDom(saveBtn) {
     const titleInput = getEl("tc-reward-guide-title");
     const textInput = getEl("tc-reward-guide-text");
@@ -982,6 +1367,15 @@
     void saveRewardGuideFromDom(button);
   });
 
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest("#tc-reward-advanced-save");
+    if (!(button instanceof HTMLButtonElement)) return;
+    event.preventDefault();
+    void saveRewardPrizeDisplayFromDom(button);
+  });
+
   async function initSettings() {
     const saveBtn = getEl("tc-settings-save");
     const activeToggle = getEl("tc-active-toggle");
@@ -992,9 +1386,11 @@
     const endTime = getEl("tc-duration-end-time");
 
     initControlPanelTabs();
+    initCampaignLinker();
     initRewardGuide();
     const settings = await loadSettings();
     applySettings(settings);
+    initRewardPrizeDisplay(settings);
     initLandingEditor(settings);
     initAssignAdmin();
     activeToggle?.addEventListener("change", () => {

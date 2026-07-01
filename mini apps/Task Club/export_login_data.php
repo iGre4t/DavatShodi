@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
 $tcExportSessionUser = requireTabPermissionFromSession('task-club', false);
 if (!userHasPermissionId($tcExportSessionUser, 'task-club:export')) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', false);
@@ -47,6 +48,9 @@ function tcExportFindHeaderIndex(array $header, array $candidates): int
 
 function tcExportReadCsvRows(string $path): array
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsSnapshot($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -196,12 +200,13 @@ for ($i = 1; $i < count($rows); $i += 1) {
   $exportRows[] = [$workId, $firstName, $lastName, $password, $phone, $nationalId];
 }
 
-$filename = 'tc-login-data-' . date('Ymd-His') . '.xls';
-header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+$filename = 'tc-login-data-' . date('Ymd-His') . '.xlsx';
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Pragma: no-cache');
 header('Expires: 0');
 
+require_once dirname(__DIR__, 2) . '/api/lib/xlsx-export.php';
+ob_start();
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
 ?>
@@ -245,3 +250,6 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
   </WorksheetOptions>
  </Worksheet>
 </Workbook>
+<?php
+$spreadsheetXml = (string)ob_get_clean();
+appXlsxSend(appXlsxFromSpreadsheetXml($spreadsheetXml), $filename);

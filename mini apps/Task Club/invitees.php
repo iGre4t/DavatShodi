@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 require_once __DIR__ . '/invitees_special_access.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
 $tcInviteesSessionUser = requireTabPermissionFromSession('task-club', false);
 if (!userHasPermissionId($tcInviteesSessionUser, 'task-club:invitees')) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', false);
@@ -57,6 +58,9 @@ function readMappedConfig(string $path): array {
 }
 
 function readCsvRows(string $path): array {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsSnapshot($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -120,7 +124,114 @@ function resolveMappedInviteColumnIndex(array $header, array $mapping, string $k
   return findInviteHeaderIndex($header, $fallbackNames);
 }
 
+function inviteeListDecodeProgressValue(string $raw) {
+  $value = trim($raw);
+  if ($value === '') {
+    return null;
+  }
+  $decoded = json_decode($value, true);
+  return json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+}
+
+function inviteeListProgressEntries(string $raw): array {
+  $decoded = inviteeListDecodeProgressValue($raw);
+  if (is_array($decoded)) {
+    return $decoded;
+  }
+  $entries = preg_split('/\s*(?:,|;)\s*/', trim($raw), -1, PREG_SPLIT_NO_EMPTY);
+  return is_array($entries) ? $entries : [];
+}
+
+function inviteeListCompletedMissionIds(array $row, array $header): array {
+  $completed = [];
+  $completedIndex = findInviteHeaderIndex($header, ['task completed ids', 'task completed id', 'task completed']);
+  $rawCompleted = $completedIndex >= 0 ? trim((string)($row[$completedIndex] ?? '')) : '';
+  $completedValues = inviteeListProgressEntries(str_replace('|', ',', $rawCompleted));
+  foreach ($completedValues ?: [] as $key => $value) {
+    $taskId = is_string($key) && !is_int($key) && is_bool($value) ? $key : (string)$value;
+    $taskId = trim($taskId);
+    if ($taskId !== '') {
+      $completed[$taskId] = true;
+    }
+  }
+
+  foreach (['task score map', 'info tasks', 'describe photo task'] as $columnName) {
+    $index = findInviteHeaderIndex($header, [$columnName]);
+    $entries = $index >= 0 ? inviteeListProgressEntries((string)($row[$index] ?? '')) : [];
+    foreach ($entries as $taskId => $value) {
+      if (is_int($taskId)) {
+        $taskId = trim(explode(':', (string)$value, 2)[0] ?? '');
+      }
+      $taskId = trim((string)$taskId);
+      if ($taskId !== '') {
+        $completed[$taskId] = true;
+      }
+    }
+  }
+
+  $teamIndex = findInviteHeaderIndex($header, ['team task']);
+  $teamEntries = $teamIndex >= 0 ? inviteeListProgressEntries((string)($row[$teamIndex] ?? '')) : [];
+  foreach ($teamEntries as $taskId => $entry) {
+    if (is_int($taskId)) {
+      $parts = explode('::', (string)$entry);
+      $taskId = trim((string)($parts[0] ?? ''));
+      $score = (int)($parts[3] ?? 0);
+    } else {
+      $score = is_array($entry) ? (int)($entry['score'] ?? 0) : 0;
+    }
+    if ($score > 0) {
+      $taskId = trim((string)$taskId);
+      if ($taskId !== '') {
+        $completed[$taskId] = true;
+      }
+    }
+  }
+
+  return array_keys($completed);
+}
+
+function inviteeListTaskOrderMap(string $tasksPath): array {
+  if (!is_file($tasksPath)) {
+    return [];
+  }
+  $content = (string)file_get_contents($tasksPath);
+  if (!preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $matches)) {
+    return [];
+  }
+  $tasks = json_decode((string)($matches[1] ?? ''), true);
+  if (!is_array($tasks)) {
+    return [];
+  }
+  $orders = [];
+  foreach ($tasks as $index => $task) {
+    if (!is_array($task)) {
+      continue;
+    }
+    $taskId = trim((string)($task['id'] ?? ''));
+    if ($taskId !== '') {
+      $orders[$taskId] = max(1, (int)($task['order'] ?? ($index + 1)));
+    }
+  }
+  return $orders;
+}
+
+function inviteeListReachedMissionOrder(array $completedMissionIds, array $taskOrderMap): int {
+  $reached = 0;
+  foreach ($completedMissionIds as $taskId) {
+    $id = trim((string)$taskId);
+    if (isset($taskOrderMap[$id])) {
+      $reached = max($reached, (int)$taskOrderMap[$id]);
+      continue;
+    }
+    if (preg_match('/(\d+)(?!.*\d)/', $id, $matches)) {
+      $reached = max($reached, (int)($matches[1] ?? 0));
+    }
+  }
+  return $reached;
+}
+
 $mapping = readMappedConfig($mapFile);
+$taskOrderMap = inviteeListTaskOrderMap(__DIR__ . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js');
 $anyPasswordLoginSettings = readAnyPasswordLoginSettings($anyPasswordSettingsFile);
 $rows = readCsvRows($mappedFile);
 if ($rows) {
@@ -131,6 +242,7 @@ if ($rows) {
   $nationalIdIndex = resolveMappedInviteColumnIndex($header, $mapping, 'nationalId', ['national id']);
   $phoneNumberIndex = resolveMappedInviteColumnIndex($header, $mapping, 'phoneNumber', ['phone number', 'phone', 'mobile']);
   $passwordIndex = findInviteHeaderIndex($header, ['password']);
+  $totalScoreIndex = findInviteHeaderIndex($header, ['score', 'total score']);
   $stats['total'] = max(0, count($rows) - 1);
   $stats['columns'] = [
     'workId' => ($workIdIndex >= 0 && isset($header[$workIdIndex])) ? (string)$header[$workIdIndex] : '',
@@ -156,6 +268,10 @@ if ($rows) {
     $nationalId = trim((string)($row[$nationalIdIndex] ?? ''));
     $phoneNumber = trim((string)($row[$phoneNumberIndex] ?? ''));
     $password = trim((string)($row[$passwordIndex] ?? ''));
+    $totalScore = max(0, (int)($row[$totalScoreIndex] ?? 0));
+    $completedMissionIds = inviteeListCompletedMissionIds($row, $header);
+    $completedMissions = count($completedMissionIds);
+    $reachedMissionOrder = inviteeListReachedMissionOrder($completedMissionIds, $taskOrderMap);
 
     if ($workId !== '' || $nationalId !== '' || $phoneNumber !== '' || $first !== '' || $last !== '') {
       $allInvitees[] = [
@@ -165,7 +281,10 @@ if ($rows) {
         'workId' => $workId,
         'nationalId' => $nationalId,
         'phoneNumber' => $phoneNumber,
-        'password' => $password
+        'password' => $password,
+        'completedMissions' => $completedMissions,
+        'reachedMissionOrder' => $reachedMissionOrder,
+        'totalScore' => $totalScore
       ];
     }
 
@@ -224,6 +343,11 @@ if ($rows) {
           <table class="tct-list-table tc-info-rate-table">
             <thead>
               <tr>
+                <?php if ($tcInviteesCanReset): ?>
+                <th>
+                  <input type="checkbox" id="tc-invitees-select-all" aria-label="Select all visible invitees" />
+                </th>
+                <?php endif; ?>
                 <th>Row</th>
                 <th>First Name</th>
                 <th>Last Name</th>
@@ -231,13 +355,15 @@ if ($rows) {
                 <th>National ID</th>
                 <th>Phone Number</th>
                 <th>Password</th>
+                <th>Missions Done</th>
+                <th>Total Score</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody data-invitees-all-table-body>
               <?php if (!$allInvitees): ?>
                 <tr>
-                  <td colspan="8" class="muted">No invitees found.</td>
+                  <td colspan="<?= $tcInviteesCanReset ? '11' : '10' ?>" class="muted">No invitees found.</td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($allInvitees as $invitee): ?>
@@ -252,6 +378,17 @@ if ($rows) {
                     ]));
                   ?>
                   <tr data-invitee-row="1" data-search="<?= htmlspecialchars($inviteeSearchText, ENT_QUOTES, 'UTF-8') ?>">
+                    <?php if ($tcInviteesCanReset): ?>
+                    <td>
+                      <input
+                        type="checkbox"
+                        data-invitee-select
+                        data-reached-mission-order="<?= htmlspecialchars((string)($invitee['reachedMissionOrder'] ?? 0), ENT_QUOTES, 'UTF-8') ?>"
+                        value="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                        aria-label="Select <?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
+                      />
+                    </td>
+                    <?php endif; ?>
                     <td><?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['firstName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['lastName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
@@ -259,6 +396,8 @@ if ($rows) {
                     <td><?= htmlspecialchars((string)($invitee['nationalId'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['phoneNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['password'] ?? '') !== '' ? '*****' : '—', ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['completedMissions'] ?? 0), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><?= htmlspecialchars((string)($invitee['totalScore'] ?? 0), ENT_QUOTES, 'UTF-8') ?></td>
                     <td>
                       <div class="tc-info-rate-row-actions">
                         <?php if ($tcInviteesCanEdit): ?>
@@ -307,12 +446,91 @@ if ($rows) {
                   </tr>
                 <?php endforeach; ?>
                 <tr data-invitees-no-results hidden>
-                  <td colspan="8" class="muted">No matching invitee found.</td>
+                  <td colspan="<?= $tcInviteesCanReset ? '11' : '10' ?>" class="muted">No matching invitee found.</td>
                 </tr>
               <?php endif; ?>
             </tbody>
           </table>
         </div>
+        <?php if ($tcInviteesCanReset && $allInvitees): ?>
+        <div class="card tc-invitees-bulk-card" id="tc-invitees-bulk-card">
+          <div class="card-header">
+            <div>
+              <h4>Selected Invitees Action</h4>
+              <p class="muted"><span id="tc-invitees-selected-count">0</span> invitees selected</p>
+            </div>
+          </div>
+          <div class="tc-invitees-active-selector">
+            <div class="tc-invitees-active-fields">
+              <label class="field">
+                <span>Active users — level reached</span>
+                <select id="tc-invitees-active-minimum">
+                  <option value="">Select a level / mission</option>
+                  <option value="0">Non mission done</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>But (optional)</span>
+                <select id="tc-invitees-bulk-condition">
+                  <option value="none">None — ignore score condition</option>
+                  <option value="not_already_scored">But not already scored</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>In level / mission</span>
+                <select id="tc-invitees-condition-task" disabled>
+                  <option value="">Select a level / mission</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>At least logged in X times — optional</span>
+                <input id="tc-invitees-minimum-logins" type="number" min="0" step="1" inputmode="numeric" placeholder="Example: 3" />
+              </label>
+              <label class="field">
+                <span>Top by login count (%) — optional</span>
+                <input id="tc-invitees-login-percentage" type="number" min="1" max="100" step="1" inputmode="numeric" placeholder="Example: 80" />
+              </label>
+            </div>
+            <div class="tc-invitees-filter-counts" aria-live="polite">
+              <div>
+                <span>Reached selected level</span>
+                <strong id="tc-invitees-reached-count">—</strong>
+              </div>
+              <div>
+                <span>Reached level and not scored in selected mission</span>
+                <strong id="tc-invitees-not-scored-count">—</strong>
+              </div>
+              <div>
+                <span>After minimum-login filter</span>
+                <strong id="tc-invitees-minimum-logins-count">—</strong>
+              </div>
+              <div>
+                <span>After top-login percentage filter</span>
+                <strong id="tc-invitees-login-filtered-count">—</strong>
+              </div>
+            </div>
+            <div class="tc-invitees-active-actions">
+              <button type="button" class="btn ghost" id="tc-invitees-select-active">Select Active Users</button>
+              <button type="button" class="btn ghost" id="tc-invitees-clear-selection">Clear Selection</button>
+            </div>
+          </div>
+          <p class="muted small">Minimum level selects users by the furthest mission reached. The optional score condition narrows that group, then the login percentage keeps the users with the highest login counts.</p>
+          <div class="form grid tc-invitees-bulk-form">
+            <label class="field">
+              <span>Mission</span>
+              <select id="tc-invitees-bulk-task">
+                <option value="">Select a mission</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Score</span>
+              <input id="tc-invitees-bulk-score" type="number" min="0" step="1" inputmode="numeric" />
+            </label>
+            <button type="button" class="btn primary" id="tc-invitees-bulk-apply" disabled>Apply to Selected</button>
+          </div>
+          <p id="tc-invitees-bulk-msg" class="hint" aria-live="polite"></p>
+        </div>
+        <?php endif; ?>
       </div>
     </div>
   </div>
@@ -697,6 +915,27 @@ if ($rows) {
   const allInviteesSearchInput = document.getElementById('tc-all-invitees-search');
   const allInviteesSearchMetaEl = document.getElementById('tc-all-invitees-search-meta');
   const allInviteesTableBody = document.querySelector('[data-invitees-all-table-body]');
+  const inviteesSelectAllEl = document.getElementById('tc-invitees-select-all');
+  const bulkTaskEl = document.getElementById('tc-invitees-bulk-task');
+  const bulkScoreEl = document.getElementById('tc-invitees-bulk-score');
+  const bulkConditionEl = document.getElementById('tc-invitees-bulk-condition');
+  const conditionTaskEl = document.getElementById('tc-invitees-condition-task');
+  const bulkApplyBtn = document.getElementById('tc-invitees-bulk-apply');
+  const bulkSelectedCountEl = document.getElementById('tc-invitees-selected-count');
+  const bulkMsgEl = document.getElementById('tc-invitees-bulk-msg');
+  const activeMinimumEl = document.getElementById('tc-invitees-active-minimum');
+  const selectActiveBtn = document.getElementById('tc-invitees-select-active');
+  const clearSelectionBtn = document.getElementById('tc-invitees-clear-selection');
+  const reachedCountEl = document.getElementById('tc-invitees-reached-count');
+  const notScoredCountEl = document.getElementById('tc-invitees-not-scored-count');
+  const minimumLoginsEl = document.getElementById('tc-invitees-minimum-logins');
+  const minimumLoginsCountEl = document.getElementById('tc-invitees-minimum-logins-count');
+  const loginPercentageEl = document.getElementById('tc-invitees-login-percentage');
+  const loginFilteredCountEl = document.getElementById('tc-invitees-login-filtered-count');
+  if (selectActiveBtn instanceof HTMLButtonElement) {
+    selectActiveBtn.disabled = false;
+    selectActiveBtn.removeAttribute('aria-disabled');
+  }
 
   let parsedRows = [];
   let headerRow = [];
@@ -706,8 +945,14 @@ if ($rows) {
   let scoreEditContext = null;
   let participationContext = null;
   let pendingSensitiveAction = '';
+  let bulkActionContext = null;
+  let activeFilterPreview = null;
 
-  const normalizeSearchValue = (value) => String(value || '')
+  const normalizeSearchDigits = (value) => String(value || '').replace(/[\u06F0-\u06F9\u0660-\u0669]/g, (digit) =>
+    String(digit.charCodeAt(0) & 0xF)
+  );
+
+  const normalizeSearchValue = (value) => normalizeSearchDigits(value)
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
@@ -722,6 +967,187 @@ if ($rows) {
   const formatStatValue = (value) => {
     const text = String(value ?? '').trim();
     return text !== '' ? text : '-';
+  };
+
+  const selectedInviteeRows = () => Array.from(document.querySelectorAll('[data-invitee-select]:checked'))
+    .map((checkbox) => Number(checkbox.value))
+    .filter((row) => Number.isFinite(row) && row > 1)
+    .map((row) => Math.trunc(row));
+
+  const setBulkMsg = (message = '', isError = false) => {
+    if (!bulkMsgEl) return;
+    bulkMsgEl.textContent = message;
+    bulkMsgEl.classList.toggle('error', isError);
+  };
+
+  const updateBulkSelection = () => {
+    const all = Array.from(document.querySelectorAll('[data-invitee-select]'));
+    const selected = all.filter((checkbox) => checkbox.checked);
+    if (bulkSelectedCountEl) bulkSelectedCountEl.textContent = String(selected.length);
+    if (bulkApplyBtn) bulkApplyBtn.disabled = selected.length === 0;
+    if (inviteesSelectAllEl) {
+      const visible = all.filter((checkbox) => !checkbox.closest('tr')?.hidden);
+      const visibleSelected = visible.filter((checkbox) => checkbox.checked);
+      inviteesSelectAllEl.checked = visible.length > 0 && visibleSelected.length === visible.length;
+      inviteesSelectAllEl.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visible.length;
+    }
+  };
+
+  const refreshActiveFilterPreview = async () => {
+    const minimumRaw = String(activeMinimumEl?.value || '').trim();
+    const conditionTaskId = String(conditionTaskEl?.value || '').trim();
+    const useNotScoredFilter = bulkConditionEl?.value === 'not_already_scored';
+    const minimumLoginsRaw = String(minimumLoginsEl?.value || '').trim();
+    const minimumLogins = minimumLoginsRaw === '' ? 0 : Number(minimumLoginsRaw);
+    const loginPercentageRaw = String(loginPercentageEl?.value || '').trim();
+    const loginPercentage = loginPercentageRaw === '' ? 0 : Number(loginPercentageRaw);
+    if (!/^\d+$/.test(minimumRaw)) {
+      activeFilterPreview = null;
+      if (reachedCountEl) reachedCountEl.textContent = '—';
+      if (notScoredCountEl) notScoredCountEl.textContent = '—';
+      if (minimumLoginsCountEl) minimumLoginsCountEl.textContent = '—';
+      if (loginFilteredCountEl) loginFilteredCountEl.textContent = '—';
+      return null;
+    }
+    if (minimumLoginsRaw !== '' && (!Number.isInteger(minimumLogins) || minimumLogins < 0)) {
+      activeFilterPreview = null;
+      if (minimumLoginsCountEl) minimumLoginsCountEl.textContent = '!';
+      return null;
+    }
+    if (loginPercentageRaw !== '' && (!Number.isInteger(loginPercentage) || loginPercentage < 1 || loginPercentage > 100)) {
+      activeFilterPreview = null;
+      if (loginFilteredCountEl) loginFilteredCountEl.textContent = '!';
+      return null;
+    }
+    if (reachedCountEl) reachedCountEl.textContent = '…';
+    if (notScoredCountEl) notScoredCountEl.textContent = conditionTaskId ? '…' : '—';
+    if (minimumLoginsCountEl) minimumLoginsCountEl.textContent = minimumLoginsRaw !== '' ? '…' : '—';
+    if (loginFilteredCountEl) loginFilteredCountEl.textContent = loginPercentage > 0 ? '…' : '—';
+    try {
+      const response = await postRevealAction('get_active_filter_preview', {
+        minimum_order: Number(minimumRaw),
+        condition_task_id: conditionTaskId,
+        use_not_scored: useNotScoredFilter,
+        minimum_logins: minimumLogins,
+        login_percentage: loginPercentage
+      });
+      if (!response.ok) throw new Error(response.message || 'Failed to load filter counts.');
+      activeFilterPreview = {
+        reachedRows: Array.isArray(response.data?.reachedRows) ? response.data.reachedRows.map(Number) : [],
+        notScoredRows: Array.isArray(response.data?.notScoredRows) ? response.data.notScoredRows.map(Number) : [],
+        filteredRows: Array.isArray(response.data?.filteredRows) ? response.data.filteredRows.map(Number) : []
+      };
+      if (reachedCountEl) reachedCountEl.textContent = String(response.data?.reachedCount ?? activeFilterPreview.reachedRows.length);
+      if (notScoredCountEl) {
+        notScoredCountEl.textContent = conditionTaskId
+          ? String(response.data?.notScoredCount ?? activeFilterPreview.notScoredRows.length)
+          : '—';
+      }
+      if (minimumLoginsCountEl) {
+        minimumLoginsCountEl.textContent = minimumLoginsRaw !== ''
+          ? String(response.data?.minimumLoginsCount ?? activeFilterPreview.filteredRows.length)
+          : '—';
+      }
+      if (loginFilteredCountEl) {
+        loginFilteredCountEl.textContent = loginPercentage > 0
+          ? String(response.data?.filteredCount ?? activeFilterPreview.filteredRows.length)
+          : '—';
+      }
+      return activeFilterPreview;
+    } catch {
+      activeFilterPreview = null;
+      if (reachedCountEl) reachedCountEl.textContent = '!';
+      if (notScoredCountEl) notScoredCountEl.textContent = conditionTaskId ? '!' : '—';
+      if (minimumLoginsCountEl) minimumLoginsCountEl.textContent = minimumLoginsRaw !== '' ? '!' : '—';
+      if (loginFilteredCountEl) loginFilteredCountEl.textContent = loginPercentage > 0 ? '!' : '—';
+      return null;
+    }
+  };
+
+  const loadBulkTaskOptions = async () => {
+    if (!(bulkTaskEl instanceof HTMLSelectElement)) return;
+    try {
+      const response = await postRevealAction('get_task_options');
+      if (!response.ok) return;
+      const tasks = Array.isArray(response.data?.tasks) ? response.data.tasks : [];
+      tasks.forEach((task) => {
+        const id = String(task.id || '').trim();
+        if (!id) return;
+        const order = Math.max(1, Number.parseInt(String(task.order || ''), 10) || 1);
+        const option = document.createElement('option');
+        option.value = id;
+        const title = String(task.title || id).trim();
+        const tagCode = String(task.tagCode || '').trim();
+        option.textContent = tagCode ? `${title} (${tagCode})` : title;
+        bulkTaskEl.appendChild(option);
+        if (conditionTaskEl instanceof HTMLSelectElement) {
+          conditionTaskEl.appendChild(option.cloneNode(true));
+        }
+        if (activeMinimumEl instanceof HTMLSelectElement) {
+          const levelOption = document.createElement('option');
+          levelOption.value = String(order);
+          levelOption.textContent = `Level ${order} — ${option.textContent}`;
+          activeMinimumEl.appendChild(levelOption);
+        }
+      });
+      await refreshActiveFilterPreview();
+    } catch {
+      setBulkMsg('Failed to load missions.', true);
+    }
+  };
+
+  const applyBulkMissionScore = async () => {
+    const rows = bulkActionContext?.rows || selectedInviteeRows();
+    const taskId = String(bulkActionContext?.taskId || bulkTaskEl?.value || '').trim();
+    const scoreRaw = String(bulkActionContext?.score ?? bulkScoreEl?.value ?? '').trim();
+    const condition = String(bulkActionContext?.condition || bulkConditionEl?.value || 'none').trim();
+    const conditionTaskId = String(bulkActionContext?.conditionTaskId || conditionTaskEl?.value || '').trim();
+    if (!rows.length) {
+      setBulkMsg('Select at least one invitee.', true);
+      return;
+    }
+    if (!taskId) {
+      setBulkMsg('Select a mission.', true);
+      return;
+    }
+    if (!/^\d+$/.test(scoreRaw)) {
+      setBulkMsg('Score must be a non-negative whole number.', true);
+      return;
+    }
+    if (condition === 'not_already_scored' && !conditionTaskId) {
+      setBulkMsg('Select the level or mission used by the “not already scored” condition.', true);
+      return;
+    }
+    bulkActionContext = { rows, taskId, score: Number(scoreRaw), condition, conditionTaskId };
+    if (bulkApplyBtn) bulkApplyBtn.disabled = true;
+    setBulkMsg(`Updating ${rows.length} invitees...`);
+    try {
+      const response = await postRevealAction('bulk_save_task_score', {
+        rows,
+        task_id: taskId,
+        score: Number(scoreRaw),
+        condition,
+        condition_task_id: conditionTaskId
+      });
+      if (response.ok) {
+        setBulkMsg(response.message || 'Mission scores updated.');
+        bulkActionContext = null;
+        activeFilterPreview = null;
+        await refreshActiveFilterPreview();
+      } else if (response.status === 'auth_required') {
+        pendingSensitiveAction = 'bulk_save_task_score';
+        setBulkMsg('Authorization required. Please verify your panel password.', true);
+        openAuthModal();
+      } else {
+        setBulkMsg(response.message || 'Failed to update mission scores.', true);
+        bulkActionContext = null;
+      }
+    } catch {
+      setBulkMsg('Failed to update mission scores.', true);
+      bulkActionContext = null;
+    } finally {
+      if (bulkApplyBtn) bulkApplyBtn.disabled = selectedInviteeRows().length === 0;
+    }
   };
 
   const applyAllInviteesSearch = () => {
@@ -753,6 +1179,7 @@ if ($rows) {
         allInviteesSearchMetaEl.textContent = `${visibleCount} result${visibleCount === 1 ? '' : 's'} found`;
       }
     }
+    updateBulkSelection();
   };
 
   const setMsg = (text, isError = false) => {
@@ -1461,6 +1888,8 @@ if ($rows) {
           await requestResetAccess();
         } else if (nextAction === 'save_task_score' && scoreEditContext) {
           await saveTaskScore();
+        } else if (nextAction === 'bulk_save_task_score' && bulkActionContext) {
+          await applyBulkMissionScore();
         }
       } else {
         setAuthMsg(response.message || 'Password verification failed.', true);
@@ -1783,6 +2212,127 @@ if ($rows) {
       addInviteeBtn.disabled = false;
     }
   });
+
+  inviteesSelectAllEl?.addEventListener('change', () => {
+    const checked = Boolean(inviteesSelectAllEl.checked);
+    document.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
+      if (!checkbox.closest('tr')?.hidden) {
+        checkbox.checked = checked;
+      }
+    });
+    updateBulkSelection();
+  });
+
+  selectActiveBtn?.addEventListener('click', async () => {
+    const minimumRaw = String(activeMinimumEl?.value || '').trim();
+    if (!/^\d+$/.test(minimumRaw)) {
+      setBulkMsg('Select the minimum level reached.', true);
+      return;
+    }
+    const minimum = Number(minimumRaw);
+    const useNotScoredFilter = bulkConditionEl?.value === 'not_already_scored';
+    if (useNotScoredFilter && !conditionTaskEl?.value) {
+      setBulkMsg('Select the level or mission for the “not already scored” filter.', true);
+      return;
+    }
+    const minimumLoginsRaw = String(minimumLoginsEl?.value || '').trim();
+    if (minimumLoginsRaw !== '') {
+      const minimumLogins = Number(minimumLoginsRaw);
+      if (!Number.isInteger(minimumLogins) || minimumLogins < 0) {
+        setBulkMsg('Minimum login count must be a non-negative whole number.', true);
+        return;
+      }
+    }
+    const loginPercentageRaw = String(loginPercentageEl?.value || '').trim();
+    if (loginPercentageRaw !== '') {
+      const loginPercentage = Number(loginPercentageRaw);
+      if (!Number.isInteger(loginPercentage) || loginPercentage < 1 || loginPercentage > 100) {
+        setBulkMsg('Top login percentage must be a whole number from 1 to 100.', true);
+        return;
+      }
+    }
+    const preview = await refreshActiveFilterPreview();
+    if (!preview) {
+      setBulkMsg('Failed to evaluate active users.', true);
+      return;
+    }
+    const matchingRows = new Set(preview.filteredRows);
+    document.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
+      checkbox.checked = matchingRows.has(Number(checkbox.value));
+    });
+    const selectedCount = selectedInviteeRows().length;
+    bulkActionContext = null;
+    const levelLabel = minimum === 0 ? 'with no mission done' : `who reached level ${minimum} or later`;
+    const suffix = useNotScoredFilter ? ' and are not already scored in the selected mission' : '';
+    const minimumLoginsSuffix = minimumLoginsRaw !== '' ? `, with at least ${minimumLoginsRaw} logins` : '';
+    const loginSuffix = loginPercentageRaw !== '' ? `, limited to the top ${loginPercentageRaw}% by login count` : '';
+    setBulkMsg(`${selectedCount} user${selectedCount === 1 ? '' : 's'} ${levelLabel}${suffix}${minimumLoginsSuffix}${loginSuffix} selected.`);
+    updateBulkSelection();
+  });
+
+  bulkConditionEl?.addEventListener('change', () => {
+    const enabled = bulkConditionEl.value === 'not_already_scored';
+    if (conditionTaskEl) {
+      conditionTaskEl.disabled = !enabled;
+      if (enabled && !conditionTaskEl.value && bulkTaskEl?.value) {
+        conditionTaskEl.value = bulkTaskEl.value;
+      } else if (!enabled) {
+        conditionTaskEl.value = '';
+      }
+    }
+    if (selectActiveBtn instanceof HTMLButtonElement) {
+      selectActiveBtn.disabled = false;
+      selectActiveBtn.removeAttribute('aria-disabled');
+    }
+    bulkActionContext = null;
+    void refreshActiveFilterPreview();
+  });
+
+  activeMinimumEl?.addEventListener('change', () => {
+    activeFilterPreview = null;
+    void refreshActiveFilterPreview();
+  });
+
+  conditionTaskEl?.addEventListener('change', () => {
+    activeFilterPreview = null;
+    bulkActionContext = null;
+    void refreshActiveFilterPreview();
+  });
+
+  minimumLoginsEl?.addEventListener('change', () => {
+    activeFilterPreview = null;
+    bulkActionContext = null;
+    void refreshActiveFilterPreview();
+  });
+
+  loginPercentageEl?.addEventListener('change', () => {
+    activeFilterPreview = null;
+    bulkActionContext = null;
+    void refreshActiveFilterPreview();
+  });
+
+  clearSelectionBtn?.addEventListener('click', () => {
+    document.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
+      checkbox.checked = false;
+    });
+    bulkActionContext = null;
+    setBulkMsg('');
+    updateBulkSelection();
+  });
+
+  allInviteesTableBody?.addEventListener('change', (event) => {
+    if (event.target instanceof HTMLInputElement && event.target.matches('[data-invitee-select]')) {
+      updateBulkSelection();
+    }
+  });
+
+  bulkApplyBtn?.addEventListener('click', () => {
+    bulkActionContext = null;
+    void applyBulkMissionScore();
+  });
+
+  updateBulkSelection();
+  void loadBulkTaskOptions();
 })();
 </script>
 

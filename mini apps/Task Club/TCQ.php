@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
 $tcqIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tcq_action']);
 $tcqSessionUser = requireTabPermissionFromSession('task-club', $tcqIsJsonRequest);
 if (!userHasPermissionId($tcqSessionUser, 'task-club:manage-tasks')) {
@@ -21,13 +22,34 @@ $tcqTaskTitle = '';
 $tcqTaskType = 'quiz';
 const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
+  'answerTimeLimitMs' => 14000,
   'randomOrder' => true,
   'questionsPerAttempt' => 0,
   'correctAnswersToScore' => 1
 ];
 
+function tcqDefaultAnswerTimeLimitMs(bool $isConditionalQuizTask): int
+{
+  return $isConditionalQuizTask ? 30000 : (int)TCQ_DEFAULT_SETTINGS['answerTimeLimitMs'];
+}
+
+function tcqNormalizeAnswerTimeLimitMs($value, int $fallback): int
+{
+  if (!is_scalar($value)) {
+    return $fallback;
+  }
+  $parsed = (int)$value;
+  if ($parsed < 1000) {
+    return $fallback;
+  }
+  return min($parsed, 600000);
+}
+
 function tcqReadCsv(string $path): array
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsForUpdate($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -50,6 +72,9 @@ function tcqReadCsv(string $path): array
 
 function tcqWriteCsv(string $path, array $rows): bool
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvCommitRows($path, $rows);
+  }
   $dir = dirname($path);
   if (!is_dir($dir)) {
     mkdir($dir, 0777, true);
@@ -98,11 +123,11 @@ function tcqFindHeaderIndex(array $header, string $name): int
   return -1;
 }
 
-function tcqEnsureInviteesColumns(string $path): void
+function tcqEnsureInviteesColumns(string $path): bool
 {
   $rows = tcqReadCsv($path);
   if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
-    return;
+    return false;
   }
   $header = $rows[0];
   $required = ['count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
@@ -123,10 +148,11 @@ function tcqEnsureInviteesColumns(string $path): void
     $changed = true;
   }
   if (!$changed) {
-    return;
+    tcInviteesCsvEndTransaction($path);
+    return true;
   }
   $rows[0] = $header;
-  tcqWriteCsv($path, $rows);
+  return tcqWriteCsv($path, $rows);
 }
 
 function tcqNormalizeScoreValue($value): int
@@ -203,9 +229,10 @@ function tcqSaveStore(string $path, array $rows): bool
   return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
-function tcqLoadSettings(string $path): array
+function tcqLoadSettings(string $path, int $defaultAnswerTimeLimitMs = 14000): array
 {
   $settings = TCQ_DEFAULT_SETTINGS;
+  $settings['answerTimeLimitMs'] = $defaultAnswerTimeLimitMs;
   if (!is_file($path)) {
     return $settings;
   }
@@ -219,6 +246,7 @@ function tcqLoadSettings(string $path): array
   }
   $storedCorrectAnswersToScore = max(0, (int)($decoded['correctAnswersToScore'] ?? $settings['correctAnswersToScore']));
   $settings['answerTimeLimit'] = (bool)($decoded['answerTimeLimit'] ?? $settings['answerTimeLimit']);
+  $settings['answerTimeLimitMs'] = tcqNormalizeAnswerTimeLimitMs($decoded['answerTimeLimitMs'] ?? ($decoded['answer_time_limit_ms'] ?? $settings['answerTimeLimitMs']), $defaultAnswerTimeLimitMs);
   $settings['randomOrder'] = (bool)($decoded['randomOrder'] ?? $settings['randomOrder']);
   $settings['questionsPerAttempt'] = max(0, (int)($decoded['questionsPerAttempt'] ?? $settings['questionsPerAttempt']));
   $settings['correctAnswersToScore'] = $storedCorrectAnswersToScore > 0
@@ -235,6 +263,7 @@ function tcqSaveSettings(string $path, array $settings, bool $includeCorrectAnsw
   }
   $payload = [
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
+    'answerTimeLimitMs' => tcqNormalizeAnswerTimeLimitMs($settings['answerTimeLimitMs'] ?? 14000, 14000),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0))
   ];
@@ -252,6 +281,7 @@ function tcqSettingsForTaskType(array $settings, bool $includeCorrectAnswersToSc
 {
   $payload = [
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
+    'answerTimeLimitMs' => tcqNormalizeAnswerTimeLimitMs($settings['answerTimeLimitMs'] ?? 14000, 14000),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0))
   ];
@@ -581,7 +611,10 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
   $action = trim((string)($_POST['tcq_action'] ?? ''));
 
   if ($action === 'list') {
-    tcqEnsureInviteesColumns($tcqInviteesCsvPath);
+    if (!tcqEnsureInviteesColumns($tcqInviteesCsvPath)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to prepare invitees CSV columns.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $items = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
     $usedCodes = [];
@@ -592,27 +625,31 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
     }
     if (count($repaired) === count($items)) {
       $items = $repaired;
-      tcqSaveStore($tcqStorePath, $items);
-      tcqSaveCodeState($tcqCodeStatePath, $codeState);
+      if (!tcqSaveStore($tcqStorePath, $items) || !tcqSaveCodeState($tcqCodeStatePath, $codeState)) {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to persist repaired question codes.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
     }
     if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $items, $items, !$tcqIsConditionalQuizTask)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with questions.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    $settings = tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath), !$tcqIsConditionalQuizTask);
+    $settings = tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask)), !$tcqIsConditionalQuizTask);
     echo json_encode(['status' => 'ok', 'items' => $items, 'settings' => $settings], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
   if ($action === 'save_settings') {
     $answerTimeLimitRaw = trim((string)($_POST['answer_time_limit'] ?? '1'));
+    $answerTimeLimitMsRaw = trim((string)($_POST['answer_time_limit_ms'] ?? (string)tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask)));
     $randomOrderRaw = trim((string)($_POST['random_order'] ?? '1'));
     $questionsPerAttemptRaw = trim((string)($_POST['questions_per_attempt'] ?? '0'));
     $correctAnswersToScoreRaw = trim((string)($_POST['correct_answers_to_score'] ?? '1'));
-    if (!preg_match('/^\d+$/', $questionsPerAttemptRaw) || (!$tcqIsConditionalQuizTask && !preg_match('/^\d+$/', $correctAnswersToScoreRaw))) {
-      echo json_encode(['status' => 'error', 'message' => 'Question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
+    if (!preg_match('/^\d+$/', $answerTimeLimitMsRaw) || !preg_match('/^\d+$/', $questionsPerAttemptRaw) || (!$tcqIsConditionalQuizTask && !preg_match('/^\d+$/', $correctAnswersToScoreRaw))) {
+      echo json_encode(['status' => 'error', 'message' => 'Time and question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
+    $answerTimeLimitMs = tcqNormalizeAnswerTimeLimitMs($answerTimeLimitMsRaw, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask));
     $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
     $correctAnswersToScore = $tcqIsConditionalQuizTask ? 0 : max(1, (int)$correctAnswersToScoreRaw);
     if (!$tcqIsConditionalQuizTask && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
@@ -621,6 +658,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
     }
     $settings = [
       'answerTimeLimit' => in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
+      'answerTimeLimitMs' => $answerTimeLimitMs,
       'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true),
       'questionsPerAttempt' => $questionsPerAttempt,
       'correctAnswersToScore' => $correctAnswersToScore
@@ -632,13 +670,16 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
     echo json_encode([
       'status' => 'ok',
       'message' => 'General settings saved.',
-      'settings' => tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath), !$tcqIsConditionalQuizTask)
+      'settings' => tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask)), !$tcqIsConditionalQuizTask)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
   if ($action === 'save_all') {
-    tcqEnsureInviteesColumns($tcqInviteesCsvPath);
+    if (!tcqEnsureInviteesColumns($tcqInviteesCsvPath)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to prepare invitees CSV columns.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $raw = (string)($_POST['items'] ?? '[]');
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {
@@ -648,6 +689,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
 
     $oldItems = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
+    $oldCodeState = $codeState;
     $usedCodes = [];
     $items = [];
     foreach ($decoded as $index => $row) {
@@ -679,12 +721,19 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       exit;
     }
     if (!tcqSaveCodeState($tcqCodeStatePath, $codeState)) {
-      tcqSaveStore($tcqStorePath, $oldItems);
+      $rolledBack = tcqSaveStore($tcqStorePath, $oldItems);
       echo json_encode(['status' => 'error', 'message' => 'Failed to save question code state.'], JSON_UNESCAPED_UNICODE);
+      if (!$rolledBack) {
+        error_log('Task Club failed to roll back question storage after a code-state write failure.');
+      }
       exit;
     }
     if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $oldItems, $items, !$tcqIsConditionalQuizTask)) {
-      tcqSaveStore($tcqStorePath, $oldItems);
+      $storeRolledBack = tcqSaveStore($tcqStorePath, $oldItems);
+      $codeStateRolledBack = tcqSaveCodeState($tcqCodeStatePath, $oldCodeState);
+      if (!$storeRolledBack || !$codeStateRolledBack) {
+        error_log('Task Club failed to fully roll back question storage after an Answers.csv sync failure.');
+      }
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with saved questions.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -733,6 +782,10 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     <label class="tcq-settings-row">
       <span>Answer Time Limit</span>
       <input id="tcq-setting-answer-time-limit" type="checkbox" checked />
+    </label>
+    <label class="tcq-settings-row">
+      <span>Answer Time Limit (ms)</span>
+      <input id="tcq-setting-answer-time-limit-ms" type="number" min="1000" max="600000" step="100" value="<?= $tcqIsConditionalQuizTask ? '30000' : '14000' ?>" />
     </label>
     <label class="tcq-settings-row">
       <span>Random Order</span>
@@ -857,6 +910,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const statusEl = document.getElementById('tcq-status');
   const saveAllBtn = document.getElementById('tcq-save-all');
   const answerTimeLimitToggle = document.getElementById('tcq-setting-answer-time-limit');
+  const answerTimeLimitMsInput = document.getElementById('tcq-setting-answer-time-limit-ms');
   const randomOrderToggle = document.getElementById('tcq-setting-random-order');
   const questionsPerAttemptInput = document.getElementById('tcq-setting-questions-per-attempt');
   const correctAnswersToScoreInput = document.getElementById('tcq-setting-correct-answers-to-score');
@@ -880,6 +934,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
 
   let items = [];
   let draggedRowId = '';
+  const defaultAnswerTimeLimitMs = isConditionalQuizTask ? 30000 : 14000;
 
   const esc = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -896,6 +951,21 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       return 0;
     }
     return parsed;
+  };
+
+  const normalizeAnswerTimeLimitMs = (value) => {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 1000) {
+      return defaultAnswerTimeLimitMs;
+    }
+    return Math.min(parsed, 600000);
+  };
+
+  const syncAnswerTimeLimitFieldState = () => {
+    if (!(answerTimeLimitToggle instanceof HTMLInputElement) || !(answerTimeLimitMsInput instanceof HTMLInputElement)) return;
+    const enabled = answerTimeLimitToggle.checked;
+    answerTimeLimitMsInput.disabled = !enabled;
+    answerTimeLimitMsInput.setAttribute('aria-disabled', enabled ? 'false' : 'true');
   };
 
   const normalizeAnswers = (list) => {
@@ -946,6 +1016,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const applySettingsToForm = (settings) => {
     if (
       !(answerTimeLimitToggle instanceof HTMLInputElement)
+      || !(answerTimeLimitMsInput instanceof HTMLInputElement)
       || !(randomOrderToggle instanceof HTMLInputElement)
       || !(questionsPerAttemptInput instanceof HTMLInputElement)
       || (!isConditionalQuizTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
@@ -953,11 +1024,13 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       return;
     }
     answerTimeLimitToggle.checked = Boolean(settings?.answerTimeLimit ?? true);
+    answerTimeLimitMsInput.value = String(normalizeAnswerTimeLimitMs(settings?.answerTimeLimitMs ?? settings?.answer_time_limit_ms));
     randomOrderToggle.checked = Boolean(settings?.randomOrder ?? true);
     questionsPerAttemptInput.value = String(Math.max(0, Number.parseInt(String(settings?.questionsPerAttempt ?? 0), 10) || 0));
     if (correctAnswersToScoreInput instanceof HTMLInputElement) {
       correctAnswersToScoreInput.value = String(Math.max(1, Number.parseInt(String(settings?.correctAnswersToScore ?? 1), 10) || 0));
     }
+    syncAnswerTimeLimitFieldState();
   };
 
   const validateAll = () => {
@@ -1272,18 +1345,25 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   formTypeInputs.forEach((radio) => {
     radio.addEventListener('change', syncAddFormTypeState);
   });
+  if (answerTimeLimitToggle instanceof HTMLInputElement) {
+    answerTimeLimitToggle.addEventListener('change', syncAnswerTimeLimitFieldState);
+  }
   syncAddFormTypeState();
+  syncAnswerTimeLimitFieldState();
 
   if (saveSettingsBtn instanceof HTMLButtonElement) {
     saveSettingsBtn.addEventListener('click', async () => {
       if (
         !(answerTimeLimitToggle instanceof HTMLInputElement)
+        || !(answerTimeLimitMsInput instanceof HTMLInputElement)
         || !(randomOrderToggle instanceof HTMLInputElement)
         || !(questionsPerAttemptInput instanceof HTMLInputElement)
         || (!isConditionalQuizTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
       ) {
         return;
       }
+      const answerTimeLimitMs = normalizeAnswerTimeLimitMs(answerTimeLimitMsInput.value);
+      answerTimeLimitMsInput.value = String(answerTimeLimitMs);
       const questionsPerAttempt = Math.max(0, Number.parseInt(questionsPerAttemptInput.value || '0', 10) || 0);
       const correctAnswersToScore = correctAnswersToScoreInput instanceof HTMLInputElement
         ? Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0)
@@ -1296,6 +1376,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       try {
         const data = await postAction('save_settings', {
           answer_time_limit: answerTimeLimitToggle.checked ? '1' : '0',
+          answer_time_limit_ms: String(answerTimeLimitMs),
           random_order: randomOrderToggle.checked ? '1' : '0',
           questions_per_attempt: String(questionsPerAttempt),
           correct_answers_to_score: String(correctAnswersToScore)

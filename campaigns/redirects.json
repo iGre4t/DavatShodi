@@ -1,0 +1,21 @@
+{
+    "updated_at": "",
+    "redirects": [
+        {
+            "path": "zendegi",
+            "target": "/mini%20apps/RateMe/index.php",
+            "redirect_type": "normal",
+            "status_code": 302,
+            "created_at": "",
+            "updated_at": ""
+        },
+        {
+            "path": "dastavard",
+            "target": "/mini%20apps/Task%20Club/index.php",
+            "redirect_type": "logger",
+            "status_code": 302,
+            "created_at": "",
+            "updated_at": ""
+        }
+    ]
+}

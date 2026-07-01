@@ -2,8 +2,14 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+$campaignRedirectsFile = __DIR__ . '/../../api/lib/campaign-redirects.php';
+if (is_file($campaignRedirectsFile)) {
+  require_once $campaignRedirectsFile;
+}
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
+require_once __DIR__ . '/pot_service.php';
 $tcStoreSessionUser = requireTabPermissionFromSession('task-club', true);
 tcSecurityGetCsrfToken();
 
@@ -13,8 +19,77 @@ $baseDir = __DIR__;
 $prizesFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Prizes.json';
 $prizeLevelsFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Prize Levels.json';
 $settingsFile = $baseDir . DIRECTORY_SEPARATOR . 'Setting.json';
+$legacySettingsFile = $baseDir . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'store.json';
 $inviteesMappedFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
+
+function tcStoreCampaignLinkTarget(): string
+{
+  return '/mini%20apps/Task%20Club/index.php';
+}
+
+function tcStoreCampaignRedirectsReady(): bool
+{
+  return function_exists('campaignRedirectsNormalizePath')
+    && function_exists('campaignRedirectsPathError')
+    && function_exists('campaignRedirectsFind')
+    && function_exists('campaignRedirectsList')
+    && function_exists('campaignRedirectsSaveList')
+    && function_exists('campaignRedirectsTypeForTarget')
+    && function_exists('campaignRedirectsTypeLabel');
+}
+
+function tcStoreRequireCampaignRedirects(): void
+{
+  global $campaignRedirectsFile;
+  if (!tcStoreCampaignRedirectsReady() && is_string($campaignRedirectsFile ?? null) && is_file($campaignRedirectsFile)) {
+    require_once $campaignRedirectsFile;
+  }
+  if (tcStoreCampaignRedirectsReady()) {
+    return;
+  }
+  http_response_code(503);
+  echo json_encode([
+    'status' => 'error',
+    'message' => 'Linker Service is not available on this server. Missing api/lib/campaign-redirects.php.'
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+function tcStoreCampaignLinkResponse(string $path, ?array $redirect = null): array
+{
+  tcStoreRequireCampaignRedirects();
+  $normalizedPath = campaignRedirectsNormalizePath($path);
+  $target = tcStoreCampaignLinkTarget();
+  $targetType = campaignRedirectsTypeForTarget($target);
+  $existing = is_array($redirect) ? $redirect : campaignRedirectsFind($normalizedPath);
+  $existingTarget = is_array($existing) ? (string)($existing['target'] ?? '') : '';
+  $ownedByTaskClub = $existingTarget !== '' && $existingTarget === $target;
+  $existingType = is_array($existing)
+    ? (string)($existing['redirect_type'] ?? campaignRedirectsTypeForTarget((string)($existing['target'] ?? '')))
+    : '';
+
+  return [
+    'path' => $normalizedPath,
+    'campaign_url' => '/campaigns/' . $normalizedPath,
+    'target' => $target,
+    'redirect_type' => $targetType,
+    'redirect_type_label' => campaignRedirectsTypeLabel($targetType),
+    'available' => $existing === null,
+    'owned_by_task_club' => $ownedByTaskClub,
+    'can_create' => $existing === null,
+    'existing' => $existing === null ? null : [
+      'path' => (string)($existing['path'] ?? $normalizedPath),
+      'campaign_url' => '/campaigns/' . (string)($existing['path'] ?? $normalizedPath),
+      'target' => (string)($existing['target'] ?? ''),
+      'redirect_type' => $existingType,
+      'redirect_type_label' => campaignRedirectsTypeLabel($existingType),
+      'status_code' => (int)($existing['status_code'] ?? 302),
+      'created_at' => (string)($existing['created_at'] ?? ''),
+      'updated_at' => (string)($existing['updated_at'] ?? '')
+    ]
+  ];
+}
 
 function tcStoreNormalizeMissionCode(string $value): string
 {
@@ -142,6 +217,30 @@ function tcStoreSyncMissionRegistry(string $missionsRoot): void
   }
 }
 
+function tcStoreSyncMissionMetadataName(string $baseDir, string $eventName): bool
+{
+  $context = tcStoreMissionContext($baseDir);
+  if (empty($context['isMission'])) {
+    return true;
+  }
+  $missionDir = (string)($context['missionDir'] ?? '');
+  if ($missionDir === '') {
+    return false;
+  }
+  $metaPath = tcStoreMissionMetadataPath($missionDir);
+  $meta = readJsonFile($metaPath, []);
+  $meta['name'] = trim($eventName);
+  $meta['updatedAt'] = gmdate('c');
+  if (!writeJsonFile($metaPath, $meta)) {
+    return false;
+  }
+  $missionsRoot = (string)($context['missionsRoot'] ?? '');
+  if ($missionsRoot !== '') {
+    tcStoreSyncMissionRegistry($missionsRoot);
+  }
+  return true;
+}
+
 function readJsonFile($path, $fallback) {
   if (!is_file($path)) {
     return $fallback;
@@ -160,6 +259,26 @@ function writeJsonFile($path, $data) {
     return false;
   }
   return file_put_contents($path, $encoded, LOCK_EX) !== false;
+}
+
+function normalizeSettingsFilePayload($data): array
+{
+  if (!is_array($data)) {
+    return [];
+  }
+  return is_array($data['settings'] ?? null) ? $data['settings'] : $data;
+}
+
+function readSettingsFile(string $path, ?string $legacyPath = null): array
+{
+  $settings = normalizeSettingsFilePayload(readJsonFile($path, []));
+  if ($settings !== [] || is_file($path)) {
+    return $settings;
+  }
+  if (is_string($legacyPath) && $legacyPath !== '') {
+    return normalizeSettingsFilePayload(readJsonFile($legacyPath, []));
+  }
+  return [];
 }
 
 function normalizeLandingSettings($value): array
@@ -240,6 +359,9 @@ function defaultLandingSettings(): array
 
 function readCsvFileRows(string $path): array
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsForUpdate($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -262,6 +384,9 @@ function readCsvFileRows(string $path): array
 
 function writeCsvFileRows(string $path, array $rows): bool
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvCommitRows($path, $rows);
+  }
   $dir = dirname($path);
   if ($dir !== '' && !is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
@@ -584,10 +709,23 @@ function normalizeLevelName($value, $fallback = '') {
 
 function normalizeLevelType($value) {
   $token = strtolower(trim((string)$value));
-  if ($token === 'out_of_value') {
-    return 'out_of_value';
+  if (in_array($token, ['out_of_value', 'pot'], true)) {
+    return $token;
   }
   return 'value_sum';
+}
+
+function normalizePotSettings($value): array {
+  $source = is_array($value) ? $value : [];
+  $title = trim((string)($source['title'] ?? ''));
+  $prizeName = trim((string)($source['prizeName'] ?? ($source['prize_name'] ?? '')));
+  $winnerLimit = (int)($source['winnerLimit'] ?? ($source['winner_limit'] ?? 1));
+  return [
+    'title' => function_exists('mb_substr') ? mb_substr($title, 0, 160, 'UTF-8') : substr($title, 0, 160),
+    'winnerLimit' => max(1, min(1000, $winnerLimit)),
+    'prizeName' => function_exists('mb_substr') ? mb_substr($prizeName, 0, 160, 'UTF-8') : substr($prizeName, 0, 160),
+    'locked' => !empty($source['locked'])
+  ];
 }
 
 function normalizeHexColor($value, $fallback = '') {
@@ -599,6 +737,24 @@ function normalizeHexColor($value, $fallback = '') {
     return $color;
   }
   return '';
+}
+
+function normalizeRewardPrizeDisplaySettings($value): array
+{
+  $source = is_array($value) ? $value : [];
+  $hiddenText = trim((string)($source['hiddenText'] ?? ($source['hidden_text'] ?? '')));
+  if (function_exists('mb_substr')) {
+    $hiddenText = mb_substr($hiddenText, 0, 160, 'UTF-8');
+  } else {
+    $hiddenText = substr($hiddenText, 0, 160);
+  }
+  return [
+    'nonValuePrizeDescribe' => !empty($source['nonValuePrizeDescribe']) || !empty($source['non_value_prize_describe']),
+    'showPrize' => array_key_exists('showPrize', $source) || array_key_exists('show_prize', $source)
+      ? (bool)($source['showPrize'] ?? $source['show_prize'])
+      : true,
+    'hiddenText' => $hiddenText
+  ];
 }
 
 function requireTcStoreCsrf(?array $payload = null): void
@@ -620,6 +776,8 @@ $tcStoreMainActions = [
   'save_prize_levels',
   'get_reward_guide',
   'save_reward_guide',
+  'get_reward_prize_display',
+  'save_reward_prize_display',
   'search_invitee_admin',
   'get_admin_assignments',
   'set_admin_assignment'
@@ -635,6 +793,109 @@ if (in_array($action, ['get_settings', 'save_settings', 'get_mission_link', 'sav
   if (!$canMain && !$canEventStyle) {
     denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
   }
+}
+
+if (in_array($action, ['check_campaign_link', 'create_campaign_link'], true) && !userHasPermissionId($tcStoreSessionUser, 'task-club:linker')) {
+  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+}
+
+if ($action === 'check_campaign_link') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  tcStoreRequireCampaignRedirects();
+  $path = campaignRedirectsNormalizePath($payload['path'] ?? '');
+  $pathError = campaignRedirectsPathError($path);
+  if ($pathError !== '') {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => $pathError], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $redirect = campaignRedirectsFind($path);
+  echo json_encode([
+    'status' => 'ok',
+    'data' => tcStoreCampaignLinkResponse($path, $redirect)
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'create_campaign_link') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  tcStoreRequireCampaignRedirects();
+  $path = campaignRedirectsNormalizePath($payload['path'] ?? '');
+  $pathError = campaignRedirectsPathError($path);
+  if ($pathError !== '') {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => $pathError], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $target = tcStoreCampaignLinkTarget();
+  $redirects = campaignRedirectsList();
+  $map = [];
+  foreach ($redirects as $redirect) {
+    $redirectPath = (string)($redirect['path'] ?? '');
+    if ($redirectPath !== '') {
+      $map[$redirectPath] = $redirect;
+    }
+  }
+  $existing = $map[$path] ?? null;
+  if (is_array($existing)) {
+    if ((string)($existing['target'] ?? '') === $target) {
+      echo json_encode([
+        'status' => 'ok',
+        'message' => 'This campaign already points to Task Club.',
+        'data' => tcStoreCampaignLinkResponse($path, $existing)
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      exit;
+    }
+    http_response_code(409);
+    echo json_encode([
+      'status' => 'error',
+      'message' => 'This /campaigns link is already occupied in Linker Service.',
+      'data' => tcStoreCampaignLinkResponse($path, $existing)
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  $now = gmdate('c');
+  $map[$path] = [
+    'path' => $path,
+    'target' => $target,
+    'status_code' => 302,
+    'created_at' => $now,
+    'updated_at' => $now
+  ];
+  if (!campaignRedirectsSaveList(array_values($map))) {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save campaign redirect.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $saved = campaignRedirectsFind($path);
+  echo json_encode([
+    'status' => 'ok',
+    'message' => 'Task Club campaign redirect created.',
+    'data' => tcStoreCampaignLinkResponse($path, $saved)
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
 }
 
 if ($action === 'get_prizes') {
@@ -740,11 +1001,15 @@ if ($action === 'get_prize_levels') {
     if ($id === '') {
       $id = uniqid('lvl_', true);
     }
+    $potSettings = normalizePotSettings($item['potSettings'] ?? ($item['pot_settings'] ?? []));
     $normalized[] = [
       'id' => $id,
       'name' => $name,
       'type' => $type,
-      'score' => $score
+      'score' => $score,
+      'description' => trim((string)($item['description'] ?? ($item['describe'] ?? ($item['infoText'] ?? ($item['info_text'] ?? ''))))),
+      'buttonText' => trim((string)($item['buttonText'] ?? ($item['button_text'] ?? ''))),
+      'potSettings' => $potSettings
     ];
   }
   usort($normalized, static function ($a, $b) {
@@ -807,11 +1072,25 @@ if ($action === 'save_prize_levels') {
     if ($id === '') {
       $id = uniqid('lvl_', true);
     }
+    $potSettings = normalizePotSettings($item['potSettings'] ?? ($item['pot_settings'] ?? []));
+    if ($type === 'pot' && $potSettings['locked'] && $potSettings['prizeName'] === '') {
+      http_response_code(422);
+      echo json_encode(['status' => 'error', 'message' => 'Prize name is required before locking a Pot.']);
+      exit;
+    }
+    if ($type === 'pot' && $potSettings['locked'] && count(tcPotReadWinners($id)) < 1) {
+      http_response_code(422);
+      echo json_encode(['status' => 'error', 'message' => 'At least one confirmed winner is required before locking a Pot.']);
+      exit;
+    }
     $normalized[] = [
       'id' => $id,
       'name' => $name,
       'type' => $type,
-      'score' => $score
+      'score' => $score,
+      'description' => trim((string)($item['description'] ?? ($item['describe'] ?? ($item['infoText'] ?? ($item['info_text'] ?? ''))))),
+      'buttonText' => trim((string)($item['buttonText'] ?? ($item['button_text'] ?? ''))),
+      'potSettings' => $potSettings
     ];
   }
 
@@ -828,7 +1107,7 @@ if ($action === 'save_prize_levels') {
 }
 
 if ($action === 'get_reward_guide') {
-  $settings = readJsonFile($settingsFile, []);
+  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
   $guide = is_array($settings['rewardGuide'] ?? null) ? $settings['rewardGuide'] : [];
   echo json_encode([
     'status' => 'ok',
@@ -853,13 +1132,44 @@ if ($action === 'save_reward_guide') {
   }
   requireTcStoreCsrf($payload);
   $guide = is_array($payload['rewardGuide'] ?? null) ? $payload['rewardGuide'] : [];
-  $settings = readJsonFile($settingsFile, []);
+  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
   $settings['rewardGuide'] = [
     'title' => trim((string)($guide['title'] ?? 'راهنمای دریافت جایزه')),
     'text' => trim((string)($guide['text'] ?? ''))
   ];
   if (!writeJsonFile($settingsFile, $settings)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save reward guide.']);
+    exit;
+  }
+  echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'get_reward_prize_display') {
+  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
+  echo json_encode([
+    'status' => 'ok',
+    'data' => normalizeRewardPrizeDisplaySettings($settings['rewardPrizeDisplay'] ?? [])
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'save_reward_prize_display') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
+  $settings['rewardPrizeDisplay'] = normalizeRewardPrizeDisplaySettings($payload['rewardPrizeDisplay'] ?? []);
+  if (!writeJsonFile($settingsFile, $settings)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save advanced prize setting.']);
     exit;
   }
   echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
@@ -964,6 +1274,7 @@ if ($action === 'get_settings') {
     'active' => false,
     'duration' => false,
     'maintenanceMode' => false,
+    'eventAccessLocked' => false,
     'startDate' => '',
     'startTime' => '',
     'endDate' => '',
@@ -982,11 +1293,17 @@ if ($action === 'get_settings') {
       'title' => '',
       'subtitle' => '',
       'sections' => []
+    ],
+    'rewardPrizeDisplay' => [
+      'nonValuePrizeDescribe' => false,
+      'showPrize' => true,
+      'hiddenText' => ''
     ]
   ];
-  $stored = readJsonFile($settingsFile, []);
+  $stored = readSettingsFile($settingsFile, $legacySettingsFile);
   $settings = array_merge($defaults, is_array($stored) ? $stored : []);
   $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
+  $settings['eventAccessLocked'] = (bool)($settings['eventAccessLocked'] ?? false);
   $storedColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
   $settings['eventName'] = is_string($settings['eventName'] ?? null) ? trim(preg_replace('/\s+/u', ' ', $settings['eventName'])) : '';
   $settings['eventLogo'] = trim((string)($settings['eventLogo'] ?? ''));
@@ -996,6 +1313,7 @@ if ($action === 'get_settings') {
     'accentSoft' => normalizeHexColor($storedColors['accentSoft'] ?? '', $defaults['eventColors']['accentSoft'])
   ];
   $settings['landing'] = normalizeLandingSettings($settings['landing'] ?? []);
+  $settings['rewardPrizeDisplay'] = normalizeRewardPrizeDisplaySettings($settings['rewardPrizeDisplay'] ?? []);
   echo json_encode(['status' => 'ok', 'data' => $settings], JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -1017,12 +1335,13 @@ if ($action === 'save_settings') {
     echo json_encode(['status' => 'error', 'message' => 'Invalid settings.']);
     exit;
   }
-  $storedSettings = readJsonFile($settingsFile, []);
+  $storedSettings = readSettingsFile($settingsFile, $legacySettingsFile);
   $settings = array_merge(is_array($storedSettings) ? $storedSettings : [], $incomingSettings);
   $settings['hint'] = is_string($settings['hint'] ?? null) ? trim($settings['hint']) : '';
   $settings['hintHtml'] = is_string($settings['hintHtml'] ?? null) ? trim($settings['hintHtml']) : '';
   $settings['hintAlign'] = is_string($settings['hintAlign'] ?? null) ? trim($settings['hintAlign']) : 'right';
   $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
+  $settings['eventAccessLocked'] = (bool)($settings['eventAccessLocked'] ?? false);
   $incomingColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
   $eventName = is_string($settings['eventName'] ?? null) ? trim(preg_replace('/\s+/u', ' ', $settings['eventName'])) : '';
   $settings['eventName'] = function_exists('mb_substr') ? mb_substr($eventName, 0, 120, 'UTF-8') : substr($eventName, 0, 120);
@@ -1035,8 +1354,13 @@ if ($action === 'save_settings') {
   if (array_key_exists('landing', $settings)) {
     $settings['landing'] = normalizeLandingSettings($settings['landing']);
   }
+  $settings['rewardPrizeDisplay'] = normalizeRewardPrizeDisplaySettings($settings['rewardPrizeDisplay'] ?? []);
   if (!writeJsonFile($settingsFile, $settings)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save settings.']);
+    exit;
+  }
+  if (!tcStoreSyncMissionMetadataName($baseDir, (string)$settings['eventName'])) {
+    echo json_encode(['status' => 'error', 'message' => 'Settings saved, but failed to update the Task Club tab name.']);
     exit;
   }
   echo json_encode(['status' => 'ok']);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/invitees_special_access.php';
 $tcInviteesUploadSessionUser = requireTabPermissionFromSession('task-club', true);
 if (!userHasPermissionId($tcInviteesUploadSessionUser, 'task-club:invitees')) {
@@ -77,12 +78,39 @@ function tcInviteesUploadWriteTextLocked(string $path, string $content): bool
   return true;
 }
 
+function tcInviteesUploadReadHeader(string $csv): array
+{
+  $handle = fopen('php://temp', 'w+b');
+  if ($handle === false || fwrite($handle, $csv) === false || rewind($handle) === false) {
+    if (is_resource($handle)) fclose($handle);
+    return [];
+  }
+  $header = fgetcsv($handle, null, ',', '"', '\\');
+  fclose($handle);
+  return is_array($header) ? $header : [];
+}
+
+$uploadHeader = tcInviteesUploadReadHeader($csv);
+$uploadColumnCount = count($uploadHeader);
+$workIdMapping = (int)($mapping['workId'] ?? -1);
+if ($uploadColumnCount === 0 || $workIdMapping < 0 || $workIdMapping >= $uploadColumnCount) {
+  echo json_encode(['status' => 'error', 'message' => 'The uploaded CSV or Work ID mapping is invalid.']);
+  exit;
+}
+foreach (['firstName', 'lastName', 'nationalId', 'phoneNumber'] as $mappingKey) {
+  $mappingIndex = (int)($mapping[$mappingKey] ?? -1);
+  if ($mappingIndex < -1 || $mappingIndex >= $uploadColumnCount) {
+    echo json_encode(['status' => 'error', 'message' => 'One or more mapped columns are outside the uploaded CSV.']);
+    exit;
+  }
+}
+
 $filePath = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $mapPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Mapped.json';
 $answersPath = $baseDir . DIRECTORY_SEPARATOR . 'Answers.csv';
 $loginAttemptsPath = $baseDir . DIRECTORY_SEPARATOR . 'login_attempts.json';
 
-if (!tcInviteesUploadWriteTextLocked($filePath, $csv)) {
+if (!tcInviteesCsvBeginTransaction($filePath) || !tcInviteesCsvReplaceText($filePath, $csv, false)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to save file.']);
   exit;
 }
@@ -117,7 +145,10 @@ if (!defined('TCQ_INCLUDE_ONLY')) {
 }
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'TCQ.php';
 
-tcqEnsureInviteesColumns($filePath);
+if (!tcqEnsureInviteesColumns($filePath)) {
+  echo json_encode(['status' => 'error', 'message' => 'Failed to prepare invitees columns.']);
+  exit;
+}
 $questions = tcqLoadStore(__DIR__ . DIRECTORY_SEPARATOR . 'TCQ list.json');
 if (!tcqSyncAnswersSheet($answersPath, $questions, $questions)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to rebuild answers table.']);

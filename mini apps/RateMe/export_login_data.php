@@ -191,12 +191,13 @@ for ($i = 1; $i < count($rows); $i += 1) {
   $exportRows[] = [$workId, $firstName, $lastName, $password, $phone, $nationalId];
 }
 
-$filename = 'tc-login-data-' . date('Ymd-His') . '.xls';
-header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+$filename = 'tc-login-data-' . date('Ymd-His') . '.xlsx';
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Pragma: no-cache');
 header('Expires: 0');
 
+require_once dirname(__DIR__, 2) . '/api/lib/xlsx-export.php';
+ob_start();
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
 ?>
@@ -240,3 +241,6 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
   </WorksheetOptions>
  </Worksheet>
 </Workbook>
+<?php
+$spreadsheetXml = (string)ob_get_clean();
+appXlsxSend(appXlsxFromSpreadsheetXml($spreadsheetXml), $filename);

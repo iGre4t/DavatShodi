@@ -116,13 +116,15 @@ $eventAccentSoft = normalizeHexColor($eventColors['accentSoft'] ?? '', '#FFB347'
 $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
 $siteIconUrl = formatAssetUrl((string)($panelSettings['siteIcon'] ?? ''));
 $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
+$eventName = trim((string)($settings['eventName'] ?? ''));
+$pageTitle = $eventName !== '' ? $eventName : ($landing['title'] !== '' ? $landing['title'] : 'مسابقه به‌دست آوردیم');
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>مسابقه به‌دست آوردیم</title>
+  <title><?= htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') ?></title>
   <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
   <style>
     :root {

@@ -303,7 +303,7 @@ $accountEmail = $currentUser['email'] ?? '';
               <span>تنظیمات حساب</span>
             </button>
           <?php endif; ?>
-          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('task-club', $allowedTabs, true) || $taskClubCreatorEnabled || in_array('rate-me', $allowedTabs, true) || $rateMeCreatorEnabled || in_array('asset-manager', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
+          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('task-club', $allowedTabs, true) || $taskClubCreatorEnabled || in_array('rate-me', $allowedTabs, true) || $rateMeCreatorEnabled || in_array('asset-manager', $allowedTabs, true) || in_array('utm-service', $allowedTabs, true) || in_array('linker-service', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
             <div class="nav-separator" aria-hidden="true"></div>
           <?php endif; ?>
           <?php if (in_array('features', $allowedTabs, true)): ?>
@@ -360,6 +360,18 @@ $accountEmail = $currentUser['email'] ?? '';
             <button class="nav-item<?= $initialTab === 'asset-manager' ? ' active' : '' ?>" data-tab="asset-manager"<?= $initialTab === 'asset-manager' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-archive-drawer-line" aria-hidden="true"></span>
               <span>مدیریت اموال</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('utm-service', $allowedTabs, true)): ?>
+            <button class="nav-item<?= $initialTab === 'utm-service' ? ' active' : '' ?>" data-tab="utm-service"<?= $initialTab === 'utm-service' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-route-line" aria-hidden="true"></span>
+              <span>UTM Service</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('linker-service', $allowedTabs, true)): ?>
+            <button class="nav-item<?= $initialTab === 'linker-service' ? ' active' : '' ?>" data-tab="linker-service"<?= $initialTab === 'linker-service' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-links-line" aria-hidden="true"></span>
+              <span>Linker Service</span>
             </button>
           <?php endif; ?>
           <?php if (in_array('devsettings', $allowedTabs, true)): ?>
@@ -579,6 +591,20 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-asset-manager"
             class="tab<?= $initialTab === 'asset-manager' ? ' active' : '' ?>"
             data-tab-source="mini%20apps/Asset%20Manager/panel-tab.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('utm-service', $allowedTabs, true)): ?>
+          <section
+            id="tab-utm-service"
+            class="tab<?= $initialTab === 'utm-service' ? ' active' : '' ?>"
+            data-tab-source="modules/minor/UTM/UTMPanel.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('linker-service', $allowedTabs, true)): ?>
+          <section
+            id="tab-linker-service"
+            class="tab<?= $initialTab === 'linker-service' ? ' active' : '' ?>"
+            data-tab-source="modules/major/linker/linkerPanel.php"
           ></section>
         <?php endif; ?>
 

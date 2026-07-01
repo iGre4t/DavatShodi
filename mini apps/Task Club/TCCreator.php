@@ -201,6 +201,29 @@ function tcCreatorShouldCopyRelativePath(string $relativePath, bool $isDir): boo
   return true;
 }
 
+function tcCreatorShouldUpdateRelativePath(string $relativePath, bool $isDir): bool
+{
+  $relative = trim(str_replace('\\', '/', $relativePath), '/');
+  if ($relative === '') {
+    return true;
+  }
+  if (in_array($relative, ['TCCreator.php', 'panel.php', 'mission.json', 'Setting.json'], true)) {
+    return false;
+  }
+  foreach (['tasks', 'TC Event', 'useractivitylogs/logs'] as $dataPath) {
+    if ($relative === $dataPath || strpos($relative, $dataPath . '/') === 0) {
+      return false;
+    }
+  }
+  if ($relative === 'vendor' || strpos($relative, 'vendor/') === 0) {
+    return true;
+  }
+  if (!$isDir && preg_match('/\.json$/i', $relative)) {
+    return false;
+  }
+  return true;
+}
+
 function tcCreatorIsPatchableTextFile(string $relativePath): bool
 {
   $relative = trim(str_replace('\\', '/', $relativePath), '/');
@@ -270,6 +293,36 @@ function tcCreatorCopyTaskClubTemplate(string $sourceDir, string $targetDir, str
   }
 }
 
+function tcCreatorCopyTaskClubUpdates(string $sourceDir, string $targetDir, string $folderName, string $webPath): void
+{
+  if (!is_dir($targetDir) || !tcCreatorIsWithinPath($targetDir, tcCreatorMissionsRoot())) {
+    throw new RuntimeException('Invalid Task Club target directory.');
+  }
+  $sourceDir = rtrim($sourceDir, DIRECTORY_SEPARATOR);
+  $iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($sourceDir, FilesystemIterator::SKIP_DOTS),
+    RecursiveIteratorIterator::SELF_FIRST
+  );
+
+  foreach ($iterator as $item) {
+    $sourcePath = $item->getPathname();
+    $relative = tcCreatorRelativePath($sourceDir, $sourcePath);
+    if (!tcCreatorShouldUpdateRelativePath($relative, $item->isDir())) {
+      continue;
+    }
+    $destination = $targetDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+    if ($item->isDir()) {
+      tcCreatorEnsureDirectory($destination);
+      continue;
+    }
+    tcCreatorEnsureDirectory(dirname($destination));
+    if (!copy($sourcePath, $destination)) {
+      throw new RuntimeException('Failed to update file: ' . $relative);
+    }
+    tcCreatorPatchGeneratedFile($destination, $relative, $folderName, $webPath);
+  }
+}
+
 function tcCreatorInitializeMission(string $targetDir, string $name, string $folderName, string $webPath): void
 {
   tcCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'tasks');
@@ -285,6 +338,7 @@ function tcCreatorInitializeMission(string $targetDir, string $name, string $fol
     'active' => false,
     'duration' => false,
     'maintenanceMode' => false,
+    'eventAccessLocked' => false,
     'startDate' => '',
     'startTime' => '',
     'endDate' => '',
@@ -373,6 +427,15 @@ function tcCreatorJsonResponse(array $payload, int $statusCode = 200): void
   exit;
 }
 
+function tcCreatorResolveMissionFolder(string $rawFolder): string
+{
+  $folderName = tcCreatorNormalizeMissionName($rawFolder);
+  if ($folderName === '') {
+    throw new InvalidArgumentException('Select a valid Task Club.');
+  }
+  return $folderName;
+}
+
 function tcCreatorCreateMission(string $rawName): array
 {
   tcCreatorEnsureGeneratorStorage();
@@ -420,6 +483,60 @@ function tcCreatorCreateMission(string $rawName): array
   ];
 }
 
+function tcCreatorUpdateMissionBranchSetting(string $rawFolder): array
+{
+  tcCreatorEnsureGeneratorStorage();
+  $folderName = tcCreatorResolveMissionFolder($rawFolder);
+  $targetDir = tcCreatorMissionsRoot() . DIRECTORY_SEPARATOR . $folderName;
+  if (!is_dir($targetDir) || !tcCreatorIsWithinPath($targetDir, tcCreatorMissionsRoot())) {
+    throw new InvalidArgumentException('Task Club was not found.');
+  }
+
+  $webPath = tcCreatorMissionWebPath($folderName);
+  tcCreatorCopyTaskClubUpdates(__DIR__, $targetDir, $folderName, $webPath);
+
+  $metaPath = $targetDir . DIRECTORY_SEPARATOR . 'mission.json';
+  $meta = tcCreatorReadJsonFile($metaPath);
+  $meta['name'] = trim((string)($meta['name'] ?? $folderName)) ?: $folderName;
+  $meta['folder'] = $folderName;
+  $meta['directory'] = tcCreatorMissionDirectoryLabel($folderName);
+  $meta['webPath'] = $webPath;
+  $meta['source'] = TC_CREATOR_SOURCE_LABEL;
+  $meta['generatorVersion'] = TC_CREATOR_GENERATOR_VERSION;
+  $meta['updatedAt'] = gmdate('c');
+  if (trim((string)($meta['createdAt'] ?? '')) === '') {
+    $meta['createdAt'] = gmdate('c');
+  }
+  tcCreatorWriteJsonFile($metaPath, $meta);
+
+  $missions = tcCreatorListMissions();
+  tcCreatorSyncRegistry($missions);
+  foreach ($missions as $mission) {
+    if (($mission['folder'] ?? '') === $folderName) {
+      return $mission;
+    }
+  }
+  throw new RuntimeException('Updated Task Club could not be reloaded.');
+}
+
+function tcCreatorDeleteMission(string $rawFolder): array
+{
+  tcCreatorEnsureGeneratorStorage();
+  $folderName = tcCreatorResolveMissionFolder($rawFolder);
+  $targetDir = tcCreatorMissionsRoot() . DIRECTORY_SEPARATOR . $folderName;
+  if (!is_dir($targetDir) || !tcCreatorIsWithinPath($targetDir, tcCreatorMissionsRoot())) {
+    throw new InvalidArgumentException('Task Club was not found.');
+  }
+
+  tcCreatorRemoveTree($targetDir, tcCreatorMissionsRoot());
+  if (is_dir($targetDir)) {
+    throw new RuntimeException('Failed to delete Task Club.');
+  }
+  $missions = tcCreatorListMissions();
+  tcCreatorSyncRegistry($missions);
+  return $missions;
+}
+
 if ($tcCreatorIsJsonRequest) {
   $payload = json_decode((string)file_get_contents('php://input'), true);
   if (!is_array($payload)) {
@@ -441,11 +558,29 @@ if ($tcCreatorIsJsonRequest) {
         'clubs' => $missions
       ]);
     }
+    if ($action === 'update_branch_setting') {
+      $mission = tcCreatorUpdateMissionBranchSetting((string)($payload['folder'] ?? ''));
+      $missions = tcCreatorListMissions();
+      tcCreatorJsonResponse([
+        'status' => 'ok',
+        'message' => 'Task Club branch setting updated.',
+        'club' => $mission,
+        'clubs' => $missions
+      ]);
+    }
+    if ($action === 'delete') {
+      $missions = tcCreatorDeleteMission((string)($payload['folder'] ?? ''));
+      tcCreatorJsonResponse([
+        'status' => 'ok',
+        'message' => 'Task Club deleted.',
+        'clubs' => $missions
+      ]);
+    }
     tcCreatorJsonResponse(['status' => 'error', 'message' => 'Unsupported action.'], 400);
   } catch (InvalidArgumentException $error) {
     tcCreatorJsonResponse(['status' => 'error', 'message' => $error->getMessage()], 400);
   } catch (Throwable $error) {
-    tcCreatorJsonResponse(['status' => 'error', 'message' => 'Failed to create Task Club.'], 500);
+    tcCreatorJsonResponse(['status' => 'error', 'message' => 'Task Club creator action failed.'], 500);
   }
 }
 
@@ -533,6 +668,8 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
             <div class="tc-creator-actions">
               <a class="btn primary" href="<?= htmlspecialchars((string)$mission['panelUrl'], ENT_QUOTES, 'UTF-8') ?>">Panel tab</a>
               <a class="btn ghost" href="<?= htmlspecialchars((string)$mission['appUrl'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">Open app</a>
+              <button type="button" class="btn ghost" data-tc-update-branch-setting data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>">Update branch setting</button>
+              <button type="button" class="btn ghost tc-btn-danger" data-tc-delete-club data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>">Delete Task Club</button>
             </div>
           </div>
         <?php endforeach; ?>
@@ -589,6 +726,7 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
       const directory = escapeHtml(club?.directory || '');
       const panelUrl = escapeHtml(club?.panelUrl || '#');
       const appUrl = escapeHtml(club?.appUrl || '#');
+      const folder = escapeHtml(club?.folder || '');
       return `
         <div class="tc-creator-mission">
           <div class="tc-creator-mission-title">
@@ -599,10 +737,30 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
           <div class="tc-creator-actions">
             <a class="btn primary" href="${panelUrl}">Panel tab</a>
             <a class="btn ghost" href="${appUrl}" target="_blank" rel="noopener">Open app</a>
+            <button type="button" class="btn ghost" data-tc-update-branch-setting data-folder="${folder}">Update branch setting</button>
+            <button type="button" class="btn ghost tc-btn-danger" data-tc-delete-club data-folder="${folder}">Delete Task Club</button>
           </div>
         </div>
       `;
     }).join('');
+  };
+
+  const postCreatorAction = async (body) => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-TC-CSRF': csrf
+      },
+      body: JSON.stringify({ ...body, csrf })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.status !== 'ok') {
+      throw new Error(payload?.message || 'Task Club creator action failed.');
+    }
+    return payload;
   };
 
   try {
@@ -625,20 +783,7 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
       }
       setStatus('Creating Task Club...');
       try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          credentials: 'same-origin',
-          cache: 'no-store',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-TC-CSRF': csrf
-          },
-          body: JSON.stringify({ action: 'create', name, csrf })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload?.status !== 'ok') {
-          throw new Error(payload?.message || 'Failed to create Task Club.');
-        }
+        const payload = await postCreatorAction({ action: 'create', name });
         clubs = Array.isArray(payload?.clubs) ? payload.clubs : clubs;
         renderClubs();
         if (input instanceof HTMLInputElement) {
@@ -655,6 +800,50 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
         if (submitBtn instanceof HTMLButtonElement) {
           submitBtn.disabled = false;
         }
+      }
+    });
+  }
+
+  if (listEl instanceof HTMLElement) {
+    listEl.addEventListener('click', async (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest('[data-tc-update-branch-setting], [data-tc-delete-club]')
+        : null;
+      if (!(target instanceof HTMLButtonElement)) {
+        return;
+      }
+      const folder = String(target.dataset.folder || '').trim();
+      if (!folder) {
+        setStatus('Task Club folder is missing.', 'error');
+        return;
+      }
+      const isDelete = target.hasAttribute('data-tc-delete-club');
+      const action = isDelete ? 'delete' : 'update_branch_setting';
+      if (isDelete) {
+        const clubName = target.closest('.tc-creator-mission')?.querySelector('strong')?.textContent?.trim() || folder;
+        if (!window.confirm(`Delete "${clubName}" and all of its mission data? This cannot be undone.`)) {
+          return;
+        }
+      } else if (!window.confirm('Update this Task Club from the source Task Club files? Mission data will be kept.')) {
+        return;
+      }
+
+      const buttons = Array.from(listEl.querySelectorAll('button'));
+      buttons.forEach((button) => {
+        button.disabled = true;
+      });
+      setStatus(isDelete ? 'Deleting Task Club...' : 'Updating branch setting...');
+      try {
+        const payload = await postCreatorAction({ action, folder });
+        clubs = Array.isArray(payload?.clubs) ? payload.clubs : clubs;
+        renderClubs();
+        setStatus(payload?.message || (isDelete ? 'Task Club deleted.' : 'Task Club updated.'), 'ok');
+      } catch (error) {
+        setStatus(error?.message || 'Task Club creator action failed.', 'error');
+      } finally {
+        Array.from(listEl.querySelectorAll('button')).forEach((button) => {
+          button.disabled = false;
+        });
       }
     });
   }

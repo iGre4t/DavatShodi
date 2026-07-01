@@ -16,6 +16,8 @@ function getPanelTabDefinitions(): array
         ['id' => 'task-club', 'label' => 'باشگاه تعاملی', 'title' => 'باشگاه تعاملی'],
         ['id' => 'rate-me', 'label' => 'RateMe', 'title' => 'RateMe'],
         ['id' => 'asset-manager', 'label' => 'مدیریت اموال', 'title' => 'مدیریت اموال'],
+        ['id' => 'utm-service', 'label' => 'UTM Service', 'title' => 'UTM Service'],
+        ['id' => 'linker-service', 'label' => 'Linker Service', 'title' => 'Linker Service'],
         ['id' => 'devsettings', 'label' => 'تنظیمات توسعه‌دهنده', 'title' => 'Developer Settings']
     ];
     return $tabs;
@@ -35,6 +37,7 @@ function getPanelChildTabDefinitionsByParent(): array
             ['id' => 'task-club:task-access', 'label' => 'دسترسی ادمین'],
             ['id' => 'task-club:monitoring', 'label' => 'مانیتورینگ'],
             ['id' => 'task-club:export', 'label' => 'خروجی'],
+            ['id' => 'task-club:linker', 'label' => 'Linker'],
             ['id' => 'task-club:event-style', 'label' => 'استایل رویداد'],
             ['id' => 'task-club:logs', 'label' => 'Logs']
         ],

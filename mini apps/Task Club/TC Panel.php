@@ -11,9 +11,10 @@ $tcCanManageTasksPane = isset($tcAllowedChildSet['task-club:manage-tasks']);
 $tcCanTaskAccessPane = isset($tcAllowedChildSet['task-club:task-access']);
 $tcCanMonitoringPane = isset($tcAllowedChildSet['task-club:monitoring']);
 $tcCanExportPane = isset($tcAllowedChildSet['task-club:export']);
+$tcCanLinkerPane = isset($tcAllowedChildSet['task-club:linker']);
 $tcCanEventStylePane = isset($tcAllowedChildSet['task-club:event-style']);
 $tcCanLogsPane = isset($tcAllowedChildSet['task-club:logs']);
-$tcCanControlPanel = $tcCanMainPane || $tcCanTaskAccessPane || $tcCanExportPane || $tcCanEventStylePane;
+$tcCanControlPanel = $tcCanMainPane || $tcCanTaskAccessPane || $tcCanExportPane || $tcCanLinkerPane || $tcCanEventStylePane;
 $tcNormalizeBool = static function ($value): bool {
   if (is_bool($value)) {
     return $value;
@@ -76,6 +77,7 @@ $tcHasAnyPane = $tcCanMainPane
   || $tcCanTaskAccessPane
   || $tcCanMonitoringPane
   || $tcCanExportPane
+  || $tcCanLinkerPane
   || $tcCanEventStylePane
   || $tcCanLogsPane;
 $tcInitialPane = '';
@@ -136,7 +138,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
   <div class="sub-content">
     <?php if ($tcCanControlPanel): ?>
     <div class="sub-pane<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">
-      <?php $tcControlInitialSection = $tcCanMainPane ? 'general' : ($tcCanTaskAccessPane ? 'admin-access' : ($tcCanExportPane ? 'export' : 'event-style')); ?>
+      <?php $tcControlInitialSection = $tcCanMainPane ? 'general' : ($tcCanTaskAccessPane ? 'admin-access' : ($tcCanExportPane ? 'export' : ($tcCanLinkerPane ? 'linker' : 'event-style'))); ?>
       <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های کنترل پنل">
         <?php if ($tcCanMainPane): ?>
           <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'general' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'general' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="general">عمومی</button>
@@ -147,6 +149,9 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
         <?php endif; ?>
         <?php if ($tcCanExportPane): ?>
           <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'export' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'export' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="export">خروجی</button>
+        <?php endif; ?>
+        <?php if ($tcCanLinkerPane): ?>
+          <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'linker' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'linker' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="linker">Linker</button>
         <?php endif; ?>
         <?php if ($tcCanEventStylePane): ?>
           <button type="button" class="tc-task-top-item<?= $tcControlInitialSection === 'event-style' ? ' active' : '' ?>" aria-selected="<?= $tcControlInitialSection === 'event-style' ? 'true' : 'false' ?>" data-tc-control-panel-trigger="event-style">استایل رویداد</button>
@@ -189,6 +194,13 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
         <span class="switch-label">حالت تعمیرات</span>
         <span class="switch-toggle">
           <input type="checkbox" id="tc-maintenance-toggle" aria-label="حالت تعمیرات" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
+      </label>
+      <label class="switch tc-switch">
+        <span class="switch-label">قفل ماموریت‌ها و کارت‌ها</span>
+        <span class="switch-toggle">
+          <input type="checkbox" id="tc-event-access-lock-toggle" aria-label="قفل ماموریت‌ها و کارت‌ها" />
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </span>
       </label>
@@ -459,6 +471,78 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
             rel="noopener"
           >خروجی شرکت‌کنندگان</a>
         </div>
+        <div class="field">
+          <a
+            class="btn primary standard-primary-button"
+            href="mini%20apps/Task%20Club/valuable_prizes_export.php"
+            target="_blank"
+            rel="noopener"
+          >خروجی برندگان جوایز ارزشمند</a>
+        </div>
+        <?php
+          $tcPrizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
+          $tcPrizeLevels = [];
+          if (is_file($tcPrizeLevelsPath)) {
+            $tcPrizeLevelsDecoded = json_decode((string)file_get_contents($tcPrizeLevelsPath), true);
+            if (is_array($tcPrizeLevelsDecoded)) $tcPrizeLevels = $tcPrizeLevelsDecoded;
+          }
+          foreach ($tcPrizeLevels as $tcPrizeLevel):
+            if (!is_array($tcPrizeLevel) || strtolower(trim((string)($tcPrizeLevel['type'] ?? ''))) !== 'pot') continue;
+            $tcPotLevelId = trim((string)($tcPrizeLevel['id'] ?? ''));
+            if ($tcPotLevelId === '') continue;
+            $tcPotLevelName = trim((string)($tcPrizeLevel['name'] ?? 'Pot'));
+            $tcPotExportBase = 'mini%20apps/Task%20Club/pot_export.php?level_id=' . rawurlencode($tcPotLevelId);
+        ?>
+        <div class="field">
+          <span><?= htmlspecialchars($tcPotLevelName, ENT_QUOTES, 'UTF-8') ?></span>
+          <div class="tc-action-bar">
+            <a class="btn primary standard-primary-button" href="<?= htmlspecialchars($tcPotExportBase . '&type=winners', ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">خروجی برندگان</a>
+            <a class="btn ghost" href="<?= htmlspecialchars($tcPotExportBase . '&type=reached_non_winners', ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">خروجی رسیده‌ها بدون برد</a>
+          </div>
+        </div>
+        <?php endforeach; ?>
+      </div>
+      </section>
+      <?php endif; ?>
+
+      <?php if ($tcCanLinkerPane): ?>
+      <section data-tc-control-panel-section="linker"<?= $tcControlInitialSection === 'linker' ? '' : ' hidden' ?>>
+      <div class="card" id="tc-campaign-linker-card">
+        <div class="section-header">
+          <h3>Linker</h3>
+        </div>
+        <div class="form" style="gap:12px;">
+          <label class="field standard-width">
+            <span>Campaign path</span>
+            <div class="tc-linker-input-row">
+              <span class="tc-linker-prefix">/campaigns/</span>
+              <input id="tc-linker-path" type="text" maxlength="180" autocomplete="off" dir="ltr" placeholder="dastavard" />
+            </div>
+          </label>
+          <p id="tc-linker-preview" class="hint muted small" aria-live="polite"></p>
+          <div class="tc-action-bar">
+            <button type="button" class="btn ghost" id="tc-linker-check">Check availability</button>
+            <button type="button" class="btn primary standard-primary-button" id="tc-linker-create" disabled>Create redirect</button>
+          </div>
+          <p id="tc-linker-status" class="hint muted small" aria-live="polite"></p>
+          <div class="table-wrapper">
+            <table class="tct-list-table tc-linker-table">
+              <thead>
+                <tr>
+                  <th>Campaign URL</th>
+                  <th>Type</th>
+                  <th>Target</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="tc-linker-current-body">
+                <tr>
+                  <td colspan="4" class="muted">Check a campaign path to see whether it is available.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
       </section>
       <?php endif; ?>
@@ -558,6 +642,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
     <div class="sub-pane<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config">
       <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های جوایز">
         <button type="button" class="tc-task-top-item active" aria-selected="true" data-tc-reward-config-trigger="guide">راهنمای دریافت جایزه</button>
+        <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="advanced">Advanced Prize Setting</button>
         <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="levels">سطح بندی جوایز</button>
         <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="storage">انبار جوایز</button>
       </div>
@@ -582,6 +667,40 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
         </div>
       </section>
 
+      <section data-tc-reward-config-section="advanced" hidden>
+        <div class="card">
+          <div class="section-header">
+            <h3>Advanced Prize Setting</h3>
+          </div>
+          <div class="form" style="gap:12px;">
+            <div class="tc-switch-grid tc-reward-advanced-switch-grid">
+              <label class="switch tc-switch">
+                <span class="switch-label">Non Value Prize Describe</span>
+                <span class="switch-toggle">
+                  <input id="tc-reward-non-value-describe-toggle" type="checkbox" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </span>
+              </label>
+              <label class="switch tc-switch">
+                <span class="switch-label">Show Prize</span>
+                <span class="switch-toggle">
+                  <input id="tc-reward-show-prize-toggle" type="checkbox" checked />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </span>
+              </label>
+            </div>
+            <label class="field full">
+              <span>Text shown when prize value is hidden</span>
+              <input id="tc-reward-hidden-prize-text" type="text" autocomplete="off" />
+            </label>
+            <div class="field full">
+              <button type="button" class="btn primary standard-primary-button" id="tc-reward-advanced-save">Save</button>
+            </div>
+            <p class="muted small" id="tc-reward-advanced-status" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+
       <section data-tc-reward-config-section="levels" hidden>
         <div class="card">
           <div class="section-header">
@@ -597,6 +716,7 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
               <select id="tc-prize-level-type" name="type" required>
                 <option value="value_sum">مجموع ارزش جوایز</option>
                 <option value="out_of_value">خارج از ارزش جایزه</option>
+                <option value="pot">Pot</option>
               </select>
             </label>
             <label class="field standard-width">

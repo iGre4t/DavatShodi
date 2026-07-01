@@ -142,6 +142,7 @@
       endTime: normalizeTime(raw.endTime ?? raw.end_time ?? ''),
       score: normalizeScoreValue(raw.score ?? raw.taskScore ?? 0),
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
+      hasGoldenTime: normalizeBool(raw.hasGoldenTime ?? raw.has_golden_time ?? true),
       anotherChanceIfZero: normalizeBool(raw.anotherChanceIfZero ?? raw.another_chance_if_zero ?? false),
       infoTitle: String(raw.infoTitle ?? raw.info_title ?? '').trim(),
       infoText: String(raw.infoText ?? raw.info_text ?? '').trim(),
@@ -471,6 +472,7 @@
   function getTaskScoreControls(pane) {
     if (!(pane instanceof HTMLElement)) return null;
     const scoreInput = pane.querySelector('[data-task-field="score"]');
+    const hasGoldenTimeToggle = pane.querySelector('[data-task-field="hasGoldenTime"]');
     const afterEndtimeScoreInput = pane.querySelector('[data-task-field="afterEndtimeScore"]');
     const saveStatusEl = pane.querySelector('[data-task-score-save-status]');
     const saveButton = pane.querySelector('[data-action="save-task-score-system"]');
@@ -480,6 +482,7 @@
     const taskType = normalizeTaskType(pane.dataset.taskType || 'quiz');
     return {
       scoreInput,
+      hasGoldenTimeToggle: hasGoldenTimeToggle instanceof HTMLInputElement ? hasGoldenTimeToggle : null,
       afterEndtimeScoreInput: afterEndtimeScoreInput instanceof HTMLInputElement ? afterEndtimeScoreInput : null,
       taskType,
       saveStatusEl: saveStatusEl instanceof HTMLElement ? saveStatusEl : null,
@@ -539,6 +542,21 @@
     if (!controls?.saveStatusEl) return;
     controls.saveStatusEl.textContent = message || '';
     controls.saveStatusEl.style.color = isError ? '#d1434a' : '';
+  }
+
+  function syncTaskScoreGoldenTimeState(pane) {
+    const controls = getTaskScoreControls(pane);
+    if (!controls || controls.taskType !== 'conditional_quiz') return;
+    const enabled = controls.hasGoldenTimeToggle instanceof HTMLInputElement
+      ? controls.hasGoldenTimeToggle.checked
+      : true;
+    if (controls.afterEndtimeScoreInput instanceof HTMLInputElement) {
+      controls.afterEndtimeScoreInput.disabled = !enabled;
+      controls.afterEndtimeScoreInput.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+      if (!enabled) {
+        controls.afterEndtimeScoreInput.value = '0';
+      }
+    }
   }
 
   function setTaskCrisisSaveStatus(pane, message, isError = false) {
@@ -2175,9 +2193,15 @@
     const controls = getTaskScoreControls(pane);
     if (!controls) return null;
     const isInfoTask = isInfoLikeTaskType(controls.taskType);
+    const hasGoldenTime = controls.taskType === 'conditional_quiz'
+      ? Boolean(controls.hasGoldenTimeToggle?.checked)
+      : true;
     return {
       score: String(normalizeScoreValue(controls.scoreInput.value)),
-      after_endtime_score: isInfoTask ? '0' : String(normalizeScoreValue(controls.afterEndtimeScoreInput?.value))
+      has_golden_time: hasGoldenTime ? '1' : '0',
+      after_endtime_score: isInfoTask || (controls.taskType === 'conditional_quiz' && !hasGoldenTime)
+        ? '0'
+        : String(normalizeScoreValue(controls.afterEndtimeScoreInput?.value))
     };
   }
 
@@ -2229,9 +2253,13 @@
     const scoreControls = getTaskScoreControls(pane);
     if (scoreControls) {
       scoreControls.scoreInput.value = String(normalizeScoreValue(task?.score));
+      if (scoreControls.hasGoldenTimeToggle instanceof HTMLInputElement) {
+        scoreControls.hasGoldenTimeToggle.checked = normalizeBool(task?.hasGoldenTime ?? true);
+      }
       if (scoreControls.afterEndtimeScoreInput instanceof HTMLInputElement) {
         scoreControls.afterEndtimeScoreInput.value = String(normalizeScoreValue(task?.afterEndtimeScore));
       }
+      syncTaskScoreGoldenTimeState(pane);
     }
     const crisisControls = getTaskCrisisControls(pane);
     if (crisisControls) {
@@ -2291,6 +2319,7 @@
     const teamMaxRaw = Math.max(1, normalizeScoreValue(task.teamMax ?? teamMin));
     const teamMax = Math.max(teamMin, teamMaxRaw);
     const teamAdditionalNote = String(task.teamAdditionalNote || '');
+    const hasGoldenTime = normalizeBool(task.hasGoldenTime ?? true);
     const anotherChanceIfZero = normalizeBool(task.anotherChanceIfZero);
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
@@ -2625,10 +2654,19 @@
                 <span>${isConditionalQuizTask ? 'Correct Answer Score' : (isInfoTask ? 'Total Score' : 'Active Duration (Golden Time)')}</span>
                 <input type="number" min="0" step="1" data-task-field="score" />
               </label>
+              ${isConditionalQuizTask ? `
+                <label class="switch tc-switch">
+                  <span class="switch-label">Has Golden Time</span>
+                  <span class="switch-toggle">
+                    <input type="checkbox" data-task-field="hasGoldenTime" aria-label="Has Golden Time" ${hasGoldenTime ? 'checked' : ''} />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
+              ` : ''}
               ${isInfoTask ? '' : `
                 <label class="field standard-width">
                   <span>${isConditionalQuizTask ? 'Golden Time Correct Answer Score' : 'Golden Time Ended, you can answer with lower score'}</span>
-                  <input type="number" min="0" step="1" data-task-field="afterEndtimeScore" />
+                  <input type="number" min="0" step="1" data-task-field="afterEndtimeScore" ${isConditionalQuizTask && !hasGoldenTime ? 'disabled aria-disabled="true"' : ''} />
                 </label>
               `}
               <div class="field full">
@@ -2832,6 +2870,11 @@
       ) {
         updateTaskPaneStatus(pane);
         setTaskSaveStatus(pane, '');
+        return;
+      }
+      if (fieldName === 'hasGoldenTime') {
+        syncTaskScoreGoldenTimeState(pane);
+        setTaskScoreSaveStatus(pane, '');
         return;
       }
       if (fieldName === 'score' || fieldName === 'afterEndtimeScore') {

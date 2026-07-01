@@ -6,6 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 require_once __DIR__ . '/invitees_special_access.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
 
 $tcInviteesAddSessionUser = requireTabPermissionFromSession('task-club', true);
 if (!userHasPermissionId($tcInviteesAddSessionUser, 'task-club:invitees')) {
@@ -105,6 +106,9 @@ function readJsonArray(string $path): array
 
 function readCsvRows(string $path): array
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsForUpdate($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -127,6 +131,9 @@ function readCsvRows(string $path): array
 
 function writeCsvRowsLocked(string $path, array $rows): bool
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvCommitRows($path, $rows);
+  }
   $handle = fopen($path, 'c+');
   if ($handle === false) {
     return false;

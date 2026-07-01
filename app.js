@@ -4764,6 +4764,35 @@ function setActiveTab(tab) {
   if (el) el.textContent = titles[safeTab] || '';
 }
 
+window.updatePanelTabLabel = function updatePanelTabLabel(tab, label) {
+  const safeTab = normalizeTabToken(tab);
+  const safeLabel = String(label ?? "").trim();
+  if (!safeTab || !safeLabel) {
+    return;
+  }
+  const catalogEntry = PANEL_TAB_CATALOG.find((tabInfo) => tabInfo.id === safeTab);
+  if (catalogEntry) {
+    catalogEntry.label = safeLabel;
+    catalogEntry.title = safeLabel;
+  }
+  qsa(".nav-item").forEach((button) => {
+    if (!(button instanceof HTMLElement) || normalizeTabToken(button.dataset.tab) !== safeTab) {
+      return;
+    }
+    const labelEl = button.querySelector("span:last-child");
+    if (labelEl instanceof HTMLElement) {
+      labelEl.textContent = safeLabel;
+    }
+  });
+  const activeButton = qs(`.nav-item.active`);
+  if (activeButton instanceof HTMLElement && normalizeTabToken(activeButton.dataset.tab) === safeTab) {
+    const titleEl = qs("#page-title");
+    if (titleEl instanceof HTMLElement) {
+      titleEl.textContent = safeLabel;
+    }
+  }
+};
+
 function getExternalTabHost(tab) {
   return qs(`#tab-${tab}[data-tab-source]`);
 }

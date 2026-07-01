@@ -55,6 +55,8 @@ $eventAccentSoft = normalizeHexColor($eventColors['accentSoft'] ?? '', '#FFB347'
 $eventLogoUrl = formatAssetUrl((string)($settings['eventLogo'] ?? ''));
 $siteIconUrl = formatAssetUrl((string)($panelSettings['siteIcon'] ?? ''));
 $faviconUrl = $eventLogoUrl !== '' ? $eventLogoUrl : $siteIconUrl;
+$eventName = trim((string)($settings['eventName'] ?? ''));
+$maintenanceTitle = ($eventName !== '' ? $eventName : 'کمپین به دست آوردیم') . ' - در حال بروزرسانی';
 $maintenanceMode = (bool)($settings['maintenanceMode'] ?? false);
 if (!$maintenanceMode) {
   header('Location: index.php');
@@ -66,7 +68,7 @@ if (!$maintenanceMode) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>کمپین به دست آوردیم - در حال بروزرسانی</title>
+  <title><?= htmlspecialchars($maintenanceTitle, ENT_QUOTES, 'UTF-8') ?></title>
   <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
   <style>
     :root {

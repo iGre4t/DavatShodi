@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/invitees_csv_safety.php';
 $tcExportSessionUser = requireTabPermissionFromSession('task-club', false);
 if (!userHasPermissionId($tcExportSessionUser, 'task-club:export')) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', false);
@@ -45,6 +46,9 @@ function tcParticipantsFindHeaderIndex(array $header, array $candidates): int
 
 function tcParticipantsReadCsvRows(string $path): array
 {
+  if (tcInviteesCsvIsManagedPath($path)) {
+    return tcInviteesCsvReadRowsSnapshot($path);
+  }
   if (!is_file($path)) {
     return [];
   }
@@ -243,14 +247,15 @@ for ($i = 1; $i < count($rows); $i += 1) {
 }
 
 $eventTitle = tcParticipantsEventTitle('Task Club');
-$filename = tcParticipantsFilenameStem($eventTitle) . '-participants.xls';
+$filename = tcParticipantsFilenameStem($eventTitle) . '-participants.xlsx';
 $asciiFilename = preg_replace('/[^\x20-\x7E]+/', '', $filename);
-$asciiFilename = is_string($asciiFilename) && trim($asciiFilename) !== '' ? $asciiFilename : 'event-participants.xls';
-header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+$asciiFilename = is_string($asciiFilename) && trim($asciiFilename) !== '' ? $asciiFilename : 'event-participants.xlsx';
 header('Content-Disposition: attachment; filename="' . str_replace('"', '', $asciiFilename) . '"; filename*=UTF-8\'\'' . rawurlencode($filename));
 header('Pragma: no-cache');
 header('Expires: 0');
 
+require_once dirname(__DIR__, 2) . '/api/lib/xlsx-export.php';
+ob_start();
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
 ?>
@@ -287,3 +292,6 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
   </Table>
  </Worksheet>
 </Workbook>
+<?php
+$spreadsheetXml = (string)ob_get_clean();
+appXlsxSend(appXlsxFromSpreadsheetXml($spreadsheetXml), $filename);
