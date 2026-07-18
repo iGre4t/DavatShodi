@@ -303,7 +303,7 @@ $accountEmail = $currentUser['email'] ?? '';
               <span>تنظیمات حساب</span>
             </button>
           <?php endif; ?>
-          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('task-club', $allowedTabs, true) || $taskClubCreatorEnabled || in_array('rate-me', $allowedTabs, true) || $rateMeCreatorEnabled || in_array('asset-manager', $allowedTabs, true) || in_array('utm-service', $allowedTabs, true) || in_array('linker-service', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
+          <?php if (in_array('features', $allowedTabs, true) || in_array('wheel-of-fortune', $allowedTabs, true) || in_array('task-club', $allowedTabs, true) || in_array('event-guest-manager', $allowedTabs, true) || $taskClubCreatorEnabled || in_array('rate-me', $allowedTabs, true) || $rateMeCreatorEnabled || in_array('asset-manager', $allowedTabs, true) || in_array('utm-service', $allowedTabs, true) || in_array('linker-service', $allowedTabs, true) || in_array('devsettings', $allowedTabs, true)): ?>
             <div class="nav-separator" aria-hidden="true"></div>
           <?php endif; ?>
           <?php if (in_array('features', $allowedTabs, true)): ?>
@@ -323,6 +323,12 @@ $accountEmail = $currentUser['email'] ?? '';
             <button class="nav-item<?= $initialTab === 'task-club' ? ' active' : '' ?>" data-tab="task-club"<?= $initialTab === 'task-club' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-group-line" aria-hidden="true"></span>
               <span>باشگاه تعاملی</span>
+            </button>
+          <?php endif; ?>
+          <?php if (in_array('event-guest-manager', $allowedTabs, true)): ?>
+            <button class="nav-item<?= $initialTab === 'event-guest-manager' ? ' active' : '' ?>" data-tab="event-guest-manager"<?= $initialTab === 'event-guest-manager' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-user-star-line" aria-hidden="true"></span>
+              <span>مدیریت رویداد</span>
             </button>
           <?php endif; ?>
           <?php foreach ($taskClubMissionTabs as $missionTab): ?>
@@ -542,6 +548,13 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-task-club"
             class="tab<?= $initialTab === 'task-club' ? ' active' : '' ?>"
             data-tab-source="mini%20apps/Task%20Club/TC%20Panel.php"
+          ></section>
+        <?php endif; ?>
+        <?php if (in_array('event-guest-manager', $allowedTabs, true)): ?>
+          <section
+            id="tab-event-guest-manager"
+            class="tab<?= $initialTab === 'event-guest-manager' ? ' active' : '' ?>"
+            data-tab-source="mini%20apps/Event%20Guest%20Manager/EGM%20Panel.php"
           ></section>
         <?php endif; ?>
         <?php foreach ($taskClubMissionTabs as $missionTab): ?>

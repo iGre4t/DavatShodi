@@ -7,11 +7,11 @@ Options -Indexes
   RewriteRule "(^|/)\.(?!well-known/)" - [F,L]
 
   # Never allow executable scripts inside storage directories.
-  RewriteRule "(?i)(^|/)(TC Event|tasks)/.*\.(php[0-9]?|phtml|phar)$" - [F,L]
+  RewriteRule "(?i)(^|/)(EGM Event|tasks)/.*\.(php[0-9]?|phtml|phar)$" - [F,L]
 
   # Block direct reads of sensitive data/config files.
   RewriteRule "(?i)\.(csv|tsv|xls|xlsx|ods|json|txt|log|sql|bak|backup|ini|env|db|sqlite|sqlite3|yml|yaml)$" - [F,L]
-  RewriteRule "(?i)(^|/)(TC Prizes\.json|TC Prize Awards Log\.json)(\.|$)" - [F,L]
+  RewriteRule "(?i)(^|/)(EGM Prizes\.json|EGM Prize Awards Log\.json)(\.|$)" - [F,L]
 
   # Block common package/config lock files and task list store.
   RewriteRule "(?i)(^|/)(composer\.(json|lock)|package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tasks\.js)$" - [F,L]
@@ -21,7 +21,7 @@ Options -Indexes
   <FilesMatch "(?i)\.(csv|tsv|xls|xlsx|ods|json|txt|log|sql|bak|backup|ini|env|db|sqlite|sqlite3|yml|yaml)$">
     Require all denied
   </FilesMatch>
-  <FilesMatch "(?i)^(TC Prizes\.json|TC Prize Awards Log\.json)(\.|$)">
+  <FilesMatch "(?i)^(EGM Prizes\.json|EGM Prize Awards Log\.json)(\.|$)">
     Require all denied
   </FilesMatch>
   <Files "tasks.js">
@@ -37,7 +37,7 @@ Options -Indexes
     Order allow,deny
     Deny from all
   </FilesMatch>
-  <FilesMatch "(?i)^(TC Prizes\.json|TC Prize Awards Log\.json)(\.|$)">
+  <FilesMatch "(?i)^(EGM Prizes\.json|EGM Prize Awards Log\.json)(\.|$)">
     Order allow,deny
     Deny from all
   </FilesMatch>

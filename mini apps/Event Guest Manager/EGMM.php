@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_award_log.php';
@@ -6,7 +6,7 @@ require_once __DIR__ . '/prize_inventory_store.php';
 require_once __DIR__ . '/prize_levels_store.php';
 require_once __DIR__ . '/pot_service.php';
 
-function tcStartIsolatedSession(): void
+function egmStartIsolatedSession(): void
 {
   if (session_status() === PHP_SESSION_ACTIVE) {
     return;
@@ -27,7 +27,7 @@ function tcStartIsolatedSession(): void
   session_start();
 }
 
-tcStartIsolatedSession();
+egmStartIsolatedSession();
 $cspNonce = base64_encode(random_bytes(16));
 header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$cspNonce}'; style-src 'self' 'nonce-{$cspNonce}'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
 header("X-Content-Type-Options: nosniff");
@@ -35,36 +35,36 @@ header("Referrer-Policy: same-origin");
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
-if (empty($_SESSION['tc_csrf'])) {
-  $_SESSION['tc_csrf'] = bin2hex(random_bytes(16));
+if (empty($_SESSION['egm_csrf'])) {
+  $_SESSION['egm_csrf'] = bin2hex(random_bytes(16));
 }
 if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
-  $forceLogoutWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
-  tcActivityLogUserActivity([
+  $forceLogoutWorkId = trim((string)($_SESSION['egm_work_id'] ?? ''));
+  egmActivityLogUserActivity([
     'level' => 'info',
     'user_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
     'action' => 'taskclub.user.logout',
     'entity_type' => 'taskclub_user',
     'entity_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
     'status' => 'success',
-    'message' => 'Task Club user force logged out.',
+    'message' => 'Event Guest Manager user force logged out.',
     'metadata' => [
       'forced' => true,
-      'session_duration_seconds' => tcActivitySessionDurationSeconds()
+      'session_duration_seconds' => egmActivitySessionDurationSeconds()
     ],
     'audit' => true
   ]);
-  tcActivityLogUserActivity([
+  egmActivityLogUserActivity([
     'level' => 'info',
     'user_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
     'action' => 'taskclub.session.end',
     'entity_type' => 'taskclub_session',
     'entity_id' => $forceLogoutWorkId !== '' ? $forceLogoutWorkId : null,
     'status' => 'success',
-    'message' => 'Task Club session ended by force logout.',
+    'message' => 'Event Guest Manager session ended by force logout.',
     'metadata' => [
       'reason' => 'force_logout',
-      'session_duration_seconds' => tcActivitySessionDurationSeconds()
+      'session_duration_seconds' => egmActivitySessionDurationSeconds()
     ],
     'audit' => true
   ]);
@@ -82,18 +82,18 @@ if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
   exit;
 }
 
-$tcMaintenanceSettingsPath = __DIR__ . '/Setting.json';
-$tcMaintenanceEnabled = false;
-if (is_file($tcMaintenanceSettingsPath)) {
-  $tcMaintenanceRaw = file_get_contents($tcMaintenanceSettingsPath);
-  $tcMaintenanceDecoded = is_string($tcMaintenanceRaw) ? json_decode($tcMaintenanceRaw, true) : null;
-  if (is_array($tcMaintenanceDecoded)) {
-    $tcMaintenanceEnabled = (bool)($tcMaintenanceDecoded['maintenanceMode'] ?? false);
+$egmMaintenanceSettingsPath = __DIR__ . '/Setting.json';
+$egmMaintenanceEnabled = false;
+if (is_file($egmMaintenanceSettingsPath)) {
+  $egmMaintenanceRaw = file_get_contents($egmMaintenanceSettingsPath);
+  $egmMaintenanceDecoded = is_string($egmMaintenanceRaw) ? json_decode($egmMaintenanceRaw, true) : null;
+  if (is_array($egmMaintenanceDecoded)) {
+    $egmMaintenanceEnabled = (bool)($egmMaintenanceDecoded['maintenanceMode'] ?? false);
   }
 }
-$tcPanelSessionBypass = !empty($_SESSION['authenticated']) && is_array($_SESSION['user'] ?? null);
-if ($tcMaintenanceEnabled && !$tcPanelSessionBypass) {
-  $maintenanceUrl = 'TCM-maintenance.php';
+$egmPanelSessionBypass = !empty($_SESSION['authenticated']) && is_array($_SESSION['user'] ?? null);
+if ($egmMaintenanceEnabled && !$egmPanelSessionBypass) {
+  $maintenanceUrl = 'EGMM-maintenance.php';
   if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     header('Content-Type: application/json; charset=UTF-8');
     echo json_encode([
@@ -122,16 +122,16 @@ const TASK_DESCRIBE_PHOTO_DIR = 'photos';
 const TASK_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 const TASK_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 
-$prizeStorePath = __DIR__ . '/TC Prizes.json';
-$prizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
-$questionsStorePath = __DIR__ . '/TCQ list.json';
-$tcqSettingsPath = __DIR__ . '/TCQ settings.json';
-$inviteesFilePath = __DIR__ . '/TC Event/Invitees mapped.csv';
-$inviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
-$prizeAwardLogPath = __DIR__ . '/TC Event/TC Prize Awards Log.json';
-$loginAttemptsPath = __DIR__ . '/TC Event/login_attempts.json';
-$anyPasswordLoginSettingsPath = __DIR__ . '/TC Event/any-password-login.json';
-const TCQ_DEFAULT_SETTINGS = [
+$prizeStorePath = __DIR__ . '/EGM Prizes.json';
+$prizeLevelsPath = __DIR__ . '/EGM Prize Levels.json';
+$questionsStorePath = __DIR__ . '/EGMQ list.json';
+$tcqSettingsPath = __DIR__ . '/EGMQ settings.json';
+$inviteesFilePath = __DIR__ . '/EGM Event/Invitees mapped.csv';
+$inviteesMapPath = __DIR__ . '/EGM Event/EGM Mapped.json';
+$prizeAwardLogPath = __DIR__ . '/EGM Event/EGM Prize Awards Log.json';
+$loginAttemptsPath = __DIR__ . '/EGM Event/login_attempts.json';
+$anyPasswordLoginSettingsPath = __DIR__ . '/EGM Event/any-password-login.json';
+const EGMQ_DEFAULT_SETTINGS = [
   'answerTimeLimit' => true,
   'answerTimeLimitMs' => 14000,
   'randomOrder' => true,
@@ -144,7 +144,7 @@ const CONDITIONAL_QUIZ_TIME_LIMIT_SECONDS = 600;
 
 function readPrizeStore(string $path): array
 {
-  return tcPrizeInventoryReadSnapshot($path) ?? [];
+  return egmPrizeInventoryReadSnapshot($path) ?? [];
 }
 
 function normalizePrizeLevelScoreValue($value): int
@@ -225,7 +225,7 @@ function buildPotLevelUserState(
 
   $normalizedSessionWorkId = normalizeCredentialToken($sessionWorkId);
   $isWinner = false;
-  $winners = tcPotReadWinners((string)($level['id'] ?? ''));
+  $winners = egmPotReadWinners((string)($level['id'] ?? ''));
   foreach ($winners as $winner) {
     $participant = is_array($winner['participant'] ?? null) ? $winner['participant'] : [];
     $winnerWorkId = trim((string)($participant['workId'] ?? ($winner['participantKey'] ?? '')));
@@ -247,9 +247,9 @@ function buildPotLevelUserState(
 
 function readPrizeLevelRecords(string $path): array
 {
-  $snapshot = tcPrizeLevelsReadSnapshot($path);
+  $snapshot = egmPrizeLevelsReadSnapshot($path);
   if (empty($snapshot['ok']) || !is_array($snapshot['records'] ?? null)) {
-    error_log('Task Club prize levels are unavailable: ' . (string)($snapshot['reason'] ?? 'read_failed'));
+    error_log('Event Guest Manager prize levels are unavailable: ' . (string)($snapshot['reason'] ?? 'read_failed'));
     return [];
   }
   $records = array_values($snapshot['records']);
@@ -416,7 +416,7 @@ function parseRewardPrizeNames(string $raw, ?bool &$valid = null, ?bool &$wasJso
   return $names;
 }
 
-function tcRewardPrizeIndex(array $prizes, string $prizeId, string $inventoryName = ''): int
+function egmRewardPrizeIndex(array $prizes, string $prizeId, string $inventoryName = ''): int
 {
   foreach ($prizes as $index => $item) {
     if (!is_array($item)) continue;
@@ -430,7 +430,7 @@ function tcRewardPrizeIndex(array $prizes, string $prizeId, string $inventoryNam
   return -1;
 }
 
-function tcRewardFindRequestEntry(
+function egmRewardFindRequestEntry(
   array $entries,
   string $requestId,
   string $workId,
@@ -440,7 +440,7 @@ function tcRewardFindRequestEntry(
 {
   if ($requestId === '') return null;
   foreach (array_reverse($entries) as $entry) {
-    if (!is_array($entry) || (string)($entry['source'] ?? '') !== 'TCM.reward_flip') continue;
+    if (!is_array($entry) || (string)($entry['source'] ?? '') !== 'EGMM.reward_flip') continue;
     if ((string)($entry['requestId'] ?? '') !== $requestId) continue;
     if ((string)($entry['workId'] ?? '') !== $workId) return ['requestConflict' => true, 'conflictReason' => 'work_id'];
     $storedLevel = is_array($entry['level'] ?? null) ? $entry['level'] : [];
@@ -455,7 +455,7 @@ function tcRewardFindRequestEntry(
   return null;
 }
 
-function tcRewardWeightedPrizeIndex(array $prizes, ?int $ticket = null): int
+function egmRewardWeightedPrizeIndex(array $prizes, ?int $ticket = null): int
 {
   $weights = [];
   $total = 0;
@@ -484,7 +484,7 @@ function tcRewardWeightedPrizeIndex(array $prizes, ?int $ticket = null): int
  * Inventory carries a temporary award ID marker, making recovery idempotent:
  * a marker plus no CSV win is restored once; a CSV win is finalized once.
  */
-function tcRewardReconcileAwardTransactions(
+function egmRewardReconcileAwardTransactions(
   string $logPath,
   string $inventoryPath,
   array &$prizes,
@@ -492,7 +492,7 @@ function tcRewardReconcileAwardTransactions(
   int $workIdIndex,
   int $wonLevelIdsIndex
 ): bool {
-  $entries = tcPrizeAwardLogRead($logPath);
+  $entries = egmPrizeAwardLogRead($logPath);
   $ledgerAwardIds = [];
   foreach ($entries as $entry) {
     if (is_array($entry)) {
@@ -502,9 +502,9 @@ function tcRewardReconcileAwardTransactions(
   }
   foreach ($prizes as $prize) {
     if (!is_array($prize)) continue;
-    foreach (tcPrizeInventoryNormalizePendingAwardIds($prize['pendingAwardIds'] ?? []) as $markerAwardId) {
+    foreach (egmPrizeInventoryNormalizePendingAwardIds($prize['pendingAwardIds'] ?? []) as $markerAwardId) {
       if (!isset($ledgerAwardIds[$markerAwardId])) {
-        error_log('Task Club prize recovery found an inventory marker without an audit entry: ' . $markerAwardId);
+        error_log('Event Guest Manager prize recovery found an inventory marker without an audit entry: ' . $markerAwardId);
         return false;
       }
     }
@@ -512,21 +512,21 @@ function tcRewardReconcileAwardTransactions(
   $inventoryChanged = false;
   $logUpdates = [];
   foreach ($entries as $entry) {
-    if (!is_array($entry) || (string)($entry['source'] ?? '') !== 'TCM.reward_flip') continue;
+    if (!is_array($entry) || (string)($entry['source'] ?? '') !== 'EGMM.reward_flip') continue;
     $awardId = trim((string)($entry['awardId'] ?? ''));
     $status = (string)($entry['status'] ?? '');
     $cancelledNeedsRecovery = $status === 'cancelled' && array_key_exists('inventoryRestored', $entry) && $entry['inventoryRestored'] === false;
     $restorePending = $status === 'inventory_restore_pending' || $cancelledNeedsRecovery;
     if ($awardId === '' || (!in_array($status, ['pending', 'inventory_reserved', 'awarded'], true) && !$restorePending)) continue;
     $prizeData = is_array($entry['prize'] ?? null) ? $entry['prize'] : [];
-    $prizeIndex = tcRewardPrizeIndex(
+    $prizeIndex = egmRewardPrizeIndex(
       $prizes,
       trim((string)($prizeData['id'] ?? '')),
       trim((string)($prizeData['inventoryName'] ?? ''))
     );
     $markerPresent = false;
     if ($prizeIndex >= 0) {
-      $markers = tcPrizeInventoryNormalizePendingAwardIds($prizes[$prizeIndex]['pendingAwardIds'] ?? []);
+      $markers = egmPrizeInventoryNormalizePendingAwardIds($prizes[$prizeIndex]['pendingAwardIds'] ?? []);
       $markerPosition = array_search($awardId, $markers, true);
       $markerPresent = $markerPosition !== false;
     }
@@ -539,7 +539,7 @@ function tcRewardReconcileAwardTransactions(
       continue;
     }
     if ($prizeIndex < 0 && ($status === 'pending' || $status === 'inventory_reserved' || $restorePending)) {
-      error_log('Task Club prize recovery could not find inventory item for award: ' . $awardId);
+      error_log('Event Guest Manager prize recovery could not find inventory item for award: ' . $awardId);
       return false;
     }
 
@@ -555,7 +555,7 @@ function tcRewardReconcileAwardTransactions(
         $storedLevelIdsValid
       );
       if (!$storedLevelIdsValid) {
-        error_log('Task Club prize recovery stopped because reward history JSON is malformed for work ID: ' . $workId);
+        error_log('Event Guest Manager prize recovery stopped because reward history JSON is malformed for work ID: ' . $workId);
         return false;
       }
       $csvWon = in_array($levelId, $storedLevelIds, true);
@@ -574,16 +574,16 @@ function tcRewardReconcileAwardTransactions(
       continue;
     }
     if (!$markerPresent && $status === 'inventory_reserved') {
-      error_log('Task Club prize recovery found a reserved ledger entry without its inventory marker: ' . $awardId);
+      error_log('Event Guest Manager prize recovery found a reserved ledger entry without its inventory marker: ' . $awardId);
       return false;
     }
     if ($markerPresent) {
-      if (!$restorePending && !tcPrizeAwardLogUpdate($logPath, $awardId, [
+      if (!$restorePending && !egmPrizeAwardLogUpdate($logPath, $awardId, [
         'status' => 'inventory_restore_pending',
         'inventoryRestoreStartedAt' => gmdate('c'),
         'inventoryRestored' => false
       ])) {
-        error_log('Task Club could not prepare an idempotent inventory restoration: ' . $awardId);
+        error_log('Event Guest Manager could not prepare an idempotent inventory restoration: ' . $awardId);
         return false;
       }
       $quantity = max(0, (int)($prizes[$prizeIndex]['quantity'] ?? 0));
@@ -603,12 +603,12 @@ function tcRewardReconcileAwardTransactions(
       'reconciledAt' => gmdate('c')
     ]];
   }
-  if ($inventoryChanged && !tcPrizeInventoryCommit($inventoryPath, $prizes, false)) {
+  if ($inventoryChanged && !egmPrizeInventoryCommit($inventoryPath, $prizes, false)) {
     return false;
   }
   foreach ($logUpdates as [$awardId, $changes]) {
-    if (!tcPrizeAwardLogUpdate($logPath, (string)$awardId, (array)$changes)) {
-      error_log('Task Club could not finalize recovered prize audit record: ' . $awardId);
+    if (!egmPrizeAwardLogUpdate($logPath, (string)$awardId, (array)$changes)) {
+      error_log('Event Guest Manager could not finalize recovered prize audit record: ' . $awardId);
       return false;
     }
   }
@@ -715,7 +715,7 @@ function extractCodeFromAnswersHeader(string $headerCell): string
 
 function loadWfqSettings(string $path, int $defaultAnswerTimeLimitMs = DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS): array
 {
-  $settings = TCQ_DEFAULT_SETTINGS;
+  $settings = EGMQ_DEFAULT_SETTINGS;
   $settings['answerTimeLimitMs'] = $defaultAnswerTimeLimitMs;
   if (!is_file($path)) {
     return $settings;
@@ -741,9 +741,9 @@ function loadWfqSettings(string $path, int $defaultAnswerTimeLimitMs = DEFAULT_Q
 
 function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuestionCount, bool $usesCorrectAnswersToScore = true): array
 {
-  $questionsPerAttempt = max(0, (int)($settings['questionsPerAttempt'] ?? TCQ_DEFAULT_SETTINGS['questionsPerAttempt']));
+  $questionsPerAttempt = max(0, (int)($settings['questionsPerAttempt'] ?? EGMQ_DEFAULT_SETTINGS['questionsPerAttempt']));
   $correctAnswersToScore = $usesCorrectAnswersToScore
-    ? max(1, (int)($settings['correctAnswersToScore'] ?? TCQ_DEFAULT_SETTINGS['correctAnswersToScore']))
+    ? max(1, (int)($settings['correctAnswersToScore'] ?? EGMQ_DEFAULT_SETTINGS['correctAnswersToScore']))
     : 0;
   $selectedQuestionCount = $questionsPerAttempt > 0
     ? min($questionsPerAttempt, max(0, $availableQuestionCount))
@@ -755,7 +755,7 @@ function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuesti
     : $correctAnswersToScore);
   return [
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
-    'answerTimeLimitMs' => normalizeAnswerTimeLimitMs($settings['answerTimeLimitMs'] ?? TCQ_DEFAULT_SETTINGS['answerTimeLimitMs'], (int)TCQ_DEFAULT_SETTINGS['answerTimeLimitMs']),
+    'answerTimeLimitMs' => normalizeAnswerTimeLimitMs($settings['answerTimeLimitMs'] ?? EGMQ_DEFAULT_SETTINGS['answerTimeLimitMs'], (int)EGMQ_DEFAULT_SETTINGS['answerTimeLimitMs']),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
     'questionsPerAttempt' => $questionsPerAttempt,
     'correctAnswersToScore' => $correctAnswersToScore,
@@ -1094,7 +1094,7 @@ function readTaskTitlesFromJsStore(string $storePath): array
   }
 
   $jsonPayload = '';
-  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
+  if (preg_match('/window\.EGM_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
     $jsonPayload = (string)($m[1] ?? '');
   } else {
     $start = strpos($content, '[');
@@ -1275,7 +1275,7 @@ function readTasksStoreItems(string $storePath): array
     return [];
   }
   $jsonPayload = '';
-  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
+  if (preg_match('/window\.EGM_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $m)) {
     $jsonPayload = (string)($m[1] ?? '');
   } else {
     $start = strpos($content, '[');
@@ -2543,13 +2543,13 @@ function loadTaskQuizAssets(array $task, string $sharedQuestionsStorePath): arra
       'settingsPath' => '',
       'answersPath' => '',
       'questions' => readQuestionStore($sharedQuestionsStorePath),
-      'settings' => TCQ_DEFAULT_SETTINGS
+      'settings' => EGMQ_DEFAULT_SETTINGS
     ];
   }
 
   $taskDir = TASKS_DIR_PATH . DIRECTORY_SEPARATOR . $tagCode;
-  $taskQuestionsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json';
-  $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'TCQ settings.json';
+  $taskQuestionsPath = $taskDir . DIRECTORY_SEPARATOR . 'EGMQ list.json';
+  $settingsPath = $taskDir . DIRECTORY_SEPARATOR . 'EGMQ settings.json';
   $answersPath = $taskDir . DIRECTORY_SEPARATOR . 'Answers.csv';
   $questions = readQuestionStore($taskQuestionsPath);
   $resolvedQuestionsPath = $taskQuestionsPath;
@@ -2601,8 +2601,8 @@ function clearTaskQuizAttemptState(string $workId, string $taskId): void
   if ($key === '') {
     return;
   }
-  if (isset($_SESSION['tc_task_quiz_attempts'][$key])) {
-    unset($_SESSION['tc_task_quiz_attempts'][$key]);
+  if (isset($_SESSION['egm_task_quiz_attempts'][$key])) {
+    unset($_SESSION['egm_task_quiz_attempts'][$key]);
   }
 }
 
@@ -2612,7 +2612,7 @@ function readTaskQuizAttemptState(string $workId, string $taskId): ?array
   if ($key === '') {
     return null;
   }
-  $state = $_SESSION['tc_task_quiz_attempts'][$key] ?? null;
+  $state = $_SESSION['egm_task_quiz_attempts'][$key] ?? null;
   if (!is_array($state)) {
     return null;
   }
@@ -2685,8 +2685,8 @@ function writeTaskQuizAttemptState(string $workId, string $taskId, array $state)
   if ($key === '') {
     return;
   }
-  if (!isset($_SESSION['tc_task_quiz_attempts']) || !is_array($_SESSION['tc_task_quiz_attempts'])) {
-    $_SESSION['tc_task_quiz_attempts'] = [];
+  if (!isset($_SESSION['egm_task_quiz_attempts']) || !is_array($_SESSION['egm_task_quiz_attempts'])) {
+    $_SESSION['egm_task_quiz_attempts'] = [];
   }
   $startedAt = array_key_exists('startedAt', $state)
     ? max(0, (int)($state['startedAt'] ?? 0))
@@ -2697,7 +2697,7 @@ function writeTaskQuizAttemptState(string $workId, string $taskId, array $state)
   if (!$quizStarted) {
     $startedAt = 0;
   }
-  $_SESSION['tc_task_quiz_attempts'][$key] = [
+  $_SESSION['egm_task_quiz_attempts'][$key] = [
     'questionCodes' => array_values(array_map(static fn($code) => strtoupper(trim((string)$code)), is_array($state['questionCodes'] ?? null) ? $state['questionCodes'] : [])),
     'requiredCorrectAnswers' => max(0, (int)($state['requiredCorrectAnswers'] ?? 1)),
     'answered' => is_array($state['answered'] ?? null) ? $state['answered'] : [],
@@ -3778,9 +3778,9 @@ function buildTaskPayloadForView(
     if ($taskType === 'conditional_quiz') {
       $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
       $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
-      $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : TCQ_DEFAULT_SETTINGS;
+      $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : EGMQ_DEFAULT_SETTINGS;
       $availableQuestionCount = count($questions);
-      $questionsPerAttempt = max(0, (int)($settings['questionsPerAttempt'] ?? TCQ_DEFAULT_SETTINGS['questionsPerAttempt']));
+      $questionsPerAttempt = max(0, (int)($settings['questionsPerAttempt'] ?? EGMQ_DEFAULT_SETTINGS['questionsPerAttempt']));
       $maxScoreQuestionCount = $questionsPerAttempt > 0
         ? min($questionsPerAttempt, $availableQuestionCount)
         : $availableQuestionCount;
@@ -3828,8 +3828,8 @@ function buildTaskPayloadForView(
 
 function readInviteesCsv(string $path): array
 {
-  if (tcInviteesCsvIsManagedPath($path)) {
-    return tcInviteesCsvReadRowsForUpdate($path);
+  if (egmInviteesCsvIsManagedPath($path)) {
+    return egmInviteesCsvReadRowsForUpdate($path);
   }
   if (!is_file($path)) {
     return [];
@@ -3853,8 +3853,8 @@ function readInviteesCsv(string $path): array
 
 function writeInviteesCsv(string $path, array $rows, bool $endTransaction = true): bool
 {
-  if (tcInviteesCsvIsManagedPath($path)) {
-    return tcInviteesCsvCommitRows($path, $rows, $endTransaction);
+  if (egmInviteesCsvIsManagedPath($path)) {
+    return egmInviteesCsvCommitRows($path, $rows, $endTransaction);
   }
   $dir = dirname($path);
   if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
@@ -4404,22 +4404,22 @@ function ensureUserQuestionProgress(array &$rows, int $rowIndex, array $columns,
   return ['order' => $order, 'answered' => $answered, 'changed' => $changed];
 }
 
-function tcActivitySessionStartedAt(): int
+function egmActivitySessionStartedAt(): int
 {
-  $startedAt = (int)($_SESSION['tc_session_started_at'] ?? 0);
+  $startedAt = (int)($_SESSION['egm_session_started_at'] ?? 0);
   if ($startedAt <= 0) {
     $startedAt = time();
-    $_SESSION['tc_session_started_at'] = $startedAt;
+    $_SESSION['egm_session_started_at'] = $startedAt;
   }
   return $startedAt;
 }
 
-function tcActivitySessionDurationSeconds(): int
+function egmActivitySessionDurationSeconds(): int
 {
-  return max(0, time() - tcActivitySessionStartedAt());
+  return max(0, time() - egmActivitySessionStartedAt());
 }
 
-function tcNormalizeActivityMetadata($value, int $depth = 0)
+function egmNormalizeActivityMetadata($value, int $depth = 0)
 {
   if ($depth > 5) {
     return '[max_depth]';
@@ -4431,7 +4431,7 @@ function tcNormalizeActivityMetadata($value, int $depth = 0)
     $normalized = [];
     foreach ($value as $key => $item) {
       if (is_int($key) || is_string($key)) {
-        $normalized[$key] = tcNormalizeActivityMetadata($item, $depth + 1);
+        $normalized[$key] = egmNormalizeActivityMetadata($item, $depth + 1);
       }
     }
     return $normalized;
@@ -4439,7 +4439,7 @@ function tcNormalizeActivityMetadata($value, int $depth = 0)
   return (string)gettype($value);
 }
 
-function tcLogClientActivity(array $payload, string $fallbackWorkId = ''): void
+function egmLogClientActivity(array $payload, string $fallbackWorkId = ''): void
 {
   $eventType = strtolower(trim((string)($payload['eventType'] ?? 'activity')));
   $allowedEvents = [
@@ -4465,13 +4465,13 @@ function tcLogClientActivity(array $payload, string $fallbackWorkId = ''): void
   }
   $metadata = is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [];
   $metadata['client_event_type'] = $eventType;
-  $metadata['session_duration_seconds'] = tcActivitySessionDurationSeconds();
+  $metadata['session_duration_seconds'] = egmActivitySessionDurationSeconds();
   foreach (['slide', 'previousSlide', 'taskId', 'taskType', 'taskTitle', 'questionCode', 'durationMs', 'visible', 'focused', 'reason'] as $key) {
     if (array_key_exists($key, $payload)) {
       $metadata[$key] = $payload[$key];
     }
   }
-  tcActivityLogUserActivity([
+  egmActivityLogUserActivity([
     'level' => $eventType === 'session_expire' ? 'warning' : 'info',
     'user_id' => $workId !== '' ? $workId : null,
     'action' => 'taskclub.' . $eventType,
@@ -4479,11 +4479,11 @@ function tcLogClientActivity(array $payload, string $fallbackWorkId = ''): void
     'entity_id' => trim((string)($payload['taskId'] ?? '')) ?: ($workId !== '' ? $workId : null),
     'status' => $eventType === 'session_expire' ? 'expired' : 'success',
     'message' => trim((string)($payload['message'] ?? '')),
-    'metadata' => tcNormalizeActivityMetadata($metadata)
+    'metadata' => egmNormalizeActivityMetadata($metadata)
   ]);
 }
 
-function tcLogTaskRequestActivity(string $action, array $payload, string $sessionWorkId): void
+function egmLogTaskRequestActivity(string $action, array $payload, string $sessionWorkId): void
 {
   if ($sessionWorkId === '' || $action === '' || $action === 'activity_log') {
     return;
@@ -4498,15 +4498,15 @@ function tcLogTaskRequestActivity(string $action, array $payload, string $sessio
   if (!$isTaskAction) {
     return;
   }
-  tcActivityLogUserActivity([
+  egmActivityLogUserActivity([
     'level' => 'info',
     'user_id' => $sessionWorkId,
     'action' => 'taskclub.task.action',
     'entity_type' => !empty($payload['taskId']) ? 'taskclub_task' : 'taskclub_action',
     'entity_id' => trim((string)($payload['taskId'] ?? '')) ?: $action,
     'status' => 'requested',
-    'message' => 'Task Club user action requested.',
-    'metadata' => tcNormalizeActivityMetadata([
+    'message' => 'Event Guest Manager user action requested.',
+    'metadata' => egmNormalizeActivityMetadata([
       'request_action' => $action,
       'mode' => $payload['mode'] ?? null,
       'task_id' => $payload['taskId'] ?? null,
@@ -4519,7 +4519,7 @@ function tcLogTaskRequestActivity(string $action, array $payload, string $sessio
   ]);
 }
 
-if (defined('TCM_FUNCTIONS_ONLY') && TCM_FUNCTIONS_ONLY === true) {
+if (defined('EGMM_FUNCTIONS_ONLY') && EGMM_FUNCTIONS_ONLY === true) {
   return;
 }
 
@@ -4529,18 +4529,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   $payload = json_decode($rawInput ?: '', true);
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
   $csrfToken = is_array($payload) ? (string)($payload['csrf'] ?? '') : '';
-  $sessionCsrf = (string)($_SESSION['tc_csrf'] ?? '');
+  $sessionCsrf = (string)($_SESSION['egm_csrf'] ?? '');
   if ($sessionCsrf === '') {
     $sessionCsrf = bin2hex(random_bytes(16));
-    $_SESSION['tc_csrf'] = $sessionCsrf;
+    $_SESSION['egm_csrf'] = $sessionCsrf;
   }
-  $sessionWorkIdForActivity = trim((string)($_SESSION['tc_work_id'] ?? ''));
+  $sessionWorkIdForActivity = trim((string)($_SESSION['egm_work_id'] ?? ''));
   if ($action === 'activity_log') {
     $csrfOk = $csrfToken !== '' && $sessionCsrf !== '' && hash_equals($sessionCsrf, $csrfToken);
     $eventType = strtolower(trim((string)($payload['eventType'] ?? '')));
     $preCsrfAllowed = in_array($eventType, ['session_expire', 'session_end', 'session_time', 'page_refresh'], true);
     if ($csrfOk || $preCsrfAllowed) {
-      tcLogClientActivity(is_array($payload) ? $payload : [], $sessionWorkIdForActivity);
+      egmLogClientActivity(is_array($payload) ? $payload : [], $sessionWorkIdForActivity);
       echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -4555,7 +4555,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     exit;
   }
   if ($sessionWorkIdForActivity !== '') {
-    tcLogTaskRequestActivity($action, is_array($payload) ? $payload : [], $sessionWorkIdForActivity);
+    egmLogTaskRequestActivity($action, is_array($payload) ? $payload : [], $sessionWorkIdForActivity);
   }
 
   // These legacy two-step prize mutations trusted browser-supplied prize data
@@ -4579,8 +4579,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
     $username = normalizeCredentialToken((string)($payload['username'] ?? ''));
     $password = normalizeCredentialToken((string)($payload['password'] ?? ''));
-    $logLoginFailure = static function (string $reason, string $message = 'Task Club login failed.') use ($username): void {
-      tcActivityLogUserActivity([
+    $logLoginFailure = static function (string $reason, string $message = 'Event Guest Manager login failed.') use ($username): void {
+      egmActivityLogUserActivity([
         'level' => 'warning',
         'user_id' => $username !== '' ? $username : null,
         'action' => 'taskclub.user.login_failed',
@@ -4612,12 +4612,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $ipEntry = is_array($attempts[$ipAttemptKey] ?? null) ? $attempts[$ipAttemptKey] : ['fails' => []];
     $ipFails = $collectRecentFails($ipEntry['fails'] ?? []);
     if (count($ipFails) >= $maxAttemptsPerIp) {
-      $logLoginFailure('too_many_attempts_ip', 'Task Club login blocked by IP rate limit.');
+      $logLoginFailure('too_many_attempts_ip', 'Event Guest Manager login blocked by IP rate limit.');
       echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts from this IP. Please try again later.']);
       exit;
     }
     if (count($fails) >= $maxAttempts) {
-      $logLoginFailure('too_many_attempts_user', 'Task Club login blocked by user rate limit.');
+      $logLoginFailure('too_many_attempts_user', 'Event Guest Manager login blocked by user rate limit.');
       echo json_encode(['status' => 'error', 'message' => 'Too many failed attempts. Please try again later.']);
       exit;
     }
@@ -4720,11 +4720,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($resolvedWorkId === '') {
       $resolvedWorkId = $username;
     }
-    $_SESSION['tc_authed'] = true;
-    $_SESSION['tc_work_id'] = $resolvedWorkId;
+    $_SESSION['egm_authed'] = true;
+    $_SESSION['egm_work_id'] = $resolvedWorkId;
     session_regenerate_id(true);
-    $_SESSION['tc_session_started_at'] = time();
-    $_SESSION['tc_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
+    $_SESSION['egm_session_started_at'] = time();
+    $_SESSION['egm_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
     $prizeIndex = $columns['prize won'] ?? -1;
     $prizeWonAtIndex = $columns['prize won at'] ?? -1;
     $angleIndex = $columns['wheel angle'] ?? -1;
@@ -4744,32 +4744,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $wheelAngle = (float)$angleValue;
       }
     }
-    tcActivityLogUserActivity([
+    egmActivityLogUserActivity([
       'level' => 'info',
       'user_id' => $resolvedWorkId,
       'action' => 'taskclub.user.login',
       'entity_type' => 'taskclub_user',
       'entity_id' => $resolvedWorkId,
       'status' => 'success',
-      'message' => 'Task Club user logged in successfully.',
+      'message' => 'Event Guest Manager user logged in successfully.',
       'metadata' => [
         'username' => $username,
         'full_name' => $fullName
       ],
       'audit' => true
     ]);
-    tcActivityLogUserActivity([
+    egmActivityLogUserActivity([
       'level' => 'info',
       'user_id' => $resolvedWorkId,
       'action' => 'taskclub.session.start',
       'entity_type' => 'taskclub_session',
       'entity_id' => $resolvedWorkId,
       'status' => 'success',
-      'message' => 'Task Club session started.',
+      'message' => 'Event Guest Manager session started.',
       'metadata' => [
         'username' => $username,
         'full_name' => $fullName,
-        'session_started_at' => $_SESSION['tc_session_started_at']
+        'session_started_at' => $_SESSION['egm_session_started_at']
       ],
       'audit' => true
     ]);
@@ -4786,30 +4786,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'logout') {
-    $logoutWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
-    tcActivityLogUserActivity([
+    $logoutWorkId = trim((string)($_SESSION['egm_work_id'] ?? ''));
+    egmActivityLogUserActivity([
       'level' => 'info',
       'user_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
       'action' => 'taskclub.user.logout',
       'entity_type' => 'taskclub_user',
       'entity_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
       'status' => 'success',
-      'message' => 'Task Club user logged out.',
+      'message' => 'Event Guest Manager user logged out.',
       'metadata' => [
-        'session_duration_seconds' => tcActivitySessionDurationSeconds()
+        'session_duration_seconds' => egmActivitySessionDurationSeconds()
       ],
       'audit' => true
     ]);
-    tcActivityLogUserActivity([
+    egmActivityLogUserActivity([
       'level' => 'info',
       'user_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
       'action' => 'taskclub.session.end',
       'entity_type' => 'taskclub_session',
       'entity_id' => $logoutWorkId !== '' ? $logoutWorkId : null,
       'status' => 'success',
-      'message' => 'Task Club session ended by logout.',
+      'message' => 'Event Guest Manager session ended by logout.',
       'metadata' => [
-        'session_duration_seconds' => tcActivitySessionDurationSeconds(),
+        'session_duration_seconds' => egmActivitySessionDurationSeconds(),
         'reason' => 'logout'
       ],
       'audit' => true
@@ -4821,8 +4821,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'settings_get') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -4854,8 +4854,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'task_fetch') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -4890,7 +4890,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
     $tagCode = (string)($quizAssets['tagCode'] ?? '');
     $questions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
-    $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : TCQ_DEFAULT_SETTINGS;
+    $settings = is_array($quizAssets['settings'] ?? null) ? $quizAssets['settings'] : EGMQ_DEFAULT_SETTINGS;
     $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
     if ($taskType === 'conditional_quiz' && empty($progress['completed'])) {
       $attemptState = readTaskQuizAttemptState($sessionWorkId, $taskId);
@@ -5014,8 +5014,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'task_start_quiz') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -5086,8 +5086,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'task_log_answer') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -5183,8 +5183,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'describe_photo_load_article') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -5241,8 +5241,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'describe_photo_save_article') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -5299,8 +5299,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'team_task_action') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -6008,8 +6008,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'task_complete') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -6170,8 +6170,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'reward_state') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -6188,7 +6188,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'رکورد کاربر پیدا نشد.']);
       exit;
     }
@@ -6198,20 +6198,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? ($columns['مجموع جوایز برنده شده'] ?? -1));
     $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
     if ($wonLevelIdsIndex < 0) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'ستون تاریخچه جایزه آماده نیست؛ هیچ داده‌ای تغییر نکرد.']);
       exit;
     }
 
     // Recovery must stay reachable even when an event is inactive, upcoming,
     // ended, or administratively locked. Lock order is CSV -> inventory -> log.
-    $recoveryPrizes = tcPrizeInventoryReadForUpdate($prizeStorePath);
+    $recoveryPrizes = egmPrizeInventoryReadForUpdate($prizeStorePath);
     if (!is_array($recoveryPrizes)) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'موجودی جوایز در دسترس نیست؛ هیچ داده‌ای تغییر نکرد.']);
       exit;
     }
-    $recoveryOk = tcRewardReconcileAwardTransactions(
+    $recoveryOk = egmRewardReconcileAwardTransactions(
       $prizeAwardLogPath,
       $prizeStorePath,
       $recoveryPrizes,
@@ -6219,15 +6219,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $workIdIndex,
       $wonLevelIdsIndex
     );
-    tcPrizeInventoryEnd($prizeStorePath);
+    egmPrizeInventoryEnd($prizeStorePath);
     if (!$recoveryOk) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'بازیابی تراکنش قبلی جایزه ناموفق بود؛ هیچ داده جدیدی ثبت نشد.']);
       exit;
     }
 
     if ($eventStatus === 'upcoming' || $eventStatus === 'inactive') {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode([
         'status' => 'ok',
         'data' => [
@@ -6256,7 +6256,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $wonLevelHistoryValid = true;
     $wonLevelIds = parseRewardStoredList($wonLevelIdsRaw, $wonLevelHistoryValid);
     if (!$wonLevelHistoryValid || count(array_unique($wonLevelIds)) !== count($wonLevelIds)) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'تاریخچه سطح‌های جایزه آسیب دیده است؛ هیچ داده‌ای تغییر نکرد.']);
       exit;
     }
@@ -6267,7 +6267,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $wonPrizeHistoryValid = true;
     $wonPrizeEntries = parseRewardPrizeNames($eachLevelWonPrizeRaw, $wonPrizeHistoryValid);
     if (!$wonPrizeHistoryValid || count($wonPrizeEntries) !== count($wonLevelIds)) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'تاریخچه جوایز آسیب دیده است؛ هیچ داده‌ای تغییر نکرد.']);
       exit;
     }
@@ -6332,7 +6332,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       $availablePrizeNames[] = $displayName !== '' ? $displayName : $name;
     }
 
-    tcInviteesCsvEndTransaction($inviteesFilePath);
+    egmInviteesCsvEndTransaction($inviteesFilePath);
     echo json_encode([
       'status' => 'ok',
       'data' => [
@@ -6353,8 +6353,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'reward_flip') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.']);
       exit;
     }
@@ -6405,7 +6405,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
     $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
     if ($rowIndex < 0) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'رکورد کاربر پیدا نشد.']);
       exit;
     }
@@ -6416,22 +6416,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $totalPrizeWonIndex = (int)($columns['Total Prize Won'] ?? ($columns['مجموع جوایز برنده شده'] ?? -1));
     $wonLevelIdsIndex = (int)($columns['Reward Level Won IDs'] ?? -1);
     if ($flipCountIndex < 0 || $wonPrizeIndex < 0 || $totalPrizeWonIndex < 0 || $wonLevelIdsIndex < 0) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'ستون‌های جایزه آماده نیستند.']);
       exit;
     }
 
-    $prizes = tcPrizeInventoryReadForUpdate($prizeStorePath);
+    $prizes = egmPrizeInventoryReadForUpdate($prizeStorePath);
     if (!is_array($prizes)) {
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
       echo json_encode(['status' => 'error', 'message' => 'موجودی جوایز در دسترس نیست؛ هیچ تغییری انجام نشد.']);
       exit;
     }
     $releaseAwardLocks = static function () use ($prizeStorePath, $inviteesFilePath): void {
-      tcPrizeInventoryEnd($prizeStorePath);
-      tcInviteesCsvEndTransaction($inviteesFilePath);
+      egmPrizeInventoryEnd($prizeStorePath);
+      egmInviteesCsvEndTransaction($inviteesFilePath);
     };
-    if (!tcRewardReconcileAwardTransactions(
+    if (!egmRewardReconcileAwardTransactions(
       $prizeAwardLogPath,
       $prizeStorePath,
       $prizes,
@@ -6444,8 +6444,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    $existingRequest = tcRewardFindRequestEntry(
-      tcPrizeAwardLogRead($prizeAwardLogPath),
+    $existingRequest = egmRewardFindRequestEntry(
+      egmPrizeAwardLogRead($prizeAwardLogPath),
       $requestId,
       $sessionWorkId,
       $targetLevelId,
@@ -6536,7 +6536,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    $selectedStoreIndex = tcRewardWeightedPrizeIndex($prizes);
+    $selectedStoreIndex = egmRewardWeightedPrizeIndex($prizes);
     if ($selectedStoreIndex < 0) {
       $releaseAwardLocks();
       echo json_encode(['status' => 'error', 'message' => 'در حال حاضر جایزه‌ای موجود نیست.']);
@@ -6566,7 +6566,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'تاریخچه جوایز آسیب دیده است؛ جایزه‌ای ثبت نشد.']);
       exit;
     }
-    $awardId = 'tc-award-' . bin2hex(random_bytes(16));
+    $awardId = 'egm-award-' . bin2hex(random_bytes(16));
     $selectedAt = gmdate('c');
     $userFullName = resolveInviteeFullName(
       is_array($table['header'] ?? null) ? $table['header'] : [],
@@ -6579,7 +6579,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'requestId' => $requestId,
       'cardIndex' => $cardIndex,
       'status' => 'pending',
-      'source' => 'TCM.reward_flip',
+      'source' => 'EGMM.reward_flip',
       'selectedAt' => $selectedAt,
       'awardedAt' => null,
       'cancelledAt' => null,
@@ -6605,18 +6605,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'totalPrizeWonBefore' => $currentTotalPrizeWon,
       'totalPrizeWonAfter' => $currentTotalPrizeWon + $selectedPrizeValue
     ];
-    if (!tcPrizeAwardLogAppend($prizeAwardLogPath, $awardLogEntry)) {
+    if (!egmPrizeAwardLogAppend($prizeAwardLogPath, $awardLogEntry)) {
       $releaseAwardLocks();
       echo json_encode(['status' => 'error', 'message' => 'ثبت گزارش جایزه ناموفق بود؛ جایزه‌ای کسر نشد.']);
       exit;
     }
 
     $prizes[$selectedStoreIndex]['last'] = max(0, $selectedLast - 1);
-    $pendingAwardIds = tcPrizeInventoryNormalizePendingAwardIds($prizes[$selectedStoreIndex]['pendingAwardIds'] ?? []);
+    $pendingAwardIds = egmPrizeInventoryNormalizePendingAwardIds($prizes[$selectedStoreIndex]['pendingAwardIds'] ?? []);
     $pendingAwardIds[] = $awardId;
-    $prizes[$selectedStoreIndex]['pendingAwardIds'] = tcPrizeInventoryNormalizePendingAwardIds($pendingAwardIds);
-    if (!tcPrizeInventoryCommit($prizeStorePath, $prizes, false)) {
-      tcPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
+    $prizes[$selectedStoreIndex]['pendingAwardIds'] = egmPrizeInventoryNormalizePendingAwardIds($pendingAwardIds);
+    if (!egmPrizeInventoryCommit($prizeStorePath, $prizes, false)) {
+      egmPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
         'status' => 'cancelled',
         'cancelledAt' => gmdate('c'),
         'cancellationReason' => 'prize_inventory_write_failed'
@@ -6625,7 +6625,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'error', 'message' => 'رزرو جایزه ناموفق بود.']);
       exit;
     }
-    tcPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
+    egmPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
       'status' => 'inventory_reserved',
       'inventoryReservedAt' => gmdate('c')
     ]);
@@ -6638,7 +6638,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $rows[$rowIndex][$wonLevelIdsIndex] = serializeRewardStoredList($wonLevelIds);
 
     if (!writeInviteesCsv($inviteesFilePath, $rows, false)) {
-      $restorePrepared = tcPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
+      $restorePrepared = egmPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
         'status' => 'inventory_restore_pending',
         'inventoryRestoreStartedAt' => gmdate('c'),
         'inventoryRestored' => false,
@@ -6657,19 +6657,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         max(0, (int)($prizes[$selectedStoreIndex]['last'] ?? 0)) + 1
       );
       $prizes[$selectedStoreIndex]['pendingAwardIds'] = array_values(array_filter(
-        tcPrizeInventoryNormalizePendingAwardIds($prizes[$selectedStoreIndex]['pendingAwardIds'] ?? []),
+        egmPrizeInventoryNormalizePendingAwardIds($prizes[$selectedStoreIndex]['pendingAwardIds'] ?? []),
         static fn(string $id): bool => $id !== $awardId
       ));
-      $inventoryRestored = tcPrizeInventoryCommit($prizeStorePath, $prizes, false);
+      $inventoryRestored = egmPrizeInventoryCommit($prizeStorePath, $prizes, false);
       if ($inventoryRestored) {
-        tcPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
+        egmPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
           'status' => 'cancelled',
           'cancelledAt' => gmdate('c'),
           'cancellationReason' => 'invitees_csv_write_failed',
           'inventoryRestored' => true
         ]);
       } else {
-        tcPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
+        egmPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
           'status' => 'inventory_restore_pending',
           'lastErrorAt' => gmdate('c'),
           'lastError' => 'invitees_csv_write_failed_and_inventory_restore_pending',
@@ -6681,32 +6681,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    $auditFinalized = tcPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
+    $auditFinalized = egmPrizeAwardLogUpdate($prizeAwardLogPath, $awardId, [
       'status' => 'awarded',
       'awardedAt' => gmdate('c')
     ]);
     if (!$auditFinalized) {
       // The original pending entry already contains the complete award details,
       // so it can still be reconciled against the CSV after a logging outage.
-      error_log('Task Club prize award remained pending in the audit log: ' . $awardId);
+      error_log('Event Guest Manager prize award remained pending in the audit log: ' . $awardId);
     } else {
       $prizes[$selectedStoreIndex]['pendingAwardIds'] = array_values(array_filter(
-        tcPrizeInventoryNormalizePendingAwardIds($prizes[$selectedStoreIndex]['pendingAwardIds'] ?? []),
+        egmPrizeInventoryNormalizePendingAwardIds($prizes[$selectedStoreIndex]['pendingAwardIds'] ?? []),
         static fn(string $id): bool => $id !== $awardId
       ));
-      if (!tcPrizeInventoryCommit($prizeStorePath, $prizes, false)) {
-        error_log('Task Club could not clean a completed prize transaction marker: ' . $awardId);
+      if (!egmPrizeInventoryCommit($prizeStorePath, $prizes, false)) {
+        error_log('Event Guest Manager could not clean a completed prize transaction marker: ' . $awardId);
       }
     }
     $releaseAwardLocks();
-    tcActivityLogUserActivity([
+    egmActivityLogUserActivity([
       'level' => 'info',
       'user_id' => $sessionWorkId,
       'action' => 'taskclub.reward.awarded',
       'entity_type' => 'taskclub_prize_award',
       'entity_id' => $awardId,
       'status' => 'success',
-      'message' => 'Task Club card-flip prize awarded.',
+      'message' => 'Event Guest Manager card-flip prize awarded.',
       'metadata' => [
         'level_id' => $targetLevelId,
         'level_name' => trim((string)($targetLevel['name'] ?? 'Level')),
@@ -6780,8 +6780,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 
   if ($action === 'log_roll') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ورود required.']);
       exit;
     }
@@ -6828,8 +6828,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'log_answer') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ورود required.']);
       exit;
     }
@@ -6838,8 +6838,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   }
 
   if ($action === 'update_answered') {
-    $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
-    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+    $sessionWorkId = (string)($_SESSION['egm_work_id'] ?? '');
+    if (!(($_SESSION['egm_authed'] ?? false) && $sessionWorkId !== '')) {
       echo json_encode(['status' => 'error', 'message' => 'ورود required.']);
       exit;
     }
@@ -6871,10 +6871,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 $wheelSettings = loadJsonPayload(__DIR__ . '/Setting.json');
 $globalEventStatus = deriveGlobalEventStatus($wheelSettings);
-$tcTasksVisibleInitial = in_array($globalEventStatus, ['active', 'locked'], true);
-$tcRewardsEntryVisibleInitial = in_array($globalEventStatus, ['active', 'ended', 'locked'], true);
-$tcTasksInteractableInitial = $globalEventStatus === 'active';
-$taskRecords = $tcTasksVisibleInitial ? loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH) : [];
+$egmTasksVisibleInitial = in_array($globalEventStatus, ['active', 'locked'], true);
+$egmRewardsEntryVisibleInitial = in_array($globalEventStatus, ['active', 'ended', 'locked'], true);
+$egmTasksInteractableInitial = $globalEventStatus === 'active';
+$taskRecords = $egmTasksVisibleInitial ? loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH) : [];
 $panelSettings = loadPanelSettings();
 $eventLogoRaw = (string)($wheelSettings['eventLogo'] ?? '');
 $eventLogoUrl = formatSiteIconUrlForHtml($eventLogoRaw);
@@ -6955,30 +6955,30 @@ $hintAlign = trim((string)($wheelSettings['hintAlign'] ?? 'right'));
 $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlign : 'right';
 
 $inviteesMtime = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
-$sessionAuthed = isset($_SESSION['tc_authed']) && $_SESSION['tc_authed'] === true;
+$sessionAuthed = isset($_SESSION['egm_authed']) && $_SESSION['egm_authed'] === true;
 if ($sessionAuthed && $inviteesMtime === null) {
-  $expiredWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
-  tcActivityLogUserActivity([
+  $expiredWorkId = trim((string)($_SESSION['egm_work_id'] ?? ''));
+  egmActivityLogUserActivity([
     'level' => 'warning',
     'user_id' => $expiredWorkId !== '' ? $expiredWorkId : null,
     'action' => 'taskclub.session.expire',
     'entity_type' => 'taskclub_session',
     'entity_id' => $expiredWorkId !== '' ? $expiredWorkId : null,
     'status' => 'expired',
-    'message' => 'Task Club session expired because invitees data is unavailable.',
+    'message' => 'Event Guest Manager session expired because invitees data is unavailable.',
     'metadata' => [
       'reason' => 'invitees_missing',
-      'session_duration_seconds' => tcActivitySessionDurationSeconds()
+      'session_duration_seconds' => egmActivitySessionDurationSeconds()
     ],
     'audit' => true
   ]);
-  unset($_SESSION['tc_authed'], $_SESSION['tc_work_id'], $_SESSION['tc_invitees_mtime'], $_SESSION['tc_task_quiz_attempts']);
+  unset($_SESSION['egm_authed'], $_SESSION['egm_work_id'], $_SESSION['egm_invitees_mtime'], $_SESSION['egm_task_quiz_attempts']);
   $sessionAuthed = false;
 }
-if ($sessionAuthed && $inviteesMtime !== null && $inviteesMtime !== ($_SESSION['tc_invitees_mtime'] ?? null)) {
-  $_SESSION['tc_invitees_mtime'] = $inviteesMtime;
+if ($sessionAuthed && $inviteesMtime !== null && $inviteesMtime !== ($_SESSION['egm_invitees_mtime'] ?? null)) {
+  $_SESSION['egm_invitees_mtime'] = $inviteesMtime;
 }
-$sessionWorkId = $sessionAuthed ? trim((string)($_SESSION['tc_work_id'] ?? '')) : '';
+$sessionWorkId = $sessionAuthed ? trim((string)($_SESSION['egm_work_id'] ?? '')) : '';
 $sessionFullName = $sessionWorkId;
 $sessionFirstName = 'کاربر';
 $sessionPrizeWon = '';
@@ -7002,23 +7002,23 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
   $rowIndex = findInviteeRowIndex($rows, $workIdIndex, $sessionWorkId);
   if ($rowIndex < 0) {
     if ($sessionRowsChanged && !writeInviteesCsv($inviteesFilePath, $rows)) {
-      error_log('Task Club failed to persist required invitee columns while loading a user session.');
+      error_log('Event Guest Manager failed to persist required invitee columns while loading a user session.');
     }
-    tcActivityLogUserActivity([
+    egmActivityLogUserActivity([
       'level' => 'warning',
       'user_id' => $sessionWorkId !== '' ? $sessionWorkId : null,
       'action' => 'taskclub.session.expire',
       'entity_type' => 'taskclub_session',
       'entity_id' => $sessionWorkId !== '' ? $sessionWorkId : null,
       'status' => 'expired',
-      'message' => 'Task Club session expired because user row was not found.',
+      'message' => 'Event Guest Manager session expired because user row was not found.',
       'metadata' => [
         'reason' => 'user_row_missing',
-        'session_duration_seconds' => tcActivitySessionDurationSeconds()
+        'session_duration_seconds' => egmActivitySessionDurationSeconds()
       ],
       'audit' => true
     ]);
-    unset($_SESSION['tc_authed'], $_SESSION['tc_work_id'], $_SESSION['tc_invitees_mtime'], $_SESSION['tc_task_quiz_attempts']);
+    unset($_SESSION['egm_authed'], $_SESSION['egm_work_id'], $_SESSION['egm_invitees_mtime'], $_SESSION['egm_task_quiz_attempts']);
     $sessionAuthed = false;
     $sessionWorkId = '';
   } else {
@@ -7035,7 +7035,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
       $sessionRowsChanged = true;
     }
     if ($sessionRowsChanged && !writeInviteesCsv($inviteesFilePath, $rows)) {
-      error_log('Task Club failed to persist invitee columns or quiz progress while loading a user session.');
+      error_log('Event Guest Manager failed to persist invitee columns or quiz progress while loading a user session.');
     }
     if ($prizeIndex >= 0) {
       $sessionPrizeWon = trim((string)($rows[$rowIndex][$prizeIndex] ?? ''));
@@ -7051,7 +7051,7 @@ if ($sessionAuthed && $sessionWorkId !== '' && $inviteesMtime !== null) {
     }
   }
 }
-$taskItemsForView = $tcTasksVisibleInitial
+$taskItemsForView = $egmTasksVisibleInitial
   ? buildTaskPayloadForView(
     $taskRecords,
     $inviteesFilePath,
@@ -7106,9 +7106,9 @@ $sessionPayload = [
         --accent-ink: #ffffff;
         --soft-pink: #eef5ff;
         --soft-blue: #eef5ff;
-        --tc-secondary: <?= htmlspecialchars($eventSecondary, ENT_QUOTES, 'UTF-8') ?>;
-        --tc-highlight: <?= htmlspecialchars($eventHighlight, ENT_QUOTES, 'UTF-8') ?>;
-        --tc-accent-soft: <?= htmlspecialchars($eventAccentSoft, ENT_QUOTES, 'UTF-8') ?>;
+        --egm-secondary: <?= htmlspecialchars($eventSecondary, ENT_QUOTES, 'UTF-8') ?>;
+        --egm-highlight: <?= htmlspecialchars($eventHighlight, ENT_QUOTES, 'UTF-8') ?>;
+        --egm-accent-soft: <?= htmlspecialchars($eventAccentSoft, ENT_QUOTES, 'UTF-8') ?>;
         font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
         color-scheme: light;
       }
@@ -7145,8 +7145,8 @@ $sessionPayload = [
         align-items: center;
         justify-content: center;
         background:
-          radial-gradient(circle at top right, color-mix(in srgb, var(--tc-highlight) 20%, transparent), transparent 46%),
-          radial-gradient(circle at bottom left, color-mix(in srgb, var(--tc-secondary) 18%, transparent), transparent 45%),
+          radial-gradient(circle at top right, color-mix(in srgb, var(--egm-highlight) 20%, transparent), transparent 46%),
+          radial-gradient(circle at bottom left, color-mix(in srgb, var(--egm-secondary) 18%, transparent), transparent 45%),
           var(--bg);
         color: var(--ink);
         padding: 18px;
@@ -7218,7 +7218,7 @@ $sessionPayload = [
         stroke-linejoin: round;
         stroke-dasharray: 950 1250;
         stroke-dashoffset: 0;
-        animation: tc-icon-stroke 2.4s linear infinite;
+        animation: egm-icon-stroke 2.4s linear infinite;
       }
 
       .loader-text {
@@ -7239,7 +7239,7 @@ $sessionPayload = [
         pointer-events: none;
       }
 
-      @keyframes tc-icon-stroke {
+      @keyframes egm-icon-stroke {
         0% {
           stroke-dashoffset: 0;
           opacity: 0.85;
@@ -7334,7 +7334,7 @@ $sessionPayload = [
       }
 
       .brand-name {
-        color: var(--tc-secondary);
+        color: var(--egm-secondary);
         font-weight: 700;
       }
 
@@ -7363,7 +7363,7 @@ $sessionPayload = [
         padding: 12px 18px 10px;
       }
 
-      #tc-timer-area {
+      #egm-timer-area {
         flex: 1;
         min-height: 0;
         justify-content: flex-start;
@@ -7418,7 +7418,7 @@ $sessionPayload = [
         height: 160%;
         background: linear-gradient(110deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0));
         transform: rotate(14deg);
-        animation: tcGlassShine 3.2s ease-in-out infinite;
+        animation: egmGlassShine 3.2s ease-in-out infinite;
         pointer-events: none;
         z-index: 0;
       }
@@ -7717,7 +7717,7 @@ $sessionPayload = [
         text-align: center;
       }
 
-      .tc-bottom-cta {
+      .egm-bottom-cta {
         position: absolute;
         left: 0;
         right: 0;
@@ -7728,15 +7728,15 @@ $sessionPayload = [
         -webkit-backdrop-filter: blur(8px);
       }
 
-      .tc-bottom-cta.quiz-hidden {
+      .egm-bottom-cta.quiz-hidden {
         display: none;
       }
 
-      body.tc-rewards-slide-open #tc-bottom-cta {
+      body.egm-rewards-slide-open #egm-bottom-cta {
         display: none !important;
       }
 
-      .tc-bottom-cta-btn {
+      .egm-bottom-cta-btn {
         width: min(360px, calc(100vw - 56px));
         margin: 0 auto;
         display: block;
@@ -7744,8 +7744,8 @@ $sessionPayload = [
         text-align: center;
         text-decoration: none;
         border-radius: 14px;
-        border: 1px solid var(--tc-secondary);
-        background: var(--tc-secondary);
+        border: 1px solid var(--egm-secondary);
+        background: var(--egm-secondary);
         color: #ffffff;
         font-size: 0.96rem;
         font-weight: 700;
@@ -7754,17 +7754,17 @@ $sessionPayload = [
         transition: background-color 0.18s ease, transform 0.18s ease;
       }
 
-      .tc-bottom-cta-btn:hover {
-        background: var(--tc-secondary);
+      .egm-bottom-cta-btn:hover {
+        background: var(--egm-secondary);
         filter: brightness(1.06);
         transform: translateY(-1px);
       }
 
-      .tc-bottom-cta-btn:active {
+      .egm-bottom-cta-btn:active {
         transform: translateY(0);
       }
 
-      @keyframes tcCtaPulse {
+      @keyframes egmCtaPulse {
         0% {
           transform: translateY(0) scale(1);
           box-shadow: 0 14px 26px rgba(37, 86, 146, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
@@ -7779,8 +7779,8 @@ $sessionPayload = [
         }
       }
 
-      .tc-bottom-cta-btn.is-attention {
-        animation: tcCtaPulse 1.35s ease-in-out infinite;
+      .egm-bottom-cta-btn.is-attention {
+        animation: egmCtaPulse 1.35s ease-in-out infinite;
       }
 
       .rewards-view {
@@ -7790,14 +7790,14 @@ $sessionPayload = [
         gap: 10px;
       }
 
-      #tc-reward-cards-view {
+      #egm-reward-cards-view {
         flex: 1;
         min-height: 0;
         justify-content: center;
         gap: 14px;
       }
 
-      #tc-reward-cards-view .result-label {
+      #egm-reward-cards-view .result-label {
         display: block;
         margin-bottom: 1px;
         text-align: center;
@@ -7807,7 +7807,7 @@ $sessionPayload = [
         opacity: 0.72;
       }
 
-      #tc-rewards-view {
+      #egm-rewards-view {
         flex: 1;
         min-height: 0;
         justify-content: flex-start;
@@ -7832,7 +7832,7 @@ $sessionPayload = [
       }
 
       .rewards-time-box,
-      #tc-reward-cards-box {
+      #egm-reward-cards-box {
         width: min(360px, calc(100vw - 56px));
       }
 
@@ -7860,7 +7860,7 @@ $sessionPayload = [
         margin: 0 0 14px;
       }
 
-      #tc-non-value-prize-describe-wrap {
+      #egm-non-value-prize-describe-wrap {
         display: none !important;
       }
 
@@ -7877,7 +7877,7 @@ $sessionPayload = [
         margin-bottom: 0;
       }
 
-      #tc-reward-time-label {
+      #egm-reward-time-label {
         display: block;
         text-align: center;
         font-size: 0.66rem;
@@ -8079,11 +8079,11 @@ $sessionPayload = [
         }
       }
 
-      #tc-reward-status-line {
+      #egm-reward-status-line {
         display: none;
       }
 
-      #tc-reward-cards-box {
+      #egm-reward-cards-box {
         border-radius: 18px;
         border: 1px solid #d9e7fb;
         background: #f6faff;
@@ -8091,7 +8091,7 @@ $sessionPayload = [
         padding: 12px;
       }
 
-      #tc-reward-cards-box.is-disabled {
+      #egm-reward-cards-box.is-disabled {
         opacity: 0.58;
         filter: grayscale(0.4);
       }
@@ -8134,12 +8134,12 @@ $sessionPayload = [
       }
 
       .flip-card.is-picked .flip-face {
-        border-color: var(--tc-highlight);
+        border-color: var(--egm-highlight);
         box-shadow: 0 0 0 2px rgba(255, 211, 84, 0.26), 0 10px 20px rgba(33, 65, 109, 0.2);
       }
 
       .flip-card.is-picked .flip-back {
-        background: var(--tc-highlight);
+        background: var(--egm-highlight);
         color: #ffffff;
       }
 
@@ -8195,7 +8195,7 @@ $sessionPayload = [
         font-family: 'Peyda Fa Num', 'Segoe UI', Tahoma, Arial, sans-serif;
       }
 
-      @keyframes tcGlassShine {
+      @keyframes egmGlassShine {
         0% {
           left: -120%;
         }
@@ -8207,12 +8207,12 @@ $sessionPayload = [
         }
       }
 
-      #tc-task-quiz-area {
+      #egm-task-quiz-area {
         justify-content: flex-start;
         padding-top: 14px;
       }
 
-      .tc-task-quiz-head {
+      .egm-task-quiz-head {
         width: min(360px, calc(100% - 8px));
         display: flex;
         align-items: center;
@@ -8221,7 +8221,7 @@ $sessionPayload = [
         margin: 0 0 2px;
       }
 
-      .tc-task-quiz-title {
+      .egm-task-quiz-title {
         margin: 0;
         color: #29416b;
         font-size: 1rem;
@@ -8244,7 +8244,7 @@ $sessionPayload = [
         cursor: not-allowed;
       }
 
-      #tc-task-quiz-area .quiz-counter {
+      #egm-task-quiz-area .quiz-counter {
         position: static;
         align-self: flex-start;
         margin: 0;
@@ -8304,7 +8304,7 @@ $sessionPayload = [
         pointer-events: none;
       }
 
-      .tc-task-quiz-footer {
+      .egm-task-quiz-footer {
         position: absolute;
         left: 0;
         right: 0;
@@ -8661,7 +8661,7 @@ $sessionPayload = [
       .login-title {
         margin: 0;
         font-size: 1.08rem;
-        color: var(--tc-highlight);
+        color: var(--egm-highlight);
       }
 
       .info-task-area {
@@ -8682,7 +8682,7 @@ $sessionPayload = [
         gap: 6px;
       }
 
-      .tc-task-info-title {
+      .egm-task-info-title {
         margin: 0;
         text-align: center;
         color: #1f3560;
@@ -8783,7 +8783,7 @@ $sessionPayload = [
         width: 18px;
         height: 18px;
         margin: 0;
-        accent-color: var(--tc-secondary);
+        accent-color: var(--egm-secondary);
       }
 
       .info-task-skip:not(.hidden) {
@@ -8908,11 +8908,11 @@ $sessionPayload = [
         padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
       }
 
-      #tc-team-preview-step {
+      #egm-team-preview-step {
         overflow: hidden;
       }
 
-      #tc-team-preview-members {
+      #egm-team-preview-members {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
@@ -8964,34 +8964,34 @@ $sessionPayload = [
         padding-inline-start: 18px;
       }
 
-      #tc-team-rules-text {
+      #egm-team-rules-text {
         margin: 0;
         color: #4a5e86;
         line-height: 1.8;
       }
 
-      #tc-team-rules-text .team-rules-note {
+      #egm-team-rules-text .team-rules-note {
         margin-top: 8px;
         padding-top: 8px;
         border-top: 1px dashed #d5e2f8;
       }
 
-      #tc-team-rules-text p,
-      #tc-team-rules-text h1,
-      #tc-team-rules-text h2,
-      #tc-team-rules-text h3,
-      #tc-team-rules-text h4,
-      #tc-team-rules-text h5,
-      #tc-team-rules-text h6 {
+      #egm-team-rules-text p,
+      #egm-team-rules-text h1,
+      #egm-team-rules-text h2,
+      #egm-team-rules-text h3,
+      #egm-team-rules-text h4,
+      #egm-team-rules-text h5,
+      #egm-team-rules-text h6 {
         margin: 0;
       }
 
-      #tc-team-rules-text p + p {
+      #egm-team-rules-text p + p {
         margin-top: 6px;
       }
 
-      #tc-team-rules-text ul,
-      #tc-team-rules-text ol {
+      #egm-team-rules-text ul,
+      #egm-team-rules-text ol {
         margin: 8px 0 0;
         padding-inline-start: 18px;
       }
@@ -9023,7 +9023,7 @@ $sessionPayload = [
       }
 
       .team-room-invite-btn {
-        background: var(--tc-highlight);
+        background: var(--egm-highlight);
         color: #ffffff;
       }
 
@@ -9313,7 +9313,7 @@ $sessionPayload = [
         position: absolute;
         top: -9px;
         inset-inline-end: 10px;
-        background: var(--tc-highlight);
+        background: var(--egm-highlight);
         color: #fff;
         border-radius: 999px;
         padding: 2px 8px;
@@ -9477,7 +9477,7 @@ $sessionPayload = [
       .team-invite-dialog-content .login-field,
       .team-invite-dialog-content .login-input,
       .team-invite-dialog-content .login-btn,
-      .team-invite-dialog-content .tc-result-dialog-confirm,
+      .team-invite-dialog-content .egm-result-dialog-confirm,
       .team-invite-dialog-content .team-invite-result {
         width: 100%;
       }
@@ -9661,7 +9661,7 @@ $sessionPayload = [
         opacity: 0.72;
       }
 
-      .tc-confirm-dialog-actions {
+      .egm-confirm-dialog-actions {
         width: 100%;
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -9669,17 +9669,17 @@ $sessionPayload = [
         margin-top: auto;
       }
 
-      .tc-confirm-dialog-actions .tc-result-dialog-confirm {
+      .egm-confirm-dialog-actions .egm-result-dialog-confirm {
         margin-top: 0;
       }
 
-      .tc-confirm-dialog-cancel {
+      .egm-confirm-dialog-cancel {
         background: #eef3fb;
         color: #2c4b7f;
         border: 1px solid #cfdbf1;
       }
 
-      .tc-confirm-dialog-danger {
+      .egm-confirm-dialog-danger {
         background: #d5434d;
         color: #fff;
       }
@@ -9802,7 +9802,7 @@ $sessionPayload = [
       }
 
       .login-help-id {
-        color: var(--tc-secondary);
+        color: var(--egm-secondary);
         font-weight: 700;
         direction: ltr;
         unicode-bidi: plaintext;
@@ -9890,7 +9890,7 @@ $sessionPayload = [
         text-align: justify;
       }
 
-      .tc-result-dialog-overlay {
+      .egm-result-dialog-overlay {
         position: fixed;
         inset: 0;
         display: none;
@@ -9901,11 +9901,11 @@ $sessionPayload = [
         z-index: 9998;
       }
 
-      .tc-result-dialog-overlay.open {
+      .egm-result-dialog-overlay.open {
         display: flex;
       }
 
-      .tc-result-dialog {
+      .egm-result-dialog {
         width: min(460px, 100%);
         min-height: min(520px, calc(100vh - 36px));
         max-height: calc(100vh - 36px);
@@ -9923,7 +9923,7 @@ $sessionPayload = [
         padding: 24px 18px;
       }
 
-      .tc-result-dialog-title {
+      .egm-result-dialog-title {
         margin: 0;
         font-size: 1.18rem;
         color: #2a3c63;
@@ -9931,7 +9931,7 @@ $sessionPayload = [
         z-index: 2;
       }
 
-      .tc-result-dialog-content {
+      .egm-result-dialog-content {
         flex: 1;
         width: 100%;
         display: flex;
@@ -9943,21 +9943,21 @@ $sessionPayload = [
         z-index: 2;
       }
 
-      .tc-result-dialog .hint {
+      .egm-result-dialog .hint {
         font-size: 1rem;
         line-height: 1.7;
         color: #243a63;
       }
 
-      #tc-info-dialog-message {
+      #egm-info-dialog-message {
         white-space: pre-line;
         font-size: 1.04rem;
         font-weight: 600;
       }
 
-      .tc-result-gift {
+      .egm-result-gift {
         font-size: 7.2rem;
-        color: var(--tc-highlight);
+        color: var(--egm-highlight);
         line-height: 1;
         text-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
         animation: result-gift-shake 1.1s ease-in-out infinite;
@@ -9974,7 +9974,7 @@ $sessionPayload = [
         100% { transform: rotate(0deg) translateX(0); }
       }
 
-      .tc-result-dialog-confirm {
+      .egm-result-dialog-confirm {
         width: 100%;
         margin-top: auto;
         border: none;
@@ -9991,11 +9991,11 @@ $sessionPayload = [
         z-index: 2;
       }
 
-      .tc-result-dialog-confirm:hover {
+      .egm-result-dialog-confirm:hover {
         transform: translateY(-1px);
       }
 
-      .tc-result-dialog-confirm:disabled {
+      .egm-result-dialog-confirm:disabled {
         opacity: 0.7;
         cursor: not-allowed;
         transform: none;
@@ -10064,7 +10064,7 @@ $sessionPayload = [
         z-index: 50;
       }
 
-      .tc-result-dialog .confetti-layer {
+      .egm-result-dialog .confetti-layer {
         z-index: 1;
       }
 
@@ -10122,7 +10122,7 @@ $sessionPayload = [
         align-self: stretch;
       }
 
-      #tc-result {
+      #egm-result {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -10411,12 +10411,12 @@ $sessionPayload = [
           gap: 14px;
         }
 
-        .tc-bottom-cta {
+        .egm-bottom-cta {
           padding-inline: 16px;
           padding-bottom: 12px;
         }
 
-        .tc-bottom-cta-btn {
+        .egm-bottom-cta-btn {
           width: min(296px, calc(100vw - 52px));
         }
 
@@ -10436,7 +10436,7 @@ $sessionPayload = [
     </style>
   </head>
   <body class="page-loading <?= $sessionPayload['authed'] ? 'authed' : 'no-auth' ?>">
-    <div id="tc-loader" class="loader-overlay" role="status" aria-live="polite">
+    <div id="egm-loader" class="loader-overlay" role="status" aria-live="polite">
       <div class="loader-card">
         <div class="loader-icon-wrap" aria-hidden="true">
           <svg class="loader-icon-svg" viewBox="0 0 1173 773" aria-hidden="true" focusable="false">
@@ -10462,11 +10462,11 @@ $sessionPayload = [
           </p>
           <div class="topbar-actions">
             <?php if ($sessionPayload['authed']): ?>
-              <button id="tc-topbar-back" class="logout-btn hidden" type="button">
+              <button id="egm-topbar-back" class="logout-btn hidden" type="button">
                 <span aria-hidden="true"></span>
                 برگشت
               </button>
-              <button id="tc-logout" class="logout-btn" type="button">
+              <button id="egm-logout" class="logout-btn" type="button">
                 <span aria-hidden="true"></span>
                 خروج
               </button>
@@ -10491,22 +10491,22 @@ $sessionPayload = [
             <?php endif; ?>
             <h2 class="login-title"><?= htmlspecialchars($loginEventTitle, ENT_QUOTES, 'UTF-8') ?></h2>
           </div>
-          <form id="tc-login-form" class="login-form" autocomplete="on">
+          <form id="egm-login-form" class="login-form" autocomplete="on">
             <label class="login-field">
               <span>نام کاربری</span>
-              <input id="tc-login-user" class="login-input" type="text" autocomplete="username" required />
+              <input id="egm-login-user" class="login-input" type="text" autocomplete="username" required />
             </label>
             <label class="login-field">
               <span>رمز عبور</span>
               <span class="password-input-wrap">
-                <input id="tc-login-pass" class="login-input" type="password" autocomplete="current-password" required />
-                <button id="tc-login-pass-toggle" class="password-toggle" type="button" aria-label="نمایش رمز عبور" aria-pressed="false">
+                <input id="egm-login-pass" class="login-input" type="password" autocomplete="current-password" required />
+                <button id="egm-login-pass-toggle" class="password-toggle" type="button" aria-label="نمایش رمز عبور" aria-pressed="false">
                   <i class="ri-eye-line" aria-hidden="true"></i>
                 </button>
               </span>
             </label>
             <button type="submit" class="login-btn">ورود</button>
-            <p id="tc-login-msg" class="login-hint" aria-live="polite"></p>
+            <p id="egm-login-msg" class="login-hint" aria-live="polite"></p>
           </form>
           <section class="login-help-card" aria-label="راهنمای ورود و پشتیبانی">
             <p class="login-help-title">راهنمای ورود و پشتیبانی</p>
@@ -10519,18 +10519,18 @@ $sessionPayload = [
           </section>
         </div>
       <?php else: ?>
-        <div id="tc-timer-area" class="main-area">
+        <div id="egm-timer-area" class="main-area">
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-tasks-title" class="tasks-title<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>"><?= htmlspecialchars($tasksEventTitle, ENT_QUOTES, 'UTF-8') ?></h2>
-          <div id="tc-user-score-chip" class="user-score-chip<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>">
+          <h2 id="egm-tasks-title" class="tasks-title<?= $egmTasksVisibleInitial ? '' : ' hidden' ?>"><?= htmlspecialchars($tasksEventTitle, ENT_QUOTES, 'UTF-8') ?></h2>
+          <div id="egm-user-score-chip" class="user-score-chip<?= $egmTasksVisibleInitial ? '' : ' hidden' ?>">
             <span>امتیاز شما</span>
-            <strong id="tc-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
+            <strong id="egm-user-score"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
-          <p id="tc-tasks-list-label" class="tasks-list-label<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>">ماموریت‌ها</p>
-          <p id="tc-event-notice" class="tasks-empty<?= $globalEventStatus === 'active' ? ' hidden' : '' ?>" aria-live="polite"><?= $globalEventStatus === 'active' ? '' : htmlspecialchars(resolveGlobalEventUnavailableMessage($globalEventStatus), ENT_QUOTES, 'UTF-8') ?></p>
-          <div id="tc-tasks-list" class="tasks-list<?= $tcTasksVisibleInitial ? '' : ' hidden' ?>" aria-label="فهرست ماموریت‌ها">
+          <p id="egm-tasks-list-label" class="tasks-list-label<?= $egmTasksVisibleInitial ? '' : ' hidden' ?>">ماموریت‌ها</p>
+          <p id="egm-event-notice" class="tasks-empty<?= $globalEventStatus === 'active' ? ' hidden' : '' ?>" aria-live="polite"><?= $globalEventStatus === 'active' ? '' : htmlspecialchars(resolveGlobalEventUnavailableMessage($globalEventStatus), ENT_QUOTES, 'UTF-8') ?></p>
+          <div id="egm-tasks-list" class="tasks-list<?= $egmTasksVisibleInitial ? '' : ' hidden' ?>" aria-label="فهرست ماموریت‌ها">
             <?php if ($taskItemsForView): ?>
               <?php foreach ($taskItemsForView as $taskItem): ?>
                 <?php
@@ -10542,7 +10542,7 @@ $sessionPayload = [
                   $isTeamStartedPending = (bool)($taskItem['teamStartedPending'] ?? false);
                   $taskTypeToken = (string)($taskItem['taskType'] ?? 'quiz');
                   $taskStatusToken = (string)($taskItem['status'] ?? 'inactive');
-                  $isButtonInteractable = $tcTasksInteractableInitial && $isAvailable;
+                  $isButtonInteractable = $egmTasksInteractableInitial && $isAvailable;
                   $buttonClass = 'task-item-btn';
                   if (!$isButtonInteractable) {
                     $buttonClass .= ' is-disabled';
@@ -10597,113 +10597,113 @@ $sessionPayload = [
             <?php endif; ?>
           </div>
         </div>
-        <div id="tc-bottom-cta" class="tc-bottom-cta<?= $tcRewardsEntryVisibleInitial ? '' : ' hidden' ?>">
-          <button id="tc-open-rewards-btn" class="tc-bottom-cta-btn" type="button">دریافت جایزه</button>
+        <div id="egm-bottom-cta" class="egm-bottom-cta<?= $egmRewardsEntryVisibleInitial ? '' : ' hidden' ?>">
+          <button id="egm-open-rewards-btn" class="egm-bottom-cta-btn" type="button">دریافت جایزه</button>
         </div>
-        <div id="tc-rewards-view" class="main-area rewards-view hidden" aria-hidden="true">
+        <div id="egm-rewards-view" class="main-area rewards-view hidden" aria-hidden="true">
           <?php if ($eventLogoUrl !== ''): ?>
             <img class="task-event-logo" src="<?= htmlspecialchars($eventLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="لوگوی رویداد" />
           <?php endif; ?>
-          <h2 id="tc-rewards-title" class="tasks-title">مراحل دریافت جوایز</h2>
+          <h2 id="egm-rewards-title" class="tasks-title">مراحل دریافت جوایز</h2>
           <div class="user-score-chip">
             <span>امتیاز شما</span>
-            <strong id="tc-reward-user-score-chip-value"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
+            <strong id="egm-reward-user-score-chip-value"><?= (int)($sessionPayload['taskTotalScore'] ?? 0) ?></strong>
           </div>
           <section class="rewards-roadmap-main">
-            <div id="tc-reward-roadmap" class="roadmap-list"></div>
+            <div id="egm-reward-roadmap" class="roadmap-list"></div>
           </section>
           <div class="result rewards-total-bar">
-            <span id="tc-reward-time-label" class="result-label">مجموع جوایز برنده شده</span>
-            <p id="tc-reward-time-value" class="result-value">—</p>
+            <span id="egm-reward-time-label" class="result-label">مجموع جوایز برنده شده</span>
+            <p id="egm-reward-time-value" class="result-value">—</p>
           </div>
-          <div id="tc-non-value-prize-describe-wrap" class="reward-description-cta hidden">
-            <button id="tc-non-value-prize-describe-btn" class="tc-bottom-cta-btn" type="button">توضیحات</button>
+          <div id="egm-non-value-prize-describe-wrap" class="reward-description-cta hidden">
+            <button id="egm-non-value-prize-describe-btn" class="egm-bottom-cta-btn" type="button">توضیحات</button>
           </div>
-          <p id="tc-reward-status-line" class="tasks-empty" aria-live="polite"></p>
+          <p id="egm-reward-status-line" class="tasks-empty" aria-live="polite"></p>
         </div>
-        <div id="tc-reward-cards-view" class="main-area rewards-view hidden" aria-hidden="true">
-          <p id="tc-reward-cards-hint" class="tasks-empty"></p>
-          <section id="tc-reward-cards-box" class="cards-box">
-            <div id="tc-reward-cards" class="cards-grid"></div>
+        <div id="egm-reward-cards-view" class="main-area rewards-view hidden" aria-hidden="true">
+          <p id="egm-reward-cards-hint" class="tasks-empty"></p>
+          <section id="egm-reward-cards-box" class="cards-box">
+            <div id="egm-reward-cards" class="cards-grid"></div>
           </section>
           <div class="result rewards-time-box">
             <span class="result-label">مجموع جوایز برنده شده</span>
-            <p id="tc-reward-cards-total-value" class="result-value"><?= htmlspecialchars($initialRewardCardsTotalDisplay, ENT_QUOTES, 'UTF-8') ?></p>
+            <p id="egm-reward-cards-total-value" class="result-value"><?= htmlspecialchars($initialRewardCardsTotalDisplay, ENT_QUOTES, 'UTF-8') ?></p>
           </div>
         </div>
-        <div id="tc-reward-description-view" class="main-area rewards-view reward-description-view hidden" aria-hidden="true">
+        <div id="egm-reward-description-view" class="main-area rewards-view reward-description-view hidden" aria-hidden="true">
           <div class="info-task-head">
-            <h3 id="tc-reward-description-title" class="tc-task-info-title">توضیحات</h3>
+            <h3 id="egm-reward-description-title" class="egm-task-info-title">توضیحات</h3>
           </div>
-          <div id="tc-reward-description-content" class="info-task-content"></div>
-          <button id="tc-reward-description-close" class="login-btn info-task-ack" type="button">متوجه شدم</button>
+          <div id="egm-reward-description-content" class="info-task-content"></div>
+          <button id="egm-reward-description-close" class="login-btn info-task-ack" type="button">متوجه شدم</button>
         </div>
-        <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
-          <div class="tc-task-quiz-head">
-            <h3 id="tc-task-quiz-title" class="tc-task-quiz-title">ماموریت کوییز</h3>
+        <div id="egm-task-quiz-area" class="quiz-area quiz-hidden">
+          <div class="egm-task-quiz-head">
+            <h3 id="egm-task-quiz-title" class="egm-task-quiz-title">ماموریت کوییز</h3>
           </div>
-          <div id="tc-task-quiz-counter" class="quiz-counter">1 / 1</div>
-          <div id="tc-task-quiz-question" class="quiz-question-box">-</div>
-          <div id="tc-task-quiz-answers" class="quiz-answers-grid"></div>
-          <div class="quiz-timer-track"><div id="tc-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
+          <div id="egm-task-quiz-counter" class="quiz-counter">1 / 1</div>
+          <div id="egm-task-quiz-question" class="quiz-question-box">-</div>
+          <div id="egm-task-quiz-answers" class="quiz-answers-grid"></div>
+          <div class="quiz-timer-track"><div id="egm-task-quiz-timer-fill" class="quiz-timer-fill"></div></div>
         </div>
-        <div id="tc-task-quiz-footer" class="tc-bottom-cta tc-task-quiz-footer quiz-hidden">
-          <button id="tc-task-quiz-next" class="login-btn info-task-ack quiz-nav-next" type="button" disabled>بعدی</button>
+        <div id="egm-task-quiz-footer" class="egm-bottom-cta egm-task-quiz-footer quiz-hidden">
+          <button id="egm-task-quiz-next" class="login-btn info-task-ack quiz-nav-next" type="button" disabled>بعدی</button>
         </div>
-        <div id="tc-task-info-area" class="info-task-area quiz-hidden">
-          <div id="tc-task-info-head" class="info-task-head">
-            <h3 id="tc-task-info-title" class="tc-task-info-title">اطلاعات ماموریت</h3>
+        <div id="egm-task-info-area" class="info-task-area quiz-hidden">
+          <div id="egm-task-info-head" class="info-task-head">
+            <h3 id="egm-task-info-title" class="egm-task-info-title">اطلاعات ماموریت</h3>
           </div>
-          <div id="tc-task-info-content" class="info-task-content"></div>
-          <section id="tc-team-rules-step" class="team-task-step hidden">
+          <div id="egm-task-info-content" class="info-task-content"></div>
+          <section id="egm-team-rules-step" class="team-task-step hidden">
             <div class="info-task-section team-task-rules-card">
               <h3>قوانین تیم</h3>
-              <div id="tc-team-rules-text">برای این ماموریت تیمی ابتدا تیم خود را بسازید یا به یک تیم ملحق شوید.</div>
+              <div id="egm-team-rules-text">برای این ماموریت تیمی ابتدا تیم خود را بسازید یا به یک تیم ملحق شوید.</div>
             </div>
             <div class="team-task-actions">
-              <button id="tc-team-create-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
+              <button id="egm-team-create-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             </div>
           </section>
-          <section id="tc-team-create-name-step" class="team-task-step hidden">
+          <section id="egm-team-create-name-step" class="team-task-step hidden">
             <label class="login-field">
               <span>نام تیم را انتخاب کنید</span>
-              <input id="tc-team-create-name-input" class="login-input" type="text" maxlength="80" placeholder="نام تیم" />
+              <input id="egm-team-create-name-input" class="login-input" type="text" maxlength="80" placeholder="نام تیم" />
             </label>
-            <button id="tc-team-create-name-confirm" class="login-btn describe-photo-btn" type="button">تایید نام</button>
+            <button id="egm-team-create-name-confirm" class="login-btn describe-photo-btn" type="button">تایید نام</button>
           </section>
-          <section id="tc-team-create-type-step" class="team-task-step hidden">
+          <section id="egm-team-create-type-step" class="team-task-step hidden">
             <p class="team-list-title">نوع تیم را انتخاب کنید</p>
             <div class="team-join-type-list">
               <label class="team-join-type-option">
-                <input type="radio" name="tc-team-create-join-type" value="private" checked />
+                <input type="radio" name="egm-team-create-join-type" value="private" checked />
                 <span class="team-join-type-text">
                   <strong>تیم خصوصی</strong>
                   <small>فقط افرادی که دعوت می‌کنید می‌توانند ملحق شوند</small>
                 </span>
               </label>
               <label class="team-join-type-option">
-                <input type="radio" name="tc-team-create-join-type" value="public_request" />
+                <input type="radio" name="egm-team-create-join-type" value="public_request" />
                 <span class="team-join-type-text">
                   <strong>ورود فقط با درخواست</strong>
                   <small>در لیست تیم‌ها نمایش داده می‌شود و دیگران می‌توانند درخواست عضویت بفرستند</small>
                 </span>
               </label>
               <label class="team-join-type-option">
-                <input type="radio" name="tc-team-create-join-type" value="public_open" />
+                <input type="radio" name="egm-team-create-join-type" value="public_open" />
                 <span class="team-join-type-text">
                   <strong>ورود آزاد</strong>
                   <small>هر کسی می‌تواند تیم را ببیند و مستقیم وارد شود</small>
                 </span>
               </label>
             </div>
-            <button id="tc-team-create-type-confirm" class="login-btn describe-photo-btn" type="button">ادامه و ساخت تیم</button>
+            <button id="egm-team-create-type-confirm" class="login-btn describe-photo-btn" type="button">ادامه و ساخت تیم</button>
           </section>
-          <section id="tc-team-room-step" class="team-task-step hidden">
-            <p id="tc-team-room-name" class="describe-photo-editor-title">-</p>
-            <p id="tc-team-room-slot" class="describe-photo-index team-room-slot-badge">-</p>
-            <div id="tc-team-room-top-actions" class="team-room-top-actions hidden">
-              <button id="tc-team-open-invite-btn" class="login-btn describe-photo-btn team-room-invite-btn" type="button">دعوت دیگران</button>
-              <button id="tc-team-settings-btn" class="login-btn describe-photo-btn secondary team-settings-icon-btn" type="button" aria-label="تنظیمات تیم">
+          <section id="egm-team-room-step" class="team-task-step hidden">
+            <p id="egm-team-room-name" class="describe-photo-editor-title">-</p>
+            <p id="egm-team-room-slot" class="describe-photo-index team-room-slot-badge">-</p>
+            <div id="egm-team-room-top-actions" class="team-room-top-actions hidden">
+              <button id="egm-team-open-invite-btn" class="login-btn describe-photo-btn team-room-invite-btn" type="button">دعوت دیگران</button>
+              <button id="egm-team-settings-btn" class="login-btn describe-photo-btn secondary team-settings-icon-btn" type="button" aria-label="تنظیمات تیم">
                 <span class="team-settings-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 8.1a3.9 3.9 0 1 1 0 7.8 3.9 3.9 0 0 1 0-7.8Zm8.2 3.2-.9-.2a7.2 7.2 0 0 0-.5-1.2l.5-.8a1.4 1.4 0 0 0-.2-1.8l-1.1-1.1a1.4 1.4 0 0 0-1.8-.2l-.8.5c-.4-.2-.8-.4-1.2-.5l-.2-.9A1.4 1.4 0 0 0 12.6 4h-1.2a1.4 1.4 0 0 0-1.4 1.1l-.2.9c-.4.1-.8.3-1.2.5l-.8-.5a1.4 1.4 0 0 0-1.8.2L4.9 7.3a1.4 1.4 0 0 0-.2 1.8l.5.8c-.2.4-.4.8-.5 1.2l-.9.2A1.4 1.4 0 0 0 2.7 12v1.2c0 .7.5 1.2 1.1 1.4l.9.2c.1.4.3.8.5 1.2l-.5.8a1.4 1.4 0 0 0 .2 1.8l1.1 1.1c.5.5 1.2.5 1.8.2l.8-.5c.4.2.8.4 1.2.5l.2.9c.2.6.7 1.1 1.4 1.1h1.2c.7 0 1.2-.5 1.4-1.1l.2-.9c.4-.1.8-.3 1.2-.5l.8.5c.6.3 1.3.3 1.8-.2l1.1-1.1c.5-.5.5-1.2.2-1.8l-.5-.8c.2-.4.4-.8.5-1.2l.9-.2c.6-.2 1.1-.7 1.1-1.4V12c0-.7-.5-1.2-1.1-1.4Z"/>
@@ -10711,67 +10711,67 @@ $sessionPayload = [
                 </span>
               </button>
             </div>
-            <div id="tc-team-room-members" class="team-members-grid"></div>
+            <div id="egm-team-room-members" class="team-members-grid"></div>
             <div class="team-task-actions team-task-actions--sticky">
-              <button id="tc-team-start-btn" class="login-btn describe-photo-btn" type="button" disabled>شروع چالش</button>
+              <button id="egm-team-start-btn" class="login-btn describe-photo-btn" type="button" disabled>شروع چالش</button>
             </div>
           </section>
-          <section id="tc-team-find-step" class="team-task-step hidden">
+          <section id="egm-team-find-step" class="team-task-step hidden">
             <div class="team-find-actions">
-              <button id="tc-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
-              <button id="tc-team-create-from-find-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
+              <button id="egm-team-open-search-btn" class="login-btn describe-photo-btn secondary" type="button">جستجوی تیم</button>
+              <button id="egm-team-create-from-find-btn" class="login-btn describe-photo-btn" type="button">ساخت تیم</button>
             </div>
-            <div id="tc-team-find-additional-text" class="team-find-additional-text hidden"></div>
-            <p id="tc-team-groups-hint" class="team-groups-hint">گروه تیم‌ها</p>
-            <div id="tc-team-invited-group" class="team-list-group team-list-group--invited">
+            <div id="egm-team-find-additional-text" class="team-find-additional-text hidden"></div>
+            <p id="egm-team-groups-hint" class="team-groups-hint">گروه تیم‌ها</p>
+            <div id="egm-team-invited-group" class="team-list-group team-list-group--invited">
               <p class="team-list-title">دعوت‌شده‌ها</p>
-              <div id="tc-team-invited-list" class="team-list team-list--invited"></div>
+              <div id="egm-team-invited-list" class="team-list team-list--invited"></div>
             </div>
             <div class="team-list-group team-list-group--public">
               <p class="team-list-title">تیم‌های عمومی</p>
-              <div id="tc-team-public-list" class="team-list team-list--public"></div>
+              <div id="egm-team-public-list" class="team-list team-list--public"></div>
             </div>
           </section>
-          <section id="tc-team-search-step" class="team-task-step hidden">
+          <section id="egm-team-search-step" class="team-task-step hidden">
             <label class="login-field">
               <span>جستجوی سرگروه</span>
               <small class="team-field-hint">شماره پرسنلی سرگروه مدنظر خود را وارد کنید.</small>
-              <input id="tc-team-search-leader-input" class="login-input" type="text" placeholder="شماره پرسنلی سرگروه" />
+              <input id="egm-team-search-leader-input" class="login-input" type="text" placeholder="شماره پرسنلی سرگروه" />
             </label>
-            <button id="tc-team-search-leader-btn" class="login-btn describe-photo-btn" type="button">جستجوی تیم</button>
+            <button id="egm-team-search-leader-btn" class="login-btn describe-photo-btn" type="button">جستجوی تیم</button>
           </section>
-          <section id="tc-team-preview-step" class="team-task-step hidden">
-            <p id="tc-team-preview-name" class="describe-photo-editor-title">-</p>
-            <p id="tc-team-preview-meta" class="team-meta-badges">-</p>
-            <div id="tc-team-preview-members" class="team-list"></div>
+          <section id="egm-team-preview-step" class="team-task-step hidden">
+            <p id="egm-team-preview-name" class="describe-photo-editor-title">-</p>
+            <p id="egm-team-preview-meta" class="team-meta-badges">-</p>
+            <div id="egm-team-preview-members" class="team-list"></div>
             <div class="team-task-actions team-task-actions--sticky team-preview-actions">
-              <button id="tc-team-preview-join-btn" class="login-btn describe-photo-btn" type="button">درخواست عضویت</button>
+              <button id="egm-team-preview-join-btn" class="login-btn describe-photo-btn" type="button">درخواست عضویت</button>
             </div>
           </section>
-          <section id="tc-team-settings-step" class="team-task-step hidden">
+          <section id="egm-team-settings-step" class="team-task-step hidden">
             <label class="login-field">
               <span>نام تیم</span>
-              <input id="tc-team-settings-name-input" class="login-input" type="text" maxlength="80" placeholder="نام جدید تیم" />
+              <input id="egm-team-settings-name-input" class="login-input" type="text" maxlength="80" placeholder="نام جدید تیم" />
             </label>
-            <div id="tc-team-settings-join-wrap" class="login-field">
+            <div id="egm-team-settings-join-wrap" class="login-field">
               <span>نوع عضویت</span>
               <div class="team-join-type-list">
                 <label class="team-join-type-option">
-                  <input type="radio" name="tc-team-settings-join-type" value="private" checked />
+                  <input type="radio" name="egm-team-settings-join-type" value="private" checked />
                   <span class="team-join-type-text">
                     <strong>تیم خصوصی</strong>
                     <small>فقط افرادی که دعوت می‌کنید می‌توانند ملحق شوند</small>
                   </span>
                 </label>
                 <label class="team-join-type-option">
-                  <input type="radio" name="tc-team-settings-join-type" value="public_request" />
+                  <input type="radio" name="egm-team-settings-join-type" value="public_request" />
                   <span class="team-join-type-text">
                     <strong>ورود فقط با درخواست</strong>
                     <small>نمایش عمومی همراه با تایید سرگروه</small>
                   </span>
                 </label>
                 <label class="team-join-type-option">
-                  <input type="radio" name="tc-team-settings-join-type" value="public_open" />
+                  <input type="radio" name="egm-team-settings-join-type" value="public_open" />
                   <span class="team-join-type-text">
                     <strong>ورود آزاد</strong>
                     <small>همه کاربران می‌توانند مستقیم عضو شوند</small>
@@ -10779,113 +10779,113 @@ $sessionPayload = [
                 </label>
               </div>
             </div>
-            <button id="tc-team-settings-save-btn" class="login-btn describe-photo-btn" type="button">ذخیره تنظیمات</button>
-            <button id="tc-team-settings-delete-btn" class="login-btn team-danger-btn" type="button">حذف تیم</button>
-            <button id="tc-team-settings-leave-btn" class="login-btn team-danger-btn hidden" type="button">خروج از تیم</button>
+            <button id="egm-team-settings-save-btn" class="login-btn describe-photo-btn" type="button">ذخیره تنظیمات</button>
+            <button id="egm-team-settings-delete-btn" class="login-btn team-danger-btn" type="button">حذف تیم</button>
+            <button id="egm-team-settings-leave-btn" class="login-btn team-danger-btn hidden" type="button">خروج از تیم</button>
           </section>
-          <section id="tc-team-challenge-step" class="team-task-step hidden">
-            <p id="tc-team-challenge-title" class="describe-photo-editor-title">راهنمای چالش تیمی</p>
-            <div id="tc-team-challenge-content" class="info-task-content"></div>
-            <button id="tc-team-challenge-back-btn" class="login-btn describe-photo-btn secondary" type="button">برگشت به تیم</button>
+          <section id="egm-team-challenge-step" class="team-task-step hidden">
+            <p id="egm-team-challenge-title" class="describe-photo-editor-title">راهنمای چالش تیمی</p>
+            <div id="egm-team-challenge-content" class="info-task-content"></div>
+            <button id="egm-team-challenge-back-btn" class="login-btn describe-photo-btn secondary" type="button">برگشت به تیم</button>
           </section>
-          <section id="tc-describe-photo-step" class="describe-photo-step hidden">
+          <section id="egm-describe-photo-step" class="describe-photo-step hidden">
             <div class="describe-photo-preview">
-              <img id="tc-describe-photo-image" class="describe-photo-image" alt="تصویر ماموریت" />
+              <img id="egm-describe-photo-image" class="describe-photo-image" alt="تصویر ماموریت" />
             </div>
-            <p id="tc-describe-photo-name" class="describe-photo-name">-</p>
-            <p id="tc-describe-photo-index" class="describe-photo-index">1 / 3</p>
+            <p id="egm-describe-photo-name" class="describe-photo-name">-</p>
+            <p id="egm-describe-photo-index" class="describe-photo-index">1 / 3</p>
             <div class="describe-photo-actions">
-              <button id="tc-describe-photo-change" class="login-btn describe-photo-btn secondary" type="button">تغییر عکس 1/3</button>
-              <button id="tc-describe-photo-select" class="login-btn describe-photo-btn" type="button">انتخاب این تصویر</button>
+              <button id="egm-describe-photo-change" class="login-btn describe-photo-btn secondary" type="button">تغییر عکس 1/3</button>
+              <button id="egm-describe-photo-select" class="login-btn describe-photo-btn" type="button">انتخاب این تصویر</button>
             </div>
           </section>
-          <section id="tc-describe-photo-editor-step" class="describe-photo-editor hidden">
-            <p id="tc-describe-photo-editor-title" class="describe-photo-editor-title">-</p>
+          <section id="egm-describe-photo-editor-step" class="describe-photo-editor hidden">
+            <p id="egm-describe-photo-editor-title" class="describe-photo-editor-title">-</p>
             <div class="describe-photo-preview describe-photo-editor-preview">
-              <img id="tc-describe-photo-editor-image" class="describe-photo-image" alt="تصویر انتخاب شده" />
+              <img id="egm-describe-photo-editor-image" class="describe-photo-image" alt="تصویر انتخاب شده" />
             </div>
-            <p id="tc-describe-photo-editor-name" class="describe-photo-index">الهی‌نامه شما بر اساس تصویر:</p>
+            <p id="egm-describe-photo-editor-name" class="describe-photo-index">الهی‌نامه شما بر اساس تصویر:</p>
             <textarea
-              id="tc-describe-photo-text"
+              id="egm-describe-photo-text"
               class="describe-photo-textarea"
               rows="10"
               maxlength="8000"
               placeholder="الهی‌نامه خود را بر اساس تصویر بنویسید (حداکثر 300 کلمه)"
             ></textarea>
-            <p id="tc-describe-photo-word-count" class="describe-photo-word-count">0 / 300 کلمه</p>
-            <button id="tc-describe-photo-save" class="login-btn describe-photo-save-btn" type="button">ذخیره</button>
+            <p id="egm-describe-photo-word-count" class="describe-photo-word-count">0 / 300 کلمه</p>
+            <button id="egm-describe-photo-save" class="login-btn describe-photo-save-btn" type="button">ذخیره</button>
           </section>
-          <label id="tc-task-info-skip-wrap" class="info-task-skip hidden">
-            <input id="tc-task-info-skip" type="checkbox" />
+          <label id="egm-task-info-skip-wrap" class="info-task-skip hidden">
+            <input id="egm-task-info-skip" type="checkbox" />
             <span>دوباره نشان نده</span>
           </label>
-          <button id="tc-task-info-ack" class="login-btn info-task-ack" type="button">متوجه شدم</button>
+          <button id="egm-task-info-ack" class="login-btn info-task-ack" type="button">متوجه شدم</button>
         </div>
       <?php endif; ?>
       </section>
     </main>
     <?php if ($sessionPayload['authed']): ?>
-      <div id="tc-task-result-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
-        <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-task-result-title">
-          <h3 id="tc-task-result-title" class="tc-result-dialog-title">نتیجه ماموریت</h3>
-          <div class="tc-result-dialog-content">
+      <div id="egm-task-result-dialog" class="egm-result-dialog-overlay" aria-hidden="true">
+        <section class="egm-result-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-task-result-title">
+          <h3 id="egm-task-result-title" class="egm-result-dialog-title">نتیجه ماموریت</h3>
+          <div class="egm-result-dialog-content">
             <div class="result">
               <span class="result-label">امتیاز</span>
-              <p id="tc-task-result-value" class="result-value">0</p>
+              <p id="egm-task-result-value" class="result-value">0</p>
             </div>
-            <p id="tc-task-result-message" class="hint hint-align-center">-</p>
+            <p id="egm-task-result-message" class="hint hint-align-center">-</p>
           </div>
-          <button id="tc-task-result-confirm" class="tc-result-dialog-confirm" type="button">تایید</button>
+          <button id="egm-task-result-confirm" class="egm-result-dialog-confirm" type="button">تایید</button>
         </section>
       </div>
-      <div id="tc-reward-win-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
-        <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-reward-win-title">
-          <div id="tc-reward-win-confetti" class="confetti-layer" aria-hidden="true"></div>
-          <h3 id="tc-reward-win-title" class="tc-result-dialog-title">شما برنده شدید</h3>
-          <div class="tc-result-dialog-content">
-            <span class="tc-result-gift" aria-hidden="true">🎁</span>
+      <div id="egm-reward-win-dialog" class="egm-result-dialog-overlay" aria-hidden="true">
+        <section class="egm-result-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-reward-win-title">
+          <div id="egm-reward-win-confetti" class="confetti-layer" aria-hidden="true"></div>
+          <h3 id="egm-reward-win-title" class="egm-result-dialog-title">شما برنده شدید</h3>
+          <div class="egm-result-dialog-content">
+            <span class="egm-result-gift" aria-hidden="true">🎁</span>
             <div class="result">
               <span class="result-label">جایزه شما</span>
-              <p id="tc-reward-win-value" class="result-value">-</p>
+              <p id="egm-reward-win-value" class="result-value">-</p>
             </div>
-            <p id="tc-reward-win-message" class="hint hint-align-center">تبریک! جایزه شما ثبت شد.</p>
+            <p id="egm-reward-win-message" class="hint hint-align-center">تبریک! جایزه شما ثبت شد.</p>
           </div>
-          <button id="tc-reward-win-confirm" class="tc-result-dialog-confirm" type="button">عالیه</button>
+          <button id="egm-reward-win-confirm" class="egm-result-dialog-confirm" type="button">عالیه</button>
         </section>
       </div>
-      <div id="tc-info-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
-        <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-info-dialog-title">
-          <h3 id="tc-info-dialog-title" class="tc-result-dialog-title">پیام</h3>
-          <div class="tc-result-dialog-content">
-            <p id="tc-info-dialog-message" class="hint hint-align-center">-</p>
+      <div id="egm-info-dialog" class="egm-result-dialog-overlay" aria-hidden="true">
+        <section class="egm-result-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-info-dialog-title">
+          <h3 id="egm-info-dialog-title" class="egm-result-dialog-title">پیام</h3>
+          <div class="egm-result-dialog-content">
+            <p id="egm-info-dialog-message" class="hint hint-align-center">-</p>
           </div>
-          <button id="tc-info-dialog-confirm" class="tc-result-dialog-confirm" type="button">متوجه شدم</button>
+          <button id="egm-info-dialog-confirm" class="egm-result-dialog-confirm" type="button">متوجه شدم</button>
         </section>
       </div>
-      <div id="tc-team-invite-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
-        <section class="tc-result-dialog team-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-team-invite-dialog-title">
-          <h3 id="tc-team-invite-dialog-title" class="tc-result-dialog-title">دعوت عضو جدید</h3>
-          <div class="tc-result-dialog-content team-invite-dialog-content">
+      <div id="egm-team-invite-dialog" class="egm-result-dialog-overlay" aria-hidden="true">
+        <section class="egm-result-dialog team-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-team-invite-dialog-title">
+          <h3 id="egm-team-invite-dialog-title" class="egm-result-dialog-title">دعوت عضو جدید</h3>
+          <div class="egm-result-dialog-content team-invite-dialog-content">
             <label class="login-field">
               <span>شماره پرسنلی (Work ID)</span>
-              <input id="tc-team-invite-query-input" class="login-input" type="text" placeholder="مثال: 12345" />
+              <input id="egm-team-invite-query-input" class="login-input" type="text" placeholder="مثال: 12345" />
             </label>
-            <div id="tc-team-invite-result" class="team-invite-result hidden">
-              <p id="tc-team-invite-result-name" class="team-invite-result-name">-</p>
+            <div id="egm-team-invite-result" class="team-invite-result hidden">
+              <p id="egm-team-invite-result-name" class="team-invite-result-name">-</p>
             </div>
-            <button id="tc-team-invite-action-btn" class="tc-result-dialog-confirm" type="button">جستجو</button>
+            <button id="egm-team-invite-action-btn" class="egm-result-dialog-confirm" type="button">جستجو</button>
           </div>
         </section>
       </div>
-      <div id="tc-confirm-dialog" class="tc-result-dialog-overlay" aria-hidden="true">
-        <section class="tc-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-confirm-dialog-title">
-          <h3 id="tc-confirm-dialog-title" class="tc-result-dialog-title">تایید عملیات</h3>
-          <div class="tc-result-dialog-content">
-            <p id="tc-confirm-dialog-message" class="hint hint-align-center">-</p>
+      <div id="egm-confirm-dialog" class="egm-result-dialog-overlay" aria-hidden="true">
+        <section class="egm-result-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-confirm-dialog-title">
+          <h3 id="egm-confirm-dialog-title" class="egm-result-dialog-title">تایید عملیات</h3>
+          <div class="egm-result-dialog-content">
+            <p id="egm-confirm-dialog-message" class="hint hint-align-center">-</p>
           </div>
-          <div class="tc-confirm-dialog-actions">
-            <button id="tc-confirm-dialog-cancel" class="tc-result-dialog-confirm tc-confirm-dialog-cancel" type="button">انصراف</button>
-            <button id="tc-confirm-dialog-confirm" class="tc-result-dialog-confirm tc-confirm-dialog-danger" type="button">تایید</button>
+          <div class="egm-confirm-dialog-actions">
+            <button id="egm-confirm-dialog-cancel" class="egm-result-dialog-confirm egm-confirm-dialog-cancel" type="button">انصراف</button>
+            <button id="egm-confirm-dialog-confirm" class="egm-result-dialog-confirm egm-confirm-dialog-danger" type="button">تایید</button>
           </div>
         </section>
       </div>
@@ -10897,18 +10897,18 @@ $sessionPayload = [
           const body = document.body;
           if (!body || !body.classList.contains('page-loading')) return;
           body.classList.remove('page-loading');
-          const loader = document.getElementById('tc-loader');
+          const loader = document.getElementById('egm-loader');
           if (loader) {
             loader.classList.add('loader-hidden');
             setTimeout(() => loader.remove(), 450);
           }
         }, 9000);
-        window.__tcClearLoaderWatchdog = () => clearTimeout(watchdog);
+        window.__egmClearLoaderWatchdog = () => clearTimeout(watchdog);
       })();
     </script>
 
     <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
-      const loaderEl = document.getElementById('tc-loader');
+      const loaderEl = document.getElementById('egm-loader');
       const bodyEl = document.body;
       const loaderStart = performance.now();
       const minLoaderDuration = 1300;
@@ -10927,8 +10927,8 @@ $sessionPayload = [
       };
 
       const revealPage = () => {
-        if (typeof window.__tcClearLoaderWatchdog === 'function') {
-          window.__tcClearLoaderWatchdog();
+        if (typeof window.__egmClearLoaderWatchdog === 'function') {
+          window.__egmClearLoaderWatchdog();
         }
         bodyEl.classList.remove('page-loading');
         if (loaderEl) {
@@ -10954,7 +10954,7 @@ $sessionPayload = [
       bootReady();
 
       const sessionInfo = <?= json_encode($sessionPayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-      let csrfToken = <?= json_encode($_SESSION['tc_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+      let csrfToken = <?= json_encode($_SESSION['egm_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const rewardGuideInfo = <?= json_encode($rewardGuidePayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const rewardPrizeDisplayInfo = <?= json_encode($rewardPrizeDisplayPayload, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
       const isCsrfMismatchPayload = (payload) => (
@@ -10964,8 +10964,8 @@ $sessionPayload = [
         payload.csrf.trim() !== ''
       );
       const rewardCardLogoUrl = <?= json_encode($eventLogoUrl !== '' ? $eventLogoUrl : $fallbackSiteIconUrl, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-      const loginForm = document.getElementById('tc-login-form');
-      const logoutBtn = document.getElementById('tc-logout');
+      const loginForm = document.getElementById('egm-login-form');
+      const logoutBtn = document.getElementById('egm-logout');
       const createRuntimeLoader = (primaryText, secondaryText = '') => {
         const overlay = document.createElement('div');
         overlay.className = 'loader-overlay';
@@ -11072,11 +11072,11 @@ $sessionPayload = [
         if (loaderText) {
           createRuntimeLoader(loaderText, loaderSubtext);
         }
-        if (typeof tcFlushCurrentSlide === 'function') {
-          tcFlushCurrentSlide('logout', { beacon: true });
+        if (typeof egmFlushCurrentSlide === 'function') {
+          egmFlushCurrentSlide('logout', { beacon: true });
         }
-        if (typeof tcLogActivity === 'function') {
-          tcLogActivity('session_time', { reason: 'logout' }, { beacon: true });
+        if (typeof egmLogActivity === 'function') {
+          egmLogActivity('session_time', { reason: 'logout' }, { beacon: true });
         }
         try {
           await fetch(window.location.href, {
@@ -11092,10 +11092,10 @@ $sessionPayload = [
         .replace(/[٠-٩]/g, (char) => String(char.charCodeAt(0) - 1584));
       if (!sessionInfo?.authed) {
         const loginBtn = document.querySelector('.login-btn');
-        const loginMsg = document.getElementById('tc-login-msg');
-        const userInput = document.getElementById('tc-login-user');
-        const passInput = document.getElementById('tc-login-pass');
-        const passToggle = document.getElementById('tc-login-pass-toggle');
+        const loginMsg = document.getElementById('egm-login-msg');
+        const userInput = document.getElementById('egm-login-user');
+        const passInput = document.getElementById('egm-login-pass');
+        const passToggle = document.getElementById('egm-login-pass-toggle');
         if (passToggle instanceof HTMLButtonElement && passInput instanceof HTMLInputElement) {
           passToggle.addEventListener('click', () => {
             const shouldShow = passInput.type === 'password';
@@ -11157,133 +11157,133 @@ $sessionPayload = [
           });
         }
 
-        const timeCounterLabelEl = document.getElementById('tc-time-counter-label');
-        const timeCounterEl = document.getElementById('tc-time-counter');
-        const statusEl = document.getElementById('tc-status');
-        const userScoreEl = document.getElementById('tc-user-score');
-        const userScoreChipEl = document.getElementById('tc-user-score-chip');
-        const timerAreaEl = document.getElementById('tc-timer-area');
-        const tasksTitleEl = document.getElementById('tc-tasks-title');
-        const tasksListLabelEl = document.getElementById('tc-tasks-list-label');
-        const tasksListEl = document.getElementById('tc-tasks-list');
-        const eventNoticeEl = document.getElementById('tc-event-notice');
-        const bottomCtaEl = document.getElementById('tc-bottom-cta');
-        const bottomCtaBtnEl = bottomCtaEl ? bottomCtaEl.querySelector('.tc-bottom-cta-btn') : null;
-        const rewardsViewEl = document.getElementById('tc-rewards-view');
-        const rewardCardsViewEl = document.getElementById('tc-reward-cards-view');
-        const openRewardsBtnEl = document.getElementById('tc-open-rewards-btn');
-        const topbarBackBtnEl = document.getElementById('tc-topbar-back');
-        const rewardTimeLabelEl = document.getElementById('tc-reward-time-label');
-        const rewardTimeValueEl = document.getElementById('tc-reward-time-value');
+        const timeCounterLabelEl = document.getElementById('egm-time-counter-label');
+        const timeCounterEl = document.getElementById('egm-time-counter');
+        const statusEl = document.getElementById('egm-status');
+        const userScoreEl = document.getElementById('egm-user-score');
+        const userScoreChipEl = document.getElementById('egm-user-score-chip');
+        const timerAreaEl = document.getElementById('egm-timer-area');
+        const tasksTitleEl = document.getElementById('egm-tasks-title');
+        const tasksListLabelEl = document.getElementById('egm-tasks-list-label');
+        const tasksListEl = document.getElementById('egm-tasks-list');
+        const eventNoticeEl = document.getElementById('egm-event-notice');
+        const bottomCtaEl = document.getElementById('egm-bottom-cta');
+        const bottomCtaBtnEl = bottomCtaEl ? bottomCtaEl.querySelector('.egm-bottom-cta-btn') : null;
+        const rewardsViewEl = document.getElementById('egm-rewards-view');
+        const rewardCardsViewEl = document.getElementById('egm-reward-cards-view');
+        const openRewardsBtnEl = document.getElementById('egm-open-rewards-btn');
+        const topbarBackBtnEl = document.getElementById('egm-topbar-back');
+        const rewardTimeLabelEl = document.getElementById('egm-reward-time-label');
+        const rewardTimeValueEl = document.getElementById('egm-reward-time-value');
         const rewardsTotalBarEl = rewardsViewEl ? rewardsViewEl.querySelector('.rewards-total-bar') : null;
-        const rewardScoreChipEl = document.getElementById('tc-reward-user-score-chip-value');
-        const rewardRoadmapEl = document.getElementById('tc-reward-roadmap');
-        const rewardCardsBoxEl = document.getElementById('tc-reward-cards-box');
-        const rewardCardsEl = document.getElementById('tc-reward-cards');
-        const rewardCardsHintEl = document.getElementById('tc-reward-cards-hint');
-        const rewardStatusLineEl = document.getElementById('tc-reward-status-line');
-        const rewardCardsTotalValueEl = document.getElementById('tc-reward-cards-total-value');
-        const nonValuePrizeDescribeWrapEl = document.getElementById('tc-non-value-prize-describe-wrap');
-        const nonValuePrizeDescribeBtnEl = document.getElementById('tc-non-value-prize-describe-btn');
-        const rewardDescriptionViewEl = document.getElementById('tc-reward-description-view');
-        const rewardDescriptionTitleEl = document.getElementById('tc-reward-description-title');
-        const rewardDescriptionContentEl = document.getElementById('tc-reward-description-content');
-        const rewardDescriptionCloseEl = document.getElementById('tc-reward-description-close');
-        const rewardWinDialogEl = document.getElementById('tc-reward-win-dialog');
-        const rewardWinConfettiEl = document.getElementById('tc-reward-win-confetti');
-        const rewardWinValueEl = document.getElementById('tc-reward-win-value');
-        const rewardWinMessageEl = document.getElementById('tc-reward-win-message');
-        const rewardWinConfirmEl = document.getElementById('tc-reward-win-confirm');
-        const infoDialogEl = document.getElementById('tc-info-dialog');
-        const infoDialogTitleEl = document.getElementById('tc-info-dialog-title');
-        const infoDialogMessageEl = document.getElementById('tc-info-dialog-message');
-        const infoDialogConfirmEl = document.getElementById('tc-info-dialog-confirm');
-        const confirmDialogEl = document.getElementById('tc-confirm-dialog');
-        const confirmDialogTitleEl = document.getElementById('tc-confirm-dialog-title');
-        const confirmDialogMessageEl = document.getElementById('tc-confirm-dialog-message');
-        const confirmDialogCancelEl = document.getElementById('tc-confirm-dialog-cancel');
-        const confirmDialogConfirmEl = document.getElementById('tc-confirm-dialog-confirm');
-        const quizAreaEl = document.getElementById('tc-task-quiz-area');
-        const taskInfoAreaEl = document.getElementById('tc-task-info-area');
-        const taskInfoTitleEl = document.getElementById('tc-task-info-title');
-        const taskInfoContentEl = document.getElementById('tc-task-info-content');
-        const taskInfoSkipWrapEl = document.getElementById('tc-task-info-skip-wrap');
-        const taskInfoSkipInputEl = document.getElementById('tc-task-info-skip');
-        const taskInfoAckBtnEl = document.getElementById('tc-task-info-ack');
-        const describePhotoStepEl = document.getElementById('tc-describe-photo-step');
-        const describePhotoImageEl = document.getElementById('tc-describe-photo-image');
-        const describePhotoNameEl = document.getElementById('tc-describe-photo-name');
-        const describePhotoIndexEl = document.getElementById('tc-describe-photo-index');
-        const describePhotoChangeBtnEl = document.getElementById('tc-describe-photo-change');
-        const describePhotoSelectBtnEl = document.getElementById('tc-describe-photo-select');
-        const describePhotoEditorStepEl = document.getElementById('tc-describe-photo-editor-step');
-        const describePhotoEditorTitleEl = document.getElementById('tc-describe-photo-editor-title');
-        const describePhotoEditorImageEl = document.getElementById('tc-describe-photo-editor-image');
-        const describePhotoEditorNameEl = document.getElementById('tc-describe-photo-editor-name');
-        const describePhotoTextareaEl = document.getElementById('tc-describe-photo-text');
-        const describePhotoWordCountEl = document.getElementById('tc-describe-photo-word-count');
-        const describePhotoSaveBtnEl = document.getElementById('tc-describe-photo-save');
-        const teamRulesStepEl = document.getElementById('tc-team-rules-step');
-        const teamRulesTextEl = document.getElementById('tc-team-rules-text');
-        const teamCreateBtnEl = document.getElementById('tc-team-create-btn');
-        const teamCreateNameStepEl = document.getElementById('tc-team-create-name-step');
-        const teamCreateNameInputEl = document.getElementById('tc-team-create-name-input');
-        const teamCreateNameConfirmBtnEl = document.getElementById('tc-team-create-name-confirm');
-        const teamCreateTypeStepEl = document.getElementById('tc-team-create-type-step');
-        const teamCreateJoinTypeInputs = Array.from(document.querySelectorAll('input[name="tc-team-create-join-type"]'));
-        const teamCreateTypeConfirmBtnEl = document.getElementById('tc-team-create-type-confirm');
-        const teamRoomStepEl = document.getElementById('tc-team-room-step');
-        const teamRoomNameEl = document.getElementById('tc-team-room-name');
-        const teamRoomSlotEl = document.getElementById('tc-team-room-slot');
-        const teamRoomTopActionsEl = document.getElementById('tc-team-room-top-actions');
-        const teamRoomMembersEl = document.getElementById('tc-team-room-members');
-        const teamOpenInviteBtnEl = document.getElementById('tc-team-open-invite-btn');
-        const teamInviteQueryInputEl = document.getElementById('tc-team-invite-query-input');
-        const teamInviteResultEl = document.getElementById('tc-team-invite-result');
-        const teamInviteResultNameEl = document.getElementById('tc-team-invite-result-name');
-        const teamInviteActionBtnEl = document.getElementById('tc-team-invite-action-btn');
-        const teamInviteDialogEl = document.getElementById('tc-team-invite-dialog');
-        const teamStartBtnEl = document.getElementById('tc-team-start-btn');
-        const teamSettingsBtnEl = document.getElementById('tc-team-settings-btn');
-        const teamFindStepEl = document.getElementById('tc-team-find-step');
-        const teamFindAdditionalTextEl = document.getElementById('tc-team-find-additional-text');
-        const teamOpenSearchBtnEl = document.getElementById('tc-team-open-search-btn');
-        const teamCreateFromFindBtnEl = document.getElementById('tc-team-create-from-find-btn');
-        const teamInvitedGroupEl = document.getElementById('tc-team-invited-group');
-        const teamInvitedListEl = document.getElementById('tc-team-invited-list');
-        const teamPublicListEl = document.getElementById('tc-team-public-list');
-        const teamSearchStepEl = document.getElementById('tc-team-search-step');
-        const teamSearchLeaderInputEl = document.getElementById('tc-team-search-leader-input');
-        const teamSearchLeaderBtnEl = document.getElementById('tc-team-search-leader-btn');
-        const teamPreviewStepEl = document.getElementById('tc-team-preview-step');
-        const teamPreviewNameEl = document.getElementById('tc-team-preview-name');
-        const teamPreviewMetaEl = document.getElementById('tc-team-preview-meta');
-        const teamPreviewMembersEl = document.getElementById('tc-team-preview-members');
-        const teamPreviewJoinBtnEl = document.getElementById('tc-team-preview-join-btn');
-        const teamSettingsStepEl = document.getElementById('tc-team-settings-step');
-        const teamSettingsNameInputEl = document.getElementById('tc-team-settings-name-input');
-        const teamSettingsJoinWrapEl = document.getElementById('tc-team-settings-join-wrap');
-        const teamSettingsJoinInputs = Array.from(document.querySelectorAll('input[name="tc-team-settings-join-type"]'));
-        const teamSettingsSaveBtnEl = document.getElementById('tc-team-settings-save-btn');
-        const teamSettingsDeleteBtnEl = document.getElementById('tc-team-settings-delete-btn');
-        const teamSettingsLeaveBtnEl = document.getElementById('tc-team-settings-leave-btn');
-        const teamChallengeStepEl = document.getElementById('tc-team-challenge-step');
-        const teamChallengeTitleEl = document.getElementById('tc-team-challenge-title');
-        const teamChallengeContentEl = document.getElementById('tc-team-challenge-content');
-        const teamChallengeBackBtnEl = document.getElementById('tc-team-challenge-back-btn');
+        const rewardScoreChipEl = document.getElementById('egm-reward-user-score-chip-value');
+        const rewardRoadmapEl = document.getElementById('egm-reward-roadmap');
+        const rewardCardsBoxEl = document.getElementById('egm-reward-cards-box');
+        const rewardCardsEl = document.getElementById('egm-reward-cards');
+        const rewardCardsHintEl = document.getElementById('egm-reward-cards-hint');
+        const rewardStatusLineEl = document.getElementById('egm-reward-status-line');
+        const rewardCardsTotalValueEl = document.getElementById('egm-reward-cards-total-value');
+        const nonValuePrizeDescribeWrapEl = document.getElementById('egm-non-value-prize-describe-wrap');
+        const nonValuePrizeDescribeBtnEl = document.getElementById('egm-non-value-prize-describe-btn');
+        const rewardDescriptionViewEl = document.getElementById('egm-reward-description-view');
+        const rewardDescriptionTitleEl = document.getElementById('egm-reward-description-title');
+        const rewardDescriptionContentEl = document.getElementById('egm-reward-description-content');
+        const rewardDescriptionCloseEl = document.getElementById('egm-reward-description-close');
+        const rewardWinDialogEl = document.getElementById('egm-reward-win-dialog');
+        const rewardWinConfettiEl = document.getElementById('egm-reward-win-confetti');
+        const rewardWinValueEl = document.getElementById('egm-reward-win-value');
+        const rewardWinMessageEl = document.getElementById('egm-reward-win-message');
+        const rewardWinConfirmEl = document.getElementById('egm-reward-win-confirm');
+        const infoDialogEl = document.getElementById('egm-info-dialog');
+        const infoDialogTitleEl = document.getElementById('egm-info-dialog-title');
+        const infoDialogMessageEl = document.getElementById('egm-info-dialog-message');
+        const infoDialogConfirmEl = document.getElementById('egm-info-dialog-confirm');
+        const confirmDialogEl = document.getElementById('egm-confirm-dialog');
+        const confirmDialogTitleEl = document.getElementById('egm-confirm-dialog-title');
+        const confirmDialogMessageEl = document.getElementById('egm-confirm-dialog-message');
+        const confirmDialogCancelEl = document.getElementById('egm-confirm-dialog-cancel');
+        const confirmDialogConfirmEl = document.getElementById('egm-confirm-dialog-confirm');
+        const quizAreaEl = document.getElementById('egm-task-quiz-area');
+        const taskInfoAreaEl = document.getElementById('egm-task-info-area');
+        const taskInfoTitleEl = document.getElementById('egm-task-info-title');
+        const taskInfoContentEl = document.getElementById('egm-task-info-content');
+        const taskInfoSkipWrapEl = document.getElementById('egm-task-info-skip-wrap');
+        const taskInfoSkipInputEl = document.getElementById('egm-task-info-skip');
+        const taskInfoAckBtnEl = document.getElementById('egm-task-info-ack');
+        const describePhotoStepEl = document.getElementById('egm-describe-photo-step');
+        const describePhotoImageEl = document.getElementById('egm-describe-photo-image');
+        const describePhotoNameEl = document.getElementById('egm-describe-photo-name');
+        const describePhotoIndexEl = document.getElementById('egm-describe-photo-index');
+        const describePhotoChangeBtnEl = document.getElementById('egm-describe-photo-change');
+        const describePhotoSelectBtnEl = document.getElementById('egm-describe-photo-select');
+        const describePhotoEditorStepEl = document.getElementById('egm-describe-photo-editor-step');
+        const describePhotoEditorTitleEl = document.getElementById('egm-describe-photo-editor-title');
+        const describePhotoEditorImageEl = document.getElementById('egm-describe-photo-editor-image');
+        const describePhotoEditorNameEl = document.getElementById('egm-describe-photo-editor-name');
+        const describePhotoTextareaEl = document.getElementById('egm-describe-photo-text');
+        const describePhotoWordCountEl = document.getElementById('egm-describe-photo-word-count');
+        const describePhotoSaveBtnEl = document.getElementById('egm-describe-photo-save');
+        const teamRulesStepEl = document.getElementById('egm-team-rules-step');
+        const teamRulesTextEl = document.getElementById('egm-team-rules-text');
+        const teamCreateBtnEl = document.getElementById('egm-team-create-btn');
+        const teamCreateNameStepEl = document.getElementById('egm-team-create-name-step');
+        const teamCreateNameInputEl = document.getElementById('egm-team-create-name-input');
+        const teamCreateNameConfirmBtnEl = document.getElementById('egm-team-create-name-confirm');
+        const teamCreateTypeStepEl = document.getElementById('egm-team-create-type-step');
+        const teamCreateJoinTypeInputs = Array.from(document.querySelectorAll('input[name="egm-team-create-join-type"]'));
+        const teamCreateTypeConfirmBtnEl = document.getElementById('egm-team-create-type-confirm');
+        const teamRoomStepEl = document.getElementById('egm-team-room-step');
+        const teamRoomNameEl = document.getElementById('egm-team-room-name');
+        const teamRoomSlotEl = document.getElementById('egm-team-room-slot');
+        const teamRoomTopActionsEl = document.getElementById('egm-team-room-top-actions');
+        const teamRoomMembersEl = document.getElementById('egm-team-room-members');
+        const teamOpenInviteBtnEl = document.getElementById('egm-team-open-invite-btn');
+        const teamInviteQueryInputEl = document.getElementById('egm-team-invite-query-input');
+        const teamInviteResultEl = document.getElementById('egm-team-invite-result');
+        const teamInviteResultNameEl = document.getElementById('egm-team-invite-result-name');
+        const teamInviteActionBtnEl = document.getElementById('egm-team-invite-action-btn');
+        const teamInviteDialogEl = document.getElementById('egm-team-invite-dialog');
+        const teamStartBtnEl = document.getElementById('egm-team-start-btn');
+        const teamSettingsBtnEl = document.getElementById('egm-team-settings-btn');
+        const teamFindStepEl = document.getElementById('egm-team-find-step');
+        const teamFindAdditionalTextEl = document.getElementById('egm-team-find-additional-text');
+        const teamOpenSearchBtnEl = document.getElementById('egm-team-open-search-btn');
+        const teamCreateFromFindBtnEl = document.getElementById('egm-team-create-from-find-btn');
+        const teamInvitedGroupEl = document.getElementById('egm-team-invited-group');
+        const teamInvitedListEl = document.getElementById('egm-team-invited-list');
+        const teamPublicListEl = document.getElementById('egm-team-public-list');
+        const teamSearchStepEl = document.getElementById('egm-team-search-step');
+        const teamSearchLeaderInputEl = document.getElementById('egm-team-search-leader-input');
+        const teamSearchLeaderBtnEl = document.getElementById('egm-team-search-leader-btn');
+        const teamPreviewStepEl = document.getElementById('egm-team-preview-step');
+        const teamPreviewNameEl = document.getElementById('egm-team-preview-name');
+        const teamPreviewMetaEl = document.getElementById('egm-team-preview-meta');
+        const teamPreviewMembersEl = document.getElementById('egm-team-preview-members');
+        const teamPreviewJoinBtnEl = document.getElementById('egm-team-preview-join-btn');
+        const teamSettingsStepEl = document.getElementById('egm-team-settings-step');
+        const teamSettingsNameInputEl = document.getElementById('egm-team-settings-name-input');
+        const teamSettingsJoinWrapEl = document.getElementById('egm-team-settings-join-wrap');
+        const teamSettingsJoinInputs = Array.from(document.querySelectorAll('input[name="egm-team-settings-join-type"]'));
+        const teamSettingsSaveBtnEl = document.getElementById('egm-team-settings-save-btn');
+        const teamSettingsDeleteBtnEl = document.getElementById('egm-team-settings-delete-btn');
+        const teamSettingsLeaveBtnEl = document.getElementById('egm-team-settings-leave-btn');
+        const teamChallengeStepEl = document.getElementById('egm-team-challenge-step');
+        const teamChallengeTitleEl = document.getElementById('egm-team-challenge-title');
+        const teamChallengeContentEl = document.getElementById('egm-team-challenge-content');
+        const teamChallengeBackBtnEl = document.getElementById('egm-team-challenge-back-btn');
         const taskButtons = Array.from(document.querySelectorAll('.task-item-btn[data-task-id]'));
-        const quizTitleEl = document.getElementById('tc-task-quiz-title');
-        const quizCounterEl = document.getElementById('tc-task-quiz-counter');
-        const quizQuestionEl = document.getElementById('tc-task-quiz-question');
-        const quizAnswersEl = document.getElementById('tc-task-quiz-answers');
-        const quizTimerFillEl = document.getElementById('tc-task-quiz-timer-fill');
-        const quizFooterEl = document.getElementById('tc-task-quiz-footer');
-        const quizNextBtnEl = document.getElementById('tc-task-quiz-next');
-        const taskInfoHeadEl = document.getElementById('tc-task-info-head');
-        const resultDialogEl = document.getElementById('tc-task-result-dialog');
-        const resultValueEl = document.getElementById('tc-task-result-value');
-        const resultMessageEl = document.getElementById('tc-task-result-message');
-        const resultConfirmBtn = document.getElementById('tc-task-result-confirm');
+        const quizTitleEl = document.getElementById('egm-task-quiz-title');
+        const quizCounterEl = document.getElementById('egm-task-quiz-counter');
+        const quizQuestionEl = document.getElementById('egm-task-quiz-question');
+        const quizAnswersEl = document.getElementById('egm-task-quiz-answers');
+        const quizTimerFillEl = document.getElementById('egm-task-quiz-timer-fill');
+        const quizFooterEl = document.getElementById('egm-task-quiz-footer');
+        const quizNextBtnEl = document.getElementById('egm-task-quiz-next');
+        const taskInfoHeadEl = document.getElementById('egm-task-info-head');
+        const resultDialogEl = document.getElementById('egm-task-result-dialog');
+        const resultValueEl = document.getElementById('egm-task-result-value');
+        const resultMessageEl = document.getElementById('egm-task-result-message');
+        const resultConfirmBtn = document.getElementById('egm-task-result-confirm');
 
         let statusTickTimer = null;
         let taskStatusTimer = null;
@@ -11364,7 +11364,7 @@ $sessionPayload = [
 
         const parseHistoryDepth = (state) => {
           if (!state || typeof state !== 'object') return null;
-          const raw = state.tcDepth;
+          const raw = state.egmDepth;
           const depth = Number.parseInt(String(raw ?? ''), 10);
           if (!Number.isFinite(depth) || depth < 0) return null;
           return depth;
@@ -11381,7 +11381,7 @@ $sessionPayload = [
           const depth = currentDepth === null ? 0 : currentDepth;
           tcmInPageHistoryDepth = depth;
           window.history.replaceState(
-            { ...currentState, tcPage: 'TCM', tcDepth: depth },
+            { ...currentState, egmPage: 'EGMM', egmDepth: depth },
             '',
             window.location.href
           );
@@ -11397,7 +11397,7 @@ $sessionPayload = [
           const nextDepth = Math.max(0, tcmInPageHistoryDepth) + 1;
           tcmInPageHistoryDepth = nextDepth;
           window.history.pushState(
-            { ...currentState, tcPage: 'TCM', tcDepth: nextDepth },
+            { ...currentState, egmPage: 'EGMM', egmDepth: nextDepth },
             '',
             window.location.href
           );
@@ -11458,8 +11458,8 @@ $sessionPayload = [
         const TEHRAN_OFFSET_MINUTES = 210;
 
         const getTehranDateTimeParts = (date = new Date()) => {
-          const utcMs = date.getTime() + date.getTimezoneOffset() * 60000;
-          const tehran = new Date(utcMs + TEHRAN_OFFSET_MINUTES * 60000);
+          const uegmMs = date.getTime() + date.getTimezoneOffset() * 60000;
+          const tehran = new Date(uegmMs + TEHRAN_OFFSET_MINUTES * 60000);
           const year = String(tehran.getFullYear());
           const month = String(tehran.getMonth() + 1).padStart(2, '0');
           const day = String(tehran.getDate()).padStart(2, '0');
@@ -11480,8 +11480,8 @@ $sessionPayload = [
           if (![year, month, day, hour, minute, second].every((n) => Number.isFinite(n))) {
             return null;
           }
-          const utcMs = Date.UTC(year, month - 1, day, hour, minute, second) - TEHRAN_OFFSET_MINUTES * 60000;
-          return new Date(utcMs);
+          const uegmMs = Date.UEGM(year, month - 1, day, hour, minute, second) - TEHRAN_OFFSET_MINUTES * 60000;
+          return new Date(uegmMs);
         };
 
         const parseTimeToSeconds = (value) => {
@@ -11992,7 +11992,7 @@ $sessionPayload = [
 
         const keepBottomCtaHiddenOnRewardsSlide = () => {
           if (!isRewardsSlideOpen()) return;
-          document.body.classList.add('tc-rewards-slide-open');
+          document.body.classList.add('egm-rewards-slide-open');
           if (bottomCtaEl) {
             bottomCtaEl.classList.add('hidden');
             bottomCtaEl.classList.add('quiz-hidden');
@@ -12119,7 +12119,7 @@ $sessionPayload = [
         };
 
         const openQuizOverlay = () => {
-          tcTrackSlide(`quiz:${currentTaskId || 'unknown'}`, {
+          egmTrackSlide(`quiz:${currentTaskId || 'unknown'}`, {
             taskId: currentTaskId,
             taskType: currentTaskType,
             taskTitle: currentTaskTitle,
@@ -12140,7 +12140,7 @@ $sessionPayload = [
         };
 
         const closeQuizOverlay = () => {
-          tcTrackSlide('task_list', { reason: 'quiz_close' });
+          egmTrackSlide('task_list', { reason: 'quiz_close' });
           clearQuizTimer();
           hideConditionalQuizNextButton();
           if (quizAreaEl) {
@@ -12510,11 +12510,11 @@ $sessionPayload = [
         const normalizeDescribePhotoUrl = (value) => {
           const raw = String(value || '').trim();
           if (raw === '') return '';
-          if (/^mini%20apps\/Task%20Club\//i.test(raw)) {
-            return raw.replace(/^mini%20apps\/Task%20Club\//i, '');
+          if (/^mini%20apps\/Event%20Guest%20Manager\//i.test(raw)) {
+            return raw.replace(/^mini%20apps\/Event%20Guest%20Manager\//i, '');
           }
-          if (/^mini apps\/Task Club\//i.test(raw)) {
-            return raw.replace(/^mini apps\/Task Club\//i, '');
+          if (/^mini apps\/Event Guest Manager\//i.test(raw)) {
+            return raw.replace(/^mini apps\/Event Guest Manager\//i, '');
           }
           return raw;
         };
@@ -12564,7 +12564,7 @@ $sessionPayload = [
           const isTeamSettingsStep = next === 'team_settings';
           const isTeamChallengeStep = next === 'team_challenge';
           infoTaskCurrentStep = next;
-          tcTrackSlide(`task:${currentTaskId || 'unknown'}:${currentTaskType}:${next}`, {
+          egmTrackSlide(`task:${currentTaskId || 'unknown'}:${currentTaskType}:${next}`, {
             taskId: currentTaskId,
             taskType: currentTaskType,
             taskTitle: currentTaskTitle,
@@ -13046,7 +13046,7 @@ $sessionPayload = [
             const baseState = (window.history.state && typeof window.history.state === 'object')
               ? window.history.state
               : {};
-            window.history.pushState({ ...baseState, tcOverlay: 'teamInviteDialog' }, '', window.location.href);
+            window.history.pushState({ ...baseState, egmOverlay: 'teamInviteDialog' }, '', window.location.href);
             teamInviteDialogHasHistoryState = true;
           }
           window.setTimeout(() => {
@@ -13449,7 +13449,7 @@ $sessionPayload = [
           if (quizStarting) return;
           quizStarting = true;
           currentQuizStartedAt = Date.now();
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_start',
             taskId: currentTaskId,
             taskType: currentTaskType,
@@ -13507,7 +13507,7 @@ $sessionPayload = [
           const isTrackedAction = /^(task_|describe_photo_|team_task_)/.test(requestAction)
             || ['reward_state', 'reward_flip', 'log_roll', 'log_answer', 'update_answered', 'log_prize'].includes(requestAction);
           if (!retriedOnCsrf && isTrackedAction) {
-            tcLogActivity('task_action', {
+            egmLogActivity('task_action', {
               requestAction,
               taskId: body?.taskId || currentTaskId,
               taskType: currentTaskType,
@@ -13532,7 +13532,7 @@ $sessionPayload = [
             return postJson(body, true);
           }
           if (payload?.status === 'error' && String(payload?.message || '').includes('ابتدا وارد شوید')) {
-            tcLogActivity('session_expire', { reason: 'server_requires_login', requestAction: body?.action || '' }, { beacon: true });
+            egmLogActivity('session_expire', { reason: 'server_requires_login', requestAction: body?.action || '' }, { beacon: true });
           }
           if (!response.ok || payload?.status !== 'ok') {
             throw new Error(payload?.message || 'درخواست ناموفق بود.');
@@ -13540,9 +13540,9 @@ $sessionPayload = [
           return payload;
         };
 
-        const tcActivityClientId = (() => {
+        const egmActivityClientId = (() => {
           try {
-            const key = `tc_activity_client_${String(sessionInfo?.workId || 'guest')}`;
+            const key = `egm_activity_client_${String(sessionInfo?.workId || 'guest')}`;
             const existing = sessionStorage.getItem(key);
             if (existing) return existing;
             const generated = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -13552,10 +13552,10 @@ $sessionPayload = [
             return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
           }
         })();
-        const tcActivityStartedAt = Date.now();
-        let tcCurrentSlide = null;
+        const egmActivityStartedAt = Date.now();
+        let egmCurrentSlide = null;
 
-        const tcBuildActivityPayload = (eventType, metadata = {}) => ({
+        const egmBuildActivityPayload = (eventType, metadata = {}) => ({
           action: 'activity_log',
           csrf: csrfToken,
           eventType,
@@ -13572,14 +13572,14 @@ $sessionPayload = [
           reason: metadata?.reason,
           metadata: {
             ...metadata,
-            client_id: tcActivityClientId,
-            client_session_ms: Math.max(0, Date.now() - tcActivityStartedAt),
+            client_id: egmActivityClientId,
+            client_session_ms: Math.max(0, Date.now() - egmActivityStartedAt),
             path: window.location.pathname
           }
         });
 
-        const tcLogActivity = (eventType, metadata = {}, options = {}) => {
-          const payload = tcBuildActivityPayload(eventType, metadata);
+        const egmLogActivity = (eventType, metadata = {}, options = {}) => {
+          const payload = egmBuildActivityPayload(eventType, metadata);
           const body = JSON.stringify(payload);
           if (options?.beacon && navigator.sendBeacon) {
             try {
@@ -13595,35 +13595,35 @@ $sessionPayload = [
           }).catch(() => {});
         };
 
-        const tcFlushCurrentSlide = (reason = 'leave', options = {}) => {
-          if (!tcCurrentSlide) return;
-          const durationMs = Math.max(0, Date.now() - tcCurrentSlide.startedAt);
-          tcLogActivity('slide_time', {
-            ...tcCurrentSlide.metadata,
-            slide: tcCurrentSlide.name,
+        const egmFlushCurrentSlide = (reason = 'leave', options = {}) => {
+          if (!egmCurrentSlide) return;
+          const durationMs = Math.max(0, Date.now() - egmCurrentSlide.startedAt);
+          egmLogActivity('slide_time', {
+            ...egmCurrentSlide.metadata,
+            slide: egmCurrentSlide.name,
             durationMs,
             reason
           }, options);
         };
 
-        const tcTrackSlide = (name, metadata = {}) => {
+        const egmTrackSlide = (name, metadata = {}) => {
           const nextName = String(name || '').trim();
           if (!nextName) return;
-          if (tcCurrentSlide?.name === nextName) return;
-          const previousSlide = tcCurrentSlide?.name || '';
-          tcFlushCurrentSlide('switch');
-          tcCurrentSlide = {
+          if (egmCurrentSlide?.name === nextName) return;
+          const previousSlide = egmCurrentSlide?.name || '';
+          egmFlushCurrentSlide('switch');
+          egmCurrentSlide = {
             name: nextName,
             startedAt: Date.now(),
             metadata: { ...metadata, slide: nextName, previousSlide }
           };
-          tcLogActivity('slide_enter', tcCurrentSlide.metadata);
+          egmLogActivity('slide_enter', egmCurrentSlide.metadata);
         };
 
-        const tcLogInterfaceState = (reason = 'heartbeat') => {
+        const egmLogInterfaceState = (reason = 'heartbeat') => {
           const isActive = document.visibilityState === 'visible' && document.hasFocus();
-          tcLogActivity(isActive ? 'interface_active' : 'interface_inactive', {
-            slide: tcCurrentSlide?.name || 'task_list',
+          egmLogActivity(isActive ? 'interface_active' : 'interface_inactive', {
+            slide: egmCurrentSlide?.name || 'task_list',
             reason
           });
         };
@@ -13631,24 +13631,24 @@ $sessionPayload = [
         try {
           const navigationEntry = performance.getEntriesByType?.('navigation')?.[0];
           if (navigationEntry?.type === 'reload' || performance.navigation?.type === 1) {
-            tcLogActivity('page_refresh', { reason: 'navigation_reload' });
+            egmLogActivity('page_refresh', { reason: 'navigation_reload' });
           }
         } catch {}
-        tcLogActivity('page_load', { reason: 'interface_loaded' });
-        window.setTimeout(() => tcTrackSlide('task_list', { reason: 'initial' }), 0);
+        egmLogActivity('page_load', { reason: 'interface_loaded' });
+        window.setTimeout(() => egmTrackSlide('task_list', { reason: 'initial' }), 0);
         window.setInterval(() => {
-          tcLogInterfaceState('heartbeat');
-          tcLogActivity('heartbeat', { slide: tcCurrentSlide?.name || 'task_list' });
+          egmLogInterfaceState('heartbeat');
+          egmLogActivity('heartbeat', { slide: egmCurrentSlide?.name || 'task_list' });
         }, 30000);
         document.addEventListener('visibilitychange', () => {
-          tcLogInterfaceState(document.visibilityState === 'visible' ? 'visibility_visible' : 'visibility_hidden');
+          egmLogInterfaceState(document.visibilityState === 'visible' ? 'visibility_visible' : 'visibility_hidden');
         });
-        window.addEventListener('focus', () => tcLogInterfaceState('window_focus'));
-        window.addEventListener('blur', () => tcLogInterfaceState('window_blur'));
+        window.addEventListener('focus', () => egmLogInterfaceState('window_focus'));
+        window.addEventListener('blur', () => egmLogInterfaceState('window_blur'));
         window.addEventListener('pagehide', () => {
-          tcFlushCurrentSlide('pagehide', { beacon: true });
-          tcLogActivity('session_time', { reason: 'pagehide' }, { beacon: true });
-          tcLogActivity('session_end', { reason: 'pagehide' }, { beacon: true });
+          egmFlushCurrentSlide('pagehide', { beacon: true });
+          egmLogActivity('session_time', { reason: 'pagehide' }, { beacon: true });
+          egmLogActivity('session_end', { reason: 'pagehide' }, { beacon: true });
         });
 
         const formatRewardNumber = (value) => {
@@ -13691,9 +13691,9 @@ $sessionPayload = [
           return arr;
         };
 
-        const rewardCardLockStorageKey = `tc_reward_locked_cards_${String(sessionInfo?.workId || 'guest')}`;
-        const rewardCardLockPrizeStorageKey = `tc_reward_locked_card_prizes_${String(sessionInfo?.workId || 'guest')}`;
-        const rewardGuideSkipStorageKey = `tc_reward_guide_skip_${String(sessionInfo?.workId || 'guest')}`;
+        const rewardCardLockStorageKey = `egm_reward_locked_cards_${String(sessionInfo?.workId || 'guest')}`;
+        const rewardCardLockPrizeStorageKey = `egm_reward_locked_card_prizes_${String(sessionInfo?.workId || 'guest')}`;
+        const rewardGuideSkipStorageKey = `egm_reward_guide_skip_${String(sessionInfo?.workId || 'guest')}`;
         const MIN_REWARD_CARD_COUNT = 9;
 
         const getRewardCardCount = () => {
@@ -13841,7 +13841,7 @@ $sessionPayload = [
           const cardCount = getRewardCardCount();
           for (let i = 0; i < cardCount; i += 1) {
             cards.push({
-              id: `tc_reward_card_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
+              id: `egm_reward_card_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
               label: String(safeNames[Math.floor(Math.random() * safeNames.length)] || 'جایزه ویژه')
             });
           }
@@ -14224,7 +14224,7 @@ $sessionPayload = [
 
         const runRewardWinConfetti = () => {
           if (!(rewardWinConfettiEl instanceof HTMLElement)) return;
-          const colors = ['var(--tc-secondary)', 'var(--tc-highlight)'];
+          const colors = ['var(--egm-secondary)', 'var(--egm-highlight)'];
           const bounds = rewardWinConfettiEl.getBoundingClientRect();
           const width = Math.max(260, bounds.width || 360);
           const height = Math.max(220, bounds.height || 420);
@@ -14516,7 +14516,7 @@ $sessionPayload = [
         };
 
         const openRewardCardsSlide = async (levelId, options = {}) => {
-          tcTrackSlide(`reward_cards:${String(levelId || '')}`, {
+          egmTrackSlide(`reward_cards:${String(levelId || '')}`, {
             levelId: String(levelId || ''),
             reason: 'reward_cards_open'
           });
@@ -14558,7 +14558,7 @@ $sessionPayload = [
         };
 
         const closeRewardCardsSlide = () => {
-          tcTrackSlide('rewards', { reason: 'reward_cards_close' });
+          egmTrackSlide('rewards', { reason: 'reward_cards_close' });
           rewardsCardsViewOpen = false;
           selectedRewardLevelId = '';
           if (rewardCardsViewEl) {
@@ -14581,7 +14581,7 @@ $sessionPayload = [
           if (shouldPushHistory) {
             pushInPageHistoryState();
           }
-          tcTrackSlide(`reward_description:${String(level?.id || '')}`, {
+          egmTrackSlide(`reward_description:${String(level?.id || '')}`, {
             levelId: String(level?.id || ''),
             reason: 'reward_description_open'
           });
@@ -14640,7 +14640,7 @@ $sessionPayload = [
         };
 
         const closeRewardDescriptionSlide = () => {
-          tcTrackSlide('rewards', { reason: 'reward_description_close' });
+          egmTrackSlide('rewards', { reason: 'reward_description_close' });
           rewardsDescriptionViewOpen = false;
           selectedRewardLevelId = '';
           if (rewardDescriptionViewEl) {
@@ -14651,7 +14651,7 @@ $sessionPayload = [
         };
 
         const openRewardsView = async (options = {}) => {
-          tcTrackSlide('rewards', { reason: 'rewards_open' });
+          egmTrackSlide('rewards', { reason: 'rewards_open' });
           const eventStatus = String(globalEventStatus || 'inactive');
           if (eventStatus === 'upcoming') {
             const settings = await loadWheelSettings();
@@ -14673,7 +14673,7 @@ $sessionPayload = [
           rewardsViewOpen = true;
           rewardsCardsViewOpen = false;
           rewardsDescriptionViewOpen = false;
-          document.body.classList.add('tc-rewards-slide-open');
+          document.body.classList.add('egm-rewards-slide-open');
           if (timerAreaEl) timerAreaEl.classList.add('hidden');
           keepBottomCtaHiddenOnRewardsSlide();
           if (quizAreaEl) quizAreaEl.classList.add('hidden');
@@ -14697,11 +14697,11 @@ $sessionPayload = [
         };
 
         const closeRewardsView = () => {
-          tcTrackSlide('task_list', { reason: 'rewards_close' });
+          egmTrackSlide('task_list', { reason: 'rewards_close' });
           rewardsViewOpen = false;
           rewardsCardsViewOpen = false;
           rewardsDescriptionViewOpen = false;
-          document.body.classList.remove('tc-rewards-slide-open');
+          document.body.classList.remove('egm-rewards-slide-open');
           clearRewardEventTick();
           if (rewardsViewEl) {
             rewardsViewEl.classList.add('hidden');
@@ -14845,7 +14845,7 @@ $sessionPayload = [
             return;
           }
           quizCompletionInFlight = true;
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_complete_started',
             taskId: completedTaskId,
             taskType: completingTaskType,
@@ -14896,7 +14896,7 @@ $sessionPayload = [
           }
 
           applyTaskCompletionPayload(completedTaskId, payload);
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_complete_finished',
             taskId: completedTaskId,
             taskType: completingTaskType,
@@ -14966,7 +14966,7 @@ $sessionPayload = [
           if (quizLocked) return;
           quizLocked = true;
           const item = currentQuestions[currentQuestionIndex] || null;
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_question_timeout',
             taskId: currentTaskId,
             taskType: currentTaskType,
@@ -15019,7 +15019,7 @@ $sessionPayload = [
           quizLocked = true;
           clearQuizTimer();
           const secondsWaited = currentQuestionShownAt > 0 ? Math.round((Date.now() - currentQuestionShownAt) / 100) / 10 : null;
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_answer_selected',
             taskId: currentTaskId,
             taskType: currentTaskType,
@@ -15047,7 +15047,7 @@ $sessionPayload = [
           }
           syncQuizAttemptProgress(answerPayload, isCorrect);
           const wasCorrect = Boolean(answerPayload?.wasCorrect ?? isCorrect);
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_answer_recorded',
             taskId: currentTaskId,
             taskType: currentTaskType,
@@ -15107,7 +15107,7 @@ $sessionPayload = [
           clearQuizTimer();
           const value = Math.max(0, Math.min(100, Number.parseInt(slider.value || '0', 10)));
           const secondsWaited = currentQuestionShownAt > 0 ? Math.round((Date.now() - currentQuestionShownAt) / 100) / 10 : null;
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_answer_selected',
             taskId: currentTaskId,
             taskType: currentTaskType,
@@ -15127,7 +15127,7 @@ $sessionPayload = [
             return;
           }
           syncQuizAttemptProgress(answerPayload, Boolean(answerPayload?.wasCorrect ?? true));
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_answer_recorded',
             taskId: currentTaskId,
             taskType: currentTaskType,
@@ -15225,7 +15225,7 @@ $sessionPayload = [
             return false;
           }
           currentQuestionShownAt = Date.now();
-          tcTrackSlide(`quiz:${currentTaskId || 'unknown'}:${String(item.code || currentQuestionIndex + 1)}`, {
+          egmTrackSlide(`quiz:${currentTaskId || 'unknown'}:${String(item.code || currentQuestionIndex + 1)}`, {
             taskId: currentTaskId,
             taskType: currentTaskType,
             taskTitle: currentTaskTitle,
@@ -15234,7 +15234,7 @@ $sessionPayload = [
             questionTotal: total,
             reason: revealCard ? 'question_revealed' : 'question_loaded'
           });
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'quiz_question_shown',
             taskId: currentTaskId,
             taskType: currentTaskType,
@@ -15352,7 +15352,7 @@ $sessionPayload = [
           if (!taskId) return;
           const clickedMeta = getTaskButtonMeta(button);
           currentTaskOpenedAt = Date.now();
-          tcLogActivity('task_action', {
+          egmLogActivity('task_action', {
             requestAction: 'task_open_started',
             ...clickedMeta
           });
@@ -15399,7 +15399,7 @@ $sessionPayload = [
             if (fetchedTaskType === 'info' || fetchedTaskType === 'team_task' || fetchedTaskType === 'describe_photo') {
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
-              tcLogActivity('task_action', {
+              egmLogActivity('task_action', {
                 requestAction: 'task_opened',
                 taskId: currentTaskId,
                 taskType: fetchedTaskType,
@@ -15435,7 +15435,7 @@ $sessionPayload = [
             currentTaskType = normalizeTaskTypeToken(fetchedTaskType);
             answerTimeLimitEnabled = Boolean(payload?.settings?.answerTimeLimit ?? true);
             currentQuestionTimeLimitMs = normalizeQuestionTimeLimitMs(payload?.settings?.answerTimeLimitMs ?? payload?.settings?.answer_time_limit_ms, currentTaskType);
-            tcLogActivity('task_action', {
+            egmLogActivity('task_action', {
               requestAction: 'task_opened',
               taskId: currentTaskId,
               taskType: currentTaskType,
@@ -15476,7 +15476,7 @@ $sessionPayload = [
               { taskType: currentTaskType }
             );
           } catch (error) {
-            tcLogActivity('task_action', {
+            egmLogActivity('task_action', {
               requestAction: 'task_open_failed',
               ...clickedMeta,
               errorMessage: error?.message || ''
@@ -15499,7 +15499,7 @@ $sessionPayload = [
         }
         if (taskInfoAckBtnEl) {
           taskInfoAckBtnEl.addEventListener('click', async () => {
-            tcLogActivity('task_action', {
+            egmLogActivity('task_action', {
               requestAction: 'task_info_ack',
               taskId: currentTaskId,
               taskType: currentTaskType,
@@ -15575,7 +15575,7 @@ $sessionPayload = [
         if (describePhotoChangeBtnEl) {
           describePhotoChangeBtnEl.addEventListener('click', () => {
             if (!describePhotoChoices.length) return;
-            tcLogActivity('task_action', {
+            egmLogActivity('task_action', {
               requestAction: 'describe_photo_change',
               taskId: currentTaskId,
               taskType: currentTaskType,
@@ -15588,7 +15588,7 @@ $sessionPayload = [
 
         if (describePhotoSelectBtnEl) {
           describePhotoSelectBtnEl.addEventListener('click', () => {
-            tcLogActivity('task_action', {
+            egmLogActivity('task_action', {
               requestAction: 'describe_photo_select',
               taskId: currentTaskId,
               taskType: currentTaskType,
@@ -16185,12 +16185,12 @@ $sessionPayload = [
         taskButtons.forEach((button) => {
           button.addEventListener('click', () => {
             const clickedMeta = getTaskButtonMeta(button);
-            tcLogActivity('task_action', {
+            egmLogActivity('task_action', {
               requestAction: 'task_clicked',
               ...clickedMeta
             });
             if (button.disabled) {
-              tcLogActivity('task_action', {
+              egmLogActivity('task_action', {
                 requestAction: 'task_click_ignored_disabled',
                 ...clickedMeta
               });
@@ -16208,7 +16208,7 @@ $sessionPayload = [
         });
 
         window.addEventListener('storage', (event) => {
-          if (event.key === 'tcSettingsUpdated') {
+          if (event.key === 'egmSettingsUpdated') {
             refreshStatus();
           }
         });

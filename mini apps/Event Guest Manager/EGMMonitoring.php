@@ -4,11 +4,11 @@ declare(strict_types=1);
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_inventory_store.php';
 
-$tcMonitoringAction = strtolower(trim((string)($_GET['action'] ?? '')));
-$tcMonitoringIsJsonRequest = $tcMonitoringAction === 'stats';
-$tcMonitoringJsonCompleted = false;
+$egmMonitoringAction = strtolower(trim((string)($_GET['action'] ?? '')));
+$egmMonitoringIsJsonRequest = $egmMonitoringAction === 'stats';
+$egmMonitoringJsonCompleted = false;
 
-function tcMonitoringEarlyJsonFlags(): int
+function egmMonitoringEarlyJsonFlags(): int
 {
   $flags = JSON_UNESCAPED_UNICODE;
   if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
@@ -20,20 +20,20 @@ function tcMonitoringEarlyJsonFlags(): int
   return $flags;
 }
 
-function tcMonitoringEarlyJsonResponse(array $payload): string
+function egmMonitoringEarlyJsonResponse(array $payload): string
 {
-  $json = json_encode($payload, tcMonitoringEarlyJsonFlags());
+  $json = json_encode($payload, egmMonitoringEarlyJsonFlags());
   return is_string($json) && $json !== '' ? $json : '{"status":"error","message":"Monitoring JSON encode failed."}';
 }
 
-if ($tcMonitoringIsJsonRequest || $tcMonitoringAction === 'export') {
+if ($egmMonitoringIsJsonRequest || $egmMonitoringAction === 'export') {
   @ini_set('display_errors', '0');
 }
 
-if ($tcMonitoringIsJsonRequest) {
+if ($egmMonitoringIsJsonRequest) {
   ob_start();
-  register_shutdown_function(static function () use (&$tcMonitoringJsonCompleted): void {
-    if ($tcMonitoringJsonCompleted) {
+  register_shutdown_function(static function () use (&$egmMonitoringJsonCompleted): void {
+    if ($egmMonitoringJsonCompleted) {
       return;
     }
 
@@ -64,8 +64,8 @@ if ($tcMonitoringIsJsonRequest) {
 
     if ($isFatal) {
       http_response_code(500);
-      error_log('Task Club monitoring fatal error: ' . (string)($error['message'] ?? 'unknown error'));
-      echo tcMonitoringEarlyJsonResponse([
+      error_log('Event Guest Manager monitoring fatal error: ' . (string)($error['message'] ?? 'unknown error'));
+      echo egmMonitoringEarlyJsonResponse([
         'status' => 'error',
         'code' => 'monitoring_fatal',
         'message' => 'خطای داخلی در مانیتورینگ رخ داد. جزئیات خطا در همین بخش نمایش داده شد.',
@@ -80,7 +80,7 @@ if ($tcMonitoringIsJsonRequest) {
     }
 
     http_response_code(200);
-    echo tcMonitoringEarlyJsonResponse([
+    echo egmMonitoringEarlyJsonResponse([
       'status' => 'error',
       'code' => 'monitoring_pre_json_output',
       'message' => 'پاسخ مانیتورینگ قبل از تولید JSON متوقف شد. نشست یا دسترسی مانیتورینگ را بررسی کنید.',
@@ -96,12 +96,12 @@ if ($tcMonitoringIsJsonRequest) {
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 
-$tcMonitoringSessionUser = requireTabPermissionFromSession('task-club', $tcMonitoringIsJsonRequest);
-if (!userHasPermissionId($tcMonitoringSessionUser, 'task-club:monitoring')) {
-  denyPanelAccess(403, 'شما دسترسی لازم برای مشاهده این بخش باشگاه تعاملی را ندارید.', $tcMonitoringIsJsonRequest);
+$egmMonitoringSessionUser = requireTabPermissionFromSession('event-guest-manager', $egmMonitoringIsJsonRequest);
+if (!userHasPermissionId($egmMonitoringSessionUser, 'event-guest-manager:monitoring')) {
+  denyPanelAccess(403, 'شما دسترسی لازم برای مشاهده این بخش باشگاه تعاملی را ندارید.', $egmMonitoringIsJsonRequest);
 }
 
-function tcMonitoringReadJson(string $path, $fallback)
+function egmMonitoringReadJson(string $path, $fallback)
 {
   if (!is_file($path)) {
     return $fallback;
@@ -114,7 +114,7 @@ function tcMonitoringReadJson(string $path, $fallback)
   return $decoded === null ? $fallback : $decoded;
 }
 
-function tcMonitoringEmptyStats(array $warnings = []): array
+function egmMonitoringEmptyStats(array $warnings = []): array
 {
   return [
     'summary' => [
@@ -191,7 +191,7 @@ function tcMonitoringEmptyStats(array $warnings = []): array
   ];
 }
 
-function tcMonitoringSanitizeForJson($value)
+function egmMonitoringSanitizeForJson($value)
 {
   if (is_string($value)) {
     if (function_exists('mb_check_encoding') && function_exists('mb_convert_encoding')) {
@@ -206,9 +206,9 @@ function tcMonitoringSanitizeForJson($value)
   if (is_array($value)) {
     $clean = [];
     foreach ($value as $key => $item) {
-      $cleanKey = is_string($key) ? tcMonitoringSanitizeForJson($key) : $key;
+      $cleanKey = is_string($key) ? egmMonitoringSanitizeForJson($key) : $key;
       if (is_int($cleanKey) || is_string($cleanKey)) {
-        $clean[$cleanKey] = tcMonitoringSanitizeForJson($item);
+        $clean[$cleanKey] = egmMonitoringSanitizeForJson($item);
       }
     }
     return $clean;
@@ -219,7 +219,7 @@ function tcMonitoringSanitizeForJson($value)
   return (string)$value;
 }
 
-function tcMonitoringJsonResponse(array $payload): string
+function egmMonitoringJsonResponse(array $payload): string
 {
   $flags = JSON_UNESCAPED_UNICODE;
   if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
@@ -232,23 +232,23 @@ function tcMonitoringJsonResponse(array $payload): string
   if (is_string($json) && $json !== '') {
     return $json;
   }
-  $sanitizedJson = json_encode(tcMonitoringSanitizeForJson($payload), $flags);
+  $sanitizedJson = json_encode(egmMonitoringSanitizeForJson($payload), $flags);
   if (is_string($sanitizedJson) && $sanitizedJson !== '') {
     return $sanitizedJson;
   }
   $fallback = [
     'status' => 'partial',
     'message' => 'بخشی از داده‌های مانیتورینگ قابل نمایش نبود.',
-    'data' => tcMonitoringEmptyStats(['بخشی از داده‌های مانیتورینگ قابل تبدیل به JSON نبود.'])
+    'data' => egmMonitoringEmptyStats(['بخشی از داده‌های مانیتورینگ قابل تبدیل به JSON نبود.'])
   ];
   $json = json_encode($fallback, $flags);
   return is_string($json) && $json !== '' ? $json : '{"status":"error","message":"Monitoring JSON encode failed."}';
 }
 
-function tcMonitoringReadCsvRows(string $path): array
+function egmMonitoringReadCsvRows(string $path): array
 {
-  if (tcInviteesCsvIsManagedPath($path)) {
-    return tcInviteesCsvReadRowsSnapshot($path);
+  if (egmInviteesCsvIsManagedPath($path)) {
+    return egmInviteesCsvReadRowsSnapshot($path);
   }
   if (!is_file($path)) {
     return [];
@@ -270,7 +270,7 @@ function tcMonitoringReadCsvRows(string $path): array
   return $rows;
 }
 
-function tcMonitoringNormalizeHeader(string $value): string
+function egmMonitoringNormalizeHeader(string $value): string
 {
   $withoutBom = str_replace("\xEF\xBB\xBF", '', $value);
   $normalized = strtolower(trim($withoutBom));
@@ -278,11 +278,11 @@ function tcMonitoringNormalizeHeader(string $value): string
   return is_string($normalized) ? $normalized : '';
 }
 
-function tcMonitoringFindHeaderIndex(array $header, array $names): int
+function egmMonitoringFindHeaderIndex(array $header, array $names): int
 {
   $needles = [];
   foreach ($names as $name) {
-    $needle = tcMonitoringNormalizeHeader((string)$name);
+    $needle = egmMonitoringNormalizeHeader((string)$name);
     if ($needle !== '') {
       $needles[$needle] = true;
     }
@@ -291,7 +291,7 @@ function tcMonitoringFindHeaderIndex(array $header, array $names): int
     return -1;
   }
   foreach ($header as $index => $cell) {
-    $normalized = tcMonitoringNormalizeHeader((string)$cell);
+    $normalized = egmMonitoringNormalizeHeader((string)$cell);
     if ($normalized !== '' && isset($needles[$normalized])) {
       return (int)$index;
     }
@@ -299,7 +299,7 @@ function tcMonitoringFindHeaderIndex(array $header, array $names): int
   return -1;
 }
 
-function tcMonitoringResolveMappedIndex(array $header, array $mapping, array $mappingKeys, array $fallbackNames): int
+function egmMonitoringResolveMappedIndex(array $header, array $mapping, array $mappingKeys, array $fallbackNames): int
 {
   foreach ($mappingKeys as $mappingKey) {
     $mappedIndex = $mapping[(string)$mappingKey] ?? null;
@@ -311,10 +311,10 @@ function tcMonitoringResolveMappedIndex(array $header, array $mapping, array $ma
       return $index;
     }
   }
-  return tcMonitoringFindHeaderIndex($header, $fallbackNames);
+  return egmMonitoringFindHeaderIndex($header, $fallbackNames);
 }
 
-function tcMonitoringCell(array $row, int $index): string
+function egmMonitoringCell(array $row, int $index): string
 {
   if ($index < 0) {
     return '';
@@ -322,7 +322,7 @@ function tcMonitoringCell(array $row, int $index): string
   return trim((string)($row[$index] ?? ''));
 }
 
-function tcMonitoringParseNumber($value): float
+function egmMonitoringParseNumber($value): float
 {
   if (!is_scalar($value)) {
     return 0.0;
@@ -342,12 +342,12 @@ function tcMonitoringParseNumber($value): float
   return $parsed;
 }
 
-function tcMonitoringParseInt($value): int
+function egmMonitoringParseInt($value): int
 {
-  return (int)floor(tcMonitoringParseNumber($value));
+  return (int)floor(egmMonitoringParseNumber($value));
 }
 
-function tcMonitoringSplitTokens(string $value): array
+function egmMonitoringSplitTokens(string $value): array
 {
   $parts = preg_split('/\s*(?:,|،|;)\s*/u', trim($value));
   if (!is_array($parts)) {
@@ -366,9 +366,9 @@ function tcMonitoringSplitTokens(string $value): array
   return $result;
 }
 
-function tcMonitoringParseTaskScoreMap(string $value): array
+function egmMonitoringParseTaskScoreMap(string $value): array
 {
-  $items = tcMonitoringSplitTokens($value);
+  $items = egmMonitoringSplitTokens($value);
   $map = [];
   foreach ($items as $item) {
     $separatorPos = strpos($item, '::');
@@ -385,14 +385,14 @@ function tcMonitoringParseTaskScoreMap(string $value): array
       continue;
     }
     $scoreRaw = trim(substr($item, $separatorPos + $separatorLength));
-    $map[$taskId] = tcMonitoringParseNumber($scoreRaw);
+    $map[$taskId] = egmMonitoringParseNumber($scoreRaw);
   }
   return $map;
 }
 
-function tcMonitoringParseTeamTaskMap(string $value): array
+function egmMonitoringParseTeamTaskMap(string $value): array
 {
-  $items = tcMonitoringSplitTokens($value);
+  $items = egmMonitoringSplitTokens($value);
   $map = [];
   foreach ($items as $item) {
     $parts = explode('::', $item);
@@ -406,13 +406,13 @@ function tcMonitoringParseTeamTaskMap(string $value): array
     $map[$taskId] = [
       'teamName' => trim((string)($parts[1] ?? '')),
       'status' => trim((string)($parts[2] ?? '')),
-      'score' => tcMonitoringParseNumber($parts[3] ?? 0)
+      'score' => egmMonitoringParseNumber($parts[3] ?? 0)
     ];
   }
   return $map;
 }
 
-function tcMonitoringWorkIdGroup(string $workId): string
+function egmMonitoringWorkIdGroup(string $workId): string
 {
   $trimmed = trim($workId);
   if ($trimmed === '') {
@@ -424,7 +424,7 @@ function tcMonitoringWorkIdGroup(string $workId): string
   return function_exists('mb_substr') ? mb_substr($trimmed, 0, 1, 'UTF-8') : substr($trimmed, 0, 1);
 }
 
-function tcMonitoringNormalizeWorkIdGroupKey(string $group): string
+function egmMonitoringNormalizeWorkIdGroupKey(string $group): string
 {
   $normalized = trim(strtr($group, [
     '۰' => '0',
@@ -451,7 +451,7 @@ function tcMonitoringNormalizeWorkIdGroupKey(string $group): string
   return $normalized !== '' ? $normalized : 'نامشخص';
 }
 
-function tcMonitoringRequestedWorkIdGroups(array $availableGroups): array
+function egmMonitoringRequestedWorkIdGroups(array $availableGroups): array
 {
   if (!array_key_exists('groups', $_GET)) {
     return $availableGroups;
@@ -482,11 +482,11 @@ function tcMonitoringRequestedWorkIdGroups(array $availableGroups): array
   }
   $availableByKey = [];
   foreach ($availableGroups as $group) {
-    $availableByKey[tcMonitoringNormalizeWorkIdGroupKey((string)$group)] = (string)$group;
+    $availableByKey[egmMonitoringNormalizeWorkIdGroupKey((string)$group)] = (string)$group;
   }
   $selected = [];
   foreach ($tokens as $group) {
-    $key = tcMonitoringNormalizeWorkIdGroupKey((string)$group);
+    $key = egmMonitoringNormalizeWorkIdGroupKey((string)$group);
     if ($key !== '' && isset($availableByKey[$key])) {
       $selected[$availableByKey[$key]] = true;
     }
@@ -494,17 +494,17 @@ function tcMonitoringRequestedWorkIdGroups(array $availableGroups): array
   return array_keys($selected);
 }
 
-function tcMonitoringHasExplicitWorkIdGroupFilter(): bool
+function egmMonitoringHasExplicitWorkIdGroupFilter(): bool
 {
   return array_key_exists('groups', $_GET);
 }
 
-function tcMonitoringUserWorkIdGroupKey(array $user): string
+function egmMonitoringUserWorkIdGroupKey(array $user): string
 {
-  return tcMonitoringNormalizeWorkIdGroupKey((string)($user['workIdGroup'] ?? tcMonitoringWorkIdGroup((string)($user['workId'] ?? ''))));
+  return egmMonitoringNormalizeWorkIdGroupKey((string)($user['workIdGroup'] ?? egmMonitoringWorkIdGroup((string)($user['workId'] ?? ''))));
 }
 
-function tcMonitoringParseTimestamp(string $value): ?DateTimeImmutable
+function egmMonitoringParseTimestamp(string $value): ?DateTimeImmutable
 {
   $trimmed = trim($value);
   if ($trimmed === '') {
@@ -517,9 +517,9 @@ function tcMonitoringParseTimestamp(string $value): ?DateTimeImmutable
   }
 }
 
-function tcMonitoringParseDescribePhotoPicksMap(string $value): array
+function egmMonitoringParseDescribePhotoPicksMap(string $value): array
 {
-  $items = tcMonitoringSplitTokens($value);
+  $items = egmMonitoringSplitTokens($value);
   $map = [];
   foreach ($items as $item) {
     $parts = explode('::', $item, 3);
@@ -537,7 +537,7 @@ function tcMonitoringParseDescribePhotoPicksMap(string $value): array
   return $map;
 }
 
-function tcMonitoringCountWords(string $text): int
+function egmMonitoringCountWords(string $text): int
 {
   $trimmed = trim($text);
   if ($trimmed === '') {
@@ -550,7 +550,7 @@ function tcMonitoringCountWords(string $text): int
   return $matched;
 }
 
-function tcMonitoringHasDescribePhotoSubmissionForTask(array $user, string $taskId, string $tagCode, string $tasksDir): bool
+function egmMonitoringHasDescribePhotoSubmissionForTask(array $user, string $taskId, string $tagCode, string $tasksDir): bool
 {
   $normalizedTaskId = trim($taskId);
   if ($normalizedTaskId === '') {
@@ -594,7 +594,7 @@ function tcMonitoringHasDescribePhotoSubmissionForTask(array $user, string $task
       if (!is_string($content)) {
         $content = '';
       }
-      $submissionCache[$filePath] = tcMonitoringCountWords($content) > 0;
+      $submissionCache[$filePath] = egmMonitoringCountWords($content) > 0;
     }
     if ($submissionCache[$filePath]) {
       return true;
@@ -603,7 +603,7 @@ function tcMonitoringHasDescribePhotoSubmissionForTask(array $user, string $task
   return false;
 }
 
-function tcMonitoringNormalizeTaskType(string $value): string
+function egmMonitoringNormalizeTaskType(string $value): string
 {
   $token = strtolower(trim($value));
   if (in_array($token, ['quiz', 'quiz-task', 'quiz task'], true)) {
@@ -624,7 +624,7 @@ function tcMonitoringNormalizeTaskType(string $value): string
   return 'quiz';
 }
 
-function tcMonitoringNormalizeBool($value): bool
+function egmMonitoringNormalizeBool($value): bool
 {
   if (is_bool($value)) {
     return $value;
@@ -636,13 +636,13 @@ function tcMonitoringNormalizeBool($value): bool
   return in_array($token, ['1', 'true', 'on', 'yes'], true);
 }
 
-function tcMonitoringNormalizeDate(string $value): string
+function egmMonitoringNormalizeDate(string $value): string
 {
   $trimmed = trim($value);
   return preg_match('/^\d{4}-\d{2}-\d{2}$/', $trimmed) ? $trimmed : '';
 }
 
-function tcMonitoringNormalizeTime(string $value): string
+function egmMonitoringNormalizeTime(string $value): string
 {
   $trimmed = trim($value);
   if (preg_match('/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/', $trimmed, $matches)) {
@@ -651,7 +651,7 @@ function tcMonitoringNormalizeTime(string $value): string
   return '';
 }
 
-function tcMonitoringTaskTimeToSeconds(string $value): ?int
+function egmMonitoringTaskTimeToSeconds(string $value): ?int
 {
   $trimmed = trim($value);
   if (!preg_match('/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/', $trimmed, $matches)) {
@@ -660,7 +660,7 @@ function tcMonitoringTaskTimeToSeconds(string $value): ?int
   return ((int)$matches[1] * 3600) + ((int)$matches[2] * 60) + (isset($matches[3]) ? (int)$matches[3] : 0);
 }
 
-function tcMonitoringNowTehran(): array
+function egmMonitoringNowTehran(): array
 {
   try {
     $dt = new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
@@ -670,19 +670,19 @@ function tcMonitoringNowTehran(): array
   return ['date' => $dt->format('Y-m-d'), 'time' => $dt->format('H:i:s')];
 }
 
-function tcMonitoringDeriveTaskStatus(array $task): string
+function egmMonitoringDeriveTaskStatus(array $task): string
 {
-  $active = tcMonitoringNormalizeBool($task['active'] ?? false);
-  $duration = tcMonitoringNormalizeBool($task['duration'] ?? false);
+  $active = egmMonitoringNormalizeBool($task['active'] ?? false);
+  $duration = egmMonitoringNormalizeBool($task['duration'] ?? false);
   if (!$duration) {
     return $active ? 'active' : 'inactive';
   }
 
-  $startDate = tcMonitoringNormalizeDate((string)($task['startDate'] ?? ''));
-  $endDate = tcMonitoringNormalizeDate((string)($task['endDate'] ?? ''));
-  $startTime = tcMonitoringNormalizeTime((string)($task['startTime'] ?? ''));
-  $endTime = tcMonitoringNormalizeTime((string)($task['endTime'] ?? ''));
-  $now = tcMonitoringNowTehran();
+  $startDate = egmMonitoringNormalizeDate((string)($task['startDate'] ?? ''));
+  $endDate = egmMonitoringNormalizeDate((string)($task['endDate'] ?? ''));
+  $startTime = egmMonitoringNormalizeTime((string)($task['startTime'] ?? ''));
+  $endTime = egmMonitoringNormalizeTime((string)($task['endTime'] ?? ''));
+  $now = egmMonitoringNowTehran();
   $today = (string)($now['date'] ?? '');
   if ($startDate === '' || $today === '') {
     return 'inactive';
@@ -694,15 +694,15 @@ function tcMonitoringDeriveTaskStatus(array $task): string
     return 'ended';
   }
   if ($startDate === $today) {
-    $startSeconds = tcMonitoringTaskTimeToSeconds($startTime);
-    $nowSeconds = tcMonitoringTaskTimeToSeconds((string)($now['time'] ?? '')) ?? 0;
+    $startSeconds = egmMonitoringTaskTimeToSeconds($startTime);
+    $nowSeconds = egmMonitoringTaskTimeToSeconds((string)($now['time'] ?? '')) ?? 0;
     if ($startSeconds !== null && $nowSeconds < $startSeconds) {
       return 'upcoming';
     }
   }
   if ($endDate !== '' && $endDate === $today) {
-    $endSeconds = tcMonitoringTaskTimeToSeconds($endTime);
-    $nowSeconds = tcMonitoringTaskTimeToSeconds((string)($now['time'] ?? '')) ?? 0;
+    $endSeconds = egmMonitoringTaskTimeToSeconds($endTime);
+    $nowSeconds = egmMonitoringTaskTimeToSeconds((string)($now['time'] ?? '')) ?? 0;
     if ($endSeconds !== null && $nowSeconds >= $endSeconds) {
       return 'ended';
     }
@@ -710,44 +710,44 @@ function tcMonitoringDeriveTaskStatus(array $task): string
   return 'active';
 }
 
-function tcMonitoringTaskHasStarted(array $task): bool
+function egmMonitoringTaskHasStarted(array $task): bool
 {
-  $status = (string)($task['status'] ?? tcMonitoringDeriveTaskStatus($task));
+  $status = (string)($task['status'] ?? egmMonitoringDeriveTaskStatus($task));
   return in_array($status, ['active', 'ended'], true);
 }
 
-function tcMonitoringTaskHasGoldenTime(array $task): bool
+function egmMonitoringTaskHasGoldenTime(array $task): bool
 {
-  $taskType = tcMonitoringNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
+  $taskType = egmMonitoringNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
   if ($taskType === 'conditional_quiz' && array_key_exists('hasGoldenTime', $task)) {
-    return tcMonitoringNormalizeBool($task['hasGoldenTime']);
+    return egmMonitoringNormalizeBool($task['hasGoldenTime']);
   }
   return $taskType === 'quiz' || $taskType === 'conditional_quiz';
 }
 
-function tcMonitoringTaskGoldenTimeApplies(array $task): bool
+function egmMonitoringTaskGoldenTimeApplies(array $task): bool
 {
-  $taskType = tcMonitoringNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
+  $taskType = egmMonitoringNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
   if ($taskType !== 'quiz' && $taskType !== 'conditional_quiz') {
     return false;
   }
-  if (!tcMonitoringTaskHasGoldenTime($task)) {
+  if (!egmMonitoringTaskHasGoldenTime($task)) {
     return false;
   }
-  if (!tcMonitoringNormalizeBool($task['duration'] ?? false)) {
+  if (!egmMonitoringNormalizeBool($task['duration'] ?? false)) {
     return false;
   }
-  return tcMonitoringNormalizeDate((string)($task['endDate'] ?? '')) !== ''
-    && tcMonitoringNormalizeTime((string)($task['endTime'] ?? '')) !== '';
+  return egmMonitoringNormalizeDate((string)($task['endDate'] ?? '')) !== ''
+    && egmMonitoringNormalizeTime((string)($task['endTime'] ?? '')) !== '';
 }
 
-function tcMonitoringTaskGoldenEndAt(array $task): ?DateTimeImmutable
+function egmMonitoringTaskGoldenEndAt(array $task): ?DateTimeImmutable
 {
-  if (!tcMonitoringTaskGoldenTimeApplies($task)) {
+  if (!egmMonitoringTaskGoldenTimeApplies($task)) {
     return null;
   }
-  $endDate = tcMonitoringNormalizeDate((string)($task['endDate'] ?? ''));
-  $endTime = tcMonitoringNormalizeTime((string)($task['endTime'] ?? ''));
+  $endDate = egmMonitoringNormalizeDate((string)($task['endDate'] ?? ''));
+  $endTime = egmMonitoringNormalizeTime((string)($task['endTime'] ?? ''));
   try {
     return new DateTimeImmutable($endDate . ' ' . $endTime . ':00', new DateTimeZone('Asia/Tehran'));
   } catch (Throwable $err) {
@@ -755,34 +755,34 @@ function tcMonitoringTaskGoldenEndAt(array $task): ?DateTimeImmutable
   }
 }
 
-function tcMonitoringReadQuestionCount(string $tasksDir, string $tagCode): int
+function egmMonitoringReadQuestionCount(string $tasksDir, string $tagCode): int
 {
   $normalizedTagCode = strtoupper(trim($tagCode));
   $normalizedTagCode = preg_replace('/[^A-Z0-9_-]+/', '', $normalizedTagCode);
   if (!is_string($normalizedTagCode) || $normalizedTagCode === '') {
     return 0;
   }
-  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTagCode . DIRECTORY_SEPARATOR . 'TCQ list.json';
-  $decoded = tcMonitoringReadJson($path, []);
+  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTagCode . DIRECTORY_SEPARATOR . 'EGMQ list.json';
+  $decoded = egmMonitoringReadJson($path, []);
   return is_array($decoded) ? count($decoded) : 0;
 }
 
-function tcMonitoringReadQuestionsPerAttempt(string $tasksDir, string $tagCode): int
+function egmMonitoringReadQuestionsPerAttempt(string $tasksDir, string $tagCode): int
 {
   $normalizedTagCode = strtoupper(trim($tagCode));
   $normalizedTagCode = preg_replace('/[^A-Z0-9_-]+/', '', $normalizedTagCode);
   if (!is_string($normalizedTagCode) || $normalizedTagCode === '') {
     return 0;
   }
-  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTagCode . DIRECTORY_SEPARATOR . 'TCQ settings.json';
-  $decoded = tcMonitoringReadJson($path, []);
+  $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTagCode . DIRECTORY_SEPARATOR . 'EGMQ settings.json';
+  $decoded = egmMonitoringReadJson($path, []);
   if (!is_array($decoded)) {
     return 0;
   }
-  return max(0, tcMonitoringParseInt($decoded['questionsPerAttempt'] ?? ($decoded['questions_per_attempt'] ?? 0)));
+  return max(0, egmMonitoringParseInt($decoded['questionsPerAttempt'] ?? ($decoded['questions_per_attempt'] ?? 0)));
 }
 
-function tcMonitoringReadTaskScoreSettings(string $tasksDir, string $tagCode): array
+function egmMonitoringReadTaskScoreSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = ['score' => 0, 'afterEndtimeScore' => 0, 'hasGoldenTime' => true];
   $normalizedTagCode = strtoupper(trim($tagCode));
@@ -791,24 +791,24 @@ function tcMonitoringReadTaskScoreSettings(string $tasksDir, string $tagCode): a
     return $defaults;
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTagCode . DIRECTORY_SEPARATOR . 'task-score.json';
-  $decoded = tcMonitoringReadJson($path, []);
+  $decoded = egmMonitoringReadJson($path, []);
   if (!is_array($decoded)) {
     return $defaults;
   }
   return [
-    'score' => max(0, tcMonitoringParseInt($decoded['score'] ?? 0)),
-    'afterEndtimeScore' => max(0, tcMonitoringParseInt($decoded['afterEndtimeScore'] ?? ($decoded['after_endtime_score'] ?? 0))),
+    'score' => max(0, egmMonitoringParseInt($decoded['score'] ?? 0)),
+    'afterEndtimeScore' => max(0, egmMonitoringParseInt($decoded['afterEndtimeScore'] ?? ($decoded['after_endtime_score'] ?? 0))),
     'hasGoldenTime' => array_key_exists('hasGoldenTime', $decoded) || array_key_exists('has_golden_time', $decoded)
-      ? tcMonitoringNormalizeBool($decoded['hasGoldenTime'] ?? ($decoded['has_golden_time'] ?? true))
+      ? egmMonitoringNormalizeBool($decoded['hasGoldenTime'] ?? ($decoded['has_golden_time'] ?? true))
       : true
   ];
 }
 
-function tcMonitoringMinPositiveScoreValue(array $values): int
+function egmMonitoringMinPositiveScoreValue(array $values): int
 {
   $min = 0;
   foreach ($values as $value) {
-    $score = max(0, tcMonitoringParseInt($value));
+    $score = max(0, egmMonitoringParseInt($value));
     if ($score <= 0) {
       continue;
     }
@@ -819,7 +819,7 @@ function tcMonitoringMinPositiveScoreValue(array $values): int
   return $min;
 }
 
-function tcMonitoringReadTasks(string $storePath, string $tasksDir): array
+function egmMonitoringReadTasks(string $storePath, string $tasksDir): array
 {
   if (!is_file($storePath)) {
     return [];
@@ -829,7 +829,7 @@ function tcMonitoringReadTasks(string $storePath, string $tasksDir): array
     return [];
   }
   $jsonText = $content;
-  if (preg_match('/window\.TC_TASKS\s*=\s*(.*?);\s*$/s', $content, $matches)) {
+  if (preg_match('/window\.EGM_TASKS\s*=\s*(.*?);\s*$/s', $content, $matches)) {
     $jsonText = trim((string)($matches[1] ?? ''));
   }
   $decoded = json_decode($jsonText, true);
@@ -857,14 +857,14 @@ function tcMonitoringReadTasks(string $storePath, string $tasksDir): array
       continue;
     }
     $seen[$id] = true;
-    $taskType = tcMonitoringNormalizeTaskType((string)($item['taskType'] ?? ($item['task_type'] ?? 'quiz')));
-    $scoreSettings = tcMonitoringReadTaskScoreSettings($tasksDir, $tagCode);
-    $baseScore = max(0, tcMonitoringParseInt($item['score'] ?? $scoreSettings['score'] ?? 0));
-    $afterEndtimeScore = max(0, tcMonitoringParseInt($item['afterEndtimeScore'] ?? ($item['after_endtime_score'] ?? ($scoreSettings['afterEndtimeScore'] ?? 0))));
-    $questionCount = tcMonitoringReadQuestionCount($tasksDir, $tagCode);
-    $questionsPerAttempt = tcMonitoringReadQuestionsPerAttempt($tasksDir, $tagCode);
+    $taskType = egmMonitoringNormalizeTaskType((string)($item['taskType'] ?? ($item['task_type'] ?? 'quiz')));
+    $scoreSettings = egmMonitoringReadTaskScoreSettings($tasksDir, $tagCode);
+    $baseScore = max(0, egmMonitoringParseInt($item['score'] ?? $scoreSettings['score'] ?? 0));
+    $afterEndtimeScore = max(0, egmMonitoringParseInt($item['afterEndtimeScore'] ?? ($item['after_endtime_score'] ?? ($scoreSettings['afterEndtimeScore'] ?? 0))));
+    $questionCount = egmMonitoringReadQuestionCount($tasksDir, $tagCode);
+    $questionsPerAttempt = egmMonitoringReadQuestionsPerAttempt($tasksDir, $tagCode);
     $selectedQuestionCount = $questionsPerAttempt > 0 ? min($questionsPerAttempt, $questionCount) : $questionCount;
-    $minPositiveUnitScore = tcMonitoringMinPositiveScoreValue([$baseScore, $afterEndtimeScore]);
+    $minPositiveUnitScore = egmMonitoringMinPositiveScoreValue([$baseScore, $afterEndtimeScore]);
     $maxScore = $taskType === 'conditional_quiz'
       ? max($baseScore, $afterEndtimeScore) * max(0, $selectedQuestionCount)
       : max($baseScore, $afterEndtimeScore);
@@ -881,15 +881,15 @@ function tcMonitoringReadTasks(string $storePath, string $tasksDir): array
       'hasGoldenTime' => (bool)($scoreSettings['hasGoldenTime'] ?? true),
       'minScore' => $minScore,
       'maxScore' => $maxScore,
-      'active' => tcMonitoringNormalizeBool($item['active'] ?? false),
-      'duration' => tcMonitoringNormalizeBool($item['duration'] ?? false),
-      'startDate' => tcMonitoringNormalizeDate((string)($item['startDate'] ?? ($item['start_date'] ?? ''))),
-      'startTime' => tcMonitoringNormalizeTime((string)($item['startTime'] ?? ($item['start_time'] ?? ''))),
-      'endDate' => tcMonitoringNormalizeDate((string)($item['endDate'] ?? ($item['end_date'] ?? ''))),
-      'endTime' => tcMonitoringNormalizeTime((string)($item['endTime'] ?? ($item['end_time'] ?? ''))),
-      'order' => max(1, tcMonitoringParseInt($item['order'] ?? 0))
+      'active' => egmMonitoringNormalizeBool($item['active'] ?? false),
+      'duration' => egmMonitoringNormalizeBool($item['duration'] ?? false),
+      'startDate' => egmMonitoringNormalizeDate((string)($item['startDate'] ?? ($item['start_date'] ?? ''))),
+      'startTime' => egmMonitoringNormalizeTime((string)($item['startTime'] ?? ($item['start_time'] ?? ''))),
+      'endDate' => egmMonitoringNormalizeDate((string)($item['endDate'] ?? ($item['end_date'] ?? ''))),
+      'endTime' => egmMonitoringNormalizeTime((string)($item['endTime'] ?? ($item['end_time'] ?? ''))),
+      'order' => max(1, egmMonitoringParseInt($item['order'] ?? 0))
     ];
-    $taskRecord['status'] = tcMonitoringDeriveTaskStatus($taskRecord);
+    $taskRecord['status'] = egmMonitoringDeriveTaskStatus($taskRecord);
     $tasks[] = $taskRecord;
   }
 
@@ -899,7 +899,7 @@ function tcMonitoringReadTasks(string $storePath, string $tasksDir): array
   return $tasks;
 }
 
-function tcMonitoringBuildEventInfo(array $tasks): array
+function egmMonitoringBuildEventInfo(array $tasks): array
 {
   $starts = [];
   $ends = [];
@@ -908,10 +908,10 @@ function tcMonitoringBuildEventInfo(array $tasks): array
     if (!is_array($task)) {
       continue;
     }
-    $startDate = tcMonitoringNormalizeDate((string)($task['startDate'] ?? ''));
-    $startTime = tcMonitoringNormalizeTime((string)($task['startTime'] ?? ''));
-    $endDate = tcMonitoringNormalizeDate((string)($task['endDate'] ?? ''));
-    $endTime = tcMonitoringNormalizeTime((string)($task['endTime'] ?? ''));
+    $startDate = egmMonitoringNormalizeDate((string)($task['startDate'] ?? ''));
+    $startTime = egmMonitoringNormalizeTime((string)($task['startTime'] ?? ''));
+    $endDate = egmMonitoringNormalizeDate((string)($task['endDate'] ?? ''));
+    $endTime = egmMonitoringNormalizeTime((string)($task['endTime'] ?? ''));
     $start = null;
     $end = null;
     try {
@@ -943,9 +943,9 @@ function tcMonitoringBuildEventInfo(array $tasks): array
   ];
 }
 
-function tcMonitoringReadPrizeLevels(string $path): array
+function egmMonitoringReadPrizeLevels(string $path): array
 {
-  $decoded = tcMonitoringReadJson($path, []);
+  $decoded = egmMonitoringReadJson($path, []);
   if (!is_array($decoded)) {
     return [];
   }
@@ -954,7 +954,7 @@ function tcMonitoringReadPrizeLevels(string $path): array
     if (!is_array($item)) {
       continue;
     }
-    $score = max(1, tcMonitoringParseInt($item['score'] ?? ($item['levelScore'] ?? 0)));
+    $score = max(1, egmMonitoringParseInt($item['score'] ?? ($item['levelScore'] ?? 0)));
     $name = trim((string)($item['name'] ?? ($item['levelName'] ?? ('سطح ' . $score))));
     if ($name === '') {
       $name = 'سطح ' . $score;
@@ -974,9 +974,9 @@ function tcMonitoringReadPrizeLevels(string $path): array
   return $levels;
 }
 
-function tcMonitoringReadPrizes(string $path): array
+function egmMonitoringReadPrizes(string $path): array
 {
-  $decoded = tcPrizeInventoryReadSnapshot($path);
+  $decoded = egmPrizeInventoryReadSnapshot($path);
   if (!is_array($decoded)) {
     return [];
   }
@@ -989,15 +989,15 @@ function tcMonitoringReadPrizes(string $path): array
     if ($name === '') {
       continue;
     }
-    $quantity = max(0, tcMonitoringParseInt($item['quantity'] ?? 0));
-    $last = max(0, tcMonitoringParseInt($item['last'] ?? $quantity));
+    $quantity = max(0, egmMonitoringParseInt($item['quantity'] ?? 0));
+    $last = max(0, egmMonitoringParseInt($item['last'] ?? $quantity));
     if ($quantity === 0 && $last > 0) {
       $quantity = $last;
     }
     if ($last > $quantity) {
       $last = $quantity;
     }
-    $value = tcMonitoringParseNumber($item['value'] ?? 0);
+    $value = egmMonitoringParseNumber($item['value'] ?? 0);
     $isFake = (bool)($item['isFake'] ?? false);
     $prizes[] = [
       'name' => $name,
@@ -1011,20 +1011,20 @@ function tcMonitoringReadPrizes(string $path): array
   return $prizes;
 }
 
-function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): array
+function egmMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): array
 {
-  $rows = tcMonitoringReadCsvRows($inviteesPath);
+  $rows = egmMonitoringReadCsvRows($inviteesPath);
   if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
     return ['users' => [], 'rowsCount' => 0];
   }
 
   $header = $rows[0];
-  $mapping = tcMonitoringReadJson($mapPath, []);
+  $mapping = egmMonitoringReadJson($mapPath, []);
   if (!is_array($mapping)) {
     $mapping = [];
   }
 
-  $workIdIndex = tcMonitoringResolveMappedIndex(
+  $workIdIndex = egmMonitoringResolveMappedIndex(
     $header,
     $mapping,
     ['workId', 'username'],
@@ -1034,48 +1034,48 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
     return ['users' => [], 'rowsCount' => max(0, count($rows) - 1)];
   }
 
-  $firstNameIndex = tcMonitoringResolveMappedIndex(
+  $firstNameIndex = egmMonitoringResolveMappedIndex(
     $header,
     $mapping,
     ['firstName', 'first_name'],
     ['First Name', 'first name', 'firstname', 'name', 'نام']
   );
-  $lastNameIndex = tcMonitoringResolveMappedIndex(
+  $lastNameIndex = egmMonitoringResolveMappedIndex(
     $header,
     $mapping,
     ['lastName', 'last_name'],
     ['Last Name', 'last name', 'lastname', 'family', 'surname', 'نام خانوادگی']
   );
-  $fullNameIndex = tcMonitoringResolveMappedIndex(
+  $fullNameIndex = egmMonitoringResolveMappedIndex(
     $header,
     $mapping,
     ['fullName', 'fullname', 'name', 'full_name'],
     ['Full Name', 'full name', 'name', 'نام و نام خانوادگی']
   );
 
-  $scoreIndex = tcMonitoringFindHeaderIndex($header, ['score']);
-  $loginCountIndex = tcMonitoringFindHeaderIndex($header, ['logins counts', 'logins count', 'login count']);
-  $loginsIndex = tcMonitoringFindHeaderIndex($header, ['logins', 'login logs']);
-  $taskCompletedIndex = tcMonitoringFindHeaderIndex($header, ['task completed ids', 'task completed id']);
-  $taskScoreMapIndex = tcMonitoringFindHeaderIndex($header, ['task score map']);
-  $infoTasksIndex = tcMonitoringFindHeaderIndex($header, ['info tasks']);
-  $teamTasksIndex = tcMonitoringFindHeaderIndex($header, ['team task']);
-  $describeTasksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo task']);
-  $describePicksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo picks']);
-  $outOfValueRewardsIndex = tcMonitoringFindHeaderIndex($header, ['out of value rewards']);
+  $scoreIndex = egmMonitoringFindHeaderIndex($header, ['score']);
+  $loginCountIndex = egmMonitoringFindHeaderIndex($header, ['logins counts', 'logins count', 'login count']);
+  $loginsIndex = egmMonitoringFindHeaderIndex($header, ['logins', 'login logs']);
+  $taskCompletedIndex = egmMonitoringFindHeaderIndex($header, ['task completed ids', 'task completed id']);
+  $taskScoreMapIndex = egmMonitoringFindHeaderIndex($header, ['task score map']);
+  $infoTasksIndex = egmMonitoringFindHeaderIndex($header, ['info tasks']);
+  $teamTasksIndex = egmMonitoringFindHeaderIndex($header, ['team task']);
+  $describeTasksIndex = egmMonitoringFindHeaderIndex($header, ['describe photo task']);
+  $describePicksIndex = egmMonitoringFindHeaderIndex($header, ['describe photo picks']);
+  $outOfValueRewardsIndex = egmMonitoringFindHeaderIndex($header, ['out of value rewards']);
 
   $users = [];
   for ($i = 1; $i < count($rows); $i += 1) {
     $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
-    $workId = tcMonitoringCell($row, $workIdIndex);
+    $workId = egmMonitoringCell($row, $workIdIndex);
     if ($workId === '') {
       continue;
     }
 
-    $firstName = tcMonitoringCell($row, $firstNameIndex);
-    $lastName = tcMonitoringCell($row, $lastNameIndex);
+    $firstName = egmMonitoringCell($row, $firstNameIndex);
+    $lastName = egmMonitoringCell($row, $lastNameIndex);
     if (($firstName === '' || $lastName === '') && $fullNameIndex >= 0) {
-      $fullName = tcMonitoringCell($row, $fullNameIndex);
+      $fullName = egmMonitoringCell($row, $fullNameIndex);
       if ($fullName !== '') {
         $parts = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
         if (is_array($parts) && $parts) {
@@ -1094,19 +1094,19 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
       $displayName = $workId;
     }
 
-    $score = max(0, tcMonitoringParseInt(tcMonitoringCell($row, $scoreIndex)));
-    $loginCount = max(0, tcMonitoringParseInt(tcMonitoringCell($row, $loginCountIndex)));
-    $loginStamps = tcMonitoringSplitTokens(tcMonitoringCell($row, $loginsIndex));
+    $score = max(0, egmMonitoringParseInt(egmMonitoringCell($row, $scoreIndex)));
+    $loginCount = max(0, egmMonitoringParseInt(egmMonitoringCell($row, $loginCountIndex)));
+    $loginStamps = egmMonitoringSplitTokens(egmMonitoringCell($row, $loginsIndex));
     if ($loginCount === 0 && $loginStamps) {
       $loginCount = count($loginStamps);
     }
 
-    $completedTaskIds = tcMonitoringSplitTokens(tcMonitoringCell($row, $taskCompletedIndex));
-    $taskScoreMap = tcMonitoringParseTaskScoreMap(tcMonitoringCell($row, $taskScoreMapIndex));
-    $infoTasksMap = tcMonitoringParseTaskScoreMap(tcMonitoringCell($row, $infoTasksIndex));
-    $teamTasksMap = tcMonitoringParseTeamTaskMap(tcMonitoringCell($row, $teamTasksIndex));
-    $describeTasksMap = tcMonitoringParseTaskScoreMap(tcMonitoringCell($row, $describeTasksIndex));
-    $describePhotoPicksMap = tcMonitoringParseDescribePhotoPicksMap(tcMonitoringCell($row, $describePicksIndex));
+    $completedTaskIds = egmMonitoringSplitTokens(egmMonitoringCell($row, $taskCompletedIndex));
+    $taskScoreMap = egmMonitoringParseTaskScoreMap(egmMonitoringCell($row, $taskScoreMapIndex));
+    $infoTasksMap = egmMonitoringParseTaskScoreMap(egmMonitoringCell($row, $infoTasksIndex));
+    $teamTasksMap = egmMonitoringParseTeamTaskMap(egmMonitoringCell($row, $teamTasksIndex));
+    $describeTasksMap = egmMonitoringParseTaskScoreMap(egmMonitoringCell($row, $describeTasksIndex));
+    $describePhotoPicksMap = egmMonitoringParseDescribePhotoPicksMap(egmMonitoringCell($row, $describePicksIndex));
 
     $allCompletedLookup = [];
     foreach ($completedTaskIds as $taskId) {
@@ -1123,7 +1123,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
         continue;
       }
       $teamStatus = strtolower(trim((string)($entry['status'] ?? '')));
-      $teamScore = tcMonitoringParseNumber($entry['score'] ?? 0);
+      $teamScore = egmMonitoringParseNumber($entry['score'] ?? 0);
       if ($teamScore > 0 || $teamStatus === 'started') {
         $allCompletedLookup[(string)$taskId] = true;
       }
@@ -1132,7 +1132,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
       $allCompletedLookup[(string)$taskId] = true;
     }
 
-    $outOfValueRewards = tcMonitoringSplitTokens(tcMonitoringCell($row, $outOfValueRewardsIndex));
+    $outOfValueRewards = egmMonitoringSplitTokens(egmMonitoringCell($row, $outOfValueRewardsIndex));
     $completedTaskCount = count($allCompletedLookup);
     $activityScore = ($completedTaskCount * 3) + $loginCount;
 
@@ -1145,7 +1145,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
       'loginCount' => $loginCount,
       'loginStamps' => $loginStamps,
       'hasLoggedIn' => ($loginCount > 0) || (count($loginStamps) > 0),
-      'workIdGroup' => tcMonitoringWorkIdGroup($workId),
+      'workIdGroup' => egmMonitoringWorkIdGroup($workId),
       'completedTaskIds' => $completedTaskIds,
       'taskScoreMap' => $taskScoreMap,
       'infoTasksMap' => $infoTasksMap,
@@ -1161,7 +1161,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
   return ['users' => $users, 'rowsCount' => max(0, count($rows) - 1)];
 }
 
-function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksDir, array $completionPhaseLookup = []): array
+function egmMonitoringUserTaskCompletion(array $user, array $task, string $tasksDir, array $completionPhaseLookup = []): array
 {
   $taskId = (string)($task['id'] ?? '');
   $taskType = (string)($task['taskType'] ?? 'quiz');
@@ -1190,7 +1190,7 @@ function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksD
   if ($taskType === 'team_task') {
     if (isset($teamTasksMap[$taskId]) && is_array($teamTasksMap[$taskId])) {
       $entry = $teamTasksMap[$taskId];
-      $score = tcMonitoringParseNumber($entry['score'] ?? 0);
+      $score = egmMonitoringParseNumber($entry['score'] ?? 0);
       $status = strtolower(trim((string)($entry['status'] ?? '')));
       return [
         'completed' => $score > 0 || $status === 'started',
@@ -1205,7 +1205,7 @@ function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksD
   }
 
   if ($taskType === 'describe_photo') {
-    $hasDescribeSubmission = tcMonitoringHasDescribePhotoSubmissionForTask(
+    $hasDescribeSubmission = egmMonitoringHasDescribePhotoSubmissionForTask(
       $user,
       $taskId,
       (string)($task['tagCode'] ?? ''),
@@ -1220,7 +1220,7 @@ function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksD
   if (isset($completedLookup[$taskId]) || array_key_exists($taskId, $taskScoreMap)) {
     $score = (float)($taskScoreMap[$taskId] ?? 0);
     $phase = $loggedPhase !== '' ? $loggedPhase : 'active';
-    if ($phase === 'active' && !tcMonitoringTaskGoldenTimeApplies($task)) {
+    if ($phase === 'active' && !egmMonitoringTaskGoldenTimeApplies($task)) {
       $phase = 'no_golden';
     }
     if ($phase === 'active' && $taskType !== 'conditional_quiz' && (float)$score > 0 && (int)$score === (int)($task['afterEndtimeScore'] ?? -1) && (int)($task['afterEndtimeScore'] ?? 0) !== (int)($task['score'] ?? 0)) {
@@ -1232,7 +1232,7 @@ function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksD
   return ['completed' => false, 'score' => 0.0, 'phase' => 'unknown'];
 }
 
-function tcMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks): array
+function egmMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks): array
 {
   if (!is_dir($logsDir)) {
     return [];
@@ -1286,15 +1286,15 @@ function tcMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks): 
       if (isset($lookup[$userId][$taskId])) {
         continue;
       }
-      $timestamp = tcMonitoringParseTimestamp((string)($event['timestamp'] ?? ''));
+      $timestamp = egmMonitoringParseTimestamp((string)($event['timestamp'] ?? ''));
       if ($timestamp === null) {
         continue;
       }
       $task = $taskById[$taskId];
-      if (!tcMonitoringTaskGoldenTimeApplies($task)) {
+      if (!egmMonitoringTaskGoldenTimeApplies($task)) {
         $phase = 'no_golden';
       } else {
-        $goldenEndAt = tcMonitoringTaskGoldenEndAt($task);
+        $goldenEndAt = egmMonitoringTaskGoldenEndAt($task);
         $phase = $goldenEndAt !== null && $timestamp->setTimezone(new DateTimeZone('Asia/Tehran')) > $goldenEndAt
           ? 'after_golden'
           : 'active';
@@ -1309,7 +1309,7 @@ function tcMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks): 
   return $lookup;
 }
 
-function tcMonitoringUserHasTaskParticipation(array $user, array $taskInteractionWorkIds = []): bool
+function egmMonitoringUserHasTaskParticipation(array $user, array $taskInteractionWorkIds = []): bool
 {
   $workId = trim((string)($user['workId'] ?? ''));
   if ($workId !== '' && isset($taskInteractionWorkIds[$workId])) {
@@ -1327,7 +1327,7 @@ function tcMonitoringUserHasTaskParticipation(array $user, array $taskInteractio
   return false;
 }
 
-function tcMonitoringReadTaskInteractionWorkIds(string $logsDir): array
+function egmMonitoringReadTaskInteractionWorkIds(string $logsDir): array
 {
   if (!is_dir($logsDir)) {
     return [];
@@ -1376,7 +1376,7 @@ function tcMonitoringReadTaskInteractionWorkIds(string $logsDir): array
   return $workIds;
 }
 
-function tcMonitoringScoreStages(array $users, int $minScore, int $maxScore, array $taskInteractionWorkIds = []): array
+function egmMonitoringScoreStages(array $users, int $minScore, int $maxScore, array $taskInteractionWorkIds = []): array
 {
   $minScore = max(0, $minScore);
   $maxScore = max(0, $maxScore);
@@ -1420,7 +1420,7 @@ function tcMonitoringScoreStages(array $users, int $minScore, int $maxScore, arr
   $sums = array_fill(0, 7, 0.0);
   $includedUsers = 0;
   foreach ($users as $user) {
-    if (!tcMonitoringUserHasTaskParticipation($user, $taskInteractionWorkIds)) {
+    if (!egmMonitoringUserHasTaskParticipation($user, $taskInteractionWorkIds)) {
       continue;
     }
     $score = max(0, (int)($user['score'] ?? 0));
@@ -1449,7 +1449,7 @@ function tcMonitoringScoreStages(array $users, int $minScore, int $maxScore, arr
   return $stages;
 }
 
-function tcMonitoringFallbackUserCompletedTask(array $user, array $task): bool
+function egmMonitoringFallbackUserCompletedTask(array $user, array $task): bool
 {
   $taskId = (string)($task['id'] ?? '');
   if ($taskId === '') {
@@ -1470,7 +1470,7 @@ function tcMonitoringFallbackUserCompletedTask(array $user, array $task): bool
   if ($taskType === 'team_task') {
     if (isset($teamTasksMap[$taskId]) && is_array($teamTasksMap[$taskId])) {
       $entry = $teamTasksMap[$taskId];
-      return tcMonitoringParseNumber($entry['score'] ?? 0) > 0 || strtolower(trim((string)($entry['status'] ?? ''))) === 'started';
+      return egmMonitoringParseNumber($entry['score'] ?? 0) > 0 || strtolower(trim((string)($entry['status'] ?? ''))) === 'started';
     }
     return array_key_exists($taskId, $infoTasksMap);
   }
@@ -1480,27 +1480,27 @@ function tcMonitoringFallbackUserCompletedTask(array $user, array $task): bool
   return isset($completedLookup[$taskId]) || array_key_exists($taskId, $taskScoreMap);
 }
 
-function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): array
+function egmMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): array
 {
   $tasksPath = $baseDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js';
   $tasksDir = $baseDir . DIRECTORY_SEPARATOR . 'tasks';
-  $inviteesPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
-  $inviteesMapPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
-  $prizesPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Prizes.json';
-  $levelsPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Prize Levels.json';
+  $inviteesPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
+  $inviteesMapPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'EGM Mapped.json';
+  $prizesPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Prizes.json';
+  $levelsPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Prize Levels.json';
 
-  $tasks = tcMonitoringReadTasks($tasksPath, $tasksDir);
-  $eventInfo = tcMonitoringBuildEventInfo($tasks);
-  $inviteesPayload = tcMonitoringBuildInviteesData($inviteesPath, $inviteesMapPath);
+  $tasks = egmMonitoringReadTasks($tasksPath, $tasksDir);
+  $eventInfo = egmMonitoringBuildEventInfo($tasks);
+  $inviteesPayload = egmMonitoringBuildInviteesData($inviteesPath, $inviteesMapPath);
   $users = is_array($inviteesPayload['users'] ?? null) ? $inviteesPayload['users'] : [];
   $allUsers = $users;
   $allWorkIdGroups = array_values(array_unique(array_map(static fn(array $user): string => (string)($user['workIdGroup'] ?? 'نامشخص'), $allUsers)));
   usort($allWorkIdGroups, static fn(string $a, string $b): int => strnatcasecmp($a, $b));
-  $selectedWorkIdGroups = tcMonitoringRequestedWorkIdGroups($allWorkIdGroups);
-  $selectedGroupSet = array_fill_keys(array_map(static fn(string $group): string => tcMonitoringNormalizeWorkIdGroupKey($group), $selectedWorkIdGroups), true);
-  $hasExplicitGroupFilter = tcMonitoringHasExplicitWorkIdGroupFilter();
+  $selectedWorkIdGroups = egmMonitoringRequestedWorkIdGroups($allWorkIdGroups);
+  $selectedGroupSet = array_fill_keys(array_map(static fn(string $group): string => egmMonitoringNormalizeWorkIdGroupKey($group), $selectedWorkIdGroups), true);
+  $hasExplicitGroupFilter = egmMonitoringHasExplicitWorkIdGroupFilter();
   if ($selectedGroupSet) {
-    $users = array_values(array_filter($allUsers, static fn(array $user): bool => isset($selectedGroupSet[tcMonitoringUserWorkIdGroupKey($user)])));
+    $users = array_values(array_filter($allUsers, static fn(array $user): bool => isset($selectedGroupSet[egmMonitoringUserWorkIdGroupKey($user)])));
   } elseif ($hasExplicitGroupFilter) {
     $users = [];
   }
@@ -1512,8 +1512,8 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
     }
   }
   $rowsCount = max(0, (int)($inviteesPayload['rowsCount'] ?? 0));
-  $prizes = tcMonitoringReadPrizes($prizesPath);
-  $levels = tcMonitoringReadPrizeLevels($levelsPath);
+  $prizes = egmMonitoringReadPrizes($prizesPath);
+  $levels = egmMonitoringReadPrizeLevels($levelsPath);
   $totalUsers = count($users);
 
   $loggedInUsers = 0;
@@ -1547,7 +1547,7 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
     }
     $completedUsers = 0;
     foreach ($users as $user) {
-      if (is_array($user) && tcMonitoringFallbackUserCompletedTask($user, $task)) {
+      if (is_array($user) && egmMonitoringFallbackUserCompletedTask($user, $task)) {
         $completedUsers += 1;
       }
     }
@@ -1625,7 +1625,7 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
   ));
   $usersWithTaskParticipation = count(array_filter(
     $users,
-    static fn(array $user): bool => tcMonitoringUserHasTaskParticipation($user)
+    static fn(array $user): bool => egmMonitoringUserHasTaskParticipation($user)
   ));
 
   $prizeCapacity = 0;
@@ -1698,7 +1698,7 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
   usort($fallbackWorkIdGroupStats, static fn(array $a, array $b): int => strnatcasecmp((string)($a['group'] ?? ''), (string)($b['group'] ?? '')));
 
   $warnings[] = 'بخشی از محاسبات جدید مانیتورینگ ناموفق بود؛ داده‌های پایه نمایش داده می‌شود.';
-  return array_merge(tcMonitoringEmptyStats($warnings), [
+  return array_merge(egmMonitoringEmptyStats($warnings), [
     'summary' => [
       'totalUsers' => $totalUsers,
       'loggedInUsers' => $loggedInUsers,
@@ -1757,7 +1757,7 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
   ]);
 }
 
-function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindows, int $totalUsers): array
+function egmMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindows, int $totalUsers): array
 {
   $empty = [
     'available' => false,
@@ -1796,7 +1796,7 @@ function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindow
         continue;
       }
       $userId = trim((string)($decoded['user_id'] ?? ''));
-      $timestamp = tcMonitoringParseTimestamp((string)($decoded['timestamp'] ?? ''));
+      $timestamp = egmMonitoringParseTimestamp((string)($decoded['timestamp'] ?? ''));
       if ($userId === '' || $timestamp === null) {
         continue;
       }
@@ -1838,7 +1838,7 @@ function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindow
         continue;
       }
       $userId = trim((string)($event['user_id'] ?? ''));
-      $timestamp = tcMonitoringParseTimestamp((string)($event['timestamp'] ?? ''));
+      $timestamp = egmMonitoringParseTimestamp((string)($event['timestamp'] ?? ''));
       if ($userId === '' || $timestamp === null) {
         continue;
       }
@@ -1906,30 +1906,30 @@ function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindow
   ];
 }
 
-function tcMonitoringBuildStats(string $baseDir): array
+function egmMonitoringBuildStats(string $baseDir): array
 {
   $tasksPath = $baseDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js';
   $tasksDir = $baseDir . DIRECTORY_SEPARATOR . 'tasks';
-  $inviteesPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
-  $inviteesMapPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
-  $prizesPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Prizes.json';
-  $levelsPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Prize Levels.json';
+  $inviteesPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
+  $inviteesMapPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'EGM Mapped.json';
+  $prizesPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Prizes.json';
+  $levelsPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Prize Levels.json';
   $logsDir = $baseDir . DIRECTORY_SEPARATOR . 'useractivitylogs' . DIRECTORY_SEPARATOR . 'logs';
   $warnings = [];
 
-  $tasks = tcMonitoringReadTasks($tasksPath, $tasksDir);
-  $eventInfo = tcMonitoringBuildEventInfo($tasks);
-  $inviteesPayload = tcMonitoringBuildInviteesData($inviteesPath, $inviteesMapPath);
+  $tasks = egmMonitoringReadTasks($tasksPath, $tasksDir);
+  $eventInfo = egmMonitoringBuildEventInfo($tasks);
+  $inviteesPayload = egmMonitoringBuildInviteesData($inviteesPath, $inviteesMapPath);
   $users = is_array($inviteesPayload['users'] ?? null) ? $inviteesPayload['users'] : [];
   $allUsers = $users;
-  $allWorkIdGroups = array_values(array_unique(array_map(static fn(array $user): string => (string)($user['workIdGroup'] ?? tcMonitoringWorkIdGroup((string)($user['workId'] ?? ''))), $allUsers)));
+  $allWorkIdGroups = array_values(array_unique(array_map(static fn(array $user): string => (string)($user['workIdGroup'] ?? egmMonitoringWorkIdGroup((string)($user['workId'] ?? ''))), $allUsers)));
   $allWorkIdGroups = array_values(array_filter($allWorkIdGroups, static fn(string $group): bool => trim($group) !== ''));
   usort($allWorkIdGroups, static fn(string $a, string $b): int => strnatcasecmp($a, $b));
-  $selectedWorkIdGroups = tcMonitoringRequestedWorkIdGroups($allWorkIdGroups);
-  $selectedGroupSet = array_fill_keys(array_map(static fn(string $group): string => tcMonitoringNormalizeWorkIdGroupKey($group), $selectedWorkIdGroups), true);
-  $hasExplicitGroupFilter = tcMonitoringHasExplicitWorkIdGroupFilter();
+  $selectedWorkIdGroups = egmMonitoringRequestedWorkIdGroups($allWorkIdGroups);
+  $selectedGroupSet = array_fill_keys(array_map(static fn(string $group): string => egmMonitoringNormalizeWorkIdGroupKey($group), $selectedWorkIdGroups), true);
+  $hasExplicitGroupFilter = egmMonitoringHasExplicitWorkIdGroupFilter();
   if ($selectedGroupSet) {
-    $users = array_values(array_filter($allUsers, static fn(array $user): bool => isset($selectedGroupSet[tcMonitoringUserWorkIdGroupKey($user)])));
+    $users = array_values(array_filter($allUsers, static fn(array $user): bool => isset($selectedGroupSet[egmMonitoringUserWorkIdGroupKey($user)])));
   } elseif ($hasExplicitGroupFilter) {
     $users = [];
   }
@@ -1941,8 +1941,8 @@ function tcMonitoringBuildStats(string $baseDir): array
     }
   }
   $rowsCount = max(0, (int)($inviteesPayload['rowsCount'] ?? 0));
-  $prizes = tcMonitoringReadPrizes($prizesPath);
-  $levels = tcMonitoringReadPrizeLevels($levelsPath);
+  $prizes = egmMonitoringReadPrizes($prizesPath);
+  $levels = egmMonitoringReadPrizeLevels($levelsPath);
   $activityLogsAvailable = is_dir($logsDir);
   if (!$activityLogsAvailable) {
     $warnings[] = 'برای این رویداد گزارش فعالیت کافی وجود ندارد؛ آمار ورود و زمان پاسخ ممکن است برای رویدادهای قدیمی در دسترس نباشد.';
@@ -1972,7 +1972,7 @@ function tcMonitoringBuildStats(string $baseDir): array
     }
   }
   $averageScore = $totalUsers > 0 ? round($sumScores / $totalUsers, 2) : 0.0;
-  $startedTasks = array_values(array_filter($tasks, static fn(array $task): bool => tcMonitoringTaskHasStarted($task)));
+  $startedTasks = array_values(array_filter($tasks, static fn(array $task): bool => egmMonitoringTaskHasStarted($task)));
   $startedTaskCount = count($startedTasks);
   $startedTaskIdSet = [];
   foreach ($startedTasks as $task) {
@@ -1985,7 +1985,7 @@ function tcMonitoringBuildStats(string $baseDir): array
   $minPossibleScore = 0;
   foreach ($startedTasks as $task) {
     $maxPossibleScore += max(0, (int)($task['maxScore'] ?? max((int)($task['score'] ?? 0), (int)($task['afterEndtimeScore'] ?? 0))));
-    $taskMinScore = max(0, (int)($task['minScore'] ?? tcMonitoringMinPositiveScoreValue([
+    $taskMinScore = max(0, (int)($task['minScore'] ?? egmMonitoringMinPositiveScoreValue([
       $task['score'] ?? 0,
       $task['afterEndtimeScore'] ?? 0,
       $task['maxScore'] ?? 0
@@ -2002,18 +2002,18 @@ function tcMonitoringBuildStats(string $baseDir): array
       }
     }
   }
-  $taskInteractionWorkIds = tcMonitoringReadTaskInteractionWorkIds($logsDir);
+  $taskInteractionWorkIds = egmMonitoringReadTaskInteractionWorkIds($logsDir);
   $usersWithTaskParticipation = count(array_filter(
     $users,
-    static fn(array $user): bool => tcMonitoringUserHasTaskParticipation($user, $taskInteractionWorkIds)
+    static fn(array $user): bool => egmMonitoringUserHasTaskParticipation($user, $taskInteractionWorkIds)
   ));
   try {
-    $completionPhaseLookup = tcMonitoringBuildCompletionPhaseLookup($logsDir, $tasks);
+    $completionPhaseLookup = egmMonitoringBuildCompletionPhaseLookup($logsDir, $tasks);
   } catch (Throwable $err) {
     $completionPhaseLookup = [];
     $warnings[] = 'گزارش فعالیت قابل خواندن نبود؛ تفکیک مهلت طلایی ممکن است ناقص باشد.';
   }
-  $scoreStages = tcMonitoringScoreStages($users, $minPossibleScore, $maxPossibleScore, $taskInteractionWorkIds);
+  $scoreStages = egmMonitoringScoreStages($users, $minPossibleScore, $maxPossibleScore, $taskInteractionWorkIds);
   $scoreStageUserCount = array_sum(array_map(static fn(array $stage): int => max(0, (int)($stage['users'] ?? 0)), $scoreStages));
 
   $taskStatsMap = [];
@@ -2061,7 +2061,7 @@ function tcMonitoringBuildStats(string $baseDir): array
 
     foreach ($taskStatsMap as $taskId => &$taskStat) {
       $taskForCompletion = $taskStat;
-      $completion = tcMonitoringUserTaskCompletion($user, $taskForCompletion, $tasksDir, $completionPhaseLookup);
+      $completion = egmMonitoringUserTaskCompletion($user, $taskForCompletion, $tasksDir, $completionPhaseLookup);
       $completed = !empty($completion['completed']);
       $awardedScore = $completed ? (float)($completion['score'] ?? 0) : null;
       $isStartedTask = isset($startedTaskIdSet[(string)$taskId]);
@@ -2198,7 +2198,7 @@ function tcMonitoringBuildStats(string $baseDir): array
     $groupMap[$group]['users'] = (int)$groupMap[$group]['users'] + 1;
     $userCompletedStarted = 0;
     foreach ($startedTasks as $task) {
-      $completion = tcMonitoringUserTaskCompletion($user, $task, $tasksDir);
+      $completion = egmMonitoringUserTaskCompletion($user, $task, $tasksDir);
       if (!empty($completion['completed'])) {
         $userCompletedStarted += 1;
         $taskId = (string)($task['id'] ?? '');
@@ -2263,7 +2263,7 @@ function tcMonitoringBuildStats(string $baseDir): array
   $startedChallengeTeams = 0;
   $challengeParticipants = [];
   foreach ($teamRuntimePaths as $runtimePath) {
-    $runtime = tcMonitoringReadJson((string)$runtimePath, []);
+    $runtime = egmMonitoringReadJson((string)$runtimePath, []);
     $teamsRuntime = is_array($runtime['teams'] ?? null) ? $runtime['teams'] : [];
     foreach ($teamsRuntime as $team) {
       if (!is_array($team) || empty($team['started'])) {
@@ -2297,14 +2297,14 @@ function tcMonitoringBuildStats(string $baseDir): array
     }
     $taskWindows[$taskId] = [
       'date' => $startDate,
-      'startSeconds' => tcMonitoringTaskTimeToSeconds((string)($task['startTime'] ?? '')) ?? 0,
-      'endSeconds' => tcMonitoringTaskTimeToSeconds((string)($task['endTime'] ?? '')) ?? 86399
+      'startSeconds' => egmMonitoringTaskTimeToSeconds((string)($task['startTime'] ?? '')) ?? 0,
+      'endSeconds' => egmMonitoringTaskTimeToSeconds((string)($task['endTime'] ?? '')) ?? 86399
     ];
   }
   try {
-    $timeEngagementStats = tcMonitoringBuildTimeEngagementStats($logsDir, $taskWindows, $totalUsers);
+    $timeEngagementStats = egmMonitoringBuildTimeEngagementStats($logsDir, $taskWindows, $totalUsers);
   } catch (Throwable $err) {
-    $timeEngagementStats = tcMonitoringBuildTimeEngagementStats('', [], $totalUsers);
+    $timeEngagementStats = egmMonitoringBuildTimeEngagementStats('', [], $totalUsers);
     $warnings[] = 'گزارش فعالیت قابل خواندن نبود؛ آمار ورود و زمان پاسخ ممکن است ناقص باشد.';
   }
   if (empty($timeEngagementStats['available'])) {
@@ -2472,15 +2472,15 @@ function tcMonitoringBuildStats(string $baseDir): array
   ];
 }
 
-function tcMonitoringAttachInviteeGroupsToStats(array $data, string $baseDir): array
+function egmMonitoringAttachInviteeGroupsToStats(array $data, string $baseDir): array
 {
   if (!empty($data['workIdGroups']) && is_array($data['workIdGroups'])) {
     return $data;
   }
-  $inviteesPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
-  $inviteesMapPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
+  $inviteesPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
+  $inviteesMapPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'EGM Mapped.json';
   try {
-    $inviteesPayload = tcMonitoringBuildInviteesData($inviteesPath, $inviteesMapPath);
+    $inviteesPayload = egmMonitoringBuildInviteesData($inviteesPath, $inviteesMapPath);
   } catch (Throwable $err) {
     return $data;
   }
@@ -2489,26 +2489,26 @@ function tcMonitoringAttachInviteeGroupsToStats(array $data, string $baseDir): a
   usort($groups, static fn(string $a, string $b): int => strnatcasecmp($a, $b));
   if ($groups) {
     $data['workIdGroups'] = $groups;
-    $data['selectedWorkIdGroups'] = tcMonitoringRequestedWorkIdGroups($groups);
+    $data['selectedWorkIdGroups'] = egmMonitoringRequestedWorkIdGroups($groups);
   }
   return $data;
 }
 
-if ($tcMonitoringAction === 'export') {
+if ($egmMonitoringAction === 'export') {
   try {
     require_once __DIR__ . '/monitoring_excel_export.php';
     try {
-      $exportData = tcMonitoringBuildStats(__DIR__);
+      $exportData = egmMonitoringBuildStats(__DIR__);
     } catch (Throwable $statsErr) {
-      error_log('Task Club monitoring export full stats failed; using fallback: ' . $statsErr->getMessage());
-      $exportData = tcMonitoringBuildFallbackStats(__DIR__, [
+      error_log('Event Guest Manager monitoring export full stats failed; using fallback: ' . $statsErr->getMessage());
+      $exportData = egmMonitoringBuildFallbackStats(__DIR__, [
         'بخشی از محاسبات کامل مانیتورینگ در دسترس نبود؛ خروجی از داده‌های پایه ساخته شد.'
       ]);
-      $exportData = tcMonitoringAttachInviteeGroupsToStats($exportData, __DIR__);
+      $exportData = egmMonitoringAttachInviteeGroupsToStats($exportData, __DIR__);
     }
-    tcMonitoringSendExcelExport($exportData, __DIR__);
+    egmMonitoringSendExcelExport($exportData, __DIR__);
   } catch (Throwable $err) {
-    error_log('Task Club monitoring export failed: ' . $err->getMessage());
+    error_log('Event Guest Manager monitoring export failed: ' . $err->getMessage());
     if (!headers_sent()) {
       http_response_code(500);
       header('Content-Type: text/plain; charset=utf-8');
@@ -2518,7 +2518,7 @@ if ($tcMonitoringAction === 'export') {
   exit;
 }
 
-if ($tcMonitoringIsJsonRequest) {
+if ($egmMonitoringIsJsonRequest) {
   $preStatsOutput = '';
   if (ob_get_level() > 0) {
     $preStatsOutput = trim((string)ob_get_clean());
@@ -2526,7 +2526,7 @@ if ($tcMonitoringIsJsonRequest) {
   header('Content-Type: application/json; charset=utf-8');
   ob_start();
   try {
-    $data = tcMonitoringBuildStats(__DIR__);
+    $data = egmMonitoringBuildStats(__DIR__);
     $statsOutput = trim((string)ob_get_clean());
     $unexpectedOutput = trim($preStatsOutput . "\n" . $statsOutput);
     if ($unexpectedOutput !== '') {
@@ -2535,21 +2535,21 @@ if ($tcMonitoringIsJsonRequest) {
       }
       $data['warnings'][] = 'در زمان محاسبه مانیتورینگ یک پیام غیرمنتظره تولید شد؛ اطلاعات موجود نمایش داده می‌شود.';
     }
-    $response = tcMonitoringJsonResponse(['status' => 'ok', 'data' => $data]);
-    $tcMonitoringJsonCompleted = true;
+    $response = egmMonitoringJsonResponse(['status' => 'ok', 'data' => $data]);
+    $egmMonitoringJsonCompleted = true;
     echo $response;
   } catch (Throwable $err) {
     if (ob_get_level() > 0) {
       ob_end_clean();
     }
-    error_log('Task Club monitoring stats failed: ' . $err->getMessage());
+    error_log('Event Guest Manager monitoring stats failed: ' . $err->getMessage());
     try {
-      $fallbackData = tcMonitoringBuildFallbackStats(__DIR__, [
+      $fallbackData = egmMonitoringBuildFallbackStats(__DIR__, [
         'بخشی از داده‌های مانیتورینگ قابل محاسبه نبود؛ داده‌های پایه نمایش داده می‌شود.'
       ]);
     } catch (Throwable $fallbackErr) {
-      error_log('Task Club monitoring fallback stats failed: ' . $fallbackErr->getMessage());
-      $fallbackData = tcMonitoringEmptyStats([
+      error_log('Event Guest Manager monitoring fallback stats failed: ' . $fallbackErr->getMessage());
+      $fallbackData = egmMonitoringEmptyStats([
         'بخشی از داده‌های مانیتورینگ قابل محاسبه نبود؛ داده‌های در دسترس نمایش داده می‌شود.'
       ]);
     }
@@ -2559,7 +2559,7 @@ if ($tcMonitoringIsJsonRequest) {
       }
       $fallbackData['warnings'][] = 'در زمان آماده‌سازی مانیتورینگ یک پیام غیرمنتظره تولید شد؛ داده‌های پایه نمایش داده می‌شود.';
     }
-    $fallbackData = tcMonitoringAttachInviteeGroupsToStats($fallbackData, __DIR__);
+    $fallbackData = egmMonitoringAttachInviteeGroupsToStats($fallbackData, __DIR__);
     $fallbackData['diagnostics'] = [
       'type' => 'stats_exception',
       'message' => $err->getMessage(),
@@ -2571,12 +2571,12 @@ if ($tcMonitoringIsJsonRequest) {
       $fallbackData['diagnostics']['fallbackFile'] = $fallbackErr->getFile();
       $fallbackData['diagnostics']['fallbackLine'] = $fallbackErr->getLine();
     }
-    $response = tcMonitoringJsonResponse([
+    $response = egmMonitoringJsonResponse([
       'status' => 'partial',
       'message' => 'بخشی از داده‌های مانیتورینگ قابل محاسبه نبود.',
       'data' => $fallbackData
     ]);
-    $tcMonitoringJsonCompleted = true;
+    $egmMonitoringJsonCompleted = true;
     echo $response;
   }
   exit;
@@ -2586,51 +2586,51 @@ if ($tcMonitoringIsJsonRequest) {
 <div class="card">
   <div class="section-header">
     <h3>مانیتورینگ</h3>
-    <div class="tc-monitoring-header-actions">
-      <button type="button" class="btn ghost" id="tc-monitoring-export">خروجی اکسل</button>
-      <button type="button" class="btn ghost" id="tc-monitoring-refresh">بروزرسانی</button>
+    <div class="egm-monitoring-header-actions">
+      <button type="button" class="btn ghost" id="egm-monitoring-export">خروجی اکسل</button>
+      <button type="button" class="btn ghost" id="egm-monitoring-refresh">بروزرسانی</button>
     </div>
   </div>
   <p class="muted small">نمای کلی کاربران، ماموریت‌ها، سطوح جایزه و موجودی جوایز.</p>
-  <p id="tc-monitoring-status" class="muted small" aria-live="polite"></p>
-  <div id="tc-monitoring-loading" class="tc-monitoring-loading hidden" role="status" aria-live="polite">
-    <div class="tc-monitoring-loading-head">
-      <span id="tc-monitoring-loading-text">در حال محاسبه داده‌ها</span>
-      <span id="tc-monitoring-loading-percent">۰٪</span>
+  <p id="egm-monitoring-status" class="muted small" aria-live="polite"></p>
+  <div id="egm-monitoring-loading" class="egm-monitoring-loading hidden" role="status" aria-live="polite">
+    <div class="egm-monitoring-loading-head">
+      <span id="egm-monitoring-loading-text">در حال محاسبه داده‌ها</span>
+      <span id="egm-monitoring-loading-percent">۰٪</span>
     </div>
-    <div class="tc-monitoring-loading-track" aria-hidden="true">
-      <span id="tc-monitoring-loading-fill" class="tc-monitoring-loading-fill" style="width:0%"></span>
+    <div class="egm-monitoring-loading-track" aria-hidden="true">
+      <span id="egm-monitoring-loading-fill" class="egm-monitoring-loading-fill" style="width:0%"></span>
     </div>
   </div>
-  <pre id="tc-monitoring-diagnostics" class="muted small" style="display:none; white-space:pre-wrap; direction:ltr; text-align:left;"></pre>
-  <p id="tc-monitoring-updated" class="muted small"></p>
+  <pre id="egm-monitoring-diagnostics" class="muted small" style="display:none; white-space:pre-wrap; direction:ltr; text-align:left;"></pre>
+  <p id="egm-monitoring-updated" class="muted small"></p>
 </div>
 
-<div id="tc-monitoring-export-modal" class="tc-monitoring-export-modal" hidden>
-  <section class="tc-monitoring-export-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-monitoring-export-title">
+<div id="egm-monitoring-export-modal" class="egm-monitoring-export-modal" hidden>
+  <section class="egm-monitoring-export-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-monitoring-export-title">
     <div class="section-header">
-      <h3 id="tc-monitoring-export-title">خروجی اکسل مانیتورینگ</h3>
-      <button type="button" class="icon-btn" id="tc-monitoring-export-close" aria-label="بستن">×</button>
+      <h3 id="egm-monitoring-export-title">خروجی اکسل مانیتورینگ</h3>
+      <button type="button" class="icon-btn" id="egm-monitoring-export-close" aria-label="بستن">×</button>
     </div>
     <p class="muted small">گروه‌های شماره پرسنلی موردنظر برای گزارش را انتخاب کنید.</p>
-    <div class="tc-monitoring-export-selection-actions">
-      <button type="button" class="btn ghost" id="tc-monitoring-export-select-all">انتخاب همه</button>
-      <button type="button" class="btn ghost" id="tc-monitoring-export-select-none">لغو همه</button>
+    <div class="egm-monitoring-export-selection-actions">
+      <button type="button" class="btn ghost" id="egm-monitoring-export-select-all">انتخاب همه</button>
+      <button type="button" class="btn ghost" id="egm-monitoring-export-select-none">لغو همه</button>
     </div>
-    <div id="tc-monitoring-export-groups" class="tc-monitoring-group-filter"></div>
-    <div id="tc-monitoring-export-progress" class="tc-monitoring-export-progress" hidden aria-live="polite">
-      <div class="tc-monitoring-loading-head">
-        <span id="tc-monitoring-export-progress-text">در حال ساخت فایل اکسل...</span>
-        <span id="tc-monitoring-export-progress-percent">۰٪</span>
+    <div id="egm-monitoring-export-groups" class="egm-monitoring-group-filter"></div>
+    <div id="egm-monitoring-export-progress" class="egm-monitoring-export-progress" hidden aria-live="polite">
+      <div class="egm-monitoring-loading-head">
+        <span id="egm-monitoring-export-progress-text">در حال ساخت فایل اکسل...</span>
+        <span id="egm-monitoring-export-progress-percent">۰٪</span>
       </div>
-      <div class="tc-monitoring-loading-track" aria-hidden="true">
-        <span id="tc-monitoring-export-progress-fill" class="tc-monitoring-loading-fill" style="width:0%"></span>
+      <div class="egm-monitoring-loading-track" aria-hidden="true">
+        <span id="egm-monitoring-export-progress-fill" class="egm-monitoring-loading-fill" style="width:0%"></span>
       </div>
     </div>
-    <p id="tc-monitoring-export-status" class="muted small" aria-live="polite"></p>
+    <p id="egm-monitoring-export-status" class="muted small" aria-live="polite"></p>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" id="tc-monitoring-export-cancel">انصراف</button>
-      <button type="button" class="btn primary standard-primary-button" id="tc-monitoring-export-submit">ساخت و دانلود فایل</button>
+      <button type="button" class="btn ghost" id="egm-monitoring-export-cancel">انصراف</button>
+      <button type="button" class="btn primary standard-primary-button" id="egm-monitoring-export-submit">ساخت و دانلود فایل</button>
     </div>
   </section>
 </div>
@@ -2639,17 +2639,17 @@ if ($tcMonitoringIsJsonRequest) {
   <div class="section-header">
     <h3>اطلاعات رویداد</h3>
   </div>
-  <div id="tc-monitoring-event-info" class="tc-monitoring-kpi-grid"></div>
+  <div id="egm-monitoring-event-info" class="egm-monitoring-kpi-grid"></div>
 </div>
 
 <div class="card">
   <div class="section-header">
     <h3>فیلتر گروه شماره پرسنلی</h3>
   </div>
-  <div id="tc-monitoring-workid-filter" class="tc-monitoring-group-filter"></div>
-  <div class="tc-monitoring-filter-actions">
-    <button type="button" class="btn primary standard-primary-button" id="tc-monitoring-workid-apply">اعمال فیلتر</button>
-    <span id="tc-monitoring-workid-filter-status" class="muted small"></span>
+  <div id="egm-monitoring-workid-filter" class="egm-monitoring-group-filter"></div>
+  <div class="egm-monitoring-filter-actions">
+    <button type="button" class="btn primary standard-primary-button" id="egm-monitoring-workid-apply">اعمال فیلتر</button>
+    <span id="egm-monitoring-workid-filter-status" class="muted small"></span>
   </div>
 </div>
 
@@ -2658,7 +2658,7 @@ if ($tcMonitoringIsJsonRequest) {
     <h3>مشارکت بر اساس گروه شماره پرسنلی</h3>
   </div>
   <div class="table-wrapper">
-    <table class="tc-monitoring-table">
+    <table class="egm-monitoring-table">
       <thead>
         <tr>
           <th>گروه</th>
@@ -2669,34 +2669,34 @@ if ($tcMonitoringIsJsonRequest) {
           <th>میانگین امتیاز</th>
         </tr>
       </thead>
-      <tbody id="tc-monitoring-workid-groups"></tbody>
-      <tfoot id="tc-monitoring-workid-groups-footer"></tfoot>
+      <tbody id="egm-monitoring-workid-groups"></tbody>
+      <tfoot id="egm-monitoring-workid-groups-footer"></tfoot>
     </table>
   </div>
 </div>
 
-<div id="tc-monitoring-kpis" class="tc-monitoring-kpi-grid"></div>
+<div id="egm-monitoring-kpis" class="egm-monitoring-kpi-grid"></div>
 
 <div class="card">
   <div class="section-header">
     <h3>تکمیل ماموریت‌ها</h3>
   </div>
-  <div id="tc-monitoring-task-chart" class="tc-monitoring-bars"></div>
+  <div id="egm-monitoring-task-chart" class="egm-monitoring-bars"></div>
 </div>
 
-<div class="card tc-monitoring-score-card">
+<div class="card egm-monitoring-score-card">
   <div class="section-header">
     <h3>پراکندگی مرحله‌های امتیاز</h3>
   </div>
-  <div id="tc-monitoring-score-stages" class="tc-monitoring-bars"></div>
+  <div id="egm-monitoring-score-stages" class="egm-monitoring-bars"></div>
 </div>
 
 <div class="card">
   <div class="section-header">
     <h3>وضعیت رسیدن به سطوح جایزه</h3>
   </div>
-  <p id="tc-monitoring-level-subtitle" class="muted small">حداکثر کارت جایزه قابل باز شدن: ۰</p>
-  <div id="tc-monitoring-level-chart" class="tc-monitoring-bars"></div>
+  <p id="egm-monitoring-level-subtitle" class="muted small">حداکثر کارت جایزه قابل باز شدن: ۰</p>
+  <div id="egm-monitoring-level-chart" class="egm-monitoring-bars"></div>
 </div>
 
 <div class="card">
@@ -2704,14 +2704,14 @@ if ($tcMonitoringIsJsonRequest) {
     <h3>شاخص‌های میزان مشارکت</h3>
   </div>
   <p class="muted small">نتایج بر اساس گروه‌های انتخاب‌شده در فیلتر شماره پرسنلی محاسبه می‌شوند. برای مشاهده جزئیات روی هر ستون بروید.</p>
-  <div id="tc-monitoring-participation-chart" class="tc-monitoring-vertical-chart"></div>
+  <div id="egm-monitoring-participation-chart" class="egm-monitoring-vertical-chart"></div>
 </div>
 
 <div class="card">
   <div class="section-header">
     <h3>میانگین چالش‌های انجام‌شده</h3>
   </div>
-  <div id="tc-monitoring-challenge-stats" class="tc-monitoring-kpi-grid"></div>
+  <div id="egm-monitoring-challenge-stats" class="egm-monitoring-kpi-grid"></div>
 </div>
 
 <div class="card">
@@ -2719,7 +2719,7 @@ if ($tcMonitoringIsJsonRequest) {
     <h3>فعال‌ترین کاربران</h3>
   </div>
   <div class="table-wrapper">
-    <table class="tc-monitoring-table">
+    <table class="egm-monitoring-table">
       <thead>
         <tr>
           <th>ردیف</th>
@@ -2731,7 +2731,7 @@ if ($tcMonitoringIsJsonRequest) {
           <th>شاخص فعالیت</th>
         </tr>
       </thead>
-      <tbody id="tc-monitoring-active-users"></tbody>
+      <tbody id="egm-monitoring-active-users"></tbody>
     </table>
   </div>
 </div>

@@ -1,9 +1,9 @@
 (() => {
-  const API_URL = "mini%20apps/Task%20Club/tc_store.php";
-  const TC_PRIZE_STATUS_INTERVAL_KEY = "__tcPrizeStatusInterval";
-  const tcShellEl = document.querySelector(".tc-shell");
-  const csrfToken = tcShellEl instanceof HTMLElement
-    ? String(tcShellEl.dataset.tcCsrf || "").trim()
+  const API_URL = "mini%20apps/Event%20Guest%20Manager/egm_store.php";
+  const EGM_PRIZE_STATUS_INTERVAL_KEY = "__egmPrizeStatusInterval";
+  const egmShellEl = document.querySelector(".egm-shell");
+  const csrfToken = egmShellEl instanceof HTMLElement
+    ? String(egmShellEl.dataset.egmCsrf || "").trim()
     : "";
   let prizeInventoryVersion = "";
   let prizeLevelsVersion = "";
@@ -275,14 +275,14 @@
               </label>
             </td>
             <td>
-              <span class="tc-status-pill">
-                <span class="tc-status-last">${escapeHtml(last)}</span>
-                <span class="tc-status-divider">/</span>
-                <span class="tc-status-qty">${escapeHtml(quantity)}</span>
+              <span class="egm-status-pill">
+                <span class="egm-status-last">${escapeHtml(last)}</span>
+                <span class="egm-status-divider">/</span>
+                <span class="egm-status-qty">${escapeHtml(quantity)}</span>
               </span>
             </td>
             <td>
-              <label class="field tc-standard-third tc-prize-qty" style="margin:0;">
+              <label class="field egm-standard-third egm-prize-qty" style="margin:0;">
                 <input type="number" data-field="quantity" min="0" step="1" value="${escapeHtml(quantity)}" />
               </label>
             </td>
@@ -292,21 +292,21 @@
               </label>
             </td>
             <td>
-              <div class="tc-count-control">
-                <button type="button" class="btn tc-btn-count-add" data-action="add-count" title="افزودن به موجودی" aria-label="افزودن به موجودی">
+              <div class="egm-count-control">
+                <button type="button" class="btn egm-btn-count-add" data-action="add-count" title="افزودن به موجودی" aria-label="افزودن به موجودی">
                   <span class="ri ri-add-line" aria-hidden="true"></span>
                 </button>
-                <button type="button" class="btn tc-btn-count-sub" data-action="sub-count" title="کم کردن از موجودی" aria-label="کم کردن از موجودی">
+                <button type="button" class="btn egm-btn-count-sub" data-action="sub-count" title="کم کردن از موجودی" aria-label="کم کردن از موجودی">
                   <span class="ri ri-subtract-line" aria-hidden="true"></span>
                 </button>
-                <button type="button" class="btn tc-btn-count-reset" data-action="reset-count" title="بازنشانی موجودی" aria-label="بازنشانی موجودی">
+                <button type="button" class="btn egm-btn-count-reset" data-action="reset-count" title="بازنشانی موجودی" aria-label="بازنشانی موجودی">
                   <span class="ri ri-refresh-line" aria-hidden="true"></span>
                 </button>
               </div>
             </td>
             <td>
-              <div class="tc-action-bar">
-                <button type="button" class="btn tc-btn-danger" data-action="delete">حذف</button>
+              <div class="egm-action-bar">
+                <button type="button" class="btn egm-btn-danger" data-action="delete">حذف</button>
                 <button type="button" class="btn primary" data-action="save">ذخیره</button>
               </div>
             </td>
@@ -317,14 +317,14 @@
   }
 
   async function initPrizeForm() {
-    const form = document.getElementById("tc-prize-form");
-    const nameInput = document.getElementById("tc-prize-name");
-    const quantityInput = document.getElementById("tc-prize-quantity");
-    const valueInput = document.getElementById("tc-prize-value");
-    const listEl = document.getElementById("tc-prize-list");
-    const fakeForm = document.getElementById("tc-fake-form");
-    const fakeNameInput = document.getElementById("tc-fake-name");
-    const fakeListEl = document.getElementById("tc-fake-list");
+    const form = document.getElementById("egm-prize-form");
+    const nameInput = document.getElementById("egm-prize-name");
+    const quantityInput = document.getElementById("egm-prize-quantity");
+    const valueInput = document.getElementById("egm-prize-value");
+    const listEl = document.getElementById("egm-prize-list");
+    const fakeForm = document.getElementById("egm-fake-form");
+    const fakeNameInput = document.getElementById("egm-fake-name");
+    const fakeListEl = document.getElementById("egm-fake-list");
 
     if (!form || !nameInput || !quantityInput || !valueInput || !listEl) {
       return;
@@ -394,7 +394,7 @@
         const deleteBtn = row.querySelector('button[data-action="delete"]');
         const countButtons = row.querySelectorAll('button[data-action="add-count"], button[data-action="sub-count"]');
 
-        row.classList.toggle("tc-prize-row-locked", isLockedRow);
+        row.classList.toggle("egm-prize-row-locked", isLockedRow);
 
         if (rowNameInput) rowNameInput.disabled = isLockedRow;
         if (rowOnWheelNameInput) rowOnWheelNameInput.disabled = isLockedRow;
@@ -403,26 +403,26 @@
 
         if (deleteBtn) {
           deleteBtn.disabled = isLockedRow || (isActiveRow && dirty);
-          deleteBtn.classList.toggle("tc-action-disabled", deleteBtn.disabled);
+          deleteBtn.classList.toggle("egm-action-disabled", deleteBtn.disabled);
         }
 
         if (saveBtn) {
           const canSave = isActiveRow && dirty;
           saveBtn.disabled = !canSave;
-          saveBtn.classList.toggle("tc-save-active", canSave);
-          saveBtn.classList.toggle("tc-action-disabled", saveBtn.disabled);
+          saveBtn.classList.toggle("egm-save-active", canSave);
+          saveBtn.classList.toggle("egm-action-disabled", saveBtn.disabled);
         }
 
         countButtons.forEach(btn => {
           btn.disabled = isLockedRow || (isActiveRow && dirty);
-          btn.classList.toggle("tc-action-disabled", btn.disabled);
+          btn.classList.toggle("egm-action-disabled", btn.disabled);
         });
       });
 
       form.querySelectorAll("input, button").forEach(control => {
         control.disabled = lockActive;
       });
-      form.classList.toggle("tc-prize-form-locked", lockActive);
+      form.classList.toggle("egm-prize-form-locked", lockActive);
     }
 
     async function refreshStatus() {
@@ -454,8 +454,8 @@
             return;
           }
           const status = byName.get(name);
-          const lastEl = row.querySelector(".tc-status-last");
-          const qtyEl = row.querySelector(".tc-status-qty");
+          const lastEl = row.querySelector(".egm-status-last");
+          const qtyEl = row.querySelector(".egm-status-qty");
           if (lastEl) lastEl.textContent = String(status.last);
           if (qtyEl) qtyEl.textContent = String(status.quantity);
         });
@@ -463,11 +463,11 @@
     }
 
     refreshStatus();
-    const previousStatusInterval = window[TC_PRIZE_STATUS_INTERVAL_KEY];
+    const previousStatusInterval = window[EGM_PRIZE_STATUS_INTERVAL_KEY];
     if (typeof previousStatusInterval === "number") {
       clearInterval(previousStatusInterval);
     }
-    window[TC_PRIZE_STATUS_INTERVAL_KEY] = window.setInterval(refreshStatus, 5000);
+    window[EGM_PRIZE_STATUS_INTERVAL_KEY] = window.setInterval(refreshStatus, 5000);
 
     listEl.addEventListener("input", event => {
       const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"], [data-field="value"]');
@@ -686,13 +686,13 @@
           <td>
             <input
               type="text"
-              class="tc-prize-level-control"
+              class="egm-prize-level-control"
               data-field="level-name"
               value="${escapeHtml(level.name || `سطح ${level.score || ""}`)}"
             />
           </td>
           <td>
-            <select class="tc-prize-level-control" data-field="level-type">
+            <select class="egm-prize-level-control" data-field="level-type">
               <option value="value_sum" ${normalizeLevelType(level.type) === "value_sum" ? "selected" : ""}>مجموع ارزش جوایز</option>
               <option value="out_of_value" ${normalizeLevelType(level.type) === "out_of_value" ? "selected" : ""}>خارج از ارزش جایزه</option>
               <option value="pot" ${isPot ? "selected" : ""}>Pot</option>
@@ -703,7 +703,7 @@
               type="number"
               min="1"
               step="1"
-              class="tc-prize-level-control"
+              class="egm-prize-level-control"
               data-field="level-score"
               value="${escapeHtml(level.score)}"
             />
@@ -712,8 +712,8 @@
             <div class="tct-action-wrap">
               ${isOutOfValue || isPot ? '<button type="button" class="btn ghost" data-action="edit-level-description">توضیحات</button>' : ''}
               ${isPot ? '<button type="button" class="btn ghost" data-action="edit-pot-settings">Pot Settings</button>' : ''}
-              ${isPot ? `<a class="btn ghost" href="mini%20apps/Task%20Club/pot_draw.php?level_id=${encodeURIComponent(level.id)}" target="_blank" rel="noopener">Open Draw</a>` : ''}
-              ${isPot ? `<a class="btn ghost" href="mini%20apps/Task%20Club/pot_export.php?level_id=${encodeURIComponent(level.id)}">Export</a>` : ''}
+              ${isPot ? `<a class="btn ghost" href="mini%20apps/Event%20Guest%20Manager/pot_draw.php?level_id=${encodeURIComponent(level.id)}" target="_blank" rel="noopener">Open Draw</a>` : ''}
+              ${isPot ? `<a class="btn ghost" href="mini%20apps/Event%20Guest%20Manager/pot_export.php?level_id=${encodeURIComponent(level.id)}">Export</a>` : ''}
               ${isPot ? '<button type="button" class="btn ghost" data-action="reset-pot-winners">Reset Winners</button>' : ''}
               <button type="button" class="btn ghost" data-action="remove-level">حذف</button>
             </div>
@@ -725,12 +725,12 @@
   }
 
   async function initPrizeLevels() {
-    const form = document.getElementById("tc-prize-level-form");
-    const nameInput = document.getElementById("tc-prize-level-name");
-    const typeInput = document.getElementById("tc-prize-level-type");
-    const scoreInput = document.getElementById("tc-prize-level-score");
-    const statusEl = document.getElementById("tc-prize-level-status");
-    const listEl = document.getElementById("tc-prize-level-list");
+    const form = document.getElementById("egm-prize-level-form");
+    const nameInput = document.getElementById("egm-prize-level-name");
+    const typeInput = document.getElementById("egm-prize-level-type");
+    const scoreInput = document.getElementById("egm-prize-level-score");
+    const statusEl = document.getElementById("egm-prize-level-status");
+    const listEl = document.getElementById("egm-prize-level-list");
     if (!form || !nameInput || !typeInput || !scoreInput || !statusEl || !listEl) {
       return;
     }
@@ -748,14 +748,14 @@
       const level = levels[index] || {};
       const settings = normalizePotSettings(level.potSettings, level.name);
       const overlay = document.createElement("div");
-      overlay.className = "tc-prize-level-modal";
+      overlay.className = "egm-prize-level-modal";
       overlay.innerHTML = `
-        <div class="tc-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="Pot settings">
+        <div class="egm-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="Pot settings">
           <div class="section-header"><h3>Pot Settings</h3></div>
           <label class="field full"><span>Draw title</span><input type="text" data-pot-field="title" maxlength="160" value="${escapeHtml(settings.title)}" /></label>
           <label class="field full"><span>Maximum winners</span><input type="number" data-pot-field="winnerLimit" min="1" max="1000" step="1" value="${settings.winnerLimit}" /></label>
           <label class="field full"><span>Prize name</span><input type="text" data-pot-field="prizeName" maxlength="160" value="${escapeHtml(settings.prizeName)}" /></label>
-          <label class="switch tc-switch">
+          <label class="switch egm-switch">
             <span class="switch-label">Lock draw and publish the final result</span>
             <span class="switch-toggle">
               <input type="checkbox" data-pot-field="locked" ${settings.locked ? "checked" : ""} />
@@ -763,7 +763,7 @@
             </span>
           </label>
           <p class="muted small" data-pot-status aria-live="polite"></p>
-          <div class="tc-action-bar">
+          <div class="egm-action-bar">
             <button type="button" class="btn primary standard-primary-button" data-action="save-pot-settings">Save</button>
             <button type="button" class="btn ghost" data-action="close-pot-settings">Close</button>
           </div>
@@ -795,7 +795,7 @@
         }
         if (nextSettings.locked) {
           try {
-            const response = await fetch("mini%20apps/Task%20Club/pot_api.php", {
+            const response = await fetch("mini%20apps/Event%20Guest%20Manager/pot_api.php", {
               method: "POST",
               credentials: "same-origin",
               headers: {"Content-Type": "application/json"},
@@ -828,9 +828,9 @@
       if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
       const level = levels[index] || {};
       const overlay = document.createElement("div");
-      overlay.className = "tc-prize-level-modal";
+      overlay.className = "egm-prize-level-modal";
       overlay.innerHTML = `
-        <div class="tc-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="توضیحات سطح جایزه">
+        <div class="egm-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="توضیحات سطح جایزه">
           <div class="section-header">
             <h3>توضیحات</h3>
           </div>
@@ -840,14 +840,14 @@
           </label>
           <label class="field full">
             <span>توضیحات</span>
-            <div class="tc-rich-text-tools" aria-label="ابزارهای ویرایش توضیحات">
+            <div class="egm-rich-text-tools" aria-label="ابزارهای ویرایش توضیحات">
               <button type="button" class="btn ghost" data-level-description-format="bold" title="ضخیم" aria-label="ضخیم"><strong>B</strong></button>
               <button type="button" class="btn ghost" data-level-description-format="list" title="فهرست" aria-label="فهرست">List</button>
             </div>
             <textarea data-level-description-field="description" rows="9">${escapeHtml(level.description || "")}</textarea>
           </label>
           <p class="muted small" data-level-description-status aria-live="polite"></p>
-          <div class="tc-action-bar">
+          <div class="egm-action-bar">
             <button type="button" class="btn primary standard-primary-button" data-action="save-level-description">ذخیره</button>
             <button type="button" class="btn ghost" data-action="close-level-description">بستن</button>
           </div>
@@ -988,7 +988,7 @@
         if (!window.confirm("Clear every confirmed winner for this Pot? This cannot be undone.")) return;
         resetPotBtn.disabled = true;
         try {
-          const response = await fetch("mini%20apps/Task%20Club/pot_api.php", {
+          const response = await fetch("mini%20apps/Event%20Guest%20Manager/pot_api.php", {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
@@ -1065,9 +1065,9 @@
             </label>
           </td>
           <td>
-            <div class="tc-action-bar">
+            <div class="egm-action-bar">
               <button type="button" class="btn primary" data-action="save">ذخیره</button>
-              <button type="button" class="btn tc-btn-danger" data-action="delete">حذف</button>
+              <button type="button" class="btn egm-btn-danger" data-action="delete">حذف</button>
             </div>
           </td>
         </tr>

@@ -7,30 +7,30 @@ if (is_file($campaignRedirectsFile)) {
   require_once $campaignRedirectsFile;
 }
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_inventory_store.php';
 require_once __DIR__ . '/prize_levels_store.php';
 require_once __DIR__ . '/pot_service.php';
-$tcStoreSessionUser = requireTabPermissionFromSession('task-club', true);
-tcSecurityGetCsrfToken();
+$egmStoreSessionUser = requireTabPermissionFromSession('event-guest-manager', true);
+egmSecurityGetCsrfToken();
 
 header('Content-Type: application/json; charset=utf-8');
 
 $baseDir = __DIR__;
-$prizesFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Prizes.json';
-$prizeLevelsFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Prize Levels.json';
+$prizesFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Prizes.json';
+$prizeLevelsFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Prize Levels.json';
 $settingsFile = $baseDir . DIRECTORY_SEPARATOR . 'Setting.json';
 $legacySettingsFile = $baseDir . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'store.json';
-$inviteesMappedFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
-$inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
+$inviteesMappedFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
+$inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'EGM Mapped.json';
 
-function tcStoreCampaignLinkTarget(): string
+function egmStoreCampaignLinkTarget(): string
 {
-  return '/mini%20apps/Task%20Club/index.php';
+  return '/mini%20apps/Event%20Guest%20Manager/index.php';
 }
 
-function tcStoreCampaignRedirectsReady(): bool
+function egmStoreCampaignRedirectsReady(): bool
 {
   return function_exists('campaignRedirectsNormalizePath')
     && function_exists('campaignRedirectsPathError')
@@ -41,13 +41,13 @@ function tcStoreCampaignRedirectsReady(): bool
     && function_exists('campaignRedirectsTypeLabel');
 }
 
-function tcStoreRequireCampaignRedirects(): void
+function egmStoreRequireCampaignRedirects(): void
 {
   global $campaignRedirectsFile;
-  if (!tcStoreCampaignRedirectsReady() && is_string($campaignRedirectsFile ?? null) && is_file($campaignRedirectsFile)) {
+  if (!egmStoreCampaignRedirectsReady() && is_string($campaignRedirectsFile ?? null) && is_file($campaignRedirectsFile)) {
     require_once $campaignRedirectsFile;
   }
-  if (tcStoreCampaignRedirectsReady()) {
+  if (egmStoreCampaignRedirectsReady()) {
     return;
   }
   http_response_code(503);
@@ -58,15 +58,15 @@ function tcStoreRequireCampaignRedirects(): void
   exit;
 }
 
-function tcStoreCampaignLinkResponse(string $path, ?array $redirect = null): array
+function egmStoreCampaignLinkResponse(string $path, ?array $redirect = null): array
 {
-  tcStoreRequireCampaignRedirects();
+  egmStoreRequireCampaignRedirects();
   $normalizedPath = campaignRedirectsNormalizePath($path);
-  $target = tcStoreCampaignLinkTarget();
+  $target = egmStoreCampaignLinkTarget();
   $targetType = campaignRedirectsTypeForTarget($target);
   $existing = is_array($redirect) ? $redirect : campaignRedirectsFind($normalizedPath);
   $existingTarget = is_array($existing) ? (string)($existing['target'] ?? '') : '';
-  $ownedByTaskClub = $existingTarget !== '' && $existingTarget === $target;
+  $ownedByEventGuestManager = $existingTarget !== '' && $existingTarget === $target;
   $existingType = is_array($existing)
     ? (string)($existing['redirect_type'] ?? campaignRedirectsTypeForTarget((string)($existing['target'] ?? '')))
     : '';
@@ -78,7 +78,7 @@ function tcStoreCampaignLinkResponse(string $path, ?array $redirect = null): arr
     'redirect_type' => $targetType,
     'redirect_type_label' => campaignRedirectsTypeLabel($targetType),
     'available' => $existing === null,
-    'owned_by_task_club' => $ownedByTaskClub,
+    'owned_by_task_club' => $ownedByEventGuestManager,
     'can_create' => $existing === null,
     'existing' => $existing === null ? null : [
       'path' => (string)($existing['path'] ?? $normalizedPath),
@@ -93,7 +93,7 @@ function tcStoreCampaignLinkResponse(string $path, ?array $redirect = null): arr
   ];
 }
 
-function tcStoreNormalizeMissionCode(string $value): string
+function egmStoreNormalizeMissionCode(string $value): string
 {
   $code = str_replace(["\r", "\n", "\t"], ' ', trim($value));
   $code = preg_replace('/\s+/u', '-', $code);
@@ -118,7 +118,7 @@ function tcStoreNormalizeMissionCode(string $value): string
   return in_array(strtolower($code), $reserved, true) ? '' : $code;
 }
 
-function tcStoreMissionContext(string $baseDir): array
+function egmStoreMissionContext(string $baseDir): array
 {
   $missionDir = realpath($baseDir);
   $missionsRoot = realpath(dirname($baseDir));
@@ -139,12 +139,12 @@ function tcStoreMissionContext(string $baseDir): array
   ];
 }
 
-function tcStoreMissionMetadataPath(string $missionDir): string
+function egmStoreMissionMetadataPath(string $missionDir): string
 {
   return rtrim($missionDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'mission.json';
 }
 
-function tcStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, string $newFolder): void
+function egmStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, string $newFolder): void
 {
   $oldWebPath = 'mini%20apps/missions/' . rawurlencode($oldFolder);
   $newWebPath = 'mini%20apps/missions/' . rawurlencode($newFolder);
@@ -174,7 +174,7 @@ function tcStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, s
   }
 }
 
-function tcStoreSyncMissionRegistry(string $missionsRoot): void
+function egmStoreSyncMissionRegistry(string $missionsRoot): void
 {
   $clubs = [];
   if (is_dir($missionsRoot)) {
@@ -192,11 +192,11 @@ function tcStoreSyncMissionRegistry(string $missionsRoot): void
       $clubs[] = [
         'name' => trim((string)($meta['name'] ?? $folder)) ?: $folder,
         'folder' => $folder,
-        'tabId' => 'task-club-mission-' . substr(hash('sha256', $folder), 0, 12),
+        'tabId' => 'event-guest-manager-mission-' . substr(hash('sha256', $folder), 0, 12),
         'directory' => 'mini apps/missions/' . $folder,
         'webPath' => $webPath,
-        'appUrl' => $webPath . '/TCM.php',
-        'panelUrl' => 'panel.php?tab=' . rawurlencode('task-club-mission-' . substr(hash('sha256', $folder), 0, 12)),
+        'appUrl' => $webPath . '/EGMM.php',
+        'panelUrl' => 'panel.php?tab=' . rawurlencode('event-guest-manager-mission-' . substr(hash('sha256', $folder), 0, 12)),
         'createdAt' => $createdAt,
         'createdAtLabel' => $createdAt !== '' ? $createdAt : '-'
       ];
@@ -219,9 +219,9 @@ function tcStoreSyncMissionRegistry(string $missionsRoot): void
   }
 }
 
-function tcStoreSyncMissionMetadataName(string $baseDir, string $eventName): bool
+function egmStoreSyncMissionMetadataName(string $baseDir, string $eventName): bool
 {
-  $context = tcStoreMissionContext($baseDir);
+  $context = egmStoreMissionContext($baseDir);
   if (empty($context['isMission'])) {
     return true;
   }
@@ -229,7 +229,7 @@ function tcStoreSyncMissionMetadataName(string $baseDir, string $eventName): boo
   if ($missionDir === '') {
     return false;
   }
-  $metaPath = tcStoreMissionMetadataPath($missionDir);
+  $metaPath = egmStoreMissionMetadataPath($missionDir);
   $meta = readJsonFile($metaPath, []);
   $meta['name'] = trim($eventName);
   $meta['updatedAt'] = gmdate('c');
@@ -238,7 +238,7 @@ function tcStoreSyncMissionMetadataName(string $baseDir, string $eventName): boo
   }
   $missionsRoot = (string)($context['missionsRoot'] ?? '');
   if ($missionsRoot !== '') {
-    tcStoreSyncMissionRegistry($missionsRoot);
+    egmStoreSyncMissionRegistry($missionsRoot);
   }
   return true;
 }
@@ -361,8 +361,8 @@ function defaultLandingSettings(): array
 
 function readCsvFileRows(string $path): array
 {
-  if (tcInviteesCsvIsManagedPath($path)) {
-    return tcInviteesCsvReadRowsForUpdate($path);
+  if (egmInviteesCsvIsManagedPath($path)) {
+    return egmInviteesCsvReadRowsForUpdate($path);
   }
   if (!is_file($path)) {
     return [];
@@ -386,8 +386,8 @@ function readCsvFileRows(string $path): array
 
 function writeCsvFileRows(string $path, array $rows): bool
 {
-  if (tcInviteesCsvIsManagedPath($path)) {
-    return tcInviteesCsvCommitRows($path, $rows);
+  if (egmInviteesCsvIsManagedPath($path)) {
+    return egmInviteesCsvCommitRows($path, $rows);
   }
   $dir = dirname($path);
   if ($dir !== '' && !is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
@@ -529,7 +529,7 @@ function ensureAdminColumn(array &$rows): int
     return -1;
   }
   $header = $rows[0];
-  $existingIndex = findHeaderIndexByNames($header, ['Admin', 'TC Admin', 'is admin', 'ادمین']);
+  $existingIndex = findHeaderIndexByNames($header, ['Admin', 'EGM Admin', 'is admin', 'ادمین']);
   if ($existingIndex >= 0) {
     normalizeRowsWidth($rows, count($header));
     return $existingIndex;
@@ -546,7 +546,7 @@ function readAdminColumnIndex(array $rows): int
   if (!$rows || !is_array($rows[0])) {
     return -1;
   }
-  return findHeaderIndexByNames($rows[0], ['Admin', 'TC Admin', 'is admin', 'ادمین']);
+  return findHeaderIndexByNames($rows[0], ['Admin', 'EGM Admin', 'is admin', 'ادمین']);
 }
 
 function isAdminCellValue($value): bool
@@ -759,14 +759,14 @@ function normalizeRewardPrizeDisplaySettings($value): array
   ];
 }
 
-function tcStoreNormalizeBool($value): bool
+function egmStoreNormalizeBool($value): bool
 {
   if (is_bool($value)) return $value;
   if (is_int($value) || is_float($value)) return (int)$value === 1;
   return in_array(strtolower(trim((string)$value)), ['1', 'true', 'on', 'yes'], true);
 }
 
-function tcStoreParseNonnegativeInt($value): ?int
+function egmStoreParseNonnegativeInt($value): ?int
 {
   if (is_int($value)) return $value >= 0 ? $value : null;
   if (is_float($value)) {
@@ -781,7 +781,7 @@ function tcStoreParseNonnegativeInt($value): ?int
   return is_int($parsed) ? $parsed : null;
 }
 
-function tcStoreParseNonnegativeNumber($value): ?float
+function egmStoreParseNonnegativeNumber($value): ?float
 {
   if (!is_scalar($value)) return null;
   $token = preg_replace('/[,\s]+/', '', (string)$value);
@@ -790,15 +790,15 @@ function tcStoreParseNonnegativeNumber($value): ?float
   return is_finite($parsed) && $parsed >= 0 ? $parsed : null;
 }
 
-function tcStoreStablePrizeLevelId(string $name, int $score, int $index): string
+function egmStoreStablePrizeLevelId(string $name, int $score, int $index): string
 {
   return 'lvl_' . substr(hash('sha256', $name . "\0" . $score . "\0" . $index), 0, 20);
 }
 
 function requireTcStoreCsrf(?array $payload = null): void
 {
-  $csrfToken = tcSecurityReadCsrfFromRequest($payload, 'csrf');
-  if (!tcSecurityIsValidCsrfToken($csrfToken)) {
+  $csrfToken = egmSecurityReadCsrfFromRequest($payload, 'csrf');
+  if (!egmSecurityIsValidCsrfToken($csrfToken)) {
     http_response_code(403);
     echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.']);
     exit;
@@ -807,7 +807,7 @@ function requireTcStoreCsrf(?array $payload = null): void
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
-$tcStoreMainActions = [
+$egmStoreMainActions = [
   'get_prizes',
   'save_prizes',
   'get_prize_levels',
@@ -821,20 +821,20 @@ $tcStoreMainActions = [
   'set_admin_assignment'
 ];
 
-if (in_array($action, $tcStoreMainActions, true) && !userHasPermissionId($tcStoreSessionUser, 'task-club:main')) {
-  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+if (in_array($action, $egmStoreMainActions, true) && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main')) {
+  denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
 }
 
 if (in_array($action, ['get_settings', 'save_settings', 'get_mission_link', 'save_mission_link'], true)) {
-  $canMain = userHasPermissionId($tcStoreSessionUser, 'task-club:main');
-  $canEventStyle = userHasPermissionId($tcStoreSessionUser, 'task-club:event-style');
+  $canMain = userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main');
+  $canEventStyle = userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:event-style');
   if (!$canMain && !$canEventStyle) {
-    denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+    denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
   }
 }
 
-if (in_array($action, ['check_campaign_link', 'create_campaign_link'], true) && !userHasPermissionId($tcStoreSessionUser, 'task-club:linker')) {
-  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+if (in_array($action, ['check_campaign_link', 'create_campaign_link'], true) && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:linker')) {
+  denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
 }
 
 if ($action === 'check_campaign_link') {
@@ -849,7 +849,7 @@ if ($action === 'check_campaign_link') {
     exit;
   }
   requireTcStoreCsrf($payload);
-  tcStoreRequireCampaignRedirects();
+  egmStoreRequireCampaignRedirects();
   $path = campaignRedirectsNormalizePath($payload['path'] ?? '');
   $pathError = campaignRedirectsPathError($path);
   if ($pathError !== '') {
@@ -860,7 +860,7 @@ if ($action === 'check_campaign_link') {
   $redirect = campaignRedirectsFind($path);
   echo json_encode([
     'status' => 'ok',
-    'data' => tcStoreCampaignLinkResponse($path, $redirect)
+    'data' => egmStoreCampaignLinkResponse($path, $redirect)
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
@@ -877,7 +877,7 @@ if ($action === 'create_campaign_link') {
     exit;
   }
   requireTcStoreCsrf($payload);
-  tcStoreRequireCampaignRedirects();
+  egmStoreRequireCampaignRedirects();
   $path = campaignRedirectsNormalizePath($payload['path'] ?? '');
   $pathError = campaignRedirectsPathError($path);
   if ($pathError !== '') {
@@ -886,7 +886,7 @@ if ($action === 'create_campaign_link') {
     exit;
   }
 
-  $target = tcStoreCampaignLinkTarget();
+  $target = egmStoreCampaignLinkTarget();
   $redirects = campaignRedirectsList();
   $map = [];
   foreach ($redirects as $redirect) {
@@ -900,8 +900,8 @@ if ($action === 'create_campaign_link') {
     if ((string)($existing['target'] ?? '') === $target) {
       echo json_encode([
         'status' => 'ok',
-        'message' => 'This campaign already points to Task Club.',
-        'data' => tcStoreCampaignLinkResponse($path, $existing)
+        'message' => 'This campaign already points to Event Guest Manager.',
+        'data' => egmStoreCampaignLinkResponse($path, $existing)
       ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       exit;
     }
@@ -909,7 +909,7 @@ if ($action === 'create_campaign_link') {
     echo json_encode([
       'status' => 'error',
       'message' => 'This /campaigns link is already occupied in Linker Service.',
-      'data' => tcStoreCampaignLinkResponse($path, $existing)
+      'data' => egmStoreCampaignLinkResponse($path, $existing)
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
   }
@@ -930,14 +930,14 @@ if ($action === 'create_campaign_link') {
   $saved = campaignRedirectsFind($path);
   echo json_encode([
     'status' => 'ok',
-    'message' => 'Task Club campaign redirect created.',
-    'data' => tcStoreCampaignLinkResponse($path, $saved)
+    'message' => 'Event Guest Manager campaign redirect created.',
+    'data' => egmStoreCampaignLinkResponse($path, $saved)
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
 
 if ($action === 'get_prizes') {
-  $prizes = tcPrizeInventoryReadSnapshot($prizesFile);
+  $prizes = egmPrizeInventoryReadSnapshot($prizesFile);
   if (!is_array($prizes)) {
     http_response_code(503);
     echo json_encode(['status' => 'error', 'message' => 'Prize inventory is unavailable; no data was changed.']);
@@ -946,7 +946,7 @@ if ($action === 'get_prizes') {
   echo json_encode([
     'status' => 'ok',
     'data' => $prizes,
-    'version' => tcPrizeInventoryVersion($prizes)
+    'version' => egmPrizeInventoryVersion($prizes)
   ], JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -1009,15 +1009,15 @@ if ($action === 'save_prizes') {
     if ($onWheelName === '') {
       $onWheelName = $name;
     }
-    $quantity = tcStoreParseNonnegativeInt($prize['quantity'] ?? 0);
-    $last = tcStoreParseNonnegativeInt($prize['last'] ?? $quantity);
-    $value = tcStoreParseNonnegativeNumber($prize['value'] ?? 0);
+    $quantity = egmStoreParseNonnegativeInt($prize['quantity'] ?? 0);
+    $last = egmStoreParseNonnegativeInt($prize['last'] ?? $quantity);
+    $value = egmStoreParseNonnegativeNumber($prize['value'] ?? 0);
     if ($quantity === null || $last === null || $value === null) {
       http_response_code(422);
       echo json_encode(['status' => 'error', 'message' => 'Prize quantity, remaining stock, and value must be valid non-negative numbers; no data was saved.']);
       exit;
     }
-    $isFake = tcStoreNormalizeBool($prize['isFake'] ?? false);
+    $isFake = egmStoreNormalizeBool($prize['isFake'] ?? false);
     if ($last > $quantity) {
       http_response_code(422);
       echo json_encode(['status' => 'error', 'message' => 'Remaining prize stock cannot exceed total quantity; no data was saved.']);
@@ -1045,7 +1045,7 @@ if ($action === 'save_prizes') {
   $actualVersion = null;
   $saved = null;
   $failureReason = null;
-  if (!tcPrizeInventoryReplaceIfVersion($prizesFile, $normalized, $expectedVersion, $actualVersion, $saved, $failureReason)) {
+  if (!egmPrizeInventoryReplaceIfVersion($prizesFile, $normalized, $expectedVersion, $actualVersion, $saved, $failureReason)) {
     $isConflict = $failureReason === 'conflict';
     $hasPendingAwards = $failureReason === 'pending_awards';
     http_response_code($isConflict || $hasPendingAwards ? 409 : 503);
@@ -1070,7 +1070,7 @@ if ($action === 'save_prizes') {
 }
 
 if ($action === 'get_prize_levels') {
-  $snapshot = tcPrizeLevelsReadSnapshot($prizeLevelsFile);
+  $snapshot = egmPrizeLevelsReadSnapshot($prizeLevelsFile);
   if (empty($snapshot['ok'])) {
     http_response_code(503);
     echo json_encode([
@@ -1117,7 +1117,7 @@ if ($action === 'save_prize_levels') {
       exit;
     }
     $rawScore = $item['score'] ?? $item['levelScore'] ?? $item['level_score'] ?? null;
-    $score = tcPrizeLevelsParsePositiveInt($rawScore);
+    $score = egmPrizeLevelsParsePositiveInt($rawScore);
     if ($score === null) {
       http_response_code(422);
       echo json_encode(['status' => 'error', 'message' => 'Every prize level must have a positive whole-number score; no data was saved.']);
@@ -1162,7 +1162,7 @@ if ($action === 'save_prize_levels') {
     }
     $id = trim((string)($item['id'] ?? ''));
     if ($id === '') {
-      $id = tcStoreStablePrizeLevelId($name, $score, (int)$levelIndex);
+      $id = egmStoreStablePrizeLevelId($name, $score, (int)$levelIndex);
     }
     if (!preg_match('/^[A-Za-z0-9._-]{1,96}$/', $id) || isset($seenIds[$id])) {
       http_response_code(422);
@@ -1171,7 +1171,7 @@ if ($action === 'save_prize_levels') {
     }
     $seenIds[$id] = true;
     $potReason = null;
-    $potSettings = tcPrizeLevelsNormalizePotSettings($item['potSettings'] ?? ($item['pot_settings'] ?? []), $potReason);
+    $potSettings = egmPrizeLevelsNormalizePotSettings($item['potSettings'] ?? ($item['pot_settings'] ?? []), $potReason);
     if (!is_array($potSettings)) {
       http_response_code(422);
       echo json_encode(['status' => 'error', 'message' => 'Pot settings are invalid; no data was saved.']);
@@ -1182,7 +1182,7 @@ if ($action === 'save_prize_levels') {
       echo json_encode(['status' => 'error', 'message' => 'Prize name is required before locking a Pot.']);
       exit;
     }
-    if ($type === 'pot' && $potSettings['locked'] && count(tcPotReadWinners($id)) < 1) {
+    if ($type === 'pot' && $potSettings['locked'] && count(egmPotReadWinners($id)) < 1) {
       http_response_code(422);
       echo json_encode(['status' => 'error', 'message' => 'At least one confirmed winner is required before locking a Pot.']);
       exit;
@@ -1212,7 +1212,7 @@ if ($action === 'save_prize_levels') {
     exit;
   }
 
-  $result = tcPrizeLevelsReplaceIfVersion($prizeLevelsFile, $normalized, $expectedVersion);
+  $result = egmPrizeLevelsReplaceIfVersion($prizeLevelsFile, $normalized, $expectedVersion);
   if (empty($result['ok'])) {
     $reason = (string)($result['reason'] ?? 'write_failed');
     $isConflict = $reason === 'conflict';
@@ -1310,14 +1310,14 @@ if ($action === 'save_reward_prize_display') {
 }
 
 if ($action === 'get_mission_link') {
-  $context = tcStoreMissionContext($baseDir);
+  $context = egmStoreMissionContext($baseDir);
   echo json_encode([
     'status' => 'ok',
     'data' => [
       'isMission' => !empty($context['isMission']),
       'code' => (string)($context['folder'] ?? ''),
       'path' => (string)($context['webPath'] ?? ''),
-      'appUrl' => !empty($context['webPath']) ? ((string)$context['webPath'] . '/TCM.php') : ''
+      'appUrl' => !empty($context['webPath']) ? ((string)$context['webPath'] . '/EGMM.php') : ''
     ]
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
@@ -1335,13 +1335,13 @@ if ($action === 'save_mission_link') {
     exit;
   }
   requireTcStoreCsrf($payload);
-  $context = tcStoreMissionContext($baseDir);
+  $context = egmStoreMissionContext($baseDir);
   if (empty($context['isMission'])) {
-    echo json_encode(['status' => 'error', 'message' => 'This Task Club link can only be changed for generated clubs.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'error', 'message' => 'This Event Guest Manager link can only be changed for generated clubs.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
   $currentCode = (string)($context['folder'] ?? '');
-  $nextCode = tcStoreNormalizeMissionCode((string)($payload['code'] ?? ''));
+  $nextCode = egmStoreNormalizeMissionCode((string)($payload['code'] ?? ''));
   if ($nextCode === '') {
     echo json_encode(['status' => 'error', 'message' => 'Enter a valid link code using letters, numbers, dash, underscore, or dot.'], JSON_UNESCAPED_UNICODE);
     exit;
@@ -1353,7 +1353,7 @@ if ($action === 'save_mission_link') {
       'data' => [
         'code' => $currentCode,
         'path' => (string)$context['webPath'],
-        'appUrl' => (string)$context['webPath'] . '/TCM.php'
+        'appUrl' => (string)$context['webPath'] . '/EGMM.php'
       ]
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
@@ -1379,15 +1379,15 @@ if ($action === 'save_mission_link') {
     echo json_encode(['status' => 'error', 'message' => 'Failed to rename the club folder.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
-  $metaPath = tcStoreMissionMetadataPath($targetDir);
+  $metaPath = egmStoreMissionMetadataPath($targetDir);
   $meta = readJsonFile($metaPath, []);
   $meta['folder'] = $nextCode;
   $meta['directory'] = 'mini apps/missions/' . $nextCode;
   $meta['webPath'] = 'mini%20apps/missions/' . rawurlencode($nextCode);
   $meta['updatedAt'] = gmdate('c');
   writeJsonFile($metaPath, $meta);
-  tcStorePatchMissionLinkStrings($targetDir, $currentCode, $nextCode);
-  tcStoreSyncMissionRegistry($missionsRoot);
+  egmStorePatchMissionLinkStrings($targetDir, $currentCode, $nextCode);
+  egmStoreSyncMissionRegistry($missionsRoot);
 
   $nextWebPath = 'mini%20apps/missions/' . rawurlencode($nextCode);
   echo json_encode([
@@ -1396,7 +1396,7 @@ if ($action === 'save_mission_link') {
     'data' => [
       'code' => $nextCode,
       'path' => $nextWebPath,
-      'appUrl' => $nextWebPath . '/TCM.php'
+      'appUrl' => $nextWebPath . '/EGMM.php'
     ]
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
@@ -1470,13 +1470,13 @@ if ($action === 'save_settings') {
   }
   $storedSettings = readSettingsFile($settingsFile, $legacySettingsFile);
   $settings = array_merge(is_array($storedSettings) ? $storedSettings : [], $incomingSettings);
-  $settings['duration'] = tcStoreNormalizeBool($settings['duration'] ?? false);
-  $settings['active'] = $settings['duration'] ? false : tcStoreNormalizeBool($settings['active'] ?? false);
+  $settings['duration'] = egmStoreNormalizeBool($settings['duration'] ?? false);
+  $settings['active'] = $settings['duration'] ? false : egmStoreNormalizeBool($settings['active'] ?? false);
   $settings['hint'] = is_string($settings['hint'] ?? null) ? trim($settings['hint']) : '';
   $settings['hintHtml'] = is_string($settings['hintHtml'] ?? null) ? trim($settings['hintHtml']) : '';
   $settings['hintAlign'] = is_string($settings['hintAlign'] ?? null) ? trim($settings['hintAlign']) : 'right';
-  $settings['maintenanceMode'] = tcStoreNormalizeBool($settings['maintenanceMode'] ?? false);
-  $settings['eventAccessLocked'] = tcStoreNormalizeBool($settings['eventAccessLocked'] ?? false);
+  $settings['maintenanceMode'] = egmStoreNormalizeBool($settings['maintenanceMode'] ?? false);
+  $settings['eventAccessLocked'] = egmStoreNormalizeBool($settings['eventAccessLocked'] ?? false);
   $incomingColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
   $eventName = is_string($settings['eventName'] ?? null) ? trim(preg_replace('/\s+/u', ' ', $settings['eventName'])) : '';
   $settings['eventName'] = function_exists('mb_substr') ? mb_substr($eventName, 0, 120, 'UTF-8') : substr($eventName, 0, 120);
@@ -1494,8 +1494,8 @@ if ($action === 'save_settings') {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save settings.']);
     exit;
   }
-  if (!tcStoreSyncMissionMetadataName($baseDir, (string)$settings['eventName'])) {
-    echo json_encode(['status' => 'error', 'message' => 'Settings saved, but failed to update the Task Club tab name.']);
+  if (!egmStoreSyncMissionMetadataName($baseDir, (string)$settings['eventName'])) {
+    echo json_encode(['status' => 'error', 'message' => 'Settings saved, but failed to update the Event Guest Manager tab name.']);
     exit;
   }
   echo json_encode(['status' => 'ok']);
@@ -1619,13 +1619,13 @@ if ($action === 'set_admin_assignment') {
     $adminIndex
   );
   $admins = collectAssignedAdmins($inviteesMappedFile, $inviteesMapFile);
-  tcActivityLogUserActivity([
+  egmActivityLogUserActivity([
     'level' => 'info',
     'action' => 'taskclub.admin_assignment_changed',
     'entity_type' => 'taskclub_user',
     'entity_id' => $workId,
     'status' => 'success',
-    'message' => $isAdmin ? 'Task Club admin assigned.' : 'Task Club admin removed.',
+    'message' => $isAdmin ? 'Event Guest Manager admin assigned.' : 'Event Guest Manager admin removed.',
     'metadata' => [
       'work_id' => $workId,
       'is_admin' => $isAdmin,

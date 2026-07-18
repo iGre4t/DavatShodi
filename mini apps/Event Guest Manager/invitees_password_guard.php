@@ -6,15 +6,15 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/users.php';
-require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_special_access.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 
-$tcInviteesPasswordSessionUser = requireTabPermissionFromSession('task-club', true);
-if (!userHasPermissionId($tcInviteesPasswordSessionUser, 'task-club:invitees')) {
-  denyPanelAccess(403, 'You do not have permission to access this Task Club section.', true);
+$egmInviteesPasswordSessionUser = requireTabPermissionFromSession('event-guest-manager', true);
+if (!userHasPermissionId($egmInviteesPasswordSessionUser, 'event-guest-manager:invitees')) {
+  denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
 }
-tcSecurityGetCsrfToken();
+egmSecurityGetCsrfToken();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   http_response_code(405);
@@ -28,8 +28,8 @@ if (!is_array($input)) {
   exit;
 }
 
-$csrfToken = tcSecurityReadCsrfFromRequest($input, 'csrf');
-if (!tcSecurityIsValidCsrfToken($csrfToken)) {
+$csrfToken = egmSecurityReadCsrfFromRequest($input, 'csrf');
+if (!egmSecurityIsValidCsrfToken($csrfToken)) {
   http_response_code(403);
   echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.']);
   exit;
@@ -79,8 +79,8 @@ function inviteePasswordFindHeaderIndexByNames(array $header, array $names): int
 
 function inviteePasswordReadCsvRows(string $path): array
 {
-  if (tcInviteesCsvIsManagedPath($path)) {
-    return tcInviteesCsvReadRowsForUpdate($path);
+  if (egmInviteesCsvIsManagedPath($path)) {
+    return egmInviteesCsvReadRowsForUpdate($path);
   }
   if (!is_file($path)) {
     return [];
@@ -104,8 +104,8 @@ function inviteePasswordReadCsvRows(string $path): array
 
 function inviteePasswordWriteCsvRowsLocked(string $path, array $rows): bool
 {
-  if (tcInviteesCsvIsManagedPath($path)) {
-    return tcInviteesCsvCommitRows($path, $rows);
+  if (egmInviteesCsvIsManagedPath($path)) {
+    return egmInviteesCsvCommitRows($path, $rows);
   }
   $handle = fopen($path, 'c+');
   if ($handle === false) {
@@ -303,7 +303,7 @@ function inviteePasswordReadTasks(string $tasksPath, string $tasksDir): array
     return [];
   }
   $json = '';
-  if (preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $matches)) {
+  if (preg_match('/window\.EGM_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $matches)) {
     $json = (string)($matches[1] ?? '');
   } else {
     $start = strpos($content, '[');
@@ -552,11 +552,11 @@ function inviteePasswordReadQuestionLookup(string $questionsPath): array
 
 function inviteePasswordReadTaskQuestionLookup(string $tasksDir, string $taskDir): array
 {
-  $lookup = inviteePasswordReadQuestionLookup($taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json');
+  $lookup = inviteePasswordReadQuestionLookup($taskDir . DIRECTORY_SEPARATOR . 'EGMQ list.json');
   if ($lookup) {
     return $lookup;
   }
-  return inviteePasswordReadQuestionLookup(dirname($tasksDir) . DIRECTORY_SEPARATOR . 'TCQ list.json');
+  return inviteePasswordReadQuestionLookup(dirname($tasksDir) . DIRECTORY_SEPARATOR . 'EGMQ list.json');
 }
 
 function inviteePasswordReadTaskAnswers(string $tasksDir, array $task, string $workId): array
@@ -1592,7 +1592,7 @@ function inviteePasswordIsUnlocked(string $userCode): bool
   if ($sessionKey === '') {
     return false;
   }
-  $all = is_array($_SESSION['tc_invite_password_unlock'] ?? null) ? $_SESSION['tc_invite_password_unlock'] : [];
+  $all = is_array($_SESSION['egm_invite_password_unlock'] ?? null) ? $_SESSION['egm_invite_password_unlock'] : [];
   $until = (int)($all[$sessionKey] ?? 0);
   return $until > time();
 }
@@ -1604,21 +1604,21 @@ function inviteePasswordSetUnlockWindow(string $userCode, int $seconds): int
     return 0;
   }
   $until = time() + max(1, $seconds);
-  $all = is_array($_SESSION['tc_invite_password_unlock'] ?? null) ? $_SESSION['tc_invite_password_unlock'] : [];
+  $all = is_array($_SESSION['egm_invite_password_unlock'] ?? null) ? $_SESSION['egm_invite_password_unlock'] : [];
   $all[$sessionKey] = $until;
-  $_SESSION['tc_invite_password_unlock'] = $all;
+  $_SESSION['egm_invite_password_unlock'] = $all;
   return $until;
 }
 
 $action = trim((string)($input['action'] ?? ''));
-$sessionUserCode = trim((string)($tcInviteesPasswordSessionUser['code'] ?? ''));
+$sessionUserCode = trim((string)($egmInviteesPasswordSessionUser['code'] ?? ''));
 if ($sessionUserCode === '') {
   echo json_encode(['status' => 'error', 'message' => 'Session user is not valid.']);
   exit;
 }
-$tcInviteesSensitiveAccess = tcInviteesSpecialAccessForPanelUser($tcInviteesPasswordSessionUser, __DIR__ . '/tasks/task-access.json');
-$canRevealPassword = !empty($tcInviteesSensitiveAccess['revealPassword']);
-$canResetInvitee = !empty($tcInviteesSensitiveAccess['resetInvitee']);
+$egmInviteesSensitiveAccess = egmInviteesSpecialAccessForPanelUser($egmInviteesPasswordSessionUser, __DIR__ . '/tasks/task-access.json');
+$canRevealPassword = !empty($egmInviteesSensitiveAccess['revealPassword']);
+$canResetInvitee = !empty($egmInviteesSensitiveAccess['resetInvitee']);
 $canUseSensitiveAuth = $canRevealPassword || $canResetInvitee;
 $isRevealAction = in_array($action, ['get_password', 'save_password'], true);
 $isParticipationAction = in_array($action, ['get_participation', 'get_task_options', 'get_active_filter_preview'], true);
@@ -1635,9 +1635,9 @@ if ($isAuthAction && !$canUseSensitiveAuth) {
   denyPanelAccess(403, 'You do not have permission to run sensitive invitee actions.', true);
 }
 
-$baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'TC Event';
+$baseDir = __DIR__ . DIRECTORY_SEPARATOR . 'EGM Event';
 $mappedFile = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
-$mapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Mapped.json';
+$mapFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Mapped.json';
 $tasksDir = __DIR__ . DIRECTORY_SEPARATOR . 'tasks';
 $tasksFile = $tasksDir . DIRECTORY_SEPARATOR . 'tasks.js';
 

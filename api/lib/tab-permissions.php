@@ -14,6 +14,7 @@ function getPanelTabDefinitions(): array
         ['id' => 'features', 'label' => 'Features', 'title' => 'Features'],
         ['id' => 'wheel-of-fortune', 'label' => 'گردونه شانس', 'title' => 'گردونه شانس'],
         ['id' => 'task-club', 'label' => 'باشگاه تعاملی', 'title' => 'باشگاه تعاملی'],
+        ['id' => 'event-guest-manager', 'label' => 'مدیریت رویداد', 'title' => 'مدیریت رویداد'],
         ['id' => 'rate-me', 'label' => 'RateMe', 'title' => 'RateMe'],
         ['id' => 'asset-manager', 'label' => 'مدیریت اموال', 'title' => 'مدیریت اموال'],
         ['id' => 'utm-service', 'label' => 'UTM Service', 'title' => 'UTM Service'],
@@ -40,6 +41,17 @@ function getPanelChildTabDefinitionsByParent(): array
             ['id' => 'task-club:linker', 'label' => 'Linker'],
             ['id' => 'task-club:event-style', 'label' => 'استایل رویداد'],
             ['id' => 'task-club:logs', 'label' => 'Logs']
+        ],
+        'event-guest-manager' => [
+            ['id' => 'event-guest-manager:main', 'label' => 'Control Panel'],
+            ['id' => 'event-guest-manager:invitees', 'label' => 'Invitees'],
+            ['id' => 'event-guest-manager:manage-tasks', 'label' => 'Manage Tasks'],
+            ['id' => 'event-guest-manager:task-access', 'label' => 'Admin Access'],
+            ['id' => 'event-guest-manager:monitoring', 'label' => 'Monitoring'],
+            ['id' => 'event-guest-manager:export', 'label' => 'Export'],
+            ['id' => 'event-guest-manager:linker', 'label' => 'Linker'],
+            ['id' => 'event-guest-manager:event-style', 'label' => 'Event Style'],
+            ['id' => 'event-guest-manager:logs', 'label' => 'Logs']
         ],
         'rate-me' => [
             ['id' => 'rate-me:main', 'label' => 'Main Panel'],

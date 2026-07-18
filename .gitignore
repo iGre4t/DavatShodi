@@ -20,3 +20,20 @@ api/config.php
 /bots/telegram bot/*.log
 /system/useractivitylogs/logs/*.log
 /mini apps/Task Club/useractivitylogs/logs/*.log
+/mini apps/Task Club/TC Event/TC Prize Awards Log.json
+/mini apps/Task Club/TC Event/TC Prize Awards Log.json.bak
+/mini apps/Task Club/TC Event/TC Prize Awards Log.json.bak.tmp
+/mini apps/Task Club/TC Event/TC Prize Awards Log.json.lock
+/mini apps/Task Club/TC Event/TC Prize Awards Log.json.rollback
+/mini apps/Task Club/TC Event/TC Prize Awards Log.json.archive/
+/mini apps/Task Club/TC Prizes.json.lock
+/mini apps/Task Club/TC Prizes.json.bak
+/mini apps/Task Club/TC Prizes.json.bak.tmp
+/mini apps/Task Club/TC Prizes.json.rollback
+/mini apps/Task Club/TC Prizes.json.corrupt-*
+/mini apps/Task Club/TC Prizes.json.backup-unsynced
+/mini apps/Task Club/TC Prize Levels.json.lock
+/mini apps/Task Club/TC Prize Levels.json.bak
+/mini apps/Task Club/TC Prize Levels.json.bak.tmp
+/mini apps/Task Club/TC Prize Levels.json.rollback
+/mini apps/Task Club/TC Prize Levels.json.corrupt-*
