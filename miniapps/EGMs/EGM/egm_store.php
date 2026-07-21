@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../api/lib/tab-permissions.php';
-require_once __DIR__ . '/../../api/lib/common.php';
-require_once __DIR__ . '/../../api/lib/egm-registry.php';
-$campaignRedirectsFile = __DIR__ . '/../../api/lib/campaign-redirects.php';
+require_once __DIR__ . '/../../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../../api/lib/common.php';
+require_once __DIR__ . '/../../../api/lib/egm-registry.php';
+$campaignRedirectsFile = __DIR__ . '/../../../api/lib/campaign-redirects.php';
 if (is_file($campaignRedirectsFile)) {
   require_once $campaignRedirectsFile;
 }
@@ -29,7 +29,7 @@ $inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPA
 
 function egmStoreProjectRoot(): string
 {
-  return dirname(__DIR__, 2);
+  return dirname(__DIR__, 3);
 }
 
 function egmStoreDatabase(): ?PDO
@@ -50,7 +50,7 @@ function egmStoreDatabase(): ?PDO
 
 function egmStoreCampaignLinkTarget(): string
 {
-  return '/mini%20apps/Event%20Guest%20Manager/index.php';
+  return '/miniapps/EGMs/EGM/index.php';
 }
 
 function egmStoreCampaignRedirectsReady(): bool

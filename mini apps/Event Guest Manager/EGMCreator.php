@@ -2,14 +2,13 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../api/lib/common.php';
+require_once __DIR__ . '/../../api/lib/egm-registry.php';
 require_once __DIR__ . '/egm-security.php';
 
 $egmCreatorIsJsonRequest = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST';
 requireTabPermissionFromSession('event-guest-manager', $egmCreatorIsJsonRequest);
 $egmCreatorCsrfToken = egmSecurityGetCsrfToken();
-
-const EGM_CREATOR_SOURCE_LABEL = 'mini apps/Event Guest Manager';
-const EGM_CREATOR_GENERATOR_VERSION = 1;
 
 function egmCreatorProjectRoot(): string
 {
@@ -18,7 +17,7 @@ function egmCreatorProjectRoot(): string
 
 function egmCreatorMissionsRoot(): string
 {
-  return egmCreatorProjectRoot() . DIRECTORY_SEPARATOR . 'mini apps' . DIRECTORY_SEPARATOR . 'missions';
+  return egmCreatorProjectRoot() . DIRECTORY_SEPARATOR . 'miniapps' . DIRECTORY_SEPARATOR . 'EGMs';
 }
 
 function egmCreatorGenerateRoot(): string
@@ -26,9 +25,19 @@ function egmCreatorGenerateRoot(): string
   return egmCreatorMissionsRoot() . DIRECTORY_SEPARATOR . 'generate';
 }
 
-function egmCreatorRegistryPath(): string
+function egmCreatorDatabase(): PDO
 {
-  return egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . 'clubs.json';
+  static $pdo = null;
+  if ($pdo instanceof PDO) {
+    return $pdo;
+  }
+  $config = loadConfig(egmCreatorProjectRoot() . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php');
+  $pdo = connectDatabase($config);
+  if (!$pdo instanceof PDO) {
+    throw new RuntimeException('Unable to connect to the EGM registry database.');
+  }
+  ensureEgmRegistryTable($pdo);
+  return $pdo;
 }
 
 function egmCreatorEnsureDirectory(string $path): void
@@ -51,19 +60,6 @@ function egmCreatorWriteJsonFile(string $path, array $payload): void
   if (file_put_contents($path, $json . PHP_EOL, LOCK_EX) === false) {
     throw new RuntimeException('Failed to write file: ' . $path);
   }
-}
-
-function egmCreatorReadJsonFile(string $path): array
-{
-  if (!is_file($path)) {
-    return [];
-  }
-  $content = file_get_contents($path);
-  if ($content === false) {
-    return [];
-  }
-  $decoded = json_decode($content, true);
-  return is_array($decoded) ? $decoded : [];
 }
 
 function egmCreatorEnsureGeneratorStorage(): void
@@ -89,10 +85,16 @@ function egmCreatorEnsureGeneratorStorage(): void
       throw new RuntimeException('Failed to write generator access rules.');
     }
   }
+}
 
-  if (!is_file(egmCreatorRegistryPath())) {
-    egmCreatorWriteJsonFile(egmCreatorRegistryPath(), ['clubs' => []]);
-  }
+function egmCreatorNormalizeUniqueCode($value): string
+{
+  return normalizeEgmSequenceCode($value);
+}
+
+function egmCreatorAllocateUniqueCode(): string
+{
+  return allocateEgmRegistryCode(egmCreatorDatabase());
 }
 
 function egmCreatorNormalizeMissionName(string $value): string
@@ -126,16 +128,20 @@ function egmCreatorNormalizeMissionName(string $value): string
 
 function egmCreatorMissionWebPath(string $folderName): string
 {
-  return 'mini%20apps/missions/' . rawurlencode($folderName);
+  return 'miniapps/EGMs/' . rawurlencode($folderName);
 }
 
 function egmCreatorMissionDirectoryLabel(string $folderName): string
 {
-  return 'mini apps/missions/' . $folderName;
+  return 'miniapps/EGMs/' . $folderName;
 }
 
-function egmCreatorMissionTabId(string $folderName): string
+function egmCreatorMissionTabId(string $folderName, string $code = ''): string
 {
+  $normalizedCode = egmCreatorNormalizeUniqueCode($code);
+  if ($normalizedCode !== '') {
+    return 'event-guest-manager-mission-' . $normalizedCode;
+  }
   return 'event-guest-manager-mission-' . substr(hash('sha256', $folderName), 0, 12);
 }
 
@@ -252,7 +258,7 @@ function egmCreatorPatchGeneratedFile(string $path, string $relativePath, string
     "__DIR__ . '/../../" => "__DIR__ . '/../../../",
     '__DIR__ . "/../../' => '__DIR__ . "/../../../',
     'dirname(__DIR__, 2)' => 'dirname(__DIR__, 3)',
-    "session_name('TASKCLUBSESSID');" => "session_name('TASKCLUB' . substr(hash('sha256', __DIR__), 0, 12));",
+    "session_name('EGMSESSID');" => "session_name('EGM' . substr(hash('sha256', __DIR__), 0, 12));",
     'return "../../{$trimmed}";' => 'return "../../../{$trimmed}";',
     "src: url('../../style/" => "src: url('../../../style/",
     "url('../../style/" => "url('../../../style/",
@@ -323,7 +329,7 @@ function egmCreatorCopyEventGuestManagerUpdates(string $sourceDir, string $targe
   }
 }
 
-function egmCreatorInitializeMission(string $targetDir, string $name, string $folderName, string $webPath): void
+function egmCreatorInitializeMission(string $targetDir, string $name): void
 {
   egmCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'tasks');
   egmCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'EGM Event');
@@ -357,45 +363,35 @@ function egmCreatorInitializeMission(string $targetDir, string $name, string $fo
     ]
   ]);
 
-  egmCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'mission.json', [
-    'name' => $name,
-    'folder' => $folderName,
-    'directory' => egmCreatorMissionDirectoryLabel($folderName),
-    'webPath' => $webPath,
-    'source' => EGM_CREATOR_SOURCE_LABEL,
-    'generatorVersion' => EGM_CREATOR_GENERATOR_VERSION,
-    'createdAt' => gmdate('c')
-  ]);
 }
 
 function egmCreatorListMissions(): array
 {
   egmCreatorEnsureGeneratorStorage();
-  $root = egmCreatorMissionsRoot();
-  if (!is_dir($root)) {
-    return [];
-  }
   $items = [];
-  foreach (new DirectoryIterator($root) as $entry) {
-    if ($entry->isDot() || !$entry->isDir()) {
+  foreach (listEgmRegistry(egmCreatorDatabase()) as $record) {
+    $code = egmCreatorNormalizeUniqueCode($record['code'] ?? '');
+    $directory = normalizeEgmRegistryDirectory($record['directory'] ?? '');
+    if ($code === '' || $directory === '') {
       continue;
     }
-    $folder = $entry->getFilename();
-    if ($folder === 'generate' || strncmp($folder, '.', 1) === 0) {
+    $folder = basename(str_replace('\\', '/', $directory));
+    $missionDir = egmCreatorProjectRoot() . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $directory);
+    if (!is_dir($missionDir) || !egmCreatorIsWithinPath($missionDir, egmCreatorMissionsRoot())) {
       continue;
     }
-    $missionDir = $entry->getPathname();
-    $meta = egmCreatorReadJsonFile($missionDir . DIRECTORY_SEPARATOR . 'mission.json');
+    $name = trim((string)($record['name'] ?? '')) ?: $folder;
     $webPath = egmCreatorMissionWebPath($folder);
-    $createdAt = trim((string)($meta['createdAt'] ?? ''));
+    $createdAt = trim((string)($record['created_at'] ?? ''));
     $items[] = [
-      'name' => trim((string)($meta['name'] ?? $folder)) ?: $folder,
+      'name' => $name,
+      'code' => $code,
       'folder' => $folder,
-      'tabId' => egmCreatorMissionTabId($folder),
-      'directory' => egmCreatorMissionDirectoryLabel($folder),
+      'tabId' => egmCreatorMissionTabId($folder, $code),
+      'directory' => $directory,
       'webPath' => $webPath,
       'appUrl' => $webPath . '/EGMM.php',
-      'panelUrl' => 'panel.php?tab=' . rawurlencode(egmCreatorMissionTabId($folder)),
+      'panelUrl' => 'panel.php?tab=' . rawurlencode(egmCreatorMissionTabId($folder, $code)),
       'createdAt' => $createdAt,
       'createdAtLabel' => $createdAt !== '' ? $createdAt : '-'
     ];
@@ -409,14 +405,6 @@ function egmCreatorListMissions(): array
     return strcasecmp((string)($left['name'] ?? ''), (string)($right['name'] ?? ''));
   });
   return $items;
-}
-
-function egmCreatorSyncRegistry(array $missions): void
-{
-  egmCreatorWriteJsonFile(egmCreatorRegistryPath(), [
-    'updatedAt' => gmdate('c'),
-    'clubs' => $missions
-  ]);
 }
 
 function egmCreatorJsonResponse(array $payload, int $statusCode = 200): void
@@ -452,19 +440,26 @@ function egmCreatorCreateMission(string $rawName): array
 
   $buildDir = egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.build-' . date('YmdHis') . '-' . bin2hex(random_bytes(4));
   $webPath = egmCreatorMissionWebPath($folderName);
+  $code = egmCreatorAllocateUniqueCode();
   try {
     egmCreatorCopyEventGuestManagerTemplate(__DIR__, $buildDir, $folderName, $webPath);
-    egmCreatorInitializeMission($buildDir, $folderName, $folderName, $webPath);
+    egmCreatorInitializeMission($buildDir, $folderName);
     if (!rename($buildDir, $targetDir)) {
       throw new RuntimeException('Failed to publish generated Event Guest Manager.');
     }
+    insertEgmRegistry(
+      egmCreatorDatabase(),
+      $code,
+      $folderName,
+      egmCreatorMissionDirectoryLabel($folderName)
+    );
   } catch (Throwable $error) {
     egmCreatorRemoveTree($buildDir, egmCreatorGenerateRoot());
+    egmCreatorRemoveTree($targetDir, egmCreatorMissionsRoot());
     throw $error;
   }
 
   $missions = egmCreatorListMissions();
-  egmCreatorSyncRegistry($missions);
   foreach ($missions as $mission) {
     if (($mission['folder'] ?? '') === $folderName) {
       return $mission;
@@ -472,12 +467,13 @@ function egmCreatorCreateMission(string $rawName): array
   }
   return [
     'name' => $folderName,
+    'code' => $code,
     'folder' => $folderName,
-    'tabId' => egmCreatorMissionTabId($folderName),
+    'tabId' => egmCreatorMissionTabId($folderName, $code),
     'directory' => egmCreatorMissionDirectoryLabel($folderName),
     'webPath' => $webPath,
     'appUrl' => $webPath . '/EGMM.php',
-    'panelUrl' => 'panel.php?tab=' . rawurlencode(egmCreatorMissionTabId($folderName)),
+    'panelUrl' => 'panel.php?tab=' . rawurlencode(egmCreatorMissionTabId($folderName, $code)),
     'createdAt' => gmdate('c'),
     'createdAtLabel' => gmdate('c')
   ];
@@ -491,26 +487,20 @@ function egmCreatorUpdateMissionBranchSetting(string $rawFolder): array
   if (!is_dir($targetDir) || !egmCreatorIsWithinPath($targetDir, egmCreatorMissionsRoot())) {
     throw new InvalidArgumentException('Event Guest Manager was not found.');
   }
+  $registryDirectory = egmCreatorMissionDirectoryLabel($folderName);
+  $registryRecord = findEgmRegistryByDirectory(egmCreatorDatabase(), $registryDirectory);
+  if (!is_array($registryRecord)) {
+    throw new InvalidArgumentException('Event Guest Manager is not registered in the database.');
+  }
 
   $webPath = egmCreatorMissionWebPath($folderName);
   egmCreatorCopyEventGuestManagerUpdates(__DIR__, $targetDir, $folderName, $webPath);
 
-  $metaPath = $targetDir . DIRECTORY_SEPARATOR . 'mission.json';
-  $meta = egmCreatorReadJsonFile($metaPath);
-  $meta['name'] = trim((string)($meta['name'] ?? $folderName)) ?: $folderName;
-  $meta['folder'] = $folderName;
-  $meta['directory'] = egmCreatorMissionDirectoryLabel($folderName);
-  $meta['webPath'] = $webPath;
-  $meta['source'] = EGM_CREATOR_SOURCE_LABEL;
-  $meta['generatorVersion'] = EGM_CREATOR_GENERATOR_VERSION;
-  $meta['updatedAt'] = gmdate('c');
-  if (trim((string)($meta['createdAt'] ?? '')) === '') {
-    $meta['createdAt'] = gmdate('c');
+  if (!updateEgmRegistry(egmCreatorDatabase(), (string)$registryRecord['code'], (string)$registryRecord['name'], $registryDirectory)) {
+    throw new RuntimeException('Failed to update the EGM database registry.');
   }
-  egmCreatorWriteJsonFile($metaPath, $meta);
 
   $missions = egmCreatorListMissions();
-  egmCreatorSyncRegistry($missions);
   foreach ($missions as $mission) {
     if (($mission['folder'] ?? '') === $folderName) {
       return $mission;
@@ -527,13 +517,24 @@ function egmCreatorDeleteMission(string $rawFolder): array
   if (!is_dir($targetDir) || !egmCreatorIsWithinPath($targetDir, egmCreatorMissionsRoot())) {
     throw new InvalidArgumentException('Event Guest Manager was not found.');
   }
-
-  egmCreatorRemoveTree($targetDir, egmCreatorMissionsRoot());
-  if (is_dir($targetDir)) {
-    throw new RuntimeException('Failed to delete Event Guest Manager.');
+  $registryRecord = findEgmRegistryByDirectory(egmCreatorDatabase(), egmCreatorMissionDirectoryLabel($folderName));
+  if (!is_array($registryRecord)) {
+    throw new InvalidArgumentException('Event Guest Manager is not registered in the database.');
   }
+  $stagingDir = egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.delete-' . (string)$registryRecord['code'] . '-' . bin2hex(random_bytes(4));
+  if (!rename($targetDir, $stagingDir)) {
+    throw new RuntimeException('Failed to stage Event Guest Manager for deletion.');
+  }
+  try {
+    if (!deleteEgmRegistry(egmCreatorDatabase(), (string)$registryRecord['code'])) {
+      throw new RuntimeException('Failed to delete the EGM database registry record.');
+    }
+  } catch (Throwable $error) {
+    @rename($stagingDir, $targetDir);
+    throw $error;
+  }
+  egmCreatorRemoveTree($stagingDir, egmCreatorGenerateRoot());
   $missions = egmCreatorListMissions();
-  egmCreatorSyncRegistry($missions);
   return $missions;
 }
 
@@ -586,7 +587,6 @@ if ($egmCreatorIsJsonRequest) {
 
 egmCreatorEnsureGeneratorStorage();
 $egmCreatorMissions = egmCreatorListMissions();
-egmCreatorSyncRegistry($egmCreatorMissions);
 $egmCreatorPanelCssVer = (string)(@filemtime(__DIR__ . '/egm-panel.css') ?: time());
 $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
 ?>
@@ -641,8 +641,8 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
         <h3>Generation storage</h3>
       </div>
       <p class="egm-creator-muted">
-        New Event Guest Managers are created under <code>mini apps/missions/&lt;Event Guest Manager name&gt;</code> and appear as new tabs in this panel sidebar.
-        Generator settings are kept under <code>mini apps/missions/generate</code>.
+        New Event Guest Managers are created under <code>miniapps/EGMs/&lt;name&gt;</code> and appear as new tabs in this panel sidebar.
+        EGM code, name, directory, and the next unique code are stored in MySQL. Event-specific settings remain inside each EGM directory.
       </p>
       <p class="egm-creator-muted">
         The current default Event Guest Manager stays in <code>mini apps/Event Guest Manager</code>.
@@ -664,6 +664,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
               <strong><?= htmlspecialchars((string)$mission['name'], ENT_QUOTES, 'UTF-8') ?></strong>
               <span class="egm-creator-muted"><?= htmlspecialchars((string)$mission['createdAtLabel'], ENT_QUOTES, 'UTF-8') ?></span>
             </div>
+            <div class="egm-creator-muted">Unique code: <code><?= htmlspecialchars((string)$mission['code'], ENT_QUOTES, 'UTF-8') ?></code></div>
             <div class="egm-creator-muted">Directory: <code><?= htmlspecialchars((string)$mission['directory'], ENT_QUOTES, 'UTF-8') ?></code></div>
             <div class="egm-creator-actions">
               <a class="btn primary" href="<?= htmlspecialchars((string)$mission['panelUrl'], ENT_QUOTES, 'UTF-8') ?>">Panel tab</a>
@@ -722,6 +723,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
     }
     listEl.innerHTML = clubs.map((club) => {
       const name = escapeHtml(club?.name || club?.folder || 'Event Guest Manager');
+      const code = escapeHtml(club?.code || '');
       const createdAt = escapeHtml(club?.createdAtLabel || club?.createdAt || '-');
       const directory = escapeHtml(club?.directory || '');
       const panelUrl = escapeHtml(club?.panelUrl || '#');
@@ -733,6 +735,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
             <strong>${name}</strong>
             <span class="egm-creator-muted">${createdAt}</span>
           </div>
+          <div class="egm-creator-muted">Unique code: <code>${code}</code></div>
           <div class="egm-creator-muted">Directory: <code>${directory}</code></div>
           <div class="egm-creator-actions">
             <a class="btn primary" href="${panelUrl}">Panel tab</a>

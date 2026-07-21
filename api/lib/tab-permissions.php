@@ -17,6 +17,7 @@ function getPanelTabDefinitions(): array
         ['id' => 'event-guest-manager', 'label' => 'مدیریت رویداد', 'title' => 'مدیریت رویداد'],
         ['id' => 'rate-me', 'label' => 'RateMe', 'title' => 'RateMe'],
         ['id' => 'asset-manager', 'label' => 'مدیریت اموال', 'title' => 'مدیریت اموال'],
+        ['id' => 'organizational-event-userbase', 'label' => 'کاربران سازمان', 'title' => 'کاربران سازمان'],
         ['id' => 'utm-service', 'label' => 'UTM Service', 'title' => 'UTM Service'],
         ['id' => 'linker-service', 'label' => 'Linker Service', 'title' => 'Linker Service'],
         ['id' => 'devsettings', 'label' => 'تنظیمات توسعه‌دهنده', 'title' => 'Developer Settings']
@@ -318,6 +319,12 @@ function encodeTabPermissionsForStorage(array $permissions): string
 function resolveAllowedPanelTabsForUser(array $user): array
 {
     $normalized = normalizeTabPermissions($user['permissions'] ?? null, true);
+    // Organizational users are part of user management. Keep the new module
+    // visible for existing accounts that already have the legacy Users tab.
+    if (in_array('users', $normalized, true)
+        && !in_array('organizational-event-userbase', $normalized, true)) {
+        $normalized[] = 'organizational-event-userbase';
+    }
     $allowed = [];
     foreach (getAllPanelTabIds() as $tabId) {
         if (in_array($tabId, $normalized, true)) {

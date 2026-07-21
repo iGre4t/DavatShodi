@@ -1,0 +1,22 @@
+{
+    "active": false,
+    "duration": false,
+    "maintenanceMode": false,
+    "eventAccessLocked": false,
+    "startDate": "",
+    "startTime": "",
+    "endDate": "",
+    "endTime": "",
+    "eventName": "EGM",
+    "eventLogo": "",
+    "eventColors": {
+        "secondary": "#2F8FFF",
+        "highlight": "#20C997",
+        "accentSoft": "#FFB347"
+    },
+    "landing": {
+        "title": "EGM",
+        "subtitle": "",
+        "sections": []
+    }
+}

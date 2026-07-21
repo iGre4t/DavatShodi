@@ -1,5 +1,5 @@
 (() => {
-  const API_URL = 'mini%20apps/Event%20Guest%20Manager/egm_store.php';
+  const API_URL = 'miniapps/EGMs/EGM/egm_store.php';
   const egmShellEl = document.querySelector('.egm-shell');
   const csrfToken = egmShellEl instanceof HTMLElement
     ? String(egmShellEl.dataset.egmCsrf || '').trim()

@@ -1,6 +1,6 @@
 <?php
-require_once __DIR__ . '/../../api/lib/common.php';
-require_once __DIR__ . '/../../api/lib/egm-registry.php';
+require_once __DIR__ . '/../../../api/lib/common.php';
+require_once __DIR__ . '/../../../api/lib/egm-registry.php';
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_award_log.php';
@@ -16,7 +16,7 @@ function egmRequireRegisteredRuntime(): void
   }
   $folder = basename(__DIR__);
   $directory = 'miniapps/EGMs/' . $folder;
-  $projectRoot = dirname(__DIR__, 2);
+  $projectRoot = dirname(__DIR__, 3);
   $config = loadConfig($projectRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php');
   $pdo = connectDatabase($config);
   $registry = $pdo instanceof PDO ? findEgmRegistryByDirectory($pdo, $directory) : null;
@@ -39,7 +39,7 @@ function egmStartIsolatedSession(): void
     (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
     || (string)($_SERVER['SERVER_PORT'] ?? '') === '443'
   );
-  session_name('EGMSESSID');
+  session_name('EGM' . substr(hash('sha256', __DIR__), 0, 12));
   session_set_cookie_params([
     'lifetime' => 86400,
     'path' => '/',
@@ -131,7 +131,7 @@ if ($egmMaintenanceEnabled && !$egmPanelSessionBypass) {
   exit;
 }
 
-const SETTINGS_STORE_PATH = __DIR__ . '/../../data/store.json';
+const SETTINGS_STORE_PATH = __DIR__ . '/../../../data/store.json';
 const DEFAULT_PANEL_SETTINGS = [
   'siteIcon' => ''
 ];
@@ -1010,7 +1010,7 @@ function formatSiteIconUrlForHtml(string $value): string
   if (strncmp($trimmed, '/', 1) === 0 || strncmp($trimmed, './', 2) === 0 || strncmp($trimmed, '../', 3) === 0) {
     return $trimmed;
   }
-  return "../../{$trimmed}";
+  return "../../../{$trimmed}";
 }
 
 function normalizeHexColorForTheme($value, string $fallback): string
@@ -7118,7 +7118,7 @@ $sessionPayload = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title><?= htmlspecialchars($loginEventTitle, ENT_QUOTES, 'UTF-8') ?></title>
     <link rel="icon" href="<?= htmlspecialchars($faviconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
-    <link rel="stylesheet" href="../../style/remixicon.css" />
+    <link rel="stylesheet" href="../../../style/remixicon.css" />
     <style nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
       :root {
         --bg: #f4f7fb;
@@ -7141,7 +7141,7 @@ $sessionPayload = [
       @font-face {
         font-family: 'Peyda Fa Num';
         src:
-          url('../../style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2'),
+          url('../../../style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2'),
           url('/style/fonts/PeydaWebFaNum-Regular.woff2') format('woff2');
         font-weight: 400;
         font-style: normal;
@@ -7151,7 +7151,7 @@ $sessionPayload = [
       @font-face {
         font-family: 'Peyda Fa Num';
         src:
-          url('../../style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2'),
+          url('../../../style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2'),
           url('/style/fonts/PeydaWebFaNum-Bold.woff2') format('woff2');
         font-weight: 700;
         font-style: normal;
