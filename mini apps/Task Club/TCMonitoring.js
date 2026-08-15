@@ -449,6 +449,13 @@
       levelSubtitle.textContent = `حداکثر کارت جایزه قابل باز شدن: ${formatNumber(summary.maximumPrizeCardsOpenable || 0)}`;
     }
 
+    const reconciliationDifference = Number(summary.prizeValueReconciliationDifference || 0);
+    const hasPrizeProblem = summary.prizeValueHasProblem === true || Math.abs(reconciliationDifference) > 0.005;
+    const reconciliationText = !hasPrizeProblem
+      ? 'بدون مغایرت'
+      : reconciliationDifference > 0
+        ? `${formatNumber(reconciliationDifference, 2)} تومان بیشتر از بودجه`
+        : `${formatNumber(Math.abs(reconciliationDifference), 2)} تومان کمتر از بودجه`;
     const items = [
       { label: 'تعداد دعوت‌شدگان', value: formatNumber(summary.totalUsers || 0) },
       { label: 'حداقل یک‌بار ورود', value: formatNumber(summary.loggedInUsers || 0) },
@@ -463,11 +470,14 @@
       { label: 'همه ماموریت‌های شروع‌شده را انجام داده‌اند', value: formatNumber(summary.usersCompletedAllStarted || 0) },
       { label: 'جوایز باقی‌مانده', value: formatNumber(summary.prizeRemaining || 0) },
       { label: 'ظرفیت کل جوایز', value: formatNumber(summary.prizeCapacity || 0) },
-      { label: 'جوایز داده‌شده', value: formatNumber(summary.prizeGiven || 0) }
+      { label: 'جوایز داده‌شده', value: formatNumber(summary.prizeGiven || 0) },
+      { label: 'مجموع ارزش جوایز داده‌شده', value: `${formatNumber(summary.prizeValueAssignedToInvitees || 0, 2)} تومان` },
+      { label: 'مجموع ارزش جوایز داده‌نشده', value: `${formatNumber(summary.prizeValueRemaining || 0, 2)} تومان` },
+      { label: 'بررسی بودجه جوایز', value: reconciliationText, wide: true, problem: hasPrizeProblem }
     ];
 
     host.innerHTML = items.map((item) => `
-      <article class="card tc-monitoring-kpi ${item.wide ? 'tc-monitoring-kpi--wide' : ''}">
+      <article class="card tc-monitoring-kpi ${item.wide ? 'tc-monitoring-kpi--wide' : ''} ${item.problem ? 'tc-monitoring-kpi--problem' : ''}">
         <div class="tc-monitoring-kpi-label">${escapeHtml(item.label)}</div>
         <div class="tc-monitoring-kpi-value">${escapeHtml(item.value)}</div>
       </article>

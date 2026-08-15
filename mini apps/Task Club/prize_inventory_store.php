@@ -63,6 +63,11 @@ function tcPrizeInventoryNormalizePendingAwardIds($value): array
   return $result;
 }
 
+function tcPrizeInventoryNormalizePendingResetAwardIds($value): array
+{
+  return tcPrizeInventoryNormalizePendingAwardIds($value);
+}
+
 function tcPrizeInventoryParseNonnegativeInt($value): ?int
 {
   if (is_int($value)) return $value >= 0 ? $value : null;
@@ -129,7 +134,8 @@ function tcPrizeInventoryNormalizeRecords(array $records): array
       'last' => $last,
       'value' => $value,
       'isFake' => tcPrizeInventoryNormalizeBool($record['isFake'] ?? false),
-      'pendingAwardIds' => tcPrizeInventoryNormalizePendingAwardIds($record['pendingAwardIds'] ?? [])
+      'pendingAwardIds' => tcPrizeInventoryNormalizePendingAwardIds($record['pendingAwardIds'] ?? []),
+      'pendingResetAwardIds' => tcPrizeInventoryNormalizePendingResetAwardIds($record['pendingResetAwardIds'] ?? [])
     ];
   }
   return $normalized;
@@ -192,6 +198,16 @@ function tcPrizeInventoryValidateRecords(array $records, bool $allowMissingIds, 
         $marker = trim((string)$marker);
         if ($marker === '' || strlen($marker) > 128 || isset($seenMarkers[$marker])) return false;
         $seenMarkers[$marker] = true;
+      }
+    }
+    if (array_key_exists('pendingResetAwardIds', $record)) {
+      if (!is_array($record['pendingResetAwardIds']) || !tcPrizeInventoryArrayIsList($record['pendingResetAwardIds'])) return false;
+      $seenResetMarkers = [];
+      foreach ($record['pendingResetAwardIds'] as $marker) {
+        if (!is_scalar($marker)) return false;
+        $marker = trim((string)$marker);
+        if ($marker === '' || strlen($marker) > 128 || isset($seenResetMarkers[$marker])) return false;
+        $seenResetMarkers[$marker] = true;
       }
     }
   }
@@ -484,8 +500,10 @@ function tcPrizeInventoryReplaceIfVersion(
   }
   // Pending recovery markers are server-owned and must survive an admin edit.
   $pendingById = [];
+  $pendingResetsById = [];
   foreach ($current as $item) {
     $pendingById[(string)($item['id'] ?? '')] = tcPrizeInventoryNormalizePendingAwardIds($item['pendingAwardIds'] ?? []);
+    $pendingResetsById[(string)($item['id'] ?? '')] = tcPrizeInventoryNormalizePendingResetAwardIds($item['pendingResetAwardIds'] ?? []);
   }
   $normalized = tcPrizeInventoryNormalizeRecords($records);
   $submittedById = [];
@@ -495,7 +513,8 @@ function tcPrizeInventoryReplaceIfVersion(
   foreach ($current as $currentItem) {
     $currentId = (string)($currentItem['id'] ?? '');
     $markers = tcPrizeInventoryNormalizePendingAwardIds($currentItem['pendingAwardIds'] ?? []);
-    if (!$markers) continue;
+    $resetMarkers = tcPrizeInventoryNormalizePendingResetAwardIds($currentItem['pendingResetAwardIds'] ?? []);
+    if (!$markers && !$resetMarkers) continue;
     if (!isset($submittedById[$currentId])) {
       $failureReason = 'pending_awards';
       tcPrizeInventoryEnd($path);
@@ -505,6 +524,8 @@ function tcPrizeInventoryReplaceIfVersion(
     $currentComparable = $currentItem;
     $submittedComparable['pendingAwardIds'] = [];
     $currentComparable['pendingAwardIds'] = [];
+    $submittedComparable['pendingResetAwardIds'] = [];
+    $currentComparable['pendingResetAwardIds'] = [];
     if (tcPrizeInventoryVersion([$submittedComparable]) !== tcPrizeInventoryVersion([$currentComparable])) {
       $failureReason = 'pending_awards';
       tcPrizeInventoryEnd($path);
@@ -514,6 +535,7 @@ function tcPrizeInventoryReplaceIfVersion(
   foreach ($normalized as &$item) {
     $id = (string)($item['id'] ?? '');
     $item['pendingAwardIds'] = $pendingById[$id] ?? [];
+    $item['pendingResetAwardIds'] = $pendingResetsById[$id] ?? [];
   }
   unset($item);
   $saved = tcPrizeInventoryCommit($path, $normalized, false);

@@ -220,7 +220,11 @@ function tcMonitoringBuildExcelXml(array $data, string $baseDir): array
     'usersCompletedAllStarted' => 'تکمیل‌کنندگان همه ماموریت‌های شروع‌شده',
     'prizeRemaining' => 'جوایز باقی‌مانده',
     'prizeCapacity' => 'ظرفیت کل جوایز',
-    'prizeGiven' => 'جوایز داده‌شده'
+    'prizeGiven' => 'جوایز داده‌شده',
+    'prizeValueAssignedToInvitees' => 'مجموع ارزش جوایز داده‌شده (تومان)',
+    'prizeValueRemaining' => 'مجموع ارزش جوایز داده‌نشده (تومان)',
+    'prizeValueBudget' => 'بودجه کل جوایز (تومان)',
+    'prizeValueReconciliationDifference' => 'مغایرت بودجه جوایز (تومان)'
   ];
   $summaryRows = [];
   foreach ($summaryLabels as $key => $label) {

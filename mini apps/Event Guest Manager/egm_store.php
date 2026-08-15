@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../api/lib/common.php';
+require_once __DIR__ . '/../../api/lib/egm-registry.php';
 $campaignRedirectsFile = __DIR__ . '/../../api/lib/campaign-redirects.php';
 if (is_file($campaignRedirectsFile)) {
   require_once $campaignRedirectsFile;
@@ -24,6 +26,27 @@ $settingsFile = $baseDir . DIRECTORY_SEPARATOR . 'Setting.json';
 $legacySettingsFile = $baseDir . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'store.json';
 $inviteesMappedFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'EGM Mapped.json';
+
+function egmStoreProjectRoot(): string
+{
+  return dirname(__DIR__, 2);
+}
+
+function egmStoreDatabase(): ?PDO
+{
+  static $resolved = false;
+  static $pdo = null;
+  if ($resolved) {
+    return $pdo instanceof PDO ? $pdo : null;
+  }
+  $resolved = true;
+  $config = loadConfig(egmStoreProjectRoot() . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php');
+  $pdo = connectDatabase($config);
+  if ($pdo instanceof PDO) {
+    ensureEgmRegistryTable($pdo);
+  }
+  return $pdo instanceof PDO ? $pdo : null;
+}
 
 function egmStoreCampaignLinkTarget(): string
 {
@@ -122,34 +145,37 @@ function egmStoreMissionContext(string $baseDir): array
 {
   $missionDir = realpath($baseDir);
   $missionsRoot = realpath(dirname($baseDir));
-  if (!is_string($missionDir) || !is_string($missionsRoot) || basename($missionsRoot) !== 'missions') {
+  if (!is_string($missionDir) || !is_string($missionsRoot) || basename($missionsRoot) !== 'EGMs') {
     return ['isMission' => false];
   }
   $folder = basename($missionDir);
   if ($folder === '' || $folder === 'generate') {
     return ['isMission' => false];
   }
+  $directory = 'miniapps/EGMs/' . $folder;
+  $pdo = egmStoreDatabase();
+  $registry = $pdo instanceof PDO ? findEgmRegistryByDirectory($pdo, $directory) : null;
+  if (!is_array($registry)) {
+    return ['isMission' => false];
+  }
   return [
     'isMission' => true,
+    'code' => (string)$registry['code'],
+    'name' => (string)$registry['name'],
     'folder' => $folder,
     'missionDir' => $missionDir,
     'missionsRoot' => $missionsRoot,
-    'webPath' => 'mini%20apps/missions/' . rawurlencode($folder),
-    'directory' => 'mini apps/missions/' . $folder
+    'webPath' => 'miniapps/EGMs/' . rawurlencode($folder),
+    'directory' => $directory
   ];
-}
-
-function egmStoreMissionMetadataPath(string $missionDir): string
-{
-  return rtrim($missionDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'mission.json';
 }
 
 function egmStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, string $newFolder): void
 {
-  $oldWebPath = 'mini%20apps/missions/' . rawurlencode($oldFolder);
-  $newWebPath = 'mini%20apps/missions/' . rawurlencode($newFolder);
-  $oldDirectory = 'mini apps/missions/' . $oldFolder;
-  $newDirectory = 'mini apps/missions/' . $newFolder;
+  $oldWebPath = 'miniapps/EGMs/' . rawurlencode($oldFolder);
+  $newWebPath = 'miniapps/EGMs/' . rawurlencode($newFolder);
+  $oldDirectory = 'miniapps/EGMs/' . $oldFolder;
+  $newDirectory = 'miniapps/EGMs/' . $newFolder;
   $iterator = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator($missionDir, FilesystemIterator::SKIP_DOTS),
     RecursiveIteratorIterator::SELF_FIRST
@@ -174,71 +200,17 @@ function egmStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, 
   }
 }
 
-function egmStoreSyncMissionRegistry(string $missionsRoot): void
-{
-  $clubs = [];
-  if (is_dir($missionsRoot)) {
-    foreach (new DirectoryIterator($missionsRoot) as $entry) {
-      if ($entry->isDot() || !$entry->isDir()) {
-        continue;
-      }
-      $folder = $entry->getFilename();
-      if ($folder === 'generate' || strncmp($folder, '.', 1) === 0) {
-        continue;
-      }
-      $meta = readJsonFile($entry->getPathname() . DIRECTORY_SEPARATOR . 'mission.json', []);
-      $webPath = 'mini%20apps/missions/' . rawurlencode($folder);
-      $createdAt = trim((string)($meta['createdAt'] ?? ''));
-      $clubs[] = [
-        'name' => trim((string)($meta['name'] ?? $folder)) ?: $folder,
-        'folder' => $folder,
-        'tabId' => 'event-guest-manager-mission-' . substr(hash('sha256', $folder), 0, 12),
-        'directory' => 'mini apps/missions/' . $folder,
-        'webPath' => $webPath,
-        'appUrl' => $webPath . '/EGMM.php',
-        'panelUrl' => 'panel.php?tab=' . rawurlencode('event-guest-manager-mission-' . substr(hash('sha256', $folder), 0, 12)),
-        'createdAt' => $createdAt,
-        'createdAtLabel' => $createdAt !== '' ? $createdAt : '-'
-      ];
-    }
-  }
-  usort($clubs, static function (array $left, array $right): int {
-    $leftCreated = (string)($left['createdAt'] ?? '');
-    $rightCreated = (string)($right['createdAt'] ?? '');
-    if ($leftCreated !== $rightCreated) {
-      return strcmp($rightCreated, $leftCreated);
-    }
-    return strcasecmp((string)($left['name'] ?? ''), (string)($right['name'] ?? ''));
-  });
-  $generateRoot = rtrim($missionsRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'generate';
-  if (is_dir($generateRoot)) {
-    writeJsonFile($generateRoot . DIRECTORY_SEPARATOR . 'clubs.json', [
-      'updatedAt' => gmdate('c'),
-      'clubs' => $clubs
-    ]);
-  }
-}
-
 function egmStoreSyncMissionMetadataName(string $baseDir, string $eventName): bool
 {
   $context = egmStoreMissionContext($baseDir);
   if (empty($context['isMission'])) {
     return true;
   }
-  $missionDir = (string)($context['missionDir'] ?? '');
-  if ($missionDir === '') {
+  $pdo = egmStoreDatabase();
+  $code = (string)($context['code'] ?? '');
+  $directory = (string)($context['directory'] ?? '');
+  if (!$pdo instanceof PDO || !updateEgmRegistry($pdo, $code, trim($eventName), $directory)) {
     return false;
-  }
-  $metaPath = egmStoreMissionMetadataPath($missionDir);
-  $meta = readJsonFile($metaPath, []);
-  $meta['name'] = trim($eventName);
-  $meta['updatedAt'] = gmdate('c');
-  if (!writeJsonFile($metaPath, $meta)) {
-    return false;
-  }
-  $missionsRoot = (string)($context['missionsRoot'] ?? '');
-  if ($missionsRoot !== '') {
-    egmStoreSyncMissionRegistry($missionsRoot);
   }
   return true;
 }
@@ -1365,12 +1337,12 @@ if ($action === 'save_mission_link') {
       continue;
     }
     if (strcasecmp($entry->getFilename(), $nextCode) === 0) {
-      echo json_encode(['status' => 'error', 'message' => 'This /missions link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'This Event Guest Manager link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
   }
   if (file_exists($targetDir)) {
-    echo json_encode(['status' => 'error', 'message' => 'This /missions link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'error', 'message' => 'This Event Guest Manager link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -1379,17 +1351,18 @@ if ($action === 'save_mission_link') {
     echo json_encode(['status' => 'error', 'message' => 'Failed to rename the club folder.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
-  $metaPath = egmStoreMissionMetadataPath($targetDir);
-  $meta = readJsonFile($metaPath, []);
-  $meta['folder'] = $nextCode;
-  $meta['directory'] = 'mini apps/missions/' . $nextCode;
-  $meta['webPath'] = 'mini%20apps/missions/' . rawurlencode($nextCode);
-  $meta['updatedAt'] = gmdate('c');
-  writeJsonFile($metaPath, $meta);
+  $pdo = egmStoreDatabase();
+  $uniqueCode = (string)($context['code'] ?? '');
+  $registryName = trim((string)($context['name'] ?? $nextCode)) ?: $nextCode;
+  $nextDirectory = 'miniapps/EGMs/' . $nextCode;
+  if (!$pdo instanceof PDO || !updateEgmRegistry($pdo, $uniqueCode, $registryName, $nextDirectory)) {
+    @rename($targetDir, $missionDir);
+    echo json_encode(['status' => 'error', 'message' => 'Failed to update the EGM database registry.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   egmStorePatchMissionLinkStrings($targetDir, $currentCode, $nextCode);
-  egmStoreSyncMissionRegistry($missionsRoot);
 
-  $nextWebPath = 'mini%20apps/missions/' . rawurlencode($nextCode);
+  $nextWebPath = 'miniapps/EGMs/' . rawurlencode($nextCode);
   echo json_encode([
     'status' => 'ok',
     'message' => 'Club link updated.',

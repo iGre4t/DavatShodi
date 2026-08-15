@@ -1622,7 +1622,7 @@ $canResetInvitee = !empty($tcInviteesSensitiveAccess['resetInvitee']);
 $canUseSensitiveAuth = $canRevealPassword || $canResetInvitee;
 $isRevealAction = in_array($action, ['get_password', 'save_password'], true);
 $isParticipationAction = in_array($action, ['get_participation', 'get_task_options', 'get_active_filter_preview'], true);
-$isResetAction = in_array($action, ['reset_progress', 'reset_task_progress', 'save_task_score', 'bulk_save_task_score'], true);
+$isResetAction = in_array($action, ['reset_progress', 'reset_task_progress', 'save_task_score', 'save_total_prize_won', 'bulk_save_task_score'], true);
 $isAuthAction = in_array($action, ['verify_unlock', 'check_unlock'], true);
 
 if ($isRevealAction && !$canRevealPassword) {
@@ -2002,6 +2002,49 @@ if ($action === 'reset_task_progress') {
     'status' => 'ok',
     'message' => (string)($resetResult['message'] ?? 'Task progress reset successfully.'),
     'removedScore' => (int)($resetResult['removedScore'] ?? 0),
+    'participation' => $participation
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'save_total_prize_won') {
+  $totalRaw = trim((string)($input['total_prize_won'] ?? ($input['totalPrizeWon'] ?? '')));
+  $totalRaw = str_replace([',', '٬', '،', ' '], '', $totalRaw);
+  if ($totalRaw === '' || !preg_match('/^\d+(?:\.\d+)?$/D', $totalRaw)) {
+    echo json_encode(['status' => 'error', 'message' => 'Total won prize must be a non-negative number.']);
+    exit;
+  }
+  $totalNumber = (float)$totalRaw;
+  if (!is_finite($totalNumber) || $totalNumber < 0 || $totalNumber > 999999999999999) {
+    echo json_encode(['status' => 'error', 'message' => 'Total won prize is outside the allowed range.']);
+    exit;
+  }
+  $totalIndex = inviteePasswordFindHeaderIndexByNames($header, ['total prize won', 'مجموع جوایز برنده شده']);
+  if ($totalIndex < 0) {
+    echo json_encode(['status' => 'error', 'message' => 'Total Prize Won column is not available in mapped CSV.']);
+    exit;
+  }
+  $storedTotal = rtrim(rtrim(sprintf('%.10F', $totalNumber), '0'), '.');
+  if ($storedTotal === '') $storedTotal = '0';
+  $previousTotal = trim((string)($rows[$rowIndex][$totalIndex] ?? '0'));
+  $rows[$rowIndex][$totalIndex] = $storedTotal;
+  if (!inviteePasswordWriteCsvRowsLocked($mappedFile, $rows)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save total won prize; the previous CSV was preserved.']);
+    exit;
+  }
+  $participation = inviteePasswordBuildParticipationPayload(
+    $rows,
+    $rowIndex,
+    is_array($rows[0] ?? null) ? $rows[0] : $header,
+    $mapFile,
+    $tasksFile,
+    $tasksDir
+  );
+  echo json_encode([
+    'status' => 'ok',
+    'message' => 'Total won prize updated successfully.',
+    'previousTotalPrizeWon' => $previousTotal,
+    'totalPrizeWon' => $storedTotal,
     'participation' => $participation
   ], JSON_UNESCAPED_UNICODE);
   exit;

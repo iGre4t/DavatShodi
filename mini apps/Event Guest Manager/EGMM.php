@@ -1,10 +1,34 @@
 <?php
+require_once __DIR__ . '/../../api/lib/common.php';
+require_once __DIR__ . '/../../api/lib/egm-registry.php';
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_award_log.php';
 require_once __DIR__ . '/prize_inventory_store.php';
 require_once __DIR__ . '/prize_levels_store.php';
 require_once __DIR__ . '/pot_service.php';
+
+function egmRequireRegisteredRuntime(): void
+{
+  $instancesRoot = realpath(dirname(__DIR__));
+  if (!is_string($instancesRoot) || basename($instancesRoot) !== 'EGMs') {
+    return;
+  }
+  $folder = basename(__DIR__);
+  $directory = 'miniapps/EGMs/' . $folder;
+  $projectRoot = dirname(__DIR__, 2);
+  $config = loadConfig($projectRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php');
+  $pdo = connectDatabase($config);
+  $registry = $pdo instanceof PDO ? findEgmRegistryByDirectory($pdo, $directory) : null;
+  if (!is_array($registry)) {
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Event Guest Manager not found.';
+    exit;
+  }
+}
+
+egmRequireRegisteredRuntime();
 
 function egmStartIsolatedSession(): void
 {
@@ -15,7 +39,7 @@ function egmStartIsolatedSession(): void
     (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
     || (string)($_SERVER['SERVER_PORT'] ?? '') === '443'
   );
-  session_name('TASKCLUBSESSID');
+  session_name('EGMSESSID');
   session_set_cookie_params([
     'lifetime' => 86400,
     'path' => '/',

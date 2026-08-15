@@ -11,6 +11,7 @@ require_once __DIR__ . '/tc-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_inventory_store.php';
 require_once __DIR__ . '/prize_levels_store.php';
+require_once __DIR__ . '/prize_award_reset.php';
 require_once __DIR__ . '/pot_service.php';
 $tcStoreSessionUser = requireTabPermissionFromSession('task-club', true);
 tcSecurityGetCsrfToken();
@@ -24,6 +25,7 @@ $settingsFile = $baseDir . DIRECTORY_SEPARATOR . 'Setting.json';
 $legacySettingsFile = $baseDir . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'store.json';
 $inviteesMappedFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
+$prizeAwardsFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . TC_PRIZE_AWARD_LOG_FILENAME;
 
 function tcStoreCampaignLinkTarget(): string
 {
@@ -810,6 +812,9 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $tcStoreMainActions = [
   'get_prizes',
   'save_prizes',
+  'get_prize_awards',
+  'reset_prize_award',
+  'reset_all_prize_awards',
   'get_prize_levels',
   'save_prize_levels',
   'get_reward_guide',
@@ -948,6 +953,121 @@ if ($action === 'get_prizes') {
     'data' => $prizes,
     'version' => tcPrizeInventoryVersion($prizes)
   ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'get_prize_awards') {
+  $items = [];
+  foreach (array_reverse(tcPrizeAwardLogRead($prizeAwardsFile)) as $entry) {
+    if (!is_array($entry) || !in_array((string)($entry['status'] ?? ''), ['awarded', 'reset_pending'], true)) continue;
+    $level = is_array($entry['level'] ?? null) ? $entry['level'] : [];
+    $prize = is_array($entry['prize'] ?? null) ? $entry['prize'] : [];
+    $items[] = [
+      'awardId' => (string)($entry['awardId'] ?? ''),
+      'status' => (string)($entry['status'] ?? ''),
+      'wonAt' => (string)($entry['awardedAt'] ?? $entry['selectedAt'] ?? ''),
+      'userName' => (string)($entry['userName'] ?? ''),
+      'cardNumber' => max(0, (int)($entry['cardIndex'] ?? -1)) + 1,
+      'levelName' => (string)($level['name'] ?? ''),
+      'prizeName' => (string)($prize['name'] ?? ''),
+      'prizeValue' => max(0, (float)($prize['value'] ?? 0))
+    ];
+  }
+  echo json_encode(['status' => 'ok', 'data' => $items], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'reset_prize_award') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  $awardId = trim((string)($payload['awardId'] ?? ''));
+  $resetBy = trim((string)($tcStoreSessionUser['code'] ?? $tcStoreSessionUser['username'] ?? 'panel-admin'));
+  $result = tcPrizeResetAward($prizeAwardsFile, $inviteesMappedFile, $prizesFile, $awardId, $resetBy);
+  if (!$result['ok']) http_response_code(409);
+  if ($result['ok']) {
+    tcActivityLogUserActivity([
+      'level' => 'warning',
+      'action' => 'taskclub.prize_award_reset',
+      'entity_type' => 'taskclub_prize_award',
+      'entity_id' => $awardId,
+      'status' => 'success',
+      'message' => 'Task Club prize award reset by administrator.',
+      'metadata' => ['reset_by' => $resetBy],
+      'audit' => true
+    ]);
+  }
+  echo json_encode([
+    'status' => $result['ok'] ? 'ok' : 'error',
+    'message' => $result['message']
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'reset_all_prize_awards') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(file_get_contents('php://input'), true);
+  if (!is_array($payload)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  if (($payload['confirmResetAll'] ?? null) !== true) {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => 'Explicit confirmation is required.']);
+    exit;
+  }
+  $resetBy = trim((string)($tcStoreSessionUser['code'] ?? $tcStoreSessionUser['username'] ?? 'panel-admin'));
+  $awardIds = [];
+  foreach (tcPrizeAwardLogRead($prizeAwardsFile) as $entry) {
+    if (!is_array($entry) || !in_array((string)($entry['status'] ?? ''), ['awarded', 'reset_pending'], true)) continue;
+    $awardId = trim((string)($entry['awardId'] ?? ''));
+    if ($awardId !== '') $awardIds[] = $awardId;
+  }
+  $resetCount = 0;
+  foreach ($awardIds as $awardId) {
+    $result = tcPrizeResetAward($prizeAwardsFile, $inviteesMappedFile, $prizesFile, $awardId, $resetBy);
+    if (!$result['ok']) {
+      http_response_code(409);
+      echo json_encode([
+        'status' => 'error',
+        'message' => "Reset stopped safely after {$resetCount} prize(s): " . $result['message'],
+        'resetCount' => $resetCount,
+        'remainingCount' => max(0, count($awardIds) - $resetCount)
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      exit;
+    }
+    $resetCount++;
+  }
+  tcActivityLogUserActivity([
+    'level' => 'warning',
+    'action' => 'taskclub.all_prize_awards_reset',
+    'entity_type' => 'taskclub_prize_award',
+    'entity_id' => 'all',
+    'status' => 'success',
+    'message' => 'All Task Club prize awards reset by administrator.',
+    'metadata' => ['reset_by' => $resetBy, 'reset_count' => $resetCount],
+    'audit' => true
+  ]);
+  echo json_encode([
+    'status' => 'ok',
+    'message' => $resetCount > 0 ? "{$resetCount} prize(s) reset successfully." : 'There were no active prizes to reset.',
+    'resetCount' => $resetCount
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
 

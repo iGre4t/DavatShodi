@@ -1048,6 +1048,116 @@
     });
   }
 
+  async function initPrizeAwards() {
+    const listEl = document.getElementById("tc-prize-awards-list");
+    const statusEl = document.getElementById("tc-prize-awards-status");
+    const refreshBtn = document.getElementById("tc-prize-awards-refresh");
+    const resetAllBtn = document.getElementById("tc-prize-awards-reset-all");
+    if (!listEl) return;
+    let currentItems = [];
+
+    const setStatus = (message, error = false) => {
+      if (!statusEl) return;
+      statusEl.textContent = String(message || "");
+      statusEl.style.color = error ? "#b42318" : "";
+    };
+    const render = (items) => {
+      currentItems = Array.isArray(items) ? items : [];
+      if (resetAllBtn) resetAllBtn.disabled = currentItems.length === 0;
+      if (!items.length) {
+        listEl.innerHTML = '<tr><td colspan="7" class="muted">No confirmed prize records.</td></tr>';
+        return;
+      }
+      listEl.innerHTML = items.map((item) => {
+        const pending = item.status === "reset_pending";
+        return `<tr>
+          <td>${escapeHtml(item.userName || "-")}</td>
+          <td>${escapeHtml(formatPrizeValue(item.prizeValue ?? 0))}</td>
+          <td>${escapeHtml(item.cardNumber || "-")}</td>
+          <td>${escapeHtml(item.levelName || "-")}</td>
+          <td>${escapeHtml(item.prizeName || "-")}</td>
+          <td>${escapeHtml(item.wonAt || "-")}</td>
+          <td><button type="button" class="btn tc-btn-danger" data-reset-award-id="${escapeHtml(item.awardId)}">${pending ? "Retry reset" : "Reset prize"}</button></td>
+        </tr>`;
+      }).join("");
+    };
+    const load = async () => {
+      if (refreshBtn) refreshBtn.disabled = true;
+      if (resetAllBtn) resetAllBtn.disabled = true;
+      setStatus("Loading prize records...");
+      try {
+        const response = await fetch(`${API_URL}?action=get_prize_awards`, {credentials: "same-origin"});
+        const payload = await response.json();
+        if (!response.ok || payload?.status !== "ok" || !Array.isArray(payload.data)) {
+          throw new Error(payload?.message || "Failed to load prize records.");
+        }
+        render(payload.data);
+        setStatus(`${payload.data.length} active prize record${payload.data.length === 1 ? "" : "s"}.`);
+      } catch (error) {
+        setStatus(error?.message || "Failed to load prize records.", true);
+      } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+        if (resetAllBtn) resetAllBtn.disabled = currentItems.length === 0;
+      }
+    };
+
+    refreshBtn?.addEventListener("click", load);
+    resetAllBtn?.addEventListener("click", async () => {
+      const count = currentItems.length;
+      if (count <= 0) return;
+      if (!window.confirm(`Reset all ${count} recorded prize${count === 1 ? "" : "s"}?\n\nThis removes every matching win from user CSV histories, restores the inventory items, and lets the users win those levels again. This cannot be undone.`)) return;
+      resetAllBtn.disabled = true;
+      if (refreshBtn) refreshBtn.disabled = true;
+      setStatus(`Resetting ${count} prize${count === 1 ? "" : "s"} safely...`);
+      try {
+        const response = await fetch(`${API_URL}?action=reset_all_prize_awards`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({confirmResetAll: true, csrf: csrfToken})
+        });
+        const payload = await response.json();
+        const message = payload?.message || (response.ok ? "All prizes reset successfully." : "Reset all did not finish.");
+        await load();
+        setStatus(message, !response.ok || payload?.status !== "ok");
+      } catch (error) {
+        const message = error?.message || "Reset all did not finish. Completed resets remain consistent and the action can be retried.";
+        await load();
+        setStatus(message, true);
+      } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+        if (resetAllBtn) resetAllBtn.disabled = currentItems.length === 0;
+      }
+    });
+    listEl.addEventListener("click", async (event) => {
+      const button = event.target instanceof HTMLElement ? event.target.closest("[data-reset-award-id]") : null;
+      if (!(button instanceof HTMLButtonElement)) return;
+      const row = button.closest("tr");
+      const cells = row ? Array.from(row.cells).map((cell) => cell.textContent?.trim() || "") : [];
+      const description = `${cells[0] || "This user"} - ${cells[4] || "prize"}`;
+      if (!window.confirm(`Reset ${description}?\n\nThis removes the matching win from the user's CSV history, restores one inventory item, and lets the user win that level again.`)) return;
+      button.disabled = true;
+      setStatus("Resetting prize safely...");
+      try {
+        const response = await fetch(`${API_URL}?action=reset_prize_award`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({awardId: button.dataset.resetAwardId || "", csrf: csrfToken})
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.status !== "ok") throw new Error(payload?.message || "Prize reset did not finish.");
+        await load();
+        setStatus(payload.message || "Prize reset successfully.");
+      } catch (error) {
+        const message = error?.message || "Prize reset did not finish. No unsafe CSV replacement was made.";
+        await load();
+        setStatus(message, true);
+      }
+    });
+    await load();
+  }
+
   function renderFakeItems(fakeItems, listEl) {
     if (!listEl) {
       return;
@@ -1079,10 +1189,12 @@
     document.addEventListener("DOMContentLoaded", () => {
       initPrizeForm();
       initPrizeLevels();
+      initPrizeAwards();
     });
   } else {
     initPrizeForm();
     initPrizeLevels();
+    initPrizeAwards();
   }
 })();
 

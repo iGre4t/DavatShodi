@@ -4821,6 +4821,29 @@ function clearInactiveTaskClubRuntimeTabs(activeTab) {
   });
 }
 
+function isEventGuestManagerRuntimeTab(tab) {
+  const normalized = normalizeTabToken(tab);
+  return normalized === "event-guest-manager" || normalized.startsWith("event-guest-manager-mission-");
+}
+
+function clearInactiveEventGuestManagerRuntimeTabs(activeTab) {
+  const active = normalizeTabToken(activeTab);
+  if (!isEventGuestManagerRuntimeTab(active)) {
+    return;
+  }
+  qsa('.tab[id^="tab-event-guest-manager"]').forEach((section) => {
+    if (!(section instanceof HTMLElement)) {
+      return;
+    }
+    const tabId = normalizeTabToken(String(section.id || "").replace(/^tab-/, ""));
+    if (!isEventGuestManagerRuntimeTab(tabId) || tabId === active) {
+      return;
+    }
+    section.replaceChildren();
+    delete section.dataset.tabLoaded;
+  });
+}
+
 function buildExternalTabRequestUrl(source) {
   const divider = source.includes("?") ? "&" : "?";
   return `${source}${divider}_tab_reload=${Date.now()}`;
@@ -4955,6 +4978,7 @@ async function reloadExternalTab(tab) {
     return;
   }
   clearInactiveTaskClubRuntimeTabs(tab);
+  clearInactiveEventGuestManagerRuntimeTabs(tab);
   const cacheEnabled = host.dataset.tabCache === "1";
   if (cacheEnabled && host.dataset.tabLoaded === "1") {
     runExternalTabInitializers(tab);

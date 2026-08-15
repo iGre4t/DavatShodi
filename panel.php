@@ -4,6 +4,7 @@ session_start();
 require_once __DIR__ . '/api/lib/common.php';
 require_once __DIR__ . '/api/lib/users.php';
 require_once __DIR__ . '/api/lib/tab-permissions.php';
+require_once __DIR__ . '/api/lib/egm-registry.php';
 
 const DEFAULT_PANEL_SETTINGS = [
   'title' => 'Great Panel',
@@ -133,6 +134,67 @@ function panelMissionTabs(): array {
   return $missions;
 }
 
+function panelEgmRootPath(): string {
+  return __DIR__ . '/miniapps/EGMs';
+}
+
+function panelEgmWebPath(string $folderName): string {
+  return 'miniapps/EGMs/' . rawurlencode($folderName);
+}
+
+function panelEgmTabId(string $folderName, string $code = ''): string {
+  $normalizedCode = trim($code);
+  if (preg_match('/^[0-9]{4,}$/D', $normalizedCode) === 1) {
+    return 'event-guest-manager-mission-' . $normalizedCode;
+  }
+  return 'event-guest-manager-mission-' . substr(hash('sha256', $folderName), 0, 12);
+}
+
+function panelEgmTabs(?PDO $pdo): array {
+  $root = panelEgmRootPath();
+  if (!$pdo instanceof PDO || !is_dir($root)) {
+    return [];
+  }
+  $instances = [];
+  foreach (listEgmRegistry($pdo) as $record) {
+    $directory = normalizeEgmRegistryDirectory($record['directory'] ?? '');
+    $code = normalizeEgmRegistryCode($record['code'] ?? '');
+    if ($directory === '' || $code === '') {
+      continue;
+    }
+    $folder = basename(str_replace('\\', '/', $directory));
+    $instanceDir = __DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $directory);
+    $realRoot = realpath($root);
+    $realInstance = realpath($instanceDir);
+    if (!is_string($realRoot) || !is_string($realInstance)) {
+      continue;
+    }
+    $normalizedRoot = str_replace('\\', '/', rtrim($realRoot, DIRECTORY_SEPARATOR));
+    $normalizedInstance = str_replace('\\', '/', rtrim($realInstance, DIRECTORY_SEPARATOR));
+    if (strpos($normalizedInstance, $normalizedRoot . '/') !== 0 || !is_file($instanceDir . DIRECTORY_SEPARATOR . 'EGM Panel.php')) {
+      continue;
+    }
+    $name = trim((string)($record['name'] ?? '')) ?: $folder;
+    $instances[] = [
+      'id' => panelEgmTabId($folder, $code),
+      'name' => $name,
+      'code' => $code,
+      'folder' => $folder,
+      'source' => panelEgmWebPath($folder) . '/EGM%20Panel.php',
+      'createdAt' => trim((string)($record['created_at'] ?? ''))
+    ];
+  }
+  usort($instances, static function (array $left, array $right): int {
+    $leftCreated = (string)($left['createdAt'] ?? '');
+    $rightCreated = (string)($right['createdAt'] ?? '');
+    if ($leftCreated !== $rightCreated) {
+      return strcmp($leftCreated, $rightCreated);
+    }
+    return strcasecmp((string)($left['name'] ?? ''), (string)($right['name'] ?? ''));
+  });
+  return $instances;
+}
+
 $panelSettings = loadPanelSettings();
 $panelTitle = $panelSettings['panelName'] ?? DEFAULT_PANEL_SETTINGS['panelName'];
 if (!is_string($panelTitle) || $panelTitle === '') {
@@ -179,8 +241,10 @@ $tabCatalog = getPanelTabOptionsForFrontend();
 $permissionTree = getPanelPermissionTreeForFrontend();
 $childPermissionMap = getPanelChildTabIdsByParent();
 $taskClubCreatorEnabled = in_array('task-club', $allowedTabs, true);
+$eventGuestManagerCreatorEnabled = in_array('event-guest-manager', $allowedTabs, true);
 $rateMeCreatorEnabled = in_array('rate-me', $allowedTabs, true);
 $taskClubMissionTabs = $taskClubCreatorEnabled ? panelMissionTabs() : [];
+$eventGuestManagerTabs = $eventGuestManagerCreatorEnabled ? panelEgmTabs($userPdo) : [];
 $panelTabCatalog = $tabCatalog;
 $panelAllowedTabs = array_values($allowedTabs);
 foreach ($taskClubMissionTabs as $missionTab) {
@@ -195,6 +259,18 @@ foreach ($taskClubMissionTabs as $missionTab) {
   ];
   $panelAllowedTabs[] = $missionTabId;
 }
+foreach ($eventGuestManagerTabs as $egmTab) {
+  $egmTabId = (string)($egmTab['id'] ?? '');
+  if ($egmTabId === '') {
+    continue;
+  }
+  $panelTabCatalog[] = [
+    'id' => $egmTabId,
+    'label' => (string)($egmTab['name'] ?? $egmTabId),
+    'title' => (string)($egmTab['name'] ?? $egmTabId)
+  ];
+  $panelAllowedTabs[] = $egmTabId;
+}
 if ($taskClubCreatorEnabled) {
   $panelTabCatalog[] = [
     'id' => 'task-club-creator',
@@ -202,6 +278,14 @@ if ($taskClubCreatorEnabled) {
     'title' => 'ساخت باشگاه تعاملی'
   ];
   $panelAllowedTabs[] = 'task-club-creator';
+}
+if ($eventGuestManagerCreatorEnabled) {
+  $panelTabCatalog[] = [
+    'id' => 'event-guest-manager-creator',
+    'label' => 'مدیریت EGM',
+    'title' => 'مدیریت Event Guest Manager'
+  ];
+  $panelAllowedTabs[] = 'event-guest-manager-creator';
 }
 if ($rateMeCreatorEnabled) {
   $panelTabCatalog[] = [
@@ -329,6 +413,25 @@ $accountEmail = $currentUser['email'] ?? '';
             <button class="nav-item<?= $initialTab === 'event-guest-manager' ? ' active' : '' ?>" data-tab="event-guest-manager"<?= $initialTab === 'event-guest-manager' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-user-star-line" aria-hidden="true"></span>
               <span>مدیریت رویداد</span>
+            </button>
+          <?php endif; ?>
+          <?php foreach ($eventGuestManagerTabs as $egmTab): ?>
+            <?php
+              $egmTabId = (string)($egmTab['id'] ?? '');
+              $egmTabName = (string)($egmTab['name'] ?? $egmTabId);
+              if ($egmTabId === '') {
+                continue;
+              }
+            ?>
+            <button class="nav-item<?= $initialTab === $egmTabId ? ' active' : '' ?>" data-tab="<?= htmlspecialchars($egmTabId, ENT_QUOTES, 'UTF-8') ?>"<?= $initialTab === $egmTabId ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-user-star-line" aria-hidden="true"></span>
+              <span><?= htmlspecialchars($egmTabName, ENT_QUOTES, 'UTF-8') ?></span>
+            </button>
+          <?php endforeach; ?>
+          <?php if ($eventGuestManagerCreatorEnabled): ?>
+            <button class="nav-item<?= $initialTab === 'event-guest-manager-creator' ? ' active' : '' ?>" data-tab="event-guest-manager-creator"<?= $initialTab === 'event-guest-manager-creator' ? ' aria-current="page"' : '' ?>>
+              <span class="nav-icon ri ri-add-circle-line" aria-hidden="true"></span>
+              <span>مدیریت EGM</span>
             </button>
           <?php endif; ?>
           <?php foreach ($taskClubMissionTabs as $missionTab): ?>
@@ -555,6 +658,27 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-event-guest-manager"
             class="tab<?= $initialTab === 'event-guest-manager' ? ' active' : '' ?>"
             data-tab-source="mini%20apps/Event%20Guest%20Manager/EGM%20Panel.php"
+          ></section>
+        <?php endif; ?>
+        <?php foreach ($eventGuestManagerTabs as $egmTab): ?>
+          <?php
+            $egmTabId = (string)($egmTab['id'] ?? '');
+            $egmTabSource = (string)($egmTab['source'] ?? '');
+            if ($egmTabId === '' || $egmTabSource === '') {
+              continue;
+            }
+          ?>
+          <section
+            id="tab-<?= htmlspecialchars($egmTabId, ENT_QUOTES, 'UTF-8') ?>"
+            class="tab<?= $initialTab === $egmTabId ? ' active' : '' ?>"
+            data-tab-source="<?= htmlspecialchars($egmTabSource, ENT_QUOTES, 'UTF-8') ?>"
+          ></section>
+        <?php endforeach; ?>
+        <?php if ($eventGuestManagerCreatorEnabled): ?>
+          <section
+            id="tab-event-guest-manager-creator"
+            class="tab<?= $initialTab === 'event-guest-manager-creator' ? ' active' : '' ?>"
+            data-tab-source="mini%20apps/Event%20Guest%20Manager/EGMCreator.php"
           ></section>
         <?php endif; ?>
         <?php foreach ($taskClubMissionTabs as $missionTab): ?>

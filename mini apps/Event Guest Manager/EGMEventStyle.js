@@ -120,7 +120,7 @@
   function updateMissionLinkPreview() {
     if (!(refs.missionLinkPreview instanceof HTMLElement)) return;
     const code = normalizeMissionCode(refs.missionLinkInput instanceof HTMLInputElement ? refs.missionLinkInput.value : state.missionLinkCode);
-    refs.missionLinkPreview.textContent = code ? `/missions/${code}` : '';
+    refs.missionLinkPreview.textContent = code ? `/miniapps/EGMs/${code}` : '';
   }
 
   function updateLogoPreview() {
@@ -369,7 +369,7 @@
         refs.missionLinkInput.value = state.missionLinkCode;
       }
       updateMissionLinkPreview();
-      setMissionLinkStatus(`لینک باشگاه ذخیره شد: /missions/${state.missionLinkCode}`);
+      setMissionLinkStatus(`لینک مدیریت مهمان رویداد ذخیره شد: /miniapps/EGMs/${state.missionLinkCode}`);
       if (typeof window.showDefaultToast === 'function') {
         window.showDefaultToast('لینک باشگاه ذخیره شد.');
       }
@@ -499,7 +499,7 @@
           refs.missionLinkSaveBtn.disabled = !state.missionLinkAvailable;
         }
         updateMissionLinkPreview();
-        setMissionLinkStatus(state.missionLinkAvailable ? '' : 'لینک فقط برای باشگاه‌های ساخته‌شده در /missions قابل تغییر است.');
+        setMissionLinkStatus(state.missionLinkAvailable ? '' : 'لینک فقط برای نمونه‌های ساخته‌شده در Event Guest Manager قابل تغییر است.');
       } catch (linkError) {
         state.missionLinkAvailable = false;
         if (refs.missionLinkCard instanceof HTMLElement) {

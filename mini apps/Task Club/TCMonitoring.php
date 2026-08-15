@@ -142,6 +142,10 @@ function tcMonitoringEmptyStats(array $warnings = []): array
       'prizeGiven' => 0,
       'prizeValueRemaining' => 0,
       'prizeValueGiven' => 0,
+      'prizeValueAssignedToInvitees' => 0,
+      'prizeValueBudget' => 0,
+      'prizeValueReconciliationDifference' => 0,
+      'prizeValueHasProblem' => false,
       'favoriteTask' => null
     ],
     'scoreStages' => [],
@@ -1063,6 +1067,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
   $describeTasksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo task']);
   $describePicksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo picks']);
   $outOfValueRewardsIndex = tcMonitoringFindHeaderIndex($header, ['out of value rewards']);
+  $totalPrizeWonIndex = tcMonitoringFindHeaderIndex($header, ['total prize won', 'مجموع جوایز برنده شده']);
 
   $users = [];
   for ($i = 1; $i < count($rows); $i += 1) {
@@ -1154,6 +1159,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
       'describePhotoPicksMap' => $describePhotoPicksMap,
       'completedTaskCount' => $completedTaskCount,
       'outOfValueRewardCount' => count($outOfValueRewards),
+      'totalPrizeWon' => max(0.0, tcMonitoringParseNumber(tcMonitoringCell($row, $totalPrizeWonIndex))),
       'activityScore' => $activityScore
     ];
   }
@@ -1631,16 +1637,30 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
   $prizeCapacity = 0;
   $prizeRemaining = 0;
   $prizeGiven = 0;
+  $prizeValueRemaining = 0.0;
+  $prizeValueGiven = 0.0;
+  $prizeValueBudget = 0.0;
   foreach ($prizes as $prize) {
     if (!is_array($prize)) {
       continue;
     }
     $quantity = max(0, (int)($prize['quantity'] ?? 0));
     $last = max(0, min($quantity, (int)($prize['last'] ?? 0)));
+    $value = max(0.0, (float)($prize['value'] ?? 0));
     $prizeCapacity += $quantity;
     $prizeRemaining += $last;
     $prizeGiven += max(0, $quantity - $last);
+    if (empty($prize['isFake'])) {
+      $prizeValueBudget += $quantity * $value;
+      $prizeValueRemaining += $last * $value;
+      $prizeValueGiven += max(0, $quantity - $last) * $value;
+    }
   }
+  $prizeValueAssignedToInvitees = array_sum(array_map(
+    static fn(array $user): float => max(0.0, (float)($user['totalPrizeWon'] ?? 0)),
+    $allUsers
+  ));
+  $prizeValueReconciliationDifference = $prizeValueAssignedToInvitees + $prizeValueRemaining - $prizeValueBudget;
 
   $mostActiveUsers = array_values(array_filter($users, 'is_array'));
   usort($mostActiveUsers, static function ($a, $b): int {
@@ -1722,8 +1742,12 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
       'prizeCapacity' => $prizeCapacity,
       'prizeRemaining' => $prizeRemaining,
       'prizeGiven' => $prizeGiven,
-      'prizeValueRemaining' => 0,
-      'prizeValueGiven' => 0,
+      'prizeValueRemaining' => round($prizeValueRemaining, 2),
+      'prizeValueGiven' => round($prizeValueGiven, 2),
+      'prizeValueAssignedToInvitees' => round($prizeValueAssignedToInvitees, 2),
+      'prizeValueBudget' => round($prizeValueBudget, 2),
+      'prizeValueReconciliationDifference' => round($prizeValueReconciliationDifference, 2),
+      'prizeValueHasProblem' => abs($prizeValueReconciliationDifference) > 0.005,
       'favoriteTask' => $favoriteTask
     ],
     'taskStats' => $taskStats,
@@ -2357,6 +2381,7 @@ function tcMonitoringBuildStats(string $baseDir): array
   $prizeGiven = 0;
   $prizeValueRemaining = 0.0;
   $prizeValueGiven = 0.0;
+  $prizeValueBudget = 0.0;
   foreach ($prizes as $prize) {
     $quantity = max(0, (int)($prize['quantity'] ?? 0));
     $last = max(0, min($quantity, (int)($prize['last'] ?? 0)));
@@ -2365,9 +2390,17 @@ function tcMonitoringBuildStats(string $baseDir): array
     $prizeCapacity += $quantity;
     $prizeRemaining += $last;
     $prizeGiven += $given;
-    $prizeValueRemaining += ($last * $value);
-    $prizeValueGiven += ($given * $value);
+    if (empty($prize['isFake'])) {
+      $prizeValueBudget += ($quantity * $value);
+      $prizeValueRemaining += ($last * $value);
+      $prizeValueGiven += ($given * $value);
+    }
   }
+  $prizeValueAssignedToInvitees = array_sum(array_map(
+    static fn(array $user): float => max(0.0, (float)($user['totalPrizeWon'] ?? 0)),
+    $allUsers
+  ));
+  $prizeValueReconciliationDifference = $prizeValueAssignedToInvitees + $prizeValueRemaining - $prizeValueBudget;
 
   $mostActiveUsers = $users;
   usort($mostActiveUsers, static function (array $a, array $b): int {
@@ -2424,6 +2457,10 @@ function tcMonitoringBuildStats(string $baseDir): array
       'prizeGiven' => $prizeGiven,
       'prizeValueRemaining' => round($prizeValueRemaining, 2),
       'prizeValueGiven' => round($prizeValueGiven, 2),
+      'prizeValueAssignedToInvitees' => round($prizeValueAssignedToInvitees, 2),
+      'prizeValueBudget' => round($prizeValueBudget, 2),
+      'prizeValueReconciliationDifference' => round($prizeValueReconciliationDifference, 2),
+      'prizeValueHasProblem' => abs($prizeValueReconciliationDifference) > 0.005,
       'favoriteTask' => $favoriteTask
     ],
     'scoreStages' => $scoreStages,

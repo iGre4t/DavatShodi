@@ -3909,9 +3909,52 @@
     });
   }
 
+  function setupInviteePrizeTotalsExport() {
+    const openButton = document.getElementById('tc-invitee-prize-totals-open');
+    const modal = document.getElementById('tc-invitee-prize-totals-modal');
+    const status = document.getElementById('tc-invitee-prize-totals-status');
+    if (!(openButton instanceof HTMLButtonElement) || !(modal instanceof HTMLElement)) return;
+
+    const setBusy = (busy) => {
+      modal.querySelectorAll('button').forEach((button) => { button.disabled = busy; });
+    };
+    const close = () => modal.classList.add('hidden');
+    modal.addEventListener('click', (event) => {
+      const target = event.target;
+      if (target === modal || (target instanceof Element && target.closest('[data-tc-prize-totals-close]'))) close();
+    });
+    modal.querySelectorAll('[data-tc-prize-totals-form]').forEach((form) => {
+      form.addEventListener('submit', () => window.setTimeout(close, 100));
+    });
+    openButton.addEventListener('click', async () => {
+      modal.classList.remove('hidden');
+      if (status instanceof HTMLElement) status.textContent = 'در حال بررسی ایمن فایل دعوت‌شدگان...';
+      setBusy(true);
+      try {
+        const body = new FormData();
+        body.append('action', 'prepare');
+        body.append('csrf', TASK_CLUB_CSRF);
+        const response = await fetch('mini%20apps/Task%20Club/invitees_prize_totals_export.php', {
+          method: 'POST', credentials: 'same-origin', body
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.status !== 'ok') throw new Error(payload?.message || 'آماده‌سازی خروجی ناموفق بود.');
+        if (status instanceof HTMLElement) status.textContent = payload.columnAdded
+          ? 'ستون دریافت جایزه با موفقیت و بدون حذف هیچ ردیفی اضافه شد.'
+          : 'فایل آماده است؛ نوع خروجی را انتخاب کنید.';
+        setBusy(false);
+      } catch (error) {
+        if (status instanceof HTMLElement) status.textContent = error?.message || 'آماده‌سازی خروجی ناموفق بود.';
+        const closeButton = modal.querySelector('[data-tc-prize-totals-close]');
+        if (closeButton instanceof HTMLButtonElement) closeButton.disabled = false;
+      }
+    });
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initWheelSubLayouts);
+    document.addEventListener('DOMContentLoaded', () => { initWheelSubLayouts(); setupInviteePrizeTotalsExport(); });
   } else {
     initWheelSubLayouts();
+    setupInviteePrizeTotalsExport();
   }
 })();

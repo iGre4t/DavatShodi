@@ -1412,6 +1412,15 @@ if ($rows) {
             </div>
           `).join('')}
         </div>
+        ${canResetInviteeTasks ? `
+          <div class="field tc-participation-prize-total-edit">
+            <span>Total Won Prize</span>
+            <div class="tc-participation-score-edit">
+              <input type="number" min="0" step="any" inputmode="decimal" value="${escapeHtml(String(summary.totalPrizeWon || '0'))}" data-total-prize-won-input aria-label="Total won prize" />
+              <button type="button" class="btn primary" data-action="save-total-prize-won">Save</button>
+            </div>
+          </div>
+        ` : ''}
         <div class="tc-participation-meta-grid">
           ${extraRows.map(([label, value]) => `
             <div class="tc-participation-meta-row">
@@ -1593,6 +1602,44 @@ if ($rows) {
     }
   };
 
+  const saveTotalPrizeWon = async () => {
+    if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
+      setParticipationMsg('Invalid invitee row.', true);
+      return;
+    }
+    const input = participationSummaryEl?.querySelector('[data-total-prize-won-input]');
+    const button = participationSummaryEl?.querySelector('[data-action="save-total-prize-won"]');
+    const rawValue = input instanceof HTMLInputElement ? String(input.value || '').trim() : '';
+    if (rawValue === '' || !/^\d+(?:\.\d+)?$/.test(rawValue)) {
+      setParticipationMsg('Total won prize must be a non-negative number.', true);
+      return;
+    }
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    setParticipationMsg('Saving total won prize...');
+    try {
+      const response = await postRevealAction('save_total_prize_won', {
+        row: participationContext.row,
+        total_prize_won: rawValue
+      });
+      if (response.ok) {
+        pendingSensitiveAction = '';
+        if (response.data?.participation) renderParticipationStats(response.data.participation);
+        else await loadParticipationStats();
+        setParticipationMsg(response.message || 'Total won prize updated successfully.');
+      } else if (response.status === 'auth_required') {
+        pendingSensitiveAction = 'save_total_prize_won';
+        setParticipationMsg('Authorization required. Please verify your panel password.', true);
+        openAuthModal();
+      } else {
+        setParticipationMsg(response.message || 'Failed to save total won prize.', true);
+      }
+    } catch {
+      setParticipationMsg('Failed to save total won prize.', true);
+    } finally {
+      if (button instanceof HTMLButtonElement && button.isConnected) button.disabled = false;
+    }
+  };
+
   const requestRevealPassword = async () => {
     if (!revealPasswordContext || !Number.isFinite(revealPasswordContext.row) || revealPasswordContext.row <= 1) {
       setPasswordMsg('Invalid invitee row.', true);
@@ -1736,6 +1783,13 @@ if ($rows) {
       };
       pendingSensitiveAction = 'save_task_score';
       void saveTaskScore();
+      return;
+    }
+
+    const savePrizeTotalTrigger = target.closest('[data-action="save-total-prize-won"]');
+    if (savePrizeTotalTrigger instanceof HTMLButtonElement) {
+      pendingSensitiveAction = 'save_total_prize_won';
+      void saveTotalPrizeWon();
       return;
     }
 
@@ -1888,6 +1942,8 @@ if ($rows) {
           await requestResetAccess();
         } else if (nextAction === 'save_task_score' && scoreEditContext) {
           await saveTaskScore();
+        } else if (nextAction === 'save_total_prize_won' && participationContext) {
+          await saveTotalPrizeWon();
         } else if (nextAction === 'bulk_save_task_score' && bulkActionContext) {
           await applyBulkMissionScore();
         }

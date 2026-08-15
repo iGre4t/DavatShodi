@@ -479,6 +479,42 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
             rel="noopener"
           >خروجی برندگان جوایز ارزشمند</a>
         </div>
+        <div class="field">
+          <button
+            type="button"
+            class="btn primary standard-primary-button"
+            id="tc-invitee-prize-totals-open"
+          >خروجی مجموع جوایز دعوت‌شدگان</button>
+        </div>
+        <div id="tc-invitee-prize-totals-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tc-invitee-prize-totals-title">
+          <div class="modal-card default-modal-card">
+            <div class="modal-card-header">
+              <h3 id="tc-invitee-prize-totals-title">خروجی مجموع جوایز دعوت‌شدگان</h3>
+              <button type="button" class="btn ghost" data-tc-prize-totals-close>بستن</button>
+            </div>
+            <p class="muted" id="tc-invitee-prize-totals-status" aria-live="polite"></p>
+            <div class="modal-actions">
+              <form method="post" action="mini%20apps/Task%20Club/invitees_prize_totals_export.php" target="_blank" data-tc-prize-totals-form>
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($tcPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>" />
+                <input type="hidden" name="action" value="remaining" />
+                <button type="submit" class="btn primary standard-primary-button">خروجی باقی مانده ها و اضافه کردن به لیست دریافت کرده</button>
+              </form>
+              <form method="post" action="mini%20apps/Task%20Club/invitees_prize_totals_export.php" target="_blank" data-tc-prize-totals-form>
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($tcPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>" />
+                <input type="hidden" name="action" value="all" />
+                <button type="submit" class="btn ghost">خروجی همه برندگان</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <a
+            class="btn primary standard-primary-button"
+            href="mini%20apps/Task%20Club/prize_winners_log.php"
+            target="_blank"
+            rel="noopener"
+          >Prize card winners log</a>
+        </div>
         <?php
           $tcPrizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
           $tcPrizeLevels = [];
@@ -808,6 +844,25 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
                   </tr>
                 </thead>
                 <tbody id="tc-prize-list"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
+              <h3>Won prize records</h3>
+              <div class="tc-action-bar">
+                <button type="button" class="btn ghost" id="tc-prize-awards-refresh">Refresh</button>
+                <button type="button" class="btn tc-btn-danger" id="tc-prize-awards-reset-all">Reset all prizes</button>
+              </div>
+            </div>
+            <p class="muted small" id="tc-prize-awards-status" aria-live="polite"></p>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>User</th><th>Prize value</th><th>Card</th><th>Level</th><th>Prize</th><th>Won at</th><th>Action</th></tr>
+                </thead>
+                <tbody id="tc-prize-awards-list"><tr><td colspan="7" class="muted">Loading prize records...</td></tr></tbody>
               </table>
             </div>
           </div>
