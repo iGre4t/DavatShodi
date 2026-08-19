@@ -36,6 +36,25 @@ foreach ($periodManagers as $path) {
     );
 }
 
+$egmPanels = [
+    $root . '/mini apps/Event Guest Manager/EGM Panel.php',
+    $root . '/mini apps/EGMs/EGM/EGM Panel.php',
+];
+foreach ($egmPanels as $path) {
+    $source = file_get_contents($path);
+    egmPeriodAssert(is_string($source), "Could not read {$path}");
+    egmPeriodAssert(
+        str_contains($source, 'egmInstanceRegistryForDirectory($egmPanelRuntimeContext[\'pdo\'], __DIR__)')
+            && str_contains($source, 'htmlspecialchars($egmPanelInstanceName')
+            && str_contains($source, 'htmlspecialchars($egmPanelInstanceCode'),
+        "The EGM panel header does not use its database registry identity in {$path}"
+    );
+    egmPeriodAssert(
+        !str_contains($source, '<div class="sub-header">EGM Develop <span class="muted" dir="ltr">(00000)</span></div>'),
+        "The EGM panel header is still hardcoded to the development instance in {$path}"
+    );
+}
+
 $periodFrontends = [
     $root . '/mini apps/Event Guest Manager/egm-panel-local.js',
     $root . '/mini apps/EGMs/EGM/egm-panel-local.js',

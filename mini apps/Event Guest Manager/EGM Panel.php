@@ -102,6 +102,17 @@ foreach ([
   }
 }
 $egmPanelCsrfToken = egmSecurityGetCsrfToken();
+$egmPanelRuntimeContext = egmDatabaseRuntimeContextForPath(__DIR__ . '/Setting.json');
+$egmPanelRegistry = is_array($egmPanelRuntimeContext) && ($egmPanelRuntimeContext['pdo'] ?? null) instanceof PDO
+  ? egmInstanceRegistryForDirectory($egmPanelRuntimeContext['pdo'], __DIR__)
+  : null;
+$egmPanelInstanceCode = normalizeEgmInstanceCode(
+  $egmPanelRegistry['code'] ?? ($egmPanelRuntimeContext['code'] ?? '')
+);
+$egmPanelInstanceName = trim((string)($egmPanelRegistry['name'] ?? ''));
+if ($egmPanelInstanceName === '') {
+  $egmPanelInstanceName = $egmPanelInstanceCode === '00000' ? 'EGM Develop' : 'EGM';
+}
 
 $egmPanelCssVer = (string)(@egmDbFilemtime(__DIR__ . '/egm-panel.css') ?: time());
 $egmPanelLocalJsVer = (string)(@egmDbFilemtime(__DIR__ . '/egm-panel-local.js') ?: time());
@@ -121,7 +132,7 @@ $egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-invi
 <div class="egm-shell" data-egm-csrf="<?= htmlspecialchars($egmPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
 <div class="sub-layout" data-egm-sub-layout>
   <aside class="sub-sidebar">
-    <div class="sub-header">EGM Develop <span class="muted" dir="ltr">(00000)</span></div>
+    <div class="sub-header"><?= htmlspecialchars($egmPanelInstanceName, ENT_QUOTES, 'UTF-8') ?> <span class="muted" dir="ltr">(<?= htmlspecialchars($egmPanelInstanceCode, ENT_QUOTES, 'UTF-8') ?>)</span></div>
     <div class="sub-nav">
       <?php if ($egmCanControlPanel): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-main' ? ' active' : '' ?>" data-pane="egm-main">کنترل پنل</button>
