@@ -2104,7 +2104,6 @@ function egmInstanceScanRuntimeFiles(string $missionDir, bool $withHashes = true
         'EGM Event',
         'tasks',
         'data' . DIRECTORY_SEPARATOR . 'pots',
-        'InviteCards',
         'useractivitylogs' . DIRECTORY_SEPARATOR . 'logs',
     ] as $relativeDirectory) {
         $directory = $missionDir . DIRECTORY_SEPARATOR . $relativeDirectory;
@@ -2216,6 +2215,14 @@ SQL);
             unset($existing[$relativePath]);
         }
         foreach ($existing as $row) {
+            $existingPath = egmInstanceNormalizeRuntimeRelativePath((string)($row['file_path'] ?? ''));
+            // Invite Card images are now filesystem assets. Keep a legacy blob
+            // only until the public route or regeneration restores its JPG;
+            // neither the runtime scan nor a general sync should discard it
+            // before that safe one-time migration has happened.
+            if (str_starts_with(strtolower($existingPath), 'invitecards/')) {
+                continue;
+            }
             $deleteChunks->execute([':file_path' => (string)$row['file_path']]);
             $delete->execute([':data_key' => (string)$row['data_key']]);
             $deleted += $delete->rowCount();

@@ -113,3 +113,33 @@ function egmInviteCardFindRoute(PDO $pdo, string $inviteCode): ?array
     $row = $statement->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;
 }
+
+/**
+ * Returns the managed InviteCards path when a stored card URL points to the
+ * database-backed asset endpoint for this exact EGM and invite code.
+ */
+function egmInviteCardDatabaseAssetRelative(
+    string $storedPath,
+    string $registryDirectory,
+    string $inviteCode
+): string {
+    $storedPath = trim(str_replace('\\', '/', $storedPath));
+    $registryDirectory = trim(str_replace('\\', '/', $registryDirectory), '/');
+    if ($storedPath === '' || $registryDirectory === '' || preg_match('/^[A-Za-z0-9]{8,191}$/D', $inviteCode) !== 1) {
+        return '';
+    }
+
+    $parts = parse_url('/' . ltrim($storedPath, '/'));
+    if (!is_array($parts) || isset($parts['host'], $parts['fragment'])) {
+        return '';
+    }
+    $scriptPath = trim(rawurldecode((string)($parts['path'] ?? '')), '/');
+    if (!hash_equals($registryDirectory . '/egm_asset.php', $scriptPath)) {
+        return '';
+    }
+    $query = [];
+    parse_str((string)($parts['query'] ?? ''), $query);
+    $assetRelative = trim(str_replace('\\', '/', (string)($query['path'] ?? '')), '/');
+    $expected = 'InviteCards/' . $inviteCode . '.jpg';
+    return hash_equals($expected, $assetRelative) ? $expected : '';
+}

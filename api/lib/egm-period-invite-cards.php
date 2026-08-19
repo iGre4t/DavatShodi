@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/egm-period-invites.php';
 require_once __DIR__ . '/egm-invite-card-routes.php';
 require_once __DIR__ . '/egm-invite-card-store.php';
+require_once __DIR__ . '/egm-database-runtime.php';
 
 const EGM_PERIOD_INVITE_CARD_BACKGROUNDS_KEY = 'invite_card_period_backgrounds';
 
@@ -435,13 +436,14 @@ function egmPeriodInviteCardsStoreUpload(array $context, string $periodCode, str
         throw new RuntimeException('انتقال فایل کارت دعوت ناموفق بود.');
     }
     egmPeriodInviteCardsReplaceGeneratedFile($staging, $destination);
-    $generatedCard = file_get_contents($destination);
-    if (!is_string($generatedCard) || $generatedCard === '' || !egmDatabaseRuntimeWrite($destination, $generatedCard)) {
-        throw new RuntimeException('Failed to store the invite card in the database.');
+    if (!is_file($destination) || (int)filesize($destination) < 1) {
+        throw new RuntimeException('Failed to store the invite card file.');
     }
-    @unlink($destination);
+    // Invite-card images intentionally live on disk. Remove a legacy database
+    // blob for the same path after the physical replacement succeeds.
+    egmDatabaseRuntimeDelete($destination);
     $webPath = trim(str_replace('\\', '/', (string)$context['registry']['directory']), '/')
-        . '/egm_asset.php?path=' . rawurlencode('InviteCards/' . $inviteCode . '.jpg');
+        . '/InviteCards/' . $inviteCode . '.jpg';
     $update = $context['pdo']->prepare(
         "UPDATE `{$periodsTable}` SET `invite_card_file` = :file, `invite_card_generated_at` = CURRENT_TIMESTAMP "
         . "WHERE `id` = :id"

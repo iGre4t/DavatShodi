@@ -21,7 +21,7 @@ function migrateEgmShouldUpdate(string $relative, bool $directory): bool
 {
     if ($relative === '') return true;
     if (in_array($relative, ['EGMCreator.php', 'panel.php', 'mission.json', 'Setting.json'], true)) return false;
-    foreach (['tasks', 'EGM Event', 'InviteCards', 'useractivitylogs/logs'] as $dataPath) {
+    foreach (['tasks', 'EGM Event', 'useractivitylogs/logs'] as $dataPath) {
         if ($relative === $dataPath || str_starts_with($relative, $dataPath . '/')) return false;
     }
     if (!$directory && preg_match('/\.json$/i', $relative)) return false;
@@ -128,7 +128,7 @@ function migrateEgmDeleteRuntimeFiles(string $missionDir): int
         if (!unlink($file['path'])) throw new RuntimeException('Unable to remove migrated runtime file ' . $relative);
         $deleted++;
     }
-    foreach (['EGM Event', 'tasks', 'data/pots', 'InviteCards', 'useractivitylogs/logs'] as $relativeDir) {
+    foreach (['EGM Event', 'tasks', 'data/pots', 'useractivitylogs/logs'] as $relativeDir) {
         $directory = $missionDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativeDir);
         if (!is_dir($directory)) continue;
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS));
@@ -190,21 +190,6 @@ foreach ($registries as $registry) {
     egmInstanceWriteData($pdo, $code, 'storage_mode', ['mode' => 'database_only', 'version' => 1, 'migratedAt' => gmdate('c')]);
     $report[$code]['files_removed'] = migrateEgmDeleteRuntimeFiles($missionDir);
 
-    $prefix = trim($directory, '/') . '/InviteCards/';
-    $replacement = trim($directory, '/') . '/egm_asset.php?path=InviteCards%2F';
-    $tables = ensureEgmInstanceTables($pdo, $code);
-    $updatePeriods = $pdo->prepare(
-        "UPDATE `{$tables['user_periods']}` SET `invite_card_file`=CONCAT(:replacement,SUBSTRING(`invite_card_file`,:position)) "
-        . "WHERE `invite_card_file` LIKE :pattern"
-    );
-    $updatePeriods->execute([':replacement' => $replacement, ':position' => strlen($prefix) + 1, ':pattern' => $prefix . '%']);
-    if (egmInstanceTableExists($pdo, 'egm_invite_card_routes')) {
-        $updateRoutes = $pdo->prepare(
-            "UPDATE `egm_invite_card_routes` SET `image_web_path`=CONCAT(:replacement,SUBSTRING(`image_web_path`,:position)) "
-            . "WHERE `egm_code`=:code AND `image_web_path` LIKE :pattern"
-        );
-        $updateRoutes->execute([':replacement' => $replacement, ':position' => strlen($prefix) + 1, ':code' => $code, ':pattern' => $prefix . '%']);
-    }
 }
 
 echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), PHP_EOL;

@@ -690,12 +690,17 @@ function egmDatabaseRuntimeDelete(string $path): bool
     $ownsTransaction = !$pdo->inTransaction();
     if ($ownsTransaction) $pdo->beginTransaction();
     try {
-        $pdo->prepare("DELETE FROM `{$table}` WHERE `storage_kind`='runtime_chunk' AND `file_path`=:path")->execute([':path' => $context['relative']]);
+        $deleteChunks = $pdo->prepare("DELETE FROM `{$table}` WHERE `storage_kind`='runtime_chunk' AND `file_path`=:path");
+        $deleteChunks->execute([':path' => $context['relative']]);
+        $deletedChunks = $deleteChunks->rowCount();
         $delete = $pdo->prepare("DELETE FROM `{$table}` WHERE `data_key`=:key AND `storage_kind`='runtime_file'");
         $delete->execute([':key' => egmInstanceRuntimeFileDataKey($context['relative'])]);
-        egmDatabaseRuntimeRefreshManifest($context);
+        $deletedFile = $delete->rowCount();
+        if ($deletedFile > 0 || $deletedChunks > 0) {
+            egmDatabaseRuntimeRefreshManifest($context);
+        }
         if ($ownsTransaction) $pdo->commit();
-        return $delete->rowCount() > 0;
+        return $deletedFile > 0;
     } catch (Throwable $error) {
         if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
         throw $error;

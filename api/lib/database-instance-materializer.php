@@ -155,8 +155,9 @@ function databaseInstanceMaterializerRefreshEgmPanelCode(string $source, string 
 
 /**
  * Rebuilds missing generated code shells after a full database import. No
- * event data is written to disk; settings, periods, users, responses, logs,
- * cards and assets continue to be served from their per-instance DB tables.
+ * event records are written to disk; settings, periods, users, responses and
+ * logs continue to be served from their per-instance DB tables. Generated
+ * Invite Card JPG files are the intentional filesystem exception.
  *
  * @return list<array{kind:string,code:string,directory:string,files:int}>
  */

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/api/lib/common.php';
 require_once dirname(__DIR__) . '/api/lib/egm-invite-card-routes.php';
+require_once dirname(__DIR__) . '/api/lib/egm-database-runtime.php';
 
 function invitedNotFound(): never
 {
@@ -53,25 +54,97 @@ try {
         ':invite_code' => $inviteCode,
     ]);
     $storedPath = trim(str_replace('\\', '/', (string)$statement->fetchColumn()), '/');
-    $expectedPath = trim(str_replace('\\', '/', (string)$registry['directory']), '/')
-        . '/InviteCards/' . $inviteCode . '.jpg';
-    if ($storedPath === '' || !hash_equals($expectedPath, $storedPath)) {
+    $registryDirectory = trim(str_replace('\\', '/', (string)$registry['directory']), '/');
+    if ($storedPath === '' || $registryDirectory === '') {
+        invitedNotFound();
+    }
+    $scriptName = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/Invited/index.php'));
+    $projectBase = rtrim(dirname(dirname($scriptName)), '/');
+
+    $databaseAsset = egmInviteCardDatabaseAssetRelative(
+        $storedPath,
+        $registryDirectory,
+        $inviteCode
+    );
+    if ($databaseAsset !== '') {
+        // One-time repair for cards created by the short-lived DB-blob
+        // implementation: restore the JPG to disk, update the stored paths,
+        // then remove the blob. The public invite code never changes.
+        $expectedPath = $registryDirectory . '/' . $databaseAsset;
+        $destination = $projectRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $expectedPath);
+        $destinationDirectory = dirname($destination);
+        if (!is_dir($destinationDirectory)
+            && !mkdir($destinationDirectory, 0775, true)
+            && !is_dir($destinationDirectory)) {
+            invitedNotFound();
+        }
+        if (!is_file($destination)) {
+            $asset = egmDatabaseRuntimeRead($destination);
+            $content = is_array($asset) ? ($asset['content'] ?? null) : null;
+            $imageInfo = is_string($content) && $content !== '' ? @getimagesizefromstring($content) : false;
+            if (!is_string($content) || !is_array($imageInfo)
+                || strtolower((string)($imageInfo['mime'] ?? '')) !== 'image/jpeg') {
+                invitedNotFound();
+            }
+            $staging = $destination . '.restore-' . bin2hex(random_bytes(6));
+            $written = file_put_contents($staging, $content, LOCK_EX);
+            $published = $written === strlen($content) && @rename($staging, $destination);
+            if (!$published && !is_file($destination)) {
+                @unlink($staging);
+                invitedNotFound();
+            }
+            if (!$published) @unlink($staging);
+            @chmod($destination, 0644);
+        }
+        if (!is_file($destination) || (int)filesize($destination) < 1) {
+            invitedNotFound();
+        }
+        $updatePath = $pdo->prepare(
+            "UPDATE `{$periodsTable}` SET `invite_card_file` = :file WHERE `user_id` = :user_id "
+            . "AND `period_code` = :period_code AND `invite_card_code` = :invite_code"
+        );
+        $updatePath->execute([
+            ':file' => $expectedPath,
+            ':user_id' => (int)($route['user_id'] ?? 0),
+            ':period_code' => $periodCode,
+            ':invite_code' => $inviteCode,
+        ]);
+        egmInviteCardUpsertRoute(
+            $pdo,
+            $inviteCode,
+            $egmCode,
+            $periodCode,
+            (int)($route['user_id'] ?? 0),
+            $expectedPath,
+            'generated'
+        );
+        try {
+            egmDatabaseRuntimeDelete($destination);
+        } catch (Throwable $cleanupError) {
+            error_log('Invite card DB cleanup failed: ' . $cleanupError->getMessage());
+        }
+        $storedPath = $expectedPath;
+    }
+
+    // Preserve compatibility with pre-database cards that still exist as
+    // physical files in an instance's InviteCards directory.
+    $expectedPath = $registryDirectory . '/InviteCards/' . $inviteCode . '.jpg';
+    if (!hash_equals($expectedPath, $storedPath)) {
         invitedNotFound();
     }
     $absolute = realpath($projectRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $storedPath));
     $expectedDirectory = realpath($projectRoot . DIRECTORY_SEPARATOR
-        . str_replace('/', DIRECTORY_SEPARATOR, trim((string)$registry['directory'], '/'))
+        . str_replace('/', DIRECTORY_SEPARATOR, $registryDirectory)
         . DIRECTORY_SEPARATOR . 'InviteCards');
     if (!is_string($absolute) || !is_string($expectedDirectory) || !is_file($absolute)
         || !str_starts_with(strtolower($absolute), strtolower($expectedDirectory . DIRECTORY_SEPARATOR))) {
         invitedNotFound();
     }
-    $scriptName = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/Invited/index.php'));
-    $projectBase = rtrim(dirname(dirname($scriptName)), '/');
     $encodedPath = implode('/', array_map('rawurlencode', explode('/', $storedPath)));
+    $assetVersion = max(1, (int)filemtime($absolute));
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
-    header('Location: ' . ($projectBase === '' ? '' : $projectBase) . '/' . $encodedPath, true, 302);
+    header('Location: ' . ($projectBase === '' ? '' : $projectBase) . '/' . $encodedPath . '?v=' . $assetVersion, true, 302);
     exit;
 } catch (Throwable $error) {
     error_log('Invite card route failed: ' . $error->getMessage());
