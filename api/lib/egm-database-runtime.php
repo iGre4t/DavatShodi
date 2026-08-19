@@ -19,6 +19,15 @@ function &egmDatabaseRuntimeContextCache(): array
     return $cache;
 }
 
+function egmDatabaseRuntimeLockName(string $scope, string $identity): string
+{
+    $prefix = strtolower((string)(preg_replace('/[^a-z0-9_-]+/i', '', $scope) ?? ''));
+    $prefix = substr(trim($prefix, '-_'), 0, 12);
+    if ($prefix === '') $prefix = 'egm';
+    $digestLength = max(1, 64 - strlen($prefix) - 1);
+    return $prefix . '-' . substr(hash('sha256', $identity), 0, $digestLength);
+}
+
 function egmDatabaseRuntimeNormalizeAbsolute(string $path): string
 {
     if ($path === '' || str_contains($path, "\0") || preg_match('/^[a-z][a-z0-9+.-]*:\/\//i', $path)) {
@@ -899,7 +908,10 @@ function egmDbFopen(string $filename, string $mode, bool $useIncludePath = false
     $registry[$token] = $lockContext !== null
         ? [
             'lockPdo' => $lockContext['pdo'],
-            'lockName' => 'egm-file-' . hash('sha256', $lockContext['code'] . '|' . $lockContext['relative']),
+            'lockName' => egmDatabaseRuntimeLockName(
+                'egm-file',
+                $lockContext['code'] . '|' . $lockContext['relative']
+            ),
         ]
         : ['path' => $filename];
     return fopen('egmdb://' . $token, $mode);

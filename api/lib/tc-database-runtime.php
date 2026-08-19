@@ -19,6 +19,15 @@ function &tcDatabaseRuntimeContextCache(): array
     return $cache;
 }
 
+function tcDatabaseRuntimeLockName(string $scope, string $identity): string
+{
+    $prefix = strtolower((string)(preg_replace('/[^a-z0-9_-]+/i', '', $scope) ?? ''));
+    $prefix = substr(trim($prefix, '-_'), 0, 12);
+    if ($prefix === '') $prefix = 'tc';
+    $digestLength = max(1, 64 - strlen($prefix) - 1);
+    return $prefix . '-' . substr(hash('sha256', $identity), 0, $digestLength);
+}
+
 function tcDatabaseRuntimeNormalizeAbsolute(string $path): string
 {
     if ($path === '' || str_contains($path, "\0") || preg_match('/^[a-z][a-z0-9+.-]*:\/\//i', $path)) {
@@ -1002,7 +1011,10 @@ function tcDbFopen(string $filename, string $mode, bool $useIncludePath = false,
     $registry[$token] = $lockContext !== null
         ? [
             'lockPdo' => $lockContext['pdo'],
-            'lockName' => 'tc-file-' . hash('sha256', $lockContext['code'] . '|' . $lockContext['relative']),
+            'lockName' => tcDatabaseRuntimeLockName(
+                'tc-file',
+                $lockContext['code'] . '|' . $lockContext['relative']
+            ),
         ]
         : ['path' => $filename];
     return fopen('tcdb://' . $token, $mode);

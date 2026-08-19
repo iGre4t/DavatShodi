@@ -54,7 +54,10 @@ function tcInviteesCsvBeginTransaction(string $path): bool
   }
   $databaseContext = tcDatabaseRuntimeContextForPath($path);
   if (is_array($databaseContext)) {
-    $lockName = 'tc-invitees-' . hash('sha256', $databaseContext['code'] . '|' . $databaseContext['relative']);
+    $lockName = tcDatabaseRuntimeLockName(
+      'tc-invitees',
+      $databaseContext['code'] . '|' . $databaseContext['relative']
+    );
     $statement = $databaseContext['pdo']->prepare('SELECT GET_LOCK(:name, 10)');
     $statement->execute([':name' => $lockName]);
     if ((int)$statement->fetchColumn() !== 1) {

@@ -54,7 +54,10 @@ function egmInviteesCsvBeginTransaction(string $path): bool
   }
   $databaseContext = egmDatabaseRuntimeContextForPath($path);
   if (is_array($databaseContext)) {
-    $lockName = 'egm-invitees-' . hash('sha256', $databaseContext['code'] . '|' . $databaseContext['relative']);
+    $lockName = egmDatabaseRuntimeLockName(
+      'egm-invitees',
+      $databaseContext['code'] . '|' . $databaseContext['relative']
+    );
     $statement = $databaseContext['pdo']->prepare('SELECT GET_LOCK(:name, 10)');
     $statement->execute([':name' => $lockName]);
     if ((int)$statement->fetchColumn() !== 1) {
