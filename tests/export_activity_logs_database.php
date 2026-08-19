@@ -19,6 +19,12 @@ if (!is_dir($targetDirectory)) {
     fwrite(STDERR, "Target directory does not exist: {$targetDirectory}\n");
     exit(1);
 }
+$tables = array_values(array_filter(array_map('trim', array_slice($argv, 2)), static fn(string $table): bool => $table !== ''));
+foreach ($tables as $table) {
+    if (preg_match('/^[a-zA-Z0-9_]+$/D', $table) !== 1) {
+        throw new InvalidArgumentException('Unsafe table name: ' . $table);
+    }
+}
 
 $config = activityLogDatabaseConfig(loadConfig(dirname(__DIR__) . '/api/config.php'));
 $database = sanitizeDatabaseIdentifier((string)($config['dbname'] ?? ''), 'MCI_logs');
@@ -37,6 +43,7 @@ $command = [
     '--skip-comments',
     $database,
 ];
+array_push($command, ...$tables);
 $process = proc_open($command, [
     0 => ['pipe', 'r'],
     1 => ['pipe', 'w'],
@@ -70,4 +77,5 @@ echo json_encode([
     'file' => realpath($target) ?: $target,
     'bytes' => filesize($target),
     'sha256' => hash_file('sha256', $target),
+    'tables' => $tables ?: ['*'],
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
