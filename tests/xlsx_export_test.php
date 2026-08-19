@@ -22,6 +22,11 @@ foreach (['[Content_Types].xml', 'xl/workbook.xml', 'xl/worksheets/sheet1.xml', 
 if (!str_contains($xlsx, 'عنوان') || !str_contains($xlsx, '<v>42</v>')) {
     throw new RuntimeException('Worksheet values were not preserved.');
 }
+$styles = appXlsxStylesXml();
+if (!str_contains($styles, '<font><sz val="11"/><name val="Arial"/></font>')
+    || !str_contains($styles, '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>')) {
+    throw new RuntimeException('XLSX font properties are not in the schema-required order.');
+}
 
 $temporaryFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'davatshodi-xlsx-' . bin2hex(random_bytes(6)) . '.zip';
 file_put_contents($temporaryFile, $xlsx);
