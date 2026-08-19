@@ -1,9 +1,19 @@
 <?php
 declare(strict_types=1);
 
-if (PHP_SAPI !== 'cli') {
-    http_response_code(404);
-    exit;
+$isCli = PHP_SAPI === 'cli';
+if (!$isCli) {
+    session_start();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    if (empty($_SESSION['authenticated'])) {
+        http_response_code(403);
+        echo json_encode([
+            'status' => 'forbidden',
+            'message' => 'Log in to the main panel before opening this deployment check.',
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
+        exit;
+    }
 }
 
 require_once __DIR__ . '/lib/common.php';
@@ -177,4 +187,6 @@ if (!$report['config']['local_override'] && PHP_OS_FAMILY !== 'Windows') {
 }
 
 echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), PHP_EOL;
-exit($report['status'] === 'ok' ? 0 : 1);
+if ($isCli) {
+    exit($report['status'] === 'ok' ? 0 : 1);
+}
