@@ -61,7 +61,8 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, "String(invitee.nationalId || invitee.workId || '')"), "Period Invite Card QR data does not fall back from National ID to Work ID in {$path}");
     egmPeriodAssert(!str_contains($source, 'const inviteUrl = new URL(`Invited/'), "Period Invite Card QR still contains the public invite URL in {$path}");
     egmPeriodAssert(
-        str_contains($source, 'window.initEventGuestManagerPanel = initWheelSubLayouts;'),
+        str_contains($source, 'window.__egmPanelInitializerSource = TASKS_ENDPOINT;')
+            && str_contains($source, 'window.initEventGuestManagerPanel = initWheelSubLayouts;'),
         "The dynamically loaded EGM panel does not expose an explicit initializer in {$path}"
     );
 }
@@ -75,6 +76,16 @@ egmPeriodAssert(
 egmPeriodAssert(
     str_contains($panelApp, 'attribute.name === "defer" || attribute.name === "async"'),
     'The main panel loader still preserves parser-only scheduling attributes on dynamic scripts'
+);
+egmPeriodAssert(
+    str_contains($panelApp, 'retryEventGuestManagerInitializer(host)')
+        && str_contains($panelApp, 'url.searchParams.set("_initializer_retry", String(Date.now()))')
+        && str_contains($panelApp, 'await runExternalTabInitializers(tab, host);'),
+    'The main panel loader does not recover from a stale or incomplete EGM initializer script'
+);
+egmPeriodAssert(
+    str_contains($panelApp, '!host.querySelector(".egm-shell")'),
+    'The main panel loader does not detect an incomplete EGM PHP fragment'
 );
 
 $taskAccessStores = [

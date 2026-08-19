@@ -4880,6 +4880,7 @@
     });
   }
 
+  window.__egmPanelInitializerSource = TASKS_ENDPOINT;
   window.initEventGuestManagerPanel = initWheelSubLayouts;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initWheelSubLayouts);

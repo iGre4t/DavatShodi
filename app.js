@@ -4953,8 +4953,67 @@ async function fadeOutTabLazyLoader(host, fadeMs = TAB_LAZY_LOADER_FADEOUT_MS) {
   });
 }
 
-function runExternalTabInitializers(tab) {
+function resolveEventGuestManagerInitializerUrl(host) {
+  if (!(host instanceof Element)) {
+    return "";
+  }
+  const embeddedScript = host.querySelector('script[src*="egm-panel-local.js"]');
+  const embeddedSource = embeddedScript?.getAttribute?.("src") ?? "";
+  if (embeddedSource) {
+    return embeddedSource;
+  }
+  const panelSource = String(host.dataset.tabSource || "").trim();
+  if (!panelSource) {
+    return "";
+  }
+  return panelSource.replace(/EGM(?:%20|\s)Panel\.php(?:[?#].*)?$/i, "egm-panel-local.js");
+}
+
+function resolveEventGuestManagerTasksEndpoint(host) {
+  if (!(host instanceof Element)) {
+    return "";
+  }
+  return String(host.dataset.tabSource || "").trim()
+    .replace(/EGM(?:%20|\s)Panel\.php(?:[?#].*)?$/i, "EGMT.php");
+}
+
+async function retryEventGuestManagerInitializer(host) {
+  const source = resolveEventGuestManagerInitializerUrl(host);
+  if (!source) {
+    return;
+  }
+  const url = new URL(source, window.location.href);
+  url.searchParams.set("_initializer_retry", String(Date.now()));
+  await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.async = false;
+    script.src = url.href;
+    script.addEventListener("load", () => {
+      script.remove();
+      resolve();
+    }, { once: true });
+    script.addEventListener("error", () => {
+      script.remove();
+      reject(new Error(`Failed to reload EGM initializer: ${url.pathname}`));
+    }, { once: true });
+    document.head.appendChild(script);
+  });
+}
+
+async function runExternalTabInitializers(tab, host = getExternalTabHost(tab)) {
   if (isEventGuestManagerRuntimeTab(tab)) {
+    if (!(host instanceof Element) || !host.querySelector(".egm-shell")) {
+      throw new Error("The Event Guest Manager response was incomplete. Reload the tab and try again.");
+    }
+    const expectedTasksEndpoint = resolveEventGuestManagerTasksEndpoint(host);
+    const registeredTasksEndpoint = String(window.__egmPanelInitializerSource || "").trim();
+    const initializerIsMissing = typeof window.initEventGuestManagerPanel !== "function";
+    const initializerIsForAnotherInstance = expectedTasksEndpoint !== ""
+      && registeredTasksEndpoint !== ""
+      && registeredTasksEndpoint !== expectedTasksEndpoint;
+    if (initializerIsMissing || initializerIsForAnotherInstance) {
+      await retryEventGuestManagerInitializer(host);
+    }
     if (typeof window.initEventGuestManagerPanel !== "function") {
       throw new Error("Event Guest Manager did not initialize correctly.");
     }
@@ -4996,7 +5055,7 @@ async function reloadExternalTab(tab) {
   clearInactiveEventGuestManagerRuntimeTabs(tab);
   const cacheEnabled = host.dataset.tabCache === "1";
   if (cacheEnabled && host.dataset.tabLoaded === "1") {
-    runExternalTabInitializers(tab);
+    await runExternalTabInitializers(tab, host);
     return;
   }
 
@@ -5024,7 +5083,7 @@ async function reloadExternalTab(tab) {
     if (cacheEnabled) {
       host.dataset.tabLoaded = "1";
     }
-    runExternalTabInitializers(tab);
+    await runExternalTabInitializers(tab, host);
   } catch (error) {
     tabLoader.cancel();
     await fadeOutTabLazyLoader(host);
