@@ -29,7 +29,7 @@ foreach ([
     'prize_awards', 'pot_winners', 'login_attempts', 'activity_logs',
 ] as $suffix) {
     egmInstanceStorageAssert(
-        $tables[$suffix] === 'EGM_0001_' . $suffix,
+        $tables[$suffix] === ($suffix === 'activity_logs' ? 'egm_0001_activity_logs' : 'EGM_0001_' . $suffix),
         "The scoped EGM {$suffix} table name is incorrect"
     );
 }
@@ -61,8 +61,11 @@ foreach (listEgmRegistry($pdo) as $record) {
     }
     $instanceTables = egmInstanceTableNames($code);
     ensureEgmInstanceTables($pdo, $code);
-    foreach ($instanceTables as $instanceTable) {
-        egmInstanceStorageAssert(egmInstanceTableExists($pdo, $instanceTable), "Missing {$instanceTable}");
+    $logsPdo = connectActivityLogDatabase(loadConfig(dirname(__DIR__) . '/api/config.php'));
+    egmInstanceStorageAssert($logsPdo instanceof PDO, 'Could not connect to the EGM logs database');
+    ensureActivityLogTable($logsPdo, 'EGM', $code);
+    foreach ($instanceTables as $key => $instanceTable) {
+        egmInstanceStorageAssert(egmInstanceTableExists($key === 'activity_logs' ? $logsPdo : $pdo, $instanceTable), "Missing {$instanceTable}");
     }
     egmInstanceStorageAssert(
         egmInstanceColumnExists($pdo, $instanceTables['data'], 'periods'),

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/activity-log-storage.php';
+
 const ACTIVITY_LOGGER_CHANNEL_PANEL = 'panel';
 const ACTIVITY_LOGGER_AUDIT_TABLES = [
     ACTIVITY_LOGGER_CHANNEL_PANEL => 'panel_user_activity_logs'
@@ -188,34 +190,9 @@ function activityLoggerLogFilePath(array $entry, string $channel): string
 function activityLoggerWriteJsonLine(array $entry, string $channel): bool
 {
     try {
-        $directory = activityLoggerLogDirectory($channel);
-        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
-            error_log('Activity logger failed to create log directory: ' . $directory);
-            return false;
-        }
-        $line = json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
-        if ($line === false) {
-            error_log('Activity logger failed to encode JSON: ' . json_last_error_msg());
-            return false;
-        }
-        $path = activityLoggerLogFilePath($entry, $channel);
-        $handle = fopen($path, 'ab');
-        if ($handle === false) {
-            error_log('Activity logger failed to open log file: ' . $path);
-            return false;
-        }
-        $written = false;
-        if (flock($handle, LOCK_EX)) {
-            $payload = $line . PHP_EOL;
-            $written = fwrite($handle, $payload) === strlen($payload);
-            fflush($handle);
-            flock($handle, LOCK_UN);
-        }
-        fclose($handle);
-        if (!$written) {
-            error_log('Activity logger failed to write log line: ' . $path);
-        }
-        return $written;
+        $config = loadConfig(activityLoggerProjectRoot() . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php');
+        $logsPdo = connectActivityLogDatabase($config);
+        return $logsPdo instanceof PDO && activityLoggerWriteAuditLog($logsPdo, $entry, $channel);
     } catch (Throwable $err) {
         error_log('Activity logger file write failed: ' . $err->getMessage());
         return false;
@@ -304,12 +281,7 @@ function logUserActivity(array $event, ?PDO $pdo = null): bool
     try {
         $channel = activityLoggerNormalizeChannel((string)($event['channel'] ?? ACTIVITY_LOGGER_CHANNEL_PANEL));
         $entry = activityLoggerBuildLogEntry($event);
-        $fileWritten = activityLoggerWriteJsonLine($entry, $channel);
-        $audit = !empty($event['audit']);
-        if ($audit && $pdo instanceof PDO) {
-            activityLoggerWriteAuditLog($pdo, $entry, $channel);
-        }
-        return $fileWritten;
+        return activityLoggerWriteJsonLine($entry, $channel);
     } catch (Throwable $err) {
         error_log('Activity logger failed: ' . $err->getMessage());
         return false;

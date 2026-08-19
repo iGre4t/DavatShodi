@@ -14,6 +14,8 @@ function egmDynamicAssert(bool $condition, string $message): void
 $config = loadConfig(dirname(__DIR__) . '/api/config.php');
 $pdo = connectDatabase($config);
 egmDynamicAssert($pdo instanceof PDO, 'Could not connect to the EGM database');
+$logsPdo = connectActivityLogDatabase($config);
+egmDynamicAssert($logsPdo instanceof PDO, 'Could not connect to the EGM logs database');
 
 $code = '99999999';
 $temporaryDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'egm-dynamic-' . bin2hex(random_bytes(6));
@@ -26,8 +28,9 @@ $nationalTwo = (string)((int)$nationalOne + 1);
 try {
     dropEgmInstanceTables($pdo, $code);
     $tables = ensureEgmInstanceTables($pdo, $code);
-    foreach ($tables as $table) {
-        egmDynamicAssert(egmInstanceTableExists($pdo, $table), "Missing dynamic table {$table}");
+    ensureActivityLogTable($logsPdo, 'EGM', $code);
+    foreach ($tables as $key => $table) {
+        egmDynamicAssert(egmInstanceTableExists($key === 'activity_logs' ? $logsPdo : $pdo, $table), "Missing dynamic table {$table}");
     }
 
     file_put_contents($mappingPath, json_encode([

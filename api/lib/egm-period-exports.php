@@ -98,28 +98,44 @@ function egmPeriodExportLogRows(array $context, string $periodCode): array
     $usersTable = (string)$context['tables']['users'];
     $periodsTable = (string)$context['tables']['user_periods'];
     $logsTable = (string)$context['tables']['activity_logs'];
-    $statement = $context['pdo']->prepare(<<<SQL
+    $logsPdo = $context['logs_pdo'] ?? $context['pdo'];
+    if (!$logsPdo instanceof PDO) return [];
+    $statement = $logsPdo->prepare(<<<SQL
 SELECT
-  l.`id` AS `log_id`, l.`status` AS `log_condition`, l.`message`, l.`level`, l.`occurred_at`,
-  l.`ip_address`, l.`user_agent`, l.`work_id` AS `log_work_id`, l.`metadata_json`,
-  u.`first_name`, u.`last_name`, u.`national_id`, u.`work_id`, u.`phone_number`, u.`guest_number`,
-  u.`deputy`, u.`general_department`, u.`department`, u.`gender`, u.`postal_level`,
-  u.`is_uninvited_guest` AS `user_is_uninvited_guest`,
-  p.`entered_date`, p.`entered_time`, p.`quit_date`, p.`quit_time`, p.`attendance_state`,
-  p.`is_uninvited_guest` AS `period_is_uninvited_guest`
+  l.`id` AS `log_id`, l.`user_id`, l.`status` AS `log_condition`, l.`message`, l.`level`, l.`occurred_at`,
+  l.`ip_address`, l.`user_agent`, l.`work_id` AS `log_work_id`, l.`metadata_json`
 FROM `{$logsTable}` l
-LEFT JOIN `{$usersTable}` u ON u.`id` = l.`user_id`
-LEFT JOIN `{$periodsTable}` p ON p.`user_id` = l.`user_id` AND p.`period_code` = :join_period_code
 WHERE l.`action` = :log_action AND l.`entity_id` = :period_code
 ORDER BY l.`occurred_at` DESC, l.`id` DESC
 SQL);
     $statement->execute([
-        ':join_period_code' => $periodCode,
         ':log_action' => EGM_PERIOD_EXPORT_LOG_ACTION,
         ':period_code' => $periodCode,
     ]);
     $rows = $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $userIds = array_values(array_unique(array_filter(array_map(static fn(array $row): int => (int)($row['user_id'] ?? 0), $rows))));
+    $users = [];
+    $periods = [];
+    if ($userIds) {
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $userStatement = $context['pdo']->prepare("SELECT * FROM `{$usersTable}` WHERE `id` IN ({$placeholders})");
+        $userStatement->execute($userIds);
+        foreach ($userStatement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $user) $users[(int)$user['id']] = $user;
+        $periodStatement = $context['pdo']->prepare("SELECT * FROM `{$periodsTable}` WHERE `user_id` IN ({$placeholders}) AND `period_code` = ?");
+        $periodStatement->execute([...$userIds, $periodCode]);
+        foreach ($periodStatement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $period) $periods[(int)$period['user_id']] = $period;
+    }
     foreach ($rows as &$row) {
+        $userId = (int)($row['user_id'] ?? 0);
+        $user = $users[$userId] ?? [];
+        $period = $periods[$userId] ?? [];
+        $row += $user + [
+            'user_is_uninvited_guest' => $user['is_uninvited_guest'] ?? 0,
+            'period_is_uninvited_guest' => $period['is_uninvited_guest'] ?? 0,
+            'entered_date' => $period['entered_date'] ?? '', 'entered_time' => $period['entered_time'] ?? '',
+            'quit_date' => $period['quit_date'] ?? '', 'quit_time' => $period['quit_time'] ?? '',
+            'attendance_state' => $period['attendance_state'] ?? 'not_entered',
+        ];
         $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
         if (!is_array($metadata)) $metadata = [];
         if (trim((string)($row['national_id'] ?? '')) === '') {

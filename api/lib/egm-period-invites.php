@@ -20,7 +20,8 @@ function egmPeriodInvitesContext(string $missionDir): array
         }
         $root = $parent;
     }
-    $pdo = connectDatabase(loadConfig($root . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php'));
+    $config = loadConfig($root . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php');
+    $pdo = connectDatabase($config);
     if (!$pdo instanceof PDO) {
         throw new RuntimeException('اتصال به پایگاه داده برقرار نشد.');
     }
@@ -33,10 +34,16 @@ function egmPeriodInvitesContext(string $missionDir): array
         $tables = ensureEgmInstanceTables($pdo, $code);
         egmInstanceEnrichUsersFromOeu($pdo, $code);
     }
+    $logsPdo = connectActivityLogDatabase($config);
+    if (!$logsPdo instanceof PDO) {
+        throw new RuntimeException('اتصال به پایگاه دادهٔ لاگ‌ها برقرار نشد.');
+    }
+    if ($code !== '') ensureActivityLogTable($logsPdo, 'EGM', $code);
     return [
         'root' => $root,
         'mission_dir' => $resolvedMission,
         'pdo' => $pdo,
+        'logs_pdo' => $logsPdo,
         'registry' => $registry,
         'tables' => $tables,
         'code' => $code,

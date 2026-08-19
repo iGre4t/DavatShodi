@@ -1,10 +1,11 @@
 <?php
 declare(strict_types=1);
 
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-08-19.1';
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-08-19.2';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
 
 require_once __DIR__ . '/egm-registry.php';
+require_once __DIR__ . '/activity-log-storage.php';
 
 const EGM_DEVELOP_CODE = '00000';
 const EGM_DEVELOP_NAME = 'EGM Develop';
@@ -34,7 +35,7 @@ function egmInstanceTableNames(string $code): array
         'prize_awards' => 'EGM_' . $normalized . '_prize_awards',
         'pot_winners' => 'EGM_' . $normalized . '_pot_winners',
         'login_attempts' => 'EGM_' . $normalized . '_login_attempts',
-        'activity_logs' => 'EGM_' . $normalized . '_activity_logs',
+        'activity_logs' => 'egm_' . $normalized . '_activity_logs',
     ];
 }
 
@@ -469,37 +470,6 @@ CREATE TABLE IF NOT EXISTS `{$loginAttemptsTable}` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
 
-    $activityLogsTable = $tables['activity_logs'];
-    $pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS `{$activityLogsTable}` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `source_key` CHAR(64) NOT NULL,
-  `user_id` BIGINT UNSIGNED NULL,
-  `work_id` VARCHAR(128) NULL,
-  `session_id` VARCHAR(191) NULL,
-  `level` VARCHAR(16) NOT NULL DEFAULT 'info',
-  `action` VARCHAR(128) NOT NULL,
-  `entity_type` VARCHAR(64) NULL,
-  `entity_id` VARCHAR(191) NULL,
-  `ip_address` VARCHAR(45) NULL,
-  `user_agent` VARCHAR(512) NULL,
-  `status` VARCHAR(32) NOT NULL DEFAULT 'success',
-  `message` TEXT NULL,
-  `metadata_json` LONGTEXT NULL,
-  `occurred_at` DATETIME NOT NULL,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_activity_source` (`source_key`),
-  KEY `idx_activity_user_time` (`user_id`, `occurred_at`),
-  KEY `idx_activity_action_time` (`action`, `occurred_at`),
-  KEY `idx_activity_occurred` (`occurred_at`),
-  CONSTRAINT `fk_{$activityLogsTable}_user` FOREIGN KEY (`user_id`) REFERENCES `{$usersTable}` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-SQL);
-    if (!egmInstanceIndexExists($pdo, $activityLogsTable, 'idx_activity_occurred')) {
-        $pdo->exec("ALTER TABLE `{$activityLogsTable}` ADD KEY `idx_activity_occurred` (`occurred_at`)");
-    }
-
     egmInstanceMigrateLegacyDirectoryPaths($pdo, $tables);
     $cache[$cacheKey] = true;
     try {
@@ -785,6 +755,19 @@ function dropEgmInstanceTables(PDO $pdo, string $code): void
     if ($normalizedCode !== '' && egmInstanceTableExists($pdo, 'egm_invite_card_routes')) {
         $deleteRoutes = $pdo->prepare('DELETE FROM `egm_invite_card_routes` WHERE `egm_code` = :egm_code');
         $deleteRoutes->execute([':egm_code' => $normalizedCode]);
+    }
+    if ($normalizedCode !== '') {
+        $logsConfig = loadConfig(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config.php');
+        $logsPdo = connectActivityLogDatabase($logsConfig);
+        if ($logsPdo instanceof PDO) {
+            $logsPdo->exec("DROP TABLE IF EXISTS `{$tables['activity_logs']}`");
+            if (egmInstanceTableExists($logsPdo, 'activity_log_instances')) {
+                $deleteLogRegistry = $logsPdo->prepare(
+                    "DELETE FROM `activity_log_instances` WHERE `instance_kind`='EGM' AND `instance_code`=:code"
+                );
+                $deleteLogRegistry->execute([':code' => $normalizedCode]);
+            }
+        }
     }
     foreach ([
         'team_members',
@@ -1969,8 +1952,11 @@ function egmInstanceSyncActivityLogs(PDO $pdo, array $tables, string $missionDir
     if (!is_dir($logsDir)) {
         return;
     }
+    $logsPdo = activityLogDatabaseForProject(activityLogFindProjectRoot($missionDir));
+    $code = preg_replace('/^EGM_([0-9]+)_activity_logs$/iD', '$1', (string)$tables['activity_logs']);
+    ensureActivityLogTable($logsPdo, 'EGM', (string)$code);
     $userMaps = egmInstanceUserIdMaps($pdo, $tables['users']);
-    $insert = $pdo->prepare(<<<SQL
+    $insert = $logsPdo->prepare(<<<SQL
 INSERT IGNORE INTO `{$tables['activity_logs']}`
 (`source_key`, `user_id`, `work_id`, `session_id`, `level`, `action`, `entity_type`, `entity_id`, `ip_address`, `user_agent`, `status`, `message`, `metadata_json`, `occurred_at`)
 VALUES (:source_key, :user_id, :work_id, :session_id, :level, :action, :entity_type, :entity_id, :ip_address, :user_agent, :status, :message, :metadata_json, :occurred_at)

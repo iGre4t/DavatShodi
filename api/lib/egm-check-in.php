@@ -231,13 +231,17 @@ function egmCheckInContext(
     ?DateTimeImmutable $now = null
 ): array
 {
-    $pdo = connectDatabase(loadConfig(rtrim($projectRoot, DIRECTORY_SEPARATOR) . '/api/config.php'));
+    $config = loadConfig(rtrim($projectRoot, DIRECTORY_SEPARATOR) . '/api/config.php');
+    $pdo = connectDatabase($config);
     if (!$pdo instanceof PDO) throw new RuntimeException('اتصال به پایگاه داده برقرار نشد.');
     $registry = egmInstanceRegistryForDirectory($pdo, $missionDir);
     if (!is_array($registry)) throw new RuntimeException('این رویداد در پایگاه داده ثبت نشده است.');
     $code = normalizeEgmInstanceCode($registry['code'] ?? '');
     if ($code === '') throw new RuntimeException('شناسه رویداد نامعتبر است.');
     $tables = ensureEgmInstanceTables($pdo, $code);
+    $logsPdo = connectActivityLogDatabase($config);
+    if (!$logsPdo instanceof PDO) throw new RuntimeException('اتصال به پایگاه دادهٔ لاگ‌ها برقرار نشد.');
+    ensureActivityLogTable($logsPdo, 'EGM', $code);
     egmInstanceEnrichUsersFromOeu($pdo, $code);
     $record = findEgmRegistryByCode($pdo, $code);
     $periods = egmInstanceReadPeriods($pdo, $code);
@@ -246,6 +250,7 @@ function egmCheckInContext(
     $selectedPeriod = is_array($periodState['period'] ?? null) ? $periodState['period'] : null;
     return [
         'pdo' => $pdo,
+        'logs_pdo' => $logsPdo,
         'code' => $code,
         'name' => trim((string)($record['name'] ?? '')) ?: 'رویداد',
         'tables' => $tables,
@@ -288,7 +293,9 @@ function egmCheckInWriteLog(array $context, ?array $user, string $nationalId, st
         'period_code' => $periodCode,
         'period_title' => $periodTitle,
     ] + $extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $statement = $context['pdo']->prepare(
+    $logsPdo = $context['logs_pdo'] ?? $context['pdo'];
+    if (!$logsPdo instanceof PDO) throw new RuntimeException('Activity logs database is unavailable.');
+    $statement = $logsPdo->prepare(
         "INSERT INTO `{$table}` (`source_key`, `user_id`, `work_id`, `session_id`, `level`, `action`, "
         . "`entity_type`, `entity_id`, `ip_address`, `user_agent`, `status`, `message`, `metadata_json`, `occurred_at`) "
         . "VALUES (:source_key, :user_id, :work_id, :session_id, :level, :action, 'period', :entity_id, "
@@ -546,6 +553,8 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
     $logsTable = (string)$context['tables']['activity_logs'];
     $usersTable = (string)$context['tables']['users'];
     $userPeriodsTable = (string)$context['tables']['user_periods'];
+    $logsPdo = $context['logs_pdo'] ?? $context['pdo'];
+    if (!$logsPdo instanceof PDO) return [];
     $periodCode = trim((string)($context['logs_period_code'] ?? ($context['period_code'] ?? '')));
     $where = ["l.`action` = '" . EGM_CHECK_IN_ACTION . "'"];
     $params = [];
@@ -554,42 +563,60 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
         $params[':period_code'] = $periodCode;
     }
     $query = egmCheckInCleanText($query, 100);
-    if ($query !== '') {
-        $searchFields = [
-            'l.`status`', 'l.`message`', 'l.`entity_id`', 'l.`occurred_at`', 'l.`metadata_json`',
-            'u.`first_name`', 'u.`last_name`', "CONCAT_WS(' ', u.`first_name`, u.`last_name`)",
-            'u.`national_id`', 'u.`work_id`', 'u.`phone_number`',
-            'u.`guest_number`', 'u.`deputy`', 'u.`general_department`', 'u.`department`', 'u.`gender`',
-            'u.`postal_level`', 'u.`source_type`', 'p.`invitation_source`', 'p.`attendance_state`',
-            'p.`entered_date`', 'p.`entered_time`',
-            'p.`quit_date`', 'p.`quit_time`',
-        ];
-        $searchParts = [];
-        foreach ($searchFields as $index => $field) {
-            $parameter = ':search_' . $index;
-            $searchParts[] = "COALESCE({$field}, '') LIKE {$parameter}";
-            $params[$parameter] = '%' . $query . '%';
-        }
-        foreach (egmCheckInSearchStatusCodes($query) as $index => $statusCode) {
-            $parameter = ':status_' . $index;
-            $searchParts[] = "l.`status` = {$parameter}";
-            $params[$parameter] = $statusCode;
-        }
-        $where[] = '(' . implode(' OR ', $searchParts) . ')';
-    }
-    $statement = $context['pdo']->prepare(
-        "SELECT l.`status`, l.`message`, l.`entity_id`, l.`occurred_at`, l.`metadata_json`, "
-        . "u.`work_id`, u.`first_name`, u.`last_name`, u.`national_id`, u.`phone_number`, u.`guest_number`, "
-        . "u.`deputy`, u.`general_department`, u.`department`, u.`gender`, u.`postal_level`, u.`outside_organization`, "
-        . "u.`is_uninvited_guest` AS `user_is_uninvited_guest`, p.`is_uninvited_guest` AS `period_is_uninvited_guest`, "
-        . "p.`entered_date`, p.`entered_time`, p.`quit_date`, p.`quit_time`, p.`attendance_state` FROM `{$logsTable}` l "
-        . "LEFT JOIN `{$usersTable}` u ON u.`id` = l.`user_id` "
-        . "LEFT JOIN `{$userPeriodsTable}` p ON p.`user_id` = l.`user_id` AND p.`period_code` = l.`entity_id` "
+    $fetchLimit = $query === '' ? $limit : 10000;
+    $statement = $logsPdo->prepare(
+        "SELECT l.`user_id`, l.`work_id` AS `log_work_id`, l.`status`, l.`message`, l.`entity_id`, l.`occurred_at`, l.`metadata_json` "
+        . "FROM `{$logsTable}` l "
         . 'WHERE ' . implode(' AND ', $where)
-        . " ORDER BY l.`occurred_at` DESC, l.`id` DESC LIMIT {$limit}"
+        . " ORDER BY l.`occurred_at` DESC, l.`id` DESC LIMIT {$fetchLimit}"
     );
     $statement->execute($params);
-    $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+    $rows = $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $userIds = array_values(array_unique(array_filter(array_map(
+        static fn(array $row): int => (int)($row['user_id'] ?? 0),
+        $rows
+    ))));
+    $users = [];
+    $periodStates = [];
+    if ($userIds) {
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $userStatement = $context['pdo']->prepare("SELECT * FROM `{$usersTable}` WHERE `id` IN ({$placeholders})");
+        $userStatement->execute($userIds);
+        foreach ($userStatement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $user) $users[(int)$user['id']] = $user;
+        $periodStatement = $context['pdo']->prepare(
+            "SELECT * FROM `{$userPeriodsTable}` WHERE `user_id` IN ({$placeholders})"
+            . ($periodCode !== '' ? ' AND `period_code` = ?' : '')
+        );
+        $periodStatement->execute($periodCode !== '' ? [...$userIds, $periodCode] : $userIds);
+        foreach ($periodStatement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $period) {
+            $periodStates[(int)$period['user_id'] . ':' . (string)$period['period_code']] = $period;
+        }
+    }
+    foreach ($rows as &$row) {
+        $userId = (int)($row['user_id'] ?? 0);
+        $user = $users[$userId] ?? [];
+        $period = $periodStates[$userId . ':' . (string)($row['entity_id'] ?? '')] ?? [];
+        $row = $row + $user + [
+            'work_id' => (string)($user['work_id'] ?? $row['log_work_id'] ?? ''),
+            'user_is_uninvited_guest' => $user['is_uninvited_guest'] ?? 0,
+            'period_is_uninvited_guest' => $period['is_uninvited_guest'] ?? 0,
+            'entered_date' => $period['entered_date'] ?? '', 'entered_time' => $period['entered_time'] ?? '',
+            'quit_date' => $period['quit_date'] ?? '', 'quit_time' => $period['quit_time'] ?? '',
+            'attendance_state' => $period['attendance_state'] ?? 'not_entered',
+        ];
+    }
+    unset($row);
+    if ($query !== '') {
+        $statusCodes = egmCheckInSearchStatusCodes($query);
+        $needle = function_exists('mb_strtolower') ? mb_strtolower($query, 'UTF-8') : strtolower($query);
+        $rows = array_values(array_filter($rows, static function (array $row) use ($needle, $statusCodes): bool {
+            if (in_array((string)($row['status'] ?? ''), $statusCodes, true)) return true;
+            $haystack = implode(' ', array_map('strval', array_filter($row, 'is_scalar')));
+            $haystack = function_exists('mb_strtolower') ? mb_strtolower($haystack, 'UTF-8') : strtolower($haystack);
+            return str_contains($haystack, $needle);
+        }));
+    }
+    $rows = array_slice($rows, 0, $limit);
     return array_map(static function (array $row): array {
         $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
         if (!is_array($metadata)) $metadata = [];

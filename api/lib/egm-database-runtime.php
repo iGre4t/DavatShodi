@@ -48,7 +48,7 @@ function egmDatabaseRuntimeNormalizeAbsolute(string $path): string
     return $prefix . implode('/', $parts);
 }
 
-/** @return array{pdo:PDO,code:string,tables:array<string,string>,root:string,relative:string}|null */
+/** @return array{pdo:PDO,logs_pdo:PDO,code:string,tables:array<string,string>,root:string,relative:string}|null */
 function egmDatabaseRuntimeContextForPath(string $path): ?array
 {
     $absolute = egmDatabaseRuntimeNormalizeAbsolute($path);
@@ -87,12 +87,17 @@ function egmDatabaseRuntimeContextForPath(string $path): ?array
         if ($parent === $projectRoot) throw new RuntimeException('Unable to resolve the EGM project root.');
         $projectRoot = $parent;
     }
-    $pdo = connectDatabase(loadConfig(str_replace('/', DIRECTORY_SEPARATOR, $projectRoot . '/api/config.php')));
+    $config = loadConfig(str_replace('/', DIRECTORY_SEPARATOR, $projectRoot . '/api/config.php'));
+    $pdo = connectDatabase($config);
     if (!$pdo instanceof PDO) throw new RuntimeException('Unable to connect to the EGM database.');
     $registry = egmInstanceRegistryForDirectory($pdo, str_replace('/', DIRECTORY_SEPARATOR, $missionRoot));
     if (!is_array($registry)) throw new RuntimeException('The EGM instance is not registered in the database.');
+    $logsPdo = connectActivityLogDatabase($config);
+    if (!$logsPdo instanceof PDO) throw new RuntimeException('Unable to connect to the EGM activity logs database.');
+    ensureActivityLogTable($logsPdo, 'EGM', (string)$registry['code']);
     $context = [
         'pdo' => $pdo,
+        'logs_pdo' => $logsPdo,
         'code' => (string)$registry['code'],
         'tables' => ensureEgmInstanceTables($pdo, (string)$registry['code']),
         'root' => $missionRoot,
@@ -491,7 +496,7 @@ function egmDatabaseRuntimeActivityDays(string $missionDir): array
 {
     $context = egmDatabaseRuntimeContextForPath(rtrim($missionDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'Setting.json');
     if ($context === null) return [];
-    $rows = $context['pdo']->query(
+    $rows = $context['logs_pdo']->query(
         "SELECT DISTINCT DATE_FORMAT(`occurred_at`, '%Y-%m-%d') AS `day` "
         . "FROM `{$context['tables']['activity_logs']}` ORDER BY `day` DESC"
     )->fetchAll(PDO::FETCH_COLUMN);
@@ -506,7 +511,7 @@ function egmDatabaseRuntimeActivityEntriesForDay(string $missionDir, string $day
     if ($context === null) return [];
     $limit = max(1, min(10000, $limit));
     $nextDay = (new DateTimeImmutable($day))->modify('+1 day')->format('Y-m-d');
-    $statement = $context['pdo']->prepare(
+    $statement = $context['logs_pdo']->prepare(
         "SELECT `work_id`,`session_id`,`level`,`action`,`entity_type`,`entity_id`,`ip_address`,`user_agent`,`status`,`message`,`metadata_json`,`occurred_at` "
         . "FROM `{$context['tables']['activity_logs']}` WHERE `occurred_at` >= :start AND `occurred_at` < :end "
         . "ORDER BY `occurred_at` DESC, `id` DESC LIMIT {$limit}"
@@ -528,7 +533,7 @@ function egmDatabaseRuntimeAppendActivity(string $missionDir, array $entry): boo
         $context['code'], $occurredAt, (string)($entry['action'] ?? ''), $workId,
         (string)($entry['session_id'] ?? ''), bin2hex(random_bytes(12)),
     ]));
-    $statement = $context['pdo']->prepare(
+    $statement = $context['logs_pdo']->prepare(
         "INSERT INTO `{$context['tables']['activity_logs']}` "
         . "(`source_key`,`user_id`,`work_id`,`session_id`,`level`,`action`,`entity_type`,`entity_id`,`ip_address`,`user_agent`,`status`,`message`,`metadata_json`,`occurred_at`) "
         . "VALUES (:source_key,:user_id,:work_id,:session_id,:level,:action,:entity_type,:entity_id,:ip_address,:user_agent,:status,:message,:metadata_json,:occurred_at)"

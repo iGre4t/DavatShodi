@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/common.php';
+require_once __DIR__ . '/lib/activity-log-storage.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -15,14 +16,20 @@ $result = [
 
 try {
     $pdo = connect($config);
-    if ($pdo) {
+    $logsPdo = connectActivityLogDatabase($config);
+    if ($pdo && $logsPdo) {
         $result = [
             'status' => 'ok',
-            'message' => 'MySQL connection successful.',
+            'message' => 'Core and activity-logs MySQL connections are successful.',
             'connection' => true,
             'database' => $config['dbname'] ?? null,
+            'logs_connection' => true,
+            'logs_database' => activityLogDatabaseConfig($config)['dbname'] ?? null,
             'table' => $config['table'] ?? null
         ];
+    } elseif ($pdo) {
+        $result['message'] = 'Core database connected, but the activity-logs database connection failed.';
+        $result['logs_connection'] = false;
     } else {
         $result['message'] = 'Missing host/dbname in configuration.';
     }

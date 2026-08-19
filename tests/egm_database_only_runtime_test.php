@@ -14,6 +14,8 @@ function egmDatabaseOnlyAssert(bool $condition, string $message): void
 
 $pdo = connectDatabase(loadConfig($projectRoot . '/api/config.php'));
 egmDatabaseOnlyAssert($pdo instanceof PDO, 'Database connection failed.');
+$logsPdo = connectActivityLogDatabase(loadConfig($projectRoot . '/api/config.php'));
+egmDatabaseOnlyAssert($logsPdo instanceof PDO, 'Logs database connection failed.');
 
 foreach (listEgmRegistry($pdo) as $registry) {
     $code = normalizeEgmInstanceCode($registry['code'] ?? '');
@@ -26,6 +28,7 @@ foreach (listEgmRegistry($pdo) as $registry) {
     egmDatabaseOnlyAssert(egmInstanceScanRuntimeFiles($missionDir) === [], "{$code} still has runtime data files on disk.");
 
     $tables = ensureEgmInstanceTables($pdo, $code);
+    egmDatabaseOnlyAssert(egmInstanceTableExists($logsPdo, $tables['activity_logs']), "Missing logs table {$tables['activity_logs']}.");
     $csvCount = (int)$pdo->query("SELECT COUNT(*) FROM `{$tables['data']}` WHERE `file_path` IS NOT NULL AND LOWER(`file_path`) LIKE '%.csv'")->fetchColumn();
     egmDatabaseOnlyAssert($csvCount === 0, "{$code} still stores CSV documents.");
     $paths = $pdo->query("SELECT `file_path` FROM `{$tables['data']}` WHERE `storage_kind`='runtime_file' ORDER BY `file_path`")->fetchAll(PDO::FETCH_COLUMN);

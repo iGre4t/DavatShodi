@@ -68,7 +68,7 @@ function portabilityValidateDocuments(PDO $pdo, string $table, string $label): a
     return ['documents' => count($headers), 'chunks' => $chunkCount, 'bytes' => $byteCount];
 }
 
-function portabilityValidateInstance(PDO $pdo, string $kind, array $registry, string $root): array
+function portabilityValidateInstance(PDO $pdo, PDO $logsPdo, string $kind, array $registry, string $root): array
 {
     $isEgm = $kind === 'EGM';
     $code = $isEgm ? normalizeEgmInstanceCode($registry['code'] ?? '') : normalizeTcInstanceCode($registry['code'] ?? '');
@@ -76,8 +76,9 @@ function portabilityValidateInstance(PDO $pdo, string $kind, array $registry, st
     portabilityAssert($code !== '' && $directory !== '', "{$kind} has an invalid registry record.");
     portabilityAssert(preg_match('/^(?:[A-Za-z]:|\/)/', $directory) !== 1, "{$kind} {$code} registry directory is machine-specific.");
     $tables = $isEgm ? ensureEgmInstanceTables($pdo, $code) : ensureTcInstanceTables($pdo, $code);
-    foreach ($tables as $table) {
-        $exists = $isEgm ? egmInstanceTableExists($pdo, $table) : tcInstanceTableExists($pdo, $table);
+    foreach ($tables as $key => $table) {
+        $tablePdo = $key === 'activity_logs' ? $logsPdo : $pdo;
+        $exists = $isEgm ? egmInstanceTableExists($tablePdo, $table) : tcInstanceTableExists($tablePdo, $table);
         portabilityAssert($exists, "{$kind} {$code} is missing table {$table}.");
     }
     $read = $isEgm ? 'egmInstanceReadData' : 'tcInstanceReadData';
@@ -99,13 +100,23 @@ function portabilityValidateInstance(PDO $pdo, string $kind, array $registry, st
 
     $documents = portabilityValidateDocuments($pdo, $tables['data'], "{$kind} {$code}");
     $counts = [];
-    foreach ($tables as $key => $table) $counts[$key] = (int)$pdo->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
+    foreach ($tables as $key => $table) {
+        $tablePdo = $key === 'activity_logs' ? $logsPdo : $pdo;
+        $counts[$key] = (int)$tablePdo->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
+    }
     foreach (['user_periods', 'answers', 'team_members', 'photo_submissions', 'prize_awards', 'login_attempts', 'activity_logs'] as $key) {
         if (!isset($tables[$key]) || !isset($tables['users'])) continue;
-        $orphans = (int)$pdo->query(
-            "SELECT COUNT(*) FROM `{$tables[$key]}` child LEFT JOIN `{$tables['users']}` parent ON parent.`id`=child.`user_id` "
-            . "WHERE child.`user_id` IS NOT NULL AND parent.`id` IS NULL"
-        )->fetchColumn();
+        if ($key === 'activity_logs') {
+            $userIds = array_fill_keys(array_map('intval', $pdo->query("SELECT `id` FROM `{$tables['users']}`")->fetchAll(PDO::FETCH_COLUMN)), true);
+            $orphans = 0;
+            $logIds = $logsPdo->query("SELECT DISTINCT `user_id` FROM `{$tables[$key]}` WHERE `user_id` IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($logIds as $userId) if (!isset($userIds[(int)$userId])) $orphans++;
+        } else {
+            $orphans = (int)$pdo->query(
+                "SELECT COUNT(*) FROM `{$tables[$key]}` child LEFT JOIN `{$tables['users']}` parent ON parent.`id`=child.`user_id` "
+                . "WHERE child.`user_id` IS NOT NULL AND parent.`id` IS NULL"
+            )->fetchColumn();
+        }
         portabilityAssert($orphans === 0, "{$kind} {$code} has orphan {$key} history.");
     }
     return ['kind' => $kind, 'code' => $code, 'name' => (string)$registry['name'], 'periods' => count($periods), 'rows' => $counts, 'stored' => $documents];
@@ -113,11 +124,13 @@ function portabilityValidateInstance(PDO $pdo, string $kind, array $registry, st
 
 $pdo = connectDatabase(loadConfig($root . '/api/config.php'));
 portabilityAssert($pdo instanceof PDO, 'Database connection failed.');
+$logsPdo = connectActivityLogDatabase(loadConfig($root . '/api/config.php'));
+portabilityAssert($logsPdo instanceof PDO, 'Logs database connection failed.');
 $restored = materializeDatabaseBackedInstances($pdo, $root);
 portabilityAssert($restored === [], 'Existing deployment unexpectedly needed code-shell restoration.');
 $report = [];
-foreach (listEgmRegistry($pdo) as $registry) $report[] = portabilityValidateInstance($pdo, 'EGM', $registry, $root);
-foreach (listTcRegistry($pdo) as $registry) $report[] = portabilityValidateInstance($pdo, 'TC', $registry, $root);
+foreach (listEgmRegistry($pdo) as $registry) $report[] = portabilityValidateInstance($pdo, $logsPdo, 'EGM', $registry, $root);
+foreach (listTcRegistry($pdo) as $registry) $report[] = portabilityValidateInstance($pdo, $logsPdo, 'TC', $registry, $root);
 portabilityAssert(count($report) === 5, 'Expected two EGM and three TaskClub database instances.');
 
 if (egmInstanceTableExists($pdo, 'egm_invite_card_routes')) {

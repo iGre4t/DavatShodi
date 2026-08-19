@@ -14,6 +14,8 @@ function tcDatabaseOnlyAssert(bool $condition, string $message): void
 
 $pdo = connectDatabase(loadConfig($root . '/api/config.php'));
 tcDatabaseOnlyAssert($pdo instanceof PDO, 'Database connection failed.');
+$logsPdo = connectActivityLogDatabase(loadConfig($root . '/api/config.php'));
+tcDatabaseOnlyAssert($logsPdo instanceof PDO, 'Logs database connection failed.');
 $seen = 0;
 foreach (listTcRegistry($pdo) as $registry) {
     $code = normalizeTcInstanceCode($registry['code'] ?? '');
@@ -26,7 +28,10 @@ foreach (listTcRegistry($pdo) as $registry) {
     tcDatabaseOnlyAssert(is_array($mode) && ($mode['mode'] ?? '') === 'database_only', "{$code} is not database-only.");
     tcDatabaseOnlyAssert(tcInstanceScanRuntimeFiles($missionDir) === [], "{$code} still has runtime files on disk.");
     $tables = ensureTcInstanceTables($pdo, $code);
-    foreach ($tables as $table) tcDatabaseOnlyAssert(tcInstanceTableExists($pdo, $table), "Missing table {$table}.");
+    foreach ($tables as $key => $table) {
+        $tablePdo = $key === 'activity_logs' ? $logsPdo : $pdo;
+        tcDatabaseOnlyAssert(tcInstanceTableExists($tablePdo, $table), "Missing table {$table}.");
+    }
 
     $opaqueCsv = (int)$pdo->query("SELECT COUNT(*) FROM `{$tables['data']}` WHERE `file_path` IS NOT NULL AND LOWER(`file_path`) LIKE '%.csv'")->fetchColumn();
     tcDatabaseOnlyAssert($opaqueCsv === 0, "{$code} still stores CSV documents.");

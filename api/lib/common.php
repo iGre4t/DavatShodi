@@ -8,7 +8,10 @@ function getDatabaseConfigOverridesPath(): string
 
 function getDatabaseConfigAllowedKeys(): array
 {
-    return ['host', 'port', 'dbname', 'user', 'password', 'table', 'record'];
+    return [
+        'host', 'port', 'dbname', 'user', 'password', 'table', 'record',
+        'logs_host', 'logs_port', 'logs_dbname', 'logs_user', 'logs_password',
+    ];
 }
 
 function loadDatabaseConfigOverrides(): array
@@ -33,8 +36,10 @@ function mergeDatabaseConfigOverrides(array $config): array
     }
     $allowed = array_fill_keys(getDatabaseConfigAllowedKeys(), true);
     $filtered = array_intersect_key($overrides, $allowed);
-    if (array_key_exists('port', $filtered)) {
-        $filtered['port'] = (int)$filtered['port'];
+    foreach (['port', 'logs_port'] as $portKey) {
+        if (array_key_exists($portKey, $filtered)) {
+            $filtered[$portKey] = (int)$filtered[$portKey];
+        }
     }
     return array_merge($config, $filtered);
 }
@@ -49,15 +54,22 @@ function sanitizeDatabaseConfigPayload(array $payload): array
 {
     $result = [];
     foreach (getDatabaseConfigAllowedKeys() as $key) {
-        if ($key === 'port') {
-            $port = (int)($payload['port'] ?? 0);
-            $result['port'] = $port > 0 ? $port : 3306;
+        if (!array_key_exists($key, $payload)) {
+            continue;
+        }
+        if ($key === 'port' || $key === 'logs_port') {
+            $port = (int)($payload[$key] ?? 0);
+            $result[$key] = $port > 0 ? $port : 3306;
             continue;
         }
         $value = $payload[$key] ?? '';
         $trimmed = trim((string)$value);
-        if ($key === 'dbname') {
-            $result['dbname'] = sanitizeDatabaseIdentifier($trimmed, 'MCI');
+        if ($key === 'dbname' || $key === 'logs_dbname') {
+            if ($key === 'logs_dbname' && $trimmed === '') {
+                $result[$key] = '';
+                continue;
+            }
+            $result[$key] = sanitizeDatabaseIdentifier($trimmed, $key === 'dbname' ? 'MCI' : 'MCI_logs');
             continue;
         }
         if ($key === 'table') {
@@ -93,8 +105,8 @@ function getDatabaseConfigForResponse(array $config): array
     $result = [];
     foreach (getDatabaseConfigAllowedKeys() as $key) {
         $value = $config[$key] ?? '';
-        if ($key === 'port') {
-            $result['port'] = (int)$value;
+        if ($key === 'port' || $key === 'logs_port') {
+            $result[$key] = (int)$value;
             continue;
         }
         $result[$key] = trim((string)$value);
@@ -153,7 +165,7 @@ function loadConfig(string $path): array
     return mergeDatabaseConfigOverrides($config);
 }
 
-function connectDatabase(array $config): ?PDO
+function connectDatabase(array $config, bool $ensureApplicationStore = true): ?PDO
 {
     static $connectionCache = [];
 
@@ -176,7 +188,11 @@ function connectDatabase(array $config): ?PDO
         (string)$password
     ]));
     if (array_key_exists($connectionKey, $connectionCache)) {
-        return $connectionCache[$connectionKey];
+        $cached = $connectionCache[$connectionKey];
+        if ($ensureApplicationStore && $cached instanceof PDO) {
+            ensureStoreTable($cached, resolveTableName($config));
+        }
+        return $cached;
     }
 
     // PDO_MYSQL on Windows can ignore ATTR_TIMEOUT while waiting for a server
@@ -218,7 +234,9 @@ function connectDatabase(array $config): ?PDO
             PDO::ATTR_TIMEOUT => $connectTimeout
         ];
         $pdo = new PDO($dsn, $user, $password, $options);
-        ensureStoreTable($pdo, resolveTableName($config));
+        if ($ensureApplicationStore) {
+            ensureStoreTable($pdo, resolveTableName($config));
+        }
         $connectionCache[$connectionKey] = $pdo;
         return $pdo;
     } catch (PDOException $e) {

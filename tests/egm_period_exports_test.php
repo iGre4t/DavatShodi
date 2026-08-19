@@ -11,6 +11,8 @@ function egmPeriodExportsAssert(bool $condition, string $message): void
 
 $pdo = connectDatabase(loadConfig(dirname(__DIR__) . '/api/config.php'));
 egmPeriodExportsAssert($pdo instanceof PDO, 'Could not connect to the period export test database');
+$logsPdo = connectActivityLogDatabase(loadConfig(dirname(__DIR__) . '/api/config.php'));
+egmPeriodExportsAssert($logsPdo instanceof PDO, 'Could not connect to the period export logs database');
 do {
     $code = '98' . (string)random_int(10000000, 99999999);
     $names = egmInstanceTableNames($code);
@@ -18,6 +20,7 @@ do {
 
 try {
     $tables = ensureEgmInstanceTables($pdo, $code);
+    ensureActivityLogTable($logsPdo, 'EGM', $code);
     egmInstanceWritePeriods($pdo, $code, [[
         'id' => 'period-export-test',
         'tagCode' => '01',
@@ -66,7 +69,7 @@ try {
         ':registered_at' => '2026-08-18 10:10:00', ':registered_by' => 'admin',
     ]);
 
-    $insertLog = $pdo->prepare(
+    $insertLog = $logsPdo->prepare(
         "INSERT INTO `{$tables['activity_logs']}` (`source_key`,`user_id`,`work_id`,`level`,`action`,`entity_type`,"
         . "`entity_id`,`status`,`message`,`metadata_json`,`occurred_at`) VALUES (:source_key,:user_id,:work_id,'info',"
         . ":action,'period','01',:status,:message,:metadata_json,:occurred_at)"
@@ -84,7 +87,7 @@ try {
         ':occurred_at' => '2026-08-18 09:10:00',
     ]);
 
-    $context = ['pdo' => $pdo, 'code' => $code, 'tables' => $tables, 'mission_dir' => dirname(__DIR__)];
+    $context = ['pdo' => $pdo, 'logs_pdo' => $logsPdo, 'code' => $code, 'tables' => $tables, 'mission_dir' => dirname(__DIR__)];
     foreach (['all_guests' => 2, 'uninvited_guests' => 1, 'full_log' => 2, 'user_conditions' => 2] as $type => $expectedRows) {
         $export = egmPeriodExportBuild($context, '01', $type);
         egmPeriodExportsAssert($export['row_count'] === $expectedRows, "Unexpected row count for {$type}");

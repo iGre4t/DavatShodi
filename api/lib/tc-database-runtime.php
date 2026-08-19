@@ -48,7 +48,7 @@ function tcDatabaseRuntimeNormalizeAbsolute(string $path): string
     return $prefix . implode('/', $parts);
 }
 
-/** @return array{pdo:PDO,code:string,tables:array<string,string>,root:string,relative:string}|null */
+/** @return array{pdo:PDO,logs_pdo:PDO,code:string,tables:array<string,string>,root:string,relative:string}|null */
 function tcDatabaseRuntimeContextForPath(string $path): ?array
 {
     $absolute = tcDatabaseRuntimeNormalizeAbsolute($path);
@@ -87,12 +87,17 @@ function tcDatabaseRuntimeContextForPath(string $path): ?array
         if ($parent === $projectRoot) throw new RuntimeException('Unable to resolve the TC project root.');
         $projectRoot = $parent;
     }
-    $pdo = connectDatabase(loadConfig(str_replace('/', DIRECTORY_SEPARATOR, $projectRoot . '/api/config.php')));
+    $config = loadConfig(str_replace('/', DIRECTORY_SEPARATOR, $projectRoot . '/api/config.php'));
+    $pdo = connectDatabase($config);
     if (!$pdo instanceof PDO) throw new RuntimeException('Unable to connect to the TC database.');
     $registry = tcInstanceRegistryForDirectory($pdo, str_replace('/', DIRECTORY_SEPARATOR, $missionRoot));
     if (!is_array($registry)) throw new RuntimeException('The TC instance is not registered in the database.');
+    $logsPdo = connectActivityLogDatabase($config);
+    if (!$logsPdo instanceof PDO) throw new RuntimeException('Unable to connect to the TC activity logs database.');
+    ensureActivityLogTable($logsPdo, 'TC', (string)$registry['code']);
     $context = [
         'pdo' => $pdo,
+        'logs_pdo' => $logsPdo,
         'code' => (string)$registry['code'],
         'tables' => ensureTcInstanceTables($pdo, (string)$registry['code']),
         'root' => $missionRoot,
@@ -532,7 +537,7 @@ function tcDatabaseRuntimeActivityEntries(string $missionDir, string $purpose = 
         // Monitoring only needs the set of participating users here. Returning
         // every task-action row (hundreds of thousands in migrated histories)
         // exhausted PHP memory before the panel could render.
-        $rows = $context['pdo']->query(
+        $rows = $context['logs_pdo']->query(
             "SELECT `work_id`, MIN(`occurred_at`) AS `occurred_at` FROM `{$table}` "
             . "WHERE `work_id` IS NOT NULL AND `work_id` <> '' "
             . "AND `action` IN ('taskclub.task.action','taskclub.task_action') GROUP BY `work_id`"
@@ -561,7 +566,7 @@ function tcDatabaseRuntimeActivityEntries(string $missionDir, string $purpose = 
         $where = " WHERE `action`='taskclub.user.login' OR (`action`='taskclub.task.action' "
             . "AND JSON_UNQUOTE(JSON_EXTRACT(`metadata_json`,'$.request_action')) IN ('task_log_answer','task_complete'))";
     }
-    $rows = $context['pdo']->query(
+    $rows = $context['logs_pdo']->query(
         "SELECT `work_id`,`session_id`,`level`,`action`,`entity_type`,`entity_id`,`ip_address`,`user_agent`,`status`,`message`,`metadata_json`,`occurred_at` "
         . "FROM `{$table}`{$where} ORDER BY `occurred_at`,`id`"
     )->fetchAll(PDO::FETCH_ASSOC);
@@ -599,7 +604,7 @@ function tcDatabaseRuntimeActivityDays(string $missionDir): array
 {
     $context = tcDatabaseRuntimeContextForPath(rtrim($missionDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'Setting.json');
     if ($context === null) return [];
-    $rows = $context['pdo']->query(
+    $rows = $context['logs_pdo']->query(
         "SELECT DISTINCT DATE_FORMAT(`occurred_at`, '%Y-%m-%d') AS `day` "
         . "FROM `{$context['tables']['activity_logs']}` ORDER BY `day` DESC"
     )->fetchAll(PDO::FETCH_COLUMN);
@@ -613,7 +618,7 @@ function tcDatabaseRuntimeActivityEntriesForDay(string $missionDir, string $day,
     $context = tcDatabaseRuntimeContextForPath(rtrim($missionDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'Setting.json');
     if ($context === null) return [];
     $limit = max(1, min(10000, $limit));
-    $statement = $context['pdo']->prepare(
+    $statement = $context['logs_pdo']->prepare(
         "SELECT `work_id`,`session_id`,`level`,`action`,`entity_type`,`entity_id`,`ip_address`,`user_agent`,`status`,`message`,`metadata_json`,`occurred_at` "
         . "FROM `{$context['tables']['activity_logs']}` WHERE `occurred_at` >= :start AND `occurred_at` < :end "
         . "ORDER BY `occurred_at` DESC, `id` DESC LIMIT {$limit}"
@@ -634,7 +639,7 @@ function tcDatabaseRuntimeAppendActivity(string $missionDir, array $entry): bool
         $context['code'], $timestamp, $workId, (string)($entry['session_id'] ?? ''),
         (string)($entry['action'] ?? ''), (string)($entry['entity_id'] ?? ''), random_bytes(8),
     ]));
-    $statement = $context['pdo']->prepare(
+    $statement = $context['logs_pdo']->prepare(
         "INSERT INTO `{$context['tables']['activity_logs']}` "
         . "(`source_key`,`user_id`,`work_id`,`session_id`,`level`,`action`,`entity_type`,`entity_id`,`ip_address`,`user_agent`,`status`,`message`,`metadata_json`,`occurred_at`) "
         . "VALUES (:source_key,:user_id,:work_id,:session_id,:level,:action,:entity_type,:entity_id,:ip_address,:user_agent,:status,:message,:metadata_json,:occurred_at)"

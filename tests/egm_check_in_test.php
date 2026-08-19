@@ -54,6 +54,8 @@ egmCheckInAssert(($overlapState['result'] ?? '') === 'multiple_active_periods', 
 
 $pdo = connectDatabase(loadConfig(dirname(__DIR__) . '/api/config.php'));
 egmCheckInAssert($pdo instanceof PDO, 'Could not connect to the check-in test database');
+$logsPdo = connectActivityLogDatabase(loadConfig(dirname(__DIR__) . '/api/config.php'));
+egmCheckInAssert($logsPdo instanceof PDO, 'Could not connect to the check-in logs test database');
 do {
     $code = '99' . (string)random_int(10000000, 99999999);
     $names = egmInstanceTableNames($code);
@@ -61,6 +63,7 @@ do {
 
 try {
     $tables = ensureEgmInstanceTables($pdo, $code);
+    ensureActivityLogTable($logsPdo, 'EGM', $code);
     egmCheckInAssert(egmInstanceColumnExists($pdo, $tables['user_periods'], 'entered_date'), 'entered_date was not provisioned');
     egmCheckInAssert(egmInstanceColumnExists($pdo, $tables['user_periods'], 'entered_time'), 'entered_time was not provisioned');
     egmCheckInAssert(egmInstanceColumnExists($pdo, $tables['user_periods'], 'quit_date'), 'quit_date was not provisioned');
@@ -98,6 +101,7 @@ try {
     $basePeriod = ['tagCode' => '01', 'title' => 'Test Period', 'duration' => false];
     $context = [
         'pdo' => $pdo,
+        'logs_pdo' => $logsPdo,
         'code' => $code,
         'name' => 'Check-in Test',
         'tables' => $tables,
@@ -122,7 +126,7 @@ try {
         "SELECT `entered_date`, `entered_time` FROM `{$tables['user_periods']}` WHERE `user_id` = {$userId}"
     )->fetch(PDO::FETCH_ASSOC);
     egmCheckInAssert($storedAfterDuplicate === $stored, 'A duplicate check-in overwrote the original entry time');
-    $statuses = $pdo->query(
+    $statuses = $logsPdo->query(
         "SELECT `status` FROM `{$tables['activity_logs']}` WHERE `action` = '" . EGM_CHECK_IN_ACTION . "' ORDER BY `id`"
     )->fetchAll(PDO::FETCH_COLUMN);
     egmCheckInAssert($statuses === ['success', 'duplicate'], 'Success and duplicate attempts were not both audited');

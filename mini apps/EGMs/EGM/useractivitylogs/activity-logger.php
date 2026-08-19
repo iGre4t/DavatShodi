@@ -205,7 +205,7 @@ function egmActivityLoadDatabaseConfig(): array
     $overrideFile = egmActivityProjectRoot() . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'db-config.json';
     $overrides = egmActivityLoadJsonFile($overrideFile);
     if ($overrides) {
-        $allowed = array_fill_keys(['host', 'port', 'dbname', 'user', 'password', 'charset'], true);
+        $allowed = array_fill_keys(['host', 'port', 'dbname', 'user', 'password', 'charset', 'logs_host', 'logs_port', 'logs_dbname', 'logs_user', 'logs_password'], true);
         $config = array_merge($config, array_intersect_key($overrides, $allowed));
     }
     return $config;
@@ -218,23 +218,8 @@ function egmActivityPdo(): ?PDO
         return $pdo instanceof PDO ? $pdo : null;
     }
     $config = egmActivityLoadDatabaseConfig();
-    $host = trim((string)($config['host'] ?? ''));
-    $dbname = trim((string)($config['dbname'] ?? ''));
-    if ($host === '' || $dbname === '') {
-        $pdo = null;
-        return null;
-    }
-    $port = (int)($config['port'] ?? 3306);
-    $charset = trim((string)($config['charset'] ?? 'utf8mb4')) ?: 'utf8mb4';
-    $user = trim((string)($config['user'] ?? ''));
-    $password = (string)($config['password'] ?? '');
     try {
-        $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port > 0 ? $port : 3306, $dbname, $charset);
-        $pdo = new PDO($dsn, $user, $password, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false
-        ]);
+        $pdo = connectActivityLogDatabase($config);
         return $pdo;
     } catch (Throwable $err) {
         error_log('Event Guest Manager activity logger DB connection failed: ' . $err->getMessage());

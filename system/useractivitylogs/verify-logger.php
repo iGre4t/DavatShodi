@@ -19,19 +19,16 @@ $ok = panelLogUserActivity([
     'metadata' => ['source' => 'verify-logger.php']
 ]);
 
-$path = panelActivityLogDirectory() . DIRECTORY_SEPARATOR . date('Y-m-d') . '.log';
-if (!$ok || !is_file($path)) {
+$config = loadConfig(dirname(__DIR__, 2) . '/api/config.php');
+$pdo = connectActivityLogDatabase($config);
+if (!$ok || !$pdo instanceof PDO) {
     fwrite(STDERR, "Panel activity logger verification failed.\n");
     exit(1);
 }
-
-$lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-$last = is_array($lines) ? end($lines) : false;
-$decoded = is_string($last) ? json_decode($last, true) : null;
-if (!is_array($decoded) || ($decoded['action'] ?? '') !== 'panel.logger.verification') {
-    fwrite(STDERR, "Panel activity logger wrote an invalid JSONL entry.\n");
+$statement = $pdo->query("SELECT `action` FROM `panel_user_activity_logs` ORDER BY `id` DESC LIMIT 1");
+if ((string)$statement->fetchColumn() !== 'panel.logger.verification') {
+    fwrite(STDERR, "Panel activity logger wrote an invalid database entry.\n");
     exit(1);
 }
-
-echo "Panel activity logger verification passed: {$path}\n";
+echo "Panel activity logger database verification passed.\n";
 
