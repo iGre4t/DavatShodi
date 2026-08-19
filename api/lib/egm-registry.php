@@ -1,14 +1,14 @@
 <?php
 declare(strict_types=1);
 
-const EGM_REGISTRY_TABLE = 'EGM';
+const EGM_REGISTRY_TABLE = 'egm';
 const EGM_INSTANCES_DIRECTORY = 'mini apps/EGMs';
 const EGM_LEGACY_INSTANCES_DIRECTORY = 'miniapps/EGMs';
 
 function ensureEgmRegistryTable(PDO $pdo): void
 {
     $pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS `EGM` (
+CREATE TABLE IF NOT EXISTS `egm` (
   `code` VARCHAR(64) NOT NULL,
   `name` VARCHAR(128) NOT NULL,
   `directory` VARCHAR(512) NOT NULL,
@@ -19,14 +19,14 @@ CREATE TABLE IF NOT EXISTS `EGM` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
     $pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS `EGM_sequence` (
+CREATE TABLE IF NOT EXISTS `egm_sequence` (
   `id` TINYINT UNSIGNED NOT NULL,
   `next_code` VARCHAR(64) NOT NULL,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
-    $pdo->exec("INSERT IGNORE INTO `EGM_sequence` (`id`, `next_code`) VALUES (1, '0001')");
+    $pdo->exec("INSERT IGNORE INTO `egm_sequence` (`id`, `next_code`) VALUES (1, '0001')");
     migrateLegacyEgmRegistryDirectories($pdo);
 }
 
@@ -35,7 +35,7 @@ function migrateLegacyEgmRegistryDirectories(PDO $pdo): void
     $legacyPrefix = EGM_LEGACY_INSTANCES_DIRECTORY . '/';
     $canonicalPrefix = EGM_INSTANCES_DIRECTORY . '/';
     $statement = $pdo->prepare(
-        'UPDATE `EGM` SET `directory` = CONCAT(:canonical_prefix, SUBSTRING(`directory`, :legacy_length)) '
+        'UPDATE `egm` SET `directory` = CONCAT(:canonical_prefix, SUBSTRING(`directory`, :legacy_length)) '
         . 'WHERE `directory` LIKE :legacy_pattern'
     );
     $statement->execute([
@@ -94,16 +94,16 @@ function allocateEgmRegistryCode(PDO $pdo): string
     ensureEgmRegistryTable($pdo);
     $pdo->beginTransaction();
     try {
-        $stmt = $pdo->query('SELECT `next_code` FROM `EGM_sequence` WHERE `id` = 1 FOR UPDATE');
+        $stmt = $pdo->query('SELECT `next_code` FROM `egm_sequence` WHERE `id` = 1 FOR UPDATE');
         $nextCode = normalizeEgmSequenceCode($stmt ? $stmt->fetchColumn() : '') ?: '0001';
-        $records = $pdo->query('SELECT `code` FROM `EGM`');
+        $records = $pdo->query('SELECT `code` FROM `egm`');
         foreach ($records ? $records->fetchAll(PDO::FETCH_ASSOC) : [] as $record) {
             $existingCode = normalizeEgmSequenceCode($record['code'] ?? '');
             if ($existingCode !== '' && compareEgmSequenceCodes($existingCode, $nextCode) >= 0) {
                 $nextCode = incrementEgmSequenceCode($existingCode);
             }
         }
-        $update = $pdo->prepare('UPDATE `EGM_sequence` SET `next_code` = :next_code, `updated_at` = CURRENT_TIMESTAMP WHERE `id` = 1');
+        $update = $pdo->prepare('UPDATE `egm_sequence` SET `next_code` = :next_code, `updated_at` = CURRENT_TIMESTAMP WHERE `id` = 1');
         $update->execute([':next_code' => incrementEgmSequenceCode($nextCode)]);
         $pdo->commit();
         return $nextCode;
@@ -134,14 +134,14 @@ function normalizeEgmRegistryDirectory($value): string
 function listEgmRegistry(PDO $pdo): array
 {
     ensureEgmRegistryTable($pdo);
-    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `EGM` ORDER BY LENGTH(`code`), `code`');
+    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `egm` ORDER BY LENGTH(`code`), `code`');
     return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
 }
 
 function findEgmRegistryByCode(PDO $pdo, string $code): ?array
 {
     ensureEgmRegistryTable($pdo);
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `EGM` WHERE `code` = :code LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `egm` WHERE `code` = :code LIMIT 1');
     $stmt->execute([':code' => $code]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;
@@ -154,7 +154,7 @@ function findEgmRegistryByDirectory(PDO $pdo, string $directory): ?array
     if ($directory === '') {
         return null;
     }
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `EGM` WHERE `directory` = :directory LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `egm` WHERE `directory` = :directory LIMIT 1');
     $stmt->execute([':directory' => $directory]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;
@@ -169,7 +169,7 @@ function insertEgmRegistry(PDO $pdo, string $code, string $name, string $directo
         throw new InvalidArgumentException('Invalid EGM registry record.');
     }
     ensureEgmRegistryTable($pdo);
-    $stmt = $pdo->prepare('INSERT INTO `EGM` (`code`, `name`, `directory`) VALUES (:code, :name, :directory)');
+    $stmt = $pdo->prepare('INSERT INTO `egm` (`code`, `name`, `directory`) VALUES (:code, :name, :directory)');
     $stmt->execute([':code' => $code, ':name' => $name, ':directory' => $directory]);
 }
 
@@ -183,7 +183,7 @@ function upsertEgmRegistry(PDO $pdo, string $code, string $name, string $directo
     }
     ensureEgmRegistryTable($pdo);
     $stmt = $pdo->prepare(<<<SQL
-INSERT INTO `EGM` (`code`, `name`, `directory`)
+INSERT INTO `egm` (`code`, `name`, `directory`)
 VALUES (:code, :name, :directory)
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `directory` = VALUES(`directory`), `updated_at` = CURRENT_TIMESTAMP
 SQL);
@@ -199,7 +199,7 @@ function updateEgmRegistry(PDO $pdo, string $code, string $name, string $directo
         return false;
     }
     ensureEgmRegistryTable($pdo);
-    $stmt = $pdo->prepare('UPDATE `EGM` SET `name` = :name, `directory` = :directory, `updated_at` = CURRENT_TIMESTAMP WHERE `code` = :code');
+    $stmt = $pdo->prepare('UPDATE `egm` SET `name` = :name, `directory` = :directory, `updated_at` = CURRENT_TIMESTAMP WHERE `code` = :code');
     $stmt->execute([':code' => $code, ':name' => $name, ':directory' => $directory]);
     return $stmt->rowCount() > 0 || findEgmRegistryByCode($pdo, $code) !== null;
 }
@@ -207,7 +207,7 @@ function updateEgmRegistry(PDO $pdo, string $code, string $name, string $directo
 function deleteEgmRegistry(PDO $pdo, string $code): bool
 {
     ensureEgmRegistryTable($pdo);
-    $stmt = $pdo->prepare('DELETE FROM `EGM` WHERE `code` = :code');
+    $stmt = $pdo->prepare('DELETE FROM `egm` WHERE `code` = :code');
     $stmt->execute([':code' => $code]);
     return $stmt->rowCount() > 0;
 }

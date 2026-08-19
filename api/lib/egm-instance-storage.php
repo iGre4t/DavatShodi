@@ -25,16 +25,16 @@ function egmInstanceTableNames(string $code): array
         throw new InvalidArgumentException('Invalid EGM instance code.');
     }
     return [
-        'data' => 'EGM_' . $normalized,
-        'users' => 'EGM_' . $normalized . '_users',
-        'user_periods' => 'EGM_' . $normalized . '_user_periods',
-        'answers' => 'EGM_' . $normalized . '_answers',
-        'teams' => 'EGM_' . $normalized . '_teams',
-        'team_members' => 'EGM_' . $normalized . '_team_members',
-        'photo_submissions' => 'EGM_' . $normalized . '_photo_submissions',
-        'prize_awards' => 'EGM_' . $normalized . '_prize_awards',
-        'pot_winners' => 'EGM_' . $normalized . '_pot_winners',
-        'login_attempts' => 'EGM_' . $normalized . '_login_attempts',
+        'data' => 'egm_' . $normalized,
+        'users' => 'egm_' . $normalized . '_users',
+        'user_periods' => 'egm_' . $normalized . '_user_periods',
+        'answers' => 'egm_' . $normalized . '_answers',
+        'teams' => 'egm_' . $normalized . '_teams',
+        'team_members' => 'egm_' . $normalized . '_team_members',
+        'photo_submissions' => 'egm_' . $normalized . '_photo_submissions',
+        'prize_awards' => 'egm_' . $normalized . '_prize_awards',
+        'pot_winners' => 'egm_' . $normalized . '_pot_winners',
+        'login_attempts' => 'egm_' . $normalized . '_login_attempts',
         'activity_logs' => 'egm_' . $normalized . '_activity_logs',
     ];
 }
@@ -889,7 +889,7 @@ function egmInstanceEnsureDevelopmentInstance(PDO $pdo, string $missionDir): arr
         throw new InvalidArgumentException('Invalid EGM development directory.');
     }
     ensureEgmRegistryTable($pdo);
-    $pdo->prepare('DELETE FROM `EGM` WHERE `directory` = :directory AND `code` <> :code')->execute([
+    $pdo->prepare('DELETE FROM `egm` WHERE `directory` = :directory AND `code` <> :code')->execute([
         ':directory' => EGM_DEVELOP_DIRECTORY,
         ':code' => EGM_DEVELOP_CODE,
     ]);
@@ -925,7 +925,7 @@ function egmInstanceRegistryForDirectory(PDO $pdo, string $missionDir): ?array
     if ($directory === EGM_DEVELOP_DIRECTORY) {
         return egmInstanceEnsureDevelopmentInstance($pdo, $missionDir);
     }
-    $statement = $pdo->prepare('SELECT `code`, `directory` FROM `EGM` WHERE `directory` = :directory LIMIT 1');
+    $statement = $pdo->prepare('SELECT `code`, `directory` FROM `egm` WHERE `directory` = :directory LIMIT 1');
     $statement->execute([':directory' => $directory]);
     $row = $statement->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? ['code' => (string)$row['code'], 'directory' => (string)$row['directory']] : null;
@@ -1346,7 +1346,7 @@ function egmInstanceRefreshAllUsersFromOeu(PDO $pdo): int
         return 0;
     }
     $updated = 0;
-    $codes = $pdo->query('SELECT `code` FROM `EGM`')->fetchAll(PDO::FETCH_COLUMN);
+    $codes = $pdo->query('SELECT `code` FROM `egm`')->fetchAll(PDO::FETCH_COLUMN);
     foreach ($codes as $code) {
         $normalized = normalizeEgmInstanceCode($code);
         if ($normalized !== '') {

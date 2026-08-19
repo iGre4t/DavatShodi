@@ -134,7 +134,7 @@ foreach (listTcRegistry($pdo) as $registry) $report[] = portabilityValidateInsta
 portabilityAssert(count($report) === 5, 'Expected two EGM and three TaskClub database instances.');
 
 if (egmInstanceTableExists($pdo, 'egm_invite_card_routes')) {
-    $orphans = (int)$pdo->query('SELECT COUNT(*) FROM `egm_invite_card_routes` routes LEFT JOIN `EGM` registry ON registry.`code`=routes.`egm_code` WHERE registry.`code` IS NULL')->fetchColumn();
+    $orphans = (int)$pdo->query('SELECT COUNT(*) FROM `egm_invite_card_routes` routes LEFT JOIN `egm` registry ON registry.`code`=routes.`egm_code` WHERE registry.`code` IS NULL')->fetchColumn();
     portabilityAssert($orphans === 0, 'Invite-card routes reference missing EGM registry records.');
 }
 

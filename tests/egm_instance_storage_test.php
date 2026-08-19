@@ -22,14 +22,14 @@ egmInstanceStorageAssert(
     is_dir(dirname(__DIR__) . '/mini apps/EGMs') && !is_dir(dirname(__DIR__) . '/miniapps'),
     'Generated EGMs were not consolidated under mini apps/EGMs'
 );
-egmInstanceStorageAssert($tables['data'] === 'EGM_0001', 'The scoped EGM data table name is incorrect');
-egmInstanceStorageAssert($tables['users'] === 'EGM_0001_users', 'The scoped EGM users table name is incorrect');
+egmInstanceStorageAssert($tables['data'] === 'egm_0001', 'The scoped EGM data table name is incorrect');
+egmInstanceStorageAssert($tables['users'] === 'egm_0001_users', 'The scoped EGM users table name is incorrect');
 foreach ([
     'user_periods', 'answers', 'teams', 'team_members', 'photo_submissions',
     'prize_awards', 'pot_winners', 'login_attempts', 'activity_logs',
 ] as $suffix) {
     egmInstanceStorageAssert(
-        $tables[$suffix] === ($suffix === 'activity_logs' ? 'egm_0001_activity_logs' : 'EGM_0001_' . $suffix),
+        $tables[$suffix] === 'egm_0001_' . $suffix,
         "The scoped EGM {$suffix} table name is incorrect"
     );
 }

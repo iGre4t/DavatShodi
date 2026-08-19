@@ -1,14 +1,14 @@
 <?php
 declare(strict_types=1);
 
-const TC_REGISTRY_TABLE = 'TC';
+const TC_REGISTRY_TABLE = 'tc';
 const TC_INSTANCES_DIRECTORY = 'mini apps/missions';
 const TC_LEGACY_INSTANCES_DIRECTORY = 'mini apps/missions';
 
 function ensureTcRegistryTable(PDO $pdo): void
 {
     $pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS `TC` (
+CREATE TABLE IF NOT EXISTS `tc` (
   `code` VARCHAR(64) NOT NULL,
   `name` VARCHAR(128) NOT NULL,
   `directory` VARCHAR(512) NOT NULL,
@@ -19,14 +19,14 @@ CREATE TABLE IF NOT EXISTS `TC` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
     $pdo->exec(<<<SQL
-CREATE TABLE IF NOT EXISTS `TC_sequence` (
+CREATE TABLE IF NOT EXISTS `tc_sequence` (
   `id` TINYINT UNSIGNED NOT NULL,
   `next_code` VARCHAR(64) NOT NULL,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
-    $pdo->exec("INSERT IGNORE INTO `TC_sequence` (`id`, `next_code`) VALUES (1, '0001')");
+    $pdo->exec("INSERT IGNORE INTO `tc_sequence` (`id`, `next_code`) VALUES (1, '0001')");
     migrateLegacyTcRegistryDirectories($pdo);
 }
 
@@ -35,7 +35,7 @@ function migrateLegacyTcRegistryDirectories(PDO $pdo): void
     $legacyPrefix = TC_LEGACY_INSTANCES_DIRECTORY . '/';
     $canonicalPrefix = TC_INSTANCES_DIRECTORY . '/';
     $statement = $pdo->prepare(
-        'UPDATE `TC` SET `directory` = CONCAT(:canonical_prefix, SUBSTRING(`directory`, :legacy_length)) '
+        'UPDATE `tc` SET `directory` = CONCAT(:canonical_prefix, SUBSTRING(`directory`, :legacy_length)) '
         . 'WHERE `directory` LIKE :legacy_pattern'
     );
     $statement->execute([
@@ -94,16 +94,16 @@ function allocateTcRegistryCode(PDO $pdo): string
     ensureTcRegistryTable($pdo);
     $pdo->beginTransaction();
     try {
-        $stmt = $pdo->query('SELECT `next_code` FROM `TC_sequence` WHERE `id` = 1 FOR UPDATE');
+        $stmt = $pdo->query('SELECT `next_code` FROM `tc_sequence` WHERE `id` = 1 FOR UPDATE');
         $nextCode = normalizeTcSequenceCode($stmt ? $stmt->fetchColumn() : '') ?: '0001';
-        $records = $pdo->query('SELECT `code` FROM `TC`');
+        $records = $pdo->query('SELECT `code` FROM `tc`');
         foreach ($records ? $records->fetchAll(PDO::FETCH_ASSOC) : [] as $record) {
             $existingCode = normalizeTcSequenceCode($record['code'] ?? '');
             if ($existingCode !== '' && compareTcSequenceCodes($existingCode, $nextCode) >= 0) {
                 $nextCode = incrementTcSequenceCode($existingCode);
             }
         }
-        $update = $pdo->prepare('UPDATE `TC_sequence` SET `next_code` = :next_code, `updated_at` = CURRENT_TIMESTAMP WHERE `id` = 1');
+        $update = $pdo->prepare('UPDATE `tc_sequence` SET `next_code` = :next_code, `updated_at` = CURRENT_TIMESTAMP WHERE `id` = 1');
         $update->execute([':next_code' => incrementTcSequenceCode($nextCode)]);
         $pdo->commit();
         return $nextCode;
@@ -134,14 +134,14 @@ function normalizeTcRegistryDirectory($value): string
 function listTcRegistry(PDO $pdo): array
 {
     ensureTcRegistryTable($pdo);
-    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `TC` ORDER BY LENGTH(`code`), `code`');
+    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `tc` ORDER BY LENGTH(`code`), `code`');
     return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
 }
 
 function findTcRegistryByCode(PDO $pdo, string $code): ?array
 {
     ensureTcRegistryTable($pdo);
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `TC` WHERE `code` = :code LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `tc` WHERE `code` = :code LIMIT 1');
     $stmt->execute([':code' => $code]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;
@@ -154,7 +154,7 @@ function findTcRegistryByDirectory(PDO $pdo, string $directory): ?array
     if ($directory === '') {
         return null;
     }
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `TC` WHERE `directory` = :directory LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `tc` WHERE `directory` = :directory LIMIT 1');
     $stmt->execute([':directory' => $directory]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;
@@ -169,7 +169,7 @@ function insertTcRegistry(PDO $pdo, string $code, string $name, string $director
         throw new InvalidArgumentException('Invalid TC registry record.');
     }
     ensureTcRegistryTable($pdo);
-    $stmt = $pdo->prepare('INSERT INTO `TC` (`code`, `name`, `directory`) VALUES (:code, :name, :directory)');
+    $stmt = $pdo->prepare('INSERT INTO `tc` (`code`, `name`, `directory`) VALUES (:code, :name, :directory)');
     $stmt->execute([':code' => $code, ':name' => $name, ':directory' => $directory]);
 }
 
@@ -183,7 +183,7 @@ function upsertTcRegistry(PDO $pdo, string $code, string $name, string $director
     }
     ensureTcRegistryTable($pdo);
     $stmt = $pdo->prepare(<<<SQL
-INSERT INTO `TC` (`code`, `name`, `directory`)
+INSERT INTO `tc` (`code`, `name`, `directory`)
 VALUES (:code, :name, :directory)
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `directory` = VALUES(`directory`), `updated_at` = CURRENT_TIMESTAMP
 SQL);
@@ -199,7 +199,7 @@ function updateTcRegistry(PDO $pdo, string $code, string $name, string $director
         return false;
     }
     ensureTcRegistryTable($pdo);
-    $stmt = $pdo->prepare('UPDATE `TC` SET `name` = :name, `directory` = :directory, `updated_at` = CURRENT_TIMESTAMP WHERE `code` = :code');
+    $stmt = $pdo->prepare('UPDATE `tc` SET `name` = :name, `directory` = :directory, `updated_at` = CURRENT_TIMESTAMP WHERE `code` = :code');
     $stmt->execute([':code' => $code, ':name' => $name, ':directory' => $directory]);
     return $stmt->rowCount() > 0 || findTcRegistryByCode($pdo, $code) !== null;
 }
@@ -207,7 +207,7 @@ function updateTcRegistry(PDO $pdo, string $code, string $name, string $director
 function deleteTcRegistry(PDO $pdo, string $code): bool
 {
     ensureTcRegistryTable($pdo);
-    $stmt = $pdo->prepare('DELETE FROM `TC` WHERE `code` = :code');
+    $stmt = $pdo->prepare('DELETE FROM `tc` WHERE `code` = :code');
     $stmt->execute([':code' => $code]);
     return $stmt->rowCount() > 0;
 }

@@ -118,7 +118,7 @@ try {
     $restoredCounts = dumpRestoreCounts($restored, $restoredTables);
     dumpRestoreAssert($sourceCounts === $restoredCounts, 'Restored database table or row counts differ from the source dump.');
     $lowerTables = array_map('strtolower', $restoredTables);
-    foreach (['EGM', 'EGM_sequence', 'TC', 'TC_sequence'] as $requiredTable) {
+    foreach (['egm', 'egm_sequence', 'tc', 'tc_sequence'] as $requiredTable) {
         dumpRestoreAssert(in_array(strtolower($requiredTable), $lowerTables, true), "Restored database is missing {$requiredTable}.");
     }
     $dynamicTables = array_filter(array_keys($restoredCounts), static fn(string $table): bool => preg_match('/^(?:EGM|TC)_[0-9]+(?:_|$)/i', $table) === 1);

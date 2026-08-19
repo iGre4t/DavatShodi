@@ -25,17 +25,17 @@ function tcInstanceTableNames(string $code): array
         throw new InvalidArgumentException('Invalid TC instance code.');
     }
     return [
-        'data' => 'TC_' . $normalized,
-        'users' => 'TC_' . $normalized . '_users',
-        'user_periods' => 'TC_' . $normalized . '_user_periods',
-        'answers' => 'TC_' . $normalized . '_answers',
-        'shared_answers_quiz_results' => 'TC_' . $normalized . '_shared_answers_quiz_results',
-        'teams' => 'TC_' . $normalized . '_teams',
-        'team_members' => 'TC_' . $normalized . '_team_members',
-        'photo_submissions' => 'TC_' . $normalized . '_photo_submissions',
-        'prize_awards' => 'TC_' . $normalized . '_prize_awards',
-        'pot_winners' => 'TC_' . $normalized . '_pot_winners',
-        'login_attempts' => 'TC_' . $normalized . '_login_attempts',
+        'data' => 'tc_' . $normalized,
+        'users' => 'tc_' . $normalized . '_users',
+        'user_periods' => 'tc_' . $normalized . '_user_periods',
+        'answers' => 'tc_' . $normalized . '_answers',
+        'shared_answers_quiz_results' => 'tc_' . $normalized . '_shared_answers_quiz_results',
+        'teams' => 'tc_' . $normalized . '_teams',
+        'team_members' => 'tc_' . $normalized . '_team_members',
+        'photo_submissions' => 'tc_' . $normalized . '_photo_submissions',
+        'prize_awards' => 'tc_' . $normalized . '_prize_awards',
+        'pot_winners' => 'tc_' . $normalized . '_pot_winners',
+        'login_attempts' => 'tc_' . $normalized . '_login_attempts',
         'activity_logs' => 'tc_' . $normalized . '_activity_logs',
     ];
 }
@@ -915,7 +915,7 @@ function tcInstanceEnsureDevelopmentInstance(PDO $pdo, string $missionDir): arra
         throw new InvalidArgumentException('Invalid TC development directory.');
     }
     ensureTcRegistryTable($pdo);
-    $pdo->prepare('DELETE FROM `TC` WHERE `directory` = :directory AND `code` <> :code')->execute([
+    $pdo->prepare('DELETE FROM `tc` WHERE `directory` = :directory AND `code` <> :code')->execute([
         ':directory' => TC_DEVELOP_DIRECTORY,
         ':code' => TC_DEVELOP_CODE,
     ]);
@@ -951,7 +951,7 @@ function tcInstanceRegistryForDirectory(PDO $pdo, string $missionDir): ?array
     if ($directory === TC_DEVELOP_DIRECTORY) {
         return tcInstanceEnsureDevelopmentInstance($pdo, $missionDir);
     }
-    $statement = $pdo->prepare('SELECT `code`, `directory` FROM `TC` WHERE `directory` = :directory LIMIT 1');
+    $statement = $pdo->prepare('SELECT `code`, `directory` FROM `tc` WHERE `directory` = :directory LIMIT 1');
     $statement->execute([':directory' => $directory]);
     $row = $statement->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? ['code' => (string)$row['code'], 'directory' => (string)$row['directory']] : null;
@@ -1372,7 +1372,7 @@ function tcInstanceRefreshAllUsersFromOeu(PDO $pdo): int
         return 0;
     }
     $updated = 0;
-    $codes = $pdo->query('SELECT `code` FROM `TC`')->fetchAll(PDO::FETCH_COLUMN);
+    $codes = $pdo->query('SELECT `code` FROM `tc`')->fetchAll(PDO::FETCH_COLUMN);
     foreach ($codes as $code) {
         $normalized = normalizeTcInstanceCode($code);
         if ($normalized !== '') {

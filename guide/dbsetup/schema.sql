@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `mci_store` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `EGM` (
+CREATE TABLE IF NOT EXISTS `egm` (
   `code` VARCHAR(64) NOT NULL,
   `name` VARCHAR(128) NOT NULL,
   `directory` VARCHAR(512) NOT NULL,
@@ -22,16 +22,16 @@ CREATE TABLE IF NOT EXISTS `EGM` (
   UNIQUE KEY `uniq_egm_directory` (`directory`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `EGM_sequence` (
+CREATE TABLE IF NOT EXISTS `egm_sequence` (
   `id` TINYINT UNSIGNED NOT NULL,
   `next_code` VARCHAR(64) NOT NULL,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO `EGM_sequence` (`id`, `next_code`) VALUES (1, '0001');
+INSERT IGNORE INTO `egm_sequence` (`id`, `next_code`) VALUES (1, '0001');
 
-CREATE TABLE IF NOT EXISTS `TC` (
+CREATE TABLE IF NOT EXISTS `tc` (
   `code` VARCHAR(64) NOT NULL,
   `name` VARCHAR(128) NOT NULL,
   `directory` VARCHAR(512) NOT NULL,
@@ -41,14 +41,14 @@ CREATE TABLE IF NOT EXISTS `TC` (
   UNIQUE KEY `uniq_tc_directory` (`directory`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `TC_sequence` (
+CREATE TABLE IF NOT EXISTS `tc_sequence` (
   `id` TINYINT UNSIGNED NOT NULL,
   `next_code` VARCHAR(64) NOT NULL,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO `TC_sequence` (`id`, `next_code`) VALUES (1, '0001');
+INSERT IGNORE INTO `tc_sequence` (`id`, `next_code`) VALUES (1, '0001');
 
 -- The application creates the per-EGM data, users, periods, answers, teams,
 -- submissions, awards, winners, login-attempt and activity-log tables dynamically.
