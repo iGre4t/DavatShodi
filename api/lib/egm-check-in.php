@@ -7,7 +7,7 @@ require_once __DIR__ . '/egm-instance-storage.php';
 
 const EGM_CHECK_IN_ACTION = 'egm_period_check_in';
 
-function egmCheckInNormalizeNationalId($value): string
+function egmCheckInNormalizeDigits($value): string
 {
     $value = strtr(trim((string)$value), [
         '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
@@ -15,7 +15,27 @@ function egmCheckInNormalizeNationalId($value): string
         '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
         '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
     ]);
-    return preg_match('/^[0-9]{10}$/D', $value) === 1 ? $value : '';
+    return preg_match('/^[0-9]+$/D', $value) === 1 ? $value : '';
+}
+
+function egmCheckInNormalizeNationalId($value): string
+{
+    $value = egmCheckInNormalizeDigits($value);
+    return strlen($value) === 10 ? $value : '';
+}
+
+function egmCheckInNormalizeGuestCode($value): string
+{
+    $value = egmCheckInNormalizeDigits($value);
+    $length = strlen($value);
+    return $length >= 4 && $length <= 10 ? $value : '';
+}
+
+function egmCheckInNormalizeWorkId($value): string
+{
+    $value = egmCheckInNormalizeDigits($value);
+    $length = strlen($value);
+    return $length >= 4 && $length <= 9 ? $value : '';
 }
 
 function egmCheckInBool($value): bool
@@ -265,31 +285,61 @@ function egmCheckInContext(
     ];
 }
 
-function egmCheckInFindUser(PDO $pdo, string $usersTable, string $nationalId): ?array
+function egmCheckInFindUser(PDO $pdo, string $usersTable, string $submittedCode): ?array
 {
-    $statement = $pdo->prepare("SELECT * FROM `{$usersTable}` WHERE `national_id` = :national_id LIMIT 1 FOR UPDATE");
-    $statement->execute([':national_id' => $nationalId]);
+    $nationalId = egmCheckInNormalizeNationalId($submittedCode);
+    if ($nationalId !== '') {
+        $statement = $pdo->prepare("SELECT * FROM `{$usersTable}` WHERE `national_id` = :national_id LIMIT 1 FOR UPDATE");
+        $statement->execute([':national_id' => $nationalId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        if (is_array($row)) return $row;
+        $fallback = $pdo->query(
+            "SELECT * FROM `{$usersTable}` WHERE `national_id` IS NOT NULL AND TRIM(`national_id`) <> '' FOR UPDATE"
+        );
+        $match = null;
+        foreach ($fallback ? $fallback->fetchAll(PDO::FETCH_ASSOC) : [] as $candidate) {
+            if (egmCheckInNormalizeNationalId($candidate['national_id'] ?? '') !== $nationalId) continue;
+            if (is_array($match)) throw new RuntimeException('کد ملی تکراری است و باید ابتدا تعارض کاربر برطرف شود.');
+            $match = $candidate;
+        }
+        if (is_array($match)) return $match;
+    }
+
+    $workId = egmCheckInNormalizeWorkId($submittedCode);
+    if ($workId === '') return null;
+    $statement = $pdo->prepare("SELECT * FROM `{$usersTable}` WHERE `work_id` = :work_id LIMIT 1 FOR UPDATE");
+    $statement->execute([':work_id' => $workId]);
     $row = $statement->fetch(PDO::FETCH_ASSOC);
     if (is_array($row)) return $row;
     $fallback = $pdo->query(
-        "SELECT * FROM `{$usersTable}` WHERE `national_id` IS NOT NULL AND TRIM(`national_id`) <> '' FOR UPDATE"
+        "SELECT * FROM `{$usersTable}` WHERE `work_id` IS NOT NULL AND TRIM(`work_id`) <> '' FOR UPDATE"
     );
     $match = null;
     foreach ($fallback ? $fallback->fetchAll(PDO::FETCH_ASSOC) : [] as $candidate) {
-        if (egmCheckInNormalizeNationalId($candidate['national_id'] ?? '') !== $nationalId) continue;
-        if (is_array($match)) throw new RuntimeException('کد ملی تکراری است و باید ابتدا تعارض کاربر برطرف شود.');
+        if (egmCheckInNormalizeWorkId($candidate['work_id'] ?? '') !== $workId) continue;
+        if (is_array($match)) throw new RuntimeException('کد پرسنلی تکراری است و باید ابتدا تعارض کاربر برطرف شود.');
         $match = $candidate;
     }
     return $match;
 }
 
-function egmCheckInWriteLog(array $context, ?array $user, string $nationalId, string $status, string $message, ?array $period, DateTimeImmutable $now, array $extra = []): void
+function egmCheckInWriteLog(array $context, ?array $user, string $submittedCode, string $status, string $message, ?array $period, DateTimeImmutable $now, array $extra = []): void
 {
     $table = (string)$context['tables']['activity_logs'];
     $periodCode = is_array($period) ? egmCheckInPeriodCode($period) : '';
     $periodTitle = is_array($period) ? trim((string)($period['title'] ?? '')) : '';
+    $lookupType = strlen($submittedCode) === 10 ? 'national_id' : 'work_id';
+    $nationalId = is_array($user)
+        ? trim((string)($user['national_id'] ?? ''))
+        : ($lookupType === 'national_id' ? $submittedCode : '');
+    $workId = is_array($user)
+        ? trim((string)($user['work_id'] ?? ''))
+        : ($lookupType === 'work_id' ? $submittedCode : '');
     $metadata = json_encode([
         'national_id' => $nationalId,
+        'work_id' => $workId,
+        'submitted_code' => $submittedCode,
+        'lookup_type' => $lookupType,
         'period_code' => $periodCode,
         'period_title' => $periodTitle,
     ] + $extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -304,7 +354,7 @@ function egmCheckInWriteLog(array $context, ?array $user, string $nationalId, st
     $statement->execute([
         ':source_key' => hash('sha256', random_bytes(24) . microtime(true)),
         ':user_id' => is_array($user) ? (int)($user['id'] ?? 0) ?: null : null,
-        ':work_id' => is_array($user) ? trim((string)($user['work_id'] ?? '')) ?: null : null,
+        ':work_id' => $workId !== '' ? $workId : null,
         ':session_id' => session_id() ?: null,
         ':level' => in_array($status, ['success', 'quit_success', 'walk_in_registered'], true) ? 'info' : 'warning',
         ':action' => EGM_CHECK_IN_ACTION,
@@ -669,10 +719,10 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
     }, $rows ?: []);
 }
 
-function egmCheckInProcess(array $context, string $nationalId, ?DateTimeImmutable $now = null): array
+function egmCheckInProcess(array $context, string $submittedCode, ?DateTimeImmutable $now = null): array
 {
-    $nationalId = egmCheckInNormalizeNationalId($nationalId);
-    if ($nationalId === '') throw new InvalidArgumentException('کد ملی باید دقیقاً ۱۰ رقم باشد.');
+    $submittedCode = egmCheckInNormalizeGuestCode($submittedCode);
+    if ($submittedCode === '') throw new InvalidArgumentException('شناسه مهمان باید فقط شامل ۴ تا ۱۰ رقم باشد.');
     $now ??= new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
     $pdo = $context['pdo'];
     $usersTable = (string)$context['tables']['users'];
@@ -686,20 +736,20 @@ function egmCheckInProcess(array $context, string $nationalId, ?DateTimeImmutabl
             $message = $result === 'multiple_active_periods'
                 ? 'بیش از یک بازه در این رویداد هم‌زمان فعال است؛ ابتدا هم‌پوشانی زمان‌بندی را برطرف کنید.'
                 : 'در حال حاضر هیچ بازه فعالی در این رویداد وجود ندارد.';
-            egmCheckInWriteLog($context, null, $nationalId, $result, $message, null, $now);
+            egmCheckInWriteLog($context, null, $submittedCode, $result, $message, null, $now);
             $pdo->commit();
             return ['result' => $result, 'message' => $message];
         }
-        $user = egmCheckInFindUser($pdo, $usersTable, $nationalId);
+        $user = egmCheckInFindUser($pdo, $usersTable, $submittedCode);
         if (!is_array($user)) {
-            $message = 'کاربری با این کد ملی در این رویداد پیدا نشد.';
-            egmCheckInWriteLog($context, null, $nationalId, 'not_found', $message, $selectedPeriod, $now);
+            $message = 'کاربری با این شناسه مهمان در این رویداد پیدا نشد.';
+            egmCheckInWriteLog($context, null, $submittedCode, 'not_found', $message, $selectedPeriod, $now);
             $pdo->commit();
             return ['result' => 'not_found', 'message' => $message];
         }
         if (array_key_exists('is_active', $user) && (int)$user['is_active'] !== 1) {
             $message = 'حساب این مهمان در این رویداد غیرفعال است.';
-            egmCheckInWriteLog($context, $user, $nationalId, 'user_inactive', $message, $selectedPeriod, $now);
+            egmCheckInWriteLog($context, $user, $submittedCode, 'user_inactive', $message, $selectedPeriod, $now);
             $pdo->commit();
             return ['result' => 'user_inactive', 'message' => $message];
         }
@@ -732,7 +782,7 @@ function egmCheckInProcess(array $context, string $nationalId, ?DateTimeImmutabl
                 ? 'این مهمان به بازه فعال دعوت نشده و دعوت او مربوط به بازه دیگری است'
                     . ($periodTitles ? ': ' . implode('، ', $periodTitles) : '.')
                 : 'این مهمان به هیچ بازه‌ای در این رویداد دعوت نشده است.';
-            egmCheckInWriteLog($context, $user, $nationalId, $result, $message, $selectedPeriod, $now, [
+            egmCheckInWriteLog($context, $user, $submittedCode, $result, $message, $selectedPeriod, $now, [
                 'invited_period_codes' => $otherCodes,
             ]);
             $pdo->commit();
@@ -753,7 +803,7 @@ function egmCheckInProcess(array $context, string $nationalId, ?DateTimeImmutabl
             egmCheckInSavePeriodCondition(
                 $context, (int)$invitation['id'], $result, 'check', $message, $now
             );
-            egmCheckInWriteLog($context, $user, $nationalId, $result, $message, $period, $now, ['attendance_phase' => $result]);
+            egmCheckInWriteLog($context, $user, $submittedCode, $result, $message, $period, $now, ['attendance_phase' => $result]);
             $pdo->commit();
             return ['result' => $result, 'message' => $message];
         }
@@ -768,7 +818,7 @@ function egmCheckInProcess(array $context, string $nationalId, ?DateTimeImmutabl
                 egmCheckInSavePeriodCondition(
                     $context, (int)$invitation['id'], 'quit_without_entry', 'quit', $message, $now, 'not_entered'
                 );
-                egmCheckInWriteLog($context, $user, $nationalId, 'quit_without_entry', $message, $period, $now, [
+                egmCheckInWriteLog($context, $user, $submittedCode, 'quit_without_entry', $message, $period, $now, [
                     'attendance_action' => 'quit',
                 ]);
                 $pdo->commit();
@@ -790,7 +840,7 @@ function egmCheckInProcess(array $context, string $nationalId, ?DateTimeImmutabl
             egmCheckInSavePeriodCondition(
                 $context, (int)$invitation['id'], $duplicateResult, $attendanceAction, $message, $now, $storedAttendanceState
             );
-            egmCheckInWriteLog($context, $user, $nationalId, $duplicateResult, $message, $period, $now, [
+            egmCheckInWriteLog($context, $user, $submittedCode, $duplicateResult, $message, $period, $now, [
                 $dateColumn => $storedDate,
                 $timeColumn => $storedTime,
                 'attendance_action' => $attendanceAction,
@@ -820,7 +870,7 @@ function egmCheckInProcess(array $context, string $nationalId, ?DateTimeImmutabl
             $now,
             $isQuit ? 'quit_completed' : 'entered'
         );
-        egmCheckInWriteLog($context, $user, $nationalId, $successResult, $message, $period, $now, [
+        egmCheckInWriteLog($context, $user, $submittedCode, $successResult, $message, $period, $now, [
             $dateColumn => $storedDate,
             $timeColumn => $storedTime,
             'attendance_action' => $attendanceAction,
@@ -877,7 +927,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     $previousSummary = $periodSummary($context['previous_period'] ?? null);
     $nextSummary = $periodSummary($context['next_period'] ?? null);
     $initialResult = $canScan
-        ? 'کد ملی مهمان را وارد کنید.'
+        ? 'شناسه مهمان را وارد یا اسکن کنید.'
         : ($phaseReason === 'multiple_active_periods'
             ? 'چند بازه هم‌زمان فعال هستند؛ تا رفع هم‌پوشانی امکان ثبت وجود ندارد.'
             : 'اکنون هیچ بازه فعالی وجود ندارد؛ ثبت ورود یا خروج متوقف است.');
@@ -985,9 +1035,9 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     <?php endif; ?>
     <div class="scan-grid">
       <div class="scanner">
-        <label class="scanner-label" for="guest-national-id">کد ملی مهمان</label>
-        <input id="guest-national-id" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="off" autofocus aria-label="کد ملی ۱۰ رقمی" data-national-id<?= $canScan ? '' : ' disabled aria-disabled="true"' ?> />
-        <p class="hint">ثبت خودکار پس از وارد کردن دهمین رقم</p>
+        <label class="scanner-label" for="guest-national-id">شناسه مهمان (کد ملی یا کد پرسنلی)</label>
+        <input id="guest-national-id" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="off" autofocus aria-label="شناسه مهمان ۴ تا ۱۰ رقمی" data-national-id<?= $canScan ? '' : ' disabled aria-disabled="true"' ?> />
+        <p class="hint">کد ملی ۱۰ رقمی خودکار بررسی می‌شود؛ کد پرسنلی ۴ تا ۹ رقمی را اسکن کنید یا پس از ورود دستی Enter بزنید.</p>
       </div>
       <div class="result-area">
         <span class="result-label">نتیجه بررسی</span>
@@ -1042,6 +1092,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const app=document.querySelector('[data-check-in-app]'); if(!app)return;
   const input=app.querySelector('[data-national-id]'),result=app.querySelector('[data-result]'),tbody=app.querySelector('[data-logs]'),logSearch=app.querySelector('[data-log-search]'),logSearchMeta=app.querySelector('[data-log-search-meta]'),dialog=app.querySelector('[data-guest-dialog]'),dialogTitle=app.querySelector('[data-dialog-title]'),dialogContent=app.querySelector('[data-dialog-content]'),walkInDialog=app.querySelector('[data-walk-in-dialog]'),walkInForm=app.querySelector('[data-walk-in-form]'),walkInStatus=app.querySelector('[data-walk-in-status]');
   const canRegisterUninvited=app.dataset.canRegisterUninvited==='1';
+  const SCANNER_MAX_KEY_GAP_MS=50,SCANNER_MIN_FAST_GAPS=3,SCANNER_COMPLETION_DELAY_MS=90;
   const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const normalize=(v)=>String(v??'').replace(/[۰-۹]/g,d=>String(d.charCodeAt(0)-0x06f0)).replace(/[٠-٩]/g,d=>String(d.charCodeAt(0)-0x0660)).replace(/\D/g,'').slice(0,10);
   const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='quit_without_entry'?'ورود ثبت نشده':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
@@ -1074,11 +1125,13 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   walkInControl('outside_organization')?.addEventListener('change',syncOutsideOrganization);
   walkInControl('national_id')?.addEventListener('input',event=>{event.target.value=normalize(event.target.value)});
   walkInForm?.addEventListener('submit',async event=>{event.preventDefault();const submitButton=app.querySelector('[data-walk-in-submit]');if(submitButton instanceof HTMLButtonElement)submitButton.disabled=true;if(walkInStatus){walkInStatus.className='walk-in-status';walkInStatus.textContent='در حال ثبت مهمان ناخوانده...'}try{const formData=new FormData(walkInForm);const payload=Object.fromEntries(formData.entries());payload.action='register_uninvited';payload.csrf=app.dataset.csrf||'';payload.outside_organization=Boolean(walkInControl('outside_organization')?.checked);const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت مهمان ناخوانده ناموفق بود.');if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs);result.className='result success';result.textContent=data.message||'مهمان ناخوانده ثبت شد.';if(walkInStatus){walkInStatus.className='walk-in-status success';walkInStatus.textContent=data.message||'ثبت شد.'}window.setTimeout(closeWalkIn,500)}catch(error){if(walkInStatus){walkInStatus.className='walk-in-status error';walkInStatus.textContent=error instanceof Error?error.message:'ثبت مهمان ناخوانده ناموفق بود.'}}finally{if(submitButton instanceof HTMLButtonElement)submitButton.disabled=false}});
-  let busy=false,last='';
-  const submit=async(nationalId)=>{if(busy||nationalId.length!==10||nationalId===last)return;busy=true;last=nationalId;input.disabled=true;result.className='result loading';result.textContent='در حال بررسی دعوت و وضعیت زمانی بازه...';
-    try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({national_id:nationalId,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=data.message||'بررسی انجام شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.'}finally{window.setTimeout(()=>{input.value='';input.disabled=false;busy=false;last='';input.focus()},350)}};
-  input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10)void submit(value)});
-  input.addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault()}); input.focus();
+  let isSubmitting=false,lastSubmittedCode='',scannerCompletionTimer=0,lastNumericKeyAt=0,consecutiveFastGaps=0,scannerDetected=false;
+  const resetScannerState=()=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=0;lastNumericKeyAt=0;consecutiveFastGaps=0;scannerDetected=false};
+  const submit=async(rawCode)=>{const guestCode=normalize(rawCode);if(isSubmitting||guestCode.length<4||guestCode.length>10||guestCode===lastSubmittedCode)return;resetScannerState();isSubmitting=true;lastSubmittedCode=guestCode;input.disabled=true;result.className='result loading';result.textContent='در حال بررسی دعوت و وضعیت زمانی بازه...';
+    try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=data.message||'بررسی انجام شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.'}finally{window.setTimeout(()=>{input.value='';input.disabled=false;isSubmitting=false;lastSubmittedCode='';resetScannerState();input.focus()},350)}};
+  const scheduleScannerSubmission=(value)=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=window.setTimeout(()=>{scannerCompletionTimer=0;const completedCode=normalize(input.value);if(scannerDetected&&completedCode===value&&completedCode.length>=4&&completedCode.length<=9)void submit(completedCode)},SCANNER_COMPLETION_DELAY_MS)};
+  input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10){void submit(value);return}if(scannerDetected&&value.length>=4&&value.length<=9)scheduleScannerSubmission(value)});
+  input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(scannerCompletionTimer);const value=normalize(input.value);if(value.length>=4&&value.length<=10)void submit(value);return}if(event.repeat){resetScannerState();return}if(!/^[0-9]$/.test(event.key)){if(!event.ctrlKey&&!event.metaKey&&!event.altKey)resetScannerState();return}const now=performance.now();const gap=lastNumericKeyAt>0?now-lastNumericKeyAt:Number.POSITIVE_INFINITY;if(gap<=SCANNER_MAX_KEY_GAP_MS)consecutiveFastGaps+=1;else{consecutiveFastGaps=0;scannerDetected=false}lastNumericKeyAt=now;if(consecutiveFastGaps>=SCANNER_MIN_FAST_GAPS)scannerDetected=true}); input.focus();
 })();
 </script>
 </body>
@@ -1113,7 +1166,7 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
             $action = strtolower(trim((string)($payload['action'] ?? 'check_in')));
             $result = $action === 'register_uninvited'
                 ? egmCheckInRegisterUninvited($context, $payload, $sessionUser)
-                : egmCheckInProcess($context, (string)($payload['national_id'] ?? ''));
+                : egmCheckInProcess($context, (string)($payload['guest_code'] ?? ($payload['national_id'] ?? '')));
             egmCheckInJson(['status' => 'ok'] + $result + ['logs' => egmCheckInRecentLogs($context)]);
         }
         $nonce = egmSecurityCreateCspNonce();

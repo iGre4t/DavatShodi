@@ -13,6 +13,19 @@ function egmCheckInAssert(bool $condition, string $message): void
 
 egmCheckInAssert(egmCheckInNormalizeNationalId('۱۲۳۴۵۶۷۸۹۰') === '1234567890', 'Persian National ID digits were not normalized');
 egmCheckInAssert(egmCheckInNormalizeNationalId('123456789') === '', 'A National ID shorter than 10 digits was accepted');
+egmCheckInAssert(egmCheckInNormalizeGuestCode('۱۲۳۴۵۶۷۸') === '12345678', 'Persian Work ID digits were not normalized');
+egmCheckInAssert(egmCheckInNormalizeGuestCode('123') === '', 'A Guest ID shorter than 4 digits was accepted');
+egmCheckInAssert(egmCheckInNormalizeGuestCode('12345678901') === '', 'A Guest ID longer than 10 digits was accepted');
+egmCheckInAssert(egmCheckInNormalizeWorkId('1234') === '1234', 'A 4-digit Work ID was rejected');
+egmCheckInAssert(egmCheckInNormalizeWorkId('123456789') === '123456789', 'A 9-digit Work ID was rejected');
+egmCheckInAssert(egmCheckInNormalizeWorkId('1234567890') === '', 'A 10-digit value was accepted as a Work ID');
+
+$checkInSource = file_get_contents(dirname(__DIR__) . '/api/lib/egm-check-in.php');
+egmCheckInAssert(is_string($checkInSource), 'Could not inspect the Guest Control frontend');
+foreach (['SCANNER_MAX_KEY_GAP_MS=50', 'SCANNER_MIN_FAST_GAPS=3', 'SCANNER_COMPLETION_DELAY_MS=90', 'performance.now()', 'isSubmitting', "event.key==='Enter'", 'guest_code:guestCode'] as $scannerRequirement) {
+    egmCheckInAssert(str_contains($checkInSource, $scannerRequirement), "Scanner requirement is missing: {$scannerRequirement}");
+}
+egmCheckInAssert(!str_contains($checkInSource, 'setInterval('), 'Scanner detection uses forbidden polling');
 
 $timezone = new DateTimeZone('Asia/Tehran');
 $inside = new DateTimeImmutable('2026-08-18 10:30:00', $timezone);
@@ -130,6 +143,32 @@ try {
         "SELECT `status` FROM `{$tables['activity_logs']}` WHERE `action` = '" . EGM_CHECK_IN_ACTION . "' ORDER BY `id`"
     )->fetchAll(PDO::FETCH_COLUMN);
     egmCheckInAssert($statuses === ['success', 'duplicate'], 'Success and duplicate attempts were not both audited');
+
+    $pdo->exec(
+        "INSERT INTO `{$tables['users']}` (`work_id`, `first_name`, `last_name`, `national_id`, `phone_number`, "
+        . "`deputy`, `general_department`, `department`, `gender`, `postal_level`, `source_row`) "
+        . "VALUES ('45678901', 'Work', 'Identifier', NULL, '', '', '', '', '', '', 2)"
+    );
+    $workIdUserId = (int)$pdo->lastInsertId();
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`, `period_code`, `invited_at`) "
+        . "VALUES (:user_id, '01', '2026-08-18 09:00:00')"
+    )->execute([':user_id' => $workIdUserId]);
+    $workIdEntry = egmCheckInProcess($context, '45678901', new DateTimeImmutable('2026-08-18 10:21:00', $timezone));
+    egmCheckInAssert(($workIdEntry['result'] ?? '') === 'success', 'A valid Work ID did not use the existing check-in flow');
+    $workIdLogs = egmCheckInRecentLogs($context, 200, '45678901');
+    egmCheckInAssert(count($workIdLogs) === 1, 'The Work ID check-in was not searchable in Guest Control logs');
+    egmCheckInAssert(($workIdLogs[0]['work_id'] ?? '') === '45678901', 'The submitted Work ID was not retained in the check-in log');
+    $missingWorkId = egmCheckInProcess($context, '87654321', new DateTimeImmutable('2026-08-18 10:22:00', $timezone));
+    egmCheckInAssert(($missingWorkId['result'] ?? '') === 'not_found', 'An unknown Work ID did not use the existing not-found flow');
+
+    $shortCodeRejected = false;
+    try {
+        egmCheckInProcess($context, '123', new DateTimeImmutable('2026-08-18 10:23:00', $timezone));
+    } catch (InvalidArgumentException $error) {
+        $shortCodeRejected = true;
+    }
+    egmCheckInAssert($shortCodeRejected, 'A 1-3 digit Guest ID reached the lookup flow');
 
     $pdo->exec(
         "INSERT INTO `{$tables['users']}` (`work_id`, `first_name`, `last_name`, `national_id`, `phone_number`, "
