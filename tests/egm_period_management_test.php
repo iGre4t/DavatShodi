@@ -76,9 +76,12 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, 'state.excelWorkbook.Sheets?.[sheetName]'), "The chosen workbook sheet is not read in {$path}");
     egmPeriodAssert(!str_contains($source, 'workbook.Sheets[workbook.SheetNames[0]]'), "The first workbook sheet is still selected implicitly in {$path}");
     egmPeriodAssert(str_contains($source, 'async function readPeriodInviteResponse(response)'), "Period invitation responses do not safely handle non-JSON server errors in {$path}");
+    egmPeriodAssert(str_contains($source, "responseText.indexOf('{')"), "Period invitation responses do not recover JSON wrapped by cPanel output in {$path}");
     egmPeriodAssert(str_contains($source, 'async function matchPeriodExcelRows(periodCode, rows'), "Excel matching is not split into reliable server batches in {$path}");
     egmPeriodAssert(str_contains($source, 'const batchSize = 400;'), "Excel matching does not enforce a cPanel-safe request batch size in {$path}");
     egmPeriodAssert(str_contains($source, 'const compactRows = rows.map'), "Excel matching still sends full duplicate spreadsheet rows in {$path}");
+    egmPeriodAssert(str_contains($source, 'row?.match_error'), "Excel identity conflicts are not shown per row in {$path}");
+    egmPeriodAssert(str_contains($source, 'merged.match_error = String(row.match_error)'), "Batched Excel matching loses server conflict reasons in {$path}");
     egmPeriodAssert(str_contains($source, 'matchButton.disabled = true'), "Excel matching permits overlapping duplicate requests in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-export'), "The Invite Card Excel export button is missing in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-background-file'), "The per-period Invite Card background upload is missing in {$path}");
@@ -89,7 +92,8 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, 'type=uninvited_guests'), "The uninvited-guests period export is not linked in {$path}");
     egmPeriodAssert(str_contains($source, 'type=full_log'), "The full period log export is not linked in {$path}");
     egmPeriodAssert(str_contains($source, 'type=user_conditions'), "The user-conditions period export is not linked in {$path}");
-    egmPeriodAssert(str_contains($source, "url.searchParams.set('action', 'export_excel')"), "The Invite Card Excel export action is not wired in {$path}");
+    egmPeriodAssert(str_contains($source, "requestPeriodInviteCards('export_data'"), "The Invite Card XLSX export data action is not wired in {$path}");
+    egmPeriodAssert(str_contains($source, 'window.XLSX.writeFile(workbook, filename'), "The Invite Card export is not written as a client-side XLSX in {$path}");
     egmPeriodAssert(str_contains($source, "String(invitee.nationalId || invitee.workId || '')"), "Period Invite Card QR data does not fall back from National ID to Work ID in {$path}");
     egmPeriodAssert(!str_contains($source, 'const inviteUrl = new URL(`Invited/'), "Period Invite Card QR still contains the public invite URL in {$path}");
     egmPeriodAssert(

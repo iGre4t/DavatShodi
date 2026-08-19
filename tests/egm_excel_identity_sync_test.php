@@ -74,17 +74,32 @@ try {
         'Excel National ID was not written to the matching EGM guest or linked to OEU.'
     );
 
-    $conflictRejected = false;
-    try {
-        egmPeriodInvitesMatchExcel($context, 'sync-period', [[
-            'work_id' => $workId,
-            'national_id' => $conflictingNationalId,
-            'source_row' => 3,
-        ]]);
-    } catch (InvalidArgumentException $error) {
-        $conflictRejected = true;
-    }
-    egmExcelIdentitySyncAssert($conflictRejected, 'A conflicting Excel National ID overwrote the existing identity.');
+    $conflictResult = egmPeriodInvitesMatchExcel($context, 'sync-period', [[
+        'work_id' => $workId,
+        'national_id' => $conflictingNationalId,
+        'source_row' => 3,
+    ], [
+        'work_id' => $workId,
+        'national_id' => $nationalId,
+        'source_row' => 4,
+    ]]);
+    $conflictRow = $conflictResult['unmatched_rows'][0] ?? [];
+    egmExcelIdentitySyncAssert(
+        (int)($conflictResult['matched'] ?? -1) === 1
+            && (int)($conflictResult['conflicts'] ?? 0) === 1
+            && is_array($conflictRow)
+            && ($conflictRow['can_invite'] ?? true) === false
+            && trim((string)($conflictRow['match_error'] ?? '')) !== '',
+        'A conflicting Excel identity did not return as an isolated, non-invitable row.'
+    );
+    $readOeu->execute([':id' => $oeuId]);
+    egmExcelIdentitySyncAssert((string)$readOeu->fetchColumn() === $nationalId, 'A conflict changed the existing OEU National ID.');
+    $readGuest->execute([':id' => $matchedGuestId]);
+    $unchangedGuest = $readGuest->fetch(PDO::FETCH_ASSOC);
+    egmExcelIdentitySyncAssert(
+        is_array($unchangedGuest) && (string)$unchangedGuest['national_id'] === $nationalId,
+        'A conflict changed the existing EGM National ID.'
+    );
 
     $insertOeu->execute([':work_id' => $fallbackWorkId]);
     $fallbackOeuId = (int)$pdo->lastInsertId();

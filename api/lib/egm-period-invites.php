@@ -735,6 +735,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
     }
     $matched = [];
     $unmatchedRows = [];
+    $conflicts = 0;
     $pdo = $context['pdo'];
     $ownsTransaction = !$pdo->inTransaction();
     if ($ownsTransaction) $pdo->beginTransaction();
@@ -742,28 +743,40 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
         foreach ($inputRows as $offset => $inputRow) {
             if (!is_array($inputRow)) continue;
             $excelRow = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
-            $national = egmPeriodInvitesValidNationalId($excelRow['national_id'] ?? '');
-            $workId = tctPeriodInviteClean($excelRow['work_id'] ?? '', 128);
-            $work = strtolower($workId);
+            $pdo->exec('SAVEPOINT egm_excel_match_row');
+            try {
+                $national = egmPeriodInvitesValidNationalId($excelRow['national_id'] ?? '');
+                $workId = tctPeriodInviteClean($excelRow['work_id'] ?? '', 128);
+                $work = strtolower($workId);
 
-            // An uploaded National ID is also authoritative for an unambiguous
-            // OEU Work-ID match, even when this EGM currently uses custom users.
-            $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $national);
-            $candidate = ($national !== '' ? ($byNational[$national] ?? null) : null)
-                ?? ($work !== '' ? ($byWork[$work] ?? null) : null);
-            if (!is_array($candidate)) {
+                // An uploaded National ID is also authoritative for an unambiguous
+                // OEU Work-ID match, even when this EGM currently uses custom users.
+                $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $national);
+                $candidate = ($national !== '' ? ($byNational[$national] ?? null) : null)
+                    ?? ($work !== '' ? ($byWork[$work] ?? null) : null);
+                if (!is_array($candidate)) {
+                    $unmatchedRows[] = $excelRow;
+                    $pdo->exec('RELEASE SAVEPOINT egm_excel_match_row');
+                    continue;
+                }
+                $candidate = egmPeriodInvitesSyncMatchedEgmNationalId(
+                    $context,
+                    $candidate,
+                    $national,
+                    $oeuUserId
+                );
+                if ($national !== '') $byNational[$national] = $candidate;
+                if ($work !== '') $byWork[$work] = $candidate;
+                $matched[(string)$candidate['candidate_id']] = $candidate;
+                $pdo->exec('RELEASE SAVEPOINT egm_excel_match_row');
+            } catch (InvalidArgumentException $error) {
+                $pdo->exec('ROLLBACK TO SAVEPOINT egm_excel_match_row');
+                $pdo->exec('RELEASE SAVEPOINT egm_excel_match_row');
+                $excelRow['can_invite'] = false;
+                $excelRow['match_error'] = tctPeriodInviteClean($error->getMessage(), 500);
                 $unmatchedRows[] = $excelRow;
-                continue;
+                $conflicts++;
             }
-            $candidate = egmPeriodInvitesSyncMatchedEgmNationalId(
-                $context,
-                $candidate,
-                $national,
-                $oeuUserId
-            );
-            if ($national !== '') $byNational[$national] = $candidate;
-            if ($work !== '') $byWork[$work] = $candidate;
-            $matched[(string)$candidate['candidate_id']] = $candidate;
         }
         if ($ownsTransaction) $pdo->commit();
     } catch (Throwable $error) {
@@ -774,7 +787,14 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
     $rows = array_values($matched);
     foreach ($rows as &$row) $row['invited'] = isset($invited[egmPeriodInvitesIdentityKey($row)]);
     unset($row);
-    return ['source' => $source, 'rows' => $rows, 'matched' => count($rows), 'unmatched' => count($unmatchedRows), 'unmatched_rows' => $unmatchedRows];
+    return [
+        'source' => $source,
+        'rows' => $rows,
+        'matched' => count($rows),
+        'unmatched' => count($unmatchedRows),
+        'conflicts' => $conflicts,
+        'unmatched_rows' => $unmatchedRows,
+    ];
 }
 
 function egmPeriodInvitesJson(array $payload, int $status = 200): void
@@ -880,7 +900,15 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
         }
         egmPeriodInvitesJson(['status' => 'error', 'message' => 'عملیات پشتیبانی نمی‌شود.'], 400);
     } catch (InvalidArgumentException $error) {
-        egmPeriodInvitesJson(['status' => 'error', 'message' => $error->getMessage()], 422);
+        // Some shared cPanel/Apache configurations replace 422 response bodies
+        // with an HTML error page. Keep validation errors as readable JSON and
+        // carry the semantic status in the payload for the panel.
+        egmPeriodInvitesJson([
+            'status' => 'error',
+            'error_code' => 'validation_error',
+            'http_status' => 422,
+            'message' => $error->getMessage(),
+        ]);
     } catch (Throwable $error) {
         error_log('EGM period invites failed: ' . $error->getMessage());
         egmPeriodInvitesJson(['status' => 'error', 'message' => 'عملیات دعوت بازه ناموفق بود.'], 500);

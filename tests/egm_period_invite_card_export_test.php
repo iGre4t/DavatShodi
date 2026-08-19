@@ -10,7 +10,7 @@ function egmInviteCardExportAssert(bool $condition, string $message): void
     }
 }
 
-$export = egmPeriodInviteCardsBuildExportWorkbook([
+$export = egmPeriodInviteCardsBuildExportData([
     [
         'first_name' => 'علی',
         'last_name' => 'احمدی',
@@ -31,24 +31,14 @@ $export = egmPeriodInviteCardsBuildExportWorkbook([
 
 egmInviteCardExportAssert($export['count'] === 2, 'The generated row count is incorrect.');
 egmInviteCardExportAssert($export['filename'] === 'EGM-00000-period-01-invite-card-links.xlsx', 'The export filename is incorrect.');
-egmInviteCardExportAssert(str_starts_with($export['content'], "PK\x03\x04"), 'The export is not a genuine XLSX package.');
+$firstRow = $export['rows'][0] ?? [];
+egmInviteCardExportAssert(is_array($firstRow) && count($firstRow) === 5, 'The XLSX source columns are malformed.');
+egmInviteCardExportAssert(($firstRow['national_id'] ?? '') === '0012345678', 'National ID leading zeroes were not preserved.');
+egmInviteCardExportAssert(($firstRow['work_id'] ?? '') === '00042', 'Work ID leading zeroes were not preserved.');
+egmInviteCardExportAssert(($firstRow['phone_number'] ?? '') === '09120000000', 'Phone number leading zeroes were not preserved.');
+egmInviteCardExportAssert(
+    ($firstRow['invite_url'] ?? '') === 'https://example.test/DavatShodi/Invited/AbC1230000001',
+    'The public invite-card URL is incorrect.'
+);
 
-$temporary = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'egm-invite-card-export-' . bin2hex(random_bytes(6)) . '.zip';
-file_put_contents($temporary, $export['content']);
-try {
-    $archive = new PharData($temporary);
-    $sheet = $archive['xl/worksheets/sheet1.xml']->getContent();
-    egmInviteCardExportAssert(str_contains($sheet, '0012345678'), 'National ID leading zeroes were not preserved.');
-    egmInviteCardExportAssert(str_contains($sheet, '00042'), 'Work ID leading zeroes were not preserved.');
-    egmInviteCardExportAssert(str_contains($sheet, '09120000000'), 'Phone number was not exported.');
-    egmInviteCardExportAssert(
-        str_contains($sheet, 'https://example.test/DavatShodi/Invited/AbC1230000001'),
-        'The public invite-card URL is incorrect.'
-    );
-    egmInviteCardExportAssert(str_contains($sheet, '<f>HYPERLINK('), 'The invite-card URL is not a clickable Excel hyperlink.');
-} finally {
-    unset($archive);
-    @unlink($temporary);
-}
-
-fwrite(STDOUT, "EGM period Invite Card Excel export test passed.\n");
+fwrite(STDOUT, "EGM period Invite Card XLSX source-data test passed.\n");

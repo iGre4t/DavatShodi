@@ -4,7 +4,6 @@ declare(strict_types=1);
 require_once __DIR__ . '/egm-period-invites.php';
 require_once __DIR__ . '/egm-invite-card-routes.php';
 require_once __DIR__ . '/egm-invite-card-store.php';
-require_once __DIR__ . '/xlsx-export.php';
 
 const EGM_PERIOD_INVITE_CARD_BACKGROUNDS_KEY = 'invite_card_period_backgrounds';
 
@@ -501,28 +500,14 @@ function egmPeriodInviteCardsPublicBaseUrl(array $context): string
     return $scheme . '://' . $host . ($encodedPath !== '' ? '/' . $encodedPath : '');
 }
 
-/** @return array{content:string,filename:string,count:int} */
-function egmPeriodInviteCardsBuildExportWorkbook(
+/** @return array{rows:array<int,array<string,string>>,filename:string,count:int} */
+function egmPeriodInviteCardsBuildExportData(
     array $rows,
     string $egmCode,
     string $periodCode,
     string $publicBaseUrl
 ): array {
-    $xml = '<?xml version="1.0" encoding="UTF-8"?>'
-        . '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
-        . 'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
-        . '<Styles><Style ss:ID="sHeader"><Font ss:Bold="1"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>'
-        . '<Interior ss:Color="#1689E6" ss:Pattern="Solid"/></Style></Styles>'
-        . '<Worksheet ss:Name="لینک کارت‌های دعوت"><Table>'
-        . '<Row ss:StyleID="sHeader">'
-        . '<Cell><Data ss:Type="String">نام و نام خانوادگی</Data></Cell>'
-        . '<Cell><Data ss:Type="String">کد ملی</Data></Cell>'
-        . '<Cell><Data ss:Type="String">کد پرسنلی</Data></Cell>'
-        . '<Cell><Data ss:Type="String">شماره همراه</Data></Cell>'
-        . '<Cell><Data ss:Type="String">لینک کارت دعوت</Data></Cell>'
-        . '</Row>';
-
-    $count = 0;
+    $exportRows = [];
     $base = rtrim($publicBaseUrl, '/');
     foreach ($rows as $row) {
         if (!is_array($row)) {
@@ -533,46 +518,27 @@ function egmPeriodInviteCardsBuildExportWorkbook(
             continue;
         }
         $fullName = trim(preg_replace('/\s+/u', ' ', trim((string)($row['first_name'] ?? '')) . ' ' . trim((string)($row['last_name'] ?? ''))) ?? '');
-        $url = $base . '/Invited/' . rawurlencode($inviteCode);
-        $formulaUrl = str_replace('"', '""', $url);
-        $formula = '=HYPERLINK("' . $formulaUrl . '","' . $formulaUrl . '")';
-        $xml .= '<Row>'
-            . '<Cell><Data ss:Type="String">' . appXlsxXml($fullName) . '</Data></Cell>'
-            . '<Cell><Data ss:Type="String">' . appXlsxXml((string)($row['national_id'] ?? '')) . '</Data></Cell>'
-            . '<Cell><Data ss:Type="String">' . appXlsxXml((string)($row['work_id'] ?? '')) . '</Data></Cell>'
-            . '<Cell><Data ss:Type="String">' . appXlsxXml((string)($row['phone_number'] ?? '')) . '</Data></Cell>'
-            . '<Cell ss:Formula="' . appXlsxXml($formula) . '"><Data ss:Type="String">' . appXlsxXml($url) . '</Data></Cell>'
-            . '</Row>';
-        $count++;
+        $exportRows[] = [
+            'full_name' => $fullName,
+            'national_id' => (string)($row['national_id'] ?? ''),
+            'work_id' => (string)($row['work_id'] ?? ''),
+            'phone_number' => (string)($row['phone_number'] ?? ''),
+            'invite_url' => $base . '/Invited/' . rawurlencode($inviteCode),
+        ];
     }
-    $xml .= '</Table></Worksheet></Workbook>';
 
     $safeEgm = preg_replace('/[^A-Za-z0-9_-]+/', '-', $egmCode) ?: 'EGM';
     $safePeriod = preg_replace('/[^A-Za-z0-9_-]+/', '-', $periodCode) ?: 'period';
     return [
-        'content' => appXlsxFromSpreadsheetXml($xml),
+        'rows' => $exportRows,
         'filename' => "EGM-{$safeEgm}-period-{$safePeriod}-invite-card-links.xlsx",
-        'count' => $count,
+        'count' => count($exportRows),
     ];
-}
-
-function egmPeriodInviteCardsSendExport(array $context, string $periodCode): never
-{
-    $export = egmPeriodInviteCardsBuildExportWorkbook(
-        egmPeriodInviteCardsGeneratedExportRows($context, $periodCode),
-        (string)$context['code'],
-        $periodCode,
-        egmPeriodInviteCardsPublicBaseUrl($context)
-    );
-    if ($export['count'] < 1) {
-        throw new InvalidArgumentException('هنوز هیچ کارت دعوتی برای این بازه ساخته نشده است.');
-    }
-    appXlsxSend($export['content'], $export['filename']);
-    exit;
 }
 
 function handleEgmPeriodInviteCardsRequest(string $missionDir): void
 {
+    ob_start();
     try {
         $context = egmPeriodInvitesContext($missionDir);
         if ($context['code'] === '' || !is_array($context['tables']) || !is_array($context['registry'])) {
@@ -603,8 +569,17 @@ function handleEgmPeriodInviteCardsRequest(string $missionDir): void
                 'background' => egmPeriodInviteCardsBackground($context, $periodCode, true),
             ]);
         }
-        if ($action === 'export_excel' && $method === 'GET') {
-            egmPeriodInviteCardsSendExport($context, $periodCode);
+        if ($action === 'export_data' && $method === 'GET') {
+            $export = egmPeriodInviteCardsBuildExportData(
+                egmPeriodInviteCardsGeneratedExportRows($context, $periodCode),
+                (string)$context['code'],
+                $periodCode,
+                egmPeriodInviteCardsPublicBaseUrl($context)
+            );
+            if ($export['count'] < 1) {
+                throw new InvalidArgumentException('هنوز هیچ کارت دعوتی برای این بازه ساخته نشده است.');
+            }
+            egmPeriodInvitesJson(['status' => 'ok'] + $export);
         }
         if ($action === 'prepare' && $method === 'POST') {
             egmPeriodInvitesJson(['status' => 'ok'] + egmPeriodInviteCardsPrepare(

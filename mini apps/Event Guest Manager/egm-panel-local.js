@@ -3057,8 +3057,20 @@
     try {
       data = JSON.parse(responseText.replace(/^\uFEFF/, ''));
     } catch (error) {
+      const firstBrace = responseText.indexOf('{');
+      const lastBrace = responseText.lastIndexOf('}');
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        try {
+          data = JSON.parse(responseText.slice(firstBrace, lastBrace + 1));
+        } catch (embeddedError) {
+          data = null;
+        }
+      }
+    }
+    if (!data || typeof data !== 'object') {
       const status = Number(response.status || 0);
       if (status === 413) throw new Error('حجم درخواست بیش از حد مجاز سرور است. فایل در بخش‌های کوچک‌تر پردازش خواهد شد؛ دوباره تلاش کنید.');
+      if (status === 422) throw new Error('سرور یک خطای اعتبارسنجی برگرداند، اما cPanel متن خطا را تغییر داد. پس از استقرار نسخه جدید دوباره تلاش کنید.');
       if (status === 502 || status === 503 || status === 504) throw new Error('سرور هنگام پردازش فایل به محدودیت زمانی رسید. دوباره تلاش کنید.');
       if (response.redirected && /(?:^|\/)login\.php(?:$|[?#])/i.test(String(response.url || ''))) {
         throw new Error('نشست شما منقضی شده است. دوباره وارد پنل شوید.');
@@ -3124,7 +3136,13 @@
       });
       (Array.isArray(data.unmatched_rows) ? data.unmatched_rows : []).forEach((row) => {
         const excelId = String(row?.excel_id || '');
-        if (excelId !== '') unmatchedByExcelId.set(excelId, originalsById.get(excelId) || row);
+        if (excelId !== '') {
+          const original = originalsById.get(excelId);
+          const merged = original ? { ...row, ...original } : row;
+          if (String(row?.match_error || '').trim() !== '') merged.match_error = String(row.match_error);
+          if (typeof row?.can_invite === 'boolean') merged.can_invite = row.can_invite;
+          unmatchedByExcelId.set(excelId, merged);
+        }
       });
     }
     return {
@@ -3133,6 +3151,7 @@
       rows: Array.from(matchedByCandidate.values()),
       matched: matchedByCandidate.size,
       unmatched: unmatchedByExcelId.size,
+      conflicts: Array.from(unmatchedByExcelId.values()).filter((row) => String(row?.match_error || '').trim() !== '').length,
       unmatched_rows: Array.from(unmatchedByExcelId.values())
     };
   }
@@ -3378,19 +3397,41 @@
     }
   }
 
-  function exportPeriodInviteCardLinks(pane) {
+  async function exportPeriodInviteCardLinks(pane) {
     const status = pane.querySelector('[data-period-invite-card-status]');
-    const url = new URL(PERIOD_INVITE_CARDS_ENDPOINT, window.location.href);
-    url.searchParams.set('action', 'export_excel');
-    url.searchParams.set('period_code', periodCodeForPane(pane));
-    const link = document.createElement('a');
-    link.href = url.toString();
-    link.download = '';
-    link.hidden = true;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    if (status) status.textContent = 'خروجی Excel لینک کارت‌های ساخته‌شده آماده دانلود شد.';
+    const button = pane.querySelector('[data-period-invite-card-export]');
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    try {
+      if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') {
+        throw new Error('موتور ساخت فایل Excel بارگذاری نشده است. صفحه را بازخوانی کنید.');
+      }
+      if (status) status.textContent = 'در حال ساخت فایل Excel...';
+      const data = await requestPeriodInviteCards('export_data', { period_code: periodCodeForPane(pane) });
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      if (!rows.length) throw new Error('هنوز هیچ کارت دعوتی برای این بازه ساخته نشده است.');
+      const table = [['نام و نام خانوادگی', 'کد ملی', 'کد پرسنلی', 'شماره همراه', 'لینک کارت دعوت']];
+      rows.forEach((row) => table.push([
+        String(row?.full_name || ''), String(row?.national_id || ''), String(row?.work_id || ''),
+        String(row?.phone_number || ''), String(row?.invite_url || '')
+      ]));
+      const worksheet = window.XLSX.utils.aoa_to_sheet(table);
+      worksheet['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 64 }];
+      worksheet['!autofilter'] = { ref: `A1:E${table.length}` };
+      rows.forEach((row, index) => {
+        const cell = worksheet[`E${index + 2}`];
+        const target = String(row?.invite_url || '');
+        if (cell && target) cell.l = { Target: target, Tooltip: 'باز کردن کارت دعوت' };
+      });
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, 'لینک کارت‌ها');
+      const filename = String(data.filename || 'EGM-invite-card-links.xlsx').replace(/[\\/:*?"<>|]+/g, '-');
+      window.XLSX.writeFile(workbook, filename, { bookType: 'xlsx', compression: true });
+      if (status) status.textContent = 'فایل واقعی Excel (.xlsx) لینک کارت‌ها دانلود شد.';
+    } catch (error) {
+      if (status) status.textContent = error?.message || 'ساخت فایل Excel ناموفق بود.';
+    } finally {
+      if (button instanceof HTMLButtonElement) button.disabled = false;
+    }
   }
 
   function periodSourceLabel(source) {
@@ -3440,9 +3481,11 @@
   }
 
   function periodUnmatchedDetailsMarkup(row) {
+    const matchError = String(row?.match_error || '').trim();
     const entries = Object.entries(row?.raw_data || {}).filter(([, value]) => String(value ?? '').trim() !== '');
-    if (!entries.length) return '—';
-    return `<details class="egm-period-excel-details"><summary>نمایش اطلاعات</summary><div>${entries.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</div></details>`;
+    if (!entries.length && !matchError) return '—';
+    const reason = matchError ? `<p><strong>دلیل عدم تطبیق:</strong> ${escapeHtml(matchError)}</p>` : '';
+    return `<details class="egm-period-excel-details" ${matchError ? 'open' : ''}><summary>${matchError ? 'نمایش دلیل' : 'نمایش اطلاعات'}</summary><div>${reason}${entries.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</div></details>`;
   }
 
   function renderPeriodUnmatchedRows(pane) {
@@ -3455,12 +3498,16 @@
       const id = String(row?.excel_id || '');
       const canInvite = row?.can_invite !== false && Boolean(String(row?.national_id || row?.work_id || '').trim());
       const checked = canInvite && state.unmatchedSelected.has(id);
+      const matchError = String(row?.match_error || '').trim();
+      const action = matchError
+        ? `<span class="muted">${escapeHtml(matchError)}</span>`
+        : (canInvite ? `<button type="button" class="btn ghost" data-period-invite-unmatched-one="${escapeHtml(id)}">افزودن و دعوت</button>` : '<span class="muted">بدون شناسه قابل استفاده</span>');
       return `<tr data-period-unmatched-id="${escapeHtml(id)}">
         <td><input type="checkbox" data-period-unmatched-check value="${escapeHtml(id)}" ${checked ? 'checked' : ''} ${canInvite ? '' : 'disabled'} /></td>
         <td>${escapeHtml(row?.source_row || '—')}</td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
         <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.phone_number || '—')}</span></td>
         <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td><td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td>
-        <td>${periodUnmatchedDetailsMarkup(row)}</td><td>${canInvite ? `<button type="button" class="btn ghost" data-period-invite-unmatched-one="${escapeHtml(id)}">افزودن و دعوت</button>` : '<span class="muted">بدون شناسه قابل استفاده</span>'}</td>
+        <td>${periodUnmatchedDetailsMarkup(row)}</td><td>${action}</td>
       </tr>`;
     }).join('');
     const total = pane.querySelector('[data-period-unmatched-total]');
@@ -3837,7 +3884,8 @@
         state.unmatchedSelected.clear();
         renderPeriodCandidates(pane, { rows: data.rows || [], total: data.matched || 0, page: 1, pages: 1 });
         renderPeriodUnmatchedRows(pane);
-        if (status) status.textContent = `${data.matched || 0} کاربر تطبیق و انتخاب شد؛ ${data.unmatched || 0} ردیف بدون تطبیق بود.`;
+        const conflictText = Number(data.conflicts || 0) > 0 ? ` از این تعداد، ${data.conflicts} ردیف تعارض شناسه داشت.` : '';
+        if (status) status.textContent = `${data.matched || 0} کاربر تطبیق و انتخاب شد؛ ${data.unmatched || 0} ردیف بدون تطبیق بود.${conflictText}`;
       } catch (error) {
         if (status) status.textContent = error?.message || 'تطبیق فایل ناموفق بود.';
       } finally {
