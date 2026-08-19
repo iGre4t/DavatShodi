@@ -58,7 +58,7 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, 'type=full_log'), "The full period log export is not linked in {$path}");
     egmPeriodAssert(str_contains($source, 'type=user_conditions'), "The user-conditions period export is not linked in {$path}");
     egmPeriodAssert(str_contains($source, "url.searchParams.set('action', 'export_excel')"), "The Invite Card Excel export action is not wired in {$path}");
-    egmPeriodAssert(str_contains($source, "String(invitee.nationalId || '')"), "Period Invite Card QR data is not sourced from the invitee National ID in {$path}");
+    egmPeriodAssert(str_contains($source, "String(invitee.nationalId || invitee.workId || '')"), "Period Invite Card QR data does not fall back from National ID to Work ID in {$path}");
     egmPeriodAssert(!str_contains($source, 'const inviteUrl = new URL(`Invited/'), "Period Invite Card QR still contains the public invite URL in {$path}");
     egmPeriodAssert(
         str_contains($source, 'window.initEventGuestManagerPanel = initWheelSubLayouts;'),
@@ -89,7 +89,8 @@ foreach ($taskAccessStores as $path) {
 
 $renderer = file_get_contents($root . '/assets/egm-invite-card.js');
 egmPeriodAssert(is_string($renderer), 'Could not inspect the Invite Card renderer');
-egmPeriodAssert(str_contains($renderer, 'data: inviteeNationalIdForQr(invitee)'), 'The renderer does not enforce National ID QR content');
+egmPeriodAssert(str_contains($renderer, 'data: inviteeQrIdentifier(invitee)'), 'The renderer does not enforce the National-ID/Work-ID QR content');
 egmPeriodAssert(str_contains($renderer, '/^\\d{10}$/'), 'The renderer does not require an exact 10-digit National ID');
+egmPeriodAssert(str_contains($renderer, '/^\\d{4,9}$/'), 'The renderer does not accept a 4-to-9-digit Work ID fallback');
 
 fwrite(STDOUT, "EGM period management test passed.\n");

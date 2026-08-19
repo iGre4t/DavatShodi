@@ -3286,7 +3286,7 @@
         }
         for (const [batchIndex, invitee] of rows.entries()) {
           if (status) status.textContent = `در حال ساخت کارت ${Number(batch.generated || 0) + batchIndex + 1} از ${batch.total}...`;
-          const rendered = await window.EGMInviteCardRenderer.render(config, invitee, String(invitee.nationalId || ''), {
+          const rendered = await window.EGMInviteCardRenderer.render(config, invitee, String(invitee.nationalId || invitee.workId || ''), {
             qrEndpoint: INVITE_CARD_QR_ENDPOINT, mimeType: 'image/jpeg', quality: 0.92
           });
           await uploadPeriodInviteCard(pane, periodCode, invitee, rendered.blob);

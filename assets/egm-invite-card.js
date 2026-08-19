@@ -215,16 +215,18 @@
     };
   }
 
-  function inviteeNationalIdForQr(invitee) {
-    const nationalId = String(invitee?.nationalId || '').trim()
+  function inviteeQrIdentifier(invitee) {
+    const normalizeDigits = (value) => String(value || '').trim()
       .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0))
-      .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
-      .replace(/[\s-]+/g, '');
-    if (!/^\d{10}$/.test(nationalId)) {
-      const name = inviteeMergeValues(invitee).fullname || invitee?.workId || 'دعوت‌شونده انتخاب‌شده';
-      throw new Error(`کد ملی ${name} باید دقیقاً ۱۰ رقم باشد؛ ساخت QR برای این شخص ممکن نیست.`);
-    }
-    return nationalId;
+      .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660));
+    const nationalId = normalizeDigits(invitee?.nationalId).replace(/[\s-]+/g, '');
+    if (/^\d{10}$/.test(nationalId)) return nationalId;
+
+    const workId = normalizeDigits(invitee?.workId);
+    if (/^\d{4,9}$/.test(workId)) return workId;
+
+    const name = inviteeMergeValues(invitee).fullname || invitee?.workId || 'دعوت‌شونده انتخاب‌شده';
+    throw new Error(`برای ${name} کد ملی ۱۰ رقمی یا کد پرسنلی عددی ۴ تا ۹ رقمی ثبت نشده است؛ ساخت QR ممکن نیست.`);
   }
 
   function normalizedConditionalVariables(value) {
@@ -456,7 +458,7 @@
     const qrEndpoint = String(options.qrEndpoint || '').trim();
     if (!qrEndpoint) throw new Error('ماژول ساخت QR Code در دسترس نیست.');
     const params = new URLSearchParams({
-      data: inviteeNationalIdForQr(invitee), size: '1024', margin: '2', ecc: 'M', response: 'svg'
+      data: inviteeQrIdentifier(invitee), size: '1024', margin: '2', ecc: 'M', response: 'svg'
     });
     const qrImage = await loadCanvasImage(`${qrEndpoint}?${params.toString()}`);
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
@@ -1533,7 +1535,7 @@
           throw new Error('ابعاد تصویر برای خروجی امن بسیار بزرگ است؛ حداکثر 40 میلیون پیکسل مجاز است.');
         }
         const params = new URLSearchParams({
-          data: inviteeNationalIdForQr(invitee),
+          data: inviteeQrIdentifier(invitee),
           size: '1024',
           margin: '2',
           ecc: 'M',

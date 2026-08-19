@@ -179,6 +179,7 @@ function egmPeriodInvitesNormalizeExcelRow(array $row, int $fallbackRow): array
 {
     $normalized = egmPeriodInvitesNormalizeCandidate($row, '', 'custom');
     unset($normalized['candidate_id'], $normalized['source']);
+    $normalized['national_id'] = egmPeriodInvitesValidNationalId($normalized['national_id'] ?? '');
     $normalized['excel_id'] = tctPeriodInviteClean($row['excel_id'] ?? ('x:' . $fallbackRow), 128);
     $normalized['source_row'] = max(1, (int)($row['source_row'] ?? $fallbackRow));
     $normalized['can_invite'] = egmPeriodInvitesIdentityKey($normalized) !== '';
@@ -192,6 +193,97 @@ function egmPeriodInvitesNormalizeExcelRow(array $row, int $fallbackRow): array
     }
     $normalized['raw_data'] = $rawData;
     return $normalized;
+}
+
+function egmPeriodInvitesValidNationalId($value): string
+{
+    $nationalId = orgUsersNormalizeNationalId($value);
+    return preg_match('/^[0-9]{10}$/D', $nationalId) === 1 ? $nationalId : '';
+}
+
+/**
+ * Fill a missing OEU National ID from an uploaded Excel row matched by Work ID.
+ * A different valid National ID or a duplicate Work ID is treated as a conflict
+ * so an upload can never silently move an identity to another person.
+ */
+function egmPeriodInvitesSyncOeuNationalId(PDO $pdo, string $workId, string $nationalId): int
+{
+    $workId = tctPeriodInviteClean($workId, 128);
+    $nationalId = egmPeriodInvitesValidNationalId($nationalId);
+    if ($workId === '' || $nationalId === '') return 0;
+
+    $findByWork = $pdo->prepare(
+        'SELECT `id`, `national_id` FROM `' . ORG_USERS_ACTIVE_TABLE . '` WHERE `work_id` = :work_id ORDER BY `id` FOR UPDATE'
+    );
+    $findByWork->execute([':work_id' => $workId]);
+    $matches = $findByWork->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    if (!$matches) return 0;
+    if (count($matches) > 1) {
+        throw new InvalidArgumentException("کد پرسنلی {$workId} در OEU تکراری است؛ کد ملی از اکسل به‌روزرسانی نشد.");
+    }
+
+    $oeuId = (int)($matches[0]['id'] ?? 0);
+    $currentNationalId = egmPeriodInvitesValidNationalId($matches[0]['national_id'] ?? '');
+    if ($currentNationalId !== '' && !hash_equals($currentNationalId, $nationalId)) {
+        throw new InvalidArgumentException("کد ملی اکسل با کد ملی فعلی کد پرسنلی {$workId} در OEU مغایرت دارد.");
+    }
+
+    $findOwner = $pdo->prepare(
+        'SELECT `id` FROM `' . ORG_USERS_ACTIVE_TABLE . '` WHERE `national_id` = :national_id AND `id` <> :id LIMIT 1 FOR UPDATE'
+    );
+    $findOwner->execute([':national_id' => $nationalId, ':id' => $oeuId]);
+    if ((int)$findOwner->fetchColumn() > 0) {
+        throw new InvalidArgumentException("کد ملی {$nationalId} قبلاً برای کاربر دیگری در OEU ثبت شده است.");
+    }
+    if (!hash_equals($nationalId, $currentNationalId)) {
+        $update = $pdo->prepare(
+            'UPDATE `' . ORG_USERS_ACTIVE_TABLE . '` SET `national_id` = :national_id WHERE `id` = :id'
+        );
+        $update->execute([':national_id' => $nationalId, ':id' => $oeuId]);
+    }
+    return $oeuId;
+}
+
+/** @return array<string,mixed> */
+function egmPeriodInvitesSyncMatchedEgmNationalId(
+    array $context,
+    array $candidate,
+    string $nationalId,
+    int $oeuUserId
+): array {
+    $nationalId = egmPeriodInvitesValidNationalId($nationalId);
+    if ($nationalId === '') return $candidate;
+
+    $currentNationalId = egmPeriodInvitesValidNationalId($candidate['national_id'] ?? '');
+    $workId = tctPeriodInviteClean($candidate['work_id'] ?? '', 128);
+    if ($currentNationalId !== '' && !hash_equals($currentNationalId, $nationalId)) {
+        throw new InvalidArgumentException("کد ملی اکسل با کد ملی فعلی کد پرسنلی {$workId} در EGM مغایرت دارد.");
+    }
+
+    if ($context['code'] !== '' && (string)($candidate['source'] ?? '') === 'custom') {
+        $userId = (int)substr((string)($candidate['candidate_id'] ?? ''), 2);
+        if ($userId > 0) {
+            $usersTable = (string)$context['tables']['users'];
+            $findOwner = $context['pdo']->prepare(
+                "SELECT `id` FROM `{$usersTable}` WHERE `national_id` = :national_id AND `id` <> :id LIMIT 1 FOR UPDATE"
+            );
+            $findOwner->execute([':national_id' => $nationalId, ':id' => $userId]);
+            if ((int)$findOwner->fetchColumn() > 0) {
+                throw new InvalidArgumentException("کد ملی {$nationalId} قبلاً برای کاربر دیگری در EGM ثبت شده است.");
+            }
+            $update = $context['pdo']->prepare(
+                "UPDATE `{$usersTable}` SET `national_id` = :national_id, "
+                . "`source_user_id` = COALESCE(:source_user_id, `source_user_id`) WHERE `id` = :id"
+            );
+            $update->execute([
+                ':national_id' => $nationalId,
+                ':source_user_id' => $oeuUserId > 0 ? $oeuUserId : null,
+                ':id' => $userId,
+            ]);
+        }
+    }
+    $candidate['national_id'] = $nationalId;
+    return $candidate;
 }
 
 /** @return array<int,array<string,mixed>> */
@@ -369,27 +461,61 @@ function egmPeriodInvitesInsertRegistered(array $context, string $periodCode, st
     try {
         $userIds = [];
         if ($source === 'oeu') {
-            $upsert = $pdo->prepare(<<<SQL
+            $insertUser = $pdo->prepare(<<<SQL
 INSERT INTO `{$usersTable}`
 (`work_id`,`first_name`,`last_name`,`national_id`,`phone_number`,`deputy`,`general_department`,`department`,`gender`,`postal_level`,`source_row`,`imported_at`,`is_active`,`source_type`,`source_user_id`)
 VALUES
 (:work_id,:first_name,:last_name,:national_id,:phone_number,:deputy,:general_department,:department,:gender,:postal_level,:source_row,NOW(),1,'oeu',:source_user_id)
-ON DUPLICATE KEY UPDATE
-`work_id`=VALUES(`work_id`),`first_name`=VALUES(`first_name`),`last_name`=VALUES(`last_name`),`phone_number`=VALUES(`phone_number`),
-`deputy`=VALUES(`deputy`),`general_department`=VALUES(`general_department`),`department`=VALUES(`department`),`gender`=VALUES(`gender`),
-`postal_level`=VALUES(`postal_level`),`source_row`=VALUES(`source_row`),`is_active`=1,`source_user_id`=VALUES(`source_user_id`)
 SQL);
-            $find = $pdo->prepare("SELECT `id` FROM `{$usersTable}` WHERE `national_id` = :national_id LIMIT 1");
+            $updateUser = $pdo->prepare(<<<SQL
+UPDATE `{$usersTable}` SET
+`work_id`=:work_id,`first_name`=:first_name,`last_name`=:last_name,
+`national_id`=COALESCE(:national_id,`national_id`),`phone_number`=:phone_number,
+`deputy`=:deputy,`general_department`=:general_department,`department`=:department,
+`gender`=:gender,`postal_level`=:postal_level,`source_row`=:source_row,
+`imported_at`=NOW(),`is_active`=1,`source_type`='oeu',`source_user_id`=:source_user_id
+WHERE `id`=:id
+SQL);
+            $findSource = $pdo->prepare(
+                "SELECT `id`, `national_id` FROM `{$usersTable}` WHERE `source_type` = 'oeu' AND `source_user_id` = :source_user_id LIMIT 1 FOR UPDATE"
+            );
+            $findNational = $pdo->prepare(
+                "SELECT `id`, `national_id` FROM `{$usersTable}` WHERE `national_id` = :national_id LIMIT 1 FOR UPDATE"
+            );
+            $findWork = $pdo->prepare(
+                "SELECT `id`, `national_id` FROM `{$usersTable}` WHERE `work_id` = :work_id ORDER BY `is_active` DESC, `id` DESC LIMIT 1 FOR UPDATE"
+            );
             foreach ($candidateRows as $row) {
                 $sourceId = (int)substr((string)$row['candidate_id'], 2);
-                $upsert->execute([
+                $nationalId = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
+                $params = [
                     ':work_id' => $row['work_id'], ':first_name' => $row['first_name'], ':last_name' => $row['last_name'],
-                    ':national_id' => $row['national_id'], ':phone_number' => $row['phone_number'], ':deputy' => $row['deputy'],
+                    ':national_id' => $nationalId !== '' ? $nationalId : null,
+                    ':phone_number' => $row['phone_number'], ':deputy' => $row['deputy'],
                     ':general_department' => $row['general_department'], ':department' => $row['department'], ':gender' => $row['gender'],
                     ':postal_level' => $row['postal_level'], ':source_row' => $row['source_row'], ':source_user_id' => $sourceId,
-                ]);
-                $find->execute([':national_id' => $row['national_id']]);
-                $userId = (int)$find->fetchColumn();
+                ];
+                $findSource->execute([':source_user_id' => $sourceId]);
+                $existing = $findSource->fetch(PDO::FETCH_ASSOC);
+                if (!is_array($existing) && $nationalId !== '') {
+                    $findNational->execute([':national_id' => $nationalId]);
+                    $existing = $findNational->fetch(PDO::FETCH_ASSOC);
+                }
+                if (!is_array($existing) && trim((string)$row['work_id']) !== '') {
+                    $findWork->execute([':work_id' => $row['work_id']]);
+                    $existing = $findWork->fetch(PDO::FETCH_ASSOC);
+                }
+                $userId = is_array($existing) ? (int)($existing['id'] ?? 0) : 0;
+                if ($userId > 0) {
+                    $existingNationalId = egmPeriodInvitesValidNationalId($existing['national_id'] ?? '');
+                    if ($nationalId !== '' && $existingNationalId !== '' && !hash_equals($existingNationalId, $nationalId)) {
+                        throw new InvalidArgumentException("کد ملی OEU با کاربر فعلی کد پرسنلی {$row['work_id']} در EGM مغایرت دارد.");
+                    }
+                    $updateUser->execute($params + [':id' => $userId]);
+                } else {
+                    $insertUser->execute($params);
+                    $userId = (int)$pdo->lastInsertId();
+                }
                 if ($userId > 0) $userIds[] = $userId;
             }
         } else {
@@ -441,20 +567,23 @@ function egmPeriodInvitesInsertUnmatchedRegistered(array $context, string $perio
 
     $findNational = $pdo->prepare("SELECT `id` FROM `{$usersTable}` WHERE `national_id` = :national_id LIMIT 1");
     $findWork = $pdo->prepare("SELECT `id` FROM `{$usersTable}` WHERE `work_id` = :work_id ORDER BY `is_active` DESC, `id` DESC LIMIT 1");
+    $findExistingNational = $pdo->prepare("SELECT `national_id` FROM `{$usersTable}` WHERE `id` = :id LIMIT 1 FOR UPDATE");
     $update = $pdo->prepare(<<<SQL
 UPDATE `{$usersTable}` SET
 `work_id`=COALESCE(NULLIF(:work_id,''),`work_id`),`first_name`=COALESCE(NULLIF(:first_name,''),`first_name`),
-`last_name`=COALESCE(NULLIF(:last_name,''),`last_name`),`phone_number`=COALESCE(NULLIF(:phone_number,''),`phone_number`),
+`last_name`=COALESCE(NULLIF(:last_name,''),`last_name`),`national_id`=COALESCE(NULLIF(:national_id,''),`national_id`),
+`phone_number`=COALESCE(NULLIF(:phone_number,''),`phone_number`),
 `deputy`=COALESCE(NULLIF(:deputy,''),`deputy`),`general_department`=COALESCE(NULLIF(:general_department,''),`general_department`),
 `department`=COALESCE(NULLIF(:department,''),`department`),`gender`=COALESCE(NULLIF(:gender,''),`gender`),
 `postal_level`=COALESCE(NULLIF(:postal_level,''),`postal_level`),`source_row`=:source_row,`imported_at`=NOW(),
-`state_json`=:state_json,`source_type`='period_excel',`source_user_id`=NULL,`is_active`=1
+`state_json`=:state_json,`source_type`='period_excel',
+`source_user_id`=COALESCE(:source_user_id,`source_user_id`),`is_active`=1
 WHERE `id`=:id
 SQL);
     $insertUser = $pdo->prepare(<<<SQL
 INSERT INTO `{$usersTable}`
 (`work_id`,`first_name`,`last_name`,`national_id`,`phone_number`,`deputy`,`general_department`,`department`,`gender`,`postal_level`,`source_row`,`imported_at`,`is_active`,`state_json`,`source_type`,`source_user_id`)
-VALUES (:work_id,:first_name,:last_name,:national_id,:phone_number,:deputy,:general_department,:department,:gender,:postal_level,:source_row,NOW(),1,:state_json,'period_excel',NULL)
+VALUES (:work_id,:first_name,:last_name,:national_id,:phone_number,:deputy,:general_department,:department,:gender,:postal_level,:source_row,NOW(),1,:state_json,'period_excel',:source_user_id)
 SQL);
     $insertPeriod = $pdo->prepare(<<<SQL
 INSERT IGNORE INTO `{$periodsTable}` (`user_id`,`period_code`,`status`,`invitation_source`,`invited_by`,`invited_at`)
@@ -467,13 +596,15 @@ SQL);
     $pdo->beginTransaction();
     try {
         foreach ($rows as $row) {
-            $nationalId = orgUsersNormalizeNationalId($row['national_id'] ?? '');
+            $nationalId = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
             $workId = tctPeriodInviteClean($row['work_id'] ?? '', 128);
+            $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $nationalId);
             $userId = 0;
             if ($nationalId !== '') {
                 $findNational->execute([':national_id' => $nationalId]);
                 $userId = (int)$findNational->fetchColumn();
-            } elseif ($workId !== '') {
+            }
+            if ($userId <= 0 && $workId !== '') {
                 $findWork->execute([':work_id' => $workId]);
                 $userId = (int)$findWork->fetchColumn();
             }
@@ -486,6 +617,7 @@ SQL);
                 ':work_id' => $workId,
                 ':first_name' => $row['first_name'],
                 ':last_name' => $row['last_name'],
+                ':national_id' => $nationalId,
                 ':phone_number' => $row['phone_number'],
                 ':deputy' => $row['deputy'],
                 ':general_department' => $row['general_department'],
@@ -494,11 +626,18 @@ SQL);
                 ':postal_level' => $row['postal_level'],
                 ':source_row' => (int)$row['source_row'],
                 ':state_json' => is_string($stateJson) ? $stateJson : '{}',
+                ':source_user_id' => $oeuUserId > 0 ? $oeuUserId : null,
             ];
             if ($userId > 0) {
+                $findExistingNational->execute([':id' => $userId]);
+                $existingNationalId = egmPeriodInvitesValidNationalId($findExistingNational->fetchColumn());
+                if ($nationalId !== '' && $existingNationalId !== '' && !hash_equals($existingNationalId, $nationalId)) {
+                    throw new InvalidArgumentException("کد ملی اکسل با کد ملی فعلی کد پرسنلی {$workId} در EGM مغایرت دارد.");
+                }
                 $update->execute($params + [':id' => $userId]);
             } else {
-                $insertParams = $params + [':national_id' => $nationalId !== '' ? $nationalId : null];
+                $insertParams = $params;
+                $insertParams[':national_id'] = $nationalId !== '' ? $nationalId : null;
                 $insertUser->execute($insertParams);
                 $userId = (int)$pdo->lastInsertId();
                 $addedUsers++;
@@ -587,25 +726,47 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
     $byNational = [];
     $byWork = [];
     foreach ($candidates as $candidate) {
-        $national = orgUsersNormalizeNationalId($candidate['national_id'] ?? '');
+        $national = egmPeriodInvitesValidNationalId($candidate['national_id'] ?? '');
         $work = strtolower(trim((string)($candidate['work_id'] ?? '')));
         if ($national !== '') $byNational[$national] = $candidate;
         if ($work !== '' && !isset($byWork[$work])) $byWork[$work] = $candidate;
     }
     $matched = [];
     $unmatchedRows = [];
-    foreach ($inputRows as $offset => $inputRow) {
-        if (!is_array($inputRow)) continue;
-        $excelRow = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
-        $national = orgUsersNormalizeNationalId($excelRow['national_id'] ?? '');
-        $work = strtolower(trim((string)($excelRow['work_id'] ?? '')));
-        $candidate = ($national !== '' ? ($byNational[$national] ?? null) : null)
-            ?? ($work !== '' ? ($byWork[$work] ?? null) : null);
-        if (!is_array($candidate)) {
-            $unmatchedRows[] = $excelRow;
-            continue;
+    $pdo = $context['pdo'];
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) $pdo->beginTransaction();
+    try {
+        foreach ($inputRows as $offset => $inputRow) {
+            if (!is_array($inputRow)) continue;
+            $excelRow = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
+            $national = egmPeriodInvitesValidNationalId($excelRow['national_id'] ?? '');
+            $workId = tctPeriodInviteClean($excelRow['work_id'] ?? '', 128);
+            $work = strtolower($workId);
+
+            // An uploaded National ID is also authoritative for an unambiguous
+            // OEU Work-ID match, even when this EGM currently uses custom users.
+            $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $national);
+            $candidate = ($national !== '' ? ($byNational[$national] ?? null) : null)
+                ?? ($work !== '' ? ($byWork[$work] ?? null) : null);
+            if (!is_array($candidate)) {
+                $unmatchedRows[] = $excelRow;
+                continue;
+            }
+            $candidate = egmPeriodInvitesSyncMatchedEgmNationalId(
+                $context,
+                $candidate,
+                $national,
+                $oeuUserId
+            );
+            if ($national !== '') $byNational[$national] = $candidate;
+            if ($work !== '') $byWork[$work] = $candidate;
+            $matched[(string)$candidate['candidate_id']] = $candidate;
         }
-        $matched[(string)$candidate['candidate_id']] = $candidate;
+        if ($ownsTransaction) $pdo->commit();
+    } catch (Throwable $error) {
+        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
     }
     $invited = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
     $rows = array_values($matched);

@@ -162,7 +162,18 @@ function egmPeriodInviteCardsNormalizeNationalId($value): string
     return preg_match('/^[0-9]{10}$/D', $nationalId) === 1 ? $nationalId : '';
 }
 
-function egmPeriodInviteCardsAssertNationalIds(array $context, string $periodCode): void
+function egmPeriodInviteCardsNormalizeWorkId($value): string
+{
+    $workId = strtr(trim((string)$value), [
+        '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+        '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+        '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+    ]);
+    return preg_match('/^[0-9]{4,9}$/D', $workId) === 1 ? $workId : '';
+}
+
+function egmPeriodInviteCardsAssertQrIdentifiers(array $context, string $periodCode): void
 {
     $periodsTable = (string)$context['tables']['user_periods'];
     $usersTable = (string)$context['tables']['users'];
@@ -217,6 +228,9 @@ function egmPeriodInviteCardsAssertNationalIds(array $context, string $periodCod
                 // this invitee invalid so the conflict can be resolved safely.
             }
         }
+        if (egmPeriodInviteCardsNormalizeWorkId($workId) !== '') {
+            continue;
+        }
         $invalid++;
         $name = trim(preg_replace(
             '/\s+/u',
@@ -230,7 +244,7 @@ function egmPeriodInviteCardsAssertNationalIds(array $context, string $periodCod
     if ($invalid > 0) {
         $examples = implode('، ', array_slice($invalidLabels, 0, 10));
         throw new InvalidArgumentException(
-            "کد ملی {$invalid} دعوت‌شونده خالی یا نامعتبر است؛ برای ساخت QR، کد ملی هر دعوت‌شونده باید دقیقاً ۱۰ رقم باشد."
+            "برای {$invalid} دعوت‌شونده نه کد ملی ۱۰ رقمی و نه کد پرسنلی عددی ۴ تا ۹ رقمی ثبت شده است؛ ساخت QR ممکن نیست."
             . ($examples !== '' ? " موارد نیازمند اصلاح: {$examples}" : '')
         );
     }
@@ -270,7 +284,7 @@ function egmPeriodInviteCardsPrepare(array $context, string $periodCode, bool $r
     if (!is_array($configuration) || trim((string)($configuration['imageData'] ?? '')) === '') {
         throw new InvalidArgumentException('ابتدا تنظیمات کارت دعوت EGM و تصویر پس‌زمینه را ذخیره کنید.');
     }
-    egmPeriodInviteCardsAssertNationalIds($context, $periodCode);
+    egmPeriodInviteCardsAssertQrIdentifiers($context, $periodCode);
     $pdo = $context['pdo'];
     $periodsTable = (string)$context['tables']['user_periods'];
     ensureEgmInviteCardRoutesTable($pdo);

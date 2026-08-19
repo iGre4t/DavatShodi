@@ -23,6 +23,26 @@ egmInviteCardRegenerationAssert(
     egmPeriodInviteCardsNormalizeNationalId('123456789') === '',
     'A non-10-digit National ID was accepted'
 );
+egmInviteCardRegenerationAssert(
+    egmPeriodInviteCardsNormalizeWorkId('۱۲۳۴۵۶') === '123456',
+    'A Persian-digit Work ID was not normalized'
+);
+egmInviteCardRegenerationAssert(
+    egmPeriodInviteCardsNormalizeWorkId('1234') === '1234'
+        && egmPeriodInviteCardsNormalizeWorkId('123456789') === '123456789',
+    'A valid 4-to-9-digit Work ID was rejected'
+);
+egmInviteCardRegenerationAssert(
+    egmPeriodInviteCardsNormalizeWorkId('123') === ''
+        && egmPeriodInviteCardsNormalizeWorkId('1234567890') === ''
+        && egmPeriodInviteCardsNormalizeWorkId('12-345') === '',
+    'An invalid-length Work ID was accepted'
+);
+egmInviteCardRegenerationAssert(
+    egmPeriodInvitesValidNationalId('۰۰۱۲۳۴۵۶۷۸') === '0012345678'
+        && egmPeriodInvitesValidNationalId('123456789') === '',
+    'Excel National IDs are not restricted to an exact 10 digits'
+);
 
 $directory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'egm-invite-card-regeneration-' . bin2hex(random_bytes(6));
 egmInviteCardRegenerationAssert(mkdir($directory, 0700), 'Could not create the regeneration test directory');
