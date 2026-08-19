@@ -155,6 +155,8 @@ function loadConfig(string $path): array
 
 function connectDatabase(array $config): ?PDO
 {
+    static $connectionCache = [];
+
     $host = $config['host'] ?? '';
     $dbname = $config['dbname'] ?? '';
     if ($host === '' || $dbname === '') {
@@ -164,19 +166,64 @@ function connectDatabase(array $config): ?PDO
     $charset = $config['charset'] ?? 'utf8mb4';
     $user = $config['user'] ?? '';
     $password = $config['password'] ?? '';
+    $connectTimeout = max(1, min(10, (int)($config['connect_timeout'] ?? 3)));
+    $connectionKey = hash('sha256', implode("\0", [
+        (string)$host,
+        (string)$port,
+        (string)$dbname,
+        (string)$charset,
+        (string)$user,
+        (string)$password
+    ]));
+    if (array_key_exists($connectionKey, $connectionCache)) {
+        return $connectionCache[$connectionKey];
+    }
+
+    // PDO_MYSQL on Windows can ignore ATTR_TIMEOUT while waiting for a server
+    // handshake. Probe that first byte explicitly so a stalled local MariaDB
+    // process cannot hold every Apache worker until max_execution_time.
+    if (PHP_OS_FAMILY === 'Windows' && function_exists('stream_socket_client')) {
+        $socketHost = str_contains((string)$host, ':')
+            ? '[' . trim((string)$host, '[]') . ']'
+            : (string)$host;
+        $socket = @stream_socket_client(
+            sprintf('tcp://%s:%d', $socketHost, $port),
+            $socketErrorNumber,
+            $socketErrorMessage,
+            $connectTimeout,
+            STREAM_CLIENT_CONNECT
+        );
+        if ($socket === false) {
+            error_log(sprintf('MySQL preflight failed for %s:%d: %s', $host, $port, $socketErrorMessage));
+            $connectionCache[$connectionKey] = null;
+            return null;
+        }
+        stream_set_timeout($socket, $connectTimeout);
+        $handshakeByte = fread($socket, 1);
+        $socketMetadata = stream_get_meta_data($socket);
+        fclose($socket);
+        if ($handshakeByte === '' || !empty($socketMetadata['timed_out'])) {
+            error_log(sprintf('MySQL preflight timed out for %s:%d.', $host, $port));
+            $connectionCache[$connectionKey] = null;
+            return null;
+        }
+    }
 
     try {
         $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $dbname, $charset);
         $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false
+            PDO::ATTR_EMULATE_PREPARES => false,
+            PDO::ATTR_TIMEOUT => $connectTimeout
         ];
         $pdo = new PDO($dsn, $user, $password, $options);
         ensureStoreTable($pdo, resolveTableName($config));
+        $connectionCache[$connectionKey] = $pdo;
         return $pdo;
     } catch (PDOException $e) {
         error_log('MySQL connection failed: ' . $e->getMessage());
+        $connectionCache[$connectionKey] = null;
         return null;
     }
 }

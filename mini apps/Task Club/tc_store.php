@@ -1,9 +1,11 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 $campaignRedirectsFile = __DIR__ . '/../../api/lib/campaign-redirects.php';
-if (is_file($campaignRedirectsFile)) {
+if (tcDbIsFile($campaignRedirectsFile)) {
   require_once $campaignRedirectsFile;
 }
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
@@ -11,6 +13,7 @@ require_once __DIR__ . '/tc-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_inventory_store.php';
 require_once __DIR__ . '/prize_levels_store.php';
+require_once __DIR__ . '/prize_award_reset.php';
 require_once __DIR__ . '/pot_service.php';
 $tcStoreSessionUser = requireTabPermissionFromSession('task-club', true);
 tcSecurityGetCsrfToken();
@@ -24,6 +27,7 @@ $settingsFile = $baseDir . DIRECTORY_SEPARATOR . 'Setting.json';
 $legacySettingsFile = $baseDir . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'store.json';
 $inviteesMappedFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $inviteesMapFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'TC Mapped.json';
+$prizeAwardsFile = $baseDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . TC_PRIZE_AWARD_LOG_FILENAME;
 
 function tcStoreCampaignLinkTarget(): string
 {
@@ -44,7 +48,7 @@ function tcStoreCampaignRedirectsReady(): bool
 function tcStoreRequireCampaignRedirects(): void
 {
   global $campaignRedirectsFile;
-  if (!tcStoreCampaignRedirectsReady() && is_string($campaignRedirectsFile ?? null) && is_file($campaignRedirectsFile)) {
+  if (!tcStoreCampaignRedirectsReady() && is_string($campaignRedirectsFile ?? null) && tcDbIsFile($campaignRedirectsFile)) {
     require_once $campaignRedirectsFile;
   }
   if (tcStoreCampaignRedirectsReady()) {
@@ -163,13 +167,13 @@ function tcStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, s
     if (!preg_match('/\.(php|js|css|json|htaccess)$/i', $name) && $name !== '.htaccess') {
       continue;
     }
-    $content = file_get_contents($path);
+    $content = tcDbFileGetContents($path);
     if (!is_string($content)) {
       continue;
     }
     $patched = str_replace([$oldWebPath, $oldDirectory], [$newWebPath, $newDirectory], $content);
     if ($patched !== $content) {
-      file_put_contents($path, $patched, LOCK_EX);
+      tcDbFilePutContents($path, $patched, LOCK_EX);
     }
   }
 }
@@ -244,10 +248,10 @@ function tcStoreSyncMissionMetadataName(string $baseDir, string $eventName): boo
 }
 
 function readJsonFile($path, $fallback) {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $fallback;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $fallback;
   }
@@ -260,7 +264,7 @@ function writeJsonFile($path, $data) {
   if ($encoded === false) {
     return false;
   }
-  return file_put_contents($path, $encoded, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $encoded, LOCK_EX) !== false;
 }
 
 function normalizeSettingsFilePayload($data): array
@@ -274,7 +278,7 @@ function normalizeSettingsFilePayload($data): array
 function readSettingsFile(string $path, ?string $legacyPath = null): array
 {
   $settings = normalizeSettingsFilePayload(readJsonFile($path, []));
-  if ($settings !== [] || is_file($path)) {
+  if ($settings !== [] || tcDbIsFile($path)) {
     return $settings;
   }
   if (is_string($legacyPath) && $legacyPath !== '') {
@@ -364,11 +368,11 @@ function readCsvFileRows(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -376,7 +380,7 @@ function readCsvFileRows(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
   flock($handle, LOCK_UN);
@@ -393,7 +397,7 @@ function writeCsvFileRows(string $path, array $rows): bool
   if ($dir !== '' && !is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'c+');
+  $handle = tcDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -407,7 +411,7 @@ function writeCsvFileRows(string $path, array $rows): bool
     return false;
   }
   foreach ($rows as $row) {
-    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+    if (fputcsv($handle, is_array($row) ? $row : [], ',', '"', '\\') === false) {
       flock($handle, LOCK_UN);
       fclose($handle);
       return false;
@@ -421,10 +425,10 @@ function writeCsvFileRows(string $path, array $rows): bool
 
 function readInviteesMappingConfig(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -810,6 +814,9 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $tcStoreMainActions = [
   'get_prizes',
   'save_prizes',
+  'get_prize_awards',
+  'reset_prize_award',
+  'reset_all_prize_awards',
   'get_prize_levels',
   'save_prize_levels',
   'get_reward_guide',
@@ -843,7 +850,7 @@ if ($action === 'check_campaign_link') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -871,7 +878,7 @@ if ($action === 'create_campaign_link') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -951,13 +958,138 @@ if ($action === 'get_prizes') {
   exit;
 }
 
+if ($action === 'get_prize_awards') {
+  $limit = max(20, min(200, (int)($_GET['limit'] ?? 100)));
+  $items = [];
+  $total = 0;
+  foreach (array_reverse(tcPrizeAwardLogRead($prizeAwardsFile)) as $entry) {
+    if (!is_array($entry) || !in_array((string)($entry['status'] ?? ''), ['awarded', 'reset_pending'], true)) continue;
+    $total += 1;
+    if (count($items) >= $limit) continue;
+    $level = is_array($entry['level'] ?? null) ? $entry['level'] : [];
+    $prize = is_array($entry['prize'] ?? null) ? $entry['prize'] : [];
+    $items[] = [
+      'awardId' => (string)($entry['awardId'] ?? ''),
+      'status' => (string)($entry['status'] ?? ''),
+      'wonAt' => (string)($entry['awardedAt'] ?? $entry['selectedAt'] ?? ''),
+      'userName' => (string)($entry['userName'] ?? ''),
+      'cardNumber' => max(0, (int)($entry['cardIndex'] ?? -1)) + 1,
+      'levelName' => (string)($level['name'] ?? ''),
+      'prizeName' => (string)($prize['name'] ?? ''),
+      'prizeValue' => max(0, (float)($prize['value'] ?? 0))
+    ];
+  }
+  echo json_encode([
+    'status' => 'ok',
+    'data' => $items,
+    'total' => $total,
+    'limit' => $limit,
+    'truncated' => $total > count($items)
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'reset_prize_award') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
+  if (!is_array($payload)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  $awardId = trim((string)($payload['awardId'] ?? ''));
+  $resetBy = trim((string)($tcStoreSessionUser['code'] ?? $tcStoreSessionUser['username'] ?? 'panel-admin'));
+  $result = tcPrizeResetAward($prizeAwardsFile, $inviteesMappedFile, $prizesFile, $awardId, $resetBy);
+  if (!$result['ok']) http_response_code(409);
+  if ($result['ok']) {
+    tcActivityLogUserActivity([
+      'level' => 'warning',
+      'action' => 'taskclub.prize_award_reset',
+      'entity_type' => 'taskclub_prize_award',
+      'entity_id' => $awardId,
+      'status' => 'success',
+      'message' => 'Task Club prize award reset by administrator.',
+      'metadata' => ['reset_by' => $resetBy],
+      'audit' => true
+    ]);
+  }
+  echo json_encode([
+    'status' => $result['ok'] ? 'ok' : 'error',
+    'message' => $result['message']
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'reset_all_prize_awards') {
+  if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+  }
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
+  if (!is_array($payload)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
+    exit;
+  }
+  requireTcStoreCsrf($payload);
+  if (($payload['confirmResetAll'] ?? null) !== true) {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => 'Explicit confirmation is required.']);
+    exit;
+  }
+  $resetBy = trim((string)($tcStoreSessionUser['code'] ?? $tcStoreSessionUser['username'] ?? 'panel-admin'));
+  $awardIds = [];
+  foreach (tcPrizeAwardLogRead($prizeAwardsFile) as $entry) {
+    if (!is_array($entry) || !in_array((string)($entry['status'] ?? ''), ['awarded', 'reset_pending'], true)) continue;
+    $awardId = trim((string)($entry['awardId'] ?? ''));
+    if ($awardId !== '') $awardIds[] = $awardId;
+  }
+  $resetCount = 0;
+  foreach ($awardIds as $awardId) {
+    $result = tcPrizeResetAward($prizeAwardsFile, $inviteesMappedFile, $prizesFile, $awardId, $resetBy);
+    if (!$result['ok']) {
+      http_response_code(409);
+      echo json_encode([
+        'status' => 'error',
+        'message' => "Reset stopped safely after {$resetCount} prize(s): " . $result['message'],
+        'resetCount' => $resetCount,
+        'remainingCount' => max(0, count($awardIds) - $resetCount)
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      exit;
+    }
+    $resetCount++;
+  }
+  tcActivityLogUserActivity([
+    'level' => 'warning',
+    'action' => 'taskclub.all_prize_awards_reset',
+    'entity_type' => 'taskclub_prize_award',
+    'entity_id' => 'all',
+    'status' => 'success',
+    'message' => 'All Task Club prize awards reset by administrator.',
+    'metadata' => ['reset_by' => $resetBy, 'reset_count' => $resetCount],
+    'audit' => true
+  ]);
+  echo json_encode([
+    'status' => 'ok',
+    'message' => $resetCount > 0 ? "{$resetCount} prize(s) reset successfully." : 'There were no active prizes to reset.',
+    'resetCount' => $resetCount
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 if ($action === 'save_prizes') {
   if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     http_response_code(405);
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1094,7 +1226,7 @@ if ($action === 'save_prize_levels') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1258,7 +1390,7 @@ if ($action === 'save_reward_guide') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1293,7 +1425,7 @@ if ($action === 'save_reward_prize_display') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1329,7 +1461,7 @@ if ($action === 'save_mission_link') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1369,13 +1501,13 @@ if ($action === 'save_mission_link') {
       exit;
     }
   }
-  if (file_exists($targetDir)) {
+  if (tcDbFileExists($targetDir)) {
     echo json_encode(['status' => 'error', 'message' => 'This /missions link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
   $missionDir = (string)$context['missionDir'];
-  if (!rename($missionDir, $targetDir)) {
+  if (!tcDbRename($missionDir, $targetDir)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to rename the club folder.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -1457,7 +1589,7 @@ if ($action === 'save_settings') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1555,7 +1687,7 @@ if ($action === 'set_admin_assignment') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;

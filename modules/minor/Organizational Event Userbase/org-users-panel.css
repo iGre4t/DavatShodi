@@ -1,0 +1,268 @@
+.oeu-shell {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.oeu-top-nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  align-items: flex-end;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.oeu-top-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: auto;
+  min-width: 128px;
+  padding: 10px 14px;
+  margin-bottom: -1px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: #f8fafc;
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.oeu-top-item + .oeu-top-item {
+  margin-inline-start: 6px;
+}
+
+.oeu-top-item:hover {
+  background: #eef2f7;
+}
+
+.oeu-top-item.active {
+  background: #fff;
+  color: var(--primary, #111);
+  font-weight: 700;
+}
+
+.oeu-top-item span {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.oeu-pane {
+  display: none;
+  min-width: 0;
+}
+
+.oeu-pane.active {
+  display: grid;
+  gap: 14px;
+}
+
+.oeu-filter-form {
+  display: grid;
+  gap: 20px;
+}
+
+.oeu-global-search {
+  display: grid;
+  gap: 8px;
+  width: min(620px, 100%);
+  margin: 0;
+}
+
+.oeu-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  column-gap: 18px;
+  row-gap: 20px;
+  align-items: start;
+}
+
+.oeu-filter-grid .field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  align-content: start;
+}
+
+.oeu-filter-grid .field[hidden] {
+  display: none;
+}
+
+.oeu-filter-grid .field > span {
+  display: block;
+  position: static;
+  min-height: 20px;
+  margin: 0;
+  line-height: 20px;
+}
+
+.oeu-filter-grid .field > select {
+  display: block;
+  position: static;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+  padding-block: 10px;
+  padding-inline: 14px 42px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.oeu-page-size,
+.oeu-page-size select {
+  min-width: 0;
+  width: 100%;
+}
+
+.oeu-filter-actions,
+.oeu-list-meta,
+.oeu-pagination,
+.oeu-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oeu-filter-actions {
+  padding-top: 2px;
+}
+
+.oeu-list-meta {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.oeu-table-wrap {
+  max-height: min(64vh, 680px);
+  overflow: auto;
+}
+
+.oeu-table {
+  min-width: 1480px;
+}
+
+.oeu-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+.oeu-table td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.oeu-table td.oeu-wrap-cell {
+  min-width: 210px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.oeu-ltr {
+  direction: ltr;
+  unicode-bidi: plaintext;
+  text-align: left;
+}
+
+.oeu-conflict-badge {
+  display: inline-flex;
+  margin: 2px;
+  padding: 4px 8px;
+  border: 1px solid #f3b5ac;
+  border-radius: 999px;
+  background: #fff2f0;
+  color: #a5281b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.oeu-conflict-peer {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.oeu-conflict-peer + .oeu-conflict-peer {
+  margin-top: 6px;
+}
+
+.oeu-conflict-peer strong {
+  font-size: 12px;
+}
+
+.oeu-conflict-peer span {
+  color: var(--muted, #6b7280);
+  font-size: 11px;
+}
+
+.oeu-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.oeu-page-size {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  margin-inline-start: 8px;
+}
+
+.oeu-page-size select {
+  width: 78px;
+}
+
+.oeu-stat-block {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+}
+
+.oeu-stat-block strong {
+  font-size: 20px;
+}
+
+.oeu-conflict-modal-card {
+  width: min(920px, 94vw);
+}
+
+@media (max-width: 1040px) {
+  .oeu-filter-grid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .oeu-top-item {
+    min-width: 110px;
+  }
+
+  .oeu-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .oeu-filter-actions .btn,
+  .oeu-pagination .btn {
+    flex: 1 1 auto;
+  }
+}

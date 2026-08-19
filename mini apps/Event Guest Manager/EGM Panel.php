@@ -1,11 +1,16 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../api/lib/egm-invite-card-pane.php';
 $egmPanelUser = requireTabPermissionFromSession('event-guest-manager', false);
 $egmAllowedChildTabs = resolveAllowedPanelChildTabsForUser($egmPanelUser, 'event-guest-manager');
 $egmAllowedChildSet = array_fill_keys($egmAllowedChildTabs, true);
 $egmCanMainPane = isset($egmAllowedChildSet['event-guest-manager:main']);
+$egmCanInviteCardPane = $egmCanMainPane;
 $egmCanInviteesPane = isset($egmAllowedChildSet['event-guest-manager:invitees']);
 $egmCanManageTasksPane = isset($egmAllowedChildSet['event-guest-manager:manage-tasks']);
 $egmCanTaskAccessPane = isset($egmAllowedChildSet['event-guest-manager:task-access']);
@@ -30,8 +35,8 @@ $egmManageTasksOverride = null;
 $egmHasTaskSubtabAccess = false;
 if ($egmSessionUserCode !== '') {
   $egmTaskAccessPath = __DIR__ . '/tasks/task-access.json';
-  if (is_file($egmTaskAccessPath)) {
-    $egmTaskAccessRaw = file_get_contents($egmTaskAccessPath);
+  if (egmDbIsFile($egmTaskAccessPath)) {
+    $egmTaskAccessRaw = egmDbFileGetContents($egmTaskAccessPath);
     $egmTaskAccessDecoded = is_string($egmTaskAccessRaw) ? json_decode($egmTaskAccessRaw, true) : null;
     $egmTaskAccessUsers = is_array($egmTaskAccessDecoded['users'] ?? null) ? $egmTaskAccessDecoded['users'] : [];
     foreach ($egmTaskAccessUsers as $rawCode => $entry) {
@@ -72,6 +77,7 @@ if ($egmManageTasksOverride !== null) {
 $egmCanTaskSubtabs = $egmCanManageTasksPane || $egmHasTaskSubtabAccess;
 $egmHasAnyPane = $egmCanMainPane
   || $egmCanInviteesPane
+  || $egmCanInviteCardPane
   || $egmCanManageTasksPane
   || $egmCanTaskSubtabs
   || $egmCanTaskAccessPane
@@ -85,6 +91,7 @@ foreach ([
   'egm-main' => $egmCanControlPanel,
   'egm-rewards-config' => $egmCanMainPane,
   'egm-invitees' => $egmCanInviteesPane,
+  'egm-invite-card' => $egmCanInviteCardPane,
   'egm-manage-tasks' => $egmCanManageTasksPane,
   'egm-monitoring' => $egmCanMonitoringPane,
   'egm-logs' => $egmCanLogsPane,
@@ -94,23 +101,27 @@ foreach ([
     break;
   }
 }
-require_once __DIR__ . '/egm-security.php';
 $egmPanelCsrfToken = egmSecurityGetCsrfToken();
 
-$egmPanelCssVer = (string)(@filemtime(__DIR__ . '/egm-panel.css') ?: time());
-$egmPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/egm-panel-local.js') ?: time());
-$egmPrizesJsVer = (string)(@filemtime(__DIR__ . '/EGM Prizes.js') ?: time());
-$egmSettingJsVer = (string)(@filemtime(__DIR__ . '/EGMSetting.js') ?: time());
-$egmEventStyleJsVer = (string)(@filemtime(__DIR__ . '/EGMEventStyle.js') ?: time());
-$egmMonitoringJsVer = (string)(@filemtime(__DIR__ . '/EGMMonitoring.js') ?: time());
-$egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time());
+$egmPanelCssVer = (string)(@egmDbFilemtime(__DIR__ . '/egm-panel.css') ?: time());
+$egmPanelLocalJsVer = (string)(@egmDbFilemtime(__DIR__ . '/egm-panel-local.js') ?: time());
+$egmPrizesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/EGM Prizes.js') ?: time());
+$egmSettingJsVer = (string)(@egmDbFilemtime(__DIR__ . '/EGMSetting.js') ?: time());
+$egmEventStyleJsVer = (string)(@egmDbFilemtime(__DIR__ . '/EGMEventStyle.js') ?: time());
+$egmMonitoringJsVer = (string)(@egmDbFilemtime(__DIR__ . '/EGMMonitoring.js') ?: time());
+$egmTaskAccessJsVer = (string)(@egmDbFilemtime(__DIR__ . '/EGMTaskAccess.js') ?: time());
+$egmInviteCardCssVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-invite-card.css') ?: time());
+$egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-invite-card.js') ?: time());
 ?>
 
 <link rel="stylesheet" href="mini%20apps/Event%20Guest%20Manager/egm-panel.css?v=<?= htmlspecialchars($egmPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
+<?php if ($egmCanInviteCardPane || $egmCanManageTasksPane): ?>
+<link rel="stylesheet" href="assets/egm-invite-card.css?v=<?= htmlspecialchars($egmInviteCardCssVer, ENT_QUOTES, 'UTF-8') ?>" />
+<?php endif; ?>
 <div class="egm-shell" data-egm-csrf="<?= htmlspecialchars($egmPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
 <div class="sub-layout" data-egm-sub-layout>
   <aside class="sub-sidebar">
-    <div class="sub-header">Event Guest Manager</div>
+    <div class="sub-header">EGM Develop <span class="muted" dir="ltr">(00000)</span></div>
     <div class="sub-nav">
       <?php if ($egmCanControlPanel): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-main' ? ' active' : '' ?>" data-pane="egm-main">کنترل پنل</button>
@@ -121,8 +132,11 @@ $egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time
       <?php if ($egmCanInviteesPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-invitees' ? ' active' : '' ?>" data-pane="egm-invitees">دعوت‌شدگان</button>
       <?php endif; ?>
+      <?php if ($egmCanInviteCardPane): ?>
+        <button type="button" class="sub-item<?= $egmInitialPane === 'egm-invite-card' ? ' active' : '' ?>" data-pane="egm-invite-card">Invite Card</button>
+      <?php endif; ?>
       <?php if ($egmCanManageTasksPane): ?>
-        <button type="button" class="sub-item<?= $egmInitialPane === 'egm-manage-tasks' ? ' active' : '' ?>" data-pane="egm-manage-tasks">مدیریت تسک‌ها</button>
+        <button type="button" class="sub-item<?= $egmInitialPane === 'egm-manage-tasks' ? ' active' : '' ?>" data-pane="egm-manage-tasks">بازه‌ها</button>
       <?php endif; ?>
       <?php if ($egmCanMonitoringPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-monitoring' ? ' active' : '' ?>" data-pane="egm-monitoring">مانیتورینگ</button>
@@ -164,8 +178,8 @@ $egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time
   <div class="section-header">
     <h3>وضعیت</h3>
   </div>
-  <div class="field">
-    <a class="btn primary standard-primary-button" href="mini%20apps/Event%20Guest%20Manager/EGMM.php" target="_blank" rel="noopener">باز کردن تسک کلاب</a>
+  <div class="field" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+    <a class="btn primary standard-primary-button" href="mini%20apps/Event%20Guest%20Manager/EGMM.php" target="_blank" rel="noopener">باز کردن صفحه رویداد</a>
   </div>
 </div>
 
@@ -368,10 +382,10 @@ $egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time
       <?php if ($egmCanTaskAccessPane): ?>
       <div class="card">
         <div class="section-header">
-          <h3>دسترسی تسک‌ها</h3>
+          <h3>دسترسی بازه‌ها</h3>
         </div>
         <div class="form" style="gap:12px;">
-          <p class="muted small">فهرست کاربران دارای دسترسی «باشگاه تعاملی». برای هر کاربر می‌توانید «دسترسی تسک‌ها» و «دسترسی‌های خاص» را تنظیم کنید.</p>
+          <p class="muted small">فهرست کاربران دارای دسترسی «باشگاه تعاملی». برای هر کاربر می‌توانید «دسترسی بازه‌ها» و «دسترسی‌های خاص» را تنظیم کنید.</p>
           <div class="table-wrapper">
             <table class="tct-list-table egm-task-access-users-table">
               <thead>
@@ -399,10 +413,10 @@ $egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time
             <h3 id="egm-task-access-modal-title">دسترسی‌ها</h3>
             <button type="button" class="icon-btn" data-egm-task-access-close aria-label="بستن">×</button>
           </div>
-          <p class="hint">دسترسی هر کاربر به تب‌ها و زیربخش‌های هر تسک از این بخش مدیریت می‌شود.</p>
+          <p class="hint">دسترسی هر کاربر به تب‌ها و زیربخش‌های هر بازه از این بخش مدیریت می‌شود.</p>
           <label class="egm-task-access-manage-row">
             <input type="checkbox" id="egm-task-access-manage-tasks" />
-            <span>دسترسی به تب مدیریت تسک‌ها</span>
+            <span>دسترسی به تب بازه‌ها</span>
           </label>
           <p class="muted small" id="egm-task-access-status" aria-live="polite"></p>
           <div id="egm-task-access-tree" class="egm-task-access-tree"></div>
@@ -482,8 +496,8 @@ $egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time
         <?php
           $egmPrizeLevelsPath = __DIR__ . '/EGM Prize Levels.json';
           $egmPrizeLevels = [];
-          if (is_file($egmPrizeLevelsPath)) {
-            $egmPrizeLevelsDecoded = json_decode((string)file_get_contents($egmPrizeLevelsPath), true);
+          if (egmDbIsFile($egmPrizeLevelsPath)) {
+            $egmPrizeLevelsDecoded = json_decode((string)egmDbFileGetContents($egmPrizeLevelsPath), true);
             if (is_array($egmPrizeLevelsDecoded)) $egmPrizeLevels = $egmPrizeLevelsDecoded;
           }
           foreach ($egmPrizeLevels as $egmPrizeLevel):
@@ -846,6 +860,9 @@ $egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time
       <?php include __DIR__ . '/invitees.php'; ?>
     </div>
     <?php endif; ?>
+    <?php if ($egmCanInviteCardPane): ?>
+      <?php renderEgmInviteCardPane('mini%20apps/Event%20Guest%20Manager/invite_card_store.php', $egmInitialPane === 'egm-invite-card'); ?>
+    <?php endif; ?>
     <?php if ($egmCanManageTasksPane): ?>
     <div class="sub-pane<?= $egmInitialPane === 'egm-manage-tasks' ? ' active' : '' ?>" data-pane="egm-manage-tasks">
       <?php include __DIR__ . '/EGMT.php'; ?>
@@ -911,7 +928,13 @@ $egmTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/EGMTaskAccess.js') ?: time
 </div>
 </div>
 
+<?php if ($egmCanInviteesPane || $egmCanManageTasksPane): ?>
+<script src="mini%20apps/Event%20Guest%20Manager/vendor/xlsx/xlsx.full.min.js" defer></script>
+<?php endif; ?>
 <script src="mini%20apps/Event%20Guest%20Manager/egm-panel-local.js?v=<?= htmlspecialchars($egmPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php if ($egmCanInviteCardPane): ?>
+<script src="assets/egm-invite-card.js?v=<?= htmlspecialchars($egmInviteCardJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php endif; ?>
 <?php if ($egmCanMainPane): ?>
 <script src="mini%20apps/Event%20Guest%20Manager/EGM%20Prizes.js?v=<?= htmlspecialchars($egmPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>

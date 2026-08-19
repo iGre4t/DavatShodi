@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 const EGM_REGISTRY_TABLE = 'EGM';
+const EGM_INSTANCES_DIRECTORY = 'mini apps/EGMs';
+const EGM_LEGACY_INSTANCES_DIRECTORY = 'miniapps/EGMs';
 
 function ensureEgmRegistryTable(PDO $pdo): void
 {
@@ -25,6 +27,22 @@ CREATE TABLE IF NOT EXISTS `EGM_sequence` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
     $pdo->exec("INSERT IGNORE INTO `EGM_sequence` (`id`, `next_code`) VALUES (1, '0001')");
+    migrateLegacyEgmRegistryDirectories($pdo);
+}
+
+function migrateLegacyEgmRegistryDirectories(PDO $pdo): void
+{
+    $legacyPrefix = EGM_LEGACY_INSTANCES_DIRECTORY . '/';
+    $canonicalPrefix = EGM_INSTANCES_DIRECTORY . '/';
+    $statement = $pdo->prepare(
+        'UPDATE `EGM` SET `directory` = CONCAT(:canonical_prefix, SUBSTRING(`directory`, :legacy_length)) '
+        . 'WHERE `directory` LIKE :legacy_pattern'
+    );
+    $statement->execute([
+        ':canonical_prefix' => $canonicalPrefix,
+        ':legacy_length' => strlen($legacyPrefix) + 1,
+        ':legacy_pattern' => $legacyPrefix . '%',
+    ]);
 }
 
 function normalizeEgmRegistryCode($value): string
@@ -100,7 +118,14 @@ function allocateEgmRegistryCode(PDO $pdo): string
 function normalizeEgmRegistryDirectory($value): string
 {
     $directory = trim(str_replace('\\', '/', (string)$value), '/');
-    if (preg_match('#^miniapps/EGMs/[^/]+$#u', $directory) !== 1) {
+    if ($directory === 'mini apps/Event Guest Manager') {
+        return $directory;
+    }
+    $legacyPrefix = EGM_LEGACY_INSTANCES_DIRECTORY . '/';
+    if (str_starts_with($directory, $legacyPrefix)) {
+        $directory = EGM_INSTANCES_DIRECTORY . '/' . substr($directory, strlen($legacyPrefix));
+    }
+    if (preg_match('#^mini apps/EGMs/[^/]+$#u', $directory) !== 1) {
         return '';
     }
     return $directory;
@@ -125,6 +150,10 @@ function findEgmRegistryByCode(PDO $pdo, string $code): ?array
 function findEgmRegistryByDirectory(PDO $pdo, string $directory): ?array
 {
     ensureEgmRegistryTable($pdo);
+    $directory = normalizeEgmRegistryDirectory($directory);
+    if ($directory === '') {
+        return null;
+    }
     $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `EGM` WHERE `directory` = :directory LIMIT 1');
     $stmt->execute([':directory' => $directory]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);

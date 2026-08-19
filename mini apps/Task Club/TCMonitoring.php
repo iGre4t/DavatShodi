@@ -1,11 +1,13 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_inventory_store.php';
 
 $tcMonitoringAction = strtolower(trim((string)($_GET['action'] ?? '')));
-$tcMonitoringIsJsonRequest = $tcMonitoringAction === 'stats';
+$tcMonitoringIsJsonRequest = in_array($tcMonitoringAction, ['stats', 'survey_tasks', 'survey_stats'], true);
 $tcMonitoringJsonCompleted = false;
 
 function tcMonitoringEarlyJsonFlags(): int
@@ -103,10 +105,10 @@ if (!userHasPermissionId($tcMonitoringSessionUser, 'task-club:monitoring')) {
 
 function tcMonitoringReadJson(string $path, $fallback)
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $fallback;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return $fallback;
   }
@@ -142,6 +144,10 @@ function tcMonitoringEmptyStats(array $warnings = []): array
       'prizeGiven' => 0,
       'prizeValueRemaining' => 0,
       'prizeValueGiven' => 0,
+      'prizeValueAssignedToInvitees' => 0,
+      'prizeValueBudget' => 0,
+      'prizeValueReconciliationDifference' => 0,
+      'prizeValueHasProblem' => false,
       'favoriteTask' => null
     ],
     'scoreStages' => [],
@@ -250,11 +256,11 @@ function tcMonitoringReadCsvRows(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -262,7 +268,7 @@ function tcMonitoringReadCsvRows(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
   flock($handle, LOCK_UN);
@@ -586,11 +592,11 @@ function tcMonitoringHasDescribePhotoSubmissionForTask(array $user, string $task
       continue;
     }
     $filePath = $articlesDir . DIRECTORY_SEPARATOR . $fileName;
-    if (!is_file($filePath)) {
+    if (!tcDbIsFile($filePath)) {
       continue;
     }
     if (!array_key_exists($filePath, $submissionCache)) {
-      $content = file_get_contents($filePath);
+      $content = tcDbFileGetContents($filePath);
       if (!is_string($content)) {
         $content = '';
       }
@@ -611,6 +617,9 @@ function tcMonitoringNormalizeTaskType(string $value): string
   }
   if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
     return 'conditional_quiz';
+  }
+  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz', 'survey_score_response', 'survey-score-response', 'survey score response', 'survey score'], true)) {
+    return 'shared_answers_quiz';
   }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
@@ -722,13 +731,13 @@ function tcMonitoringTaskHasGoldenTime(array $task): bool
   if ($taskType === 'conditional_quiz' && array_key_exists('hasGoldenTime', $task)) {
     return tcMonitoringNormalizeBool($task['hasGoldenTime']);
   }
-  return $taskType === 'quiz' || $taskType === 'conditional_quiz';
+  return $taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'shared_answers_quiz';
 }
 
 function tcMonitoringTaskGoldenTimeApplies(array $task): bool
 {
   $taskType = tcMonitoringNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
-  if ($taskType !== 'quiz' && $taskType !== 'conditional_quiz') {
+  if ($taskType !== 'quiz' && $taskType !== 'conditional_quiz' && $taskType !== 'shared_answers_quiz') {
     return false;
   }
   if (!tcMonitoringTaskHasGoldenTime($task)) {
@@ -821,10 +830,10 @@ function tcMonitoringMinPositiveScoreValue(array $values): int
 
 function tcMonitoringReadTasks(string $storePath, string $tasksDir): array
 {
-  if (!is_file($storePath)) {
+  if (!tcDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = tcDbFileGetContents($storePath);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -1063,6 +1072,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
   $describeTasksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo task']);
   $describePicksIndex = tcMonitoringFindHeaderIndex($header, ['describe photo picks']);
   $outOfValueRewardsIndex = tcMonitoringFindHeaderIndex($header, ['out of value rewards']);
+  $totalPrizeWonIndex = tcMonitoringFindHeaderIndex($header, ['total prize won', 'مجموع جوایز برنده شده']);
 
   $users = [];
   for ($i = 1; $i < count($rows); $i += 1) {
@@ -1154,6 +1164,7 @@ function tcMonitoringBuildInviteesData(string $inviteesPath, string $mapPath): a
       'describePhotoPicksMap' => $describePhotoPicksMap,
       'completedTaskCount' => $completedTaskCount,
       'outOfValueRewardCount' => count($outOfValueRewards),
+      'totalPrizeWon' => max(0.0, tcMonitoringParseNumber(tcMonitoringCell($row, $totalPrizeWonIndex))),
       'activityScore' => $activityScore
     ];
   }
@@ -1234,9 +1245,6 @@ function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksD
 
 function tcMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks): array
 {
-  if (!is_dir($logsDir)) {
-    return [];
-  }
   $taskById = [];
   foreach ($tasks as $task) {
     if (!is_array($task)) {
@@ -1252,24 +1260,12 @@ function tcMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks): 
   }
 
   $lookup = [];
-  $paths = glob($logsDir . DIRECTORY_SEPARATOR . '*.log');
-  if (!is_array($paths) || !$paths) {
+  $events = tcDatabaseRuntimeActivityEntries(dirname(dirname($logsDir)), 'completion');
+  if (!$events) {
     return [];
   }
-  sort($paths, SORT_NATURAL | SORT_FLAG_CASE);
-  foreach ($paths as $path) {
-    if (!is_file($path)) {
-      continue;
-    }
-    $handle = fopen($path, 'r');
-    if ($handle === false) {
-      continue;
-    }
-    while (($line = fgets($handle)) !== false) {
-      $event = json_decode(trim($line), true);
-      if (!is_array($event)) {
-        continue;
-      }
+  foreach ($events as $event) {
+      if (!is_array($event)) continue;
       $userId = trim((string)($event['user_id'] ?? ''));
       if ($userId === '') {
         continue;
@@ -1303,8 +1299,6 @@ function tcMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks): 
         $lookup[$userId] = [];
       }
       $lookup[$userId][$taskId] = $phase;
-    }
-    fclose($handle);
   }
   return $lookup;
 }
@@ -1329,27 +1323,13 @@ function tcMonitoringUserHasTaskParticipation(array $user, array $taskInteractio
 
 function tcMonitoringReadTaskInteractionWorkIds(string $logsDir): array
 {
-  if (!is_dir($logsDir)) {
-    return [];
-  }
-  $paths = glob($logsDir . DIRECTORY_SEPARATOR . '*.log');
-  if (!is_array($paths) || !$paths) {
+  $events = tcDatabaseRuntimeActivityEntries(dirname(dirname($logsDir)), 'interaction');
+  if (!$events) {
     return [];
   }
   $workIds = [];
-  foreach ($paths as $path) {
-    if (!is_file($path)) {
-      continue;
-    }
-    $handle = fopen($path, 'r');
-    if ($handle === false) {
-      continue;
-    }
-    while (($line = fgets($handle)) !== false) {
-      $event = json_decode(trim($line), true);
-      if (!is_array($event)) {
-        continue;
-      }
+  foreach ($events as $event) {
+      if (!is_array($event)) continue;
       $userId = trim((string)($event['user_id'] ?? ''));
       if ($userId === '') {
         continue;
@@ -1370,8 +1350,6 @@ function tcMonitoringReadTaskInteractionWorkIds(string $logsDir): array
       if ($isTaskInteraction) {
         $workIds[$userId] = true;
       }
-    }
-    fclose($handle);
   }
   return $workIds;
 }
@@ -1631,16 +1609,30 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
   $prizeCapacity = 0;
   $prizeRemaining = 0;
   $prizeGiven = 0;
+  $prizeValueRemaining = 0.0;
+  $prizeValueGiven = 0.0;
+  $prizeValueBudget = 0.0;
   foreach ($prizes as $prize) {
     if (!is_array($prize)) {
       continue;
     }
     $quantity = max(0, (int)($prize['quantity'] ?? 0));
     $last = max(0, min($quantity, (int)($prize['last'] ?? 0)));
+    $value = max(0.0, (float)($prize['value'] ?? 0));
     $prizeCapacity += $quantity;
     $prizeRemaining += $last;
     $prizeGiven += max(0, $quantity - $last);
+    if (empty($prize['isFake'])) {
+      $prizeValueBudget += $quantity * $value;
+      $prizeValueRemaining += $last * $value;
+      $prizeValueGiven += max(0, $quantity - $last) * $value;
+    }
   }
+  $prizeValueAssignedToInvitees = array_sum(array_map(
+    static fn(array $user): float => max(0.0, (float)($user['totalPrizeWon'] ?? 0)),
+    $allUsers
+  ));
+  $prizeValueReconciliationDifference = $prizeValueAssignedToInvitees + $prizeValueRemaining - $prizeValueBudget;
 
   $mostActiveUsers = array_values(array_filter($users, 'is_array'));
   usort($mostActiveUsers, static function ($a, $b): int {
@@ -1722,8 +1714,12 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
       'prizeCapacity' => $prizeCapacity,
       'prizeRemaining' => $prizeRemaining,
       'prizeGiven' => $prizeGiven,
-      'prizeValueRemaining' => 0,
-      'prizeValueGiven' => 0,
+      'prizeValueRemaining' => round($prizeValueRemaining, 2),
+      'prizeValueGiven' => round($prizeValueGiven, 2),
+      'prizeValueAssignedToInvitees' => round($prizeValueAssignedToInvitees, 2),
+      'prizeValueBudget' => round($prizeValueBudget, 2),
+      'prizeValueReconciliationDifference' => round($prizeValueReconciliationDifference, 2),
+      'prizeValueHasProblem' => abs($prizeValueReconciliationDifference) > 0.005,
       'favoriteTask' => $favoriteTask
     ],
     'taskStats' => $taskStats,
@@ -1746,11 +1742,11 @@ function tcMonitoringBuildFallbackStats(string $baseDir, array $warnings = []): 
     'selectedWorkIdGroups' => $selectedWorkIdGroups,
     'prizeStats' => ['rows' => $prizes],
     'dataSources' => [
-      'inviteesCsvFound' => is_file($inviteesPath),
+      'inviteesCsvFound' => tcDbIsFile($inviteesPath),
       'inviteesRows' => $rowsCount,
-      'tasksStoreFound' => is_file($tasksPath),
-      'prizesFileFound' => is_file($prizesPath),
-      'levelsFileFound' => is_file($levelsPath)
+      'tasksStoreFound' => tcDbIsFile($tasksPath),
+      'prizesFileFound' => tcDbIsFile($prizesPath),
+      'levelsFileFound' => tcDbIsFile($levelsPath)
     ],
     'warnings' => array_values(array_unique(array_filter($warnings))),
     'generatedAt' => gmdate('c')
@@ -1767,30 +1763,15 @@ function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindow
     'userDaysWithMultiMissionSamePeriod' => 0,
     'logEventsRead' => 0
   ];
-  if (!is_dir($logsDir)) {
+  $events = tcDatabaseRuntimeActivityEntries(dirname(dirname($logsDir)), 'engagement');
+  if (!$events) {
     return $empty;
   }
-  $paths = glob($logsDir . DIRECTORY_SEPARATOR . '*.log');
-  if (!is_array($paths) || !$paths) {
-    return $empty;
-  }
-  sort($paths, SORT_NATURAL | SORT_FLAG_CASE);
 
   $logEventsRead = 0;
   $loginsByUserDate = [];
-  foreach ($paths as $path) {
-    if (!is_file($path)) {
-      continue;
-    }
-    $handle = fopen($path, 'r');
-    if ($handle === false) {
-      continue;
-    }
-    while (($line = fgets($handle)) !== false) {
-      $decoded = json_decode(trim($line), true);
-      if (!is_array($decoded)) {
-        continue;
-      }
+  foreach ($events as $decoded) {
+      if (!is_array($decoded)) continue;
       $logEventsRead += 1;
       if (trim((string)($decoded['action'] ?? '')) !== 'taskclub.user.login') {
         continue;
@@ -1814,8 +1795,6 @@ function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindow
         $loginsByUserDate[$userId][$dateKey] = [];
       }
       $loginsByUserDate[$userId][$dateKey][] = $seconds;
-    }
-    fclose($handle);
   }
 
   if ($logEventsRead <= 0) {
@@ -1824,19 +1803,8 @@ function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindow
 
   $usersLoginAndAnswerOnMissionStartDay = [];
   $answeredStartedDayTasksByUserDate = [];
-  foreach ($paths as $path) {
-    if (!is_file($path)) {
-      continue;
-    }
-    $handle = fopen($path, 'r');
-    if ($handle === false) {
-      continue;
-    }
-    while (($line = fgets($handle)) !== false) {
-      $event = json_decode(trim($line), true);
-      if (!is_array($event)) {
-        continue;
-      }
+  foreach ($events as $event) {
+      if (!is_array($event)) continue;
       $userId = trim((string)($event['user_id'] ?? ''));
       $timestamp = tcMonitoringParseTimestamp((string)($event['timestamp'] ?? ''));
       if ($userId === '' || $timestamp === null) {
@@ -1885,8 +1853,6 @@ function tcMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindow
         $answeredStartedDayTasksByUserDate[$userDateKey] = [];
       }
       $answeredStartedDayTasksByUserDate[$userDateKey][$taskId] = true;
-    }
-    fclose($handle);
   }
 
   $usersMultiMissionSameDayPeriod = 0;
@@ -2248,7 +2214,7 @@ function tcMonitoringBuildStats(string $baseDir): array
   usort($workIdGroupStats, static fn(array $a, array $b): int => strnatcasecmp((string)($a['group'] ?? ''), (string)($b['group'] ?? '')));
 
   try {
-    $teamRuntimePaths = glob($tasksDir . DIRECTORY_SEPARATOR . '*' . DIRECTORY_SEPARATOR . 'team-runtime.json');
+    $teamRuntimePaths = tcDbGlob($tasksDir . DIRECTORY_SEPARATOR . '*' . DIRECTORY_SEPARATOR . 'team-runtime.json');
   } catch (Throwable $err) {
     $teamRuntimePaths = [];
     $warnings[] = 'اطلاعات چالش‌های تیمی قابل خواندن نبود.';
@@ -2357,6 +2323,7 @@ function tcMonitoringBuildStats(string $baseDir): array
   $prizeGiven = 0;
   $prizeValueRemaining = 0.0;
   $prizeValueGiven = 0.0;
+  $prizeValueBudget = 0.0;
   foreach ($prizes as $prize) {
     $quantity = max(0, (int)($prize['quantity'] ?? 0));
     $last = max(0, min($quantity, (int)($prize['last'] ?? 0)));
@@ -2365,9 +2332,17 @@ function tcMonitoringBuildStats(string $baseDir): array
     $prizeCapacity += $quantity;
     $prizeRemaining += $last;
     $prizeGiven += $given;
-    $prizeValueRemaining += ($last * $value);
-    $prizeValueGiven += ($given * $value);
+    if (empty($prize['isFake'])) {
+      $prizeValueBudget += ($quantity * $value);
+      $prizeValueRemaining += ($last * $value);
+      $prizeValueGiven += ($given * $value);
+    }
   }
+  $prizeValueAssignedToInvitees = array_sum(array_map(
+    static fn(array $user): float => max(0.0, (float)($user['totalPrizeWon'] ?? 0)),
+    $allUsers
+  ));
+  $prizeValueReconciliationDifference = $prizeValueAssignedToInvitees + $prizeValueRemaining - $prizeValueBudget;
 
   $mostActiveUsers = $users;
   usort($mostActiveUsers, static function (array $a, array $b): int {
@@ -2424,6 +2399,10 @@ function tcMonitoringBuildStats(string $baseDir): array
       'prizeGiven' => $prizeGiven,
       'prizeValueRemaining' => round($prizeValueRemaining, 2),
       'prizeValueGiven' => round($prizeValueGiven, 2),
+      'prizeValueAssignedToInvitees' => round($prizeValueAssignedToInvitees, 2),
+      'prizeValueBudget' => round($prizeValueBudget, 2),
+      'prizeValueReconciliationDifference' => round($prizeValueReconciliationDifference, 2),
+      'prizeValueHasProblem' => abs($prizeValueReconciliationDifference) > 0.005,
       'favoriteTask' => $favoriteTask
     ],
     'scoreStages' => $scoreStages,
@@ -2461,11 +2440,11 @@ function tcMonitoringBuildStats(string $baseDir): array
       'rows' => $prizes
     ],
     'dataSources' => [
-      'inviteesCsvFound' => is_file($inviteesPath),
+      'inviteesCsvFound' => tcDbIsFile($inviteesPath),
       'inviteesRows' => $rowsCount,
-      'tasksStoreFound' => is_file($tasksPath),
-      'prizesFileFound' => is_file($prizesPath),
-      'levelsFileFound' => is_file($levelsPath)
+      'tasksStoreFound' => tcDbIsFile($tasksPath),
+      'prizesFileFound' => tcDbIsFile($prizesPath),
+      'levelsFileFound' => tcDbIsFile($levelsPath)
     ],
     'warnings' => array_values(array_unique(array_filter($warnings))),
     'generatedAt' => gmdate('c')
@@ -2494,6 +2473,45 @@ function tcMonitoringAttachInviteeGroupsToStats(array $data, string $baseDir): a
   return $data;
 }
 
+if ($tcMonitoringAction === 'survey_tasks' || $tcMonitoringAction === 'survey_stats') {
+  if (!defined('TCT_INCLUDE_ONLY')) define('TCT_INCLUDE_ONLY', true);
+  require_once __DIR__ . '/TCT.php';
+  if (ob_get_level() > 0) ob_clean();
+  header('Content-Type: application/json; charset=utf-8');
+  try {
+    $surveyTasks = array_values(array_filter(
+      tctMergeTaskScores(tctReindexTasks(tctReadStoreTasks($tctStorePath)), $tctTasksDir),
+      static fn(array $task): bool => tctNormalizeTaskType((string)($task['taskType'] ?? 'quiz')) === 'shared_answers_quiz'
+    ));
+    if ($tcMonitoringAction === 'survey_tasks') {
+      $data = array_map(static fn(array $task): array => [
+        'id' => (string)($task['id'] ?? ''),
+        'title' => (string)($task['title'] ?? ''),
+        'tagCode' => (string)($task['tagCode'] ?? ''),
+        'startDate' => (string)($task['startDate'] ?? ''),
+        'startTime' => (string)($task['startTime'] ?? ''),
+        'endDate' => (string)($task['endDate'] ?? ''),
+        'endTime' => (string)($task['endTime'] ?? '')
+      ], $surveyTasks);
+    } else {
+      $taskId = trim((string)($_GET['task_id'] ?? ''));
+      $targetTask = null;
+      foreach ($surveyTasks as $task) {
+        if ((string)($task['id'] ?? '') === $taskId) { $targetTask = $task; break; }
+      }
+      if (!is_array($targetTask)) throw new RuntimeException('ماموریت نظرسنجی پیدا نشد.');
+      $data = tctBuildSurveyMonitoringData($targetTask, $tctTasksDir, $tctEventInviteesPath, $tctEventInviteesMapPath);
+    }
+    $tcMonitoringJsonCompleted = true;
+    echo tcMonitoringJsonResponse(['status' => 'ok', 'data' => $data]);
+  } catch (Throwable $err) {
+    http_response_code(500);
+    $tcMonitoringJsonCompleted = true;
+    echo tcMonitoringJsonResponse(['status' => 'error', 'message' => $err->getMessage()]);
+  }
+  exit;
+}
+
 if ($tcMonitoringAction === 'export') {
   try {
     require_once __DIR__ . '/monitoring_excel_export.php';
@@ -2518,7 +2536,7 @@ if ($tcMonitoringAction === 'export') {
   exit;
 }
 
-if ($tcMonitoringIsJsonRequest) {
+if ($tcMonitoringAction === 'stats') {
   $preStatsOutput = '';
   if (ob_get_level() > 0) {
     $preStatsOutput = trim((string)ob_get_clean());
@@ -2582,6 +2600,13 @@ if ($tcMonitoringIsJsonRequest) {
   exit;
 }
 ?>
+
+<div class="tc-monitoring-top-nav" role="tablist" aria-label="بخش‌های مانیتورینگ">
+  <button type="button" class="tc-monitoring-top-item active" aria-selected="true" data-tc-monitoring-view="overview">مانیتورینگ اصلی</button>
+  <button type="button" class="tc-monitoring-top-item" aria-selected="false" data-tc-monitoring-view="shared-survey">Survey Score Response</button>
+</div>
+
+<div class="tc-monitoring-view active" data-tc-monitoring-view-panel="overview">
 
 <div class="card">
   <div class="section-header">
@@ -2733,5 +2758,44 @@ if ($tcMonitoringIsJsonRequest) {
       </thead>
       <tbody id="tc-monitoring-active-users"></tbody>
     </table>
+  </div>
+</div>
+
+</div>
+
+<div class="tc-monitoring-view" data-tc-monitoring-view-panel="shared-survey" hidden>
+  <div class="card">
+    <div class="section-header">
+      <h3>مانیتورینگ Survey Score Response</h3>
+      <div class="tc-monitoring-header-actions">
+        <button type="button" class="btn ghost" id="tc-survey-monitoring-export">خروجی اکسل</button>
+        <button type="button" class="btn ghost" id="tc-survey-monitoring-refresh">بروزرسانی</button>
+      </div>
+    </div>
+    <label class="field standard-width"><span>ماموریت</span><select id="tc-survey-monitoring-task"><option value="">در حال دریافت ماموریت‌ها...</option></select></label>
+    <p id="tc-survey-monitoring-status" class="muted small" aria-live="polite"></p>
+    <div id="tc-survey-monitoring-loading" class="tc-monitoring-loading hidden" role="status" aria-live="polite">
+      <div class="tc-monitoring-loading-head"><span id="tc-survey-monitoring-loading-text">در حال محاسبه پاسخ‌ها</span><span id="tc-survey-monitoring-loading-percent">۰٪</span></div>
+      <div class="tc-monitoring-loading-track" aria-hidden="true"><span id="tc-survey-monitoring-loading-fill" class="tc-monitoring-loading-fill" style="width:0%"></span></div>
+    </div>
+    <p id="tc-survey-monitoring-updated" class="muted small"></p>
+  </div>
+
+  <div id="tc-survey-monitoring-kpis" class="tc-monitoring-kpi-grid"></div>
+  <div class="card">
+    <div class="section-header"><h3>پیشرفت و بازه ماموریت</h3></div>
+    <div id="tc-survey-monitoring-completion" class="tc-monitoring-bars"></div>
+    <div id="tc-survey-monitoring-dates" class="tc-monitoring-kpi-grid"></div>
+  </div>
+  <div class="card"><div class="section-header"><h3>سطوح پاسخ</h3></div><div id="tc-survey-monitoring-levels" class="tc-monitoring-bars"></div></div>
+  <div class="card"><div class="section-header"><h3>پاسخ سوال‌ها</h3></div><div id="tc-survey-monitoring-questions" class="tc-survey-question-list"></div></div>
+  <div class="card">
+    <div class="section-header"><h3>مشارکت‌کنندگان</h3></div>
+    <div class="table-wrapper">
+      <table class="tc-monitoring-table">
+        <thead><tr><th>نام</th><th>شماره پرسنلی</th><th>سطح پاسخ</th><th>امتیاز داخلی</th><th>پیشرفت</th><th>تاریخ تکمیل</th></tr></thead>
+        <tbody id="tc-survey-monitoring-participants"></tbody>
+      </table>
+    </div>
   </div>
 </div>

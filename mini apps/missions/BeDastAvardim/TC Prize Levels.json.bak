@@ -1,0 +1,58 @@
+[
+    {
+        "id": "lvl_mlw7vu00_7vg4sd",
+        "name": "کارت جایزه 60 امتیازی",
+        "type": "value_sum",
+        "score": 60,
+        "description": "",
+        "buttonText": "",
+        "potSettings": {
+            "title": "",
+            "winnerLimit": 1,
+            "prizeName": "",
+            "locked": false
+        }
+    },
+    {
+        "id": "lvl_mlw7w48v_kae8tk",
+        "name": "کارت جایزه 150 امتیازی",
+        "type": "value_sum",
+        "score": 150,
+        "description": "",
+        "buttonText": "",
+        "potSettings": {
+            "title": "",
+            "winnerLimit": 1,
+            "prizeName": "",
+            "locked": false
+        }
+    },
+    {
+        "id": "lvl_mlw82n2a_y8ruku",
+        "name": "کارت جایزه 200 امتیازی",
+        "type": "value_sum",
+        "score": 200,
+        "description": "",
+        "buttonText": "",
+        "potSettings": {
+            "title": "",
+            "winnerLimit": 1,
+            "prizeName": "",
+            "locked": false
+        }
+    },
+    {
+        "id": "lvl_mlw83pi7_ttvljr",
+        "name": "شرکت در قرعه‌کشی ویژه",
+        "type": "pot",
+        "score": 240,
+        "description": "قرعه‌کشی ویژه مسابقات «به‌دست آوردیم» بین نفرات برتر این مسابقه که 240 امتیاز کامل را گرفتند انجام خواهد شد.",
+        "buttonText": "",
+        "potSettings": {
+            "title": "قرعه کشی ویژه نفرات برتر به دست آوردیم",
+            "winnerLimit": 4,
+            "prizeName": "مودم 5G همراه اول + یکسال اینترنت هدیه",
+            "locked": false
+        }
+    }
+]

@@ -1,5 +1,11 @@
 (() => {
   const API_URL = 'mini%20apps/Task%20Club/task_access_store.php';
+  const TC_TASK_ACCESS_CHANGED_HANDLER_KEY = '__tcTaskAccessChangedHandler';
+  const previousTasksChangedHandler = window[TC_TASK_ACCESS_CHANGED_HANDLER_KEY];
+  if (typeof previousTasksChangedHandler === 'function') {
+    window.removeEventListener('tcTasksChanged', previousTasksChangedHandler);
+  }
+  delete window[TC_TASK_ACCESS_CHANGED_HANDLER_KEY];
   const tcShellEl = document.querySelector('.tc-shell');
   const csrfToken = tcShellEl instanceof HTMLElement
     ? String(tcShellEl.dataset.tcCsrf || '').trim()
@@ -49,6 +55,7 @@
     'crisis-control': 'Crisis Control',
     control: 'کنترل پنل',
     quiz: 'کوئیز',
+    'response-level': 'Response Levels',
     information: 'اطلاعات',
     photo: 'عکس‌ها',
     'invitees-rate': 'امتیازدهی',
@@ -553,9 +560,11 @@
   saveBtnEl.addEventListener('click', () => {
     void saveCurrentUserRules();
   });
-  window.addEventListener('tcTasksChanged', () => {
+  const tasksChangedHandler = () => {
     void bootstrap();
-  });
+  };
+  window[TC_TASK_ACCESS_CHANGED_HANDLER_KEY] = tasksChangedHandler;
+  window.addEventListener('tcTasksChanged', tasksChangedHandler);
 
   renderManageTasksToggle();
   renderTree();

@@ -1,0 +1,14 @@
+{
+  "name": "davatshodi/minor-qr-code-generator",
+  "description": "Self-hosted backend QR code generator for DavatShodi.",
+  "type": "library",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.2",
+    "chillerlan/php-qrcode": "^6.0"
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true
+  }
+}

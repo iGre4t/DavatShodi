@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_special_access.php';
@@ -30,15 +31,47 @@ $stats = [
 ];
 $allInvitees = [];
 
+function inviteeListGuestNumberMaps(string $missionDir): array {
+  try {
+    $root = realpath($missionDir);
+    while (is_string($root) && !egmDbIsFile($root . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php')) {
+      $parent = dirname($root);
+      if ($parent === $root) return ['national' => [], 'work' => []];
+      $root = $parent;
+    }
+    if (!is_string($root)) return ['national' => [], 'work' => []];
+    $pdo = connectDatabase(loadConfig($root . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php'));
+    $registry = $pdo instanceof PDO ? egmInstanceRegistryForDirectory($pdo, $missionDir) : null;
+    if (!$pdo instanceof PDO || !is_array($registry)) return ['national' => [], 'work' => []];
+    $tables = ensureEgmInstanceTables($pdo, (string)$registry['code']);
+    $rows = $pdo->query("SELECT `national_id`, `work_id`, `guest_number` FROM `{$tables['users']}` WHERE `guest_number` IS NOT NULL")?->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $maps = ['national' => [], 'work' => []];
+    foreach ($rows as $row) {
+      $guestNumber = trim((string)($row['guest_number'] ?? ''));
+      $nationalId = trim((string)($row['national_id'] ?? ''));
+      $workId = trim((string)($row['work_id'] ?? ''));
+      if ($guestNumber === '') continue;
+      if ($nationalId !== '') $maps['national'][$nationalId] = $guestNumber;
+      if ($workId !== '') $maps['work'][strtolower($workId)] = $guestNumber;
+    }
+    return $maps;
+  } catch (Throwable $error) {
+    error_log('EGM invitee guest-number lookup failed: ' . $error->getMessage());
+    return ['national' => [], 'work' => []];
+  }
+}
+
+$guestNumberMaps = inviteeListGuestNumberMaps(__DIR__);
+
 function readAnyPasswordLoginSettings(string $path): array {
   $defaults = [
     'anyPassword' => false,
     'minLength' => 3
   ];
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $defaults;
   }
-  $data = json_decode((string)file_get_contents($path), true);
+  $data = json_decode((string)egmDbFileGetContents($path), true);
   if (!is_array($data)) {
     return $defaults;
   }
@@ -50,10 +83,10 @@ function readAnyPasswordLoginSettings(string $path): array {
 }
 
 function readMappedConfig(string $path): array {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $data = json_decode(file_get_contents($path), true);
+  $data = json_decode(egmDbFileGetContents($path), true);
   return is_array($data) ? $data : [];
 }
 
@@ -61,11 +94,11 @@ function readCsvRows(string $path): array {
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -191,10 +224,10 @@ function inviteeListCompletedMissionIds(array $row, array $header): array {
 }
 
 function inviteeListTaskOrderMap(string $tasksPath): array {
-  if (!is_file($tasksPath)) {
+  if (!egmDbIsFile($tasksPath)) {
     return [];
   }
-  $content = (string)file_get_contents($tasksPath);
+  $content = (string)egmDbFileGetContents($tasksPath);
   if (!preg_match('/window\.EGM_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $matches)) {
     return [];
   }
@@ -269,6 +302,8 @@ if ($rows) {
     $phoneNumber = trim((string)($row[$phoneNumberIndex] ?? ''));
     $password = trim((string)($row[$passwordIndex] ?? ''));
     $totalScore = max(0, (int)($row[$totalScoreIndex] ?? 0));
+    $guestNumber = (string)($guestNumberMaps['national'][$nationalId]
+      ?? $guestNumberMaps['work'][strtolower($workId)] ?? '');
     $completedMissionIds = inviteeListCompletedMissionIds($row, $header);
     $completedMissions = count($completedMissionIds);
     $reachedMissionOrder = inviteeListReachedMissionOrder($completedMissionIds, $taskOrderMap);
@@ -281,6 +316,7 @@ if ($rows) {
         'workId' => $workId,
         'nationalId' => $nationalId,
         'phoneNumber' => $phoneNumber,
+        'guestNumber' => $guestNumber,
         'password' => $password,
         'completedMissions' => $completedMissions,
         'reachedMissionOrder' => $reachedMissionOrder,
@@ -312,6 +348,16 @@ if ($rows) {
 }
 ?>
 
+<div class="card egm-invite-source-card" data-egm-invite-source-card>
+  <div class="section-header"><h3>منبع دعوت‌شدگان EGM</h3></div>
+  <p class="muted">این انتخاب تعیین می‌کند در بخش «دعوت» هر بازه، کاربران OEU یا کاربران فایل اختصاصی همین EGM نمایش داده شوند.</p>
+  <div class="egm-invite-source-switch" role="group" aria-label="منبع دعوت‌شدگان">
+    <button type="button" class="btn ghost" data-egm-invite-source="oeu">OEU</button>
+    <button type="button" class="btn ghost" data-egm-invite-source="custom">Custom</button>
+  </div>
+  <p class="hint" data-egm-invite-source-status aria-live="polite"></p>
+</div>
+
 <div class="egm-task-top-shell" id="egm-invitees-top-shell">
   <div class="egm-task-top-nav" role="tablist" aria-label="Invitees Tabs">
     <button type="button" class="egm-task-top-item active" data-invitees-top-trigger="all-invitees" aria-selected="true">All Invitees</button>
@@ -334,7 +380,7 @@ if ($rows) {
           <input
             id="egm-all-invitees-search"
             type="text"
-            placeholder="Search by name, work ID, national ID, or phone number"
+            placeholder="Search by guest number, name, work ID, national ID, or phone number"
             autocomplete="off"
           />
           <small id="egm-all-invitees-search-meta" class="hint"></small>
@@ -349,6 +395,7 @@ if ($rows) {
                 </th>
                 <?php endif; ?>
                 <th>Row</th>
+                <th>Guest Number</th>
                 <th>First Name</th>
                 <th>Last Name</th>
                 <th>Work ID</th>
@@ -363,13 +410,14 @@ if ($rows) {
             <tbody data-invitees-all-table-body>
               <?php if (!$allInvitees): ?>
                 <tr>
-                  <td colspan="<?= $egmInviteesCanReset ? '11' : '10' ?>" class="muted">No invitees found.</td>
+                  <td colspan="<?= $egmInviteesCanReset ? '12' : '11' ?>" class="muted">No invitees found.</td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($allInvitees as $invitee): ?>
                   <?php
                     $inviteeSearchText = trim(implode(' ', [
                       (string)($invitee['row'] ?? ''),
+                      (string)($invitee['guestNumber'] ?? ''),
                       (string)($invitee['firstName'] ?? ''),
                       (string)($invitee['lastName'] ?? ''),
                       (string)($invitee['workId'] ?? ''),
@@ -390,6 +438,7 @@ if ($rows) {
                     </td>
                     <?php endif; ?>
                     <td><?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                    <td><code><?= htmlspecialchars((string)($invitee['guestNumber'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></code></td>
                     <td><?= htmlspecialchars((string)($invitee['firstName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['lastName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
@@ -446,7 +495,7 @@ if ($rows) {
                   </tr>
                 <?php endforeach; ?>
                 <tr data-invitees-no-results hidden>
-                  <td colspan="<?= $egmInviteesCanReset ? '11' : '10' ?>" class="muted">No matching invitee found.</td>
+                  <td colspan="<?= $egmInviteesCanReset ? '12' : '11' ?>" class="muted">No matching invitee found.</td>
                 </tr>
               <?php endif; ?>
             </tbody>
@@ -536,7 +585,7 @@ if ($rows) {
   </div>
   <?php if ($egmInviteesCanManage): ?>
   <div class="egm-task-top-section" data-invitees-top-section="manage-invitees" hidden>
-<div class="card">
+<div class="card" data-egm-custom-upload-card>
   <div class="section-header">
     <h3>Insert Invite List</h3>
   </div>
@@ -849,11 +898,44 @@ if ($rows) {
   </div>
 </div>
 
-<script src="mini%20apps/Event%20Guest%20Manager/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
   const csrfToken = <?= json_encode($egmInviteesCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+  const periodInvitesEndpoint = 'mini%20apps/Event%20Guest%20Manager/period_invites.php';
   const canResetInviteeTasks = <?= $egmInviteesCanReset ? 'true' : 'false' ?>;
+  const sourceCard = Array.from(document.querySelectorAll('[data-pane="egm-invitees"] [data-egm-invite-source-card]'))
+    .find((card) => card.dataset.egmInviteSourceBound !== '1') || null;
+  if (sourceCard) sourceCard.dataset.egmInviteSourceBound = '1';
+  const sourcePane = sourceCard?.closest('[data-pane="egm-invitees"]') || sourceCard?.parentElement || document;
+  const sourceButtons = Array.from(sourceCard?.querySelectorAll('[data-egm-invite-source]') || []);
+  const sourceStatus = sourceCard?.querySelector('[data-egm-invite-source-status]') || null;
+  const customUploadCard = sourcePane.querySelector?.('[data-egm-custom-upload-card]') || null;
+  const applyInviteeSource = (source) => {
+    sourceButtons.forEach((button) => button.classList.toggle('active', button.dataset.egmInviteSource === source));
+    if (customUploadCard instanceof HTMLElement) customUploadCard.hidden = source !== 'custom';
+  };
+  const loadInviteeSource = async () => {
+    try {
+      const response = await fetch(`${periodInvitesEndpoint}?action=state`, { credentials: 'same-origin' });
+      const data = await response.json();
+      if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'خطا در دریافت منبع دعوت‌شدگان.');
+      applyInviteeSource(data.source);
+      if (sourceStatus) sourceStatus.textContent = data.source === 'oeu' ? 'منبع فعال: کاربران سازمانی OEU' : 'منبع فعال: فایل اختصاصی Custom';
+    } catch (error) { if (sourceStatus) sourceStatus.textContent = error?.message || 'خطا در دریافت منبع دعوت‌شدگان.'; }
+  };
+  sourceButtons.forEach((button) => button.addEventListener('click', async () => {
+    const source = button.dataset.egmInviteSource || '';
+    sourceButtons.forEach((item) => { item.disabled = true; });
+    try {
+      const response = await fetch(periodInvitesEndpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_source', source, csrf: csrfToken }) });
+      const data = await response.json();
+      if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'ذخیره منبع ناموفق بود.');
+      applyInviteeSource(data.source);
+      if (sourceStatus) sourceStatus.textContent = data.message || 'منبع ذخیره شد.';
+    } catch (error) { if (sourceStatus) sourceStatus.textContent = error?.message || 'ذخیره منبع ناموفق بود.'; }
+    finally { sourceButtons.forEach((item) => { item.disabled = false; }); }
+  }));
+  void loadInviteeSource();
   const pickBtn = document.getElementById('egm-invite-pick');
   const fileInput = document.getElementById('egm-invite-file');
   const fileNameEl = document.getElementById('egm-invite-file-name');

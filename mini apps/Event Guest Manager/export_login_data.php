@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $egmExportSessionUser = requireTabPermissionFromSession('event-guest-manager', false);
@@ -51,11 +54,11 @@ function egmExportReadCsvRows(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -73,10 +76,10 @@ function egmExportReadCsvRows(string $path): array
 
 function egmExportReadMapping(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return [];
   }

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
@@ -22,7 +24,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   exit;
 }
 
-$input = json_decode((string)file_get_contents('php://input'), true);
+$input = json_decode((string)tcDbFileGetContents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
   exit;
@@ -82,10 +84,10 @@ function inviteePasswordReadCsvRows(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -94,7 +96,7 @@ function inviteePasswordReadCsvRows(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
   flock($handle, LOCK_UN);
@@ -107,7 +109,7 @@ function inviteePasswordWriteCsvRowsLocked(string $path, array $rows): bool
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvCommitRows($path, $rows);
   }
-  $handle = fopen($path, 'c+');
+  $handle = tcDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -121,7 +123,7 @@ function inviteePasswordWriteCsvRowsLocked(string $path, array $rows): bool
     return false;
   }
   foreach ($rows as $row) {
-    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+    if (fputcsv($handle, is_array($row) ? $row : [], ',', '"', '\\') === false) {
       flock($handle, LOCK_UN);
       fclose($handle);
       return false;
@@ -157,10 +159,10 @@ function inviteePasswordNormalizeCsvRows(array $rows): array
 
 function inviteePasswordReadJsonPayload(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -178,7 +180,7 @@ function inviteePasswordWriteJsonPayload(string $path, array $payload): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function inviteePasswordReadMappedConfig(string $path): array
@@ -206,6 +208,9 @@ function inviteePasswordNormalizeTaskType(string $value): string
   if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
     return 'conditional_quiz';
   }
+  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz', 'survey_score_response', 'survey-score-response', 'survey score response', 'survey score'], true)) {
+    return 'shared_answers_quiz';
+  }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
@@ -223,6 +228,9 @@ function inviteePasswordTaskTypeLabel(string $taskType): string
   $type = inviteePasswordNormalizeTaskType($taskType);
   if ($type === 'conditional_quiz') {
     return 'Conditional Quiz';
+  }
+  if ($type === 'shared_answers_quiz') {
+    return 'Survey Score Response';
   }
   if ($type === 'info') {
     return 'Info Task';
@@ -295,10 +303,10 @@ function inviteePasswordReadTaskScoreSettings(string $tasksDir, string $tagCode)
 
 function inviteePasswordReadTasks(string $tasksPath, string $tasksDir): array
 {
-  if (!is_file($tasksPath)) {
+  if (!tcDbIsFile($tasksPath)) {
     return [];
   }
-  $content = file_get_contents($tasksPath);
+  $content = tcDbFileGetContents($tasksPath);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -702,8 +710,8 @@ function inviteePasswordDescribePhotoArticleStats(string $tasksDir, array $task,
     }
     $text = '';
     $filePath = $articlesDir . DIRECTORY_SEPARATOR . $safeFileName;
-    if (is_file($filePath)) {
-      $content = file_get_contents($filePath);
+    if (tcDbIsFile($filePath)) {
+      $content = tcDbFileGetContents($filePath);
       $text = is_string($content) ? $content : '';
     }
     $wordCount = inviteePasswordCountWords($text);
@@ -750,11 +758,11 @@ function inviteePasswordDeleteDescribePhotoArticles(string $tasksDir, string $ta
       continue;
     }
     $targetPath = $articlesDir . DIRECTORY_SEPARATOR . $safeFileName;
-    $targetReal = is_file($targetPath) ? realpath($targetPath) : false;
+    $targetReal = tcDbIsFile($targetPath) ? realpath($targetPath) : false;
     if (!is_string($targetReal) || strpos($targetReal, $articlesReal . DIRECTORY_SEPARATOR) !== 0) {
       continue;
     }
-    @unlink($targetReal);
+    @tcDbUnlink($targetReal);
   }
 }
 
@@ -1622,7 +1630,7 @@ $canResetInvitee = !empty($tcInviteesSensitiveAccess['resetInvitee']);
 $canUseSensitiveAuth = $canRevealPassword || $canResetInvitee;
 $isRevealAction = in_array($action, ['get_password', 'save_password'], true);
 $isParticipationAction = in_array($action, ['get_participation', 'get_task_options', 'get_active_filter_preview'], true);
-$isResetAction = in_array($action, ['reset_progress', 'reset_task_progress', 'save_task_score', 'bulk_save_task_score'], true);
+$isResetAction = in_array($action, ['reset_progress', 'reset_task_progress', 'save_task_score', 'save_total_prize_won', 'bulk_save_task_score'], true);
 $isAuthAction = in_array($action, ['verify_unlock', 'check_unlock'], true);
 
 if ($isRevealAction && !$canRevealPassword) {
@@ -2002,6 +2010,49 @@ if ($action === 'reset_task_progress') {
     'status' => 'ok',
     'message' => (string)($resetResult['message'] ?? 'Task progress reset successfully.'),
     'removedScore' => (int)($resetResult['removedScore'] ?? 0),
+    'participation' => $participation
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'save_total_prize_won') {
+  $totalRaw = trim((string)($input['total_prize_won'] ?? ($input['totalPrizeWon'] ?? '')));
+  $totalRaw = str_replace([',', '٬', '،', ' '], '', $totalRaw);
+  if ($totalRaw === '' || !preg_match('/^\d+(?:\.\d+)?$/D', $totalRaw)) {
+    echo json_encode(['status' => 'error', 'message' => 'Total won prize must be a non-negative number.']);
+    exit;
+  }
+  $totalNumber = (float)$totalRaw;
+  if (!is_finite($totalNumber) || $totalNumber < 0 || $totalNumber > 999999999999999) {
+    echo json_encode(['status' => 'error', 'message' => 'Total won prize is outside the allowed range.']);
+    exit;
+  }
+  $totalIndex = inviteePasswordFindHeaderIndexByNames($header, ['total prize won', 'مجموع جوایز برنده شده']);
+  if ($totalIndex < 0) {
+    echo json_encode(['status' => 'error', 'message' => 'Total Prize Won column is not available in mapped CSV.']);
+    exit;
+  }
+  $storedTotal = rtrim(rtrim(sprintf('%.10F', $totalNumber), '0'), '.');
+  if ($storedTotal === '') $storedTotal = '0';
+  $previousTotal = trim((string)($rows[$rowIndex][$totalIndex] ?? '0'));
+  $rows[$rowIndex][$totalIndex] = $storedTotal;
+  if (!inviteePasswordWriteCsvRowsLocked($mappedFile, $rows)) {
+    echo json_encode(['status' => 'error', 'message' => 'Failed to save total won prize; the previous CSV was preserved.']);
+    exit;
+  }
+  $participation = inviteePasswordBuildParticipationPayload(
+    $rows,
+    $rowIndex,
+    is_array($rows[0] ?? null) ? $rows[0] : $header,
+    $mapFile,
+    $tasksFile,
+    $tasksDir
+  );
+  echo json_encode([
+    'status' => 'ok',
+    'message' => 'Total won prize updated successfully.',
+    'previousTotalPrizeWon' => $previousTotal,
+    'totalPrizeWon' => $storedTotal,
     'participation' => $participation
   ], JSON_UNESCAPED_UNICODE);
   exit;

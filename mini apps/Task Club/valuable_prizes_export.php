@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 
@@ -49,8 +51,8 @@ function tcValuableXml($value): string {
 $rows = tcInviteesCsvReadRowsSnapshot($csvPath);
 $header = is_array($rows[0] ?? null) ? $rows[0] : [];
 $mapping = [];
-if (is_file($mappingPath)) {
-  $decoded = json_decode((string)file_get_contents($mappingPath), true);
+if (tcDbIsFile($mappingPath)) {
+  $decoded = json_decode((string)tcDbFileGetContents($mappingPath), true);
   if (is_array($decoded)) $mapping = $decoded;
 }
 

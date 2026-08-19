@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 
@@ -20,23 +23,7 @@ function egmLogsJsonResponse(array $payload, int $status = 200): void
 
 function egmLogsAvailableDays(): array
 {
-  $directory = egmActivityLogDirectory();
-  if (!is_dir($directory)) {
-    return [];
-  }
-  $files = glob($directory . DIRECTORY_SEPARATOR . '*.log');
-  if (!is_array($files)) {
-    return [];
-  }
-  $days = [];
-  foreach ($files as $file) {
-    $name = basename((string)$file);
-    if (preg_match('/^(\d{4}-\d{2}-\d{2})\.log$/', $name, $matches)) {
-      $days[] = $matches[1];
-    }
-  }
-  rsort($days, SORT_STRING);
-  return array_values(array_unique($days));
+  return egmDatabaseRuntimeActivityDays(__DIR__);
 }
 
 function egmLogsSafeDay(string $day, array $availableDays): string
@@ -46,19 +33,6 @@ function egmLogsSafeDay(string $day, array $availableDays): string
     return $trimmed;
   }
   return $availableDays[0] ?? date('Y-m-d');
-}
-
-function egmLogsReadLinesReverse(string $path, int $maxLines = 2000): array
-{
-  if (!is_file($path)) {
-    return [];
-  }
-  $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-  if (!is_array($lines)) {
-    return [];
-  }
-  $lines = array_slice($lines, -max(1, $maxLines));
-  return array_reverse($lines);
 }
 
 function egmLogsEntrySearchText(array $entry): string
@@ -117,14 +91,8 @@ $query = trim((string)($_GET['q'] ?? ''));
 $limit = (int)($_GET['limit'] ?? 100);
 $limit = max(1, min(300, $limit));
 $needle = function_exists('mb_strtolower') ? mb_strtolower($query, 'UTF-8') : strtolower($query);
-$path = egmActivityLogDirectory() . DIRECTORY_SEPARATOR . $day . '.log';
-
 $items = [];
-foreach (egmLogsReadLinesReverse($path) as $line) {
-  $decoded = json_decode((string)$line, true);
-  if (!is_array($decoded)) {
-    continue;
-  }
+foreach (egmDatabaseRuntimeActivityEntriesForDay(__DIR__, $day, 2000) as $decoded) {
   if ($needle !== '') {
     $haystack = egmLogsEntrySearchText($decoded);
     $contains = function_exists('mb_strpos')

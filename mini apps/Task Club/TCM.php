@@ -1,4 +1,5 @@
-﻿<?php
+<?php
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_award_log.php';
@@ -84,8 +85,8 @@ if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
 
 $tcMaintenanceSettingsPath = __DIR__ . '/Setting.json';
 $tcMaintenanceEnabled = false;
-if (is_file($tcMaintenanceSettingsPath)) {
-  $tcMaintenanceRaw = file_get_contents($tcMaintenanceSettingsPath);
+if (tcDbIsFile($tcMaintenanceSettingsPath)) {
+  $tcMaintenanceRaw = tcDbFileGetContents($tcMaintenanceSettingsPath);
   $tcMaintenanceDecoded = is_string($tcMaintenanceRaw) ? json_decode($tcMaintenanceRaw, true) : null;
   if (is_array($tcMaintenanceDecoded)) {
     $tcMaintenanceEnabled = (bool)($tcMaintenanceDecoded['maintenanceMode'] ?? false);
@@ -115,6 +116,8 @@ const TASKS_DIR_PATH = __DIR__ . '/tasks';
 const TASKS_JS_STORE_PATH = TASKS_DIR_PATH . '/tasks.js';
 const TASK_SCORE_SETTINGS_FILE = 'task-score.json';
 const TASK_INFO_SETTINGS_FILE = 'info-task.json';
+const TASK_SHARED_RESPONSE_LEVELS_FILE = 'response-levels.json';
+const TASK_SHARED_RESPONSE_RESULTS_FILE = 'response-results.json';
 const TASK_TEAM_SETTINGS_FILE = 'team-settings.json';
 const TASK_TEAM_CHALLENGES_FILE = 'team-challenges.json';
 const TASK_TEAM_RUNTIME_FILE = 'team-runtime.json';
@@ -136,7 +139,9 @@ const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimitMs' => 14000,
   'randomOrder' => true,
   'questionsPerAttempt' => 0,
-  'correctAnswersToScore' => 1
+  'correctAnswersToScore' => 1,
+  'sharedAnswers' => ['', '', '', '', ''],
+  'sharedAnswerScores' => [0, 0, 0, 0, 0]
 ];
 const DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS = 14000;
 const DEFAULT_CONDITIONAL_QUIZ_ANSWER_TIME_LIMIT_MS = 30000;
@@ -635,10 +640,10 @@ function normalizeRewardPrizeDisplaySettings($value): array
 
 function readQuestionStore(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -662,7 +667,9 @@ function readQuestionStore(string $path): array
       continue;
     }
     $type = trim(mb_strtolower((string)($row['type'] ?? 'mcq'), 'UTF-8'));
-    if ($type !== 'percentage') {
+    if ($type === 'shared-mcq' || $type === 'shared mcq') {
+      $type = 'shared_mcq';
+    } elseif ($type !== 'percentage') {
       $type = 'mcq';
     }
     $question = trim((string)($row['question'] ?? ''));
@@ -670,12 +677,13 @@ function readQuestionStore(string $path): array
     if ($question === '') {
       continue;
     }
-    if ($type === 'mcq') {
-      if (count($answers) < 4) {
+    if ($type === 'mcq' || $type === 'shared_mcq') {
+      $answerCount = $type === 'shared_mcq' ? 5 : 4;
+      if (count($answers) < $answerCount) {
         continue;
       }
-      $answers = array_map(static fn($value) => trim((string)$value), array_slice($answers, 0, 4));
-      if (count(array_filter($answers, static fn($value) => $value !== '')) < 4) {
+      $answers = array_map(static fn($value) => trim((string)$value), array_slice($answers, 0, $answerCount));
+      if (count(array_filter($answers, static fn($value) => $value !== '')) < $answerCount) {
         continue;
       }
     } else {
@@ -717,10 +725,10 @@ function loadWfqSettings(string $path, int $defaultAnswerTimeLimitMs = DEFAULT_Q
 {
   $settings = TCQ_DEFAULT_SETTINGS;
   $settings['answerTimeLimitMs'] = $defaultAnswerTimeLimitMs;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $settings;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $settings;
   }
@@ -736,6 +744,14 @@ function loadWfqSettings(string $path, int $defaultAnswerTimeLimitMs = DEFAULT_Q
   $settings['correctAnswersToScore'] = $storedCorrectAnswersToScore > 0
     ? $storedCorrectAnswersToScore
     : (int)$settings['correctAnswersToScore'];
+  $sharedAnswers = is_array($decoded['sharedAnswers'] ?? ($decoded['shared_answers'] ?? null))
+    ? array_values($decoded['sharedAnswers'] ?? $decoded['shared_answers'])
+    : [];
+  $sharedAnswerScores = is_array($decoded['sharedAnswerScores'] ?? ($decoded['shared_answer_scores'] ?? null))
+    ? array_values($decoded['sharedAnswerScores'] ?? $decoded['shared_answer_scores'])
+    : [];
+  $settings['sharedAnswers'] = array_map(static fn($value): string => trim((string)$value), array_slice(array_pad($sharedAnswers, 5, ''), 0, 5));
+  $settings['sharedAnswerScores'] = array_map(static fn($value): int => max(0, (int)$value), array_slice(array_pad($sharedAnswerScores, 5, 0), 0, 5));
   return $settings;
 }
 
@@ -767,10 +783,10 @@ function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuesti
 
 function readQuestionColumnsFromStore(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -946,10 +962,10 @@ function logAnswerValue(string $answersPath, string $questionsPath, string $work
 
 function loadJsonPayload(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -1058,7 +1074,7 @@ function readTaskTitlesFromJsonFiles(string $tasksDir): array
     return [];
   }
 
-  $paths = glob($tasksDir . DIRECTORY_SEPARATOR . '*.json');
+  $paths = tcDbGlob($tasksDir . DIRECTORY_SEPARATOR . '*.json');
   if (!is_array($paths) || !$paths) {
     return [];
   }
@@ -1067,10 +1083,10 @@ function readTaskTitlesFromJsonFiles(string $tasksDir): array
   $items = [];
   $seen = [];
   foreach ($paths as $path) {
-    if (!is_file($path)) {
+    if (!tcDbIsFile($path)) {
       continue;
     }
-    $content = file_get_contents($path);
+    $content = tcDbFileGetContents($path);
     if ($content === false || trim($content) === '') {
       continue;
     }
@@ -1085,10 +1101,10 @@ function readTaskTitlesFromJsonFiles(string $tasksDir): array
 
 function readTaskTitlesFromJsStore(string $storePath): array
 {
-  if (!is_file($storePath)) {
+  if (!tcDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = tcDbFileGetContents($storePath);
   if ($content === false || trim($content) === '') {
     return [];
   }
@@ -1209,6 +1225,9 @@ function normalizeTaskTypeValue($value): string
   if ($token === 'conditional_quiz' || $token === 'conditional-quiz' || $token === 'conditional quiz' || $token === 'conditional-quiz-task' || $token === 'conditional quiz task') {
     return 'conditional_quiz';
   }
+  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz', 'survey_score_response', 'survey-score-response', 'survey score response', 'survey score'], true)) {
+    return 'shared_answers_quiz';
+  }
   if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
     return 'info';
   }
@@ -1224,7 +1243,12 @@ function normalizeTaskTypeValue($value): string
 function isQuizLikeTaskTypeValue(string $taskType): bool
 {
   $normalized = normalizeTaskTypeValue($taskType);
-  return $normalized === 'quiz' || $normalized === 'conditional_quiz';
+  return $normalized === 'quiz' || $normalized === 'conditional_quiz' || $normalized === 'shared_answers_quiz';
+}
+
+function isSharedAnswersQuizTaskTypeValue($value): bool
+{
+  return normalizeTaskTypeValue($value) === 'shared_answers_quiz';
 }
 
 function taskHasGoldenTime(array $task): bool
@@ -1267,10 +1291,10 @@ function resolveTaskScoreForStatus(array $task, string $taskStatus): int
 
 function readTasksStoreItems(string $storePath): array
 {
-  if (!is_file($storePath)) {
+  if (!tcDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = tcDbFileGetContents($storePath);
   if ($content === false) {
     return [];
   }
@@ -1304,10 +1328,10 @@ function readTaskScoreSettings(string $tasksDir, string $tagCode): array
     return $defaults;
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_SCORE_SETTINGS_FILE;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -1338,10 +1362,10 @@ function readTaskInfoSettings(string $tasksDir, string $tagCode): array
     return $defaults;
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_INFO_SETTINGS_FILE;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -1357,6 +1381,78 @@ function readTaskInfoSettings(string $tasksDir, string $tagCode): array
   ];
 }
 
+function buildTaskSharedResponsePath(string $tasksDir, string $tagCode, string $fileName): string
+{
+  $normalizedTag = normalizeTaskTagCode($tagCode);
+  return $normalizedTag === '' ? '' : $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . $fileName;
+}
+
+function normalizeTaskSharedResponseLevels(array $levels): array
+{
+  $normalized = [];
+  foreach ($levels as $index => $level) {
+    if (!is_array($level)) continue;
+    $name = trim((string)($level['name'] ?? ''));
+    $startScore = max(0, (int)($level['startScore'] ?? ($level['start_score'] ?? 0)));
+    $endScore = max(0, (int)($level['endScore'] ?? ($level['end_score'] ?? $startScore)));
+    if ($name === '' || $endScore < $startScore) continue;
+    $normalized[] = [
+      'id' => trim((string)($level['id'] ?? '')) ?: 'trl_' . ($index + 1),
+      'name' => $name,
+      'text' => str_replace(["\r\n", "\r"], "\n", (string)($level['text'] ?? ($level['responseText'] ?? ''))),
+      'startScore' => $startScore,
+      'endScore' => $endScore,
+      'createdAt' => trim((string)($level['createdAt'] ?? ($level['created_at'] ?? '')))
+    ];
+  }
+  usort($normalized, static fn(array $a, array $b): int => ($a['startScore'] <=> $b['startScore']) ?: ($a['endScore'] <=> $b['endScore']));
+  return $normalized;
+}
+
+function readTaskSharedResponseLevels(string $tasksDir, string $tagCode): array
+{
+  $payload = loadJsonPayload(buildTaskSharedResponsePath($tasksDir, $tagCode, TASK_SHARED_RESPONSE_LEVELS_FILE));
+  return normalizeTaskSharedResponseLevels($payload);
+}
+
+function readTaskSharedResponseResults(string $tasksDir, string $tagCode): array
+{
+  return loadJsonPayload(buildTaskSharedResponsePath($tasksDir, $tagCode, TASK_SHARED_RESPONSE_RESULTS_FILE));
+}
+
+function writeTaskSharedResponseResults(string $tasksDir, string $tagCode, array $payload): bool
+{
+  $path = buildTaskSharedResponsePath($tasksDir, $tagCode, TASK_SHARED_RESPONSE_RESULTS_FILE);
+  $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  return $path !== '' && $json !== false && tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function resolveSharedResponseLevelByInnerScore(array $levels, int $innerScore): ?array
+{
+  foreach (normalizeTaskSharedResponseLevels($levels) as $level) {
+    if ($innerScore >= (int)$level['startScore'] && $innerScore <= (int)$level['endScore']) return $level;
+  }
+  return null;
+}
+
+function resolveTaskSharedResponseForUser(array $task, string $workId): ?array
+{
+  $tagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+  $entry = readTaskSharedResponseResults(TASKS_DIR_PATH, $tagCode)[trim($workId)] ?? null;
+  if (!is_array($entry)) return null;
+  $innerScore = max(0, (int)($entry['innerScore'] ?? ($entry['inner_score'] ?? 0)));
+  $level = resolveSharedResponseLevelByInnerScore(readTaskSharedResponseLevels(TASKS_DIR_PATH, $tagCode), $innerScore);
+  return [
+    'innerScore' => $innerScore,
+    'title' => (string)($level['name'] ?? ($entry['levelName'] ?? '')),
+    'text' => (string)($level['text'] ?? ($entry['responseText'] ?? '')),
+    'levelId' => (string)($level['id'] ?? ($entry['levelId'] ?? '')),
+    'startScore' => (int)($level['startScore'] ?? ($entry['startScore'] ?? 0)),
+    'endScore' => (int)($level['endScore'] ?? ($entry['endScore'] ?? 0)),
+    'completedAt' => trim((string)($entry['completedAt'] ?? ($entry['completed_at'] ?? '')))
+  ];
+}
+
 function readTaskTeamSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = [
@@ -1369,10 +1465,10 @@ function readTaskTeamSettings(string $tasksDir, string $tagCode): array
     return $defaults;
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_SETTINGS_FILE;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -1403,10 +1499,10 @@ function readTaskTeamChallenges(string $tasksDir, string $tagCode): array
     return [];
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_CHALLENGES_FILE;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -1499,7 +1595,7 @@ function saveTaskTeamChallenges(string $tasksDir, string $tagCode, array $challe
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function readTaskTeamRuntime(string $tasksDir, string $tagCode): array
@@ -1509,10 +1605,10 @@ function readTaskTeamRuntime(string $tasksDir, string $tagCode): array
     return ['teams' => []];
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_RUNTIME_FILE;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return ['teams' => []];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return ['teams' => []];
   }
@@ -1595,7 +1691,7 @@ function saveTaskTeamRuntime(string $tasksDir, string $tagCode, array $runtime):
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function normalizeTeamJoinType(string $value): string
@@ -2314,6 +2410,9 @@ function loadTaskRecords(string $storePath, string $tasksDir): array
     $task['infoText'] = (string)($infoSettings['text'] ?? '');
     $task['guidePrefix'] = (string)($infoSettings['guidePrefix'] ?? '');
     $task['guideSuffix'] = (string)($infoSettings['guideSuffix'] ?? '');
+    $task['responseLevels'] = normalizeTaskTypeValue($task['taskType'] ?? 'quiz') === 'shared_answers_quiz'
+      ? readTaskSharedResponseLevels($tasksDir, $tagCode)
+      : [];
     if ((string)($task['taskType'] ?? '') === 'team_task') {
       $teamSettings = readTaskTeamSettings($tasksDir, $tagCode);
       $task['teamMin'] = (int)($teamSettings['teamMin'] ?? 1);
@@ -2558,6 +2657,28 @@ function loadTaskQuizAssets(array $task, string $sharedQuestionsStorePath): arra
     $resolvedQuestionsPath = $sharedQuestionsStorePath;
   }
 
+  $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+  $settings = loadWfqSettings(
+    $settingsPath,
+    $taskType === 'conditional_quiz'
+      ? DEFAULT_CONDITIONAL_QUIZ_ANSWER_TIME_LIMIT_MS
+      : DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS
+  );
+  if ($taskType === 'shared_answers_quiz') {
+    $settings['answerTimeLimit'] = false;
+    $settings['randomOrder'] = false;
+    $settings['questionsPerAttempt'] = 0;
+    $settings['correctAnswersToScore'] = 0;
+    $sharedAnswers = array_values($settings['sharedAnswers'] ?? []);
+    $sharedScores = array_values($settings['sharedAnswerScores'] ?? []);
+    foreach ($questions as &$question) {
+      $question['type'] = 'shared_mcq';
+      $question['answers'] = $sharedAnswers;
+      $question['sharedAnswerScores'] = $sharedScores;
+    }
+    unset($question);
+  }
+
   return [
     'tagCode' => $tagCode,
     'taskDir' => $taskDir,
@@ -2565,12 +2686,7 @@ function loadTaskQuizAssets(array $task, string $sharedQuestionsStorePath): arra
     'settingsPath' => $settingsPath,
     'answersPath' => $answersPath,
     'questions' => $questions,
-    'settings' => loadWfqSettings(
-      $settingsPath,
-      normalizeTaskTypeValue($task['taskType'] ?? 'quiz') === 'conditional_quiz'
-        ? DEFAULT_CONDITIONAL_QUIZ_ANSWER_TIME_LIMIT_MS
-        : DEFAULT_QUIZ_ANSWER_TIME_LIMIT_MS
-    )
+    'settings' => $settings
   ];
 }
 
@@ -2808,8 +2924,72 @@ function isTaskQuizAnswerCorrect(array $question, string $answer): bool
     return preg_match('/^\d{1,3}$/', trim($answer)) === 1;
   }
   $answers = is_array($question['answers'] ?? null) ? array_values($question['answers']) : [];
+  if ($type === 'shared_mcq' || $type === 'shared-mcq' || $type === 'shared mcq') {
+    return in_array(trim($answer), array_map(static fn($value): string => trim((string)$value), $answers), true);
+  }
   $correctAnswer = trim((string)($answers[0] ?? ''));
   return $correctAnswer !== '' && trim($answer) === $correctAnswer;
+}
+
+function resolveTaskQuizAnswerChoiceIndex(array $question, string $answer): int
+{
+  foreach (array_values(is_array($question['answers'] ?? null) ? $question['answers'] : []) as $index => $choice) {
+    if (trim((string)$choice) === trim($answer)) return $index + 1;
+  }
+  return 0;
+}
+
+function buildTaskQuizPureAnswersValue(array $attemptState): string
+{
+  $answered = is_array($attemptState['answered'] ?? null) ? $attemptState['answered'] : [];
+  $parts = [];
+  foreach ((array)($attemptState['questionCodes'] ?? []) as $rawCode) {
+    $code = strtoupper(trim((string)$rawCode));
+    $answer = trim((string)($answered[$code]['answer'] ?? ''));
+    if ($code === '' || $answer === '') continue;
+    $token = preg_match('/^Q0*(\d+)$/', $code, $matches) ? (string)((int)$matches[1]) : $code;
+    $parts[] = $token . '::' . $answer;
+  }
+  return implode(', ', $parts);
+}
+
+function calculateTaskQuizSharedInnerScore(array $attemptState, array $questionLookup): int
+{
+  $total = 0;
+  foreach ((array)($attemptState['answered'] ?? []) as $code => $entry) {
+    $question = $questionLookup[strtoupper(trim((string)$code))] ?? null;
+    if (!is_array($question) || !is_array($entry)) continue;
+    $choiceIndex = resolveTaskQuizAnswerChoiceIndex($question, (string)($entry['answer'] ?? ''));
+    $scores = array_values(is_array($question['sharedAnswerScores'] ?? null) ? $question['sharedAnswerScores'] : []);
+    if ($choiceIndex > 0) $total += max(0, (int)($scores[$choiceIndex - 1] ?? 0));
+  }
+  return max(0, $total);
+}
+
+function persistSharedSurveyAnswersCsv(string $path, string $workId, string $answersValue, int $innerScore): bool
+{
+  $rows = readInviteesCsv($path);
+  $nextRows = [['Work ID', 'answers', 'inner score']];
+  $found = false;
+  if ($rows && is_array($rows[0] ?? null)) {
+    $header = $rows[0];
+    $workIndex = findHeaderIndex($header, 'Work ID');
+    $answersIndex = findHeaderIndex($header, 'answers');
+    $scoreIndex = findHeaderIndex($header, 'inner score');
+    for ($i = 1; $i < count($rows); $i++) {
+      $row = is_array($rows[$i]) ? $rows[$i] : [];
+      $rowWorkId = trim((string)($row[$workIndex] ?? ''));
+      if ($rowWorkId === '') continue;
+      if ($rowWorkId === trim($workId)) {
+        $nextRows[] = [$rowWorkId, $answersValue, (string)$innerScore];
+        $found = true;
+      } else {
+        $nextRows[] = [$rowWorkId, $answersIndex >= 0 ? (string)($row[$answersIndex] ?? '') : '', $scoreIndex >= 0 ? (string)($row[$scoreIndex] ?? '') : ''];
+      }
+    }
+  }
+  if (!$found) $nextRows[] = [trim($workId), $answersValue, (string)$innerScore];
+  return writeInviteesCsv($path, $nextRows);
 }
 
 function recordTaskQuizAttemptAnswer(array $attemptState, string $questionCode, string $answer, array $questionLookup, string $taskStatus, bool $includeQuestionScore = true, ?int $fixedCorrectAnswerScore = null): array
@@ -2861,6 +3041,9 @@ function recordTaskQuizAttemptAnswer(array $attemptState, string $questionCode, 
     'correct' => $wasCorrect,
     'answeredAt' => time()
   ];
+  if (strtolower(trim((string)($questionLookup[$normalizedCode]['type'] ?? ''))) === 'shared_mcq') {
+    $answered[$normalizedCode]['answerChoiceIndex'] = resolveTaskQuizAnswerChoiceIndex($questionLookup[$normalizedCode], $answer);
+  }
   if ($includeQuestionScore || $fixedCorrectAnswerScore !== null) {
     $answered[$normalizedCode]['awardedScore'] = $questionScoreAwarded;
   }
@@ -3053,22 +3236,19 @@ function buildDescribePhotoImageUrl(string $tagCode, string $fileName): string
   if ($safeTagCode === '' || $safeFileName === '') {
     return '';
   }
-  $segments = [
-    'tasks',
-    $safeTagCode,
-    TASK_DESCRIBE_PHOTO_DIR,
-    $safeFileName
-  ];
-  return implode('/', array_map(static fn(string $segment): string => rawurlencode($segment), $segments));
+  $relative = implode('/', array_map('rawurlencode', [
+    'tasks', $safeTagCode, TASK_DESCRIBE_PHOTO_DIR, $safeFileName
+  ]));
+  return 'tc_asset.php?path=' . rawurlencode($relative);
 }
 
 function readTaskDescribePhotoEntries(string $tasksDir, string $tagCode): array
 {
   $metaPath = buildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
-  if ($metaPath === '' || !is_file($metaPath)) {
+  if ($metaPath === '' || !tcDbIsFile($metaPath)) {
     return [];
   }
-  $content = file_get_contents($metaPath);
+  $content = tcDbFileGetContents($metaPath);
   if ($content === false) {
     return [];
   }
@@ -3282,8 +3462,8 @@ function resolveDescribePhotoPicksForUser(array $task, string $workId, string $i
       $changed = true;
     }
     $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $safeFileName;
-    if (!is_file($filePath)) {
-      if (file_put_contents($filePath, '', LOCK_EX) === false) {
+    if (!tcDbIsFile($filePath)) {
+      if (tcDbFilePutContents($filePath, '', LOCK_EX) === false) {
         return ['ok' => false, 'message' => 'ساخت فایل متن تصویر ناموفق بود.'];
       }
       $changed = true;
@@ -3354,12 +3534,12 @@ function readDescribePhotoUserArticle(array $task, string $workId, string $photo
     return ['ok' => false, 'message' => 'فایل متن تصویر نامعتبر است.'];
   }
   $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $fileName;
-  if (!is_file($filePath)) {
-    if (file_put_contents($filePath, '', LOCK_EX) === false) {
+  if (!tcDbIsFile($filePath)) {
+    if (tcDbFilePutContents($filePath, '', LOCK_EX) === false) {
       return ['ok' => false, 'message' => 'ساخت فایل متن تصویر ناموفق بود.'];
     }
   }
-  $content = file_get_contents($filePath);
+  $content = tcDbFileGetContents($filePath);
   if (!is_string($content)) {
     $content = '';
   }
@@ -3416,7 +3596,7 @@ function saveDescribePhotoUserArticle(array $task, string $workId, string $photo
     return ['ok' => false, 'message' => 'فایل متن تصویر نامعتبر است.'];
   }
   $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $fileName;
-  if (file_put_contents($filePath, $normalizedText, LOCK_EX) === false) {
+  if (tcDbFilePutContents($filePath, $normalizedText, LOCK_EX) === false) {
     return ['ok' => false, 'message' => 'ذخیره متن تصویر ناموفق بود.'];
   }
   return [
@@ -3594,10 +3774,10 @@ function hasDescribePhotoSubmissionForUserTask(array $task, array $row, array $c
       continue;
     }
     $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $safeFileName;
-    if (!is_file($articlePath)) {
+    if (!tcDbIsFile($articlePath)) {
       continue;
     }
-    $content = file_get_contents($articlePath);
+    $content = tcDbFileGetContents($articlePath);
     if (!is_string($content)) {
       continue;
     }
@@ -3831,11 +4011,11 @@ function readInviteesCsv(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -3843,7 +4023,7 @@ function readInviteesCsv(string $path): array
     fclose($handle);
     return [];
   }
-  while (($data = fgetcsv($handle)) !== false) {
+  while (($data = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = $data;
   }
   flock($handle, LOCK_UN);
@@ -3860,7 +4040,7 @@ function writeInviteesCsv(string $path, array $rows, bool $endTransaction = true
   if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'c+');
+  $handle = tcDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -3874,7 +4054,7 @@ function writeInviteesCsv(string $path, array $rows, bool $endTransaction = true
     return false;
   }
   foreach ($rows as $row) {
-    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+    if (fputcsv($handle, is_array($row) ? $row : [], ',', '"', '\\') === false) {
       flock($handle, LOCK_UN);
       fclose($handle);
       return false;
@@ -3906,7 +4086,7 @@ function writeLoginAttempts(string $path, array $payload): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function readAnyPasswordLoginSettings(string $path): array
@@ -4152,6 +4332,7 @@ function loadInviteesTable(string $filePath, string $mapPath): array
     'wheel angle',
     'invitees',
     'answers',
+    'inner score',
     'score',
     'Answered',
     'task completed ids',
@@ -4525,7 +4706,7 @@ if (defined('TCM_FUNCTIONS_ONLY') && TCM_FUNCTIONS_ONLY === true) {
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   header('Content-Type: application/json; charset=UTF-8');
-  $rawInput = file_get_contents('php://input');
+  $rawInput = tcDbFileGetContents('php://input');
   $payload = json_decode($rawInput ?: '', true);
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
   $csrfToken = is_array($payload) ? (string)($payload['csrf'] ?? '') : '';
@@ -4670,14 +4851,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     } else {
       $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
-      if ($passwordIndex < 0) {
+      $databasePasswordValid = tcDatabaseRuntimeVerifyUserPassword(__DIR__, $username, $password);
+      if ($passwordIndex < 0 && $databasePasswordValid !== true) {
         $recordFail();
         $logLoginFailure('password_column_missing');
         echo json_encode(['status' => 'error', 'message' => 'رمز عبور column is missing.']);
         exit;
       }
-      $rowPassword = normalizeCredentialToken((string)($rows[$rowIndex][$passwordIndex] ?? ''));
-      if ($rowPassword === '' || $rowPassword !== $password) {
+      $rowPassword = $passwordIndex >= 0
+        ? normalizeCredentialToken((string)($rows[$rowIndex][$passwordIndex] ?? ''))
+        : '';
+      if ($databasePasswordValid !== true && ($rowPassword === '' || !hash_equals($rowPassword, $password))) {
         $recordFail();
         $logLoginFailure('bad_credentials');
         echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
@@ -4724,7 +4908,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $_SESSION['tc_work_id'] = $resolvedWorkId;
     session_regenerate_id(true);
     $_SESSION['tc_session_started_at'] = time();
-    $_SESSION['tc_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
+    $_SESSION['tc_invitees_mtime'] = tcDbIsFile($inviteesFilePath) ? tcDbFilemtime($inviteesFilePath) : null;
     $prizeIndex = $columns['prize won'] ?? -1;
     $prizeWonAtIndex = $columns['prize won at'] ?? -1;
     $angleIndex = $columns['wheel angle'] ?? -1;
@@ -4963,13 +5147,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           $taskId,
           $questions,
           $settings,
-          $taskType !== 'conditional_quiz',
+          $taskType !== 'conditional_quiz' && $taskType !== 'shared_answers_quiz',
           $taskType === 'conditional_quiz' ? 0 : null
         );
       }
       $questionsPayload = is_array($attempt['questions'] ?? null) ? $attempt['questions'] : [];
       $settingsPayload = is_array($attempt['settings'] ?? null) ? $attempt['settings'] : $settings;
+      if ($taskType === 'shared_answers_quiz') {
+        $settingsPayload['scoreMode'] = 'survey_inner';
+      }
     }
+    $sharedResponse = $taskType === 'shared_answers_quiz' && !empty($progress['completed'])
+      ? resolveTaskSharedResponseForUser($task, $sessionWorkId)
+      : null;
     $describePhotos = [];
     $teamContext = null;
     if ($taskType === 'describe_photo' && $available) {
@@ -4999,6 +5189,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'infoText' => (string)($task['infoText'] ?? ''),
         'guidePrefix' => (string)($task['guidePrefix'] ?? ''),
         'guideSuffix' => (string)($task['guideSuffix'] ?? ''),
+        'sharedResponse' => $sharedResponse,
+        'responseLevels' => is_array($task['responseLevels'] ?? null) ? $task['responseLevels'] : [],
         'teamMin' => (int)($task['teamMin'] ?? 0),
         'teamMax' => (int)($task['teamMax'] ?? 0),
         'teamAdditionalNote' => (string)($task['teamAdditionalNote'] ?? ''),
@@ -5149,7 +5341,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } else {
       $conditionalCorrectAnswerScore = null;
     }
-    $recorded = recordTaskQuizAttemptAnswer($attemptState, $questionCode, $answer, $questionLookup, $taskStatus, $taskType !== 'conditional_quiz', $conditionalCorrectAnswerScore);
+    $recorded = recordTaskQuizAttemptAnswer(
+      $attemptState,
+      $questionCode,
+      $answer,
+      $questionLookup,
+      $taskStatus,
+      $taskType !== 'conditional_quiz' && $taskType !== 'shared_answers_quiz',
+      $conditionalCorrectAnswerScore
+    );
     if (!($recorded['ok'] ?? false)) {
       echo json_encode(['status' => 'error', 'message' => (string)($recorded['message'] ?? 'ثبت پاسخ ناموفق بود.')]);
       exit;
@@ -5160,7 +5360,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $answersPath = (string)($quizAssets['answersPath'] ?? '');
     $questionsPath = (string)($quizAssets['questionsPath'] ?? '');
-    if ($answersPath !== '' && $questionsPath !== '') {
+    if ($taskType !== 'shared_answers_quiz' && $answersPath !== '' && $questionsPath !== '') {
       logAnswerValue($answersPath, $questionsPath, $sessionWorkId, $questionCode, $questionText, $answer);
     }
 
@@ -5176,7 +5376,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'questionCount' => $questionCount,
       'requiredCorrectAnswers' => $requiredCorrectAnswers,
       'questionScoreAwarded' => max(0, normalizeTaskScoreValue($recorded['questionScoreAwarded'] ?? 0)),
-      'scoreMode' => $taskType === 'conditional_quiz' ? 'conditional_inner' : 'threshold',
+      'scoreMode' => $taskType === 'conditional_quiz' ? 'conditional_inner' : ($taskType === 'shared_answers_quiz' ? 'survey_inner' : 'threshold'),
       'attemptCompleted' => isTaskQuizAttemptCompleted($nextState)
     ]);
     exit;
@@ -6129,7 +6329,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'alreadyCompleted' => true,
         'awardedScore' => 0,
         'userTaskScore' => $existingTaskScore,
-        'totalScore' => $currentTotalScore
+        'totalScore' => $currentTotalScore,
+        'sharedResponse' => $taskType === 'shared_answers_quiz' ? resolveTaskSharedResponseForUser($task, $sessionWorkId) : null
       ]);
       exit;
     }
@@ -6142,6 +6343,47 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       }
     }
 
+    $sharedResponse = null;
+    $sharedResponseResults = null;
+    $sharedResponseTagCode = '';
+    if ($taskType === 'shared_answers_quiz' && isset($attemptState) && is_array($attemptState)) {
+      $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
+      $surveyQuestions = is_array($quizAssets['questions'] ?? null) ? $quizAssets['questions'] : [];
+      $questionLookup = buildQuestionLookupByCode($surveyQuestions);
+      $innerScore = calculateTaskQuizSharedInnerScore($attemptState, $questionLookup);
+      $answersValue = buildTaskQuizPureAnswersValue($attemptState);
+      $answersIndex = (int)($columns['answers'] ?? -1);
+      $innerScoreIndex = (int)($columns['inner score'] ?? -1);
+      if ($answersIndex >= 0) $rows[$rowIndex][$answersIndex] = $answersValue;
+      if ($innerScoreIndex >= 0) $rows[$rowIndex][$innerScoreIndex] = (string)$innerScore;
+      if (!persistSharedSurveyAnswersCsv((string)($quizAssets['answersPath'] ?? ''), $sessionWorkId, $answersValue, $innerScore)) {
+        echo json_encode(['status' => 'error', 'message' => 'ذخیره پاسخ‌های نظرسنجی ناموفق بود.']);
+        exit;
+      }
+      $resolvedLevel = resolveSharedResponseLevelByInnerScore((array)($task['responseLevels'] ?? []), $innerScore);
+      $completedAt = date('Y-m-d H:i:s');
+      $sharedResponse = [
+        'innerScore' => $innerScore,
+        'title' => (string)($resolvedLevel['name'] ?? ''),
+        'text' => (string)($resolvedLevel['text'] ?? ''),
+        'levelId' => (string)($resolvedLevel['id'] ?? ''),
+        'startScore' => (int)($resolvedLevel['startScore'] ?? 0),
+        'endScore' => (int)($resolvedLevel['endScore'] ?? 0),
+        'completedAt' => $completedAt
+      ];
+      $sharedResponseTagCode = normalizeTaskTagCode((string)($task['tagCode'] ?? ''));
+      $sharedResponseResults = readTaskSharedResponseResults(TASKS_DIR_PATH, $sharedResponseTagCode);
+      $sharedResponseResults[$sessionWorkId] = [
+        'innerScore' => $innerScore,
+        'levelId' => $sharedResponse['levelId'],
+        'levelName' => $sharedResponse['title'],
+        'responseText' => $sharedResponse['text'],
+        'startScore' => $sharedResponse['startScore'],
+        'endScore' => $sharedResponse['endScore'],
+        'completedAt' => $completedAt
+      ];
+    }
+
     $completedTaskIds[] = $taskId;
     $taskScoreMap[$taskId] = $awardedScore;
     $newTotalScore = $currentTotalScore + $awardedScore;
@@ -6151,6 +6393,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $outOfValueLevels = readPrizeLevelRecords($prizeLevelsPath);
     syncOutOfValueRewardsForUser($rows, $rowIndex, $columns, $outOfValueLevels, $newTotalScore);
 
+    if (is_array($sharedResponseResults) && !writeTaskSharedResponseResults(TASKS_DIR_PATH, $sharedResponseTagCode, $sharedResponseResults)) {
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره پاسخ نهایی نظرسنجی ناموفق بود.']);
+      exit;
+    }
     if (!writeInviteesCsv($inviteesFilePath, $rows)) {
       echo json_encode(['status' => 'error', 'message' => 'ذخیره امتیاز ناموفق بود.']);
       exit;
@@ -6164,7 +6410,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'awardedScore' => $awardedScore,
       'userTaskScore' => $awardedScore,
       'scoreMode' => (isQuizLikeTaskTypeValue($taskType) && $status === 'ended') ? 'after_endtime' : 'active',
-      'totalScore' => $newTotalScore
+      'totalScore' => $newTotalScore,
+      'sharedResponse' => $sharedResponse
     ]);
     exit;
   }
@@ -6954,7 +7201,7 @@ $hintHtml = sanitizeHintHtml($rawHintHtml);
 $hintAlign = trim((string)($wheelSettings['hintAlign'] ?? 'right'));
 $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlign : 'right';
 
-$inviteesMtime = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
+$inviteesMtime = tcDbIsFile($inviteesFilePath) ? tcDbFilemtime($inviteesFilePath) : null;
 $sessionAuthed = isset($_SESSION['tc_authed']) && $_SESSION['tc_authed'] === true;
 if ($sessionAuthed && $inviteesMtime === null) {
   $expiredWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
@@ -11651,14 +11898,17 @@ $sessionPayload = [
         const normalizeTaskTypeToken = (value) => {
           const token = String(value ?? '').trim().toLowerCase();
           if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') return 'conditional_quiz';
+          if (['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz', 'survey_score_response', 'survey-score-response', 'survey score response', 'survey score'].includes(token)) return 'shared_answers_quiz';
           if (token === 'info' || token === 'team_task' || token === 'describe_photo') return token;
           return token === 'quiz' ? 'quiz' : token;
         };
 
         const isQuizLikeTaskType = (value) => {
           const token = normalizeTaskTypeToken(value);
-          return token === 'quiz' || token === 'conditional_quiz';
+          return token === 'quiz' || token === 'conditional_quiz' || token === 'shared_answers_quiz';
         };
+
+        const isSharedAnswersTaskType = (value) => normalizeTaskTypeToken(value) === 'shared_answers_quiz';
 
         const taskHasGoldenTimeButton = (button) => String(button?.dataset?.taskHasGoldenTime || '1') !== '0';
 
@@ -13495,6 +13745,14 @@ $sessionPayload = [
           }
         };
 
+        const openSharedResponseTaskView = (taskTitle, response = {}) => {
+          const innerScore = Math.max(0, Number.parseInt(String(response?.innerScore ?? 0), 10) || 0);
+          const title = String(response?.title || 'پاسخ شما').trim() || 'پاسخ شما';
+          const responseText = String(response?.text || '').trim();
+          const body = [`امتیاز داخلی شما: ${innerScore}`, responseText].filter(Boolean).join('\n\n');
+          openInfoTaskView(taskTitle, title, body, { taskType: 'shared_answers_result' });
+        };
+
         const closeTaskResultDialog = () => {
           if (resultDialogEl) {
             resultDialogEl.classList.remove('open');
@@ -14766,7 +15024,7 @@ $sessionPayload = [
           const answeredCount = Math.max(0, Number.parseInt(String(payload?.answeredCount ?? fallbackAnsweredCount), 10) || 0);
           const fallbackCount = fallbackIsCorrect ? (currentCorrectAnswers + 1) : currentCorrectAnswers;
           const correctCount = Math.max(0, Number.parseInt(String(payload?.correctCount ?? fallbackCount ?? 0), 10) || 0);
-          currentQuizScoreMode = ['answered_all', 'conditional_inner'].includes(String(payload?.scoreMode ?? currentQuizScoreMode ?? '').trim().toLowerCase())
+          currentQuizScoreMode = ['answered_all', 'conditional_inner', 'survey_inner'].includes(String(payload?.scoreMode ?? currentQuizScoreMode ?? '').trim().toLowerCase())
             ? String(payload?.scoreMode ?? currentQuizScoreMode ?? '').trim().toLowerCase()
             : 'threshold';
           currentRequiredCorrectAnswers = required;
@@ -14841,6 +15099,7 @@ $sessionPayload = [
         const completeCurrentTask = async (item, answerText = '') => {
           const completedTaskId = currentTaskId;
           const completingTaskType = currentTaskType;
+          const completedTaskTitle = currentTaskTitle;
           if (!completedTaskId || quizCompletionInFlight) {
             return;
           }
@@ -14909,12 +15168,20 @@ $sessionPayload = [
 
           closeQuizOverlay();
           if (payload?.alreadyCompleted) {
+            if (isSharedAnswersTaskType(completingTaskType)) {
+              openSharedResponseTaskView(completedTaskTitle, payload?.sharedResponse || {});
+              return;
+            }
             openTaskResultDialog(payload?.userTaskScore ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
             return;
           }
           const awardedScore = Number.parseInt(payload?.awardedScore ?? 0, 10) || 0;
           if (!Boolean(payload?.taskCompleted ?? true)) {
             openTaskResultDialog(0, 'این تلاش امتیازی نگرفت. ماموریت برای تلاش دوباره همچنان در دسترس است.');
+            return;
+          }
+          if (isSharedAnswersTaskType(completingTaskType)) {
+            openSharedResponseTaskView(completedTaskTitle, payload?.sharedResponse || {});
             return;
           }
           openTaskResultDialog(
@@ -15059,6 +15326,18 @@ $sessionPayload = [
             serverMarkedCorrect: wasCorrect,
             seconds_waited: secondsWaited
           });
+
+          if (isSharedAnswersTaskType(currentTaskType)) {
+            if (button instanceof HTMLButtonElement) button.classList.add('is-correct');
+            setTimeout(() => {
+              if (isQuizAttemptReadyToComplete(answerPayload)) {
+                void completeCurrentTask(item, answerText);
+                return;
+              }
+              continueQuiz();
+            }, QUIZ_FEEDBACK_DELAY_MS);
+            return;
+          }
 
           if (wasCorrect) {
             if (button instanceof HTMLButtonElement) {
@@ -15302,15 +15581,18 @@ $sessionPayload = [
             return true;
           }
 
+          const sharedAnswersTask = isSharedAnswersTaskType(currentTaskType);
           const answers = Array.isArray(item.answers)
-            ? item.answers.slice(0, 4).map((answer, index) => ({ text: String(answer ?? '').trim(), isCorrect: index === 0 }))
+            ? item.answers.slice(0, sharedAnswersTask ? 5 : 4).map((answer, index) => ({ text: String(answer ?? '').trim(), isCorrect: sharedAnswersTask || index === 0 }))
             : [];
           const validAnswers = answers.filter((answer) => answer.text !== '');
-          for (let i = validAnswers.length - 1; i > 0; i -= 1) {
-            const j = Math.floor(Math.random() * (i + 1));
-            const tmp = validAnswers[i];
-            validAnswers[i] = validAnswers[j];
-            validAnswers[j] = tmp;
+          if (!sharedAnswersTask) {
+            for (let i = validAnswers.length - 1; i > 0; i -= 1) {
+              const j = Math.floor(Math.random() * (i + 1));
+              const tmp = validAnswers[i];
+              validAnswers[i] = validAnswers[j];
+              validAnswers[j] = tmp;
+            }
           }
 
           validAnswers.forEach((answerItem) => {
@@ -15334,16 +15616,22 @@ $sessionPayload = [
         const normalizeQuestions = (list) => {
           if (!Array.isArray(list)) return [];
           return list
-            .map((item) => ({
-              code: String(item?.code ?? '').trim(),
-              type: String(item?.type ?? 'mcq').toLowerCase() === 'percentage' ? 'percentage' : 'mcq',
-              question: String(item?.question ?? '').trim(),
-              answers: Array.isArray(item?.answers) ? item.answers.slice(0, 4).map((ans) => String(ans ?? '').trim()) : []
-            }))
+            .map((item) => {
+              const rawType = String(item?.type ?? 'mcq').trim().toLowerCase();
+              const type = rawType === 'percentage' ? 'percentage' : (['shared_mcq', 'shared-mcq', 'shared mcq'].includes(rawType) ? 'shared_mcq' : 'mcq');
+              const answerCount = type === 'shared_mcq' ? 5 : 4;
+              return {
+                code: String(item?.code ?? '').trim(),
+                type,
+                question: String(item?.question ?? '').trim(),
+                answers: Array.isArray(item?.answers) ? item.answers.slice(0, answerCount).map((ans) => String(ans ?? '').trim()) : []
+              };
+            })
             .filter((item) => {
               if (!item.code || !item.question) return false;
               if (item.type === 'percentage') return true;
-              return item.answers.length >= 4 && item.answers.slice(0, 4).every((ans) => ans !== '');
+              const required = item.type === 'shared_mcq' ? 5 : 4;
+              return item.answers.length >= required && item.answers.slice(0, required).every((ans) => ans !== '');
             });
         };
 
@@ -15385,6 +15673,13 @@ $sessionPayload = [
               button.dataset.taskCompleted = '1';
               button.dataset.taskUserScore = String(Number.parseInt(progress?.score ?? 0, 10) || 0);
               setTaskButtonState(button, 'completed');
+              if (isSharedAnswersTaskType(payload?.task?.taskType || button?.dataset?.taskType || 'quiz')) {
+                currentTaskId = taskId;
+                currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'پاسخ شما').trim();
+                closeTaskResultDialog();
+                openSharedResponseTaskView(currentTaskTitle, payload?.task?.sharedResponse || {});
+                return;
+              }
               openTaskResultDialog(progress?.score ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
               return;
             }
@@ -15456,7 +15751,7 @@ $sessionPayload = [
                 ?? 0
               ), 10) || 0
             );
-            currentQuizScoreMode = ['answered_all', 'conditional_inner'].includes(String(payload?.settings?.scoreMode ?? '').trim().toLowerCase())
+            currentQuizScoreMode = ['answered_all', 'conditional_inner', 'survey_inner'].includes(String(payload?.settings?.scoreMode ?? '').trim().toLowerCase())
               ? String(payload?.settings?.scoreMode ?? '').trim().toLowerCase()
               : 'threshold';
             currentRequiredCorrectAnswers = Math.max(

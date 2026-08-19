@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
@@ -25,7 +27,9 @@ const TCQ_DEFAULT_SETTINGS = [
   'answerTimeLimitMs' => 14000,
   'randomOrder' => true,
   'questionsPerAttempt' => 0,
-  'correctAnswersToScore' => 1
+  'correctAnswersToScore' => 1,
+  'sharedAnswers' => ['', '', '', '', ''],
+  'sharedAnswerScores' => [0, 0, 0, 0, 0]
 ];
 
 function tcqDefaultAnswerTimeLimitMs(bool $isConditionalQuizTask): int
@@ -50,11 +54,11 @@ function tcqReadCsv(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -62,7 +66,7 @@ function tcqReadCsv(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = $row;
   }
   flock($handle, LOCK_UN);
@@ -79,7 +83,7 @@ function tcqWriteCsv(string $path, array $rows): bool
   if (!is_dir($dir)) {
     mkdir($dir, 0777, true);
   }
-  $handle = fopen($path, 'c+');
+  $handle = tcDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -93,7 +97,7 @@ function tcqWriteCsv(string $path, array $rows): bool
     return false;
   }
   foreach ($rows as $row) {
-    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+    if (fputcsv($handle, is_array($row) ? $row : [], ',', '"', '\\') === false) {
       flock($handle, LOCK_UN);
       fclose($handle);
       return false;
@@ -130,7 +134,7 @@ function tcqEnsureInviteesColumns(string $path): bool
     return false;
   }
   $header = $rows[0];
-  $required = ['count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered'];
+  $required = ['count of rolls', 'invitees', 'prize won', 'answers', 'inner score', 'score', 'Answered'];
   $changed = false;
   foreach ($required as $columnName) {
     $idx = tcqFindHeaderIndex($header, $columnName);
@@ -168,19 +172,38 @@ function tcqNormalizeScoreValue($value): int
   return $number > 0 ? $number : 0;
 }
 
-function tcqNormalizeItem(array $item, bool $includeQuestionScores = true): array
+function tcqNormalizeSharedAnswers($value): array
 {
-  $type = trim(mb_strtolower((string)($item['type'] ?? 'mcq'), 'UTF-8'));
-  if ($type !== 'percentage') {
+  $answers = is_array($value) ? array_values($value) : [];
+  while (count($answers) < 5) $answers[] = '';
+  return array_map(static fn($entry) => trim((string)$entry), array_slice($answers, 0, 5));
+}
+
+function tcqNormalizeSharedAnswerScores($value): array
+{
+  $scores = is_array($value) ? array_values($value) : [];
+  while (count($scores) < 5) $scores[] = 0;
+  return array_map(static fn($entry): int => tcqNormalizeScoreValue($entry), array_slice($scores, 0, 5));
+}
+
+function tcqNormalizeItem(array $item, bool $includeQuestionScores = true, bool $sharedAnswersTask = false, array $sharedAnswers = []): array
+{
+  $type = $sharedAnswersTask ? 'shared_mcq' : trim(mb_strtolower((string)($item['type'] ?? 'mcq'), 'UTF-8'));
+  if (!$sharedAnswersTask && $type !== 'percentage') {
     $type = 'mcq';
   }
   $answers = is_array($item['answers'] ?? null) ? array_values($item['answers']) : [];
-  while (count($answers) < 4) {
-    $answers[] = '';
-  }
-  $answers = array_slice($answers, 0, 4);
-  if ($type === 'percentage') {
+  if ($type === 'shared_mcq') {
+    $storedAnswers = tcqNormalizeSharedAnswers($answers);
+    $configuredAnswers = tcqNormalizeSharedAnswers($sharedAnswers);
+    $answers = count(array_filter($configuredAnswers, static fn(string $value): bool => $value !== '')) > 0
+      ? $configuredAnswers
+      : $storedAnswers;
+  } elseif ($type === 'percentage') {
     $answers = ['', '', '', ''];
+  } else {
+    while (count($answers) < 4) $answers[] = '';
+    $answers = array_slice($answers, 0, 4);
   }
   return [
     'id' => trim((string)($item['id'] ?? '')) ?: ('q_' . bin2hex(random_bytes(6))),
@@ -194,12 +217,12 @@ function tcqNormalizeItem(array $item, bool $includeQuestionScores = true): arra
   ];
 }
 
-function tcqLoadStore(string $path, bool $includeQuestionScores = true): array
+function tcqLoadStore(string $path, bool $includeQuestionScores = true, bool $sharedAnswersTask = false, array $sharedAnswers = []): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -210,7 +233,7 @@ function tcqLoadStore(string $path, bool $includeQuestionScores = true): array
   $items = [];
   foreach ($decoded as $row) {
     if (is_array($row)) {
-      $items[] = tcqNormalizeItem($row, $includeQuestionScores);
+      $items[] = tcqNormalizeItem($row, $includeQuestionScores, $sharedAnswersTask, $sharedAnswers);
     }
   }
   return $items;
@@ -226,17 +249,17 @@ function tcqSaveStore(string $path, array $rows): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tcqLoadSettings(string $path, int $defaultAnswerTimeLimitMs = 14000): array
 {
   $settings = TCQ_DEFAULT_SETTINGS;
   $settings['answerTimeLimitMs'] = $defaultAnswerTimeLimitMs;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $settings;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $settings;
   }
@@ -252,6 +275,8 @@ function tcqLoadSettings(string $path, int $defaultAnswerTimeLimitMs = 14000): a
   $settings['correctAnswersToScore'] = $storedCorrectAnswersToScore > 0
     ? $storedCorrectAnswersToScore
     : (int)$settings['correctAnswersToScore'];
+  $settings['sharedAnswers'] = tcqNormalizeSharedAnswers($decoded['sharedAnswers'] ?? ($decoded['shared_answers'] ?? []));
+  $settings['sharedAnswerScores'] = tcqNormalizeSharedAnswerScores($decoded['sharedAnswerScores'] ?? ($decoded['shared_answer_scores'] ?? []));
   return $settings;
 }
 
@@ -265,7 +290,9 @@ function tcqSaveSettings(string $path, array $settings, bool $includeCorrectAnsw
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
     'answerTimeLimitMs' => tcqNormalizeAnswerTimeLimitMs($settings['answerTimeLimitMs'] ?? 14000, 14000),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
-    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0))
+    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0)),
+    'sharedAnswers' => tcqNormalizeSharedAnswers($settings['sharedAnswers'] ?? []),
+    'sharedAnswerScores' => tcqNormalizeSharedAnswerScores($settings['sharedAnswerScores'] ?? [])
   ];
   if ($includeCorrectAnswersToScore) {
     $payload['correctAnswersToScore'] = max(1, (int)($settings['correctAnswersToScore'] ?? 1));
@@ -274,7 +301,7 @@ function tcqSaveSettings(string $path, array $settings, bool $includeCorrectAnsw
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tcqSettingsForTaskType(array $settings, bool $includeCorrectAnswersToScore = true): array
@@ -283,7 +310,9 @@ function tcqSettingsForTaskType(array $settings, bool $includeCorrectAnswersToSc
     'answerTimeLimit' => (bool)($settings['answerTimeLimit'] ?? true),
     'answerTimeLimitMs' => tcqNormalizeAnswerTimeLimitMs($settings['answerTimeLimitMs'] ?? 14000, 14000),
     'randomOrder' => (bool)($settings['randomOrder'] ?? true),
-    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0))
+    'questionsPerAttempt' => max(0, (int)($settings['questionsPerAttempt'] ?? 0)),
+    'sharedAnswers' => tcqNormalizeSharedAnswers($settings['sharedAnswers'] ?? []),
+    'sharedAnswerScores' => tcqNormalizeSharedAnswerScores($settings['sharedAnswerScores'] ?? [])
   ];
   if ($includeCorrectAnswersToScore) {
     $payload['correctAnswersToScore'] = max(1, (int)($settings['correctAnswersToScore'] ?? 1));
@@ -293,10 +322,10 @@ function tcqSettingsForTaskType(array $settings, bool $includeCorrectAnswersToSc
 
 function tcqLoadCodeState(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return ['nextNumber' => 1];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return ['nextNumber' => 1];
   }
@@ -322,7 +351,7 @@ function tcqSaveCodeState(string $path, array $state): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tcqNormalizeTaskTagCode(string $value): string
@@ -338,15 +367,18 @@ function tcqNormalizeTaskType(string $value): string
   if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
     return 'conditional_quiz';
   }
+  if (in_array($token, ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz', 'survey_score_response', 'survey-score-response', 'survey score response', 'survey score'], true)) {
+    return 'shared_answers_quiz';
+  }
   return 'quiz';
 }
 
 function tcqReadTasksStore(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -477,8 +509,58 @@ function tcqExtractCodeFromAnswerHeader(string $headerCell): string
   return strtoupper(trim((string)$m[1]));
 }
 
-function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newItems, bool $includeQuestionScores = true): bool
+function tcqFormatPureAnswerQuestionToken(string $questionCode): string
 {
+  $normalizedCode = strtoupper(trim($questionCode));
+  if (preg_match('/^Q0*(\d+)$/', $normalizedCode, $matches)) {
+    return (string)((int)($matches[1] ?? 0));
+  }
+  return $normalizedCode;
+}
+
+function tcqBuildSharedAnswersSummaryFromLegacyRow(array $header, array $row): string
+{
+  $parts = [];
+  foreach ($header as $index => $name) {
+    if ((int)$index === 0) continue;
+    $code = tcqExtractCodeFromAnswerHeader((string)$name);
+    $answer = trim((string)($row[$index] ?? ''));
+    $token = tcqFormatPureAnswerQuestionToken($code);
+    if ($token !== '' && $answer !== '') $parts[] = $token . '::' . $answer;
+  }
+  return implode(', ', $parts);
+}
+
+function tcqSyncSharedAnswersSheet(string $answersPath): bool
+{
+  $rows = tcqReadCsv($answersPath);
+  $header = isset($rows[0]) && is_array($rows[0]) ? $rows[0] : ['Work ID'];
+  $workIdIndex = tcqFindHeaderIndex($header, 'Work ID');
+  if ($workIdIndex < 0) {
+    $header = array_merge(['Work ID'], array_values($header));
+    $workIdIndex = 0;
+  }
+  $answersIndex = tcqFindHeaderIndex($header, 'answers');
+  $innerScoreIndex = tcqFindHeaderIndex($header, 'inner score');
+  $syncedRows = [['Work ID', 'answers', 'inner score']];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i]) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') continue;
+    $answersValue = $answersIndex >= 0
+      ? trim((string)($row[$answersIndex] ?? ''))
+      : tcqBuildSharedAnswersSummaryFromLegacyRow($header, $row);
+    $innerScoreValue = $innerScoreIndex >= 0 ? trim((string)($row[$innerScoreIndex] ?? '')) : '';
+    $syncedRows[] = [$workId, $answersValue, $innerScoreValue];
+  }
+  return tcqWriteCsv($answersPath, $syncedRows);
+}
+
+function tcqSyncAnswersSheet(string $answersPath, array $oldItems, array $newItems, bool $includeQuestionScores = true, bool $sharedAnswersTask = false): bool
+{
+  if ($sharedAnswersTask) {
+    return tcqSyncSharedAnswersSheet($answersPath);
+  }
   $rows = tcqReadCsv($answersPath);
   $header = isset($rows[0]) && is_array($rows[0]) ? $rows[0] : ['Work ID'];
   $workIdIndex = tcqFindHeaderIndex($header, 'Work ID');
@@ -587,6 +669,7 @@ if ($tcqRequestedTaskId !== '') {
 }
 
 $tcqIsConditionalQuizTask = $tcqTaskType === 'conditional_quiz';
+$tcqIsSharedAnswersTask = $tcqTaskType === 'shared_answers_quiz';
 
 if ($tcqTaskLookupFailed) {
   if (!TCQ_INCLUDE_ONLY && $tcqIsJsonRequest) {
@@ -615,7 +698,13 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       echo json_encode(['status' => 'error', 'message' => 'Failed to prepare invitees CSV columns.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    $items = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask);
+    $settings = tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask)), !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask);
+    if ($tcqIsSharedAnswersTask) {
+      $settings['answerTimeLimit'] = false;
+      $settings['randomOrder'] = false;
+      $settings['questionsPerAttempt'] = 0;
+    }
+    $items = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask, $tcqIsSharedAnswersTask, $settings['sharedAnswers'] ?? []);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
     $usedCodes = [];
     $repaired = [];
@@ -630,11 +719,10 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
         exit;
       }
     }
-    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $items, $items, !$tcqIsConditionalQuizTask)) {
+    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $items, $items, !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask, $tcqIsSharedAnswersTask)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to sync Answers.csv with questions.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    $settings = tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask)), !$tcqIsConditionalQuizTask);
     echo json_encode(['status' => 'ok', 'items' => $items, 'settings' => $settings], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -645,32 +733,40 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
     $randomOrderRaw = trim((string)($_POST['random_order'] ?? '1'));
     $questionsPerAttemptRaw = trim((string)($_POST['questions_per_attempt'] ?? '0'));
     $correctAnswersToScoreRaw = trim((string)($_POST['correct_answers_to_score'] ?? '1'));
-    if (!preg_match('/^\d+$/', $answerTimeLimitMsRaw) || !preg_match('/^\d+$/', $questionsPerAttemptRaw) || (!$tcqIsConditionalQuizTask && !preg_match('/^\d+$/', $correctAnswersToScoreRaw))) {
+    $sharedAnswers = json_decode((string)($_POST['shared_answers_json'] ?? '[]'), true);
+    $sharedAnswerScores = json_decode((string)($_POST['shared_answer_scores_json'] ?? '[]'), true);
+    if (!preg_match('/^\d+$/', $answerTimeLimitMsRaw) || !preg_match('/^\d+$/', $questionsPerAttemptRaw) || (!$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask && !preg_match('/^\d+$/', $correctAnswersToScoreRaw))) {
       echo json_encode(['status' => 'error', 'message' => 'Time and question count settings must be numeric.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $answerTimeLimitMs = tcqNormalizeAnswerTimeLimitMs($answerTimeLimitMsRaw, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask));
     $questionsPerAttempt = max(0, (int)$questionsPerAttemptRaw);
-    $correctAnswersToScore = $tcqIsConditionalQuizTask ? 0 : max(1, (int)$correctAnswersToScoreRaw);
-    if (!$tcqIsConditionalQuizTask && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
+    $correctAnswersToScore = ($tcqIsConditionalQuizTask || $tcqIsSharedAnswersTask) ? 0 : max(1, (int)$correctAnswersToScoreRaw);
+    if (!$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask && $questionsPerAttempt > 0 && $correctAnswersToScore > $questionsPerAttempt) {
       echo json_encode(['status' => 'error', 'message' => 'Required correct answers cannot be greater than questions per attempt.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $settings = [
-      'answerTimeLimit' => in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
+      'answerTimeLimit' => $tcqIsSharedAnswersTask ? false : in_array($answerTimeLimitRaw, ['1', 'true', 'on'], true),
       'answerTimeLimitMs' => $answerTimeLimitMs,
-      'randomOrder' => in_array($randomOrderRaw, ['1', 'true', 'on'], true),
-      'questionsPerAttempt' => $questionsPerAttempt,
-      'correctAnswersToScore' => $correctAnswersToScore
+      'randomOrder' => $tcqIsSharedAnswersTask ? false : in_array($randomOrderRaw, ['1', 'true', 'on'], true),
+      'questionsPerAttempt' => $tcqIsSharedAnswersTask ? 0 : $questionsPerAttempt,
+      'correctAnswersToScore' => $correctAnswersToScore,
+      'sharedAnswers' => tcqNormalizeSharedAnswers(is_array($sharedAnswers) ? $sharedAnswers : []),
+      'sharedAnswerScores' => tcqNormalizeSharedAnswerScores(is_array($sharedAnswerScores) ? $sharedAnswerScores : [])
     ];
-    if (!tcqSaveSettings($tcqSettingsPath, $settings, !$tcqIsConditionalQuizTask)) {
+    if ($tcqIsSharedAnswersTask && count(array_filter($settings['sharedAnswers'], static fn(string $value): bool => $value !== '')) !== 5) {
+      echo json_encode(['status' => 'error', 'message' => 'All 5 shared answers are required.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!tcqSaveSettings($tcqSettingsPath, $settings, !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to save general settings.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     echo json_encode([
       'status' => 'ok',
       'message' => 'General settings saved.',
-      'settings' => tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask)), !$tcqIsConditionalQuizTask)
+      'settings' => tcqSettingsForTaskType(tcqLoadSettings($tcqSettingsPath, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask)), !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask)
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -687,7 +783,9 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       exit;
     }
 
-    $oldItems = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask);
+    $storedSettings = tcqLoadSettings($tcqSettingsPath, tcqDefaultAnswerTimeLimitMs($tcqIsConditionalQuizTask));
+    $sharedAnswers = tcqNormalizeSharedAnswers($storedSettings['sharedAnswers'] ?? []);
+    $oldItems = tcqLoadStore($tcqStorePath, !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask, $tcqIsSharedAnswersTask, $sharedAnswers);
     $codeState = tcqLoadCodeState($tcqCodeStatePath);
     $oldCodeState = $codeState;
     $usedCodes = [];
@@ -697,7 +795,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
         echo json_encode(['status' => 'error', 'message' => 'Invalid row data.'], JSON_UNESCAPED_UNICODE);
         exit;
       }
-      $item = tcqNormalizeItem($row, !$tcqIsConditionalQuizTask);
+      $item = tcqNormalizeItem($row, !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask, $tcqIsSharedAnswersTask, $sharedAnswers);
       if ($item['question'] === '') {
         $num = $index + 1;
         echo json_encode(['status' => 'error', 'message' => "Question in row {$num} is required."], JSON_UNESCAPED_UNICODE);
@@ -711,6 +809,10 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
             exit;
           }
         }
+      }
+      if (($item['type'] ?? '') === 'shared_mcq' && count(array_filter($item['answers'], static fn(string $value): bool => $value !== '')) !== 5) {
+        echo json_encode(['status' => 'error', 'message' => 'Save all 5 shared answers before adding survey questions.'], JSON_UNESCAPED_UNICODE);
+        exit;
       }
       $item['code'] = tcqReserveOrCreateCode((string)($item['code'] ?? ''), $usedCodes, $codeState);
       $items[] = $item;
@@ -728,7 +830,7 @@ if (!TCQ_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && is
       }
       exit;
     }
-    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $oldItems, $items, !$tcqIsConditionalQuizTask)) {
+    if (!tcqSyncAnswersSheet($tcqAnswersCsvPath, $oldItems, $items, !$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask, $tcqIsSharedAnswersTask)) {
       $storeRolledBack = tcqSaveStore($tcqStorePath, $oldItems);
       $codeStateRolledBack = tcqSaveCodeState($tcqCodeStatePath, $oldCodeState);
       if (!$storeRolledBack || !$codeStateRolledBack) {
@@ -753,8 +855,8 @@ if (TCQ_INCLUDE_ONLY) {
 $tcqEmbeddedInPanel = defined('TCQ_EMBEDDED_IN_PANEL') && TCQ_EMBEDDED_IN_PANEL === true;
 $tcqStandaloneCoreCssHref = '../../style/styles.css';
 $tcqStandalonePanelCssHref = 'tc-panel.css';
-$tcqStandaloneCoreCssVersion = @filemtime(__DIR__ . '/../../style/styles.css');
-$tcqStandalonePanelCssVersion = @filemtime(__DIR__ . '/tc-panel.css');
+$tcqStandaloneCoreCssVersion = @tcDbFilemtime(__DIR__ . '/../../style/styles.css');
+$tcqStandalonePanelCssVersion = @tcDbFilemtime(__DIR__ . '/tc-panel.css');
 if (is_int($tcqStandaloneCoreCssVersion) && $tcqStandaloneCoreCssVersion > 0) {
   $tcqStandaloneCoreCssHref .= '?v=' . rawurlencode((string)$tcqStandaloneCoreCssVersion);
 }
@@ -779,6 +881,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     <h3>General Setting</h3>
   </div>
   <div class="tcq-settings-grid">
+    <?php if (!$tcqIsSharedAnswersTask): ?>
     <label class="tcq-settings-row">
       <span>Answer Time Limit</span>
       <input id="tcq-setting-answer-time-limit" type="checkbox" checked />
@@ -801,6 +904,18 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <input id="tcq-setting-correct-answers-to-score" type="number" min="1" step="1" value="1" />
     </label>
     <?php endif; ?>
+    <?php else: ?>
+      <?php for ($tcqSharedIndex = 1; $tcqSharedIndex <= 5; $tcqSharedIndex += 1): ?>
+      <label class="tcq-settings-row">
+        <span>Shared Answer <?= $tcqSharedIndex ?></span>
+        <input data-tcq-shared-answer="<?= $tcqSharedIndex - 1 ?>" type="text" autocomplete="off" />
+      </label>
+      <label class="tcq-settings-row">
+        <span>Inner Score <?= $tcqSharedIndex ?></span>
+        <input data-tcq-shared-answer-score="<?= $tcqSharedIndex - 1 ?>" type="number" min="0" step="1" value="0" />
+      </label>
+      <?php endfor; ?>
+    <?php endif; ?>
   </div>
   <div class="tcq-settings-actions">
     <button id="tcq-save-settings" type="button" class="btn primary">Save General Settings</button>
@@ -814,7 +929,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   </div>
 
   <form id="tcq-form" class="form" style="gap:12px;">
-    <label class="field standard-width">
+    <label class="field standard-width <?= $tcqIsSharedAnswersTask ? 'tcq-hidden' : '' ?>">
       <span>Question Type</span>
       <div class="tcq-type-group">
         <label class="tcq-type-option">
@@ -832,7 +947,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       <span>Question</span>
       <input id="tcq-question-input" name="question" type="text" autocomplete="off" required />
     </label>
-    <?php if (!$tcqIsConditionalQuizTask): ?>
+    <?php if (!$tcqIsConditionalQuizTask && !$tcqIsSharedAnswersTask): ?>
     <div class="form grid tcq-score-grid">
       <label class="field standard-width">
         <span>Active Duration (Golden Time) Score</span>
@@ -845,22 +960,22 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     </div>
     <p class="muted small">These per-question scores are used when Proportional Score Mode is enabled.</p>
     <?php endif; ?>
-    <div id="tcq-answer-grid" class="form grid tcq-answer-grid">
+    <div id="tcq-answer-grid" class="form grid tcq-answer-grid <?= $tcqIsSharedAnswersTask ? 'tcq-hidden' : '' ?>">
       <label class="field standard-width">
         <span>Answer 1 (Correct)</span>
-        <input id="tcq-answer-1" name="answer1" type="text" autocomplete="off" required />
+        <input id="tcq-answer-1" name="answer1" type="text" autocomplete="off" <?= $tcqIsSharedAnswersTask ? '' : 'required' ?> />
       </label>
       <label class="field standard-width">
         <span>Answer 2</span>
-        <input id="tcq-answer-2" name="answer2" type="text" autocomplete="off" required />
+        <input id="tcq-answer-2" name="answer2" type="text" autocomplete="off" <?= $tcqIsSharedAnswersTask ? '' : 'required' ?> />
       </label>
       <label class="field standard-width">
         <span>Answer 3</span>
-        <input id="tcq-answer-3" name="answer3" type="text" autocomplete="off" required />
+        <input id="tcq-answer-3" name="answer3" type="text" autocomplete="off" <?= $tcqIsSharedAnswersTask ? '' : 'required' ?> />
       </label>
       <label class="field standard-width">
         <span>Answer 4</span>
-        <input id="tcq-answer-4" name="answer4" type="text" autocomplete="off" required />
+        <input id="tcq-answer-4" name="answer4" type="text" autocomplete="off" <?= $tcqIsSharedAnswersTask ? '' : 'required' ?> />
       </label>
     </div>
     <div class="field full">
@@ -904,6 +1019,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   ); ?>;
   const csrfToken = <?= json_encode($tcqCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const isConditionalQuizTask = <?= $tcqIsConditionalQuizTask ? 'true' : 'false'; ?>;
+  const isSharedAnswersTask = <?= $tcqIsSharedAnswersTask ? 'true' : 'false'; ?>;
   const form = document.getElementById('tcq-form');
   const input = document.getElementById('tcq-question-input');
   const body = document.getElementById('tcq-list-body');
@@ -919,6 +1035,8 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const formAnswerGrid = document.getElementById('tcq-answer-grid');
   const formActiveDurationScoreInput = document.getElementById('tcq-active-duration-score-input');
   const formGoldenTimeEndedScoreInput = document.getElementById('tcq-golden-time-ended-score-input');
+  const sharedAnswerInputs = Array.from(document.querySelectorAll('[data-tcq-shared-answer]'));
+  const sharedAnswerScoreInputs = Array.from(document.querySelectorAll('[data-tcq-shared-answer-score]'));
   if (
     !form
     || !input
@@ -926,13 +1044,15 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     || !statusEl
     || !saveAllBtn
     || !formAnswerGrid
-    || (!isConditionalQuizTask && !(formActiveDurationScoreInput instanceof HTMLInputElement))
-    || (!isConditionalQuizTask && !(formGoldenTimeEndedScoreInput instanceof HTMLInputElement))
+    || (!isConditionalQuizTask && !isSharedAnswersTask && !(formActiveDurationScoreInput instanceof HTMLInputElement))
+    || (!isConditionalQuizTask && !isSharedAnswersTask && !(formGoldenTimeEndedScoreInput instanceof HTMLInputElement))
   ) return;
   const formTypeInputs = form.querySelectorAll('input[name="questionType"]');
   const formAnswerInputs = form.querySelectorAll('input[name="answer1"], input[name="answer2"], input[name="answer3"], input[name="answer4"]');
 
   let items = [];
+  let sharedAnswers = ['', '', '', '', ''];
+  let sharedAnswerScores = [0, 0, 0, 0, 0];
   let draggedRowId = '';
   const defaultAnswerTimeLimitMs = isConditionalQuizTask ? 30000 : 14000;
 
@@ -944,7 +1064,9 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     .replace(/'/g, '&#39;');
 
   const makeId = () => `q_${Math.random().toString(36).slice(2, 10)}`;
-  const normalizeType = (value) => String(value ?? '').toLowerCase() === 'percentage' ? 'percentage' : 'mcq';
+  const normalizeType = (value) => isSharedAnswersTask
+    ? 'shared_mcq'
+    : (String(value ?? '').toLowerCase() === 'percentage' ? 'percentage' : 'mcq');
   const normalizeScoreValue = (value) => {
     const parsed = Number.parseInt(String(value ?? '').trim(), 10);
     if (!Number.isFinite(parsed) || parsed < 0) {
@@ -968,24 +1090,28 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     answerTimeLimitMsInput.setAttribute('aria-disabled', enabled ? 'false' : 'true');
   };
 
-  const normalizeAnswers = (list) => {
-    const answers = Array.isArray(list) ? list.slice(0, 4) : [];
-    while (answers.length < 4) answers.push('');
+  const normalizeAnswers = (list, count = 4) => {
+    const answers = Array.isArray(list) ? list.slice(0, count) : [];
+    while (answers.length < count) answers.push('');
     return answers.map((v) => String(v ?? ''));
   };
+
+  const normalizeSharedAnswers = (list) => normalizeAnswers(list, 5);
+  const normalizeSharedAnswerScores = (list) => normalizeAnswers(list, 5).map((value) => normalizeScoreValue(value));
 
   const normalizeItemRecord = (item = {}) => ({
     id: String(item.id || makeId()),
     code: String(item.code || ''),
     type: normalizeType(item.type),
     question: String(item.question || ''),
-    answers: normalizeAnswers(item.answers),
-    activeDurationScore: isConditionalQuizTask ? 0 : normalizeScoreValue(item.activeDurationScore ?? item.active_duration_score ?? item.score ?? 0),
-    goldenTimeEndedScore: isConditionalQuizTask ? 0 : normalizeScoreValue(item.goldenTimeEndedScore ?? item.golden_time_ended_score ?? item.afterEndtimeScore ?? item.after_endtime_score ?? 0),
+    answers: isSharedAnswersTask ? normalizeSharedAnswers(item.answers ?? sharedAnswers) : normalizeAnswers(item.answers),
+    activeDurationScore: (isConditionalQuizTask || isSharedAnswersTask) ? 0 : normalizeScoreValue(item.activeDurationScore ?? item.active_duration_score ?? item.score ?? 0),
+    goldenTimeEndedScore: (isConditionalQuizTask || isSharedAnswersTask) ? 0 : normalizeScoreValue(item.goldenTimeEndedScore ?? item.golden_time_ended_score ?? item.afterEndtimeScore ?? item.after_endtime_score ?? 0),
     createdAt: String(item.createdAt || '')
   });
 
   const getSelectedType = () => {
+    if (isSharedAnswersTask) return 'shared_mcq';
     const selected = form.querySelector('input[name="questionType"]:checked');
     return normalizeType(selected ? selected.value : 'mcq');
   };
@@ -993,9 +1119,9 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   const syncAddFormTypeState = () => {
     const type = getSelectedType();
     const isMcq = type === 'mcq';
-    formAnswerGrid.classList.toggle('tcq-hidden', !isMcq);
+    formAnswerGrid.classList.toggle('tcq-hidden', !isMcq || isSharedAnswersTask);
     formAnswerInputs.forEach((field) => {
-      field.required = isMcq;
+      field.required = isMcq && !isSharedAnswersTask;
       if (!isMcq) {
         field.value = '';
       }
@@ -1014,12 +1140,20 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   };
 
   const applySettingsToForm = (settings) => {
+    sharedAnswers = normalizeSharedAnswers(settings?.sharedAnswers ?? settings?.shared_answers ?? sharedAnswers);
+    sharedAnswerScores = normalizeSharedAnswerScores(settings?.sharedAnswerScores ?? settings?.shared_answer_scores ?? sharedAnswerScores);
+    sharedAnswerInputs.forEach((field, index) => { field.value = sharedAnswers[index] ?? ''; });
+    sharedAnswerScoreInputs.forEach((field, index) => { field.value = String(sharedAnswerScores[index] ?? 0); });
+    if (isSharedAnswersTask) {
+      items = items.map((item) => ({ ...item, type: 'shared_mcq', answers: normalizeSharedAnswers(sharedAnswers) }));
+      return;
+    }
     if (
       !(answerTimeLimitToggle instanceof HTMLInputElement)
       || !(answerTimeLimitMsInput instanceof HTMLInputElement)
       || !(randomOrderToggle instanceof HTMLInputElement)
       || !(questionsPerAttemptInput instanceof HTMLInputElement)
-      || (!isConditionalQuizTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
+      || (!isConditionalQuizTask && !isSharedAnswersTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
     ) {
       return;
     }
@@ -1034,13 +1168,20 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
   };
 
   const validateAll = () => {
+    if (isSharedAnswersTask && normalizeSharedAnswers(sharedAnswers).some((answer) => !String(answer).trim())) {
+      return 'All 5 shared answers are required.';
+    }
     for (let i = 0; i < items.length; i += 1) {
       const row = items[i];
       if (!String(row.question || '').trim()) {
         return `Question in row ${i + 1} is required.`;
       }
       const type = normalizeType(row.type);
-      if (type === 'mcq') {
+      if (type === 'shared_mcq') {
+        if (normalizeSharedAnswers(row.answers).some((answer) => !String(answer).trim())) {
+          return `All 5 shared answers are required for row ${i + 1}.`;
+        }
+      } else if (type === 'mcq') {
         const answers = normalizeAnswers(row.answers);
         if (answers.some((ans) => !String(ans).trim())) {
           return `All 4 answers in row ${i + 1} are required for MCQ.`;
@@ -1059,13 +1200,14 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
     body.innerHTML = items.map((item, index) => {
       const type = normalizeType(item.type);
       const isMcq = type === 'mcq';
-      const answers = normalizeAnswers(item.answers);
+      const isSharedMcq = type === 'shared_mcq';
+      const answers = isSharedMcq ? normalizeSharedAnswers(sharedAnswers) : normalizeAnswers(item.answers);
       return `<tr data-row-id="${esc(item.id)}" draggable="true">
         <td>${index + 1}</td>
         <td>
           <div class="tcq-row-grid">
             <div class="muted small">Code: ${esc(item.code || 'Auto')}</div>
-            <div class="tcq-type-group">
+            ${isSharedMcq ? '<div class="muted small">Type: Survey Score Response</div>' : `<div class="tcq-type-group">
               <label class="tcq-type-option">
                 <input type="radio" name="row-type-${esc(item.id)}" data-field="type" value="mcq" ${isMcq ? 'checked' : ''} />
                 <span>MCQ</span>
@@ -1074,9 +1216,10 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
                 <input type="radio" name="row-type-${esc(item.id)}" data-field="type" value="percentage" ${!isMcq ? 'checked' : ''} />
                 <span>Percentage Question</span>
               </label>
-            </div>
+            </div>`}
             <input class="tcq-field" type="text" data-field="question" value="${esc(item.question)}" />
-            ${isConditionalQuizTask ? '' : `<div class="form grid tcq-score-grid">
+            ${isSharedMcq ? `<div class="muted small">${answers.map((answer, answerIndex) => `${answerIndex + 1}. ${esc(answer)}`).join(' | ')}</div>` : ''}
+            ${(isConditionalQuizTask || isSharedAnswersTask) ? '' : `<div class="form grid tcq-score-grid">
               <label class="field standard-width">
                 <span>Active Duration (Golden Time) Score</span>
                 <input class="tcq-field" type="number" min="0" step="1" data-field="activeDurationScore" value="${esc(String(normalizeScoreValue(item.activeDurationScore)))}" />
@@ -1086,7 +1229,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
                 <input class="tcq-field" type="number" min="0" step="1" data-field="goldenTimeEndedScore" value="${esc(String(normalizeScoreValue(item.goldenTimeEndedScore)))}" />
               </label>
             </div>`}
-            <div class="tcq-answer-grid ${isMcq ? '' : 'tcq-hidden'}">
+            <div class="tcq-answer-grid ${isMcq && !isSharedMcq ? '' : 'tcq-hidden'}">
               <input class="tcq-field" type="text" data-field="answer0" value="${esc(answers[0])}" ${isMcq ? '' : 'disabled'} />
               <input class="tcq-field" type="text" data-field="answer1" value="${esc(answers[1])}" ${isMcq ? '' : 'disabled'} />
               <input class="tcq-field" type="text" data-field="answer2" value="${esc(answers[2])}" ${isMcq ? '' : 'disabled'} />
@@ -1189,14 +1332,14 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       code: '',
       type,
       question: String(fd.get('question') ?? '').trim(),
-      answers: type === 'mcq' ? [
+      answers: type === 'shared_mcq' ? normalizeSharedAnswers(sharedAnswers) : (type === 'mcq' ? [
         String(fd.get('answer1') ?? '').trim(),
         String(fd.get('answer2') ?? '').trim(),
         String(fd.get('answer3') ?? '').trim(),
         String(fd.get('answer4') ?? '').trim()
-      ] : ['', '', '', ''],
-      activeDurationScore: isConditionalQuizTask ? 0 : normalizeScoreValue(fd.get('activeDurationScore') ?? 0),
-      goldenTimeEndedScore: isConditionalQuizTask ? 0 : normalizeScoreValue(fd.get('goldenTimeEndedScore') ?? 0),
+      ] : ['', '', '', '']),
+      activeDurationScore: (isConditionalQuizTask || isSharedAnswersTask) ? 0 : normalizeScoreValue(fd.get('activeDurationScore') ?? 0),
+      goldenTimeEndedScore: (isConditionalQuizTask || isSharedAnswersTask) ? 0 : normalizeScoreValue(fd.get('goldenTimeEndedScore') ?? 0),
       createdAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
     };
     if (!next.question) {
@@ -1353,12 +1496,42 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
 
   if (saveSettingsBtn instanceof HTMLButtonElement) {
     saveSettingsBtn.addEventListener('click', async () => {
+      if (isSharedAnswersTask) {
+        const nextAnswers = normalizeSharedAnswers(sharedAnswerInputs.map((field) => field.value));
+        const nextScores = normalizeSharedAnswerScores(sharedAnswerScoreInputs.map((field) => field.value));
+        if (nextAnswers.some((answer) => !String(answer).trim())) {
+          setSettingsStatus('All 5 shared answers are required.', true);
+          return;
+        }
+        saveSettingsBtn.disabled = true;
+        try {
+          const data = await postAction('save_settings', {
+            answer_time_limit: '0',
+            answer_time_limit_ms: '14000',
+            random_order: '0',
+            questions_per_attempt: '0',
+            correct_answers_to_score: '0',
+            shared_answers_json: JSON.stringify(nextAnswers),
+            shared_answer_scores_json: JSON.stringify(nextScores)
+          });
+          applySettingsToForm(data.settings || {});
+          items = items.map((item) => ({ ...item, type: 'shared_mcq', answers: normalizeSharedAnswers(sharedAnswers) }));
+          render();
+          await persistAllChanges('Shared answers and scores saved.');
+          setSettingsStatus(data.message || 'Survey settings saved.');
+        } catch (error) {
+          setSettingsStatus(error?.message || 'Failed to save survey settings.', true);
+        } finally {
+          saveSettingsBtn.disabled = false;
+        }
+        return;
+      }
       if (
         !(answerTimeLimitToggle instanceof HTMLInputElement)
         || !(answerTimeLimitMsInput instanceof HTMLInputElement)
         || !(randomOrderToggle instanceof HTMLInputElement)
         || !(questionsPerAttemptInput instanceof HTMLInputElement)
-        || (!isConditionalQuizTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
+        || (!isConditionalQuizTask && !isSharedAnswersTask && !(correctAnswersToScoreInput instanceof HTMLInputElement))
       ) {
         return;
       }
@@ -1368,7 +1541,7 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
       const correctAnswersToScore = correctAnswersToScoreInput instanceof HTMLInputElement
         ? Math.max(1, Number.parseInt(correctAnswersToScoreInput.value || '1', 10) || 0)
         : 0;
-      if (!isConditionalQuizTask && questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
+      if (!isConditionalQuizTask && !isSharedAnswersTask && questionsPerAttempt > 0 && correctAnswersToScore > questionsPerAttempt) {
         setSettingsStatus('Required correct answers cannot be greater than questions per attempt.', true);
         return;
       }
@@ -1379,7 +1552,9 @@ if (is_int($tcqStandalonePanelCssVersion) && $tcqStandalonePanelCssVersion > 0) 
           answer_time_limit_ms: String(answerTimeLimitMs),
           random_order: randomOrderToggle.checked ? '1' : '0',
           questions_per_attempt: String(questionsPerAttempt),
-          correct_answers_to_score: String(correctAnswersToScore)
+          correct_answers_to_score: String(correctAnswersToScore),
+          shared_answers_json: JSON.stringify(sharedAnswers),
+          shared_answer_scores_json: JSON.stringify(sharedAnswerScores)
         });
         applySettingsToForm(data.settings || {});
         setSettingsStatus(data.message || 'General settings saved.');

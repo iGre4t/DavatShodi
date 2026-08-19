@@ -50,6 +50,10 @@
     control: 'کنترل پنل',
     quiz: 'کوئیز',
     information: 'اطلاعات',
+    invite: 'دعوت',
+    invitees: 'دعوت‌شدگان',
+    'invite-card': 'کارت دعوت',
+    export: 'خروجی',
     photo: 'عکس‌ها',
     'invitees-rate': 'امتیازدهی',
     'challenge-storage': 'مخزن چالش',
@@ -207,7 +211,7 @@
     }
     const tasks = Array.isArray(state.tasks) ? state.tasks : [];
     if (!tasks.length) {
-      treeEl.innerHTML = '<div class="muted">هیچ تسکی ثبت نشده است.</div>';
+      treeEl.innerHTML = '<div class="muted">هیچ بازه‌ای ثبت نشده است.</div>';
       return;
     }
     const userRules = getUserRules(editingUser.code);
@@ -281,7 +285,7 @@
         <td>${escapeHtml(username)}</td>
         <td>
           <div class="egm-task-access-actions">
-            <button type="button" class="btn ghost" data-action="open-task-access" data-user-code="${escapeHtml(code)}">دسترسی تسک‌ها</button>
+            <button type="button" class="btn ghost" data-action="open-task-access" data-user-code="${escapeHtml(code)}">دسترسی بازه‌ها</button>
             ${specialBtn}
           </div>
         </td>
@@ -492,9 +496,9 @@
         }
       }
     } catch (error) {
-      setUsersTableMessage('بارگذاری اطلاعات دسترسی تسک‌ها ناموفق بود.');
+      setUsersTableMessage('بارگذاری اطلاعات دسترسی بازه‌ها ناموفق بود.');
       if (!modalEl.classList.contains('hidden')) {
-        setStatus(error?.message || 'بارگذاری اطلاعات دسترسی تسک‌ها ناموفق بود.', true);
+        setStatus(error?.message || 'بارگذاری اطلاعات دسترسی بازه‌ها ناموفق بود.', true);
       }
       if (supportsSpecialAccess && !specialModalEl.classList.contains('hidden')) {
         setSpecialStatus(error?.message || 'بارگذاری اطلاعات دسترسی‌های خاص ناموفق بود.', true);

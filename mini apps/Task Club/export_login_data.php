@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $tcExportSessionUser = requireTabPermissionFromSession('task-club', false);
@@ -51,11 +53,11 @@ function tcExportReadCsvRows(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -63,7 +65,7 @@ function tcExportReadCsvRows(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
   flock($handle, LOCK_UN);
@@ -73,10 +75,10 @@ function tcExportReadCsvRows(string $path): array
 
 function tcExportReadMapping(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return [];
   }

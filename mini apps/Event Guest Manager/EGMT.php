@@ -1,7 +1,11 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../api/lib/common.php';
+require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
@@ -12,8 +16,8 @@ $tctManageTasksOverride = null;
 $tctHasTaskSubtabAccess = false;
 if ($tctSessionUserCode !== '') {
   $tctTaskAccessPath = __DIR__ . '/tasks/task-access.json';
-  if (is_file($tctTaskAccessPath)) {
-    $tctTaskAccessRaw = file_get_contents($tctTaskAccessPath);
+  if (egmDbIsFile($tctTaskAccessPath)) {
+    $tctTaskAccessRaw = egmDbFileGetContents($tctTaskAccessPath);
     $tctTaskAccessDecoded = is_string($tctTaskAccessRaw) ? json_decode($tctTaskAccessRaw, true) : null;
     $tctTaskAccessUsers = is_array($tctTaskAccessDecoded['users'] ?? null) ? $tctTaskAccessDecoded['users'] : [];
     foreach ($tctTaskAccessUsers as $rawCode => $entry) {
@@ -91,23 +95,7 @@ const EGMT_TASK_ACCESS_FILE = 'task-access.json';
 
 function tctNormalizeTaskType(string $value): string
 {
-  $token = strtolower(trim($value));
-  if (in_array($token, ['quiz', 'quiz-task', 'quiz task'], true)) {
-    return 'quiz';
-  }
-  if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
-    return 'conditional_quiz';
-  }
-  if (in_array($token, ['info', 'info-task', 'info task'], true)) {
-    return 'info';
-  }
-  if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
-    return 'team_task';
-  }
-  if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
-    return 'describe_photo';
-  }
-  return 'quiz';
+  return 'period';
 }
 
 function tctNormalizeBoolValue($value): bool
@@ -148,8 +136,8 @@ function tctEnsureTasksStorage(string $tasksDir, string $storePath): bool
   if (!is_dir($tasksDir) && !mkdir($tasksDir, 0777, true) && !is_dir($tasksDir)) {
     return false;
   }
-  if (!is_file($storePath)) {
-    return file_put_contents($storePath, "window.EGM_TASKS = [];\n", LOCK_EX) !== false;
+  if (!egmDbIsFile($storePath)) {
+    return egmDbFilePutContents($storePath, "window.EGM_TASKS = [];\n", LOCK_EX) !== false;
   }
   return true;
 }
@@ -285,10 +273,10 @@ function tctLoadTaskScoreSettings(string $tasksDir, string $tagCode): array
     'anotherChanceIfZero' => false
   ];
   $path = tctBuildTaskScoreSettingsPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !egmDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -327,7 +315,7 @@ function tctSaveTaskScoreSettings(string $tasksDir, string $tagCode, array $sett
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskInfoSettingsPath(string $tasksDir, string $tagCode): string
@@ -357,10 +345,10 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
     'guideSuffix' => ''
   ];
   $path = tctBuildTaskInfoSettingsPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !egmDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -395,16 +383,16 @@ function tctSaveTaskInfoSettings(string $tasksDir, string $tagCode, array $paylo
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctLoadTaskInfoScores(string $tasksDir, string $tagCode): array
 {
   $path = tctBuildTaskInfoScoresPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -444,7 +432,7 @@ function tctSaveTaskInfoScores(string $tasksDir, string $tagCode, array $scoreMa
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskTeamSettingsPath(string $tasksDir, string $tagCode): string
@@ -464,10 +452,10 @@ function tctLoadTaskTeamSettings(string $tasksDir, string $tagCode): array
     'teamAdditionalNote' => ''
   ];
   $path = tctBuildTaskTeamSettingsPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !egmDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -518,7 +506,7 @@ function tctSaveTaskTeamSettings(string $tasksDir, string $tagCode, array $setti
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskTeamChallengesPath(string $tasksDir, string $tagCode): string
@@ -542,10 +530,10 @@ function tctMakeTaskTeamChallengeId(): string
 function tctLoadTaskTeamChallenges(string $tasksDir, string $tagCode): array
 {
   $path = tctBuildTaskTeamChallengesPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -654,7 +642,7 @@ function tctSaveTaskTeamChallenges(string $tasksDir, string $tagCode, array $cha
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskTeamRuntimePath(string $tasksDir, string $tagCode): string
@@ -681,10 +669,10 @@ function tctNormalizeTeamJoinType(string $value): string
 function tctLoadTaskTeamRuntime(string $tasksDir, string $tagCode): array
 {
   $path = tctBuildTaskTeamRuntimePath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !egmDbIsFile($path)) {
     return ['teams' => []];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return ['teams' => []];
   }
@@ -777,7 +765,7 @@ function tctSaveTaskTeamRuntime(string $tasksDir, string $tagCode, array $runtim
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctFindTaskTeamIndexById(array $teams, string $teamId): int
@@ -902,7 +890,7 @@ function tctSerializeTeamTaskMap(array $map): string
 function tctSyncTeamTaskCsvState(string $inviteesPath, string $mapPath, string $taskId, array $teams): bool
 {
   $normalizedTaskId = trim($taskId);
-  if ($normalizedTaskId === '' || !is_file($inviteesPath)) {
+  if ($normalizedTaskId === '' || !egmDbIsFile($inviteesPath)) {
     return false;
   }
   $rows = tctReadCsvRows($inviteesPath);
@@ -1020,7 +1008,7 @@ function tctResolveAbsolutePathFromRelative(string $relativePath): string
   }
   $candidate = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normalizedRelative);
   $real = realpath($candidate);
-  if (!is_string($real) || $real === '' || !is_file($real)) {
+  if (!is_string($real) || $real === '' || !egmDbIsFile($real)) {
     return '';
   }
   $rootNormalized = str_replace('\\', '/', rtrim($root, DIRECTORY_SEPARATOR));
@@ -1038,15 +1026,11 @@ function tctBuildTaskDescribePhotoUrl(string $tagCode, string $fileName): string
   if ($normalizedTagCode === '' || $safeFileName === '') {
     return '';
   }
-  $segments = [
-    'mini apps',
-    'Event Guest Manager',
-    'tasks',
-    $normalizedTagCode,
-    EGMT_DESCRIBE_PHOTO_DIR,
-    $safeFileName
-  ];
-  return implode('/', array_map(static fn(string $segment): string => rawurlencode($segment), $segments));
+  $base = 'mini%20apps/Event%20Guest%20Manager/egm_asset.php?path=';
+  $relative = implode('/', array_map('rawurlencode', [
+    'tasks', $normalizedTagCode, EGMT_DESCRIBE_PHOTO_DIR, $safeFileName
+  ]));
+  return $base . rawurlencode($relative);
 }
 
 function tctMakeTaskDescribePhotoId(): string
@@ -1085,12 +1069,12 @@ function tctEnsureTaskDescribePhotoStore(string $tasksDir, string $tagCode): boo
   if ($metaPath === '') {
     return false;
   }
-  if (!is_file($metaPath)) {
+  if (!egmDbIsFile($metaPath)) {
     $json = json_encode([], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     if ($json === false) {
       return false;
     }
-    if (file_put_contents($metaPath, $json . PHP_EOL, LOCK_EX) === false) {
+    if (egmDbFilePutContents($metaPath, $json . PHP_EOL, LOCK_EX) === false) {
       return false;
     }
   }
@@ -1100,10 +1084,10 @@ function tctEnsureTaskDescribePhotoStore(string $tasksDir, string $tagCode): boo
 function tctLoadTaskDescribePhotos(string $tasksDir, string $tagCode): array
 {
   $metaPath = tctBuildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
-  if ($metaPath === '' || !is_file($metaPath)) {
+  if ($metaPath === '' || !egmDbIsFile($metaPath)) {
     return [];
   }
-  $content = file_get_contents($metaPath);
+  $content = egmDbFileGetContents($metaPath);
   if ($content === false) {
     return [];
   }
@@ -1184,7 +1168,7 @@ function tctSaveTaskDescribePhotos(string $tasksDir, string $tagCode, array $pho
   if ($json === false) {
     return false;
   }
-  return file_put_contents($metaPath, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($metaPath, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctParseDescribePhotoPicksMap(string $raw): array
@@ -1293,10 +1277,10 @@ function tctCollectDescribePhotoSubmissionsByWorkId(
         continue;
       }
       $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $articleFile;
-      if (!is_file($articlePath)) {
+      if (!egmDbIsFile($articlePath)) {
         continue;
       }
-      $content = file_get_contents($articlePath);
+      $content = egmDbFileGetContents($articlePath);
       if (!is_string($content)) {
         continue;
       }
@@ -1388,11 +1372,11 @@ function tctReadDescribePhotoSubmissionArticle(
     return ['ok' => false, 'message' => 'Invalid article directory.'];
   }
   $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $articleFile;
-  if (!is_file($articlePath)) {
+  if (!egmDbIsFile($articlePath)) {
     return ['ok' => false, 'message' => 'Result file not found.'];
   }
 
-  $content = file_get_contents($articlePath);
+  $content = egmDbFileGetContents($articlePath);
   if (!is_string($content)) {
     return ['ok' => false, 'message' => 'Failed to read result file.'];
   }
@@ -1441,13 +1425,17 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
       continue;
     }
     $tagCode = (string)($task['tagCode'] ?? '');
-    $taskType = tctNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
-    $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
-    $task['score'] = $scoreSettings['score'];
-    $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
-    $task['hasGoldenTime'] = (bool)($scoreSettings['hasGoldenTime'] ?? true);
-    $task['anotherChanceIfZero'] = (bool)($scoreSettings['anotherChanceIfZero'] ?? false);
-    if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
+    $taskType = tctNormalizeTaskType((string)($task['taskType'] ?? 'period'));
+    if ($taskType !== 'period') {
+      $scoreSettings = tctLoadTaskScoreSettings($tasksDir, $tagCode);
+      $task['score'] = $scoreSettings['score'];
+      $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
+      $task['hasGoldenTime'] = (bool)($scoreSettings['hasGoldenTime'] ?? true);
+      $task['anotherChanceIfZero'] = (bool)($scoreSettings['anotherChanceIfZero'] ?? false);
+    } else {
+      unset($task['score'], $task['afterEndtimeScore'], $task['hasGoldenTime'], $task['anotherChanceIfZero']);
+    }
+    if ($taskType === 'period' || $taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
@@ -1489,14 +1477,18 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
   }
   $title = trim((string)($task['title'] ?? ''));
   $tagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ($task['tag_code'] ?? '')));
-  $taskType = tctNormalizeTaskType((string)($task['taskType'] ?? ($task['task_type'] ?? 'quiz')));
   $active = tctNormalizeBoolValue($task['active'] ?? false);
   $duration = tctNormalizeBoolValue($task['duration'] ?? false);
+  $quitRequired = tctNormalizeBoolValue($task['quitRequired'] ?? ($task['quit_required'] ?? false));
   $devPhase = tctNormalizeBoolValue($task['devPhase'] ?? ($task['dev_phase'] ?? false));
   $startDate = tctNormalizeDateValue((string)($task['startDate'] ?? ($task['start_date'] ?? '')));
   $startTime = tctNormalizeTimeValue((string)($task['startTime'] ?? ($task['start_time'] ?? '')));
   $endDate = tctNormalizeDateValue((string)($task['endDate'] ?? ($task['end_date'] ?? '')));
   $endTime = tctNormalizeTimeValue((string)($task['endTime'] ?? ($task['end_time'] ?? '')));
+  $enterDeadlineDate = tctNormalizeDateValue((string)($task['enterDeadlineDate'] ?? ($task['enter_deadline_date'] ?? '')));
+  $enterDeadlineTime = tctNormalizeTimeValue((string)($task['enterDeadlineTime'] ?? ($task['enter_deadline_time'] ?? '')));
+  $quitOpeningDate = tctNormalizeDateValue((string)($task['quitOpeningDate'] ?? ($task['quit_opening_date'] ?? '')));
+  $quitOpeningTime = tctNormalizeTimeValue((string)($task['quitOpeningTime'] ?? ($task['quit_opening_time'] ?? '')));
   $order = (int)($task['order'] ?? $fallbackOrder);
   if ($order < 1) {
     $order = $fallbackOrder;
@@ -1509,14 +1501,18 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
     'id' => $id,
     'title' => $title,
     'tagCode' => $tagCode,
-    'taskType' => $taskType,
     'active' => $active,
     'duration' => $duration,
+    'quitRequired' => $quitRequired,
     'devPhase' => $devPhase,
     'startDate' => $startDate,
     'startTime' => $startTime,
     'endDate' => $endDate,
     'endTime' => $endTime,
+    'enterDeadlineDate' => $enterDeadlineDate,
+    'enterDeadlineTime' => $enterDeadlineTime,
+    'quitOpeningDate' => $quitOpeningDate,
+    'quitOpeningTime' => $quitOpeningTime,
     'order' => $order,
     'createdAt' => $createdAt
   ];
@@ -1524,10 +1520,10 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
 
 function tctReadStoreTasks(string $storePath): array
 {
-  if (!is_file($storePath)) {
+  if (!egmDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = egmDbFileGetContents($storePath);
   if ($content === false) {
     return [];
   }
@@ -1587,7 +1583,7 @@ function tctReindexTasks(array $tasks): array
     $task['id'] = $id;
     $task['title'] = $title;
     $task['tagCode'] = $tagCode;
-    $task['taskType'] = tctNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
+    unset($task['taskType'], $task['task_type']);
     $task['order'] = $order;
     $result[] = $task;
     $byId[$idKey] = true;
@@ -1604,7 +1600,15 @@ function tctSaveStoreTasks(string $storePath, array $tasks): bool
     return false;
   }
   $payload = "window.EGM_TASKS = {$json};\n";
-  return file_put_contents($storePath, $payload, LOCK_EX) !== false;
+  if (egmDbFilePutContents($storePath, $payload, LOCK_EX) === false) {
+    return false;
+  }
+  try {
+    return egmInstanceWriteMissionPeriodsUsingProjectConfig(dirname(__DIR__, 2), __DIR__, array_values($tasks));
+  } catch (Throwable $error) {
+    error_log('Failed to synchronize EGM periods database column: ' . $error->getMessage());
+    return false;
+  }
 }
 
 function tctReadCsvRows(string $path): array
@@ -1612,11 +1616,11 @@ function tctReadCsvRows(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -1641,7 +1645,7 @@ function tctWriteCsvRows(string $path, array $rows): bool
   if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'c+');
+  $handle = egmDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -1699,10 +1703,10 @@ function tctFindFirstHeaderIndex(array $header, array $names): int
 
 function tctReadJsonArrayFromFile(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -1945,6 +1949,9 @@ function tctResolveTaskScoreColumnByType(string $taskType): string
 function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
+  if ($normalizedType === 'period') {
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
+  }
   if ($normalizedType === 'quiz' || $normalizedType === 'conditional_quiz') {
     if ($normalizedType === 'conditional_quiz') {
       return ['control', 'information', 'quiz', 'crisis-control'];
@@ -1960,16 +1967,16 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
   if ($normalizedType === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
   }
-  return ['control', 'information', 'quiz'];
+  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
 }
 
 function tctReadTaskAccessConfig(string $tasksDir): array
 {
   $path = $tasksDir . DIRECTORY_SEPARATOR . EGMT_TASK_ACCESS_FILE;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return ['users' => []];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content) || trim($content) === '') {
     return ['users' => []];
   }
@@ -1992,12 +1999,12 @@ function tctWriteTaskAccessConfig(string $tasksDir, array $config): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctResolveUserTaskAccessForTask(array $task, string $sessionUserCode, array $taskAccessConfig): array
 {
-  $paneKeys = tctResolveTaskPaneKeysByType((string)($task['taskType'] ?? 'quiz'));
+  $paneKeys = tctResolveTaskPaneKeysByType((string)($task['taskType'] ?? 'period'));
   $resolved = [
     'enabled' => true,
     'panes' => []
@@ -2149,93 +2156,25 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
   }
 
   $defaultJsonFiles = [
-    'EGMQ list.json' => [],
-    'EGMQ code state.json' => ['nextNumber' => 1],
-    'EGMQ settings.json' => [
-      'answerTimeLimit' => true,
-      'randomOrder' => true,
-      'questionsPerAttempt' => 0,
-      'correctAnswersToScore' => 1
-    ],
-    EGMT_SCORE_SETTINGS_FILE => [
-      'score' => 0,
-      'afterEndtimeScore' => 0,
-      'hasGoldenTime' => true,
-      'anotherChanceIfZero' => false
-    ],
-    EGMT_TEAM_SETTINGS_FILE => [
-      'teamMin' => 1,
-      'teamMax' => 1,
-      'teamAdditionalNote' => ''
-    ],
     EGMT_INFO_SETTINGS_FILE => [
       'title' => '',
       'text' => '',
       'guidePrefix' => '',
       'guideSuffix' => ''
-    ],
-    EGMT_INFO_SCORES_FILE => [],
-    EGMT_TEAM_CHALLENGES_FILE => [],
-    EGMT_TEAM_RUNTIME_FILE => ['teams' => []]
+    ]
   ];
   foreach ($defaultJsonFiles as $fileName => $payload) {
     $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
-    if (is_file($filePath)) {
+    if (egmDbIsFile($filePath)) {
       continue;
     }
     $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     if ($json === false) {
       return false;
     }
-    if (file_put_contents($filePath, $json . PHP_EOL, LOCK_EX) === false) {
+    if (egmDbFilePutContents($filePath, $json . PHP_EOL, LOCK_EX) === false) {
       return false;
     }
-  }
-
-  $defaultCsvFiles = [
-    'Answers.csv' => ['Work ID'],
-    'Invitees mapped.csv' => ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered']
-  ];
-  foreach ($defaultCsvFiles as $fileName => $header) {
-    $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
-    if (is_file($filePath)) {
-      continue;
-    }
-    if (egmInviteesCsvIsManagedPath($filePath)) {
-      if (!tctWriteCsvRows($filePath, [$header])) {
-        return false;
-      }
-      continue;
-    }
-    $handle = fopen($filePath, 'c+');
-    if ($handle === false) {
-      return false;
-    }
-    if (!flock($handle, LOCK_EX)) {
-      fclose($handle);
-      return false;
-    }
-    if (!ftruncate($handle, 0) || rewind($handle) === false) {
-      flock($handle, LOCK_UN);
-      fclose($handle);
-      return false;
-    }
-    if (fputcsv($handle, $header) === false) {
-      flock($handle, LOCK_UN);
-      fclose($handle);
-      return false;
-    }
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
-  }
-
-  if (!tctEnsureInviteesMappedColumns($taskDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv')) {
-    return false;
-  }
-
-  if (!tctEnsureTaskDescribePhotoStore($tasksDir, $normalizedTagCode)) {
-    return false;
   }
 
   return true;
@@ -2261,7 +2200,7 @@ function tctRemoveDirectoryRecursive(string $path): bool
       }
       continue;
     }
-    if (!@unlink($full)) {
+    if (!@egmDbUnlink($full)) {
       return false;
     }
   }
@@ -2367,7 +2306,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
   }
 
   if (!tctEnsureTasksStorage($tctTasksDir, $tctStorePath)) {
-    echo json_encode(['status' => 'error', 'message' => 'Failed to prepare task storage.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'error', 'message' => 'آماده‌سازی فضای ذخیره‌سازی بازه‌ها ناموفق بود.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2422,16 +2361,16 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
   if (isset($actionPaneMap[$action])) {
     $targetTaskId = trim((string)($_POST['id'] ?? ''));
     if ($targetTaskId === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $accessTask = $findTaskById($tasks, $targetTaskId);
     if (!is_array($accessTask)) {
-      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     if (!tctCanSessionUserAccessTask($accessTask, $tctSessionUserCode, $tctTaskAccessConfig)) {
-      echo json_encode(['status' => 'error', 'message' => 'You do not have access to this task tab.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شما به این بازه دسترسی ندارید.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $requiredPane = (string)($actionPaneMap[$action] ?? '');
@@ -2439,7 +2378,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       $requiredPane !== ''
       && !tctCanSessionUserAccessTaskPane($accessTask, $tctSessionUserCode, $tctTaskAccessConfig, $requiredPane)
     ) {
-      echo json_encode(['status' => 'error', 'message' => 'You do not have access to this task subpane.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شما به این بخش از بازه دسترسی ندارید.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
   }
@@ -2449,38 +2388,33 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
         continue;
       }
       if (!tctCanSessionUserAccessTask($task, $tctSessionUserCode, $tctTaskAccessConfig)) {
-        echo json_encode(['status' => 'error', 'message' => 'Task reorder is allowed only for users with access to all task tabs.'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['status' => 'error', 'message' => 'تغییر ترتیب فقط برای کاربران دارای دسترسی به همه بازه‌ها مجاز است.'], JSON_UNESCAPED_UNICODE);
         exit;
       }
     }
   }
 
   if ($action === 'list') {
-    foreach ($tasks as $task) {
-      tctEnsureTaskFolder($tctTasksDir, (string)($task['tagCode'] ?? ''));
-    }
-    if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to persist normalized task data.'], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
+    // Period discovery must never rewrite the store. The former write on every
+    // refresh caused concurrent EGM requests to deadlock, leaving period tabs
+    // empty until a later retry happened to succeed.
     echo json_encode(['status' => 'ok', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
   if ($action === 'add') {
     if (!$tctCanAccessManageTasks) {
-      echo json_encode(['status' => 'error', 'message' => 'You do not have access to Manage Tasks.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شما به مدیریت بازه‌ها دسترسی ندارید.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $title = tctNormalizeTaskTitle((string)($_POST['title'] ?? ''));
-    $taskType = tctNormalizeTaskType((string)($_POST['task_type'] ?? 'quiz'));
     if ($title === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Task title is required.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'نام بازه الزامی است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $tagCode = tctGenerateNextTagCode($tasks);
     if (!tctEnsureTaskFolder($tctTasksDir, $tagCode)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to create task folder.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ایجاد پوشه بازه ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -2488,19 +2422,18 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       'id' => tctMakeTaskId(),
       'title' => $title,
       'tagCode' => $tagCode,
-      'taskType' => $taskType,
       'devPhase' => false,
       'order' => count($tasks) + 1,
       'createdAt' => date('Y-m-d H:i:s')
     ];
     $tasks = tctReindexTasks($tasks);
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save task list.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره فهرست بازه‌ها ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     echo json_encode([
       'status' => 'ok',
-      'message' => "Task added. Tag Code: {$tagCode}",
+      'message' => "بازه با کد یکتای {$tagCode} افزوده شد.",
       'generatedTagCode' => $tagCode,
       'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
@@ -2510,7 +2443,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
   if ($action === 'remove') {
     $id = trim((string)($_POST['id'] ?? ''));
     if ($id === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $targetTask = null;
@@ -2521,7 +2454,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       }
     }
     if (!is_array($targetTask)) {
-      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -2536,21 +2469,21 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     if ($targetTagCode !== '') {
       $taskDir = $tctTasksDir . DIRECTORY_SEPARATOR . $targetTagCode;
       if (!tctRemoveDirectoryRecursive($taskDir)) {
-        echo json_encode(['status' => 'error', 'message' => 'Task removed from list, but cleanup of task files failed.'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['status' => 'error', 'message' => 'بازه از فهرست حذف شد، اما پاک‌سازی فایل‌های آن ناموفق بود.'], JSON_UNESCAPED_UNICODE);
         exit;
       }
     }
 
     $tasks = tctReindexTasks($nextTasks);
     if (!tctCleanupTaskAccessForRemovedTask($tctTasksDir, $id)) {
-      echo json_encode(['status' => 'error', 'message' => 'Task removed, but cleanup of task access settings failed.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'بازه حذف شد، اما پاک‌سازی تنظیمات دسترسی آن ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save task list.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره فهرست بازه‌ها ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task removed and cleaned up.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'بازه و اطلاعات وابسته به آن حذف شد.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2558,11 +2491,11 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $id = trim((string)($_POST['id'] ?? ''));
     $title = tctNormalizeTaskTitle((string)($_POST['title'] ?? ''));
     if ($id === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     if ($title === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Task title is required.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'نام بازه الزامی است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -2576,16 +2509,16 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       break;
     }
     if (!$found) {
-      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
     $tasks = tctReindexTasks($tasks);
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save task title.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره نام بازه ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task title saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'نام بازه ذخیره شد.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2593,21 +2526,45 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $id = trim((string)($_POST['id'] ?? ''));
     $title = tctNormalizeTaskTitle((string)($_POST['title'] ?? ''));
     if ($id === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     if ($title === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Task title is required.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'نام بازه الزامی است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
     $active = tctNormalizeBoolValue($_POST['active'] ?? '0');
     $duration = tctNormalizeBoolValue($_POST['duration'] ?? '0');
+    $quitRequired = tctNormalizeBoolValue($_POST['quit_required'] ?? '0');
     $devPhase = tctNormalizeBoolValue($_POST['dev_phase'] ?? '0');
     $startDate = tctNormalizeDateValue((string)($_POST['start_date'] ?? ''));
     $startTime = tctNormalizeTimeValue((string)($_POST['start_time'] ?? ''));
     $endDate = tctNormalizeDateValue((string)($_POST['end_date'] ?? ''));
     $endTime = tctNormalizeTimeValue((string)($_POST['end_time'] ?? ''));
+    $enterDeadlineDate = tctNormalizeDateValue((string)($_POST['enter_deadline_date'] ?? ''));
+    $enterDeadlineTime = tctNormalizeTimeValue((string)($_POST['enter_deadline_time'] ?? ''));
+    $quitOpeningDate = tctNormalizeDateValue((string)($_POST['quit_opening_date'] ?? ''));
+    $quitOpeningTime = tctNormalizeTimeValue((string)($_POST['quit_opening_time'] ?? ''));
+    if ($quitRequired) {
+      if (!$duration) {
+        echo json_encode(['status' => 'error', 'message' => 'برای الزام ثبت خروج، زمان‌بندی بازه باید فعال باشد.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $timelineValues = [$startDate, $startTime, $enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime, $endDate, $endTime];
+      if (in_array('', $timelineValues, true)) {
+        echo json_encode(['status' => 'error', 'message' => 'همه تاریخ‌ها و ساعت‌های خط زمانی ورود و خروج الزامی هستند.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $startAt = $startDate . ' ' . $startTime;
+      $enterDeadlineAt = $enterDeadlineDate . ' ' . $enterDeadlineTime;
+      $quitOpeningAt = $quitOpeningDate . ' ' . $quitOpeningTime;
+      $endAt = $endDate . ' ' . $endTime;
+      if (!($startAt < $enterDeadlineAt && $enterDeadlineAt < $quitOpeningAt && $quitOpeningAt < $endAt)) {
+        echo json_encode(['status' => 'error', 'message' => 'ترتیب زمان‌ها باید شروع، مهلت ورود، آغاز خروج و سپس پایان باشد.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+    }
 
     $found = false;
     foreach ($tasks as $index => $task) {
@@ -2617,32 +2574,37 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       $tasks[$index]['title'] = $title;
       $tasks[$index]['active'] = $active;
       $tasks[$index]['duration'] = $duration;
+      $tasks[$index]['quitRequired'] = $quitRequired;
       $tasks[$index]['devPhase'] = $devPhase;
       $tasks[$index]['startDate'] = $startDate;
       $tasks[$index]['startTime'] = $startTime;
       $tasks[$index]['endDate'] = $endDate;
       $tasks[$index]['endTime'] = $endTime;
+      $tasks[$index]['enterDeadlineDate'] = $enterDeadlineDate;
+      $tasks[$index]['enterDeadlineTime'] = $enterDeadlineTime;
+      $tasks[$index]['quitOpeningDate'] = $quitOpeningDate;
+      $tasks[$index]['quitOpeningTime'] = $quitOpeningTime;
       $found = true;
       break;
     }
     if (!$found) {
-      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
     $tasks = tctReindexTasks($tasks);
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save task settings.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره تنظیمات بازه ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task settings saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'تنظیمات بازه ذخیره شد.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
   if ($action === 'save_task_score_system') {
     $id = trim((string)($_POST['id'] ?? ''));
     if ($id === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $score = tctNormalizeScoreValue($_POST['score'] ?? 0);
@@ -2650,17 +2612,22 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $hasGoldenTime = tctNormalizeBoolValue($_POST['has_golden_time'] ?? true);
 
     $targetTagCode = '';
-    $targetTaskType = 'quiz';
+    $targetTaskType = 'period';
     foreach ($tasks as $task) {
       if ((string)($task['id'] ?? '') !== $id) {
         continue;
       }
       $targetTagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
-      $targetTaskType = tctNormalizeTaskType((string)($task['taskType'] ?? 'quiz'));
+      $targetTaskType = tctNormalizeTaskType((string)($task['taskType'] ?? 'period'));
       break;
     }
     if ($targetTagCode === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    if ($targetTaskType === 'period') {
+      echo json_encode(['status' => 'error', 'message' => 'بازه سیستم امتیازدهی یا زمان طلایی ندارد.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -2681,11 +2648,11 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       'hasGoldenTime' => $hasGoldenTime,
       'anotherChanceIfZero' => (bool)($existingScoreSettings['anotherChanceIfZero'] ?? false)
     ])) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save score settings.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره تنظیمات امتیازدهی ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
-    echo json_encode(['status' => 'ok', 'message' => 'Score settings saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'تنظیمات امتیازدهی ذخیره شد.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2789,7 +2756,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
   if ($action === 'save_info_task_content') {
     $id = trim((string)($_POST['id'] ?? ''));
     if ($id === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Invalid task id.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $targetTask = null;
@@ -2800,18 +2767,18 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       }
     }
     if (!is_array($targetTask)) {
-      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'conditional_quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
-      echo json_encode(['status' => 'error', 'message' => 'This action is only for tasks with information pane.'], JSON_UNESCAPED_UNICODE);
+    $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'period'));
+    if ($targetTaskType !== 'period' && $targetTaskType !== 'quiz' && $targetTaskType !== 'conditional_quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
+      echo json_encode(['status' => 'error', 'message' => 'این عملیات فقط برای بازه‌های دارای بخش اطلاعات مجاز است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
     $tagCode = tctNormalizeTagCode((string)($targetTask['tagCode'] ?? ''));
     if ($tagCode === '') {
-      echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'کد یکتای بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $title = trim((string)($_POST['info_title'] ?? ''));
@@ -2824,12 +2791,12 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       'guidePrefix' => $guidePrefix,
       'guideSuffix' => $guideSuffix
     ])) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save information content.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره اطلاعات بازه ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     echo json_encode([
       'status' => 'ok',
-      'message' => 'Information content saved.',
+      'message' => 'اطلاعات بازه ذخیره شد.',
       'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
@@ -2900,7 +2867,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     }
     $destinationFileName = 'task-photo-' . date('YmdHis') . '-' . $token . '.' . $extension;
     $destinationAbsolutePath = $photosDirPath . DIRECTORY_SEPARATOR . $destinationFileName;
-    if (!@copy($sourceAbsolutePath, $destinationAbsolutePath)) {
+    if (!@egmDbCopy($sourceAbsolutePath, $destinationAbsolutePath)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to copy selected photo.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -2919,7 +2886,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       'createdAt' => date('Y-m-d H:i:s')
     ];
     if (!tctSaveTaskDescribePhotos($tctTasksDir, $tagCode, $photos)) {
-      @unlink($destinationAbsolutePath);
+      @egmDbUnlink($destinationAbsolutePath);
       echo json_encode(['status' => 'error', 'message' => 'Failed to save photo metadata.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3047,8 +3014,8 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $removedFileName = basename(trim((string)($removedPhoto['fileName'] ?? '')));
     if ($photosDirPath !== '' && $removedFileName !== '') {
       $removedAbsolutePath = $photosDirPath . DIRECTORY_SEPARATOR . $removedFileName;
-      if (is_file($removedAbsolutePath)) {
-        @unlink($removedAbsolutePath);
+      if (egmDbIsFile($removedAbsolutePath)) {
+        @egmDbUnlink($removedAbsolutePath);
       }
     }
 
@@ -3351,7 +3318,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!is_file($tctEventInviteesPath)) {
+    if (!egmDbIsFile($tctEventInviteesPath)) {
       echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in EGM Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3530,7 +3497,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!is_file($tctEventInviteesPath)) {
+    if (!egmDbIsFile($tctEventInviteesPath)) {
       echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in EGM Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3719,7 +3686,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)
+    if (egmDbIsFile($tctEventInviteesPath)
       && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
       echo json_encode(['status' => 'error', 'message' => 'Team runtime was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -3779,7 +3746,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       echo json_encode(['status' => 'error', 'message' => 'Failed to update challenge accepted state.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)
+    if (egmDbIsFile($tctEventInviteesPath)
       && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
       echo json_encode(['status' => 'error', 'message' => 'Challenge state was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -3864,7 +3831,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)
+    if (egmDbIsFile($tctEventInviteesPath)
       && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
       echo json_encode(['status' => 'error', 'message' => 'Team runtime was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -3958,7 +3925,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!is_file($tctEventInviteesPath)) {
+    if (!egmDbIsFile($tctEventInviteesPath)) {
       echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in EGM Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -4159,10 +4126,10 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     }
     $tasks = tctReindexTasks($reordered);
     if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to save task order.'], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => 'error', 'message' => 'ذخیره ترتیب بازه‌ها ناموفق بود.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    echo json_encode(['status' => 'ok', 'message' => 'Task order updated.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'ok', 'message' => 'ترتیب بازه‌ها به‌روزرسانی شد.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -4175,32 +4142,18 @@ if (EGMT_INCLUDE_ONLY) {
 }
 ?>
 
+<div class="egm-period-management" dir="rtl">
 <div class="card">
   <div class="section-header">
-    <h3>Create Task</h3>
+    <h3>ایجاد بازه</h3>
   </div>
   <form id="tct-form" class="form" style="gap:12px;">
     <label class="field standard-width">
-      <span>Task Title</span>
+      <span>نام بازه</span>
       <input id="tct-title" name="title" type="text" autocomplete="off" required />
     </label>
-    <label class="field standard-width">
-      <span>Tag Code</span>
-      <input id="tct-tag-code-auto" type="text" value="Auto-generated (001, 002, ...)" readonly />
-      <small class="muted">Folder path: <code>/tasks/&lt;Auto Tag Code&gt;</code></small>
-    </label>
-    <label class="field standard-width">
-      <span>Task Type</span>
-      <select id="tct-task-type" name="task_type" required>
-        <option value="quiz">Quiz Task</option>
-        <option value="conditional_quiz">Conditional Quiz</option>
-        <option value="info">Info Task</option>
-        <option value="team_task">Team Task</option>
-        <option value="describe_photo">Describe Photo Task</option>
-      </select>
-    </label>
     <div class="field full">
-      <button type="submit" class="btn primary standard-primary-button">Add Task</button>
+      <button type="submit" class="btn primary standard-primary-button">افزودن بازه</button>
     </div>
     <p id="tct-status" class="muted small" aria-live="polite"></p>
   </form>
@@ -4208,24 +4161,25 @@ if (EGMT_INCLUDE_ONLY) {
 
 <div class="card">
   <div class="section-header">
-    <h3>Tasks List</h3>
+    <h3>فهرست بازه‌ها</h3>
   </div>
   <div class="table-wrapper">
     <table class="tct-list-table">
       <thead>
         <tr>
-          <th>Order</th>
-          <th>Task</th>
-          <th>Tag Code</th>
-          <th>Action</th>
-          <th>Move</th>
+          <th>ترتیب</th>
+          <th>نام بازه</th>
+          <th>کد یکتا</th>
+          <th>عملیات</th>
+          <th>جابجایی</th>
         </tr>
       </thead>
       <tbody id="tct-list-body">
-        <tr><td colspan="5" class="muted">Loading tasks...</td></tr>
+        <tr><td colspan="5" class="muted">در حال بارگذاری بازه‌ها...</td></tr>
       </tbody>
     </table>
   </div>
+</div>
 </div>
 
 <script>
@@ -4234,10 +4188,9 @@ if (EGMT_INCLUDE_ONLY) {
   const csrfToken = <?= json_encode($tctCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const form = document.getElementById('tct-form');
   const titleInput = document.getElementById('tct-title');
-  const taskTypeInput = document.getElementById('tct-task-type');
   const statusEl = document.getElementById('tct-status');
   const listBody = document.getElementById('tct-list-body');
-  if (!form || !titleInput || !taskTypeInput || !statusEl || !listBody) return;
+  if (!form || !titleInput || !statusEl || !listBody) return;
 
   let tasks = [];
 
@@ -4249,23 +4202,7 @@ if (EGMT_INCLUDE_ONLY) {
     .replace(/'/g, '&#39;');
 
   const normalizeTaskType = (value) => {
-    const token = String(value ?? '').trim().toLowerCase();
-    if (token === 'quiz' || token === 'quiz-task' || token === 'quiz task') {
-      return 'quiz';
-    }
-    if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') {
-      return 'conditional_quiz';
-    }
-    if (token === 'info' || token === 'info-task' || token === 'info task') {
-      return 'info';
-    }
-    if (token === 'team_task' || token === 'team-task' || token === 'team task') {
-      return 'team_task';
-    }
-    if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
-      return 'describe_photo';
-    }
-    return 'quiz';
+    return 'period';
   };
 
   const normalizeScore = (value) => {
@@ -4277,23 +4214,7 @@ if (EGMT_INCLUDE_ONLY) {
   };
 
   const resolveDefaultTopPanes = (taskType) => {
-    const token = normalizeTaskType(taskType);
-    if (token === 'quiz' || token === 'conditional_quiz') {
-      if (token === 'conditional_quiz') {
-        return ['control', 'information', 'quiz', 'crisis-control'];
-      }
-      return ['control', 'information', 'quiz'];
-    }
-    if (token === 'info') {
-      return ['control', 'information', 'invitees-rate'];
-    }
-    if (token === 'describe_photo') {
-      return ['control', 'information', 'photo', 'invitees-rate'];
-    }
-    if (token === 'team_task') {
-      return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
-    }
-    return ['control', 'information', 'quiz'];
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
   };
 
   const normalizeAllowedTopPanes = (value, taskType) => {
@@ -4326,11 +4247,16 @@ if (EGMT_INCLUDE_ONLY) {
       allowedTopPanes: normalizeAllowedTopPanes(task.allowedTopPanes, task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
+      quitRequired: Boolean(task.quitRequired),
       devPhase: Boolean(task.devPhase),
       startDate: String(task.startDate || ''),
       startTime: String(task.startTime || ''),
       endDate: String(task.endDate || ''),
       endTime: String(task.endTime || ''),
+      enterDeadlineDate: String(task.enterDeadlineDate || ''),
+      enterDeadlineTime: String(task.enterDeadlineTime || ''),
+      quitOpeningDate: String(task.quitOpeningDate || ''),
+      quitOpeningTime: String(task.quitOpeningTime || ''),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
       hasGoldenTime: task.hasGoldenTime !== false,
@@ -4357,11 +4283,16 @@ if (EGMT_INCLUDE_ONLY) {
       allowedTopPanes: normalizeAllowedTopPanes(task.allowedTopPanes, task.taskType || 'quiz'),
       active: Boolean(task.active),
       duration: Boolean(task.duration),
+      quitRequired: Boolean(task.quitRequired),
       devPhase: Boolean(task.devPhase),
       startDate: String(task.startDate || ''),
       startTime: String(task.startTime || ''),
       endDate: String(task.endDate || ''),
       endTime: String(task.endTime || ''),
+      enterDeadlineDate: String(task.enterDeadlineDate || ''),
+      enterDeadlineTime: String(task.enterDeadlineTime || ''),
+      quitOpeningDate: String(task.quitOpeningDate || ''),
+      quitOpeningTime: String(task.quitOpeningTime || ''),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
       hasGoldenTime: task.hasGoldenTime !== false,
@@ -4400,12 +4331,12 @@ if (EGMT_INCLUDE_ONLY) {
 
   const renderTasks = () => {
     if (!tasks.length) {
-      listBody.innerHTML = '<tr><td colspan="5" class="muted">No tasks created yet.</td></tr>';
+      listBody.innerHTML = '<tr><td colspan="5" class="muted">هنوز بازه‌ای ایجاد نشده است.</td></tr>';
       return;
     }
     const visibleTasks = tasks.filter((task) => task.taskAccessEnabled !== false);
     if (!visibleTasks.length) {
-      listBody.innerHTML = '<tr><td colspan="5" class="muted">No tasks available for your access.</td></tr>';
+      listBody.innerHTML = '<tr><td colspan="5" class="muted">هیچ بازه‌ای در دسترس شما نیست.</td></tr>';
       return;
     }
     const canReorderAll = visibleTasks.length === tasks.length;
@@ -4421,21 +4352,21 @@ if (EGMT_INCLUDE_ONLY) {
               value="${esc(task.title)}"
               autocomplete="off"
             />
-            <button type="button" class="btn ghost" data-save-title-id="${esc(task.id)}">Save</button>
+            <button type="button" class="btn ghost" data-save-title-id="${esc(task.id)}">ذخیره</button>
           </div>
         </td>
         <td><code>${esc(task.tagCode)}</code></td>
         <td>
           <div class="tct-action-wrap">
-            <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}">Remove</button>
+            <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}">حذف</button>
           </div>
         </td>
         <td>
           <div class="tct-order-actions">
-            <button type="button" class="btn ghost" data-move-up-id="${esc(task.id)}" ${(index === 0 || !canReorderAll) ? 'disabled' : ''}>Up</button>
-            <button type="button" class="btn ghost" data-move-down-id="${esc(task.id)}" ${(index === (visibleTasks.length - 1) || !canReorderAll) ? 'disabled' : ''}>Down</button>
+            <button type="button" class="btn ghost" data-move-up-id="${esc(task.id)}" ${(index === 0 || !canReorderAll) ? 'disabled' : ''}>بالا</button>
+            <button type="button" class="btn ghost" data-move-down-id="${esc(task.id)}" ${(index === (visibleTasks.length - 1) || !canReorderAll) ? 'disabled' : ''}>پایین</button>
           </div>
-          ${canReorderAll ? '' : '<p class="muted small">Reorder requires access to all task tabs.</p>'}
+          ${canReorderAll ? '' : '<p class="muted small">برای تغییر ترتیب باید به همه بازه‌ها دسترسی داشته باشید.</p>'}
         </td>
       </tr>
     `).join('');
@@ -4453,7 +4384,7 @@ if (EGMT_INCLUDE_ONLY) {
     const response = await fetch(endpoint, { method: 'POST', body: formData });
     const data = await response.json();
     if (!response.ok || data?.status !== 'ok') {
-      throw new Error(data?.message || 'Request failed.');
+      throw new Error(data?.message || 'انجام درخواست ناموفق بود.');
     }
     return data;
   };
@@ -4471,30 +4402,29 @@ if (EGMT_INCLUDE_ONLY) {
     setTasks(data.tasks);
     renderTasks();
     emitTasksChanged();
-    setStatus(data.message || 'Task order updated.');
+    setStatus(data.message || 'ترتیب بازه‌ها به‌روزرسانی شد.');
   };
 
   const saveTaskTitle = async (id, nextTitle) => {
     const title = String(nextTitle || '').trim();
     if (!id) {
-      throw new Error('Invalid task id.');
+      throw new Error('شناسه بازه نامعتبر است.');
     }
     if (!title) {
-      throw new Error('Task title is required.');
+      throw new Error('نام بازه الزامی است.');
     }
     const data = await postAction('save_task_title', { id, title });
     setTasks(data.tasks);
     renderTasks();
     emitTasksChanged();
-    setStatus(data.message || 'Task title saved.');
+    setStatus(data.message || 'نام بازه ذخیره شد.');
   };
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const title = String(titleInput.value || '').trim();
-    const taskType = normalizeTaskType(taskTypeInput.value);
     if (!title) {
-      setStatus('Task title is required.', true);
+      setStatus('نام بازه الزامی است.', true);
       titleInput.focus();
       return;
     }
@@ -4503,16 +4433,15 @@ if (EGMT_INCLUDE_ONLY) {
       submitButton.disabled = true;
     }
     try {
-      const data = await postAction('add', { title, task_type: taskType });
+      const data = await postAction('add', { title });
       setTasks(Array.isArray(data.tasks) ? data.tasks : tasks);
       renderTasks();
       emitTasksChanged();
-      setStatus(data.message || 'Task added.');
+      setStatus(data.message || 'بازه افزوده شد.');
       form.reset();
-      taskTypeInput.value = 'quiz';
       titleInput.focus();
     } catch (error) {
-      setStatus(error?.message || 'Failed to add task.', true);
+      setStatus(error?.message || 'افزودن بازه ناموفق بود.', true);
     } finally {
       if (submitButton instanceof HTMLButtonElement) {
         submitButton.disabled = false;
@@ -4533,7 +4462,7 @@ if (EGMT_INCLUDE_ONLY) {
       try {
         await saveTaskTitle(id, titleField.value);
       } catch (error) {
-        setStatus(error?.message || 'Failed to save task title.', true);
+        setStatus(error?.message || 'ذخیره نام بازه ناموفق بود.', true);
       } finally {
         titleSaveBtn.disabled = false;
       }
@@ -4550,7 +4479,7 @@ if (EGMT_INCLUDE_ONLY) {
       try {
         await persistOrder();
       } catch (error) {
-        setStatus(error?.message || 'Failed to save task order.', true);
+        setStatus(error?.message || 'ذخیره ترتیب بازه‌ها ناموفق بود.', true);
         await syncTasks();
       }
       return;
@@ -4566,7 +4495,7 @@ if (EGMT_INCLUDE_ONLY) {
       try {
         await persistOrder();
       } catch (error) {
-        setStatus(error?.message || 'Failed to save task order.', true);
+        setStatus(error?.message || 'ذخیره ترتیب بازه‌ها ناموفق بود.', true);
         await syncTasks();
       }
       return;
@@ -4576,16 +4505,16 @@ if (EGMT_INCLUDE_ONLY) {
     if (!(removeBtn instanceof HTMLButtonElement)) return;
     const id = removeBtn.getAttribute('data-remove-id') || '';
     if (!id) return;
-    if (!window.confirm('Remove this task?')) return;
+    if (!window.confirm('این بازه حذف شود؟')) return;
     removeBtn.disabled = true;
     try {
       const data = await postAction('remove', { id });
       setTasks(Array.isArray(data.tasks) ? data.tasks : []);
       renderTasks();
       emitTasksChanged();
-      setStatus(data.message || 'Task removed.');
+      setStatus(data.message || 'بازه حذف شد.');
     } catch (error) {
-      setStatus(error?.message || 'Failed to remove task.', true);
+      setStatus(error?.message || 'حذف بازه ناموفق بود.', true);
     } finally {
       removeBtn.disabled = false;
     }
@@ -4597,7 +4526,7 @@ if (EGMT_INCLUDE_ONLY) {
       tasks = [];
       renderTasks();
       emitTasksChanged();
-      setStatus(error?.message || 'Failed to load tasks.', true);
+      setStatus(error?.message || 'بارگذاری بازه‌ها ناموفق بود.', true);
     });
 })();
 </script>

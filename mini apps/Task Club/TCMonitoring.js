@@ -2,6 +2,19 @@
   const PANE_SELECTOR = '.sub-pane[data-pane="tc-monitoring"]';
   const API_BASE_URL = 'mini%20apps/Task%20Club/TCMonitoring.php';
   const API_URL = `${API_BASE_URL}?action=stats`;
+  const TC_MONITORING_CLICK_HANDLER_KEY = '__tcMonitoringClickHandler';
+  const TC_MONITORING_TASKS_CHANGED_HANDLER_KEY = '__tcMonitoringTasksChangedHandler';
+
+  const previousClickHandler = window[TC_MONITORING_CLICK_HANDLER_KEY];
+  if (typeof previousClickHandler === 'function') {
+    document.removeEventListener('click', previousClickHandler);
+  }
+  delete window[TC_MONITORING_CLICK_HANDLER_KEY];
+  const previousTasksChangedHandler = window[TC_MONITORING_TASKS_CHANGED_HANDLER_KEY];
+  if (typeof previousTasksChangedHandler === 'function') {
+    window.removeEventListener('tcTasksChanged', previousTasksChangedHandler);
+  }
+  delete window[TC_MONITORING_TASKS_CHANGED_HANDLER_KEY];
 
   let hasLoadedOnce = false;
   let isLoading = false;
@@ -13,6 +26,10 @@
   let monitoringProgressTimer = null;
   let monitoringProgressValue = 0;
   let isExporting = false;
+  let surveyTasksLoaded = false;
+  let surveyLoading = false;
+  let currentSurveyPayload = null;
+  let xlsxLoaderPromise = null;
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -382,6 +399,194 @@
     updatedEl.textContent = `آخرین بروزرسانی: ${date.toLocaleString('fa-IR')}`;
   }
 
+  function normalizeSurveyTaskType(value) {
+    const token = String(value ?? '').trim().toLowerCase();
+    return ['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz', 'survey_score_response', 'survey-score-response', 'survey score response', 'survey score'].includes(token)
+      ? 'shared_answers_quiz'
+      : token;
+  }
+
+  function setMonitoringView(view) {
+    const pane = getPane();
+    if (!pane) return;
+    pane.querySelectorAll('[data-tc-monitoring-view]').forEach((button) => {
+      const active = button.getAttribute('data-tc-monitoring-view') === view;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    pane.querySelectorAll('[data-tc-monitoring-view-panel]').forEach((panel) => {
+      const active = panel.getAttribute('data-tc-monitoring-view-panel') === view;
+      panel.classList.toggle('active', active);
+      panel.hidden = !active;
+    });
+    if (view === 'shared-survey') void loadSurveyTasks();
+    else void loadMonitoring(false);
+  }
+
+  function setSurveyStatus(message = '', isError = false) {
+    const status = getElement('tc-survey-monitoring-status');
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? '#d1434a' : '';
+  }
+
+  function setSurveyLoading(percent, text = 'در حال محاسبه پاسخ‌ها') {
+    const loading = getElement('tc-survey-monitoring-loading');
+    const fill = getElement('tc-survey-monitoring-loading-fill');
+    const percentEl = getElement('tc-survey-monitoring-loading-percent');
+    const textEl = getElement('tc-survey-monitoring-loading-text');
+    const value = Math.max(0, Math.min(100, Number(percent) || 0));
+    loading?.classList.toggle('hidden', value <= 0 || value >= 100);
+    if (fill) fill.style.width = `${value}%`;
+    if (percentEl) percentEl.textContent = formatPercent(value);
+    if (textEl) textEl.textContent = text;
+  }
+
+  async function fetchSurveyApi(action, taskId = '') {
+    const params = new URLSearchParams({ action });
+    if (taskId) params.set('task_id', taskId);
+    const response = await fetch(`${API_BASE_URL}?${params.toString()}`, { credentials: 'same-origin', cache: 'no-store' });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.status !== 'ok') throw new Error(payload?.message || `خطا در دریافت اطلاعات (${response.status})`);
+    return payload.data;
+  }
+
+  async function loadSurveyTasks(force = false) {
+    if (surveyLoading || (surveyTasksLoaded && !force)) return;
+    surveyLoading = true;
+    setSurveyStatus('در حال دریافت ماموریت‌های نظرسنجی...');
+    setSurveyLoading(15, 'در حال دریافت ماموریت‌ها');
+    try {
+      const tasks = await fetchSurveyApi('survey_tasks');
+      const select = getElement('tc-survey-monitoring-task');
+      const rows = (Array.isArray(tasks) ? tasks : []).filter((task) => !task?.taskType || normalizeSurveyTaskType(task.taskType) === 'shared_answers_quiz');
+      if (!(select instanceof HTMLSelectElement)) return;
+      const previous = String(select.value || '');
+      select.innerHTML = rows.length
+        ? rows.map((task) => `<option value="${escapeHtml(task.id)}">${escapeHtml(task.title || task.tagCode || task.id)}</option>`).join('')
+        : '<option value="">ماموریت Survey Score Response وجود ندارد</option>';
+      if (rows.some((task) => String(task.id) === previous)) select.value = previous;
+      surveyTasksLoaded = true;
+      setSurveyLoading(35, 'در حال خواندن پاسخ‌ها');
+      if (select.value) await loadSurveyMonitoring(select.value, true);
+      else {
+        currentSurveyPayload = null;
+        setSurveyStatus('هنوز ماموریت Survey Score Response ساخته نشده است.');
+        setSurveyLoading(100);
+        renderSurveyData({});
+      }
+    } catch (error) {
+      setSurveyStatus(error?.message || 'دریافت ماموریت‌های نظرسنجی ناموفق بود.', true);
+      setSurveyLoading(100);
+    } finally {
+      surveyLoading = false;
+    }
+  }
+
+  function surveyKpi(label, value, hint = '') {
+    return `<article class="card tc-monitoring-kpi"><div class="tc-monitoring-kpi-label">${escapeHtml(label)}</div><div class="tc-monitoring-kpi-value">${escapeHtml(value)}</div>${hint ? `<small class="muted">${escapeHtml(hint)}</small>` : ''}</article>`;
+  }
+
+  function surveyBar(title, count, rate, meta = '') {
+    const width = Math.max(0, Math.min(100, Number(rate) || 0));
+    return `<div class="tc-monitoring-bar-row"><div class="tc-monitoring-bar-head"><span class="tc-monitoring-bar-title">${escapeHtml(title)}</span><span class="tc-monitoring-bar-meta">${escapeHtml(meta || `${formatNumber(count)} نفر | ${formatPercent(width)}`)}</span></div><div class="tc-monitoring-bar-track"><span class="tc-monitoring-bar-fill" style="width:${width}%"></span></div></div>`;
+  }
+
+  function renderSurveyData(payload = {}) {
+    currentSurveyPayload = payload && typeof payload === 'object' ? payload : {};
+    const summary = currentSurveyPayload.summary || {};
+    const task = currentSurveyPayload.task || {};
+    const participants = Array.isArray(currentSurveyPayload.participants) ? currentSurveyPayload.participants : [];
+    const kpis = getElement('tc-survey-monitoring-kpis');
+    if (kpis) kpis.innerHTML = [
+      surveyKpi('کل دعوت‌شدگان', formatNumber(summary.totalInvitees || 0)),
+      surveyKpi('مشارکت‌کنندگان', formatNumber(summary.participants || 0), formatPercent(summary.completionRate || 0)),
+      surveyKpi('شرکت‌نکرده', formatNumber(summary.notParticipated || 0)),
+      surveyKpi('میانگین امتیاز داخلی', formatNumber(summary.averageInnerScore || 0, 2)),
+      surveyKpi('میانگین سطح پاسخ', formatNumber(summary.averageResponseLevelNumber || 0, 2)),
+      surveyKpi('سوال / سطح', `${formatNumber(summary.questionCount || 0)} / ${formatNumber(summary.responseLevelCount || 0)}`)
+    ].join('');
+
+    const completion = getElement('tc-survey-monitoring-completion');
+    if (completion) completion.innerHTML = surveyBar('نرخ تکمیل', summary.participants || 0, summary.completionRate || 0);
+    const dates = getElement('tc-survey-monitoring-dates');
+    if (dates) dates.innerHTML = [
+      surveyKpi('شروع ماموریت', [task.startDate, task.startTime].filter(Boolean).join(' ') || 'تنظیم نشده'),
+      surveyKpi('پایان ماموریت', [task.endDate, task.endTime].filter(Boolean).join(' ') || 'تنظیم نشده'),
+      surveyKpi('اولین تکمیل', summary.firstCompletedAt ? formatShamsiDateTime(summary.firstCompletedAt) : 'بدون داده'),
+      surveyKpi('آخرین تکمیل', summary.lastCompletedAt ? formatShamsiDateTime(summary.lastCompletedAt) : 'بدون داده')
+    ].join('');
+
+    const levels = getElement('tc-survey-monitoring-levels');
+    const levelRows = Array.isArray(currentSurveyPayload.levels) ? currentSurveyPayload.levels : [];
+    if (levels) levels.innerHTML = levelRows.length ? levelRows.map((level) => surveyBar(level.name || 'بدون نام', level.count || 0, level.rate || 0)).join('') : '<p class="muted small">سطح پاسخی تنظیم نشده یا پاسخی ثبت نشده است.</p>';
+
+    const questions = getElement('tc-survey-monitoring-questions');
+    const questionRows = Array.isArray(currentSurveyPayload.questions) ? currentSurveyPayload.questions : [];
+    if (questions) questions.innerHTML = questionRows.length ? questionRows.map((question, index) => `<section class="tc-survey-question"><div class="tc-monitoring-bar-head"><strong>${formatNumber(index + 1)}. ${escapeHtml(question.question || question.code || '')}</strong><span class="tc-monitoring-bar-meta">پاسخ ${formatNumber(question.answeredCount || 0)} نفر | ${formatPercent(question.responseRate || 0)}</span></div><div class="tc-monitoring-bars">${(Array.isArray(question.choices) ? question.choices : []).map((choice) => surveyBar(choice.answer || 'بدون پاسخ', choice.count || 0, choice.rate || 0)).join('')}</div></section>`).join('') : '<p class="muted small">سوالی برای این ماموریت ثبت نشده است.</p>';
+
+    const body = getElement('tc-survey-monitoring-participants');
+    if (body) body.innerHTML = participants.length ? participants.map((person) => {
+      const answered = Math.max(0, Number(person.answeredQuestions) || 0);
+      const total = Math.max(0, Number(person.questionCount) || 0);
+      const rate = total > 0 ? answered * 100 / total : 0;
+      return `<tr><td>${escapeHtml(person.fullName || person.workId || '')}</td><td>${escapeHtml(person.workId || '')}</td><td>${escapeHtml(person.responseLevelName || 'بدون تطبیق')}</td><td>${formatNumber(person.innerScore || 0)}</td><td><div class="tc-survey-table-progress"><span style="width:${Math.min(100, rate)}%"></span></div><small>${formatNumber(answered)} / ${formatNumber(total)}</small></td><td>${person.completedAt ? escapeHtml(formatShamsiDateTime(person.completedAt)) : 'نامشخص'}</td></tr>`;
+    }).join('') : '<tr><td colspan="6" class="muted">هنوز مشارکتی ثبت نشده است.</td></tr>';
+    const updated = getElement('tc-survey-monitoring-updated');
+    if (updated) updated.textContent = currentSurveyPayload.generatedAt ? `آخرین بروزرسانی: ${formatShamsiDateTime(currentSurveyPayload.generatedAt)}` : '';
+  }
+
+  async function loadSurveyMonitoring(taskId, force = false) {
+    if (!taskId || (surveyLoading && !force)) return;
+    surveyLoading = true;
+    setSurveyStatus('در حال استخراج پاسخ‌ها، تاریخ‌ها و پیشرفت...');
+    setSurveyLoading(45, 'در حال استخراج پاسخ‌ها');
+    try {
+      const data = await fetchSurveyApi('survey_stats', taskId);
+      setSurveyLoading(85, 'در حال ساخت گزارش');
+      renderSurveyData(data || {});
+      setSurveyStatus('');
+      setSurveyLoading(100);
+    } catch (error) {
+      setSurveyStatus(error?.message || 'دریافت مانیتورینگ نظرسنجی ناموفق بود.', true);
+      setSurveyLoading(100);
+    } finally {
+      surveyLoading = false;
+    }
+  }
+
+  function loadXlsxLibrary() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (xlsxLoaderPromise) return xlsxLoaderPromise;
+    xlsxLoaderPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'mini%20apps/Task%20Club/vendor/xlsx/xlsx.full.min.js';
+      script.addEventListener('load', () => window.XLSX ? resolve(window.XLSX) : reject(new Error('کتابخانه اکسل بارگذاری نشد.')), { once: true });
+      script.addEventListener('error', () => reject(new Error('کتابخانه اکسل بارگذاری نشد.')), { once: true });
+      document.head.appendChild(script);
+    });
+    return xlsxLoaderPromise;
+  }
+
+  async function exportSurveyMonitoring() {
+    if (!currentSurveyPayload?.task) return setSurveyStatus('ابتدا یک ماموریت را انتخاب کنید.', true);
+    try {
+      const XLSX = await loadXlsxLibrary();
+      const rows = (currentSurveyPayload.participants || []).map((person) => ({
+        'نام': person.fullName || '', 'شماره پرسنلی': person.workId || '', 'تلفن': person.phoneNumber || '', 'کد ملی': person.nationalId || '',
+        'سطح پاسخ': person.responseLevelName || '', 'امتیاز داخلی': person.innerScore || 0,
+        'سوالات پاسخ‌داده': person.answeredQuestions || 0, 'تعداد سوال': person.questionCount || 0, 'تاریخ تکمیل': person.completedAt || ''
+      }));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Participants');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(currentSurveyPayload.levels || []), 'Response Levels');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet((currentSurveyPayload.questions || []).map((q) => ({ code: q.code, question: q.question, answered: q.answeredCount, responseRate: q.responseRate }))), 'Questions');
+      XLSX.writeFile(workbook, `${String(currentSurveyPayload.task.title || currentSurveyPayload.task.tagCode || 'survey').replace(/[\\/:*?"<>|]+/g, '-')}-monitoring.xlsx`);
+    } catch (error) {
+      setSurveyStatus(error?.message || 'ساخت خروجی اکسل ناموفق بود.', true);
+    }
+  }
+
   function renderWorkIdGroupFilter(groups = [], selectedGroups = []) {
     const host = getElement('tc-monitoring-workid-filter');
     if (!host) return;
@@ -449,6 +654,13 @@
       levelSubtitle.textContent = `حداکثر کارت جایزه قابل باز شدن: ${formatNumber(summary.maximumPrizeCardsOpenable || 0)}`;
     }
 
+    const reconciliationDifference = Number(summary.prizeValueReconciliationDifference || 0);
+    const hasPrizeProblem = summary.prizeValueHasProblem === true || Math.abs(reconciliationDifference) > 0.005;
+    const reconciliationText = !hasPrizeProblem
+      ? 'بدون مغایرت'
+      : reconciliationDifference > 0
+        ? `${formatNumber(reconciliationDifference, 2)} تومان بیشتر از بودجه`
+        : `${formatNumber(Math.abs(reconciliationDifference), 2)} تومان کمتر از بودجه`;
     const items = [
       { label: 'تعداد دعوت‌شدگان', value: formatNumber(summary.totalUsers || 0) },
       { label: 'حداقل یک‌بار ورود', value: formatNumber(summary.loggedInUsers || 0) },
@@ -463,11 +675,14 @@
       { label: 'همه ماموریت‌های شروع‌شده را انجام داده‌اند', value: formatNumber(summary.usersCompletedAllStarted || 0) },
       { label: 'جوایز باقی‌مانده', value: formatNumber(summary.prizeRemaining || 0) },
       { label: 'ظرفیت کل جوایز', value: formatNumber(summary.prizeCapacity || 0) },
-      { label: 'جوایز داده‌شده', value: formatNumber(summary.prizeGiven || 0) }
+      { label: 'جوایز داده‌شده', value: formatNumber(summary.prizeGiven || 0) },
+      { label: 'مجموع ارزش جوایز داده‌شده', value: `${formatNumber(summary.prizeValueAssignedToInvitees || 0, 2)} تومان` },
+      { label: 'مجموع ارزش جوایز داده‌نشده', value: `${formatNumber(summary.prizeValueRemaining || 0, 2)} تومان` },
+      { label: 'بررسی بودجه جوایز', value: reconciliationText, wide: true, problem: hasPrizeProblem }
     ];
 
     host.innerHTML = items.map((item) => `
-      <article class="card tc-monitoring-kpi ${item.wide ? 'tc-monitoring-kpi--wide' : ''}">
+      <article class="card tc-monitoring-kpi ${item.wide ? 'tc-monitoring-kpi--wide' : ''} ${item.problem ? 'tc-monitoring-kpi--problem' : ''}">
         <div class="tc-monitoring-kpi-label">${escapeHtml(item.label)}</div>
         <div class="tc-monitoring-kpi-value">${escapeHtml(item.value)}</div>
       </article>
@@ -913,6 +1128,24 @@
     if (pane.dataset.tcMonitoringReady === '1') return;
     pane.dataset.tcMonitoringReady = '1';
 
+    pane.querySelectorAll('[data-tc-monitoring-view]').forEach((button) => {
+      button.addEventListener('click', () => setMonitoringView(String(button.getAttribute('data-tc-monitoring-view') || 'overview')));
+    });
+    const surveySelect = getElement('tc-survey-monitoring-task');
+    if (surveySelect instanceof HTMLSelectElement) {
+      surveySelect.addEventListener('change', () => void loadSurveyMonitoring(String(surveySelect.value || ''), true));
+    }
+    const surveyRefresh = getElement('tc-survey-monitoring-refresh');
+    if (surveyRefresh instanceof HTMLButtonElement) {
+      surveyRefresh.addEventListener('click', () => {
+        const taskId = surveySelect instanceof HTMLSelectElement ? String(surveySelect.value || '') : '';
+        if (taskId) void loadSurveyMonitoring(taskId, true);
+        else void loadSurveyTasks(true);
+      });
+    }
+    const surveyExport = getElement('tc-survey-monitoring-export');
+    if (surveyExport instanceof HTMLButtonElement) surveyExport.addEventListener('click', () => void exportSurveyMonitoring());
+
     const refreshButton = getElement('tc-monitoring-refresh');
     if (refreshButton instanceof HTMLButtonElement) {
       refreshButton.addEventListener('click', () => {
@@ -964,7 +1197,7 @@
       });
     }
 
-    document.addEventListener('click', (event) => {
+    const monitoringClickHandler = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const trigger = target.closest('.sub-item[data-pane]');
@@ -973,14 +1206,21 @@
       window.setTimeout(() => {
         void loadMonitoring(false);
       }, 0);
-    });
+    };
+    window[TC_MONITORING_CLICK_HANDLER_KEY] = monitoringClickHandler;
+    document.addEventListener('click', monitoringClickHandler);
 
-    window.addEventListener('tcTasksChanged', () => {
+    const tasksChangedHandler = () => {
       hasLoadedOnce = false;
+      surveyTasksLoaded = false;
       if (isMonitoringPaneActive()) {
-        void loadMonitoring(false);
+        const surveyPanel = pane.querySelector('[data-tc-monitoring-view-panel="shared-survey"]');
+        if (surveyPanel instanceof HTMLElement && !surveyPanel.hidden) void loadSurveyTasks(true);
+        else void loadMonitoring(false);
       }
-    });
+    };
+    window[TC_MONITORING_TASKS_CHANGED_HANDLER_KEY] = tasksChangedHandler;
+    window.addEventListener('tcTasksChanged', tasksChangedHandler);
 
     if (isMonitoringPaneActive()) {
       void loadMonitoring(false);

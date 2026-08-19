@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 
@@ -26,6 +28,32 @@ function tcCreatorGenerateRoot(): string
   return tcCreatorMissionsRoot() . DIRECTORY_SEPARATOR . 'generate';
 }
 
+function tcCreatorDatabase(): PDO
+{
+  static $pdo = null;
+  if ($pdo instanceof PDO) return $pdo;
+  $pdo = connectDatabase(loadConfig(tcCreatorProjectRoot() . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php'));
+  if (!$pdo instanceof PDO) throw new RuntimeException('Unable to connect to the TaskClub database registry.');
+  ensureTcRegistryTable($pdo);
+  foreach (listTcRegistry($pdo) as $record) {
+    $code = normalizeTcInstanceCode($record['code'] ?? '');
+    $directory = normalizeTcRegistryDirectory($record['directory'] ?? '');
+    if ($code === '' || $directory === '') continue;
+    ensureTcInstanceTables($pdo, $code);
+    tcInstanceWriteData($pdo, $code, 'metadata', [
+      'code' => $code,
+      'name' => trim((string)($record['name'] ?? '')),
+      'directory' => $directory
+    ]);
+  }
+  return $pdo;
+}
+
+function tcCreatorAllocateUniqueCode(): string
+{
+  return allocateTcRegistryCode(tcCreatorDatabase());
+}
+
 function tcCreatorRegistryPath(): string
 {
   return tcCreatorGenerateRoot() . DIRECTORY_SEPARATOR . 'clubs.json';
@@ -48,17 +76,17 @@ function tcCreatorWriteJsonFile(string $path, array $payload): void
     throw new RuntimeException('Failed to encode JSON.');
   }
   tcCreatorEnsureDirectory(dirname($path));
-  if (file_put_contents($path, $json . PHP_EOL, LOCK_EX) === false) {
+  if (tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) === false) {
     throw new RuntimeException('Failed to write file: ' . $path);
   }
 }
 
 function tcCreatorReadJsonFile(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -72,7 +100,7 @@ function tcCreatorEnsureGeneratorStorage(): void
   tcCreatorEnsureDirectory(tcCreatorGenerateRoot());
 
   $htaccessPath = tcCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.htaccess';
-  if (!is_file($htaccessPath)) {
+  if (!tcDbIsFile($htaccessPath)) {
     $rules = implode(PHP_EOL, [
       'Options -Indexes',
       '',
@@ -85,14 +113,11 @@ function tcCreatorEnsureGeneratorStorage(): void
       '</IfModule>',
       ''
     ]);
-    if (file_put_contents($htaccessPath, $rules, LOCK_EX) === false) {
+    if (tcDbFilePutContents($htaccessPath, $rules, LOCK_EX) === false) {
       throw new RuntimeException('Failed to write generator access rules.');
     }
   }
 
-  if (!is_file(tcCreatorRegistryPath())) {
-    tcCreatorWriteJsonFile(tcCreatorRegistryPath(), ['clubs' => []]);
-  }
 }
 
 function tcCreatorNormalizeMissionName(string $value): string
@@ -165,7 +190,7 @@ function tcCreatorRemoveTree(string $path, string $allowedRoot): void
     if ($item->isDir()) {
       @rmdir($itemPath);
     } else {
-      @unlink($itemPath);
+      @tcDbUnlink($itemPath);
     }
   }
   @rmdir($path);
@@ -194,6 +219,15 @@ function tcCreatorShouldCopyRelativePath(string $relativePath, bool $isDir): boo
   }
   if (strpos($relative, 'TC Event/') === 0) {
     return $relative === 'TC Event/Answers.csv';
+  }
+  if ($relative === 'useractivitylogs/logs') {
+    return true;
+  }
+  if (strpos($relative, 'useractivitylogs/logs/') === 0) {
+    return in_array($relative, [
+      'useractivitylogs/logs/.gitkeep',
+      'useractivitylogs/logs/.htaccess'
+    ], true);
   }
   if (!$isDir && preg_match('/\.json$/i', $relative)) {
     return false;
@@ -242,7 +276,7 @@ function tcCreatorPatchGeneratedFile(string $path, string $relativePath, string 
   if (!tcCreatorIsPatchableTextFile($relativePath)) {
     return;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content)) {
     throw new RuntimeException('Failed to read copied file: ' . $relativePath);
   }
@@ -260,7 +294,7 @@ function tcCreatorPatchGeneratedFile(string $path, string $relativePath, string 
     "= '../../style/" => "= '../../../style/"
   ];
   $patched = str_replace(array_keys($replacements), array_values($replacements), $content);
-  if ($patched !== $content && file_put_contents($path, $patched, LOCK_EX) === false) {
+  if ($patched !== $content && tcDbFilePutContents($path, $patched, LOCK_EX) === false) {
     throw new RuntimeException('Failed to patch copied file: ' . $relativePath);
   }
 }
@@ -286,7 +320,7 @@ function tcCreatorCopyTaskClubTemplate(string $sourceDir, string $targetDir, str
       continue;
     }
     tcCreatorEnsureDirectory(dirname($destination));
-    if (!copy($sourcePath, $destination)) {
+    if (!tcDbCopy($sourcePath, $destination)) {
       throw new RuntimeException('Failed to copy file: ' . $relative);
     }
     tcCreatorPatchGeneratedFile($destination, $relative, $folderName, $webPath);
@@ -316,7 +350,7 @@ function tcCreatorCopyTaskClubUpdates(string $sourceDir, string $targetDir, stri
       continue;
     }
     tcCreatorEnsureDirectory(dirname($destination));
-    if (!copy($sourcePath, $destination)) {
+    if (!tcDbCopy($sourcePath, $destination)) {
       throw new RuntimeException('Failed to update file: ' . $relative);
     }
     tcCreatorPatchGeneratedFile($destination, $relative, $folderName, $webPath);
@@ -328,10 +362,10 @@ function tcCreatorInitializeMission(string $targetDir, string $name, string $fol
   tcCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'tasks');
   tcCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'TC Event');
 
-  if (file_put_contents($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js', "window.TC_TASKS = [];\n", LOCK_EX) === false) {
+  if (tcDbFilePutContents($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js', "window.TC_TASKS = [];\n", LOCK_EX) === false) {
     throw new RuntimeException('Failed to initialize task store.');
   }
-  if (file_put_contents($targetDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Answers.csv', "Work ID\n", LOCK_EX) === false) {
+  if (tcDbFilePutContents($targetDir . DIRECTORY_SEPARATOR . 'TC Event' . DIRECTORY_SEPARATOR . 'Answers.csv', "Work ID\n", LOCK_EX) === false) {
     throw new RuntimeException('Failed to initialize answers store.');
   }
   tcCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'Setting.json', [
@@ -371,25 +405,18 @@ function tcCreatorInitializeMission(string $targetDir, string $name, string $fol
 function tcCreatorListMissions(): array
 {
   tcCreatorEnsureGeneratorStorage();
-  $root = tcCreatorMissionsRoot();
-  if (!is_dir($root)) {
-    return [];
-  }
   $items = [];
-  foreach (new DirectoryIterator($root) as $entry) {
-    if ($entry->isDot() || !$entry->isDir()) {
-      continue;
-    }
-    $folder = $entry->getFilename();
-    if ($folder === 'generate' || strncmp($folder, '.', 1) === 0) {
-      continue;
-    }
-    $missionDir = $entry->getPathname();
-    $meta = tcCreatorReadJsonFile($missionDir . DIRECTORY_SEPARATOR . 'mission.json');
+  foreach (listTcRegistry(tcCreatorDatabase()) as $record) {
+    $directory = normalizeTcRegistryDirectory($record['directory'] ?? '');
+    if (!str_starts_with($directory, TC_INSTANCES_DIRECTORY . '/')) continue;
+    $folder = basename($directory);
+    $missionDir = tcCreatorProjectRoot() . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $directory);
+    if (!is_dir($missionDir)) continue;
     $webPath = tcCreatorMissionWebPath($folder);
-    $createdAt = trim((string)($meta['createdAt'] ?? ''));
+    $createdAt = trim((string)($record['created_at'] ?? ''));
     $items[] = [
-      'name' => trim((string)($meta['name'] ?? $folder)) ?: $folder,
+      'name' => trim((string)($record['name'] ?? $folder)) ?: $folder,
+      'code' => (string)($record['code'] ?? ''),
       'folder' => $folder,
       'tabId' => tcCreatorMissionTabId($folder),
       'directory' => tcCreatorMissionDirectoryLabel($folder),
@@ -413,10 +440,7 @@ function tcCreatorListMissions(): array
 
 function tcCreatorSyncRegistry(array $missions): void
 {
-  tcCreatorWriteJsonFile(tcCreatorRegistryPath(), [
-    'updatedAt' => gmdate('c'),
-    'clubs' => $missions
-  ]);
+  // The TC registry table is authoritative; retained for older callers.
 }
 
 function tcCreatorJsonResponse(array $payload, int $statusCode = 200): void
@@ -446,20 +470,43 @@ function tcCreatorCreateMission(string $rawName): array
 
   $missionsRoot = tcCreatorMissionsRoot();
   $targetDir = $missionsRoot . DIRECTORY_SEPARATOR . $folderName;
-  if (file_exists($targetDir)) {
+  if (tcDbFileExists($targetDir)) {
     throw new InvalidArgumentException('A Task Club with this folder name already exists.');
   }
 
   $buildDir = tcCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.build-' . date('YmdHis') . '-' . bin2hex(random_bytes(4));
   $webPath = tcCreatorMissionWebPath($folderName);
+  $code = tcCreatorAllocateUniqueCode();
+  $registryInserted = false;
   try {
     tcCreatorCopyTaskClubTemplate(__DIR__, $buildDir, $folderName, $webPath);
-    tcCreatorInitializeMission($buildDir, $folderName, $folderName, $webPath);
-    if (!rename($buildDir, $targetDir)) {
+    if (!tcDbRename($buildDir, $targetDir)) {
       throw new RuntimeException('Failed to publish generated Task Club.');
     }
+    insertTcRegistry(tcCreatorDatabase(), $code, $folderName, tcCreatorMissionDirectoryLabel($folderName));
+    $registryInserted = true;
+    ensureTcInstanceTables(tcCreatorDatabase(), $code);
+    tcCreatorInitializeMission($targetDir, $folderName, $folderName, $webPath);
+    tcInstanceWriteData(tcCreatorDatabase(), $code, 'metadata', [
+      'code' => $code,
+      'name' => $folderName,
+      'directory' => tcCreatorMissionDirectoryLabel($folderName)
+    ]);
+    tcInstanceWriteData(tcCreatorDatabase(), $code, 'settings', tcCreatorReadJsonFile($targetDir . DIRECTORY_SEPARATOR . 'Setting.json'));
+    tcInstanceWritePeriods(tcCreatorDatabase(), $code, []);
+    tcInstanceWriteData(tcCreatorDatabase(), $code, 'invitee_mapping', tcDatabaseRuntimeDefaultInviteeMapping());
+    tcInstanceWriteData(tcCreatorDatabase(), $code, 'storage_mode', ['mode' => 'database_only', 'version' => 1]);
   } catch (Throwable $error) {
+    if ($registryInserted) {
+      try {
+        deleteTcRegistry(tcCreatorDatabase(), $code);
+        dropTcInstanceTables(tcCreatorDatabase(), $code);
+      } catch (Throwable $cleanupError) {
+        error_log('Failed to clean up TaskClub database provisioning: ' . $cleanupError->getMessage());
+      }
+    }
     tcCreatorRemoveTree($buildDir, tcCreatorGenerateRoot());
+    tcCreatorRemoveTree($targetDir, tcCreatorMissionsRoot());
     throw $error;
   }
 
@@ -472,6 +519,7 @@ function tcCreatorCreateMission(string $rawName): array
   }
   return [
     'name' => $folderName,
+    'code' => $code,
     'folder' => $folderName,
     'tabId' => tcCreatorMissionTabId($folderName),
     'directory' => tcCreatorMissionDirectoryLabel($folderName),
@@ -491,6 +539,9 @@ function tcCreatorUpdateMissionBranchSetting(string $rawFolder): array
   if (!is_dir($targetDir) || !tcCreatorIsWithinPath($targetDir, tcCreatorMissionsRoot())) {
     throw new InvalidArgumentException('Task Club was not found.');
   }
+  $registryDirectory = tcCreatorMissionDirectoryLabel($folderName);
+  $registryRecord = findTcRegistryByDirectory(tcCreatorDatabase(), $registryDirectory);
+  if (!is_array($registryRecord)) throw new InvalidArgumentException('Task Club is not registered in the database.');
 
   $webPath = tcCreatorMissionWebPath($folderName);
   tcCreatorCopyTaskClubUpdates(__DIR__, $targetDir, $folderName, $webPath);
@@ -508,6 +559,13 @@ function tcCreatorUpdateMissionBranchSetting(string $rawFolder): array
     $meta['createdAt'] = gmdate('c');
   }
   tcCreatorWriteJsonFile($metaPath, $meta);
+  updateTcRegistry(tcCreatorDatabase(), (string)$registryRecord['code'], (string)$registryRecord['name'], $registryDirectory);
+  tcInstanceWriteData(tcCreatorDatabase(), (string)$registryRecord['code'], 'metadata', [
+    'code' => (string)$registryRecord['code'],
+    'name' => (string)$registryRecord['name'],
+    'directory' => $registryDirectory
+  ]);
+  tcInstanceWriteData(tcCreatorDatabase(), (string)$registryRecord['code'], 'storage_mode', ['mode' => 'database_only', 'version' => 1]);
 
   $missions = tcCreatorListMissions();
   tcCreatorSyncRegistry($missions);
@@ -527,18 +585,26 @@ function tcCreatorDeleteMission(string $rawFolder): array
   if (!is_dir($targetDir) || !tcCreatorIsWithinPath($targetDir, tcCreatorMissionsRoot())) {
     throw new InvalidArgumentException('Task Club was not found.');
   }
-
-  tcCreatorRemoveTree($targetDir, tcCreatorMissionsRoot());
-  if (is_dir($targetDir)) {
-    throw new RuntimeException('Failed to delete Task Club.');
+  $registryRecord = findTcRegistryByDirectory(tcCreatorDatabase(), tcCreatorMissionDirectoryLabel($folderName));
+  if (!is_array($registryRecord)) throw new InvalidArgumentException('Task Club is not registered in the database.');
+  $stagingDir = tcCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.delete-' . (string)$registryRecord['code'] . '-' . bin2hex(random_bytes(4));
+  if (!tcDbRename($targetDir, $stagingDir)) throw new RuntimeException('Failed to stage Task Club for deletion.');
+  try {
+    if (!deleteTcRegistry(tcCreatorDatabase(), (string)$registryRecord['code'])) throw new RuntimeException('Failed to delete TaskClub registry record.');
+    dropTcInstanceTables(tcCreatorDatabase(), (string)$registryRecord['code']);
+  } catch (Throwable $error) {
+    upsertTcRegistry(tcCreatorDatabase(), (string)$registryRecord['code'], (string)$registryRecord['name'], (string)$registryRecord['directory']);
+    @tcDbRename($stagingDir, $targetDir);
+    throw $error;
   }
+  tcCreatorRemoveTree($stagingDir, tcCreatorGenerateRoot());
   $missions = tcCreatorListMissions();
   tcCreatorSyncRegistry($missions);
   return $missions;
 }
 
 if ($tcCreatorIsJsonRequest) {
-  $payload = json_decode((string)file_get_contents('php://input'), true);
+  $payload = json_decode((string)tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     tcCreatorJsonResponse(['status' => 'error', 'message' => 'Invalid request payload.'], 400);
   }
@@ -587,7 +653,7 @@ if ($tcCreatorIsJsonRequest) {
 tcCreatorEnsureGeneratorStorage();
 $tcCreatorMissions = tcCreatorListMissions();
 tcCreatorSyncRegistry($tcCreatorMissions);
-$tcCreatorPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
+$tcCreatorPanelCssVer = (string)(@tcDbFilemtime(__DIR__ . '/tc-panel.css') ?: time());
 $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
 ?>
 

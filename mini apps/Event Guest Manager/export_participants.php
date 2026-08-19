@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $egmExportSessionUser = requireTabPermissionFromSession('event-guest-manager', false);
@@ -49,10 +52,10 @@ function egmParticipantsReadCsvRows(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -71,10 +74,10 @@ function egmParticipantsReadCsvRows(string $path): array
 
 function egmParticipantsReadMapping(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return [];
   }
@@ -162,8 +165,8 @@ function egmParticipantsXmlEscape(string $value): string
 function egmParticipantsEventTitle(string $fallback): string
 {
   $indexPath = __DIR__ . DIRECTORY_SEPARATOR . 'index.php';
-  if (is_file($indexPath)) {
-    $content = file_get_contents($indexPath);
+  if (egmDbIsFile($indexPath)) {
+    $content = egmDbFileGetContents($indexPath);
     if (is_string($content) && preg_match('/<title[^>]*>(.*?)<\/title>/is', $content, $matches)) {
       $title = trim(html_entity_decode(strip_tags((string)$matches[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
       if ($title !== '') {

@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/prize_inventory_store.php';
 
@@ -103,10 +106,10 @@ if (!userHasPermissionId($egmMonitoringSessionUser, 'event-guest-manager:monitor
 
 function egmMonitoringReadJson(string $path, $fallback)
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $fallback;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return $fallback;
   }
@@ -250,11 +253,11 @@ function egmMonitoringReadCsvRows(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -586,11 +589,11 @@ function egmMonitoringHasDescribePhotoSubmissionForTask(array $user, string $tas
       continue;
     }
     $filePath = $articlesDir . DIRECTORY_SEPARATOR . $fileName;
-    if (!is_file($filePath)) {
+    if (!egmDbIsFile($filePath)) {
       continue;
     }
     if (!array_key_exists($filePath, $submissionCache)) {
-      $content = file_get_contents($filePath);
+      $content = egmDbFileGetContents($filePath);
       if (!is_string($content)) {
         $content = '';
       }
@@ -821,10 +824,10 @@ function egmMonitoringMinPositiveScoreValue(array $values): int
 
 function egmMonitoringReadTasks(string $storePath, string $tasksDir): array
 {
-  if (!is_file($storePath)) {
+  if (!egmDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = egmDbFileGetContents($storePath);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -1252,16 +1255,16 @@ function egmMonitoringBuildCompletionPhaseLookup(string $logsDir, array $tasks):
   }
 
   $lookup = [];
-  $paths = glob($logsDir . DIRECTORY_SEPARATOR . '*.log');
+  $paths = egmDbGlob($logsDir . DIRECTORY_SEPARATOR . '*.log');
   if (!is_array($paths) || !$paths) {
     return [];
   }
   sort($paths, SORT_NATURAL | SORT_FLAG_CASE);
   foreach ($paths as $path) {
-    if (!is_file($path)) {
+    if (!egmDbIsFile($path)) {
       continue;
     }
-    $handle = fopen($path, 'r');
+    $handle = egmDbFopen($path, 'r');
     if ($handle === false) {
       continue;
     }
@@ -1332,16 +1335,16 @@ function egmMonitoringReadTaskInteractionWorkIds(string $logsDir): array
   if (!is_dir($logsDir)) {
     return [];
   }
-  $paths = glob($logsDir . DIRECTORY_SEPARATOR . '*.log');
+  $paths = egmDbGlob($logsDir . DIRECTORY_SEPARATOR . '*.log');
   if (!is_array($paths) || !$paths) {
     return [];
   }
   $workIds = [];
   foreach ($paths as $path) {
-    if (!is_file($path)) {
+    if (!egmDbIsFile($path)) {
       continue;
     }
-    $handle = fopen($path, 'r');
+    $handle = egmDbFopen($path, 'r');
     if ($handle === false) {
       continue;
     }
@@ -1746,11 +1749,11 @@ function egmMonitoringBuildFallbackStats(string $baseDir, array $warnings = []):
     'selectedWorkIdGroups' => $selectedWorkIdGroups,
     'prizeStats' => ['rows' => $prizes],
     'dataSources' => [
-      'inviteesCsvFound' => is_file($inviteesPath),
+      'inviteesCsvFound' => egmDbIsFile($inviteesPath),
       'inviteesRows' => $rowsCount,
-      'tasksStoreFound' => is_file($tasksPath),
-      'prizesFileFound' => is_file($prizesPath),
-      'levelsFileFound' => is_file($levelsPath)
+      'tasksStoreFound' => egmDbIsFile($tasksPath),
+      'prizesFileFound' => egmDbIsFile($prizesPath),
+      'levelsFileFound' => egmDbIsFile($levelsPath)
     ],
     'warnings' => array_values(array_unique(array_filter($warnings))),
     'generatedAt' => gmdate('c')
@@ -1770,7 +1773,7 @@ function egmMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindo
   if (!is_dir($logsDir)) {
     return $empty;
   }
-  $paths = glob($logsDir . DIRECTORY_SEPARATOR . '*.log');
+  $paths = egmDbGlob($logsDir . DIRECTORY_SEPARATOR . '*.log');
   if (!is_array($paths) || !$paths) {
     return $empty;
   }
@@ -1779,10 +1782,10 @@ function egmMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindo
   $logEventsRead = 0;
   $loginsByUserDate = [];
   foreach ($paths as $path) {
-    if (!is_file($path)) {
+    if (!egmDbIsFile($path)) {
       continue;
     }
-    $handle = fopen($path, 'r');
+    $handle = egmDbFopen($path, 'r');
     if ($handle === false) {
       continue;
     }
@@ -1825,10 +1828,10 @@ function egmMonitoringBuildTimeEngagementStats(string $logsDir, array $taskWindo
   $usersLoginAndAnswerOnMissionStartDay = [];
   $answeredStartedDayTasksByUserDate = [];
   foreach ($paths as $path) {
-    if (!is_file($path)) {
+    if (!egmDbIsFile($path)) {
       continue;
     }
-    $handle = fopen($path, 'r');
+    $handle = egmDbFopen($path, 'r');
     if ($handle === false) {
       continue;
     }
@@ -2248,7 +2251,7 @@ function egmMonitoringBuildStats(string $baseDir): array
   usort($workIdGroupStats, static fn(array $a, array $b): int => strnatcasecmp((string)($a['group'] ?? ''), (string)($b['group'] ?? '')));
 
   try {
-    $teamRuntimePaths = glob($tasksDir . DIRECTORY_SEPARATOR . '*' . DIRECTORY_SEPARATOR . 'team-runtime.json');
+    $teamRuntimePaths = egmDbGlob($tasksDir . DIRECTORY_SEPARATOR . '*' . DIRECTORY_SEPARATOR . 'team-runtime.json');
   } catch (Throwable $err) {
     $teamRuntimePaths = [];
     $warnings[] = 'اطلاعات چالش‌های تیمی قابل خواندن نبود.';
@@ -2461,11 +2464,11 @@ function egmMonitoringBuildStats(string $baseDir): array
       'rows' => $prizes
     ],
     'dataSources' => [
-      'inviteesCsvFound' => is_file($inviteesPath),
+      'inviteesCsvFound' => egmDbIsFile($inviteesPath),
       'inviteesRows' => $rowsCount,
-      'tasksStoreFound' => is_file($tasksPath),
-      'prizesFileFound' => is_file($prizesPath),
-      'levelsFileFound' => is_file($levelsPath)
+      'tasksStoreFound' => egmDbIsFile($tasksPath),
+      'prizesFileFound' => egmDbIsFile($prizesPath),
+      'levelsFileFound' => egmDbIsFile($levelsPath)
     ],
     'warnings' => array_values(array_unique(array_filter($warnings))),
     'generatedAt' => gmdate('c')

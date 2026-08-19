@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/pot_service.php';
@@ -31,7 +33,7 @@ $contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
 if ($contentLength > 16384) {
   egmPotRespond(['status' => 'error', 'message' => 'Request body is too large.'], 413);
 }
-$rawPayload = (string)file_get_contents('php://input');
+$rawPayload = (string)egmDbFileGetContents('php://input');
 if (strlen($rawPayload) > 16384) {
   egmPotRespond(['status' => 'error', 'message' => 'Request body is too large.'], 413);
 }

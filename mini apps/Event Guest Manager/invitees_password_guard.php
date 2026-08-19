@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
@@ -22,7 +24,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   exit;
 }
 
-$input = json_decode((string)file_get_contents('php://input'), true);
+$input = json_decode((string)egmDbFileGetContents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
   exit;
@@ -82,10 +84,10 @@ function inviteePasswordReadCsvRows(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -107,7 +109,7 @@ function inviteePasswordWriteCsvRowsLocked(string $path, array $rows): bool
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvCommitRows($path, $rows);
   }
-  $handle = fopen($path, 'c+');
+  $handle = egmDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -157,10 +159,10 @@ function inviteePasswordNormalizeCsvRows(array $rows): array
 
 function inviteePasswordReadJsonPayload(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -178,7 +180,7 @@ function inviteePasswordWriteJsonPayload(string $path, array $payload): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function inviteePasswordReadMappedConfig(string $path): array
@@ -295,10 +297,10 @@ function inviteePasswordReadTaskScoreSettings(string $tasksDir, string $tagCode)
 
 function inviteePasswordReadTasks(string $tasksPath, string $tasksDir): array
 {
-  if (!is_file($tasksPath)) {
+  if (!egmDbIsFile($tasksPath)) {
     return [];
   }
-  $content = file_get_contents($tasksPath);
+  $content = egmDbFileGetContents($tasksPath);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -702,8 +704,8 @@ function inviteePasswordDescribePhotoArticleStats(string $tasksDir, array $task,
     }
     $text = '';
     $filePath = $articlesDir . DIRECTORY_SEPARATOR . $safeFileName;
-    if (is_file($filePath)) {
-      $content = file_get_contents($filePath);
+    if (egmDbIsFile($filePath)) {
+      $content = egmDbFileGetContents($filePath);
       $text = is_string($content) ? $content : '';
     }
     $wordCount = inviteePasswordCountWords($text);
@@ -750,11 +752,11 @@ function inviteePasswordDeleteDescribePhotoArticles(string $tasksDir, string $ta
       continue;
     }
     $targetPath = $articlesDir . DIRECTORY_SEPARATOR . $safeFileName;
-    $targetReal = is_file($targetPath) ? realpath($targetPath) : false;
+    $targetReal = egmDbIsFile($targetPath) ? realpath($targetPath) : false;
     if (!is_string($targetReal) || strpos($targetReal, $articlesReal . DIRECTORY_SEPARATOR) !== 0) {
       continue;
     }
-    @unlink($targetReal);
+    @egmDbUnlink($targetReal);
   }
 }
 
@@ -1916,6 +1918,17 @@ if ($action === 'save_password') {
   if (!inviteePasswordWriteCsvRowsLocked($mappedFile, $rows)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save password in mapped CSV.']);
     exit;
+  }
+  $passwordMapping = inviteePasswordReadMappedConfig($mapFile);
+  $passwordWorkIdIndex = inviteePasswordResolveMappedColumnIndex(
+    $header,
+    $passwordMapping,
+    ['workId', 'work_id', 'username'],
+    ['Work ID', 'work id', 'workid', 'username']
+  );
+  $passwordWorkId = $passwordWorkIdIndex >= 0 ? trim((string)($rows[$rowIndex][$passwordWorkIdIndex] ?? '')) : '';
+  if (!egmInstanceUpdateMissionUserPasswordUsingProjectConfig(dirname(__DIR__, 2), __DIR__, $passwordWorkId, $newPassword)) {
+    error_log('Event Guest Manager could not immediately mirror an invitee password update to the database.');
   }
   echo json_encode(['status' => 'ok', 'message' => 'Password updated successfully.'], JSON_UNESCAPED_UNICODE);
   exit;

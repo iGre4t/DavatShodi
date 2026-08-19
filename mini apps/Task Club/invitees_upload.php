@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
@@ -22,7 +24,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
+$input = json_decode(tcDbFileGetContents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
   exit;
@@ -49,7 +51,7 @@ if (!is_dir($baseDir)) {
 
 function tcInviteesUploadWriteTextLocked(string $path, string $content): bool
 {
-  $handle = fopen($path, 'c+');
+  $handle = tcDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -80,7 +82,7 @@ function tcInviteesUploadWriteTextLocked(string $path, string $content): bool
 
 function tcInviteesUploadReadHeader(string $csv): array
 {
-  $handle = fopen('php://temp', 'w+b');
+  $handle = tcDbFopen('php://temp', 'w+b');
   if ($handle === false || fwrite($handle, $csv) === false || rewind($handle) === false) {
     if (is_resource($handle)) fclose($handle);
     return [];

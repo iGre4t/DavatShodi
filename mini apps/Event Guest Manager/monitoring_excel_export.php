@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
+
 function egmMonitoringExportXmlEscape(string $value): string
 {
   return htmlspecialchars($value, ENT_QUOTES | ENT_XML1, 'UTF-8');

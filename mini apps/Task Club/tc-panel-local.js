@@ -1,10 +1,18 @@
 (() => {
+  const TC_PANEL_SCRIPT_URL = document.currentScript instanceof HTMLScriptElement
+    ? document.currentScript.src
+    : window.location.href;
+  const TC_PANEL_ENDPOINT = new URL('TC%20Panel.php', TC_PANEL_SCRIPT_URL).toString();
+  const TC_DISPOSE_HEAVY_PANES_KEY = '__tcPanelDisposeHeavyPanes';
   const TASKS_ENDPOINT = 'mini%20apps/Task%20Club/TCT.php';
   const LOGS_ENDPOINT = 'mini%20apps/Task%20Club/tc_logs.php';
+  const TC_KEYDOWN_HANDLER_KEY = '__tcPanelKeydownHandler';
+  const TC_TASKS_CHANGED_HANDLER_KEY = '__tcPanelTasksChangedHandler';
   const tcShellEl = document.querySelector('.tc-shell');
   const TASK_CLUB_CSRF = tcShellEl instanceof HTMLElement
     ? String(tcShellEl.dataset.tcCsrf || '').trim()
     : '';
+  const taskRowsByLayout = new WeakMap();
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -22,6 +30,9 @@
     }
     if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') {
       return 'conditional_quiz';
+    }
+    if (token === 'shared_answers_quiz' || token === 'shared-answers-quiz' || token === 'shared answers quiz' || token === 'shared_quiz' || token === 'shared-quiz' || token === 'shared quiz' || token === 'survey_score_response' || token === 'survey-score-response' || token === 'survey score response' || token === 'survey score') {
+      return 'shared_answers_quiz';
     }
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
@@ -42,7 +53,7 @@
 
   function isQuizLikeTaskType(taskType) {
     const type = normalizeTaskType(taskType);
-    return type === 'quiz' || type === 'conditional_quiz';
+    return type === 'quiz' || type === 'conditional_quiz' || type === 'shared_answers_quiz';
   }
 
   function hasInformationPaneTaskType(taskType) {
@@ -62,6 +73,9 @@
     const normalizedType = normalizeTaskType(taskType);
     if (normalizedType === 'conditional_quiz') {
       return ['control', 'information', 'quiz', 'crisis-control'];
+    }
+    if (normalizedType === 'shared_answers_quiz') {
+      return ['control', 'information', 'response-level', 'quiz'];
     }
     if (normalizedType === 'quiz') {
       return ['control', 'information', 'quiz'];
@@ -119,6 +133,19 @@
     return parsed;
   }
 
+  function normalizeSharedResponseLevels(value) {
+    const rows = Array.isArray(value) ? value : [];
+    return rows.map((item, index) => ({
+      id: String(item?.id || `trl_${index + 1}`).trim(),
+      name: String(item?.name || item?.levelName || '').trim(),
+      text: String(item?.text || item?.responseText || '').replace(/\r\n?/g, '\n'),
+      startScore: normalizeScoreValue(item?.startScore ?? item?.start_score ?? 0),
+      endScore: normalizeScoreValue(item?.endScore ?? item?.end_score ?? item?.startScore ?? 0),
+      createdAt: String(item?.createdAt || item?.created_at || '').trim()
+    })).filter((item) => item.name && item.endScore >= item.startScore)
+      .sort((left, right) => left.startScore - right.startScore || left.endScore - right.endScore);
+  }
+
   function normalizeTask(task, index) {
     const raw = task && typeof task === 'object' ? task : {};
     const id = String(raw.id ?? '').trim();
@@ -172,6 +199,7 @@
           createdAt: String(item?.createdAt ?? item?.created_at ?? '').trim()
         })).filter((item) => item.id)
         : [],
+      responseLevels: normalizeSharedResponseLevels(raw.responseLevels ?? raw.response_levels ?? []),
       order: Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : (index + 1)
     };
   }
@@ -333,6 +361,116 @@
     return key;
   }
 
+  async function executeLazyPaneScripts(pane) {
+    const scripts = Array.from(pane.querySelectorAll('script'));
+    for (const oldScript of scripts) {
+      if (!(oldScript instanceof HTMLScriptElement) || !oldScript.isConnected) continue;
+      const script = document.createElement('script');
+      Array.from(oldScript.attributes).forEach((attribute) => {
+        if (attribute.name === 'defer' || attribute.name === 'async') return;
+        script.setAttribute(attribute.name, attribute.value);
+      });
+      script.async = false;
+      if (oldScript.src) {
+        const loaded = new Promise((resolve, reject) => {
+          script.addEventListener('load', resolve, { once: true });
+          script.addEventListener('error', () => reject(new Error(`Failed to load ${oldScript.src}`)), { once: true });
+        });
+        script.src = oldScript.src;
+        oldScript.replaceWith(script);
+        await loaded;
+      } else {
+        script.textContent = oldScript.textContent || '';
+        oldScript.replaceWith(script);
+      }
+    }
+  }
+
+  function resetDisposableLazyPane(pane) {
+    if (!(pane instanceof HTMLElement) || pane.dataset.tcLazyDispose !== '1') return;
+    const inviteesClickHandler = window.__tcInviteesDocumentClickHandler;
+    if (typeof inviteesClickHandler === 'function') {
+      document.removeEventListener('click', inviteesClickHandler);
+      delete window.__tcInviteesDocumentClickHandler;
+    }
+    delete pane.dataset.tcLazyState;
+    pane.innerHTML = '<div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load invitees.</p></div>';
+  }
+
+  window[TC_DISPOSE_HEAVY_PANES_KEY] = (nextTab = '') => {
+    const nextTabId = String(nextTab || '').trim() ? `tab-${String(nextTab).trim()}` : '';
+    document.querySelectorAll('[data-tc-lazy-dispose="1"]').forEach((pane) => {
+      if (!(pane instanceof HTMLElement)) return;
+      const runtimeTab = pane.closest('.tab[id^="tab-"]');
+      if (nextTabId && runtimeTab instanceof HTMLElement && runtimeTab.id === nextTabId) return;
+      resetDisposableLazyPane(pane);
+    });
+  };
+
+  async function loadLazyPane(layout, pane) {
+    if (!(layout instanceof HTMLElement) || !(pane instanceof HTMLElement)) return;
+    const paneKey = String(pane.dataset.tcLazyPane || '').trim();
+    if (!paneKey || pane.dataset.tcLazyState === 'loaded') return;
+    if (pane.dataset.tcLazyState === 'loading') return;
+
+    pane.dataset.tcLazyState = 'loading';
+    pane.innerHTML = '<div class="card"><p class="muted" data-tc-lazy-status>Loading...</p></div>';
+    try {
+      const url = new URL(TC_PANEL_ENDPOINT);
+      url.searchParams.set('tc_pane', paneKey);
+      const response = await fetch(url.toString(), {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const html = await response.text();
+      if (!response.ok) {
+        throw new Error(`Failed to load this tab (${response.status}).`);
+      }
+      if (!pane.isConnected) return;
+      if (pane.dataset.tcLazyDispose === '1' && !pane.classList.contains('active')) {
+        resetDisposableLazyPane(pane);
+        return;
+      }
+
+      const template = document.createElement('template');
+      template.innerHTML = html.trim();
+      const loadedPane = Array.from(template.content.querySelectorAll('.sub-pane[data-pane]'))
+        .find((candidate) => candidate instanceof HTMLElement && candidate.dataset.pane === paneKey);
+      if (!(loadedPane instanceof HTMLElement)) {
+        throw new Error('The tab response was incomplete.');
+      }
+      const content = document.createDocumentFragment();
+      while (loadedPane.firstChild) {
+        content.appendChild(loadedPane.firstChild);
+      }
+      template.content.querySelectorAll('script').forEach((script) => content.appendChild(script));
+      pane.replaceChildren(content);
+      await executeLazyPaneScripts(pane);
+      if (!pane.isConnected) return;
+      pane.dataset.tcLazyState = 'loaded';
+
+      setupTaskClubLogsPane(layout);
+      setupInviteePrizeTotalsExport();
+      if (paneKey === 'tc-logs' && pane.classList.contains('active')) {
+        loadTaskClubLogs(layout);
+      }
+    } catch (error) {
+      if (!pane.isConnected) return;
+      pane.dataset.tcLazyState = 'error';
+      pane.innerHTML = `
+        <div class="card">
+          <p class="muted" data-tc-lazy-status>${escapeHtml(error?.message || 'Failed to load this tab.')}</p>
+          <button type="button" class="btn ghost" data-tc-lazy-retry>Retry</button>
+        </div>
+      `;
+      pane.querySelector('[data-tc-lazy-retry]')?.addEventListener('click', () => {
+        delete pane.dataset.tcLazyState;
+        void loadLazyPane(layout, pane);
+      }, { once: true });
+    }
+  }
+
   function activatePane(layout, targetPane) {
     if (!(layout instanceof HTMLElement) || !targetPane) return;
     layout.querySelectorAll('.sub-nav .sub-item[data-pane]').forEach((item) => {
@@ -341,9 +479,20 @@
     });
     layout.querySelectorAll('.sub-pane[data-pane]').forEach((pane) => {
       if (!(pane instanceof HTMLElement)) return;
-      pane.classList.toggle('active', pane.dataset.pane === targetPane);
+      const isActive = pane.dataset.pane === targetPane;
+      pane.classList.toggle('active', isActive);
+      if (!isActive && pane.dataset.tcLazyState === 'loaded') {
+        resetDisposableLazyPane(pane);
+      }
     });
-    if (targetPane === 'tc-logs') {
+    const activePane = findPaneByKey(layout, targetPane);
+    if (activePane instanceof HTMLElement && activePane.dataset.tcLazyPane) {
+      void loadLazyPane(layout, activePane);
+    }
+    if (activePane instanceof HTMLElement && activePane.dataset.taskPane === '1') {
+      hydrateTaskPane(layout, activePane);
+    }
+    if (targetPane === 'tc-logs' && activePane?.dataset?.tcLazyState === 'loaded') {
       loadTaskClubLogs(layout);
     }
   }
@@ -2131,7 +2280,43 @@
     }
   }
 
-  document.addEventListener('keydown', (event) => {
+  const previousKeydownHandler = window[TC_KEYDOWN_HANDLER_KEY];
+  if (typeof previousKeydownHandler === 'function') {
+    document.removeEventListener('keydown', previousKeydownHandler);
+  }
+
+  function getSharedResponseLevelControls(pane) {
+    if (!(pane instanceof HTMLElement) || normalizeTaskType(pane.dataset.taskType || 'quiz') !== 'shared_answers_quiz') return null;
+    return {
+      nameInput: pane.querySelector('[data-response-level-add-name]'),
+      startInput: pane.querySelector('[data-response-level-add-start]'),
+      endInput: pane.querySelector('[data-response-level-add-end]'),
+      textInput: pane.querySelector('[data-response-level-add-text]'),
+      addButton: pane.querySelector('[data-action="add-response-level"]'),
+      saveStatusEl: pane.querySelector('[data-response-level-save-status]'),
+      listStatusEl: pane.querySelector('[data-response-level-list-status]')
+    };
+  }
+
+  function setSharedResponseLevelStatus(pane, message, isError = false, target = 'save') {
+    const controls = getSharedResponseLevelControls(pane);
+    const element = target === 'list' ? controls?.listStatusEl : controls?.saveStatusEl;
+    if (!(element instanceof HTMLElement)) return;
+    element.textContent = message || '';
+    element.style.color = isError ? '#d1434a' : '';
+  }
+
+  function collectSharedResponseLevelsFromPane(pane) {
+    if (!(pane instanceof HTMLElement)) return [];
+    return Array.from(pane.querySelectorAll('tr[data-response-level-row]')).map((row) => ({
+      id: String(row.getAttribute('data-response-level-id') || '').trim(),
+      name: String(row.querySelector('[data-response-level-name]')?.value || '').trim(),
+      startScore: normalizeScoreValue(row.querySelector('[data-response-level-start]')?.value || 0),
+      endScore: normalizeScoreValue(row.querySelector('[data-response-level-end]')?.value || 0),
+      text: String(row.querySelector('[data-response-level-text]')?.value || '').replace(/\r\n?/g, '\n')
+    })).filter((level) => level.name);
+  }
+  const keydownHandler = (event) => {
     if (event.key !== 'Escape') return;
     if (teamPreviewModalEl instanceof HTMLElement && !teamPreviewModalEl.hidden) {
       closeTeamPreviewModal();
@@ -2148,7 +2333,9 @@
     if (describeResultsModalEl instanceof HTMLElement && !describeResultsModalEl.hidden) {
       closeDescribeResultsModal();
     }
-  });
+  };
+  window[TC_KEYDOWN_HANDLER_KEY] = keydownHandler;
+  document.addEventListener('keydown', keydownHandler);
 
   function setTaskPaneStatus(pane, label, tone) {
     const controls = getTaskPaneControls(pane);
@@ -2307,9 +2494,11 @@
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
-    const typeLabel = taskTypeToken === 'describe_photo'
+    const isSharedAnswersTask = taskTypeToken === 'shared_answers_quiz';
+    let typeLabel = taskTypeToken === 'describe_photo'
       ? 'تسک توصیف عکس'
       : (taskTypeToken === 'team_task' ? 'تسک تیمی' : (isInfoTask ? 'تسک اطلاعاتی' : (isConditionalQuizTask ? 'کوئیز شرطی' : 'تسک کوئیز')));
+    if (isSharedAnswersTask) typeLabel = 'Survey Score Response';
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
@@ -2323,13 +2512,16 @@
     const anotherChanceIfZero = normalizeBool(task.anotherChanceIfZero);
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
+    const responseLevels = normalizeSharedResponseLevels(task?.responseLevels);
     const topTabsMarkup = isDescribePhotoTask
       ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">عکس‌ها</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
       : (isTeamTask
         ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">انبار چالش‌ها</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">تیم</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی تیم‌ها</button>'
         : (isInfoTask
           ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
-          : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">کوئیز</button>'));
+          : (isSharedAnswersTask
+            ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">Information</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="response-level">Response Levels</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">Survey</button>'
+            : '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="quiz">کوئیز</button>')));
     const informationSection = hasInformationPane
       ? `
           <div class="tc-task-top-section" data-task-top-section="information" hidden>
@@ -2404,6 +2596,43 @@
                 </div>
                 <p class="muted small" data-task-crisis-save-status aria-live="polite"></p>
               </div>
+            </div>
+          </div>
+        `
+      : '';
+    const responseLevelSection = isSharedAnswersTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="response-level" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Add Response Level</h3></div>
+              <div class="form grid two-column-fields" style="gap:12px;">
+                <label class="field standard-width"><span>Name</span><input type="text" data-response-level-add-name autocomplete="off" /></label>
+                <label class="field standard-width"><span>Start score</span><input type="number" step="1" value="0" data-response-level-add-start /></label>
+                <label class="field standard-width"><span>End score</span><input type="number" step="1" value="0" data-response-level-add-end /></label>
+                <label class="field full"><span>Response text</span><textarea rows="5" data-response-level-add-text></textarea></label>
+                <div class="field full"><button type="button" class="btn primary standard-primary-button" data-action="add-response-level">Add level</button></div>
+                <p class="muted small field full" data-response-level-save-status aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="section-header"><h3>Response Levels</h3></div>
+              <div class="table-wrapper">
+                <table class="tct-list-table">
+                  <thead><tr><th>Name</th><th>Start</th><th>End</th><th>Response</th><th>Action</th></tr></thead>
+                  <tbody data-response-level-list>
+                    ${responseLevels.length ? responseLevels.map((level) => `
+                      <tr data-response-level-row data-response-level-id="${escapeHtml(level.id)}">
+                        <td><input type="text" value="${escapeHtml(level.name)}" data-response-level-name /></td>
+                        <td><input type="number" step="1" value="${escapeHtml(String(level.startScore))}" data-response-level-start /></td>
+                        <td><input type="number" step="1" value="${escapeHtml(String(level.endScore))}" data-response-level-end /></td>
+                        <td><textarea rows="3" data-response-level-text>${escapeHtml(level.text)}</textarea></td>
+                        <td class="actions"><button type="button" class="btn secondary" data-action="save-response-level">Save</button><button type="button" class="btn danger" data-action="remove-response-level">Remove</button></td>
+                      </tr>
+                    `).join('') : '<tr><td colspan="5" class="muted">No response levels have been added.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted small" data-response-level-list-status aria-live="polite"></p>
             </div>
           </div>
         `
@@ -2681,6 +2910,7 @@
         ${teamChallengeSection}
         ${teamSettingsSection}
         ${crisisControlSection}
+        ${responseLevelSection}
         ${isInfoTask ? `
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
@@ -2734,6 +2964,7 @@
     const visibleTasks = normalizedTasks.filter((task) => task.taskAccessEnabled !== false);
 
     if (!visibleTasks.length) {
+      taskRowsByLayout.delete(layout);
       if (normalizedTasks.length > 0) {
         paneHost.innerHTML = `
           <div class="card">
@@ -2771,31 +3002,36 @@
       pane.dataset.taskPane = '1';
       pane.dataset.taskId = task.id;
       pane.dataset.taskType = task.taskType;
-      pane.innerHTML = buildTaskControlCardMarkup(task);
+      pane.dataset.tcTaskPaneHydrated = '0';
+      pane.innerHTML = '<div class="card"><p class="muted">Select this task to load its controls.</p></div>';
       paneFragment.appendChild(pane);
     });
 
+    taskRowsByLayout.set(layout, taskById);
     navHost.appendChild(navFragment);
     paneHost.appendChild(paneFragment);
     ensureAnyActivePane(layout, previousActivePane);
+  }
 
-    paneHost.querySelectorAll('.sub-pane[data-task-pane="1"]').forEach((pane) => {
-      if (!(pane instanceof HTMLElement)) return;
-      const taskId = pane.dataset.taskId || '';
-      const task = taskById.get(taskId) || null;
-      applyTaskSettingsToPane(pane, task);
-      applyTaskTopPaneAccess(pane, task);
-      const firstTopTrigger = pane.querySelector('[data-task-top-trigger]');
-      if (firstTopTrigger instanceof HTMLElement) {
-        const firstSection = String(firstTopTrigger.getAttribute('data-task-top-trigger') || '').trim();
-        if (firstSection !== '') {
-          activateTaskTopPane(pane, firstSection);
-          if (firstSection === 'invitees-rate' && isInfoLikeTaskType(task?.taskType || pane.dataset.taskType || 'quiz')) {
-            void loadInfoRateDataIntoPane(pane);
-          }
-        }
-      }
-    });
+  function hydrateTaskPane(layout, pane) {
+    if (!(layout instanceof HTMLElement) || !(pane instanceof HTMLElement)) return;
+    if (pane.dataset.tcTaskPaneHydrated === '1') return;
+    const taskId = pane.dataset.taskId || '';
+    const task = taskRowsByLayout.get(layout)?.get(taskId) || null;
+    if (!task) return;
+
+    pane.innerHTML = buildTaskControlCardMarkup(task);
+    pane.dataset.tcTaskPaneHydrated = '1';
+    applyTaskSettingsToPane(pane, task);
+    applyTaskTopPaneAccess(pane, task);
+    const firstTopTrigger = pane.querySelector('[data-task-top-trigger]');
+    if (!(firstTopTrigger instanceof HTMLElement)) return;
+    const firstSection = String(firstTopTrigger.getAttribute('data-task-top-trigger') || '').trim();
+    if (firstSection === '') return;
+    activateTaskTopPane(pane, firstSection);
+    if (firstSection === 'invitees-rate' && isInfoLikeTaskType(task.taskType || pane.dataset.taskType || 'quiz')) {
+      void loadInfoRateDataIntoPane(pane);
+    }
   }
 
   async function postTaskAction(action, payload = {}) {
@@ -2833,10 +3069,28 @@
     }
     try {
       const tasks = await fetchTaskList();
+      window.TC_TASKS = tasks;
       renderTaskSubtabs(layout, tasks);
-    } catch {
-      renderTaskSubtabs(layout, []);
+    } catch (error) {
+      console.error('Failed to refresh TaskClub task tabs.', error);
+      const cachedTasks = Array.isArray(window.TC_TASKS) ? window.TC_TASKS : [];
+      if (cachedTasks.length) {
+        renderTaskSubtabs(layout, cachedTasks);
+      }
     }
+  }
+
+  function scheduleTaskSubtabsRefresh(layout) {
+    const run = () => {
+      if (layout instanceof HTMLElement && layout.isConnected) {
+        void refreshTaskSubtabs(layout);
+      }
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(run, { timeout: 750 });
+      return;
+    }
+    window.setTimeout(run, 0);
   }
 
   function setupTaskPaneInteractions(layout) {
@@ -3050,6 +3304,74 @@
         }
         if (sectionKey === 'challenge-storage') {
           renderTeamChallengeList(pane);
+        }
+        return;
+      }
+
+      const responseLevelButton = target.closest('[data-action="add-response-level"], [data-action="save-response-level"], [data-action="remove-response-level"]');
+      if (responseLevelButton instanceof HTMLButtonElement) {
+        const pane = responseLevelButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement) || normalizeTaskType(pane.dataset.taskType || '') !== 'shared_answers_quiz') return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const actionName = String(responseLevelButton.dataset.action || '');
+        const controls = getSharedResponseLevelControls(pane);
+        if (!taskId || !controls) return;
+
+        let levels = collectSharedResponseLevelsFromPane(pane);
+        if (actionName === 'add-response-level') {
+          const name = String(controls.nameInput?.value || '').trim();
+          const startScore = normalizeScoreValue(controls.startInput?.value || 0);
+          const endScore = normalizeScoreValue(controls.endInput?.value || 0);
+          const responseText = String(controls.textInput?.value || '').replace(/\r\n?/g, '\n').trim();
+          if (!name) {
+            setSharedResponseLevelStatus(pane, 'Enter a response level name.', true);
+            controls.nameInput?.focus();
+            return;
+          }
+          if (endScore < startScore) {
+            setSharedResponseLevelStatus(pane, 'End score must be greater than or equal to start score.', true);
+            controls.endInput?.focus();
+            return;
+          }
+          levels.push({
+            id: `trl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name,
+            startScore,
+            endScore,
+            text: responseText
+          });
+        } else if (actionName === 'remove-response-level') {
+          const row = responseLevelButton.closest('tr[data-response-level-row]');
+          const removeId = String(row?.getAttribute('data-response-level-id') || '').trim();
+          if (!removeId) return;
+          if (!window.confirm('Remove this response level?')) return;
+          levels = levels.filter((level) => level.id !== removeId);
+        }
+
+        responseLevelButton.disabled = true;
+        setSharedResponseLevelStatus(pane, 'Saving...');
+        setSharedResponseLevelStatus(pane, '', false, 'list');
+        try {
+          const data = await postTaskAction('save_shared_response_levels', {
+            id: taskId,
+            levels_json: JSON.stringify(levels)
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try { window.TC_TASKS = returnedTasks; } catch {}
+          }
+          activatePane(layout, keepPane);
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            activateTaskTopPane(activePane, 'response-level');
+            setSharedResponseLevelStatus(activePane, data.message || 'Response levels saved.');
+          }
+        } catch (error) {
+          setSharedResponseLevelStatus(pane, error?.message || 'Failed to save response levels.', true);
+        } finally {
+          if (responseLevelButton.isConnected) responseLevelButton.disabled = false;
         }
         return;
       }
@@ -3850,6 +4172,7 @@
   function setupTaskClubLogsPane(layout) {
     const pane = layout?.querySelector?.('[data-tc-logs-pane="1"]');
     if (!(pane instanceof HTMLElement) || pane.dataset.tcLogsReady === '1') return;
+    if (pane.dataset.tcLazyPane && pane.dataset.tcLazyState !== 'loaded') return;
     pane.dataset.tcLogsReady = '1';
     const searchInput = pane.querySelector('#tc-logs-search');
     const daySelect = pane.querySelector('#tc-logs-day');
@@ -3870,6 +4193,11 @@
   }
 
   function initWheelSubLayouts() {
+    const previousTasksChangedHandler = window[TC_TASKS_CHANGED_HANDLER_KEY];
+    if (typeof previousTasksChangedHandler === 'function') {
+      window.removeEventListener('tcTasksChanged', previousTasksChangedHandler);
+    }
+    delete window[TC_TASKS_CHANGED_HANDLER_KEY];
     const layouts = document.querySelectorAll('[data-tc-sub-layout]');
     layouts.forEach((layout) => {
       if (!(layout instanceof HTMLElement)) return;
@@ -3893,25 +4221,84 @@
       setupTaskClubLogsPane(layout);
       setupTaskPaneInteractions(layout);
 
-      window.addEventListener('tcTasksChanged', (event) => {
+      // Load the selected built-in pane immediately. Task-history discovery is
+      // independent and may finish later; it must not leave the controls blank.
+      ensureAnyActivePane(layout);
+
+      const tasksChangedHandler = (event) => {
         const tasks = event?.detail?.tasks;
         if (Array.isArray(tasks)) {
           renderTaskSubtabs(layout, tasks);
           return;
         }
         refreshTaskSubtabs(layout);
-      });
+      };
+      window[TC_TASKS_CHANGED_HANDLER_KEY] = tasksChangedHandler;
+      window.addEventListener('tcTasksChanged', tasksChangedHandler);
 
-      refreshTaskSubtabs(layout);
+      scheduleTaskSubtabsRefresh(layout);
       if (layout.querySelector('[data-tc-logs-pane="1"].active')) {
         loadTaskClubLogs(layout);
       }
     });
   }
 
+  function setupInviteePrizeTotalsExport() {
+    const openButton = document.getElementById('tc-invitee-prize-totals-open');
+    const modal = document.getElementById('tc-invitee-prize-totals-modal');
+    const status = document.getElementById('tc-invitee-prize-totals-status');
+    if (!(openButton instanceof HTMLButtonElement) || !(modal instanceof HTMLElement)) return;
+
+    const setBusy = (busy) => {
+      modal.querySelectorAll('button').forEach((button) => { button.disabled = busy; });
+    };
+    const close = () => modal.classList.add('hidden');
+    modal.addEventListener('click', (event) => {
+      const target = event.target;
+      if (target === modal || (target instanceof Element && target.closest('[data-tc-prize-totals-close]'))) close();
+    });
+    modal.querySelectorAll('[data-tc-prize-totals-form]').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        const actionInput = form.querySelector('input[name="action"]');
+        const action = actionInput instanceof HTMLInputElement ? actionInput.value : '';
+        if (action === 'remaining' && !window.confirm(
+          'خروجی افراد باقی‌مانده تهیه شود و همه آن‌ها در فایل دعوت‌شدگان به‌عنوان دریافت‌کننده علامت‌گذاری شوند؟\n\nاین تغییر فایل CSV را به‌روزرسانی می‌کند.'
+        )) {
+          event.preventDefault();
+          return;
+        }
+        window.setTimeout(close, 100);
+      });
+    });
+    openButton.addEventListener('click', async () => {
+      modal.classList.remove('hidden');
+      if (status instanceof HTMLElement) status.textContent = 'در حال بررسی ایمن فایل دعوت‌شدگان...';
+      setBusy(true);
+      try {
+        const body = new FormData();
+        body.append('action', 'prepare');
+        body.append('csrf', TASK_CLUB_CSRF);
+        const response = await fetch('mini%20apps/Task%20Club/invitees_prize_totals_export.php', {
+          method: 'POST', credentials: 'same-origin', body
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.status !== 'ok') throw new Error(payload?.message || 'آماده‌سازی خروجی ناموفق بود.');
+        if (status instanceof HTMLElement) status.textContent = payload.columnRequired
+          ? 'فایل آماده است؛ ستون دریافت جایزه فقط هنگام ثبت خروجی باقی‌مانده اضافه می‌شود.'
+          : 'فایل آماده است؛ نوع خروجی را انتخاب کنید.';
+        setBusy(false);
+      } catch (error) {
+        if (status instanceof HTMLElement) status.textContent = error?.message || 'آماده‌سازی خروجی ناموفق بود.';
+        const closeButton = modal.querySelector('[data-tc-prize-totals-close]');
+        if (closeButton instanceof HTMLButtonElement) closeButton.disabled = false;
+      }
+    });
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initWheelSubLayouts);
+    document.addEventListener('DOMContentLoaded', () => { initWheelSubLayouts(); setupInviteePrizeTotalsExport(); });
   } else {
     initWheelSubLayouts();
+    setupInviteePrizeTotalsExport();
   }
 })();

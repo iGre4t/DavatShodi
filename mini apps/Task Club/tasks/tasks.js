@@ -1,1 +1,0 @@
-window.TC_TASKS = [];

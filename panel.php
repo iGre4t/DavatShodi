@@ -5,6 +5,9 @@ require_once __DIR__ . '/api/lib/common.php';
 require_once __DIR__ . '/api/lib/users.php';
 require_once __DIR__ . '/api/lib/tab-permissions.php';
 require_once __DIR__ . '/api/lib/egm-registry.php';
+require_once __DIR__ . '/api/lib/egm-instance-storage.php';
+require_once __DIR__ . '/api/lib/tc-registry.php';
+require_once __DIR__ . '/api/lib/database-instance-materializer.php';
 
 const DEFAULT_PANEL_SETTINGS = [
   'title' => 'Great Panel',
@@ -91,26 +94,21 @@ function panelMissionTabId(string $folderName): string {
   return 'task-club-mission-' . substr(hash('sha256', $folderName), 0, 12);
 }
 
-function panelMissionTabs(): array {
+function panelMissionTabs(?PDO $pdo): array {
   $root = panelMissionRootPath();
-  if (!is_dir($root)) {
+  if (!$pdo instanceof PDO || !is_dir($root)) {
     return [];
   }
   $missions = [];
-  foreach (new DirectoryIterator($root) as $entry) {
-    if ($entry->isDot() || !$entry->isDir()) {
-      continue;
-    }
-    $folder = $entry->getFilename();
-    if ($folder === 'generate' || strncmp($folder, '.', 1) === 0) {
-      continue;
-    }
-    $missionDir = $entry->getPathname();
+  foreach (listTcRegistry($pdo) as $record) {
+    $directory = normalizeTcRegistryDirectory($record['directory'] ?? '');
+    if (!str_starts_with($directory, TC_INSTANCES_DIRECTORY . '/')) continue;
+    $folder = basename($directory);
+    $missionDir = __DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $directory);
     if (!is_file($missionDir . DIRECTORY_SEPARATOR . 'TC Panel.php')) {
       continue;
     }
-    $meta = panelMissionReadJson($missionDir . DIRECTORY_SEPARATOR . 'mission.json');
-    $name = trim((string)($meta['name'] ?? $folder));
+    $name = trim((string)($record['name'] ?? $folder));
     if ($name === '') {
       $name = $folder;
     }
@@ -120,7 +118,7 @@ function panelMissionTabs(): array {
       'name' => $name,
       'folder' => $folder,
       'source' => $webPath . '/TC%20Panel.php',
-      'createdAt' => trim((string)($meta['createdAt'] ?? ''))
+      'createdAt' => trim((string)($record['created_at'] ?? ''))
     ];
   }
   usort($missions, static function (array $left, array $right): int {
@@ -135,11 +133,11 @@ function panelMissionTabs(): array {
 }
 
 function panelEgmRootPath(): string {
-  return __DIR__ . '/miniapps/EGMs';
+  return __DIR__ . '/mini apps/EGMs';
 }
 
 function panelEgmWebPath(string $folderName): string {
-  return 'miniapps/EGMs/' . rawurlencode($folderName);
+  return 'mini%20apps/EGMs/' . rawurlencode($folderName);
 }
 
 function panelEgmTabId(string $folderName, string $code = ''): string {
@@ -211,6 +209,12 @@ $userConfig = loadConfig(__DIR__ . '/api/config.php');
 $userPdo = connectDatabase($userConfig);
 if ($userPdo) {
   ensureUsersExtendedColumns($userPdo);
+  egmInstanceEnsureDevelopmentInstance($userPdo, __DIR__ . '/mini apps/Event Guest Manager');
+  try {
+    materializeDatabaseBackedInstances($userPdo, __DIR__);
+  } catch (Throwable $instanceRestoreError) {
+    error_log('Database instance code restoration failed: ' . $instanceRestoreError->getMessage());
+  }
 }
 $userCode = normalizeUserValue($sessionUser['code'] ?? '');
 $dbUser = ($userPdo && $userCode !== '') ? loadUserByCode($userPdo, $userCode) : null;
@@ -246,7 +250,7 @@ $childPermissionMap = getPanelChildTabIdsByParent();
 $taskClubCreatorEnabled = in_array('task-club', $allowedTabs, true);
 $eventGuestManagerCreatorEnabled = in_array('event-guest-manager', $allowedTabs, true);
 $rateMeCreatorEnabled = in_array('rate-me', $allowedTabs, true);
-$taskClubMissionTabs = $taskClubCreatorEnabled ? panelMissionTabs() : [];
+$taskClubMissionTabs = $taskClubCreatorEnabled ? panelMissionTabs($userPdo) : [];
 $eventGuestManagerTabs = $eventGuestManagerCreatorEnabled ? panelEgmTabs($userPdo) : [];
 $panelTabCatalog = $tabCatalog;
 $panelAllowedTabs = array_values($allowedTabs);
@@ -421,7 +425,7 @@ $accountEmail = $currentUser['email'] ?? '';
           <?php if (in_array('event-guest-manager', $allowedTabs, true)): ?>
             <button class="nav-item<?= $initialTab === 'event-guest-manager' ? ' active' : '' ?>" data-tab="event-guest-manager"<?= $initialTab === 'event-guest-manager' ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-user-star-line" aria-hidden="true"></span>
-              <span>مدیریت رویداد</span>
+              <span>EGM Develop</span>
             </button>
           <?php endif; ?>
           <?php foreach ($eventGuestManagerTabs as $egmTab): ?>
@@ -660,6 +664,7 @@ $accountEmail = $currentUser['email'] ?? '';
             id="tab-task-club"
             class="tab<?= $initialTab === 'task-club' ? ' active' : '' ?>"
             data-tab-source="mini%20apps/Task%20Club/TC%20Panel.php"
+            data-tab-cache="1"
           ></section>
         <?php endif; ?>
         <?php if (in_array('event-guest-manager', $allowedTabs, true)): ?>

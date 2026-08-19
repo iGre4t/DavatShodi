@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/egm-registry.php';
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
@@ -15,7 +17,7 @@ function egmRequireRegisteredRuntime(): void
     return;
   }
   $folder = basename(__DIR__);
-  $directory = 'miniapps/EGMs/' . $folder;
+  $directory = 'mini apps/EGMs/' . $folder;
   $projectRoot = dirname(__DIR__, 2);
   $config = loadConfig($projectRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'config.php');
   $pdo = connectDatabase($config);
@@ -108,8 +110,8 @@ if (isset($_GET['force_logout']) && (string)$_GET['force_logout'] === '1') {
 
 $egmMaintenanceSettingsPath = __DIR__ . '/Setting.json';
 $egmMaintenanceEnabled = false;
-if (is_file($egmMaintenanceSettingsPath)) {
-  $egmMaintenanceRaw = file_get_contents($egmMaintenanceSettingsPath);
+if (egmDbIsFile($egmMaintenanceSettingsPath)) {
+  $egmMaintenanceRaw = egmDbFileGetContents($egmMaintenanceSettingsPath);
   $egmMaintenanceDecoded = is_string($egmMaintenanceRaw) ? json_decode($egmMaintenanceRaw, true) : null;
   if (is_array($egmMaintenanceDecoded)) {
     $egmMaintenanceEnabled = (bool)($egmMaintenanceDecoded['maintenanceMode'] ?? false);
@@ -659,10 +661,10 @@ function normalizeRewardPrizeDisplaySettings($value): array
 
 function readQuestionStore(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -741,10 +743,10 @@ function loadWfqSettings(string $path, int $defaultAnswerTimeLimitMs = DEFAULT_Q
 {
   $settings = EGMQ_DEFAULT_SETTINGS;
   $settings['answerTimeLimitMs'] = $defaultAnswerTimeLimitMs;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $settings;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $settings;
   }
@@ -791,10 +793,10 @@ function resolveTaskQuizSettingsForAttempt(array $settings, int $availableQuesti
 
 function readQuestionColumnsFromStore(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -970,10 +972,10 @@ function logAnswerValue(string $answersPath, string $questionsPath, string $work
 
 function loadJsonPayload(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -1082,7 +1084,7 @@ function readTaskTitlesFromJsonFiles(string $tasksDir): array
     return [];
   }
 
-  $paths = glob($tasksDir . DIRECTORY_SEPARATOR . '*.json');
+  $paths = egmDbGlob($tasksDir . DIRECTORY_SEPARATOR . '*.json');
   if (!is_array($paths) || !$paths) {
     return [];
   }
@@ -1091,10 +1093,10 @@ function readTaskTitlesFromJsonFiles(string $tasksDir): array
   $items = [];
   $seen = [];
   foreach ($paths as $path) {
-    if (!is_file($path)) {
+    if (!egmDbIsFile($path)) {
       continue;
     }
-    $content = file_get_contents($path);
+    $content = egmDbFileGetContents($path);
     if ($content === false || trim($content) === '') {
       continue;
     }
@@ -1109,10 +1111,10 @@ function readTaskTitlesFromJsonFiles(string $tasksDir): array
 
 function readTaskTitlesFromJsStore(string $storePath): array
 {
-  if (!is_file($storePath)) {
+  if (!egmDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = egmDbFileGetContents($storePath);
   if ($content === false || trim($content) === '') {
     return [];
   }
@@ -1291,10 +1293,10 @@ function resolveTaskScoreForStatus(array $task, string $taskStatus): int
 
 function readTasksStoreItems(string $storePath): array
 {
-  if (!is_file($storePath)) {
+  if (!egmDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = egmDbFileGetContents($storePath);
   if ($content === false) {
     return [];
   }
@@ -1328,10 +1330,10 @@ function readTaskScoreSettings(string $tasksDir, string $tagCode): array
     return $defaults;
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_SCORE_SETTINGS_FILE;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -1362,10 +1364,10 @@ function readTaskInfoSettings(string $tasksDir, string $tagCode): array
     return $defaults;
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_INFO_SETTINGS_FILE;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -1393,10 +1395,10 @@ function readTaskTeamSettings(string $tasksDir, string $tagCode): array
     return $defaults;
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_SETTINGS_FILE;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -1427,10 +1429,10 @@ function readTaskTeamChallenges(string $tasksDir, string $tagCode): array
     return [];
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_CHALLENGES_FILE;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -1523,7 +1525,7 @@ function saveTaskTeamChallenges(string $tasksDir, string $tagCode, array $challe
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function readTaskTeamRuntime(string $tasksDir, string $tagCode): array
@@ -1533,10 +1535,10 @@ function readTaskTeamRuntime(string $tasksDir, string $tagCode): array
     return ['teams' => []];
   }
   $path = $tasksDir . DIRECTORY_SEPARATOR . $normalizedTag . DIRECTORY_SEPARATOR . TASK_TEAM_RUNTIME_FILE;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return ['teams' => []];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return ['teams' => []];
   }
@@ -1619,7 +1621,7 @@ function saveTaskTeamRuntime(string $tasksDir, string $tagCode, array $runtime):
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function normalizeTeamJoinType(string $value): string
@@ -3077,22 +3079,19 @@ function buildDescribePhotoImageUrl(string $tagCode, string $fileName): string
   if ($safeTagCode === '' || $safeFileName === '') {
     return '';
   }
-  $segments = [
-    'tasks',
-    $safeTagCode,
-    TASK_DESCRIBE_PHOTO_DIR,
-    $safeFileName
-  ];
-  return implode('/', array_map(static fn(string $segment): string => rawurlencode($segment), $segments));
+  $relative = implode('/', array_map('rawurlencode', [
+    'tasks', $safeTagCode, TASK_DESCRIBE_PHOTO_DIR, $safeFileName
+  ]));
+  return 'egm_asset.php?path=' . rawurlencode($relative);
 }
 
 function readTaskDescribePhotoEntries(string $tasksDir, string $tagCode): array
 {
   $metaPath = buildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
-  if ($metaPath === '' || !is_file($metaPath)) {
+  if ($metaPath === '' || !egmDbIsFile($metaPath)) {
     return [];
   }
-  $content = file_get_contents($metaPath);
+  $content = egmDbFileGetContents($metaPath);
   if ($content === false) {
     return [];
   }
@@ -3306,8 +3305,8 @@ function resolveDescribePhotoPicksForUser(array $task, string $workId, string $i
       $changed = true;
     }
     $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $safeFileName;
-    if (!is_file($filePath)) {
-      if (file_put_contents($filePath, '', LOCK_EX) === false) {
+    if (!egmDbIsFile($filePath)) {
+      if (egmDbFilePutContents($filePath, '', LOCK_EX) === false) {
         return ['ok' => false, 'message' => 'ساخت فایل متن تصویر ناموفق بود.'];
       }
       $changed = true;
@@ -3378,12 +3377,12 @@ function readDescribePhotoUserArticle(array $task, string $workId, string $photo
     return ['ok' => false, 'message' => 'فایل متن تصویر نامعتبر است.'];
   }
   $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $fileName;
-  if (!is_file($filePath)) {
-    if (file_put_contents($filePath, '', LOCK_EX) === false) {
+  if (!egmDbIsFile($filePath)) {
+    if (egmDbFilePutContents($filePath, '', LOCK_EX) === false) {
       return ['ok' => false, 'message' => 'ساخت فایل متن تصویر ناموفق بود.'];
     }
   }
-  $content = file_get_contents($filePath);
+  $content = egmDbFileGetContents($filePath);
   if (!is_string($content)) {
     $content = '';
   }
@@ -3440,7 +3439,7 @@ function saveDescribePhotoUserArticle(array $task, string $workId, string $photo
     return ['ok' => false, 'message' => 'فایل متن تصویر نامعتبر است.'];
   }
   $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $fileName;
-  if (file_put_contents($filePath, $normalizedText, LOCK_EX) === false) {
+  if (egmDbFilePutContents($filePath, $normalizedText, LOCK_EX) === false) {
     return ['ok' => false, 'message' => 'ذخیره متن تصویر ناموفق بود.'];
   }
   return [
@@ -3618,10 +3617,10 @@ function hasDescribePhotoSubmissionForUserTask(array $task, array $row, array $c
       continue;
     }
     $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $safeFileName;
-    if (!is_file($articlePath)) {
+    if (!egmDbIsFile($articlePath)) {
       continue;
     }
-    $content = file_get_contents($articlePath);
+    $content = egmDbFileGetContents($articlePath);
     if (!is_string($content)) {
       continue;
     }
@@ -3855,11 +3854,11 @@ function readInviteesCsv(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -3884,7 +3883,7 @@ function writeInviteesCsv(string $path, array $rows, bool $endTransaction = true
   if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'c+');
+  $handle = egmDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -3930,7 +3929,7 @@ function writeLoginAttempts(string $path, array $payload): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function readAnyPasswordLoginSettings(string $path): array
@@ -4549,7 +4548,7 @@ if (defined('EGMM_FUNCTIONS_ONLY') && EGMM_FUNCTIONS_ONLY === true) {
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   header('Content-Type: application/json; charset=UTF-8');
-  $rawInput = file_get_contents('php://input');
+  $rawInput = egmDbFileGetContents('php://input');
   $payload = json_decode($rawInput ?: '', true);
   $action = is_array($payload) ? (string)($payload['action'] ?? '') : '';
   $csrfToken = is_array($payload) ? (string)($payload['csrf'] ?? '') : '';
@@ -4693,15 +4692,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         exit;
       }
     } else {
+      $databasePasswordValid = egmDatabaseRuntimeVerifyUserPassword(__DIR__, $username, $password);
       $passwordIndex = $columns['password'] ?? findHeaderIndex($table['header'], 'password');
-      if ($passwordIndex < 0) {
+      if ($passwordIndex < 0 && $databasePasswordValid !== true) {
         $recordFail();
         $logLoginFailure('password_column_missing');
         echo json_encode(['status' => 'error', 'message' => 'رمز عبور column is missing.']);
         exit;
       }
       $rowPassword = normalizeCredentialToken((string)($rows[$rowIndex][$passwordIndex] ?? ''));
-      if ($rowPassword === '' || $rowPassword !== $password) {
+      if ($databasePasswordValid !== true && ($rowPassword === '' || !hash_equals($rowPassword, $password))) {
         $recordFail();
         $logLoginFailure('bad_credentials');
         echo json_encode(['status' => 'error', 'message' => 'Invalid username or password.']);
@@ -4748,7 +4748,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $_SESSION['egm_work_id'] = $resolvedWorkId;
     session_regenerate_id(true);
     $_SESSION['egm_session_started_at'] = time();
-    $_SESSION['egm_invitees_mtime'] = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
+    $_SESSION['egm_invitees_mtime'] = egmDbIsFile($inviteesFilePath) ? egmDbFilemtime($inviteesFilePath) : null;
     $prizeIndex = $columns['prize won'] ?? -1;
     $prizeWonAtIndex = $columns['prize won at'] ?? -1;
     $angleIndex = $columns['wheel angle'] ?? -1;
@@ -6598,6 +6598,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [],
       $sessionWorkId
     );
+    $userGuestNumber = egmInstanceGuestNumberForMissionUser(__DIR__, $sessionWorkId);
     $awardLogEntry = [
       'awardId' => $awardId,
       'requestId' => $requestId,
@@ -6609,6 +6610,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'cancelledAt' => null,
       'cancellationReason' => null,
       'workId' => $sessionWorkId,
+      'guestNumber' => $userGuestNumber,
       'userName' => $userFullName,
       'userScore' => $userScore,
       'level' => [
@@ -6739,7 +6741,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'card_flips_count' => $currentFlipCount + 1,
         'total_prize_won' => $currentTotalPrizeWon + $selectedPrizeValue,
         'request_id' => $requestId,
-        'card_index' => $cardIndex
+        'card_index' => $cardIndex,
+        'guest_number' => $userGuestNumber
       ],
       'audit' => true
     ]);
@@ -6978,7 +6981,7 @@ $hintHtml = sanitizeHintHtml($rawHintHtml);
 $hintAlign = trim((string)($wheelSettings['hintAlign'] ?? 'right'));
 $hintAlign = in_array($hintAlign, ['right', 'center', 'left'], true) ? $hintAlign : 'right';
 
-$inviteesMtime = is_file($inviteesFilePath) ? filemtime($inviteesFilePath) : null;
+$inviteesMtime = egmDbIsFile($inviteesFilePath) ? egmDbFilemtime($inviteesFilePath) : null;
 $sessionAuthed = isset($_SESSION['egm_authed']) && $_SESSION['egm_authed'] === true;
 if ($sessionAuthed && $inviteesMtime === null) {
   $expiredWorkId = trim((string)($_SESSION['egm_work_id'] ?? ''));
@@ -7088,6 +7091,9 @@ $taskItemsForView = $egmTasksVisibleInitial
 $sessionTaskTotalScore = ($sessionAuthed && $sessionWorkId !== '')
   ? computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)
   : 0;
+$sessionGuestNumber = ($sessionAuthed && $sessionWorkId !== '')
+  ? egmInstanceGuestNumberForMissionUser(__DIR__, $sessionWorkId)
+  : '';
 if ($sessionFirstName === '') {
   $sessionFirstName = 'کاربر';
 }
@@ -7095,6 +7101,7 @@ $tcqSettingsForPayload = loadWfqSettings($tcqSettingsPath);
 $sessionPayload = [
   'authed' => $sessionAuthed,
   'workId' => $sessionWorkId,
+  'guestNumber' => $sessionGuestNumber,
   'isAdmin' => $sessionIsAdmin,
   'fullName' => $sessionFullName,
   'prizeWon' => $sessionPrizeWon,

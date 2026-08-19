@@ -4269,7 +4269,9 @@
   }
 
   function initWheelSubLayouts() {
-    const layouts = document.querySelectorAll('[data-tc-sub-layout]');
+    const layouts = tcShellEl instanceof HTMLElement
+      ? tcShellEl.querySelectorAll('[data-tc-sub-layout]')
+      : [];
     layouts.forEach((layout) => {
       if (!(layout instanceof HTMLElement)) return;
       if (layout.dataset.tcSubLayoutReady === '1') return;

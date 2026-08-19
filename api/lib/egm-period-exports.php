@@ -1,0 +1,334 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/egm-period-invites.php';
+require_once __DIR__ . '/xlsx-export.php';
+
+const EGM_PERIOD_EXPORT_LOG_ACTION = 'egm_period_check_in';
+
+/** @return array<string,string> */
+function egmPeriodExportTypes(): array
+{
+    return [
+        'all_guests' => 'همه مهمانان',
+        'uninvited_guests' => 'مهمانان ناخوانده',
+        'full_log' => 'گزارش کامل',
+        'user_conditions' => 'وضعیت همه کاربران',
+    ];
+}
+
+/** @return array<string,string> */
+function egmPeriodExportConditionLabels(): array
+{
+    return [
+        'success' => 'ورود موفق',
+        'quit_success' => 'خروج موفق',
+        'walk_in_registered' => 'ثبت مهمان ناخوانده',
+        'duplicate' => 'ورود تکراری؛ قبلاً وارد شده',
+        'quit_duplicate' => 'خروج تکراری؛ قبلاً خارج شده',
+        'quit_without_entry' => 'درخواست خروج بدون ورود ثبت‌شده',
+        'invited_other_period' => 'دعوت‌شده در بازه دیگر',
+        'user_inactive' => 'حساب مهمان غیرفعال',
+        'no_active_period' => 'بدون بازه فعال',
+        'multiple_active_periods' => 'هم‌پوشانی چند بازه فعال',
+        'not_found' => 'کاربر پیدا نشد',
+        'not_invited' => 'به این بازه دعوت نشده',
+        'upcoming' => 'در انتظار شروع بازه',
+        'immune_time' => 'بررسی در زمان ایمن',
+        'ended' => 'بازه پایان یافته',
+        'inactive' => 'بازه غیرفعال',
+        'invalid_schedule' => 'زمان‌بندی نامعتبر',
+        'quit_completed' => 'ورود و خروج ثبت شده',
+        'entered' => 'ورود ثبت شده؛ خروج ثبت نشده',
+        'invalid_quit_without_entry' => 'وضعیت ناسازگار؛ خروج بدون ورود',
+        'not_entered' => 'ورود ثبت نشده',
+        'not_started' => 'هنوز بررسی نشده',
+    ];
+}
+
+function egmPeriodExportConditionLabel(string $condition): string
+{
+    $condition = trim($condition);
+    if ($condition === '') return 'هنوز بررسی نشده';
+    return egmPeriodExportConditionLabels()[$condition] ?? $condition;
+}
+
+function egmPeriodExportResolveCondition(array $row): string
+{
+    $condition = trim((string)($row['last_control_condition'] ?? ''));
+    if ($condition !== '') return $condition;
+    $attendance = trim((string)($row['attendance_state'] ?? ''));
+    if ($attendance !== '') return $attendance;
+    $status = trim((string)($row['period_status'] ?? ($row['status'] ?? '')));
+    return $status !== '' ? $status : 'not_started';
+}
+
+/** @return array<int,array<string,mixed>> */
+function egmPeriodExportGuestRows(array $context, string $periodCode): array
+{
+    if ((string)($context['code'] ?? '') === '' || !is_array($context['tables'] ?? null)) {
+        throw new RuntimeException('خروجی این بازه فقط برای رویداد ثبت‌شده در پایگاه داده در دسترس است.');
+    }
+    $usersTable = (string)$context['tables']['users'];
+    $periodsTable = (string)$context['tables']['user_periods'];
+    $statement = $context['pdo']->prepare(<<<SQL
+SELECT
+  u.`id` AS `user_id`, u.`first_name`, u.`last_name`, u.`national_id`, u.`work_id`, u.`phone_number`,
+  u.`guest_number`, u.`deputy`, u.`general_department`, u.`department`, u.`gender`, u.`postal_level`,
+  u.`is_uninvited_guest` AS `user_is_uninvited_guest`, u.`outside_organization`,
+  p.`status` AS `period_status`, p.`invitation_source`, p.`invited_at`, p.`entered_date`, p.`entered_time`,
+  p.`quit_date`, p.`quit_time`, p.`attendance_state`, p.`last_control_condition`, p.`last_control_action`,
+  p.`last_control_message`, p.`last_control_at`, p.`is_uninvited_guest` AS `period_is_uninvited_guest`,
+  p.`uninvited_registered_at`, p.`uninvited_registered_by`
+FROM `{$periodsTable}` p
+JOIN `{$usersTable}` u ON u.`id` = p.`user_id`
+WHERE p.`period_code` = :period_code
+ORDER BY u.`guest_number`, u.`last_name`, u.`first_name`, u.`id`
+SQL);
+    $statement->execute([':period_code' => $periodCode]);
+    return $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+/** @return array<int,array<string,mixed>> */
+function egmPeriodExportLogRows(array $context, string $periodCode): array
+{
+    if ((string)($context['code'] ?? '') === '' || !is_array($context['tables'] ?? null)) {
+        throw new RuntimeException('خروجی این بازه فقط برای رویداد ثبت‌شده در پایگاه داده در دسترس است.');
+    }
+    $usersTable = (string)$context['tables']['users'];
+    $periodsTable = (string)$context['tables']['user_periods'];
+    $logsTable = (string)$context['tables']['activity_logs'];
+    $statement = $context['pdo']->prepare(<<<SQL
+SELECT
+  l.`id` AS `log_id`, l.`status` AS `log_condition`, l.`message`, l.`level`, l.`occurred_at`,
+  l.`ip_address`, l.`user_agent`, l.`work_id` AS `log_work_id`, l.`metadata_json`,
+  u.`first_name`, u.`last_name`, u.`national_id`, u.`work_id`, u.`phone_number`, u.`guest_number`,
+  u.`deputy`, u.`general_department`, u.`department`, u.`gender`, u.`postal_level`,
+  u.`is_uninvited_guest` AS `user_is_uninvited_guest`,
+  p.`entered_date`, p.`entered_time`, p.`quit_date`, p.`quit_time`, p.`attendance_state`,
+  p.`is_uninvited_guest` AS `period_is_uninvited_guest`
+FROM `{$logsTable}` l
+LEFT JOIN `{$usersTable}` u ON u.`id` = l.`user_id`
+LEFT JOIN `{$periodsTable}` p ON p.`user_id` = l.`user_id` AND p.`period_code` = :join_period_code
+WHERE l.`action` = :log_action AND l.`entity_id` = :period_code
+ORDER BY l.`occurred_at` DESC, l.`id` DESC
+SQL);
+    $statement->execute([
+        ':join_period_code' => $periodCode,
+        ':log_action' => EGM_PERIOD_EXPORT_LOG_ACTION,
+        ':period_code' => $periodCode,
+    ]);
+    $rows = $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($rows as &$row) {
+        $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
+        if (!is_array($metadata)) $metadata = [];
+        if (trim((string)($row['national_id'] ?? '')) === '') {
+            $row['national_id'] = trim((string)($metadata['national_id'] ?? ''));
+        }
+        if (trim((string)($row['work_id'] ?? '')) === '') {
+            $row['work_id'] = trim((string)($row['log_work_id'] ?? ''));
+        }
+        $row['attendance_action'] = trim((string)($metadata['attendance_action'] ?? 'check'));
+    }
+    unset($row);
+    return $rows;
+}
+
+/** @return array<string,string> */
+function egmPeriodExportMainRecord(array $row, ?string $condition = null): array
+{
+    $condition ??= egmPeriodExportResolveCondition($row);
+    return [
+        'نام و نام خانوادگی' => trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? '')),
+        'کد ملی' => trim((string)($row['national_id'] ?? '')),
+        'کد پرسنلی' => trim((string)($row['work_id'] ?? '')),
+        'شماره همراه' => trim((string)($row['phone_number'] ?? '')),
+        'وضعیت دقیق' => egmPeriodExportConditionLabel($condition),
+        'تاریخ ورود' => trim((string)($row['entered_date'] ?? '')),
+        'زمان ورود' => trim((string)($row['entered_time'] ?? '')),
+        'تاریخ خروج' => trim((string)($row['quit_date'] ?? '')),
+        'زمان خروج' => trim((string)($row['quit_time'] ?? '')),
+    ];
+}
+
+/** @return array<int,array<string,string>> */
+function egmPeriodExportRecords(string $type, array $guestRows, array $logRows = []): array
+{
+    if ($type === 'full_log') {
+        return array_map(static function (array $row): array {
+            $condition = trim((string)($row['log_condition'] ?? '')) ?: 'not_started';
+            return egmPeriodExportMainRecord($row, $condition) + [
+                'کد وضعیت' => $condition,
+                'زمان عملیات' => trim((string)($row['occurred_at'] ?? '')),
+                'نوع عملیات' => trim((string)($row['attendance_action'] ?? 'check')),
+                'پیام ثبت‌شده' => trim((string)($row['message'] ?? '')),
+                'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),
+                'معاونت' => trim((string)($row['deputy'] ?? '')),
+                'اداره کل' => trim((string)($row['general_department'] ?? '')),
+                'اداره' => trim((string)($row['department'] ?? '')),
+                'نشانی شبکه' => trim((string)($row['ip_address'] ?? '')),
+            ];
+        }, $logRows);
+    }
+
+    if ($type === 'uninvited_guests') {
+        $guestRows = array_values(array_filter($guestRows, static fn(array $row): bool =>
+            (int)($row['period_is_uninvited_guest'] ?? 0) === 1 || (int)($row['user_is_uninvited_guest'] ?? 0) === 1
+        ));
+    }
+
+    return array_map(static function (array $row) use ($type): array {
+        $condition = egmPeriodExportResolveCondition($row);
+        $record = egmPeriodExportMainRecord($row, $condition) + [
+            'کد وضعیت' => $condition,
+            'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),
+            'نوع دعوت' => trim((string)($row['invitation_source'] ?? '')),
+            'معاونت' => trim((string)($row['deputy'] ?? '')),
+            'اداره کل' => trim((string)($row['general_department'] ?? '')),
+            'اداره' => trim((string)($row['department'] ?? '')),
+            'آخرین زمان بررسی' => trim((string)($row['last_control_at'] ?? '')),
+            'پیام آخرین بررسی' => trim((string)($row['last_control_message'] ?? '')),
+        ];
+        if ($type === 'uninvited_guests') {
+            $record += [
+                'خارج از سازمان' => (int)($row['outside_organization'] ?? 0) === 1 ? 'بله' : 'خیر',
+                'زمان ثبت مهمان ناخوانده' => trim((string)($row['uninvited_registered_at'] ?? '')),
+                'ثبت‌کننده مهمان ناخوانده' => trim((string)($row['uninvited_registered_by'] ?? '')),
+            ];
+        }
+        return $record;
+    }, $guestRows);
+}
+
+function egmPeriodExportXmlCell(string $value, string $style = ''): string
+{
+    return '<Cell' . ($style !== '' ? ' ss:StyleID="' . appXlsxXml($style) . '"' : '')
+        . '><Data ss:Type="String">' . appXlsxXml($value) . '</Data></Cell>';
+}
+
+/** @param array<int,array<string,string>> $records */
+function egmPeriodExportSpreadsheetXml(string $sheetName, array $records): string
+{
+    $headers = $records ? array_keys($records[0]) : [
+        'نام و نام خانوادگی', 'کد ملی', 'کد پرسنلی', 'شماره همراه', 'وضعیت دقیق',
+        'تاریخ ورود', 'زمان ورود', 'تاریخ خروج', 'زمان خروج',
+    ];
+    $rowsXml = '<Row ss:StyleID="sHeader">';
+    foreach ($headers as $header) $rowsXml .= egmPeriodExportXmlCell((string)$header, 'sHeader');
+    $rowsXml .= '</Row>';
+    foreach ($records as $record) {
+        $rowsXml .= '<Row>';
+        foreach ($headers as $header) $rowsXml .= egmPeriodExportXmlCell((string)($record[$header] ?? ''));
+        $rowsXml .= '</Row>';
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?>'
+        . '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
+        . '<Styles><Style ss:ID="sHeader"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>'
+        . '<Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#E11D2E" ss:Pattern="Solid"/></Style></Styles>'
+        . '<Worksheet ss:Name="' . appXlsxXml($sheetName) . '"><Table>' . $rowsXml . '</Table></Worksheet></Workbook>';
+}
+
+function egmPeriodExportSafeFilenamePart(string $value, string $fallback): string
+{
+    $value = trim(preg_replace('~[\\\\/:*?"<>|]+~u', '-', $value) ?? '');
+    return $value !== '' ? $value : $fallback;
+}
+
+function egmPeriodExportSessionCanAccess(array $context, array $sessionUser, string $periodCode): bool
+{
+    if (function_exists('userHasPermissionId') && (
+        userHasPermissionId($sessionUser, 'event-guest-manager:export')
+        || userHasPermissionId($sessionUser, 'event-guest-manager:manage-tasks')
+    )) {
+        return true;
+    }
+    $userCode = strtolower(trim((string)($sessionUser['code'] ?? '')));
+    if ($userCode === '') return false;
+    $accessPath = (string)$context['mission_dir'] . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'task-access.json';
+    $raw = is_file($accessPath) ? file_get_contents($accessPath) : false;
+    $decoded = is_string($raw) ? json_decode($raw, true) : null;
+    $users = is_array($decoded['users'] ?? null) ? $decoded['users'] : [];
+    $userEntry = null;
+    foreach ($users as $rawCode => $entry) {
+        if (strtolower(trim((string)$rawCode)) === $userCode && is_array($entry)) {
+            $userEntry = $entry;
+            break;
+        }
+    }
+    if (!is_array($userEntry)) return false;
+    if (egmInstanceBoolValue($userEntry['allowManageTasksTab'] ?? ($userEntry['allow_manage_tasks_tab'] ?? false))) {
+        return true;
+    }
+    $periodId = '';
+    foreach (egmPeriodInvitesPeriods($context) as $period) {
+        $candidateCode = trim((string)($period['tagCode'] ?? ($period['code'] ?? '')));
+        if ($candidateCode === $periodCode) {
+            $periodId = trim((string)($period['id'] ?? ''));
+            break;
+        }
+    }
+    if ($periodId === '') return false;
+    $taskRules = is_array($userEntry['tasks'] ?? null) ? $userEntry['tasks'] : [];
+    $rule = null;
+    foreach ($taskRules as $rawTaskId => $entry) {
+        if (strtolower(trim((string)$rawTaskId)) === strtolower($periodId) && is_array($entry)) {
+            $rule = $entry;
+            break;
+        }
+    }
+    if (!is_array($rule) || !egmInstanceBoolValue($rule['enabled'] ?? true)) return false;
+    $panes = is_array($rule['panes'] ?? null) ? $rule['panes'] : [];
+    return egmInstanceBoolValue($panes['export'] ?? true);
+}
+
+/** @return array{content:string,filename:string,row_count:int,records:array<int,array<string,string>>} */
+function egmPeriodExportBuild(array $context, string $periodCode, string $type): array
+{
+    $types = egmPeriodExportTypes();
+    if (!isset($types[$type])) throw new InvalidArgumentException('نوع خروجی اکسل معتبر نیست.');
+    $periodCode = egmPeriodInvitesValidatePeriod($context, $periodCode);
+    $periodTitle = $periodCode;
+    foreach (egmPeriodInvitesPeriods($context) as $period) {
+        $candidateCode = trim((string)($period['tagCode'] ?? ($period['code'] ?? '')));
+        if ($candidateCode === $periodCode) {
+            $periodTitle = trim((string)($period['title'] ?? '')) ?: $periodCode;
+            break;
+        }
+    }
+    $guestRows = egmPeriodExportGuestRows($context, $periodCode);
+    $logRows = $type === 'full_log' ? egmPeriodExportLogRows($context, $periodCode) : [];
+    $records = egmPeriodExportRecords($type, $guestRows, $logRows);
+    $sheetName = $types[$type];
+    $xml = egmPeriodExportSpreadsheetXml($sheetName, $records);
+    $filename = egmPeriodExportSafeFilenamePart($periodTitle, 'period') . '-'
+        . egmPeriodExportSafeFilenamePart($sheetName, 'export') . '-' . date('Ymd-His') . '.xlsx';
+    return [
+        'content' => appXlsxFromSpreadsheetXml($xml),
+        'filename' => $filename,
+        'row_count' => count($records),
+        'records' => $records,
+    ];
+}
+
+function handleEgmPeriodExportRequest(string $missionDir, array $sessionUser): never
+{
+    try {
+        $context = egmPeriodInvitesContext($missionDir);
+        $periodCode = egmPeriodInvitesValidatePeriod($context, trim((string)($_GET['period_code'] ?? '')));
+        if (!egmPeriodExportSessionCanAccess($context, $sessionUser, $periodCode)) {
+            denyPanelAccess(403, 'شما اجازه دریافت خروجی این بازه را ندارید.', false);
+        }
+        $export = egmPeriodExportBuild(
+            $context,
+            $periodCode,
+            strtolower(trim((string)($_GET['type'] ?? 'all_guests')))
+        );
+        appXlsxSend($export['content'], $export['filename']);
+        exit;
+    } catch (InvalidArgumentException $error) {
+        denyPanelAccess(422, $error->getMessage(), false);
+    } catch (Throwable $error) {
+        error_log('EGM period export failed: ' . $error->getMessage());
+        denyPanelAccess(500, 'ساخت خروجی اکسل بازه ناموفق بود.', false);
+    }
+}

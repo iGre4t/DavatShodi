@@ -1,6 +1,10 @@
 (() => {
   const PANE_SELECTOR = '.sub-pane[data-pane="tc-monitoring"]';
-  const API_URL = 'mini%20apps/RateMe/rmsMonitoring.php?action=stats';
+  const currentScriptSrc = document.currentScript instanceof HTMLScriptElement
+    ? document.currentScript.src
+    : window.location.href;
+  const API_URL = new URL('rmsMonitoring.php?action=stats', currentScriptSrc).toString();
+  const rmsShellEl = document.querySelector('.rms-shell');
 
   let hasLoadedOnce = false;
   let isLoading = false;
@@ -46,7 +50,9 @@
   }
 
   function getPane() {
-    const pane = document.querySelector(PANE_SELECTOR);
+    const pane = rmsShellEl instanceof HTMLElement
+      ? rmsShellEl.querySelector(PANE_SELECTOR)
+      : null;
     return pane instanceof HTMLElement ? pane : null;
   }
 

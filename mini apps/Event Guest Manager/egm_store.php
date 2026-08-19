@@ -1,11 +1,14 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/egm-registry.php';
+require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
 $campaignRedirectsFile = __DIR__ . '/../../api/lib/campaign-redirects.php';
-if (is_file($campaignRedirectsFile)) {
+if (egmDbIsFile($campaignRedirectsFile)) {
   require_once $campaignRedirectsFile;
 }
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
@@ -67,7 +70,7 @@ function egmStoreCampaignRedirectsReady(): bool
 function egmStoreRequireCampaignRedirects(): void
 {
   global $campaignRedirectsFile;
-  if (!egmStoreCampaignRedirectsReady() && is_string($campaignRedirectsFile ?? null) && is_file($campaignRedirectsFile)) {
+  if (!egmStoreCampaignRedirectsReady() && is_string($campaignRedirectsFile ?? null) && egmDbIsFile($campaignRedirectsFile)) {
     require_once $campaignRedirectsFile;
   }
   if (egmStoreCampaignRedirectsReady()) {
@@ -152,7 +155,7 @@ function egmStoreMissionContext(string $baseDir): array
   if ($folder === '' || $folder === 'generate') {
     return ['isMission' => false];
   }
-  $directory = 'miniapps/EGMs/' . $folder;
+  $directory = 'mini apps/EGMs/' . $folder;
   $pdo = egmStoreDatabase();
   $registry = $pdo instanceof PDO ? findEgmRegistryByDirectory($pdo, $directory) : null;
   if (!is_array($registry)) {
@@ -165,17 +168,17 @@ function egmStoreMissionContext(string $baseDir): array
     'folder' => $folder,
     'missionDir' => $missionDir,
     'missionsRoot' => $missionsRoot,
-    'webPath' => 'miniapps/EGMs/' . rawurlencode($folder),
+    'webPath' => 'mini%20apps/EGMs/' . rawurlencode($folder),
     'directory' => $directory
   ];
 }
 
 function egmStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, string $newFolder): void
 {
-  $oldWebPath = 'miniapps/EGMs/' . rawurlencode($oldFolder);
-  $newWebPath = 'miniapps/EGMs/' . rawurlencode($newFolder);
-  $oldDirectory = 'miniapps/EGMs/' . $oldFolder;
-  $newDirectory = 'miniapps/EGMs/' . $newFolder;
+  $oldWebPath = 'mini%20apps/EGMs/' . rawurlencode($oldFolder);
+  $newWebPath = 'mini%20apps/EGMs/' . rawurlencode($newFolder);
+  $oldDirectory = 'mini apps/EGMs/' . $oldFolder;
+  $newDirectory = 'mini apps/EGMs/' . $newFolder;
   $iterator = new RecursiveIteratorIterator(
     new RecursiveDirectoryIterator($missionDir, FilesystemIterator::SKIP_DOTS),
     RecursiveIteratorIterator::SELF_FIRST
@@ -189,13 +192,13 @@ function egmStorePatchMissionLinkStrings(string $missionDir, string $oldFolder, 
     if (!preg_match('/\.(php|js|css|json|htaccess)$/i', $name) && $name !== '.htaccess') {
       continue;
     }
-    $content = file_get_contents($path);
+    $content = egmDbFileGetContents($path);
     if (!is_string($content)) {
       continue;
     }
     $patched = str_replace([$oldWebPath, $oldDirectory], [$newWebPath, $newDirectory], $content);
     if ($patched !== $content) {
-      file_put_contents($path, $patched, LOCK_EX);
+      egmDbFilePutContents($path, $patched, LOCK_EX);
     }
   }
 }
@@ -212,14 +215,64 @@ function egmStoreSyncMissionMetadataName(string $baseDir, string $eventName): bo
   if (!$pdo instanceof PDO || !updateEgmRegistry($pdo, $code, trim($eventName), $directory)) {
     return false;
   }
+  try {
+    egmInstanceWriteData($pdo, $code, 'metadata', [
+      'code' => $code,
+      'name' => trim($eventName),
+      'directory' => $directory
+    ]);
+  } catch (Throwable $error) {
+    error_log('Failed to update EGM instance metadata: ' . $error->getMessage());
+    return false;
+  }
   return true;
 }
 
+function egmStoreReadScopedSettings(string $baseDir, string $settingsFile, ?string $legacySettingsFile = null): array
+{
+  $fileSettings = readSettingsFile($settingsFile, $legacySettingsFile);
+  $context = egmStoreMissionContext($baseDir);
+  $pdo = egmStoreDatabase();
+  if (empty($context['isMission']) || !$pdo instanceof PDO) {
+    return $fileSettings;
+  }
+  $code = (string)($context['code'] ?? '');
+  try {
+    $databaseSettings = egmInstanceReadData($pdo, $code, 'settings');
+    if (is_array($databaseSettings)) {
+      return $databaseSettings;
+    }
+    egmInstanceWriteData($pdo, $code, 'settings', $fileSettings);
+  } catch (Throwable $error) {
+    error_log('Failed to read EGM instance settings: ' . $error->getMessage());
+  }
+  return $fileSettings;
+}
+
+function egmStoreWriteScopedSettings(string $baseDir, array $settings): bool
+{
+  $context = egmStoreMissionContext($baseDir);
+  if (empty($context['isMission'])) {
+    return true;
+  }
+  $pdo = egmStoreDatabase();
+  if (!$pdo instanceof PDO) {
+    return false;
+  }
+  try {
+    egmInstanceWriteData($pdo, (string)($context['code'] ?? ''), 'settings', $settings);
+    return true;
+  } catch (Throwable $error) {
+    error_log('Failed to write EGM instance settings: ' . $error->getMessage());
+    return false;
+  }
+}
+
 function readJsonFile($path, $fallback) {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $fallback;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $fallback;
   }
@@ -232,7 +285,7 @@ function writeJsonFile($path, $data) {
   if ($encoded === false) {
     return false;
   }
-  return file_put_contents($path, $encoded, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $encoded, LOCK_EX) !== false;
 }
 
 function normalizeSettingsFilePayload($data): array
@@ -246,7 +299,7 @@ function normalizeSettingsFilePayload($data): array
 function readSettingsFile(string $path, ?string $legacyPath = null): array
 {
   $settings = normalizeSettingsFilePayload(readJsonFile($path, []));
-  if ($settings !== [] || is_file($path)) {
+  if ($settings !== [] || egmDbIsFile($path)) {
     return $settings;
   }
   if (is_string($legacyPath) && $legacyPath !== '') {
@@ -336,11 +389,11 @@ function readCsvFileRows(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -365,7 +418,7 @@ function writeCsvFileRows(string $path, array $rows): bool
   if ($dir !== '' && !is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'c+');
+  $handle = egmDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -393,10 +446,10 @@ function writeCsvFileRows(string $path, array $rows): bool
 
 function readInviteesMappingConfig(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -815,7 +868,7 @@ if ($action === 'check_campaign_link') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -843,7 +896,7 @@ if ($action === 'create_campaign_link') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -929,7 +982,7 @@ if ($action === 'save_prizes') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1066,7 +1119,7 @@ if ($action === 'save_prize_levels') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1212,7 +1265,7 @@ if ($action === 'save_prize_levels') {
 }
 
 if ($action === 'get_reward_guide') {
-  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
+  $settings = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
   $guide = is_array($settings['rewardGuide'] ?? null) ? $settings['rewardGuide'] : [];
   echo json_encode([
     'status' => 'ok',
@@ -1230,14 +1283,14 @@ if ($action === 'save_reward_guide') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
   }
   requireTcStoreCsrf($payload);
   $guide = is_array($payload['rewardGuide'] ?? null) ? $payload['rewardGuide'] : [];
-  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
+  $settings = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
   $settings['rewardGuide'] = [
     'title' => trim((string)($guide['title'] ?? 'راهنمای دریافت جایزه')),
     'text' => trim((string)($guide['text'] ?? ''))
@@ -1246,12 +1299,17 @@ if ($action === 'save_reward_guide') {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save reward guide.']);
     exit;
   }
+  if (!egmStoreWriteScopedSettings($baseDir, $settings)) {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Reward guide was saved to file, but failed to save to the EGM database table.']);
+    exit;
+  }
   echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
 if ($action === 'get_reward_prize_display') {
-  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
+  $settings = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
   echo json_encode([
     'status' => 'ok',
     'data' => normalizeRewardPrizeDisplaySettings($settings['rewardPrizeDisplay'] ?? [])
@@ -1265,16 +1323,21 @@ if ($action === 'save_reward_prize_display') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
   }
   requireTcStoreCsrf($payload);
-  $settings = readSettingsFile($settingsFile, $legacySettingsFile);
+  $settings = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
   $settings['rewardPrizeDisplay'] = normalizeRewardPrizeDisplaySettings($payload['rewardPrizeDisplay'] ?? []);
   if (!writeJsonFile($settingsFile, $settings)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save advanced prize setting.']);
+    exit;
+  }
+  if (!egmStoreWriteScopedSettings($baseDir, $settings)) {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Prize settings were saved to file, but failed to save to the EGM database table.']);
     exit;
   }
   echo json_encode(['status' => 'ok'], JSON_UNESCAPED_UNICODE);
@@ -1301,7 +1364,7 @@ if ($action === 'save_mission_link') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1341,28 +1404,28 @@ if ($action === 'save_mission_link') {
       exit;
     }
   }
-  if (file_exists($targetDir)) {
+  if (egmDbFileExists($targetDir)) {
     echo json_encode(['status' => 'error', 'message' => 'This Event Guest Manager link is already occupied. Choose another code.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
   $missionDir = (string)$context['missionDir'];
-  if (!rename($missionDir, $targetDir)) {
+  if (!egmDbRename($missionDir, $targetDir)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to rename the club folder.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
   $pdo = egmStoreDatabase();
   $uniqueCode = (string)($context['code'] ?? '');
   $registryName = trim((string)($context['name'] ?? $nextCode)) ?: $nextCode;
-  $nextDirectory = 'miniapps/EGMs/' . $nextCode;
+  $nextDirectory = 'mini apps/EGMs/' . $nextCode;
   if (!$pdo instanceof PDO || !updateEgmRegistry($pdo, $uniqueCode, $registryName, $nextDirectory)) {
-    @rename($targetDir, $missionDir);
+    @egmDbRename($targetDir, $missionDir);
     echo json_encode(['status' => 'error', 'message' => 'Failed to update the EGM database registry.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
   egmStorePatchMissionLinkStrings($targetDir, $currentCode, $nextCode);
 
-  $nextWebPath = 'miniapps/EGMs/' . rawurlencode($nextCode);
+  $nextWebPath = 'mini%20apps/EGMs/' . rawurlencode($nextCode);
   echo json_encode([
     'status' => 'ok',
     'message' => 'Club link updated.',
@@ -1406,7 +1469,7 @@ if ($action === 'get_settings') {
       'hiddenText' => ''
     ]
   ];
-  $stored = readSettingsFile($settingsFile, $legacySettingsFile);
+  $stored = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
   $settings = array_merge($defaults, is_array($stored) ? $stored : []);
   $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
   $settings['eventAccessLocked'] = (bool)($settings['eventAccessLocked'] ?? false);
@@ -1430,7 +1493,7 @@ if ($action === 'save_settings') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -1441,7 +1504,7 @@ if ($action === 'save_settings') {
     echo json_encode(['status' => 'error', 'message' => 'Invalid settings.']);
     exit;
   }
-  $storedSettings = readSettingsFile($settingsFile, $legacySettingsFile);
+  $storedSettings = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
   $settings = array_merge(is_array($storedSettings) ? $storedSettings : [], $incomingSettings);
   $settings['duration'] = egmStoreNormalizeBool($settings['duration'] ?? false);
   $settings['active'] = $settings['duration'] ? false : egmStoreNormalizeBool($settings['active'] ?? false);
@@ -1465,6 +1528,11 @@ if ($action === 'save_settings') {
   $settings['rewardPrizeDisplay'] = normalizeRewardPrizeDisplaySettings($settings['rewardPrizeDisplay'] ?? []);
   if (!writeJsonFile($settingsFile, $settings)) {
     echo json_encode(['status' => 'error', 'message' => 'Failed to save settings.']);
+    exit;
+  }
+  if (!egmStoreWriteScopedSettings($baseDir, $settings)) {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Settings were saved to file, but failed to save to the EGM database table.']);
     exit;
   }
   if (!egmStoreSyncMissionMetadataName($baseDir, (string)$settings['eventName'])) {
@@ -1528,7 +1596,7 @@ if ($action === 'set_admin_assignment') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode(file_get_contents('php://input'), true);
+  $payload = json_decode(egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;

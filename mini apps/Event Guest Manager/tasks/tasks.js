@@ -1,1 +1,0 @@
-window.EGM_TASKS = [];

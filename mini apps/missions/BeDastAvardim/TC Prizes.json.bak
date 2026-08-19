@@ -1,0 +1,35 @@
+[
+    {
+        "id": "prize_883f751d4fe56625a37b",
+        "name": "کارت 1 میلیون تومانی",
+        "onWheelName": "یک میلیون تومانی",
+        "quantity": 508,
+        "last": 61,
+        "value": 1000000,
+        "isFake": false,
+        "pendingAwardIds": [],
+        "pendingResetAwardIds": []
+    },
+    {
+        "id": "prize_7bd20cf3624530c74fa1",
+        "name": "کارت یک میلیون و دویست هزار تومانی",
+        "onWheelName": "یک میلیون و دویست هزار تومانی",
+        "quantity": 675,
+        "last": 61,
+        "value": 1200000,
+        "isFake": false,
+        "pendingAwardIds": [],
+        "pendingResetAwardIds": []
+    },
+    {
+        "id": "prize_1nbpkl68gaanz",
+        "name": "کارت یک میلیون و پانصد هزار تومانی",
+        "onWheelName": "یک میلیون و پانصد هزار تومانی",
+        "quantity": 308,
+        "last": 42,
+        "value": 1500000,
+        "isFake": false,
+        "pendingAwardIds": [],
+        "pendingResetAwardIds": []
+    }
+]

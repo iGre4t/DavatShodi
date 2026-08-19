@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $tcExportSessionUser = requireTabPermissionFromSession('task-club', false);
@@ -49,10 +51,10 @@ function tcParticipantsReadCsvRows(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -61,7 +63,7 @@ function tcParticipantsReadCsvRows(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
   flock($handle, LOCK_UN);
@@ -71,10 +73,10 @@ function tcParticipantsReadCsvRows(string $path): array
 
 function tcParticipantsReadMapping(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return [];
   }
@@ -162,8 +164,8 @@ function tcParticipantsXmlEscape(string $value): string
 function tcParticipantsEventTitle(string $fallback): string
 {
   $indexPath = __DIR__ . DIRECTORY_SEPARATOR . 'index.php';
-  if (is_file($indexPath)) {
-    $content = file_get_contents($indexPath);
+  if (tcDbIsFile($indexPath)) {
+    $content = tcDbFileGetContents($indexPath);
     if (is_string($content) && preg_match('/<title[^>]*>(.*?)<\/title>/is', $content, $matches)) {
       $title = trim(html_entity_decode(strip_tags((string)$matches[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
       if ($title !== '') {

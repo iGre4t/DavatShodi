@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/pot_service.php';
@@ -36,7 +38,7 @@ if ($exportType === 'winners') {
 } else {
   $participants = egmPotEligibleParticipants($level, $winners);
 }
-$headers = ['fullname', 'Work ID', 'National ID', 'Phone Number', 'Total Score', 'Pot Prize Level'];
+$headers = ['Guest Number', 'fullname', 'Work ID', 'National ID', 'Phone Number', 'Total Score', 'Pot Prize Level'];
 $filename = preg_replace('/[^\pL\pN._-]+/u', '-', (string)$level['name']) ?: 'pot';
 $filename .= $exportType === 'winners' ? '-winners.xlsx' : '-reached-non-winners.xlsx';
 header('Content-Disposition: attachment; filename="pot-winners.xlsx"; filename*=UTF-8\'\'' . rawurlencode($filename));
@@ -75,6 +77,7 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
       $phoneNumber = egmPotExportCredential($credentials, ['phone number', 'phone', 'mobile', 'mobile number', 'شماره موبایل', 'شماره تلفن']);
     }
     $values = [
+      (string)($participant['guestNumber'] ?? ($participant['code'] ?? '')),
       (string)($participant['fullName'] ?? ''),
       (string)($participant['workId'] ?? ''),
       $nationalCode,

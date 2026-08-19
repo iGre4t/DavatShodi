@@ -1,0 +1,5 @@
+RewriteEngine On
+
+# Keep bookmarks to the former generated-EGM directory working after it was
+# consolidated into the single "mini apps" tree.
+RewriteRule ^miniapps/EGMs/(.*)$ legacy-egm-path.php?path=$1 [L,QSA]

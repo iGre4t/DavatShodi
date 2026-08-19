@@ -1,12 +1,34 @@
 (() => {
   const API_URL = "mini%20apps/Task%20Club/tc_store.php";
   const TC_PRIZE_STATUS_INTERVAL_KEY = "__tcPrizeStatusInterval";
+  const TC_PRIZE_STATUS_START_KEY = "__tcPrizeStatusStart";
+  const TC_PRIZE_STATUS_STOP_KEY = "__tcPrizeStatusStop";
+  const TC_REWARDS_ACTIVATION_HANDLER_KEY = "__tcRewardsActivationHandler";
+  const TC_REWARDS_VISIBILITY_HANDLER_KEY = "__tcRewardsVisibilityHandler";
   const tcShellEl = document.querySelector(".tc-shell");
   const csrfToken = tcShellEl instanceof HTMLElement
     ? String(tcShellEl.dataset.tcCsrf || "").trim()
     : "";
   let prizeInventoryVersion = "";
   let prizeLevelsVersion = "";
+
+  function isRewardsPaneActive() {
+    const rewardsPane = document.querySelector('.tc-shell .sub-pane[data-pane="tc-rewards-config"]');
+    const taskClubTab = document.getElementById("tab-task-club");
+    return rewardsPane instanceof HTMLElement
+      && rewardsPane.classList.contains("active")
+      && (!(taskClubTab instanceof HTMLElement) || taskClubTab.classList.contains("active"));
+  }
+
+  function getActiveRewardSectionKey() {
+    const rewardsPane = document.querySelector('.tc-shell .sub-pane[data-pane="tc-rewards-config"]');
+    if (!(rewardsPane instanceof HTMLElement)) return "";
+    const activeSection = Array.from(rewardsPane.querySelectorAll("[data-tc-reward-config-section]"))
+      .find(section => section instanceof HTMLElement && !section.hidden);
+    return activeSection instanceof HTMLElement
+      ? String(activeSection.getAttribute("data-tc-reward-config-section") || "")
+      : "";
+  }
 
   function makePrizeId() {
     const randomPart = globalThis.crypto?.getRandomValues
@@ -426,6 +448,15 @@
     }
 
     async function refreshStatus() {
+      if (!listEl.isConnected) {
+        if (typeof window[TC_PRIZE_STATUS_STOP_KEY] === "function") {
+          window[TC_PRIZE_STATUS_STOP_KEY]();
+        }
+        return;
+      }
+      if (!isRewardsPaneActive() || document.visibilityState !== "visible") {
+        return;
+      }
       try {
         const response = await fetch(`${API_URL}?action=get_prizes`, {
           cache: "no-store",
@@ -462,12 +493,29 @@
       } catch {}
     }
 
-    refreshStatus();
-    const previousStatusInterval = window[TC_PRIZE_STATUS_INTERVAL_KEY];
-    if (typeof previousStatusInterval === "number") {
-      clearInterval(previousStatusInterval);
+    const stopStatusPolling = () => {
+      const interval = window[TC_PRIZE_STATUS_INTERVAL_KEY];
+      if (typeof interval === "number") {
+        clearInterval(interval);
+      }
+      delete window[TC_PRIZE_STATUS_INTERVAL_KEY];
+    };
+    const startStatusPolling = (refreshImmediately = true) => {
+      stopStatusPolling();
+      if (!listEl.isConnected || !isRewardsPaneActive() || document.visibilityState !== "visible") {
+        return;
+      }
+      if (refreshImmediately) {
+        void refreshStatus();
+      }
+    };
+    const previousStopStatusPolling = window[TC_PRIZE_STATUS_STOP_KEY];
+    if (typeof previousStopStatusPolling === "function") {
+      previousStopStatusPolling();
     }
-    window[TC_PRIZE_STATUS_INTERVAL_KEY] = window.setInterval(refreshStatus, 5000);
+    window[TC_PRIZE_STATUS_START_KEY] = startStatusPolling;
+    window[TC_PRIZE_STATUS_STOP_KEY] = stopStatusPolling;
+    startStatusPolling(false);
 
     listEl.addEventListener("input", event => {
       const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"], [data-field="value"]');
@@ -1048,6 +1096,121 @@
     });
   }
 
+  async function initPrizeAwards() {
+    const listEl = document.getElementById("tc-prize-awards-list");
+    const statusEl = document.getElementById("tc-prize-awards-status");
+    const refreshBtn = document.getElementById("tc-prize-awards-refresh");
+    const resetAllBtn = document.getElementById("tc-prize-awards-reset-all");
+    if (!listEl) return;
+    let currentItems = [];
+    let currentTotal = 0;
+
+    const setStatus = (message, error = false) => {
+      if (!statusEl) return;
+      statusEl.textContent = String(message || "");
+      statusEl.style.color = error ? "#b42318" : "";
+    };
+    const render = (items, total = 0) => {
+      currentItems = Array.isArray(items) ? items : [];
+      currentTotal = Math.max(currentItems.length, Number.parseInt(total, 10) || 0);
+      if (resetAllBtn) resetAllBtn.disabled = currentTotal === 0;
+      if (!items.length) {
+        listEl.innerHTML = '<tr><td colspan="7" class="muted">No confirmed prize records.</td></tr>';
+        return;
+      }
+      listEl.innerHTML = items.map((item) => {
+        const pending = item.status === "reset_pending";
+        return `<tr>
+          <td>${escapeHtml(item.userName || "-")}</td>
+          <td>${escapeHtml(formatPrizeValue(item.prizeValue ?? 0))}</td>
+          <td>${escapeHtml(item.cardNumber || "-")}</td>
+          <td>${escapeHtml(item.levelName || "-")}</td>
+          <td>${escapeHtml(item.prizeName || "-")}</td>
+          <td>${escapeHtml(item.wonAt || "-")}</td>
+          <td><button type="button" class="btn tc-btn-danger" data-reset-award-id="${escapeHtml(item.awardId)}">${pending ? "Retry reset" : "Reset prize"}</button></td>
+        </tr>`;
+      }).join("");
+    };
+    const load = async () => {
+      if (refreshBtn) refreshBtn.disabled = true;
+      if (resetAllBtn) resetAllBtn.disabled = true;
+      setStatus("Loading prize records...");
+      try {
+        const response = await fetch(`${API_URL}?action=get_prize_awards&limit=100`, {credentials: "same-origin"});
+        const payload = await response.json();
+        if (!response.ok || payload?.status !== "ok" || !Array.isArray(payload.data)) {
+          throw new Error(payload?.message || "Failed to load prize records.");
+        }
+        render(payload.data, payload.total);
+        const shown = payload.data.length;
+        setStatus(currentTotal > shown
+          ? `Showing the newest ${shown} of ${currentTotal} active prize records.`
+          : `${currentTotal} active prize record${currentTotal === 1 ? "" : "s"}.`);
+      } catch (error) {
+        setStatus(error?.message || "Failed to load prize records.", true);
+      } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+        if (resetAllBtn) resetAllBtn.disabled = currentTotal === 0;
+      }
+    };
+
+    refreshBtn?.addEventListener("click", load);
+    resetAllBtn?.addEventListener("click", async () => {
+      const count = currentTotal;
+      if (count <= 0) return;
+      if (!window.confirm(`Reset all ${count} recorded prize${count === 1 ? "" : "s"}?\n\nThis removes every matching win from user CSV histories, restores the inventory items, and lets the users win those levels again. This cannot be undone.`)) return;
+      resetAllBtn.disabled = true;
+      if (refreshBtn) refreshBtn.disabled = true;
+      setStatus(`Resetting ${count} prize${count === 1 ? "" : "s"} safely...`);
+      try {
+        const response = await fetch(`${API_URL}?action=reset_all_prize_awards`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({confirmResetAll: true, csrf: csrfToken})
+        });
+        const payload = await response.json();
+        const message = payload?.message || (response.ok ? "All prizes reset successfully." : "Reset all did not finish.");
+        await load();
+        setStatus(message, !response.ok || payload?.status !== "ok");
+      } catch (error) {
+        const message = error?.message || "Reset all did not finish. Completed resets remain consistent and the action can be retried.";
+        await load();
+        setStatus(message, true);
+      } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+        if (resetAllBtn) resetAllBtn.disabled = currentTotal === 0;
+      }
+    });
+    listEl.addEventListener("click", async (event) => {
+      const button = event.target instanceof HTMLElement ? event.target.closest("[data-reset-award-id]") : null;
+      if (!(button instanceof HTMLButtonElement)) return;
+      const row = button.closest("tr");
+      const cells = row ? Array.from(row.cells).map((cell) => cell.textContent?.trim() || "") : [];
+      const description = `${cells[0] || "This user"} - ${cells[4] || "prize"}`;
+      if (!window.confirm(`Reset ${description}?\n\nThis removes the matching win from the user's CSV history, restores one inventory item, and lets the user win that level again.`)) return;
+      button.disabled = true;
+      setStatus("Resetting prize safely...");
+      try {
+        const response = await fetch(`${API_URL}?action=reset_prize_award`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({awardId: button.dataset.resetAwardId || "", csrf: csrfToken})
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.status !== "ok") throw new Error(payload?.message || "Prize reset did not finish.");
+        await load();
+        setStatus(payload.message || "Prize reset successfully.");
+      } catch (error) {
+        const message = error?.message || "Prize reset did not finish. No unsafe CSV replacement was made.";
+        await load();
+        setStatus(message, true);
+      }
+    });
+    await load();
+  }
+
   function renderFakeItems(fakeItems, listEl) {
     if (!listEl) {
       return;
@@ -1075,14 +1238,76 @@
       .join("");
   }
 
+  let prizeLevelsInitializationStarted = false;
+  let prizeStorageInitializationStarted = false;
+
+  function initializeActiveRewardSection(sectionKey) {
+    if (sectionKey === "levels" && !prizeLevelsInitializationStarted) {
+      prizeLevelsInitializationStarted = true;
+      void initPrizeLevels();
+      return;
+    }
+    if (sectionKey === "storage" && !prizeStorageInitializationStarted) {
+      prizeStorageInitializationStarted = true;
+      void initPrizeForm();
+      void initPrizeAwards();
+    }
+  }
+
+  function syncRewardsActivity() {
+    if (isRewardsPaneActive()) {
+      const sectionKey = getActiveRewardSectionKey();
+      initializeActiveRewardSection(sectionKey);
+      if (sectionKey === "storage" && typeof window[TC_PRIZE_STATUS_START_KEY] === "function") {
+        window[TC_PRIZE_STATUS_START_KEY]();
+      } else if (typeof window[TC_PRIZE_STATUS_STOP_KEY] === "function") {
+        window[TC_PRIZE_STATUS_STOP_KEY]();
+      }
+      return;
+    }
+    if (typeof window[TC_PRIZE_STATUS_STOP_KEY] === "function") {
+      window[TC_PRIZE_STATUS_STOP_KEY]();
+    }
+  }
+
+  function bindRewardsLifecycle() {
+    const previousActivationHandler = window[TC_REWARDS_ACTIVATION_HANDLER_KEY];
+    if (typeof previousActivationHandler === "function") {
+      document.removeEventListener("click", previousActivationHandler);
+    }
+    const activationHandler = (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest('.sub-item[data-pane], [data-tab], [data-tc-reward-config-trigger]')
+        : null;
+      if (!target) return;
+      window.setTimeout(syncRewardsActivity, 0);
+    };
+    window[TC_REWARDS_ACTIVATION_HANDLER_KEY] = activationHandler;
+    document.addEventListener("click", activationHandler);
+
+    const previousVisibilityHandler = window[TC_REWARDS_VISIBILITY_HANDLER_KEY];
+    if (typeof previousVisibilityHandler === "function") {
+      document.removeEventListener("visibilitychange", previousVisibilityHandler);
+    }
+    const visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        syncRewardsActivity();
+      } else if (typeof window[TC_PRIZE_STATUS_STOP_KEY] === "function") {
+        window[TC_PRIZE_STATUS_STOP_KEY]();
+      }
+    };
+    window[TC_REWARDS_VISIBILITY_HANDLER_KEY] = visibilityHandler;
+    document.addEventListener("visibilitychange", visibilityHandler);
+
+    if (typeof window[TC_PRIZE_STATUS_STOP_KEY] === "function") {
+      window[TC_PRIZE_STATUS_STOP_KEY]();
+    }
+    syncRewardsActivity();
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      initPrizeForm();
-      initPrizeLevels();
-    });
+    document.addEventListener("DOMContentLoaded", bindRewardsLifecycle, { once: true });
   } else {
-    initPrizeForm();
-    initPrizeLevels();
+    bindRewardsLifecycle();
   }
 })();
-

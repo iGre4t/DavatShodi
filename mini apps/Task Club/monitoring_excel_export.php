@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 function tcMonitoringExportXmlEscape(string $value): string
 {
   return htmlspecialchars($value, ENT_QUOTES | ENT_XML1, 'UTF-8');
@@ -220,7 +222,11 @@ function tcMonitoringBuildExcelXml(array $data, string $baseDir): array
     'usersCompletedAllStarted' => 'تکمیل‌کنندگان همه ماموریت‌های شروع‌شده',
     'prizeRemaining' => 'جوایز باقی‌مانده',
     'prizeCapacity' => 'ظرفیت کل جوایز',
-    'prizeGiven' => 'جوایز داده‌شده'
+    'prizeGiven' => 'جوایز داده‌شده',
+    'prizeValueAssignedToInvitees' => 'مجموع ارزش جوایز داده‌شده (تومان)',
+    'prizeValueRemaining' => 'مجموع ارزش جوایز داده‌نشده (تومان)',
+    'prizeValueBudget' => 'بودجه کل جوایز (تومان)',
+    'prizeValueReconciliationDifference' => 'مغایرت بودجه جوایز (تومان)'
   ];
   $summaryRows = [];
   foreach ($summaryLabels as $key => $label) {

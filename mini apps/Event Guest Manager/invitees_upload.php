@@ -1,8 +1,12 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../api/lib/common.php';
+require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/invitees_special_access.php';
@@ -22,7 +26,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
+$input = json_decode(egmDbFileGetContents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
   exit;
@@ -49,7 +53,7 @@ if (!is_dir($baseDir)) {
 
 function egmInviteesUploadWriteTextLocked(string $path, string $content): bool
 {
-  $handle = fopen($path, 'c+');
+  $handle = egmDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -80,7 +84,7 @@ function egmInviteesUploadWriteTextLocked(string $path, string $content): bool
 
 function egmInviteesUploadReadHeader(string $csv): array
 {
-  $handle = fopen('php://temp', 'w+b');
+  $handle = egmDbFopen('php://temp', 'w+b');
   if ($handle === false || fwrite($handle, $csv) === false || rewind($handle) === false) {
     if (is_resource($handle)) fclose($handle);
     return [];
@@ -152,6 +156,15 @@ if (!tcqEnsureInviteesColumns($filePath)) {
 $questions = tcqLoadStore(__DIR__ . DIRECTORY_SEPARATOR . 'EGMQ list.json');
 if (!tcqSyncAnswersSheet($answersPath, $questions, $questions)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to rebuild answers table.']);
+  exit;
+}
+
+try {
+  egmInstanceSyncMissionUsersUsingProjectConfig(dirname(__DIR__, 2), __DIR__, $filePath, $mapPath, true);
+} catch (Throwable $error) {
+  error_log('Failed to synchronize EGM invitees database table: ' . $error->getMessage());
+  http_response_code(500);
+  echo json_encode(['status' => 'error', 'message' => 'Invitees were saved to CSV, but failed to synchronize the EGM users database table.']);
   exit;
 }
 

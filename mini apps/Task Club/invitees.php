@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 require_once __DIR__ . '/invitees_special_access.php';
@@ -35,10 +36,10 @@ function readAnyPasswordLoginSettings(string $path): array {
     'anyPassword' => false,
     'minLength' => 3
   ];
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $defaults;
   }
-  $data = json_decode((string)file_get_contents($path), true);
+  $data = json_decode((string)tcDbFileGetContents($path), true);
   if (!is_array($data)) {
     return $defaults;
   }
@@ -50,10 +51,10 @@ function readAnyPasswordLoginSettings(string $path): array {
 }
 
 function readMappedConfig(string $path): array {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $data = json_decode(file_get_contents($path), true);
+  $data = json_decode(tcDbFileGetContents($path), true);
   return is_array($data) ? $data : [];
 }
 
@@ -61,11 +62,11 @@ function readCsvRows(string $path): array {
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsSnapshot($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -73,7 +74,7 @@ function readCsvRows(string $path): array {
     fclose($handle);
     return [];
   }
-  while (($data = fgetcsv($handle)) !== false) {
+  while (($data = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = $data;
   }
   flock($handle, LOCK_UN);
@@ -191,10 +192,10 @@ function inviteeListCompletedMissionIds(array $row, array $header): array {
 }
 
 function inviteeListTaskOrderMap(string $tasksPath): array {
-  if (!is_file($tasksPath)) {
+  if (!tcDbIsFile($tasksPath)) {
     return [];
   }
-  $content = (string)file_get_contents($tasksPath);
+  $content = (string)tcDbFileGetContents($tasksPath);
   if (!preg_match('/window\.TC_TASKS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/', $content, $matches)) {
     return [];
   }
@@ -852,6 +853,7 @@ if ($rows) {
 <script src="mini%20apps/Task%20Club/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
+  const INVITEES_DOCUMENT_CLICK_HANDLER_KEY = '__tcInviteesDocumentClickHandler';
   const csrfToken = <?= json_encode($tcInviteesCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const canResetInviteeTasks = <?= $tcInviteesCanReset ? 'true' : 'false' ?>;
   const pickBtn = document.getElementById('tc-invite-pick');
@@ -1412,6 +1414,15 @@ if ($rows) {
             </div>
           `).join('')}
         </div>
+        ${canResetInviteeTasks ? `
+          <div class="field tc-participation-prize-total-edit">
+            <span>Total Won Prize</span>
+            <div class="tc-participation-score-edit">
+              <input type="number" min="0" step="any" inputmode="decimal" value="${escapeHtml(String(summary.totalPrizeWon || '0'))}" data-total-prize-won-input aria-label="Total won prize" />
+              <button type="button" class="btn primary" data-action="save-total-prize-won">Save</button>
+            </div>
+          </div>
+        ` : ''}
         <div class="tc-participation-meta-grid">
           ${extraRows.map(([label, value]) => `
             <div class="tc-participation-meta-row">
@@ -1593,6 +1604,44 @@ if ($rows) {
     }
   };
 
+  const saveTotalPrizeWon = async () => {
+    if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
+      setParticipationMsg('Invalid invitee row.', true);
+      return;
+    }
+    const input = participationSummaryEl?.querySelector('[data-total-prize-won-input]');
+    const button = participationSummaryEl?.querySelector('[data-action="save-total-prize-won"]');
+    const rawValue = input instanceof HTMLInputElement ? String(input.value || '').trim() : '';
+    if (rawValue === '' || !/^\d+(?:\.\d+)?$/.test(rawValue)) {
+      setParticipationMsg('Total won prize must be a non-negative number.', true);
+      return;
+    }
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    setParticipationMsg('Saving total won prize...');
+    try {
+      const response = await postRevealAction('save_total_prize_won', {
+        row: participationContext.row,
+        total_prize_won: rawValue
+      });
+      if (response.ok) {
+        pendingSensitiveAction = '';
+        if (response.data?.participation) renderParticipationStats(response.data.participation);
+        else await loadParticipationStats();
+        setParticipationMsg(response.message || 'Total won prize updated successfully.');
+      } else if (response.status === 'auth_required') {
+        pendingSensitiveAction = 'save_total_prize_won';
+        setParticipationMsg('Authorization required. Please verify your panel password.', true);
+        openAuthModal();
+      } else {
+        setParticipationMsg(response.message || 'Failed to save total won prize.', true);
+      }
+    } catch {
+      setParticipationMsg('Failed to save total won prize.', true);
+    } finally {
+      if (button instanceof HTMLButtonElement && button.isConnected) button.disabled = false;
+    }
+  };
+
   const requestRevealPassword = async () => {
     if (!revealPasswordContext || !Number.isFinite(revealPasswordContext.row) || revealPasswordContext.row <= 1) {
       setPasswordMsg('Invalid invitee row.', true);
@@ -1684,7 +1733,11 @@ if ($rows) {
   });
   applyAllInviteesSearch();
 
-  document.addEventListener('click', (event) => {
+  const previousInviteesDocumentClickHandler = window[INVITEES_DOCUMENT_CLICK_HANDLER_KEY];
+  if (typeof previousInviteesDocumentClickHandler === 'function') {
+    document.removeEventListener('click', previousInviteesDocumentClickHandler);
+  }
+  const inviteesDocumentClickHandler = (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
 
@@ -1736,6 +1789,13 @@ if ($rows) {
       };
       pendingSensitiveAction = 'save_task_score';
       void saveTaskScore();
+      return;
+    }
+
+    const savePrizeTotalTrigger = target.closest('[data-action="save-total-prize-won"]');
+    if (savePrizeTotalTrigger instanceof HTMLButtonElement) {
+      pendingSensitiveAction = 'save_total_prize_won';
+      void saveTotalPrizeWon();
       return;
     }
 
@@ -1808,7 +1868,9 @@ if ($rows) {
     if (editPhoneNumberEl) editPhoneNumberEl.value = String(editTrigger.getAttribute('data-phone-number') || '').trim();
     setEditMsg('');
     openEditModal();
-  });
+  };
+  window[INVITEES_DOCUMENT_CLICK_HANDLER_KEY] = inviteesDocumentClickHandler;
+  document.addEventListener('click', inviteesDocumentClickHandler);
 
   editCloseBtns.forEach((btn) => btn.addEventListener('click', closeEditModal));
 
@@ -1888,6 +1950,8 @@ if ($rows) {
           await requestResetAccess();
         } else if (nextAction === 'save_task_score' && scoreEditContext) {
           await saveTaskScore();
+        } else if (nextAction === 'save_total_prize_won' && participationContext) {
+          await saveTotalPrizeWon();
         } else if (nextAction === 'bulk_save_task_score' && bulkActionContext) {
           await applyBulkMissionScore();
         }

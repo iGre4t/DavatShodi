@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
@@ -24,7 +26,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   exit;
 }
 
-$input = json_decode((string)file_get_contents('php://input'), true);
+$input = json_decode((string)tcDbFileGetContents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
   exit;
@@ -93,10 +95,10 @@ function resolveMappedIndex(array $header, array $mapping, string $mappingKey, a
 
 function readJsonArray(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return [];
   }
@@ -109,10 +111,10 @@ function readCsvRows(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -121,7 +123,7 @@ function readCsvRows(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = is_array($row) ? $row : [];
   }
   flock($handle, LOCK_UN);
@@ -134,7 +136,7 @@ function writeCsvRowsLocked(string $path, array $rows): bool
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvCommitRows($path, $rows);
   }
-  $handle = fopen($path, 'c+');
+  $handle = tcDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -148,7 +150,7 @@ function writeCsvRowsLocked(string $path, array $rows): bool
     return false;
   }
   foreach ($rows as $row) {
-    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+    if (fputcsv($handle, is_array($row) ? $row : [], ',', '"', '\\') === false) {
       flock($handle, LOCK_UN);
       fclose($handle);
       return false;

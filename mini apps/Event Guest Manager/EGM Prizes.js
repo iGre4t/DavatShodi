@@ -426,6 +426,14 @@
     }
 
     async function refreshStatus() {
+      if (!listEl.isConnected || document.visibilityState !== "visible") {
+        const staleInterval = window[EGM_PRIZE_STATUS_INTERVAL_KEY];
+        if (typeof staleInterval === "number") {
+          clearInterval(staleInterval);
+        }
+        delete window[EGM_PRIZE_STATUS_INTERVAL_KEY];
+        return;
+      }
       try {
         const response = await fetch(`${API_URL}?action=get_prizes`, {
           cache: "no-store",
@@ -462,12 +470,12 @@
       } catch {}
     }
 
-    refreshStatus();
+    void refreshStatus();
     const previousStatusInterval = window[EGM_PRIZE_STATUS_INTERVAL_KEY];
     if (typeof previousStatusInterval === "number") {
       clearInterval(previousStatusInterval);
     }
-    window[EGM_PRIZE_STATUS_INTERVAL_KEY] = window.setInterval(refreshStatus, 5000);
+    delete window[EGM_PRIZE_STATUS_INTERVAL_KEY];
 
     listEl.addEventListener("input", event => {
       const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"], [data-field="value"]');

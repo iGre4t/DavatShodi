@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
@@ -23,7 +25,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   exit;
 }
 
-$input = json_decode((string)file_get_contents('php://input'), true);
+$input = json_decode((string)egmDbFileGetContents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
   exit;
@@ -55,7 +57,7 @@ if (!is_dir($baseDir) && !(mkdir($baseDir, 0777, true) || is_dir($baseDir))) {
 
 $path = $baseDir . DIRECTORY_SEPARATOR . 'any-password-login.json';
 $json = json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-if (!is_string($json) || file_put_contents($path, $json . PHP_EOL, LOCK_EX) === false) {
+if (!is_string($json) || egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) === false) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to save settings.']);
   exit;
 }

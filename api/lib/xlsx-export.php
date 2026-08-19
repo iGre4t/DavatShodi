@@ -60,7 +60,12 @@ function appXlsxWorksheetXml(DOMXPath $xpath, DOMElement $worksheet): string
             $styleId = $cell->getAttributeNS('urn:schemas-microsoft-com:office:spreadsheet', 'StyleID') ?: $rowStyle;
             $style = $styleId === 'sHeader' ? 1 : ($styleId === 'sPercent' ? 2 : 0);
             $ref = appXlsxColumnName($columnNumber) . $rowNumber;
-            if ($type === 'Number' && is_numeric($value)) {
+            $formula = $cell->getAttributeNS('urn:schemas-microsoft-com:office:spreadsheet', 'Formula');
+            if ($formula !== '') {
+                $formula = ltrim($formula, '=');
+                $cellsXml .= '<c r="' . $ref . '" s="' . $style . '" t="str"><f>'
+                    . appXlsxXml($formula) . '</f><v>' . appXlsxXml($value) . '</v></c>';
+            } elseif ($type === 'Number' && is_numeric($value)) {
                 $cellsXml .= '<c r="' . $ref . '" s="' . $style . '"><v>' . appXlsxXml($value) . '</v></c>';
             } else {
                 $cellsXml .= '<c r="' . $ref . '" s="' . $style . '" t="inlineStr"><is><t xml:space="preserve">' . appXlsxXml($value) . '</t></is></c>';

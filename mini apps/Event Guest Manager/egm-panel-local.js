@@ -1,5 +1,9 @@
 (() => {
   const TASKS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/EGMT.php';
+  const PERIOD_INVITES_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invites.php';
+  const PERIOD_INVITE_CARDS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invite_cards.php';
+  const PERIOD_EXPORTS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_exports.php';
+  const INVITE_CARD_QR_ENDPOINT = 'modules/minor/QR%20Code%20Generator/generate.php';
   const LOGS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/egm_logs.php';
   const egmShellEl = document.querySelector('.egm-shell');
   const TASK_CLUB_CSRF = egmShellEl instanceof HTMLElement
@@ -16,28 +20,12 @@
   }
 
   function normalizeTaskType(value) {
-    const token = String(value ?? '').trim().toLowerCase();
-    if (token === 'quiz' || token === 'quiz-task' || token === 'quiz task') {
-      return 'quiz';
-    }
-    if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') {
-      return 'conditional_quiz';
-    }
-    if (token === 'info' || token === 'info-task' || token === 'info task') {
-      return 'info';
-    }
-    if (token === 'team_task' || token === 'team-task' || token === 'team task') {
-      return 'team_task';
-    }
-    if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
-      return 'describe_photo';
-    }
-    return 'quiz';
+    return 'period';
   }
 
   function isInfoLikeTaskType(taskType) {
     const type = normalizeTaskType(taskType);
-    return type === 'info' || type === 'team_task' || type === 'describe_photo';
+    return type === 'period' || type === 'info' || type === 'team_task' || type === 'describe_photo';
   }
 
   function isQuizLikeTaskType(taskType) {
@@ -60,6 +48,9 @@
 
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
+    if (normalizedType === 'period') {
+      return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
+    }
     if (normalizedType === 'conditional_quiz') {
       return ['control', 'information', 'quiz', 'crisis-control'];
     }
@@ -75,7 +66,7 @@
     if (normalizedType === 'team_task') {
       return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
     }
-    return ['control', 'information', 'quiz'];
+    return ['control', 'information', 'invite', 'invitees'];
   }
 
   function normalizeAllowedTopPanes(value, taskType) {
@@ -124,7 +115,7 @@
     const id = String(raw.id ?? '').trim();
     const title = String(raw.title ?? '').trim();
     const tagCode = String(raw.tagCode ?? raw.tag_code ?? '').trim().toUpperCase();
-    const taskType = normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz');
+    const taskType = 'period';
     const parsedOrder = Number.parseInt(raw.order, 10);
     return {
       id,
@@ -135,11 +126,16 @@
       allowedTopPanes: normalizeAllowedTopPanes(raw.allowedTopPanes ?? raw.allowed_top_panes ?? [], taskType),
       active: normalizeBool(raw.active),
       duration: normalizeBool(raw.duration),
+      quitRequired: normalizeBool(raw.quitRequired ?? raw.quit_required ?? false),
       devPhase: normalizeBool(raw.devPhase ?? raw.dev_phase ?? false),
       startDate: normalizeDate(raw.startDate ?? raw.start_date ?? ''),
       startTime: normalizeTime(raw.startTime ?? raw.start_time ?? ''),
       endDate: normalizeDate(raw.endDate ?? raw.end_date ?? ''),
       endTime: normalizeTime(raw.endTime ?? raw.end_time ?? ''),
+      enterDeadlineDate: normalizeDate(raw.enterDeadlineDate ?? raw.enter_deadline_date ?? ''),
+      enterDeadlineTime: normalizeTime(raw.enterDeadlineTime ?? raw.enter_deadline_time ?? ''),
+      quitOpeningDate: normalizeDate(raw.quitOpeningDate ?? raw.quit_opening_date ?? ''),
+      quitOpeningTime: normalizeTime(raw.quitOpeningTime ?? raw.quit_opening_time ?? ''),
       score: normalizeScoreValue(raw.score ?? raw.taskScore ?? 0),
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
       hasGoldenTime: normalizeBool(raw.hasGoldenTime ?? raw.has_golden_time ?? true),
@@ -257,39 +253,44 @@
     const endSeconds = parseTimeToSeconds(endTime);
 
     if (endSeconds !== null && nowSeconds >= endSeconds) {
-      return 'Ended';
+      return 'پایان‌یافته';
     }
     if (startSeconds !== null && nowSeconds >= startSeconds) {
-      return 'Active';
+      return 'فعال';
     }
     if (startSeconds !== null && nowSeconds < startSeconds) {
-      return 'Upcoming';
+      return 'در انتظار شروع';
     }
-    return 'Upcoming';
+    return 'در انتظار شروع';
   }
 
   function deriveStatusFromSettings(settings) {
     const active = normalizeBool(settings.active);
     const duration = normalizeBool(settings.duration);
+    const quitRequired = normalizeBool(settings.quitRequired);
     const startDate = normalizeDate(settings.startDate);
     const startTime = normalizeTime(settings.startTime);
     const endDate = normalizeDate(settings.endDate);
     const endTime = normalizeTime(settings.endTime);
+    const enterDeadlineDate = normalizeDate(settings.enterDeadlineDate);
+    const enterDeadlineTime = normalizeTime(settings.enterDeadlineTime);
+    const quitOpeningDate = normalizeDate(settings.quitOpeningDate);
+    const quitOpeningTime = normalizeTime(settings.quitOpeningTime);
 
     if (duration) {
       const today = getTehranDateTimeParts().date;
       if (!startDate || !today) {
-        return { label: 'Not Active', tone: 'inactive' };
+        return { label: 'غیرفعال', tone: 'inactive' };
       }
 
       const startRelation = compareGregorianDates(startDate, today);
       const endRelation = compareGregorianDates(endDate, today);
 
       if (startRelation === 1) {
-        return { label: 'Upcoming', tone: 'upcoming' };
+        return { label: 'در انتظار شروع', tone: 'upcoming' };
       }
       if (endRelation !== null && endRelation === -1) {
-        return { label: 'Ended', tone: 'ended' };
+        return { label: 'پایان‌یافته', tone: 'ended' };
       }
 
       if (startRelation === 0 || endRelation === 0) {
@@ -297,19 +298,33 @@
         const startSeconds = parseTimeToSeconds(startTime);
         const endSeconds = parseTimeToSeconds(endTime);
         if (startRelation === 0 && startSeconds !== null && nowSeconds < startSeconds) {
-          return { label: 'Upcoming', tone: 'upcoming' };
+          return { label: 'در انتظار شروع', tone: 'upcoming' };
         }
         if (endRelation === 0 && endSeconds !== null && nowSeconds >= endSeconds) {
-          return { label: 'Ended', tone: 'ended' };
+          return { label: 'پایان‌یافته', tone: 'ended' };
         }
       }
 
-      return { label: 'Active', tone: 'active' };
+      if (quitRequired) {
+        const startAt = startDate && startTime ? `${startDate}T${startTime}` : '';
+        const enterDeadlineAt = enterDeadlineDate && enterDeadlineTime ? `${enterDeadlineDate}T${enterDeadlineTime}` : '';
+        const quitOpeningAt = quitOpeningDate && quitOpeningTime ? `${quitOpeningDate}T${quitOpeningTime}` : '';
+        const endAt = endDate && endTime ? `${endDate}T${endTime}` : '';
+        if (!startAt || !enterDeadlineAt || !quitOpeningAt || !endAt || !(startAt < enterDeadlineAt && enterDeadlineAt < quitOpeningAt && quitOpeningAt < endAt)) {
+          return { label: 'زمان‌بندی نامعتبر', tone: 'inactive' };
+        }
+        const nowParts = getTehranDateTimeParts();
+        const nowAt = `${nowParts.date}T${String(nowParts.time || '').slice(0, 5)}`;
+        if (nowAt < enterDeadlineAt) return { label: 'فعال / زمان ورود', tone: 'active' };
+        if (nowAt < quitOpeningAt) return { label: 'فعال / زمان ایمن', tone: 'immune' };
+        return { label: 'فعال / زمان خروج', tone: 'quit' };
+      }
+      return { label: 'فعال', tone: 'active' };
     }
 
     return active
-      ? { label: 'Active', tone: 'active' }
-      : { label: 'Not Active', tone: 'inactive' };
+      ? { label: 'فعال', tone: 'active' }
+      : { label: 'غیرفعال', tone: 'inactive' };
   }
 
   function toSafePanePart(value) {
@@ -424,7 +439,7 @@
     shell.innerHTML = `
       <div class="card">
         <div class="section-header"><h3>No Access</h3></div>
-        <p class="muted">You do not have access to any subpane for this task.</p>
+        <p class="muted">شما به هیچ‌یک از بخش‌های این بازه دسترسی ندارید.</p>
       </div>
     `;
   }
@@ -434,11 +449,17 @@
     const titleInput = pane.querySelector('[data-task-field="taskTitle"]');
     const activeToggle = pane.querySelector('[data-task-field="active"]');
     const durationToggle = pane.querySelector('[data-task-field="duration"]');
+    const quitRequiredToggle = pane.querySelector('[data-task-field="quitRequired"]');
     const devPhaseToggle = pane.querySelector('[data-task-field="devPhase"]');
     const startDate = pane.querySelector('[data-task-field="startDate"]');
     const startTime = pane.querySelector('[data-task-field="startTime"]');
     const endDate = pane.querySelector('[data-task-field="endDate"]');
     const endTime = pane.querySelector('[data-task-field="endTime"]');
+    const enterDeadlineDate = pane.querySelector('[data-task-field="enterDeadlineDate"]');
+    const enterDeadlineTime = pane.querySelector('[data-task-field="enterDeadlineTime"]');
+    const quitOpeningDate = pane.querySelector('[data-task-field="quitOpeningDate"]');
+    const quitOpeningTime = pane.querySelector('[data-task-field="quitOpeningTime"]');
+    const quitTimeline = pane.querySelector('[data-quit-timeline]');
     const statusEl = pane.querySelector('[data-task-status]');
     const saveStatusEl = pane.querySelector('[data-task-save-status]');
     const saveButton = pane.querySelector('[data-action="save-task-settings"]');
@@ -446,11 +467,16 @@
       !(titleInput instanceof HTMLInputElement) ||
       !(activeToggle instanceof HTMLInputElement) ||
       !(durationToggle instanceof HTMLInputElement) ||
+      !(quitRequiredToggle instanceof HTMLInputElement) ||
       !(devPhaseToggle instanceof HTMLInputElement) ||
       !(startDate instanceof HTMLInputElement) ||
       !(startTime instanceof HTMLSelectElement) ||
       !(endDate instanceof HTMLInputElement) ||
-      !(endTime instanceof HTMLSelectElement)
+      !(endTime instanceof HTMLSelectElement) ||
+      !(enterDeadlineDate instanceof HTMLInputElement) ||
+      !(enterDeadlineTime instanceof HTMLSelectElement) ||
+      !(quitOpeningDate instanceof HTMLInputElement) ||
+      !(quitOpeningTime instanceof HTMLSelectElement)
     ) {
       return null;
     }
@@ -458,11 +484,17 @@
       titleInput,
       activeToggle,
       durationToggle,
+      quitRequiredToggle,
       devPhaseToggle,
       startDate,
       startTime,
       endDate,
       endTime,
+      enterDeadlineDate,
+      enterDeadlineTime,
+      quitOpeningDate,
+      quitOpeningTime,
+      quitTimeline: quitTimeline instanceof HTMLElement ? quitTimeline : null,
       statusEl: statusEl instanceof HTMLElement ? statusEl : null,
       saveStatusEl: saveStatusEl instanceof HTMLElement ? saveStatusEl : null,
       saveButton: saveButton instanceof HTMLButtonElement ? saveButton : null
@@ -2158,7 +2190,9 @@
       'egm-status--active',
       'egm-status--ended',
       'egm-status--upcoming',
-      'egm-status--inactive'
+      'egm-status--inactive',
+      'egm-status--immune',
+      'egm-status--quit'
     );
     if (tone) {
       controls.statusEl.classList.add(`egm-status--${tone}`);
@@ -2172,6 +2206,12 @@
     controls.startTime.disabled = !enabled;
     controls.endDate.disabled = !enabled;
     controls.endTime.disabled = !enabled;
+    const quitTimelineEnabled = enabled && controls.quitRequiredToggle.checked;
+    controls.enterDeadlineDate.disabled = !quitTimelineEnabled;
+    controls.enterDeadlineTime.disabled = !quitTimelineEnabled;
+    controls.quitOpeningDate.disabled = !quitTimelineEnabled;
+    controls.quitOpeningTime.disabled = !quitTimelineEnabled;
+    if (controls.quitTimeline) controls.quitTimeline.hidden = !controls.quitRequiredToggle.checked;
   }
 
   function collectTaskSettingsFromPane(pane) {
@@ -2181,11 +2221,16 @@
       title: String(controls.titleInput.value || '').trim(),
       active: controls.activeToggle.checked ? '1' : '0',
       duration: controls.durationToggle.checked ? '1' : '0',
+      quit_required: controls.quitRequiredToggle.checked ? '1' : '0',
       dev_phase: controls.devPhaseToggle.checked ? '1' : '0',
       start_date: normalizeDate(controls.startDate.value),
       start_time: normalizeTime(controls.startTime.value),
       end_date: normalizeDate(controls.endDate.value),
-      end_time: normalizeTime(controls.endTime.value)
+      end_time: normalizeTime(controls.endTime.value),
+      enter_deadline_date: normalizeDate(controls.enterDeadlineDate.value),
+      enter_deadline_time: normalizeTime(controls.enterDeadlineTime.value),
+      quit_opening_date: normalizeDate(controls.quitOpeningDate.value),
+      quit_opening_time: normalizeTime(controls.quitOpeningTime.value)
     };
   }
 
@@ -2219,10 +2264,15 @@
     const derived = deriveStatusFromSettings({
       active: settings.active,
       duration: settings.duration,
+      quitRequired: settings.quit_required,
       startDate: settings.start_date,
       startTime: settings.start_time,
       endDate: settings.end_date,
-      endTime: settings.end_time
+      endTime: settings.end_time,
+      enterDeadlineDate: settings.enter_deadline_date,
+      enterDeadlineTime: settings.enter_deadline_time,
+      quitOpeningDate: settings.quit_opening_date,
+      quitOpeningTime: settings.quit_opening_time
     });
     setTaskPaneStatus(pane, derived.label, derived.tone);
   }
@@ -2230,11 +2280,16 @@
   function syncTaskPaneToggleState(pane) {
     const controls = getTaskPaneControls(pane);
     if (!controls) return;
-    if (controls.activeToggle.checked) {
+    if (controls.quitRequiredToggle.checked) {
+      controls.durationToggle.checked = true;
+      controls.activeToggle.checked = false;
+    } else if (controls.activeToggle.checked) {
       controls.durationToggle.checked = false;
+      controls.quitRequiredToggle.checked = false;
     } else if (controls.durationToggle.checked) {
       controls.activeToggle.checked = false;
     }
+    if (!controls.durationToggle.checked) controls.quitRequiredToggle.checked = false;
     setDurationFieldsEnabled(pane, controls.durationToggle.checked);
     updateTaskPaneStatus(pane);
   }
@@ -2245,11 +2300,16 @@
     controls.titleInput.value = String(task?.title || task?.tagCode || '');
     controls.activeToggle.checked = normalizeBool(task?.active);
     controls.durationToggle.checked = normalizeBool(task?.duration);
+    controls.quitRequiredToggle.checked = normalizeBool(task?.quitRequired);
     controls.devPhaseToggle.checked = normalizeBool(task?.devPhase);
     controls.startDate.value = normalizeDate(task?.startDate);
     controls.startTime.value = normalizeTime(task?.startTime);
     controls.endDate.value = normalizeDate(task?.endDate);
     controls.endTime.value = normalizeTime(task?.endTime);
+    controls.enterDeadlineDate.value = normalizeDate(task?.enterDeadlineDate);
+    controls.enterDeadlineTime.value = normalizeTime(task?.enterDeadlineTime);
+    controls.quitOpeningDate.value = normalizeDate(task?.quitOpeningDate);
+    controls.quitOpeningTime.value = normalizeTime(task?.quitOpeningTime);
     const scoreControls = getTaskScoreControls(pane);
     if (scoreControls) {
       scoreControls.scoreInput.value = String(normalizeScoreValue(task?.score));
@@ -2304,13 +2364,12 @@
     const isInfoTask = isInfoLikeTaskType(task.taskType);
     const hasInformationPane = hasInformationPaneTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
+    const isPeriod = taskTypeToken === 'period';
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
-    const typeLabel = taskTypeToken === 'describe_photo'
-      ? 'تسک توصیف عکس'
-      : (taskTypeToken === 'team_task' ? 'تسک تیمی' : (isInfoTask ? 'تسک اطلاعاتی' : (isConditionalQuizTask ? 'کوئیز شرطی' : 'تسک کوئیز')));
     const quizSrc = `mini%20apps/Event%20Guest%20Manager/EGMQ.php?task_id=${encodeURIComponent(task.id)}`;
+    const guestControlSrc = 'mini%20apps/Event%20Guest%20Manager/check-in.php';
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
     const guidePrefix = String(task.guidePrefix || '');
@@ -2323,7 +2382,9 @@
     const anotherChanceIfZero = normalizeBool(task.anotherChanceIfZero);
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
-    const topTabsMarkup = isDescribePhotoTask
+    const topTabsMarkup = isPeriod
+      ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite">دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees">دعوت‌شدگان</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite-card">کارت دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="export">خروجی</button>'
+      : isDescribePhotoTask
       ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="photo">عکس‌ها</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
       : (isTeamTask
         ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">انبار چالش‌ها</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="team">تیم</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی تیم‌ها</button>'
@@ -2334,18 +2395,18 @@
       ? `
           <div class="egm-task-top-section" data-task-top-section="information" hidden>
             <div class="card">
-              <div class="section-header"><h3>Information Card</h3></div>
+              <div class="section-header"><h3>اطلاعات بازه</h3></div>
               <div class="form" style="gap:12px;">
                 <label class="field standard-width">
-                  <span>Title</span>
+                  <span>عنوان</span>
                   <input type="text" data-task-field="infoTitle" value="${escapeHtml(infoTitle)}" />
                 </label>
                 <label class="field full">
-                  <span>Text</span>
+                  <span>متن</span>
                   <textarea data-task-field="infoText" rows="8">${escapeHtml(infoText)}</textarea>
                 </label>
                 <div class="field full">
-                  <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">ذخیره</button>
                 </div>
                 <p class="muted small" data-task-info-save-status aria-live="polite"></p>
               </div>
@@ -2371,7 +2432,126 @@
           </div>
         `
       : '';
-    const quizSection = !isInfoTask
+    const periodInvitationSections = isPeriod ? `
+      <div class="egm-task-top-section" data-task-top-section="invite" hidden>
+        <div class="card egm-period-source-card">
+          <div class="section-header"><h3>دعوت کاربران به بازه</h3></div>
+          <p class="muted">منبع فعلی: <strong data-period-invite-source>—</strong></p>
+          <p class="hint">منبع از تب «دعوت‌شدگان» EGM انتخاب می‌شود.</p>
+        </div>
+        <div class="card egm-period-filter-card">
+          <div class="section-header"><h3>جستجو و فیلتر کاربران</h3></div>
+          <form class="form" data-period-invite-filter-form>
+            <label class="field full"><span>جستجوی نام، کد ملی یا کد پرسنلی</span><input type="search" name="q" autocomplete="off" /></label>
+            <div class="egm-period-filter-grid">
+              <label class="field"><span>معاونت</span><select name="deputy"><option value="">همه معاونت‌ها</option></select></label>
+              <label class="field"><span>اداره کل</span><select name="general_department"><option value="">همه اداره‌های کل</option></select></label>
+              <label class="field"><span>اداره</span><select name="department"><option value="">همه اداره‌ها</option></select></label>
+              <label class="field"><span>جنسیت</span><select name="gender"><option value="">همه</option></select></label>
+              <label class="field"><span>سطح پستی</span><select name="postal_level"><option value="">همه سطوح</option></select></label>
+            </div>
+            <div class="egm-period-actions"><button type="submit" class="btn primary">اعمال فیلترها</button><button type="button" class="btn ghost" data-period-invite-clear>پاک کردن</button></div>
+          </form>
+        </div>
+        <div class="card egm-period-excel-card">
+          <div class="section-header"><h3>انتخاب کاربران با فایل Excel</h3></div>
+          <p class="muted">حداقل یکی از ستون‌های کد ملی یا کد پرسنلی را انتخاب کنید. انتخاب هر دو اختیاری است.</p>
+          <div class="form">
+            <input type="file" accept=".csv,.xls,.xlsx" data-period-excel-file hidden />
+            <div class="egm-period-actions"><button type="button" class="btn" data-period-excel-pick>انتخاب فایل</button><span class="muted" data-period-excel-name>فایلی انتخاب نشده است.</span></div>
+            <div class="egm-period-filter-grid" data-period-excel-sheet-row hidden>
+              <label class="field full"><span>شیت Excel</span><select data-period-excel-sheet disabled><option value="">ابتدا شیت را انتخاب کنید</option></select></label>
+            </div>
+            <div class="egm-period-filter-grid" data-period-excel-mapping hidden>
+              <label class="field"><span>ستون کد ملی</span><select data-period-excel-national><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون کد پرسنلی</span><select data-period-excel-work><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون نام</span><select data-period-excel-first><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون نام خانوادگی</span><select data-period-excel-last><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون شماره همراه</span><select data-period-excel-phone><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون معاونت</span><select data-period-excel-deputy><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون اداره کل</span><select data-period-excel-general-department><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون اداره</span><select data-period-excel-department><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون جنسیت</span><select data-period-excel-gender><option value="">انتخاب نشده</option></select></label>
+              <label class="field"><span>ستون سطح پستی</span><select data-period-excel-postal-level><option value="">انتخاب نشده</option></select></label>
+            </div>
+            <button type="button" class="btn primary" data-period-excel-match disabled>تطبیق و انتخاب کاربران</button>
+            <p class="hint" data-period-excel-status aria-live="polite"></p>
+          </div>
+        </div>
+        <div class="card egm-period-unmatched-card" data-period-unmatched-card hidden>
+          <div class="section-header"><h3>کاربران بدون تطبیق فایل</h3><strong><span data-period-unmatched-total>0</span> ردیف</strong></div>
+          <p class="muted">هر کاربری را که تأیید کنید فقط به کاربران همین EGM افزوده و به این بازه دعوت می‌شود؛ این کاربران وارد OEU نمی‌شوند.</p>
+          <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
+            <th><input type="checkbox" data-period-unmatched-select-all aria-label="انتخاب همه کاربران بدون تطبیق" /></th><th>ردیف Excel</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>شماره همراه</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>جزئیات فایل</th><th>عملیات</th>
+          </tr></thead><tbody data-period-unmatched-body></tbody></table></div>
+          <div class="egm-period-list-footer"><span class="muted"><span data-period-unmatched-selected-count>0</span> ردیف انتخاب شده</span><button type="button" class="btn primary" data-period-invite-unmatched-selected disabled>افزودن و دعوت انتخاب‌شده‌ها</button></div>
+          <p class="hint" data-period-unmatched-status aria-live="polite"></p>
+        </div>
+        <div class="card egm-period-candidates-card">
+          <div class="section-header"><h3>فهرست کاربران قابل دعوت</h3><strong><span data-period-candidate-total>0</span> نفر</strong></div>
+          <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
+            <th><input type="checkbox" data-period-candidate-select-all aria-label="انتخاب همه کاربران نمایان" /></th><th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>وضعیت</th>
+          </tr></thead><tbody data-period-candidate-body><tr><td colspan="12" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
+          <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-candidate-prev>قبلی</button><span data-period-candidate-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-candidate-next>بعدی</button></div><button type="button" class="btn primary" data-period-invite-selected disabled>دعوت کاربران انتخاب‌شده</button></div>
+          <p class="hint" data-period-candidate-status aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="egm-task-top-section" data-task-top-section="invitees" hidden>
+        <div class="card egm-period-invitees-card">
+          <div class="section-header"><h3>دعوت‌شدگان این بازه</h3><strong><span data-period-invitee-total>0</span> نفر</strong></div>
+          <div class="form"><label class="field full"><span>جستجو</span><input type="search" data-period-invitee-search placeholder="نام، کد ملی یا کد پرسنلی" autocomplete="off" /></label></div>
+          <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
+            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>منبع</th><th>عملیات</th>
+          </tr></thead><tbody data-period-invitee-body><tr><td colspan="12" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
+          <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-invitee-prev>قبلی</button><span data-period-invitee-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-invitee-next>بعدی</button></div><button type="button" class="btn ghost" data-period-invitee-refresh>بازخوانی</button></div>
+          <p class="hint" data-period-invitee-status aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="egm-task-top-section" data-task-top-section="invite-card" hidden>
+        <div class="card egm-period-invite-card-background-card">
+          <div class="section-header"><div><h3>تصویر کارت این بازه</h3><p class="muted small">فقط تصویر پس‌زمینه مخصوص این بازه است؛ محل QR، کادر متن، فونت، متغیرها و شرط‌ها از تنظیمات مشترک کارت دعوت رویداد خوانده می‌شوند.</p></div></div>
+          <div class="egm-period-invite-card-background-editor">
+            <div class="egm-period-invite-card-background-preview">
+              <img data-period-invite-card-background-preview alt="پیش‌نمایش تصویر کارت دعوت این بازه" hidden />
+              <div data-period-invite-card-background-placeholder>در حال دریافت تصویر...</div>
+            </div>
+            <div class="egm-period-invite-card-background-controls">
+              <p class="muted" data-period-invite-card-background-details></p>
+              <input type="file" accept="image/png,image/jpeg,image/webp" data-period-invite-card-background-file hidden />
+              <div class="egm-period-actions">
+                <button type="button" class="btn" data-period-invite-card-background-pick>انتخاب تصویر این بازه</button>
+                <button type="button" class="btn primary standard-primary-button" data-period-invite-card-background-save disabled>ذخیره تصویر</button>
+                <button type="button" class="btn ghost" data-period-invite-card-background-remove disabled>حذف تصویر اختصاصی</button>
+              </div>
+              <p class="hint" data-period-invite-card-background-status aria-live="polite"></p>
+            </div>
+          </div>
+        </div>
+        <div class="card egm-period-invite-card-generator">
+          <div class="section-header"><div><h3>کارت دعوت بازه</h3><p class="muted small">برای تمام دعوت‌شدگان این بازه، کارت JPG اختصاصی و لینک امن ساخته می‌شود.</p></div></div>
+          <p class="hint">طرح، متن و جای QR از تنظیمات «کارت دعوت» همین EGM خوانده می‌شود. هر کد یکتا به کد EGM و کد بازه ختم می‌شود.</p>
+          <div class="egm-period-actions"><button type="button" class="btn primary standard-primary-button" data-period-invite-card-generate>Generate Invite Cards</button><button type="button" class="btn" data-period-invite-card-export disabled>خروجی Excel لینک کارت‌ها</button><button type="button" class="btn ghost" data-period-invite-card-refresh>بازخوانی وضعیت</button></div>
+          <div class="egm-period-invite-card-progress" data-period-invite-card-progress-wrap>
+            <progress max="100" value="0" data-period-invite-card-progress></progress>
+            <div class="egm-period-list-footer"><strong><span data-period-invite-card-generated>0</span> از <span data-period-invite-card-total>0</span> کارت</strong><span class="muted"><span data-period-invite-card-percent>0</span>٪</span></div>
+          </div>
+          <p class="hint" data-period-invite-card-status aria-live="polite">برای دریافت وضعیت روی این تب بمانید.</p>
+        </div>
+      </div>
+      <div class="egm-task-top-section" data-task-top-section="export" hidden>
+        <div class="card egm-period-export-card">
+          <div class="section-header"><div><h3>خروجی اکسل بازه</h3><p class="muted small">تمام فایل‌ها مستقیماً از اطلاعات ذخیره‌شده همین بازه در پایگاه داده ساخته می‌شوند.</p></div></div>
+          <div class="egm-period-export-grid">
+            <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>فقط مهمانانی که هنگام مراجعه به‌عنوان مهمان ناخوانده ثبت شده‌اند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>تمام تلاش‌های ورود، خروج، تکرار، رد شدن و دیگر رویدادهای کنترل مهمان.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>وضعیت همه کاربران</h4><p>یک ردیف برای هر کاربر با آخرین وضعیت دقیق ثبت‌شده در این بازه.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=user_conditions&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+          </div>
+          <p class="hint">کد ملی، کد پرسنلی و شماره همراه به‌صورت متن ذخیره می‌شوند تا صفرهای ابتدای آن‌ها در Excel حذف نشود.</p>
+        </div>
+      </div>
+    ` : '';
+    const quizSection = isQuizLikeTaskType(task.taskType)
       ? `
           <div class="egm-task-top-section" data-task-top-section="quiz" hidden>
             <div class="card egm-task-quiz-card">
@@ -2380,7 +2560,7 @@
                 src="${escapeHtml(quizSrc)}"
                 loading="lazy"
                 referrerpolicy="same-origin"
-                title="Task Quiz"
+                title="آزمون بازه"
               ></iframe>
             </div>
           </div>
@@ -2573,7 +2753,7 @@
     const inviteesRateLoadingText = isTeamTask ? 'Loading teams...' : 'Loading invitees...';
     return `
       <div class="egm-task-top-shell" data-task-top-shell>
-        <div class="egm-task-top-nav" role="tablist" aria-label="تب‌های تسک">
+        <div class="egm-task-top-nav" role="tablist" aria-label="بخش‌های بازه">
           <button type="button" class="egm-task-top-item active" aria-selected="true" data-task-top-trigger="control">کنترل</button>
           ${topTabsMarkup}
           ${isConditionalQuizTask ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="crisis-control">Crisis Control</button>' : ''}
@@ -2584,55 +2764,86 @@
             <div class="section-header">
               <h3>${escapeHtml(titleText)}</h3>
             </div>
-            <p class="muted small">کد تگ: <code>${escapeHtml(task.tagCode)}</code> - نوع: ${escapeHtml(typeLabel)}</p>
+            <p class="muted small">کد یکتا: <code>${escapeHtml(task.tagCode)}</code></p>
             <div class="form" style="gap:12px;">
               <label class="field standard-width">
-                <span>Task Name</span>
+                <span>نام بازه</span>
                 <input type="text" data-task-field="taskTitle" value="${escapeHtml(titleText)}" autocomplete="off" />
               </label>
-              <div class="egm-status egm-status--inactive" data-task-status>Not Active</div>
+              <div class="egm-status egm-status--inactive" data-task-status>غیرفعال</div>
               <div class="egm-switch-grid">
                 <label class="switch egm-switch">
-                  <span class="switch-label">Active</span>
+                  <span class="switch-label">فعال</span>
                   <span class="switch-toggle">
-                    <input type="checkbox" data-task-field="active" aria-label="Task Active" />
+                    <input type="checkbox" data-task-field="active" aria-label="فعال بودن بازه" />
                     <span class="switch-track"><span class="switch-thumb"></span></span>
                   </span>
                 </label>
                 <label class="switch egm-switch">
-                  <span class="switch-label">Duration</span>
+                  <span class="switch-label">زمان‌بندی</span>
                   <span class="switch-toggle">
-                    <input type="checkbox" data-task-field="duration" aria-label="Task Duration" />
+                    <input type="checkbox" data-task-field="duration" aria-label="زمان‌بندی بازه" />
                     <span class="switch-track"><span class="switch-thumb"></span></span>
                   </span>
                 </label>
                 <label class="switch egm-switch">
-                  <span class="switch-label">Dev Phase</span>
+                  <span class="switch-label">Quit Required</span>
                   <span class="switch-toggle">
-                    <input type="checkbox" data-task-field="devPhase" aria-label="Task Dev Phase" />
+                    <input type="checkbox" data-task-field="quitRequired" aria-label="الزام ثبت خروج" />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
+                <label class="switch egm-switch">
+                  <span class="switch-label">حالت آزمایشی</span>
+                  <span class="switch-toggle">
+                    <input type="checkbox" data-task-field="devPhase" aria-label="حالت آزمایشی بازه" />
                     <span class="switch-track"><span class="switch-thumb"></span></span>
                   </span>
                 </label>
               </div>
               <div class="form grid two-column-fields egm-datetime-grid">
-                <div class="egm-datetime-title egm-datetime-title--start">Start</div>
+                <div class="egm-datetime-title egm-datetime-title--start">شروع</div>
                 <label class="field standard-width egm-datetime-start">
-                  <span>Date</span>
+                  <span>تاریخ</span>
                   <input type="date" data-task-field="startDate" placeholder="YYYY-MM-DD" />
                 </label>
                 <label class="field standard-width egm-datetime-start-time">
-                  <span>Time</span>
+                  <span>ساعت</span>
                   <select data-task-field="startTime">
                     ${buildTimeOptions(task.startTime)}
                   </select>
                 </label>
-                <div class="egm-datetime-title egm-datetime-title--end">End</div>
+                <div class="egm-quit-timeline" data-quit-timeline hidden>
+                  <div class="egm-datetime-title">مهلت ورود (Enter Deadline)</div>
+                  <label class="field standard-width">
+                    <span>تاریخ</span>
+                    <input type="date" data-task-field="enterDeadlineDate" placeholder="YYYY-MM-DD" />
+                  </label>
+                  <label class="field standard-width">
+                    <span>ساعت</span>
+                    <select data-task-field="enterDeadlineTime">
+                      ${buildTimeOptions(task.enterDeadlineTime)}
+                    </select>
+                  </label>
+                  <div class="egm-datetime-title">آغاز خروج (Quit Opening)</div>
+                  <label class="field standard-width">
+                    <span>تاریخ</span>
+                    <input type="date" data-task-field="quitOpeningDate" placeholder="YYYY-MM-DD" />
+                  </label>
+                  <label class="field standard-width">
+                    <span>ساعت</span>
+                    <select data-task-field="quitOpeningTime">
+                      ${buildTimeOptions(task.quitOpeningTime)}
+                    </select>
+                  </label>
+                </div>
+                <div class="egm-datetime-title egm-datetime-title--end">پایان</div>
                 <label class="field standard-width egm-datetime-end">
-                  <span>Date</span>
+                  <span>تاریخ</span>
                   <input type="date" data-task-field="endDate" placeholder="YYYY-MM-DD" />
                 </label>
                 <label class="field standard-width egm-datetime-end-time">
-                  <span>Time</span>
+                  <span>ساعت</span>
                   <select data-task-field="endTime">
                     ${buildTimeOptions(task.endTime)}
                   </select>
@@ -2640,18 +2851,19 @@
                 <div class="egm-datetime-empty" aria-hidden="true"></div>
               </div>
               <div class="field full">
-                <button type="button" class="btn primary standard-primary-button" data-action="save-task-settings">Save</button>
+                <button type="button" class="btn primary standard-primary-button" data-action="save-task-settings">ذخیره</button>
+                <a class="btn ghost" href="${guestControlSrc}" target="_blank" rel="noopener">پنل کنترل مهمان رویداد</a>
               </div>
               <p class="muted small" data-task-save-status aria-live="polite"></p>
             </div>
           </div>
-          <div class="card">
+          ${isPeriod ? '' : `<div class="card">
             <div class="section-header">
-              <h3>${isConditionalQuizTask ? 'Score System Answer Base' : 'Score System'}</h3>
+              <h3>${isConditionalQuizTask ? 'سیستم امتیازدهی بر اساس پاسخ' : 'سیستم امتیازدهی'}</h3>
             </div>
             <div class="form" style="gap:12px;">
               <label class="field standard-width">
-                <span>${isConditionalQuizTask ? 'Correct Answer Score' : (isInfoTask ? 'Total Score' : 'Active Duration (Golden Time)')}</span>
+                <span>${isConditionalQuizTask ? 'امتیاز پاسخ صحیح' : (isInfoTask ? 'امتیاز کل' : 'مدت زمان طلایی')}</span>
                 <input type="number" min="0" step="1" data-task-field="score" />
               </label>
               ${isConditionalQuizTask ? `
@@ -2665,23 +2877,24 @@
               ` : ''}
               ${isInfoTask ? '' : `
                 <label class="field standard-width">
-                  <span>${isConditionalQuizTask ? 'Golden Time Correct Answer Score' : 'Golden Time Ended, you can answer with lower score'}</span>
+                  <span>${isConditionalQuizTask ? 'امتیاز پاسخ صحیح در زمان طلایی' : 'امتیاز پاسخ پس از پایان زمان طلایی'}</span>
                   <input type="number" min="0" step="1" data-task-field="afterEndtimeScore" ${isConditionalQuizTask && !hasGoldenTime ? 'disabled aria-disabled="true"' : ''} />
                 </label>
               `}
               <div class="field full">
-                <button type="button" class="btn primary standard-primary-button" data-action="save-task-score-system">Save</button>
+                <button type="button" class="btn primary standard-primary-button" data-action="save-task-score-system">ذخیره</button>
               </div>
               <p class="muted small" data-task-score-save-status aria-live="polite"></p>
             </div>
-          </div>
+          </div>`}
         </div>
         ${informationSection}
+        ${periodInvitationSections}
         ${describePhotoSection}
         ${teamChallengeSection}
         ${teamSettingsSection}
         ${crisisControlSection}
-        ${isInfoTask ? `
+        ${isInfoTask && !isPeriod ? `
           <div class="egm-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
               <div class="section-header"><h3>${inviteesRateCardTitle}</h3></div>
@@ -2737,8 +2950,8 @@
       if (normalizedTasks.length > 0) {
         paneHost.innerHTML = `
           <div class="card">
-            <div class="section-header"><h3>No Access</h3></div>
-            <p class="muted">You do not have access to any task tab.</p>
+            <div class="section-header"><h3>عدم دسترسی</h3></div>
+            <p class="muted">شما به هیچ بازه‌ای دسترسی ندارید.</p>
           </div>
         `;
       }
@@ -2785,6 +2998,7 @@
       const task = taskById.get(taskId) || null;
       applyTaskSettingsToPane(pane, task);
       applyTaskTopPaneAccess(pane, task);
+      setupPeriodInvitationPane(pane, task);
       const firstTopTrigger = pane.querySelector('[data-task-top-trigger]');
       if (firstTopTrigger instanceof HTMLElement) {
         const firstSection = String(firstTopTrigger.getAttribute('data-task-top-trigger') || '').trim();
@@ -2819,6 +3033,734 @@
     return data;
   }
 
+  const periodInviteStates = new WeakMap();
+
+  function getPeriodInviteState(pane) {
+    let state = periodInviteStates.get(pane);
+    if (!state) {
+      state = { source: '', candidates: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
+      periodInviteStates.set(pane, state);
+    }
+    return state;
+  }
+
+  async function requestPeriodInvites(action, payload = {}, method = 'GET') {
+    if (method === 'GET') {
+      const query = new URLSearchParams({ action, ...payload });
+      const response = await fetch(`${PERIOD_INVITES_ENDPOINT}?${query}`, { credentials: 'same-origin' });
+      const data = await response.json();
+      if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'دریافت اطلاعات دعوت ناموفق بود.');
+      return data;
+    }
+    const response = await fetch(PERIOD_INVITES_ENDPOINT, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, csrf: TASK_CLUB_CSRF, ...payload })
+    });
+    const data = await response.json();
+    if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'عملیات دعوت ناموفق بود.');
+    return data;
+  }
+
+  async function requestPeriodInviteCards(action, payload = {}, method = 'GET') {
+    if (method === 'GET') {
+      const query = new URLSearchParams({ action, ...payload });
+      const response = await fetch(`${PERIOD_INVITE_CARDS_ENDPOINT}?${query}`, { credentials: 'same-origin' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'دریافت وضعیت کارت‌های دعوت ناموفق بود.');
+      return data;
+    }
+    const response = await fetch(PERIOD_INVITE_CARDS_ENDPOINT, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, csrf: TASK_CLUB_CSRF, ...payload })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'ساخت کارت‌های دعوت ناموفق بود.');
+    return data;
+  }
+
+  function renderPeriodInviteCardBackground(pane, background, message = '') {
+    const state = getPeriodInviteState(pane);
+    const preview = pane.querySelector('[data-period-invite-card-background-preview]');
+    const placeholder = pane.querySelector('[data-period-invite-card-background-placeholder]');
+    const details = pane.querySelector('[data-period-invite-card-background-details]');
+    const status = pane.querySelector('[data-period-invite-card-background-status]');
+    const save = pane.querySelector('[data-period-invite-card-background-save]');
+    const remove = pane.querySelector('[data-period-invite-card-background-remove]');
+    const imageData = String(background?.imageData || '');
+    const width = Number(background?.imageWidth || 0);
+    const height = Number(background?.imageHeight || 0);
+    const isDraft = background?.source === 'draft';
+    if (preview instanceof HTMLImageElement) {
+      preview.src = imageData;
+      preview.hidden = imageData === '';
+    }
+    if (placeholder instanceof HTMLElement) {
+      placeholder.hidden = imageData !== '';
+      placeholder.textContent = 'هنوز تصویر اصلی کارت دعوت ذخیره نشده است.';
+    }
+    if (details) {
+      const sourceLabel = isDraft ? 'تصویر انتخاب‌شده و ذخیره‌نشده'
+        : background?.has_override ? 'تصویر اختصاصی همین بازه' : 'تصویر مشترک کارت دعوت رویداد';
+      details.textContent = `${sourceLabel}${width > 0 && height > 0 ? ` — ${width}×${height} پیکسل` : ''}`;
+    }
+    if (save instanceof HTMLButtonElement) save.disabled = !state.periodBackgroundDraft || state.periodBackgroundBusy;
+    if (remove instanceof HTMLButtonElement) remove.disabled = !state.periodBackground?.has_override || state.periodBackgroundBusy;
+    if (status) {
+      status.textContent = message || (background?.has_override
+        ? 'هنگام ساخت کارت‌ها، تصویر اختصاصی این بازه استفاده می‌شود.'
+        : 'برای این بازه تصویر اختصاصی ثبت نشده و تصویر مشترک استفاده می‌شود.');
+    }
+  }
+
+  function readPeriodInviteCardBackgroundFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!(file instanceof File) || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+        reject(new Error('یک تصویر PNG، JPG یا WebP انتخاب کنید.'));
+        return;
+      }
+      if (file.size > 8 * 1024 * 1024) {
+        reject(new Error('حجم تصویر نباید بیشتر از ۸ مگابایت باشد.'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('خواندن تصویر انتخاب‌شده ناموفق بود.'));
+      reader.onload = () => {
+        const dataUrl = String(reader.result || '');
+        const image = new Image();
+        image.onerror = () => reject(new Error('فایل انتخاب‌شده تصویر معتبری نیست.'));
+        image.onload = () => resolve({ file, imageData: dataUrl, imageName: file.name, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight, source: 'draft' });
+        image.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function loadPeriodInviteCardBackground(pane) {
+    const state = getPeriodInviteState(pane);
+    try {
+      const data = await requestPeriodInviteCards('period_background', { period_code: periodCodeForPane(pane) });
+      state.periodBackground = data.background || null;
+      state.periodBackgroundDraft = null;
+      renderPeriodInviteCardBackground(pane, state.periodBackground);
+      return state.periodBackground;
+    } catch (error) {
+      renderPeriodInviteCardBackground(pane, state.periodBackground || {}, error?.message || 'دریافت تصویر این بازه ناموفق بود.');
+      return null;
+    }
+  }
+
+  async function savePeriodInviteCardBackground(pane) {
+    const state = getPeriodInviteState(pane);
+    const draft = state.periodBackgroundDraft;
+    if (!draft?.file || state.periodBackgroundBusy) return;
+    const expectedWidth = Number(state.periodBackground?.imageWidth || 0);
+    const expectedHeight = Number(state.periodBackground?.imageHeight || 0);
+    if (expectedWidth > 0 && expectedHeight > 0 && (draft.imageWidth !== expectedWidth || draft.imageHeight !== expectedHeight)) {
+      renderPeriodInviteCardBackground(pane, draft, `ابعاد تصویر باید دقیقاً ${expectedWidth}×${expectedHeight} پیکسل و برابر تصویر اصلی باشد.`);
+      return;
+    }
+    state.periodBackgroundBusy = true;
+    let finalMessage = '';
+    renderPeriodInviteCardBackground(pane, draft, 'در حال ذخیره تصویر این بازه در پایگاه داده...');
+    try {
+      const form = new FormData();
+      form.append('action', 'save_period_background');
+      form.append('csrf', TASK_CLUB_CSRF);
+      form.append('period_code', periodCodeForPane(pane));
+      form.append('imageName', draft.imageName || draft.file.name || 'period-background');
+      form.append('background', draft.file, draft.file.name || 'period-background');
+      const response = await fetch(PERIOD_INVITE_CARDS_ENDPOINT, { method: 'POST', credentials: 'same-origin', body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'ذخیره تصویر این بازه ناموفق بود.');
+      state.periodBackground = data.background || null;
+      state.periodBackgroundDraft = null;
+      finalMessage = 'تصویر این بازه ذخیره شد. برای اعمال آن روی فایل‌های قبلی، کارت‌ها را دوباره تولید کنید.';
+    } catch (error) {
+      finalMessage = error?.message || 'ذخیره تصویر این بازه ناموفق بود.';
+    } finally {
+      state.periodBackgroundBusy = false;
+      renderPeriodInviteCardBackground(pane, state.periodBackgroundDraft || state.periodBackground || {}, finalMessage);
+    }
+  }
+
+  async function removePeriodInviteCardBackground(pane) {
+    const state = getPeriodInviteState(pane);
+    if (!state.periodBackground?.has_override || state.periodBackgroundBusy) return;
+    if (!window.confirm('تصویر اختصاصی این بازه حذف و تصویر مشترک جایگزین شود؟')) return;
+    state.periodBackgroundBusy = true;
+    let finalMessage = '';
+    try {
+      const data = await requestPeriodInviteCards('remove_period_background', { period_code: periodCodeForPane(pane) }, 'POST');
+      state.periodBackground = data.background || null;
+      state.periodBackgroundDraft = null;
+      finalMessage = 'تصویر اختصاصی حذف شد. از این پس تصویر مشترک استفاده می‌شود؛ برای تغییر فایل‌های قبلی کارت‌ها را دوباره تولید کنید.';
+    } catch (error) {
+      finalMessage = error?.message || 'حذف تصویر اختصاصی ناموفق بود.';
+    } finally {
+      state.periodBackgroundBusy = false;
+      renderPeriodInviteCardBackground(pane, state.periodBackground || {}, finalMessage);
+    }
+  }
+
+  function renderPeriodInviteCardProgress(pane, data, message = '') {
+    const total = Math.max(0, Number(data?.total || 0));
+    const generated = Math.max(0, Math.min(total, Number(data?.generated || 0)));
+    const percent = total > 0 ? Math.floor(generated * 100 / total) : 0;
+    const progress = pane.querySelector('[data-period-invite-card-progress]');
+    if (progress instanceof HTMLProgressElement) progress.value = percent;
+    const totalEl = pane.querySelector('[data-period-invite-card-total]');
+    const generatedEl = pane.querySelector('[data-period-invite-card-generated]');
+    const percentEl = pane.querySelector('[data-period-invite-card-percent]');
+    if (totalEl) totalEl.textContent = String(total);
+    if (generatedEl) generatedEl.textContent = String(generated);
+    if (percentEl) percentEl.textContent = String(percent);
+    const exportButton = pane.querySelector('[data-period-invite-card-export]');
+    if (exportButton instanceof HTMLButtonElement) {
+      exportButton.disabled = generated < 1 || Boolean(getPeriodInviteState(pane).inviteCardRunning);
+    }
+    const status = pane.querySelector('[data-period-invite-card-status]');
+    if (status && message) status.textContent = message;
+  }
+
+  async function loadPeriodInviteCardStatus(pane) {
+    const status = pane.querySelector('[data-period-invite-card-status]');
+    try {
+      if (status) status.textContent = 'در حال دریافت وضعیت...';
+      const data = await requestPeriodInviteCards('status', { period_code: periodCodeForPane(pane) });
+      const message = data.total < 1 ? 'هنوز دعوت‌شونده‌ای برای این بازه ثبت نشده است.'
+        : data.configuration_ready ? `${data.pending} کارت در انتظار ساخت است.` : 'ابتدا تنظیمات کارت دعوت EGM را ذخیره کنید.';
+      renderPeriodInviteCardProgress(pane, data, message);
+      return data;
+    } catch (error) {
+      if (status) status.textContent = error?.message || 'دریافت وضعیت ناموفق بود.';
+      return null;
+    }
+  }
+
+  async function uploadPeriodInviteCard(pane, periodCode, invitee, blob) {
+    const form = new FormData();
+    form.append('action', 'upload');
+    form.append('csrf', TASK_CLUB_CSRF);
+    form.append('period_code', periodCode);
+    form.append('invite_code', String(invitee.inviteCode || ''));
+    form.append('card', blob, `${invitee.inviteCode}.jpg`);
+    const response = await fetch(PERIOD_INVITE_CARDS_ENDPOINT, { method: 'POST', credentials: 'same-origin', body: form });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'بارگذاری کارت دعوت ناموفق بود.');
+    renderPeriodInviteCardProgress(pane, data, `کارت ${data.generated} از ${data.total} ذخیره شد.`);
+    return data;
+  }
+
+  async function generatePeriodInviteCards(pane) {
+    const state = getPeriodInviteState(pane);
+    if (state.inviteCardRunning) return;
+    const button = pane.querySelector('[data-period-invite-card-generate]');
+    const status = pane.querySelector('[data-period-invite-card-status]');
+    const periodCode = periodCodeForPane(pane);
+    state.inviteCardRunning = true;
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    try {
+      const current = await requestPeriodInviteCards('status', { period_code: periodCode });
+      let regenerate = false;
+      if (Number(current.total || 0) > 0 && Number(current.pending || 0) === 0) {
+        regenerate = window.confirm('همه کارت‌ها قبلاً ساخته شده‌اند. همه فایل‌ها با همان کدهای یکتا دوباره ساخته شوند؟');
+        if (!regenerate) {
+          renderPeriodInviteCardProgress(pane, current, 'ساخت مجدد لغو شد؛ کارت‌های فعلی بدون تغییر باقی ماندند.');
+          return;
+        }
+      }
+      if (status) status.textContent = 'در حال آماده‌سازی کدهای امن...';
+      const prepared = await requestPeriodInviteCards('prepare', { period_code: periodCode, regenerate }, 'POST');
+      const config = prepared.configuration;
+      renderPeriodInviteCardProgress(pane, prepared, 'ساخت کارت‌ها آغاز شد...');
+      if (!window.EGMInviteCardRenderer || typeof window.EGMInviteCardRenderer.render !== 'function') {
+        throw new Error('موتور ساخت تصویر کارت دعوت بارگذاری نشده است. صفحه را بازخوانی کنید.');
+      }
+      while (true) {
+        const batch = await requestPeriodInviteCards('next_batch', { period_code: periodCode, limit: '3' });
+        const rows = Array.isArray(batch.rows) ? batch.rows : [];
+        if (!rows.length) {
+          renderPeriodInviteCardProgress(pane, batch, batch.total > 0 ? 'همه کارت‌های دعوت با موفقیت ساخته شدند.' : 'دعوت‌شونده‌ای وجود ندارد.');
+          break;
+        }
+        for (const [batchIndex, invitee] of rows.entries()) {
+          if (status) status.textContent = `در حال ساخت کارت ${Number(batch.generated || 0) + batchIndex + 1} از ${batch.total}...`;
+          const rendered = await window.EGMInviteCardRenderer.render(config, invitee, String(invitee.nationalId || ''), {
+            qrEndpoint: INVITE_CARD_QR_ENDPOINT, mimeType: 'image/jpeg', quality: 0.92
+          });
+          await uploadPeriodInviteCard(pane, periodCode, invitee, rendered.blob);
+        }
+      }
+    } catch (error) {
+      if (status) status.textContent = `${error?.message || 'ساخت کارت‌ها ناموفق بود.'} با زدن دوباره دکمه، ادامه از کارت‌های باقی‌مانده انجام می‌شود.`;
+    } finally {
+      state.inviteCardRunning = false;
+      if (button instanceof HTMLButtonElement) button.disabled = false;
+      const exportButton = pane.querySelector('[data-period-invite-card-export]');
+      const generatedCount = Number(pane.querySelector('[data-period-invite-card-generated]')?.textContent || 0);
+      if (exportButton instanceof HTMLButtonElement) exportButton.disabled = generatedCount < 1;
+    }
+  }
+
+  function exportPeriodInviteCardLinks(pane) {
+    const status = pane.querySelector('[data-period-invite-card-status]');
+    const url = new URL(PERIOD_INVITE_CARDS_ENDPOINT, window.location.href);
+    url.searchParams.set('action', 'export_excel');
+    url.searchParams.set('period_code', periodCodeForPane(pane));
+    const link = document.createElement('a');
+    link.href = url.toString();
+    link.download = '';
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    if (status) status.textContent = 'خروجی Excel لینک کارت‌های ساخته‌شده آماده دانلود شد.';
+  }
+
+  function periodSourceLabel(source) {
+    if (source === 'period_excel') return 'Excel (کاربر اختصاصی EGM)';
+    return source === 'oeu' ? 'OEU (کاربران سازمانی)' : 'Custom (فایل اختصاصی EGM)';
+  }
+
+  function periodCandidateRowMarkup(row, state) {
+    const id = String(row?.candidate_id || '');
+    const disabled = row?.invited === true;
+    const checked = !disabled && state.selected.has(id);
+    return `<tr data-period-candidate-id="${escapeHtml(id)}">
+      <td><input type="checkbox" data-period-candidate-check value="${escapeHtml(id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} /></td>
+      <td><code>${escapeHtml(row?.guest_number || '—')}</code></td>
+      <td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
+      <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
+      <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
+      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td>
+      <td>${disabled ? '<span class="egm-period-invited-badge">دعوت شده</span>' : 'قابل دعوت'}</td>
+    </tr>`;
+  }
+
+  function renderPeriodCandidates(pane, data) {
+    const state = getPeriodInviteState(pane);
+    const body = pane.querySelector('[data-period-candidate-body]');
+    const total = pane.querySelector('[data-period-candidate-total]');
+    const pageMeta = pane.querySelector('[data-period-candidate-page]');
+    const inviteButton = pane.querySelector('[data-period-invite-selected]');
+    state.candidates = Array.isArray(data?.rows) ? data.rows : [];
+    state.page = Number(data?.page || 1);
+    state.pages = Number(data?.pages || 1);
+    if (body) body.innerHTML = state.candidates.length
+      ? state.candidates.map((row) => periodCandidateRowMarkup(row, state)).join('')
+      : '<tr><td colspan="12" class="muted">کاربری مطابق فیلترها پیدا نشد.</td></tr>';
+    if (total) total.textContent = String(data?.total ?? state.candidates.length);
+    if (pageMeta) pageMeta.textContent = state.matchedMode ? 'نتایج تطبیق فایل' : `صفحه ${state.page} از ${state.pages}`;
+    const prev = pane.querySelector('[data-period-candidate-prev]');
+    const next = pane.querySelector('[data-period-candidate-next]');
+    if (prev instanceof HTMLButtonElement) prev.disabled = state.matchedMode || state.page <= 1;
+    if (next instanceof HTMLButtonElement) next.disabled = state.matchedMode || state.page >= state.pages;
+    if (inviteButton instanceof HTMLButtonElement) inviteButton.disabled = state.selected.size === 0;
+    const selectAll = pane.querySelector('[data-period-candidate-select-all]');
+    if (selectAll instanceof HTMLInputElement) {
+      const available = state.candidates.filter((row) => !row?.invited);
+      selectAll.checked = available.length > 0 && available.every((row) => state.selected.has(String(row.candidate_id || '')));
+    }
+  }
+
+  function periodUnmatchedDetailsMarkup(row) {
+    const entries = Object.entries(row?.raw_data || {}).filter(([, value]) => String(value ?? '').trim() !== '');
+    if (!entries.length) return '—';
+    return `<details class="egm-period-excel-details"><summary>نمایش اطلاعات</summary><div>${entries.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</div></details>`;
+  }
+
+  function renderPeriodUnmatchedRows(pane) {
+    const state = getPeriodInviteState(pane);
+    const card = pane.querySelector('[data-period-unmatched-card]');
+    const body = pane.querySelector('[data-period-unmatched-body]');
+    const rows = Array.isArray(state.unmatchedRows) ? state.unmatchedRows : [];
+    if (card instanceof HTMLElement) card.hidden = rows.length === 0;
+    if (body) body.innerHTML = rows.map((row) => {
+      const id = String(row?.excel_id || '');
+      const canInvite = row?.can_invite !== false && Boolean(String(row?.national_id || row?.work_id || '').trim());
+      const checked = canInvite && state.unmatchedSelected.has(id);
+      return `<tr data-period-unmatched-id="${escapeHtml(id)}">
+        <td><input type="checkbox" data-period-unmatched-check value="${escapeHtml(id)}" ${checked ? 'checked' : ''} ${canInvite ? '' : 'disabled'} /></td>
+        <td>${escapeHtml(row?.source_row || '—')}</td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
+        <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.phone_number || '—')}</span></td>
+        <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td><td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td>
+        <td>${periodUnmatchedDetailsMarkup(row)}</td><td>${canInvite ? `<button type="button" class="btn ghost" data-period-invite-unmatched-one="${escapeHtml(id)}">افزودن و دعوت</button>` : '<span class="muted">بدون شناسه قابل استفاده</span>'}</td>
+      </tr>`;
+    }).join('');
+    const total = pane.querySelector('[data-period-unmatched-total]');
+    if (total) total.textContent = String(rows.length);
+    const count = pane.querySelector('[data-period-unmatched-selected-count]');
+    if (count) count.textContent = String(state.unmatchedSelected.size);
+    const bulkButton = pane.querySelector('[data-period-invite-unmatched-selected]');
+    if (bulkButton instanceof HTMLButtonElement) bulkButton.disabled = state.unmatchedSelected.size === 0;
+    const selectAll = pane.querySelector('[data-period-unmatched-select-all]');
+    if (selectAll instanceof HTMLInputElement) {
+      const selectable = rows.filter((row) => row?.can_invite !== false && String(row?.national_id || row?.work_id || '').trim());
+      selectAll.checked = selectable.length > 0 && selectable.every((row) => state.unmatchedSelected.has(String(row.excel_id || '')));
+      selectAll.indeterminate = state.unmatchedSelected.size > 0 && !selectAll.checked;
+    }
+  }
+
+  async function invitePeriodUnmatchedRows(pane, excelIds) {
+    const state = getPeriodInviteState(pane);
+    const wanted = new Set((excelIds || []).map(String));
+    const rows = state.unmatchedRows.filter((row) => wanted.has(String(row?.excel_id || '')) && row?.can_invite !== false);
+    if (!rows.length) return;
+    const status = pane.querySelector('[data-period-unmatched-status]');
+    if (status) status.textContent = 'در حال افزودن کاربران به EGM...';
+    try {
+      const data = await requestPeriodInvites('invite_unmatched', { period_code: periodCodeForPane(pane), rows }, 'POST');
+      state.unmatchedRows = state.unmatchedRows.filter((row) => !wanted.has(String(row?.excel_id || '')));
+      wanted.forEach((id) => state.unmatchedSelected.delete(id));
+      renderPeriodUnmatchedRows(pane);
+      if (status) status.textContent = data?.message || 'کاربران انتخاب‌شده افزوده و دعوت شدند.';
+      await loadPeriodInvitees(pane, 1);
+      await loadPeriodCandidates(pane, 1);
+    } catch (error) {
+      if (status) status.textContent = error?.message || 'افزودن کاربران بدون تطبیق ناموفق بود.';
+    }
+  }
+
+  async function loadPeriodFilterOptions(pane) {
+    const periodCode = String(pane.querySelector('[data-task-field="taskTitle"]')?.closest('.sub-pane')?.dataset.taskId || pane.dataset.taskId || '');
+    const tagCode = String(pane.dataset.periodCode || '');
+    const data = await requestPeriodInvites('filter_options', { period_code: tagCode || pane.dataset.taskTagCode || periodCode });
+    const options = data?.options || {};
+    const labels = { deputy: 'همه معاونت‌ها', general_department: 'همه اداره‌های کل', department: 'همه اداره‌ها', gender: 'همه', postal_level: 'همه سطوح' };
+    Object.entries(labels).forEach(([name, placeholder]) => {
+      const select = pane.querySelector(`[data-period-invite-filter-form] select[name="${name}"]`);
+      if (!(select instanceof HTMLSelectElement)) return;
+      select.innerHTML = `<option value="">${placeholder}</option>` + (Array.isArray(options[name]) ? options[name] : [])
+        .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+    });
+    const sourceEl = pane.querySelector('[data-period-invite-source]');
+    if (sourceEl) sourceEl.textContent = periodSourceLabel(data?.source);
+    getPeriodInviteState(pane).source = String(data?.source || '');
+  }
+
+  function periodCodeForPane(pane) {
+    return String(pane.dataset.taskTagCode || '').trim();
+  }
+
+  async function loadPeriodCandidates(pane, page = 1) {
+    const state = getPeriodInviteState(pane);
+    state.matchedMode = false;
+    const form = pane.querySelector('[data-period-invite-filter-form]');
+    const params = { period_code: periodCodeForPane(pane), page: String(page), page_size: '50' };
+    if (form instanceof HTMLFormElement) {
+      new FormData(form).forEach((value, key) => { params[key] = String(value || ''); });
+    }
+    const status = pane.querySelector('[data-period-candidate-status]');
+    if (status) status.textContent = 'در حال بارگذاری...';
+    try {
+      const data = await requestPeriodInvites('list_candidates', params);
+      state.source = String(data?.source || '');
+      const sourceEl = pane.querySelector('[data-period-invite-source]');
+      if (sourceEl) sourceEl.textContent = periodSourceLabel(state.source);
+      renderPeriodCandidates(pane, data);
+      if (status) status.textContent = '';
+    } catch (error) {
+      if (status) status.textContent = error?.message || 'بارگذاری کاربران ناموفق بود.';
+    }
+  }
+
+  function renderPeriodInvitees(pane, data) {
+    const state = getPeriodInviteState(pane);
+    state.inviteePage = Number(data?.page || 1);
+    state.inviteePages = Number(data?.pages || 1);
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    const body = pane.querySelector('[data-period-invitee-body]');
+    if (body) body.innerHTML = rows.length ? rows.map((row) => `<tr>
+      <td><code>${escapeHtml(row?.guest_number || '—')}</code></td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
+      <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
+      <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
+      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td>
+      <td><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></td>
+    </tr>`).join('') : '<tr><td colspan="12" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
+    const total = pane.querySelector('[data-period-invitee-total]');
+    if (total) total.textContent = String(data?.total || 0);
+    const meta = pane.querySelector('[data-period-invitee-page]');
+    if (meta) meta.textContent = `صفحه ${state.inviteePage} از ${state.inviteePages}`;
+    const prev = pane.querySelector('[data-period-invitee-prev]');
+    const next = pane.querySelector('[data-period-invitee-next]');
+    if (prev instanceof HTMLButtonElement) prev.disabled = state.inviteePage <= 1;
+    if (next instanceof HTMLButtonElement) next.disabled = state.inviteePage >= state.inviteePages;
+  }
+
+  async function loadPeriodInvitees(pane, page = 1) {
+    const status = pane.querySelector('[data-period-invitee-status]');
+    const search = pane.querySelector('[data-period-invitee-search]');
+    if (status) status.textContent = 'در حال بارگذاری...';
+    try {
+      const data = await requestPeriodInvites('list_invitees', { period_code: periodCodeForPane(pane), page: String(page), page_size: '50', q: search?.value || '' });
+      renderPeriodInvitees(pane, data);
+      if (status) status.textContent = '';
+    } catch (error) {
+      if (status) status.textContent = error?.message || 'بارگذاری دعوت‌شدگان ناموفق بود.';
+    }
+  }
+
+  async function parsePeriodExcel(file) {
+    if (!window.XLSX) throw new Error('کتابخانه خواندن Excel در دسترس نیست.');
+    const workbook = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    if (!Array.isArray(workbook?.SheetNames) || workbook.SheetNames.length < 1) {
+      throw new Error('این فایل هیچ شیت قابل خواندنی ندارد.');
+    }
+    return workbook;
+  }
+
+  function normalizePeriodExcelHeader(value) {
+    return String(value || '').toLowerCase().replace(/[\u200c\u200f]/g, ' ').replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function suggestPeriodExcelColumn(headers, aliases) {
+    const normalized = headers.map(normalizePeriodExcelHeader);
+    const normalizedAliases = aliases.map(normalizePeriodExcelHeader);
+    let index = normalized.findIndex((header) => normalizedAliases.includes(header));
+    if (index >= 0) return String(index);
+    index = normalized.findIndex((header) => normalizedAliases.some((alias) => alias.length > 3 && header.includes(alias)));
+    return index >= 0 ? String(index) : '';
+  }
+
+  const periodExcelMappings = [
+    ['national', ['national id', 'nationalid', 'کد ملی']], ['work', ['work id', 'workid', 'personnel id', 'کد پرسنلی', 'شماره پرسنلی']],
+    ['first', ['first name', 'firstname', 'نام']], ['last', ['last name', 'lastname', 'family', 'surname', 'نام خانوادگی']],
+    ['phone', ['phone number', 'phone', 'mobile', 'شماره همراه', 'شماره موبایل', 'تلفن همراه', 'موبایل']], ['deputy', ['deputy', 'معاونت']],
+    ['general-department', ['general department', 'اداره کل']], ['department', ['department', 'اداره']], ['gender', ['gender', 'جنسیت']],
+    ['postal-level', ['postal level', 'postal grade', 'سطح پستی', 'رتبه پستی']]
+  ];
+
+  function applyPeriodExcelSheet(pane, sheetName) {
+    const state = getPeriodInviteState(pane);
+    if (!state.excelWorkbook || !sheetName || !state.excelWorkbook.Sheets?.[sheetName]) {
+      throw new Error('یک شیت معتبر از فایل Excel انتخاب کنید.');
+    }
+    const rows = window.XLSX.utils.sheet_to_json(state.excelWorkbook.Sheets[sheetName], {
+      header: 1,
+      defval: '',
+      raw: false,
+      blankrows: false
+    });
+    if (!Array.isArray(rows) || rows.length < 1 || !Array.isArray(rows[0])) {
+      throw new Error('شیت انتخاب‌شده خالی است یا سطر عنوان ندارد.');
+    }
+    const headers = rows[0].map((value) => String(value ?? '').trim());
+    if (!headers.some(Boolean)) {
+      throw new Error('سطر اول شیت انتخاب‌شده باید عنوان ستون‌ها را داشته باشد.');
+    }
+
+    state.excelSheetName = sheetName;
+    state.excelRows = rows;
+    state.excelHeaders = headers;
+    state.matchedMode = false;
+    state.selected.clear();
+    state.unmatchedRows = [];
+    state.unmatchedSelected.clear();
+    renderPeriodUnmatchedRows(pane);
+
+    const optionMarkup = '<option value="">انتخاب نشده</option>' + headers
+      .map((label, index) => `<option value="${index}">${escapeHtml(label || `ستون ${index + 1}`)}</option>`).join('');
+    periodExcelMappings.forEach(([key, aliases]) => {
+      const select = pane.querySelector(`[data-period-excel-${key}]`);
+      if (!(select instanceof HTMLSelectElement)) return;
+      select.innerHTML = optionMarkup;
+      select.value = suggestPeriodExcelColumn(headers, aliases);
+    });
+    const mapping = pane.querySelector('[data-period-excel-mapping]');
+    if (mapping) mapping.hidden = false;
+    const match = pane.querySelector('[data-period-excel-match]');
+    if (match instanceof HTMLButtonElement) match.disabled = rows.length < 2;
+    const status = pane.querySelector('[data-period-excel-status]');
+    if (status) status.textContent = `شیت «${sheetName}» انتخاب شد؛ ${Math.max(0, rows.length - 1)} ردیف آماده نگاشت و تطبیق است.`;
+  }
+
+  function setupPeriodInvitationPane(pane, task) {
+    if (!(pane instanceof HTMLElement) || pane.dataset.periodInvitesReady === '1') return;
+    pane.dataset.periodInvitesReady = '1';
+    pane.dataset.taskTagCode = String(task?.tagCode || '');
+    const state = getPeriodInviteState(pane);
+    pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
+    pane.querySelector('[data-period-invite-card-export]')?.addEventListener('click', () => exportPeriodInviteCardLinks(pane));
+    pane.querySelector('[data-period-invite-card-refresh]')?.addEventListener('click', () => void Promise.all([loadPeriodInviteCardStatus(pane), loadPeriodInviteCardBackground(pane)]));
+    pane.querySelector('[data-period-invite-card-background-pick]')?.addEventListener('click', () => {
+      pane.querySelector('[data-period-invite-card-background-file]')?.click();
+    });
+    pane.querySelector('[data-period-invite-card-background-save]')?.addEventListener('click', () => void savePeriodInviteCardBackground(pane));
+    pane.querySelector('[data-period-invite-card-background-remove]')?.addEventListener('click', () => void removePeriodInviteCardBackground(pane));
+    pane.querySelector('[data-period-invite-card-background-file]')?.addEventListener('change', async (event) => {
+      const input = event.currentTarget;
+      if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return;
+      try {
+        const draft = await readPeriodInviteCardBackgroundFile(input.files[0]);
+        state.periodBackgroundDraft = draft;
+        const expectedWidth = Number(state.periodBackground?.imageWidth || 0);
+        const expectedHeight = Number(state.periodBackground?.imageHeight || 0);
+        const message = expectedWidth > 0 && expectedHeight > 0 && (draft.imageWidth !== expectedWidth || draft.imageHeight !== expectedHeight)
+          ? `این تصویر ${draft.imageWidth}×${draft.imageHeight} است؛ ابعاد لازم ${expectedWidth}×${expectedHeight} پیکسل است.`
+          : 'تصویر انتخاب شد؛ برای نگهداری آن دکمه ذخیره تصویر را بزنید.';
+        renderPeriodInviteCardBackground(pane, draft, message);
+      } catch (error) {
+        state.periodBackgroundDraft = null;
+        renderPeriodInviteCardBackground(pane, state.periodBackground || {}, error?.message || 'انتخاب تصویر ناموفق بود.');
+      } finally {
+        input.value = '';
+      }
+    });
+    const filterForm = pane.querySelector('[data-period-invite-filter-form]');
+    filterForm?.addEventListener('submit', (event) => { event.preventDefault(); state.selected.clear(); void loadPeriodCandidates(pane, 1); });
+    pane.querySelector('[data-period-invite-clear]')?.addEventListener('click', () => { filterForm?.reset(); state.selected.clear(); void loadPeriodCandidates(pane, 1); });
+    pane.querySelector('[data-period-candidate-prev]')?.addEventListener('click', () => void loadPeriodCandidates(pane, Math.max(1, state.page - 1)));
+    pane.querySelector('[data-period-candidate-next]')?.addEventListener('click', () => void loadPeriodCandidates(pane, Math.min(state.pages, state.page + 1)));
+    pane.querySelector('[data-period-invitee-prev]')?.addEventListener('click', () => void loadPeriodInvitees(pane, Math.max(1, state.inviteePage - 1)));
+    pane.querySelector('[data-period-invitee-next]')?.addEventListener('click', () => void loadPeriodInvitees(pane, Math.min(state.inviteePages, state.inviteePage + 1)));
+    pane.querySelector('[data-period-invitee-refresh]')?.addEventListener('click', () => void loadPeriodInvitees(pane, state.inviteePage));
+    let searchTimer = 0;
+    pane.querySelector('[data-period-invitee-search]')?.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = window.setTimeout(() => loadPeriodInvitees(pane, 1), 250); });
+    pane.addEventListener('change', (event) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement && target.matches('[data-period-candidate-check]')) {
+        target.checked ? state.selected.add(target.value) : state.selected.delete(target.value);
+        renderPeriodCandidates(pane, { rows: state.candidates, total: pane.querySelector('[data-period-candidate-total]')?.textContent || state.candidates.length, page: state.page, pages: state.pages });
+      }
+      if (target instanceof HTMLInputElement && target.matches('[data-period-candidate-select-all]')) {
+        state.candidates.filter((row) => !row?.invited).forEach((row) => target.checked ? state.selected.add(String(row.candidate_id)) : state.selected.delete(String(row.candidate_id)));
+        renderPeriodCandidates(pane, { rows: state.candidates, total: pane.querySelector('[data-period-candidate-total]')?.textContent || state.candidates.length, page: state.page, pages: state.pages });
+      }
+      if (target instanceof HTMLInputElement && target.matches('[data-period-unmatched-check]')) {
+        target.checked ? state.unmatchedSelected.add(target.value) : state.unmatchedSelected.delete(target.value);
+        renderPeriodUnmatchedRows(pane);
+      }
+      if (target instanceof HTMLInputElement && target.matches('[data-period-unmatched-select-all]')) {
+        state.unmatchedRows.filter((row) => row?.can_invite !== false && String(row?.national_id || row?.work_id || '').trim()).forEach((row) => {
+          const id = String(row.excel_id || '');
+          target.checked ? state.unmatchedSelected.add(id) : state.unmatchedSelected.delete(id);
+        });
+        renderPeriodUnmatchedRows(pane);
+      }
+    });
+    pane.querySelector('[data-period-invite-selected]')?.addEventListener('click', async () => {
+      const status = pane.querySelector('[data-period-candidate-status]');
+      try {
+        const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), candidate_ids: Array.from(state.selected) }, 'POST');
+        state.selected.clear();
+        if (status) status.textContent = data?.message || 'دعوت‌ها ذخیره شدند.';
+        await loadPeriodCandidates(pane, 1);
+        await loadPeriodInvitees(pane, 1);
+      } catch (error) { if (status) status.textContent = error?.message || 'دعوت کاربران ناموفق بود.'; }
+    });
+    pane.addEventListener('click', async (event) => {
+      const unmatchedInvite = event.target instanceof Element ? event.target.closest('[data-period-invite-unmatched-one]') : null;
+      if (unmatchedInvite instanceof HTMLButtonElement) {
+        await invitePeriodUnmatchedRows(pane, [unmatchedInvite.dataset.periodInviteUnmatchedOne || '']);
+        return;
+      }
+      const remove = event.target instanceof Element ? event.target.closest('[data-period-remove-invite]') : null;
+      if (!(remove instanceof HTMLButtonElement)) return;
+      if (!window.confirm('دعوت این کاربر از بازه حذف شود؟')) return;
+      try {
+        await requestPeriodInvites('remove', { period_code: periodCodeForPane(pane), invite_id: remove.dataset.periodRemoveInvite || '' }, 'POST');
+        await loadPeriodInvitees(pane, state.inviteePage);
+        await loadPeriodCandidates(pane, state.page);
+      } catch (error) { const status = pane.querySelector('[data-period-invitee-status]'); if (status) status.textContent = error?.message || 'حذف دعوت ناموفق بود.'; }
+    });
+    pane.querySelector('[data-period-invite-unmatched-selected]')?.addEventListener('click', () => void invitePeriodUnmatchedRows(pane, Array.from(state.unmatchedSelected)));
+    const fileInput = pane.querySelector('[data-period-excel-file]');
+    const sheetSelect = pane.querySelector('[data-period-excel-sheet]');
+    pane.querySelector('[data-period-excel-pick]')?.addEventListener('click', () => {
+      if (fileInput instanceof HTMLInputElement) fileInput.value = '';
+      fileInput?.click();
+    });
+    fileInput?.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      const status = pane.querySelector('[data-period-excel-status]');
+      try {
+        state.excelWorkbook = await parsePeriodExcel(file);
+        state.excelSheetName = '';
+        state.excelRows = [];
+        state.excelHeaders = [];
+        state.matchedMode = false;
+        state.selected.clear();
+        state.unmatchedRows = [];
+        state.unmatchedSelected.clear();
+        renderPeriodUnmatchedRows(pane);
+        pane.querySelector('[data-period-excel-name]').textContent = file.name;
+        if (sheetSelect instanceof HTMLSelectElement) {
+          sheetSelect.replaceChildren(new Option('انتخاب شیت...', ''));
+          state.excelWorkbook.SheetNames.forEach((name) => sheetSelect.add(new Option(String(name), String(name))));
+          sheetSelect.disabled = false;
+          sheetSelect.value = '';
+        }
+        const sheetRow = pane.querySelector('[data-period-excel-sheet-row]');
+        if (sheetRow) sheetRow.hidden = false;
+        const mapping = pane.querySelector('[data-period-excel-mapping]');
+        if (mapping) mapping.hidden = true;
+        const match = pane.querySelector('[data-period-excel-match]');
+        if (match instanceof HTMLButtonElement) match.disabled = true;
+        if (status) status.textContent = `فایل شامل ${state.excelWorkbook.SheetNames.length} شیت است؛ شیت موردنظر را انتخاب کنید.`;
+      } catch (error) {
+        state.excelWorkbook = null;
+        const sheetRow = pane.querySelector('[data-period-excel-sheet-row]');
+        const mapping = pane.querySelector('[data-period-excel-mapping]');
+        const match = pane.querySelector('[data-period-excel-match]');
+        if (sheetRow) sheetRow.hidden = true;
+        if (mapping) mapping.hidden = true;
+        if (match instanceof HTMLButtonElement) match.disabled = true;
+        if (status) status.textContent = error?.message || 'خواندن فایل ناموفق بود.';
+      }
+    });
+    sheetSelect?.addEventListener('change', () => {
+      const status = pane.querySelector('[data-period-excel-status]');
+      const selectedSheet = sheetSelect instanceof HTMLSelectElement ? sheetSelect.value : '';
+      const mapping = pane.querySelector('[data-period-excel-mapping]');
+      const match = pane.querySelector('[data-period-excel-match]');
+      if (!selectedSheet) {
+        state.excelSheetName = '';
+        state.excelRows = [];
+        state.excelHeaders = [];
+        if (mapping) mapping.hidden = true;
+        if (match instanceof HTMLButtonElement) match.disabled = true;
+        if (status) status.textContent = 'برای پردازش ستون‌ها ابتدا یک شیت را انتخاب کنید.';
+        return;
+      }
+      try {
+        applyPeriodExcelSheet(pane, selectedSheet);
+      } catch (error) {
+        if (mapping) mapping.hidden = true;
+        if (match instanceof HTMLButtonElement) match.disabled = true;
+        if (status) status.textContent = error?.message || 'خواندن شیت انتخاب‌شده ناموفق بود.';
+      }
+    });
+    pane.querySelector('[data-period-excel-match]')?.addEventListener('click', async () => {
+      const nationalIndex = pane.querySelector('[data-period-excel-national]')?.value ?? '';
+      const workIndex = pane.querySelector('[data-period-excel-work]')?.value ?? '';
+      const status = pane.querySelector('[data-period-excel-status]');
+      if (nationalIndex === '' && workIndex === '') { if (status) status.textContent = 'حداقل یکی از ستون‌های کد ملی یا کد پرسنلی را انتخاب کنید.'; return; }
+      const mappedValue = (row, key) => {
+        const value = pane.querySelector(`[data-period-excel-${key}]`)?.value ?? '';
+        return value === '' ? '' : String(row[Number(value)] ?? '');
+      };
+      const rows = state.excelRows.slice(1).map((row, index) => ({
+        excel_id: `x:${index + 2}`, source_row: index + 2,
+        national_id: nationalIndex === '' ? '' : String(row[Number(nationalIndex)] ?? ''), work_id: workIndex === '' ? '' : String(row[Number(workIndex)] ?? ''),
+        first_name: mappedValue(row, 'first'), last_name: mappedValue(row, 'last'), phone_number: mappedValue(row, 'phone'),
+        deputy: mappedValue(row, 'deputy'), general_department: mappedValue(row, 'general-department'), department: mappedValue(row, 'department'),
+        gender: mappedValue(row, 'gender'), postal_level: mappedValue(row, 'postal-level'),
+        raw_data: Object.fromEntries(state.excelHeaders.map((header, columnIndex) => [String(header || `ستون ${columnIndex + 1}`), String(row[columnIndex] ?? '')]))
+      }));
+      try {
+        const data = await requestPeriodInvites('match_excel', { period_code: periodCodeForPane(pane), rows }, 'POST');
+        state.matchedMode = true;
+        state.selected = new Set((data.rows || []).filter((row) => !row?.invited).map((row) => String(row.candidate_id || '')));
+        state.unmatchedRows = Array.isArray(data.unmatched_rows) ? data.unmatched_rows : [];
+        state.unmatchedSelected.clear();
+        renderPeriodCandidates(pane, { rows: data.rows || [], total: data.matched || 0, page: 1, pages: 1 });
+        renderPeriodUnmatchedRows(pane);
+        if (status) status.textContent = `${data.matched || 0} کاربر تطبیق و انتخاب شد؛ ${data.unmatched || 0} ردیف بدون تطبیق بود.`;
+      } catch (error) { if (status) status.textContent = error?.message || 'تطبیق فایل ناموفق بود.'; }
+    });
+  }
+
   async function fetchTaskList() {
     const data = await postTaskAction('list');
     return Array.isArray(data.tasks) ? data.tasks : [];
@@ -2833,9 +3775,14 @@
     }
     try {
       const tasks = await fetchTaskList();
+      window.EGM_TASKS = tasks;
       renderTaskSubtabs(layout, tasks);
-    } catch {
-      renderTaskSubtabs(layout, []);
+    } catch (error) {
+      console.error('Failed to refresh EGM period tabs.', error);
+      const cachedTasks = Array.isArray(window.EGM_TASKS) ? window.EGM_TASKS : [];
+      if (cachedTasks.length) {
+        renderTaskSubtabs(layout, cachedTasks);
+      }
     }
   }
 
@@ -2852,7 +3799,7 @@
       const pane = field.closest('.sub-pane[data-task-pane="1"]');
       if (!(pane instanceof HTMLElement)) return;
       const fieldName = field.getAttribute('data-task-field') || '';
-      if (fieldName === 'active' || fieldName === 'duration') {
+      if (fieldName === 'active' || fieldName === 'duration' || fieldName === 'quitRequired') {
         syncTaskPaneToggleState(pane);
         setTaskSaveStatus(pane, '');
         return;
@@ -2866,7 +3813,11 @@
         fieldName === 'startDate' ||
         fieldName === 'startTime' ||
         fieldName === 'endDate' ||
-        fieldName === 'endTime'
+        fieldName === 'endTime' ||
+        fieldName === 'enterDeadlineDate' ||
+        fieldName === 'enterDeadlineTime' ||
+        fieldName === 'quitOpeningDate' ||
+        fieldName === 'quitOpeningTime'
       ) {
         updateTaskPaneStatus(pane);
         setTaskSaveStatus(pane, '');
@@ -3043,6 +3994,15 @@
         activateTaskTopPane(pane, sectionKey);
         if (sectionKey === 'invitees-rate' && isInfoLikeTaskType(pane.dataset.taskType || 'quiz')) {
           void loadInfoRateDataIntoPane(pane);
+        }
+        if (sectionKey === 'invite') {
+          void loadPeriodFilterOptions(pane).then(() => loadPeriodCandidates(pane, 1));
+        }
+        if (sectionKey === 'invitees') {
+          void loadPeriodInvitees(pane, 1);
+        }
+        if (sectionKey === 'invite-card') {
+          void Promise.all([loadPeriodInviteCardStatus(pane), loadPeriodInviteCardBackground(pane)]);
         }
         if (sectionKey === 'photo') {
           renderDescribePhotoUploadCard(pane);
@@ -3399,7 +4359,7 @@
         const payload = collectTaskInfoContentFromPane(pane);
         if (!payload) return;
         saveInfoButton.disabled = true;
-        setTaskInfoContentSaveStatus(pane, 'Saving...');
+        setTaskInfoContentSaveStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('save_info_task_content', {
             id: taskId,
@@ -3416,10 +4376,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'information');
-            setTaskInfoContentSaveStatus(activePane, data.message || 'Information saved.');
+            setTaskInfoContentSaveStatus(activePane, data.message || 'اطلاعات بازه ذخیره شد.');
           }
         } catch (error) {
-          setTaskInfoContentSaveStatus(pane, error?.message || 'Failed to save information.', true);
+          setTaskInfoContentSaveStatus(pane, error?.message || 'ذخیره اطلاعات بازه ناموفق بود.', true);
         } finally {
           saveInfoButton.disabled = false;
         }
@@ -3515,7 +4475,7 @@
         if (!settings) return;
 
         saveButton.disabled = true;
-        setTaskSaveStatus(pane, 'Saving...');
+        setTaskSaveStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('save_task_settings', {
             id: taskId,
@@ -3531,10 +4491,10 @@
           }
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
-            setTaskSaveStatus(activePane, data.message || 'Task settings saved.');
+            setTaskSaveStatus(activePane, data.message || 'تنظیمات بازه ذخیره شد.');
           }
         } catch (error) {
-          setTaskSaveStatus(pane, error?.message || 'Failed to save task settings.', true);
+          setTaskSaveStatus(pane, error?.message || 'ذخیره تنظیمات بازه ناموفق بود.', true);
         } finally {
           const refreshedPane = pane.dataset.pane
             ? findPaneByKey(layout, pane.dataset.pane)
@@ -3669,7 +4629,7 @@
       if (!scoreSettings) return;
 
       scoreSaveButton.disabled = true;
-      setTaskScoreSaveStatus(pane, 'Saving...');
+      setTaskScoreSaveStatus(pane, 'در حال ذخیره...');
       try {
         const data = await postTaskAction('save_task_score_system', {
           id: taskId,
@@ -3685,10 +4645,10 @@
         }
         const activePane = findPaneByKey(layout, keepPane);
         if (activePane instanceof HTMLElement) {
-          setTaskScoreSaveStatus(activePane, data.message || 'Score settings saved.');
+          setTaskScoreSaveStatus(activePane, data.message || 'تنظیمات امتیازدهی ذخیره شد.');
         }
       } catch (error) {
-        setTaskScoreSaveStatus(pane, error?.message || 'Failed to save score settings.', true);
+        setTaskScoreSaveStatus(pane, error?.message || 'ذخیره تنظیمات امتیازدهی ناموفق بود.', true);
       } finally {
         const refreshedPane = pane.dataset.pane
           ? findPaneByKey(layout, pane.dataset.pane)

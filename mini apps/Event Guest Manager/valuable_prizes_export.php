@@ -1,8 +1,12 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
+require_once __DIR__ . '/pot_service.php';
 
 $user = requireTabPermissionFromSession('event-guest-manager', false);
 if (!userHasPermissionId($user, 'event-guest-manager:export')) {
@@ -49,8 +53,8 @@ function egmValuableXml($value): string {
 $rows = egmInviteesCsvReadRowsSnapshot($csvPath);
 $header = is_array($rows[0] ?? null) ? $rows[0] : [];
 $mapping = [];
-if (is_file($mappingPath)) {
-  $decoded = json_decode((string)file_get_contents($mappingPath), true);
+if (egmDbIsFile($mappingPath)) {
+  $decoded = json_decode((string)egmDbFileGetContents($mappingPath), true);
   if (is_array($decoded)) $mapping = $decoded;
 }
 
@@ -63,6 +67,7 @@ $phoneIndex = egmValuableMappedIndex($header, $mapping, ['phoneNumber', 'phone_n
 $scoreIndex = egmValuableHeaderIndex($header, ['score', 'total score']);
 $prizesIndex = egmValuableHeaderIndex($header, ['each level won prize']);
 $totalIndex = egmValuableHeaderIndex($header, ['total prize won', 'مجموع جوایز برنده شده']);
+$guestNumberMaps = egmPotGuestNumberMaps();
 
 $exportRows = [];
 for ($index = 1; $index < count($rows); $index++) {
@@ -71,10 +76,15 @@ for ($index = 1; $index < count($rows); $index++) {
   if ($total <= 0) continue;
   $fullName = egmValuableCell($row, $fullNameIndex);
   if ($fullName === '') $fullName = trim(egmValuableCell($row, $firstNameIndex) . ' ' . egmValuableCell($row, $lastNameIndex));
+  $workId = egmValuableCell($row, $workIdIndex);
+  $nationalId = egmValuableCell($row, $nationalIdIndex);
+  $guestNumber = (string)($guestNumberMaps['national'][$nationalId]
+    ?? $guestNumberMaps['work'][strtolower($workId)] ?? '');
   $exportRows[] = [
+    $guestNumber,
     $fullName,
-    egmValuableCell($row, $workIdIndex),
-    egmValuableCell($row, $nationalIdIndex),
+    $workId,
+    $nationalId,
     egmValuableCell($row, $phoneIndex),
     egmValuableNumber(egmValuableCell($row, $scoreIndex)),
     egmValuableCell($row, $prizesIndex),
@@ -93,14 +103,14 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
  <Worksheet ss:Name="Valuable Prizes"><Table>
   <Row>
-   <?php foreach (['fullname', 'Work ID', 'National ID', 'Phone Number', 'Total Score', 'Valuable Prizes', 'Sum of Valuable Prizes'] as $label): ?>
+   <?php foreach (['Guest Number', 'fullname', 'Work ID', 'National ID', 'Phone Number', 'Total Score', 'Valuable Prizes', 'Sum of Valuable Prizes'] as $label): ?>
    <Cell><Data ss:Type="String"><?= egmValuableXml($label) ?></Data></Cell>
    <?php endforeach; ?>
   </Row>
   <?php foreach ($exportRows as $dataRow): ?>
   <Row>
    <?php foreach ($dataRow as $cellIndex => $value): ?>
-   <Cell><Data ss:Type="<?= in_array($cellIndex, [4, 6], true) ? 'Number' : 'String' ?>"><?= egmValuableXml($value) ?></Data></Cell>
+   <Cell><Data ss:Type="<?= in_array($cellIndex, [5, 7], true) ? 'Number' : 'String' ?>"><?= egmValuableXml($value) ?></Data></Cell>
    <?php endforeach; ?>
   </Row>
   <?php endforeach; ?>

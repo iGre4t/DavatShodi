@@ -1,0 +1,490 @@
+.egm-shell [data-egm-invite-card-pane] {
+  --invite-card-qr: #2563eb;
+  --invite-card-text: #e11d48;
+}
+
+.egm-shell .egm-invite-card-upload-row,
+.egm-shell .egm-invite-card-actions,
+.egm-shell .egm-invite-card-command-row,
+.egm-shell .egm-invite-card-tool-row,
+.egm-shell .egm-invite-card-modal-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.egm-shell .egm-invite-card-source {
+  position: relative;
+  display: grid;
+  min-height: 220px;
+  margin-top: 14px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px dashed var(--border, #d7dde7);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.egm-shell .egm-invite-card-source img {
+  display: block;
+  max-width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+}
+
+.egm-shell .egm-invite-card-empty,
+.egm-shell .egm-invite-card-preview-empty {
+  padding: 34px 18px;
+  color: var(--muted, #64748b);
+  text-align: center;
+}
+
+.egm-shell .egm-invite-card-actions {
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.egm-shell .egm-invite-card-area-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.egm-shell .egm-invite-card-area-state span {
+  padding: 7px 10px;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+}
+
+.egm-shell .egm-invite-card-area-state span.is-ready {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.egm-shell .egm-invite-card-command-row {
+  justify-content: flex-end;
+}
+
+.egm-shell .egm-invite-card-editor {
+  overflow: hidden;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.egm-shell .egm-invite-card-editor:focus-within {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, .16);
+}
+
+.egm-shell .egm-invite-card-editor-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 9px;
+  border-bottom: 1px solid var(--border, #d7dde7);
+  background: #f8fafc;
+}
+
+.egm-shell .egm-invite-card-editor-toolbar > .btn {
+  min-width: 42px;
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
+.egm-shell .egm-invite-card-color-control,
+.egm-shell .egm-invite-card-font-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.egm-shell .egm-invite-card-color-control {
+  padding-inline: 3px;
+  border-inline-end: 1px solid var(--border, #d7dde7);
+}
+
+.egm-shell .egm-invite-card-color-control input[type="color"] {
+  width: 42px;
+  height: 36px;
+  padding: 3px;
+  cursor: pointer;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.egm-shell .egm-invite-card-font-control {
+  margin-top: 9px;
+}
+
+.egm-shell .egm-invite-card-font-control [data-invite-card-font-status] {
+  overflow-wrap: anywhere;
+}
+
+.egm-shell .egm-invite-card-editor-surface span[style*="color"] {
+  border-radius: 2px;
+}
+
+.egm-shell .egm-invite-card-merge-control {
+  display: flex;
+  flex: 1 1 330px;
+  align-items: center;
+  gap: 7px;
+  margin-inline-start: auto;
+}
+
+.egm-shell .egm-invite-card-merge-control select {
+  min-width: 0;
+  flex: 1 1 210px;
+}
+
+.egm-shell .egm-invite-card-editor-surface {
+  min-height: 190px;
+  max-height: 420px;
+  padding: 14px 16px;
+  overflow: auto;
+  outline: none;
+  color: #111827;
+  line-height: 1.8;
+  text-align: right;
+  white-space: normal;
+}
+
+.egm-shell .egm-invite-card-editor-surface:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.egm-shell .egm-invite-card-editor-surface ul,
+.egm-shell .egm-invite-card-editor-surface ol {
+  margin: 8px 0;
+  padding-right: 28px;
+}
+
+.egm-shell .egm-invite-card-conditional-builder {
+  padding: 16px;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.egm-shell .egm-invite-card-conditional-heading p {
+  margin: 5px 0 0;
+}
+
+.egm-shell .egm-invite-card-conditional-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, .7fr) minmax(240px, 1.3fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.egm-shell .egm-invite-card-condition-labels,
+.egm-shell .egm-invite-card-condition-row {
+  display: grid;
+  grid-template-columns: minmax(145px, .75fr) minmax(140px, 1fr) minmax(180px, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.egm-shell .egm-invite-card-condition-labels {
+  margin-top: 14px;
+  padding: 0 4px 5px;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+}
+
+.egm-shell .egm-invite-card-condition-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.egm-shell .egm-invite-card-condition-row {
+  padding: 9px;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 11px;
+  background: #fff;
+}
+
+.egm-shell .egm-invite-card-condition-row input,
+.egm-shell .egm-invite-card-condition-row select {
+  width: 100%;
+  min-width: 0;
+}
+
+.egm-shell .egm-invite-card-condition-row [data-action="remove-invite-card-condition"] {
+  min-width: 38px;
+  padding: 7px 10px;
+  color: #b91c1c;
+}
+
+.egm-shell .egm-invite-card-add-condition {
+  margin-top: 9px;
+}
+
+.egm-shell .egm-invite-card-conditional-fallback {
+  margin-top: 12px;
+}
+
+.egm-shell .egm-invite-card-conditional-actions,
+.egm-shell .egm-invite-card-conditional-item,
+.egm-shell .egm-invite-card-conditional-item-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.egm-shell .egm-invite-card-conditional-actions {
+  margin-top: 12px;
+}
+
+.egm-shell .egm-invite-card-conditional-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.egm-shell .egm-invite-card-conditional-item {
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 11px;
+  background: #eff6ff;
+}
+
+.egm-shell .egm-invite-card-conditional-token {
+  color: #1d4ed8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+}
+
+.egm-shell .egm-invite-card-condition-value.is-not-used {
+  opacity: .55;
+  pointer-events: none;
+}
+
+.egm-shell .egm-invite-card-invitee-picker {
+  display: grid;
+  grid-template-columns: minmax(220px, .8fr) minmax(280px, 1.2fr);
+  gap: 10px;
+}
+
+.egm-shell .egm-invite-card-preview-card {
+  overflow: hidden;
+}
+
+.egm-shell .egm-invite-card-preview {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 14px;
+  background: #e2e8f0;
+}
+
+.egm-shell .egm-invite-card-preview > [data-invite-card-output-image] {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.egm-shell .egm-invite-card-export-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.egm-shell .egm-invite-card-modal {
+  position: fixed;
+  z-index: 10050;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.egm-shell .egm-invite-card-modal.hidden {
+  display: none;
+}
+
+.egm-shell .egm-invite-card-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, .72);
+  backdrop-filter: blur(3px);
+}
+
+.egm-shell .egm-invite-card-modal-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 96vw);
+  max-height: 94vh;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, .35);
+}
+
+.egm-shell .egm-invite-card-modal-header {
+  flex: 0 0 auto;
+}
+
+.egm-shell .egm-invite-card-tool-row {
+  flex: 0 0 auto;
+  margin: 12px 0;
+}
+
+.egm-shell .egm-invite-card-tool-row [data-selection-tool].active {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .18);
+}
+
+.egm-shell .egm-invite-card-selection-scroll {
+  min-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 14px;
+  background-color: #e5e7eb;
+  background-image: linear-gradient(45deg, #f8fafc 25%, transparent 25%), linear-gradient(-45deg, #f8fafc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f8fafc 75%), linear-gradient(-45deg, transparent 75%, #f8fafc 75%);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.egm-shell .egm-invite-card-selection-stage {
+  position: relative;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  touch-action: none;
+}
+
+.egm-shell .egm-invite-card-selection-stage > img {
+  display: block;
+  max-width: min(100%, 1100px);
+  max-height: 66vh;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.egm-shell .egm-invite-card-selection-layer {
+  position: absolute;
+  cursor: crosshair;
+  inset: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.egm-shell .egm-invite-card-selection-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid;
+  background: rgba(255, 255, 255, .22);
+  pointer-events: none;
+}
+
+.egm-shell .egm-invite-card-selection-box span {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.egm-shell .egm-invite-card-selection-box.is-qr {
+  border-color: var(--invite-card-qr);
+  background: rgba(37, 99, 235, .18);
+}
+
+.egm-shell .egm-invite-card-selection-box.is-qr span {
+  background: var(--invite-card-qr);
+}
+
+.egm-shell .egm-invite-card-selection-box.is-text {
+  border-color: var(--invite-card-text);
+  background: rgba(225, 29, 72, .16);
+}
+
+.egm-shell .egm-invite-card-selection-box.is-text span {
+  background: var(--invite-card-text);
+}
+
+.egm-shell .egm-invite-card-selection-box.is-draft {
+  border-color: #0f172a;
+  border-style: dashed;
+  background: rgba(255, 255, 255, .28);
+}
+
+.egm-shell .egm-invite-card-modal-footer {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .egm-shell .egm-invite-card-modal {
+    padding: 8px;
+  }
+
+  .egm-shell .egm-invite-card-modal-panel {
+    width: 100%;
+    max-height: 98vh;
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .egm-shell .egm-invite-card-actions,
+  .egm-shell .egm-invite-card-command-row,
+  .egm-shell .egm-invite-card-export-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .egm-shell .egm-invite-card-actions .btn,
+  .egm-shell .egm-invite-card-command-row .btn {
+    width: 100%;
+  }
+
+  .egm-shell .egm-invite-card-invitee-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .egm-shell .egm-invite-card-merge-control {
+    flex-basis: 100%;
+  }
+
+  .egm-shell .egm-invite-card-color-control {
+    width: 100%;
+    border-inline-end: 0;
+  }
+
+  .egm-shell .egm-invite-card-conditional-grid,
+  .egm-shell .egm-invite-card-condition-labels,
+  .egm-shell .egm-invite-card-condition-row {
+    grid-template-columns: 1fr;
+  }
+
+  .egm-shell .egm-invite-card-condition-labels {
+    display: none;
+  }
+
+}

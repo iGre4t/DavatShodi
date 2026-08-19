@@ -1,6 +1,25 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
+require_once dirname(__DIR__, 2) . '/api/lib/common.php';
+require_once dirname(__DIR__, 2) . '/api/lib/egm-instance-storage.php';
+
+function egmSecurityRequireDatabaseRuntime(): void
+{
+  $context = egmDatabaseRuntimeContextForPath(__DIR__ . '/Setting.json');
+  if (!is_array($context)) {
+    throw new RuntimeException('Event Guest Manager requires its registered database instance.');
+  }
+  egmInstanceWriteData($context['pdo'], $context['code'], 'storage_mode', [
+    'mode' => 'database_only',
+    'version' => 1,
+  ]);
+}
+
+egmSecurityRequireDatabaseRuntime();
+
 function egmSecurityHardenSessionSettings(): void
 {
   if (session_status() !== PHP_SESSION_NONE) {

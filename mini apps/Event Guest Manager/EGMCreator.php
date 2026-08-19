@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/egm-registry.php';
+require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
 require_once __DIR__ . '/egm-security.php';
 
 $egmCreatorIsJsonRequest = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST';
@@ -17,7 +20,7 @@ function egmCreatorProjectRoot(): string
 
 function egmCreatorMissionsRoot(): string
 {
-  return egmCreatorProjectRoot() . DIRECTORY_SEPARATOR . 'miniapps' . DIRECTORY_SEPARATOR . 'EGMs';
+  return egmCreatorProjectRoot() . DIRECTORY_SEPARATOR . 'mini apps' . DIRECTORY_SEPARATOR . 'EGMs';
 }
 
 function egmCreatorGenerateRoot(): string
@@ -37,6 +40,49 @@ function egmCreatorDatabase(): PDO
     throw new RuntimeException('Unable to connect to the EGM registry database.');
   }
   ensureEgmRegistryTable($pdo);
+  foreach (listEgmRegistry($pdo) as $record) {
+    $code = (string)($record['code'] ?? '');
+    if (normalizeEgmInstanceCode($code) === '') {
+      continue;
+    }
+    ensureEgmInstanceTables($pdo, $code);
+    egmInstanceWriteData($pdo, $code, 'metadata', [
+      'code' => $code,
+      'name' => (string)($record['name'] ?? ''),
+      'directory' => (string)($record['directory'] ?? '')
+    ]);
+    if (egmInstanceReadData($pdo, $code, 'settings') === null) {
+      $settingsPath = egmCreatorProjectRoot() . DIRECTORY_SEPARATOR
+        . str_replace('/', DIRECTORY_SEPARATOR, (string)($record['directory'] ?? ''))
+        . DIRECTORY_SEPARATOR . 'Setting.json';
+      $settingsRaw = egmDbIsFile($settingsPath) ? egmDbFileGetContents($settingsPath) : false;
+      $settings = is_string($settingsRaw) ? json_decode($settingsRaw, true) : null;
+      if (is_array($settings)) {
+        egmInstanceWriteData($pdo, $code, 'settings', $settings);
+      }
+    }
+    if (egmInstanceReadData($pdo, $code, 'periods') === null) {
+      $periodsPath = egmCreatorProjectRoot() . DIRECTORY_SEPARATOR
+        . str_replace('/', DIRECTORY_SEPARATOR, (string)($record['directory'] ?? ''))
+        . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js';
+      $periodsRaw = egmDbIsFile($periodsPath) ? egmDbFileGetContents($periodsPath) : false;
+      $periods = [];
+      if (is_string($periodsRaw) && preg_match('/window\.EGM_TASKS\s*=\s*(\[.*\])\s*;?\s*$/s', $periodsRaw, $matches) === 1) {
+        $decodedPeriods = json_decode((string)$matches[1], true);
+        $periods = is_array($decodedPeriods) ? array_values($decodedPeriods) : [];
+      }
+      egmInstanceWritePeriods($pdo, $code, $periods);
+    }
+    $storageMode = egmInstanceReadData($pdo, $code, 'storage_mode', null);
+    if ((!is_array($storageMode) || ($storageMode['mode'] ?? '') !== 'database_only')
+        && egmInstanceReadData($pdo, $code, 'database_sync') === null) {
+      $missionDir = egmCreatorProjectRoot() . DIRECTORY_SEPARATOR
+        . str_replace('/', DIRECTORY_SEPARATOR, (string)($record['directory'] ?? ''));
+      if (is_dir($missionDir)) {
+        egmInstanceMirrorMissionStorage($pdo, $code, $missionDir);
+      }
+    }
+  }
   return $pdo;
 }
 
@@ -57,7 +103,7 @@ function egmCreatorWriteJsonFile(string $path, array $payload): void
     throw new RuntimeException('Failed to encode JSON.');
   }
   egmCreatorEnsureDirectory(dirname($path));
-  if (file_put_contents($path, $json . PHP_EOL, LOCK_EX) === false) {
+  if (egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) === false) {
     throw new RuntimeException('Failed to write file: ' . $path);
   }
 }
@@ -68,7 +114,7 @@ function egmCreatorEnsureGeneratorStorage(): void
   egmCreatorEnsureDirectory(egmCreatorGenerateRoot());
 
   $htaccessPath = egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.htaccess';
-  if (!is_file($htaccessPath)) {
+  if (!egmDbIsFile($htaccessPath)) {
     $rules = implode(PHP_EOL, [
       'Options -Indexes',
       '',
@@ -81,7 +127,7 @@ function egmCreatorEnsureGeneratorStorage(): void
       '</IfModule>',
       ''
     ]);
-    if (file_put_contents($htaccessPath, $rules, LOCK_EX) === false) {
+    if (egmDbFilePutContents($htaccessPath, $rules, LOCK_EX) === false) {
       throw new RuntimeException('Failed to write generator access rules.');
     }
   }
@@ -128,12 +174,12 @@ function egmCreatorNormalizeMissionName(string $value): string
 
 function egmCreatorMissionWebPath(string $folderName): string
 {
-  return 'miniapps/EGMs/' . rawurlencode($folderName);
+  return 'mini%20apps/EGMs/' . rawurlencode($folderName);
 }
 
 function egmCreatorMissionDirectoryLabel(string $folderName): string
 {
-  return 'miniapps/EGMs/' . $folderName;
+  return 'mini apps/EGMs/' . $folderName;
 }
 
 function egmCreatorMissionTabId(string $folderName, string $code = ''): string
@@ -171,7 +217,7 @@ function egmCreatorRemoveTree(string $path, string $allowedRoot): void
     if ($item->isDir()) {
       @rmdir($itemPath);
     } else {
-      @unlink($itemPath);
+      @egmDbUnlink($itemPath);
     }
   }
   @rmdir($path);
@@ -195,11 +241,17 @@ function egmCreatorShouldCopyRelativePath(string $relativePath, bool $isDir): bo
   if ($relative === 'tasks' || $relative === 'EGM Event' || $relative === 'vendor') {
     return true;
   }
+  if ($relative === 'InviteCards') {
+    return true;
+  }
+  if (strpos($relative, 'InviteCards/') === 0) {
+    return $relative === 'InviteCards/.htaccess';
+  }
   if (strpos($relative, 'tasks/') === 0) {
-    return $relative === 'tasks/tasks.js';
+    return false;
   }
   if (strpos($relative, 'EGM Event/') === 0) {
-    return $relative === 'EGM Event/Answers.csv';
+    return false;
   }
   if (!$isDir && preg_match('/\.json$/i', $relative)) {
     return false;
@@ -220,6 +272,12 @@ function egmCreatorShouldUpdateRelativePath(string $relativePath, bool $isDir): 
     if ($relative === $dataPath || strpos($relative, $dataPath . '/') === 0) {
       return false;
     }
+  }
+  if ($relative === 'InviteCards') {
+    return true;
+  }
+  if (strpos($relative, 'InviteCards/') === 0) {
+    return $relative === 'InviteCards/.htaccess';
   }
   if ($relative === 'vendor' || strpos($relative, 'vendor/') === 0) {
     return true;
@@ -248,7 +306,7 @@ function egmCreatorPatchGeneratedFile(string $path, string $relativePath, string
   if (!egmCreatorIsPatchableTextFile($relativePath)) {
     return;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content)) {
     throw new RuntimeException('Failed to read copied file: ' . $relativePath);
   }
@@ -266,7 +324,7 @@ function egmCreatorPatchGeneratedFile(string $path, string $relativePath, string
     "= '../../style/" => "= '../../../style/"
   ];
   $patched = str_replace(array_keys($replacements), array_values($replacements), $content);
-  if ($patched !== $content && file_put_contents($path, $patched, LOCK_EX) === false) {
+  if ($patched !== $content && egmDbFilePutContents($path, $patched, LOCK_EX) === false) {
     throw new RuntimeException('Failed to patch copied file: ' . $relativePath);
   }
 }
@@ -292,7 +350,7 @@ function egmCreatorCopyEventGuestManagerTemplate(string $sourceDir, string $targ
       continue;
     }
     egmCreatorEnsureDirectory(dirname($destination));
-    if (!copy($sourcePath, $destination)) {
+    if (!egmDbCopy($sourcePath, $destination)) {
       throw new RuntimeException('Failed to copy file: ' . $relative);
     }
     egmCreatorPatchGeneratedFile($destination, $relative, $folderName, $webPath);
@@ -322,7 +380,7 @@ function egmCreatorCopyEventGuestManagerUpdates(string $sourceDir, string $targe
       continue;
     }
     egmCreatorEnsureDirectory(dirname($destination));
-    if (!copy($sourcePath, $destination)) {
+    if (!egmDbCopy($sourcePath, $destination)) {
       throw new RuntimeException('Failed to update file: ' . $relative);
     }
     egmCreatorPatchGeneratedFile($destination, $relative, $folderName, $webPath);
@@ -334,10 +392,14 @@ function egmCreatorInitializeMission(string $targetDir, string $name): void
   egmCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'tasks');
   egmCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'EGM Event');
 
-  if (file_put_contents($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js', "window.EGM_TASKS = [];\n", LOCK_EX) === false) {
+  if (egmDbFilePutContents($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js', "window.EGM_TASKS = [];\n", LOCK_EX) === false) {
     throw new RuntimeException('Failed to initialize task store.');
   }
-  if (file_put_contents($targetDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Answers.csv', "Work ID\n", LOCK_EX) === false) {
+  egmCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'period-invites.json', [
+    'source' => 'oeu',
+    'periods' => []
+  ]);
+  if (egmDbFilePutContents($targetDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Answers.csv', "Work ID\n", LOCK_EX) === false) {
     throw new RuntimeException('Failed to initialize answers store.');
   }
   egmCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'Setting.json', [
@@ -434,17 +496,17 @@ function egmCreatorCreateMission(string $rawName): array
 
   $missionsRoot = egmCreatorMissionsRoot();
   $targetDir = $missionsRoot . DIRECTORY_SEPARATOR . $folderName;
-  if (file_exists($targetDir)) {
+  if (egmDbFileExists($targetDir)) {
     throw new InvalidArgumentException('A Event Guest Manager with this folder name already exists.');
   }
 
   $buildDir = egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.build-' . date('YmdHis') . '-' . bin2hex(random_bytes(4));
   $webPath = egmCreatorMissionWebPath($folderName);
   $code = egmCreatorAllocateUniqueCode();
+  $registryInserted = false;
   try {
     egmCreatorCopyEventGuestManagerTemplate(__DIR__, $buildDir, $folderName, $webPath);
-    egmCreatorInitializeMission($buildDir, $folderName);
-    if (!rename($buildDir, $targetDir)) {
+    if (!egmDbRename($buildDir, $targetDir)) {
       throw new RuntimeException('Failed to publish generated Event Guest Manager.');
     }
     insertEgmRegistry(
@@ -453,7 +515,34 @@ function egmCreatorCreateMission(string $rawName): array
       $folderName,
       egmCreatorMissionDirectoryLabel($folderName)
     );
+    $registryInserted = true;
+    egmCreatorInitializeMission($targetDir, $folderName);
+    $pdo = egmCreatorDatabase();
+    ensureEgmInstanceTables($pdo, $code);
+    egmInstanceWriteData($pdo, $code, 'metadata', [
+      'code' => $code,
+      'name' => $folderName,
+      'directory' => egmCreatorMissionDirectoryLabel($folderName)
+    ]);
+    $settingsRaw = egmDbFileGetContents($targetDir . DIRECTORY_SEPARATOR . 'Setting.json');
+    $settings = is_string($settingsRaw) ? json_decode($settingsRaw, true) : null;
+    if (!is_array($settings)) {
+      throw new RuntimeException('Failed to load initial EGM settings for database provisioning.');
+    }
+    egmInstanceWriteData($pdo, $code, 'settings', $settings);
+    egmInstanceWritePeriods($pdo, $code, []);
+    egmInstanceWriteData($pdo, $code, 'invitee_mapping', egmDatabaseRuntimeDefaultInviteeMapping());
+    egmInstanceWriteData($pdo, $code, 'invitee_source', ['source' => 'oeu', 'updatedAt' => gmdate('c')]);
+    egmInstanceWriteData($pdo, $code, 'storage_mode', ['mode' => 'database_only', 'version' => 1]);
   } catch (Throwable $error) {
+    if ($registryInserted) {
+      try {
+        deleteEgmRegistry(egmCreatorDatabase(), $code);
+        dropEgmInstanceTables(egmCreatorDatabase(), $code);
+      } catch (Throwable $cleanupError) {
+        error_log('Failed to clean up EGM database provisioning: ' . $cleanupError->getMessage());
+      }
+    }
     egmCreatorRemoveTree($buildDir, egmCreatorGenerateRoot());
     egmCreatorRemoveTree($targetDir, egmCreatorMissionsRoot());
     throw $error;
@@ -499,6 +588,18 @@ function egmCreatorUpdateMissionBranchSetting(string $rawFolder): array
   if (!updateEgmRegistry(egmCreatorDatabase(), (string)$registryRecord['code'], (string)$registryRecord['name'], $registryDirectory)) {
     throw new RuntimeException('Failed to update the EGM database registry.');
   }
+  ensureEgmInstanceTables(egmCreatorDatabase(), (string)$registryRecord['code']);
+  egmInstanceWriteData(egmCreatorDatabase(), (string)$registryRecord['code'], 'metadata', [
+    'code' => (string)$registryRecord['code'],
+    'name' => (string)$registryRecord['name'],
+    'directory' => $registryDirectory
+  ]);
+  egmInstanceWriteData(
+    egmCreatorDatabase(),
+    (string)$registryRecord['code'],
+    'storage_mode',
+    ['mode' => 'database_only', 'version' => 1]
+  );
 
   $missions = egmCreatorListMissions();
   foreach ($missions as $mission) {
@@ -522,15 +623,30 @@ function egmCreatorDeleteMission(string $rawFolder): array
     throw new InvalidArgumentException('Event Guest Manager is not registered in the database.');
   }
   $stagingDir = egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.delete-' . (string)$registryRecord['code'] . '-' . bin2hex(random_bytes(4));
-  if (!rename($targetDir, $stagingDir)) {
+  if (!egmDbRename($targetDir, $stagingDir)) {
     throw new RuntimeException('Failed to stage Event Guest Manager for deletion.');
   }
+  $registryDeleted = false;
   try {
     if (!deleteEgmRegistry(egmCreatorDatabase(), (string)$registryRecord['code'])) {
       throw new RuntimeException('Failed to delete the EGM database registry record.');
     }
+    $registryDeleted = true;
+    dropEgmInstanceTables(egmCreatorDatabase(), (string)$registryRecord['code']);
   } catch (Throwable $error) {
-    @rename($stagingDir, $targetDir);
+    if ($registryDeleted) {
+      try {
+        insertEgmRegistry(
+          egmCreatorDatabase(),
+          (string)$registryRecord['code'],
+          (string)$registryRecord['name'],
+          (string)$registryRecord['directory']
+        );
+      } catch (Throwable $restoreError) {
+        error_log('Failed to restore EGM registry after table deletion failure: ' . $restoreError->getMessage());
+      }
+    }
+    @egmDbRename($stagingDir, $targetDir);
     throw $error;
   }
   egmCreatorRemoveTree($stagingDir, egmCreatorGenerateRoot());
@@ -539,7 +655,7 @@ function egmCreatorDeleteMission(string $rawFolder): array
 }
 
 if ($egmCreatorIsJsonRequest) {
-  $payload = json_decode((string)file_get_contents('php://input'), true);
+  $payload = json_decode((string)egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     egmCreatorJsonResponse(['status' => 'error', 'message' => 'Invalid request payload.'], 400);
   }
@@ -587,7 +703,7 @@ if ($egmCreatorIsJsonRequest) {
 
 egmCreatorEnsureGeneratorStorage();
 $egmCreatorMissions = egmCreatorListMissions();
-$egmCreatorPanelCssVer = (string)(@filemtime(__DIR__ . '/egm-panel.css') ?: time());
+$egmCreatorPanelCssVer = (string)(@egmDbFilemtime(__DIR__ . '/egm-panel.css') ?: time());
 $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
 ?>
 
@@ -641,11 +757,11 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
         <h3>Generation storage</h3>
       </div>
       <p class="egm-creator-muted">
-        New Event Guest Managers are created under <code>miniapps/EGMs/&lt;name&gt;</code> and appear as new tabs in this panel sidebar.
-        EGM code, name, directory, and the next unique code are stored in MySQL. Event-specific settings remain inside each EGM directory.
+        New Event Guest Managers are created under <code>mini apps/EGMs/&lt;name&gt;</code> and appear as new tabs in this panel sidebar.
+        EGM code, settings, participants, progress, answers, logs, and runtime assets are stored in MySQL. The instance directory contains application code only.
       </p>
       <p class="egm-creator-muted">
-        The current default Event Guest Manager stays in <code>mini apps/Event Guest Manager</code>.
+        The development EGM uses code <code>00000</code> and stays in <code>mini apps/Event Guest Manager</code>.
       </p>
     </div>
   </div>

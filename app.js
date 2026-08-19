@@ -2912,8 +2912,8 @@ function loadImage(src, crossOrigin = false) {
 
 function getQrCodeUrl(data, size) {
   const encoded = encodeURIComponent(String(data ?? ""));
-  const normalizedSize = Math.max(32, Math.min(Math.round(size), 768));
-  return `https://api.qrserver.com/v1/create-qr-code/?size=${normalizedSize}x${normalizedSize}&margin=2&data=${encoded}`;
+  const normalizedSize = Math.max(64, Math.min(Math.round(size), 768));
+  return `modules/minor/QR%20Code%20Generator/generate.php?size=${normalizedSize}&margin=2&ecc=M&data=${encoded}`;
 }
 
 async function renderInviteCardCanvas(fields) {
@@ -4986,6 +4986,9 @@ async function reloadExternalTab(tab) {
   }
 
   host.setAttribute("aria-busy", "true");
+  if (isTaskClubRuntimeTab(tab) && typeof window.__tcPanelDisposeHeavyPanes === "function") {
+    window.__tcPanelDisposeHeavyPanes("");
+  }
   host.replaceChildren();
   const tabLoader = scheduleTabLazyLoader(host);
 
@@ -5020,12 +5023,47 @@ async function reloadExternalTab(tab) {
   }
 }
 
-async function activateTab(tab) {
+function updatePanelTabUrl(tab, historyMode = "replace") {
+  const safeTab = getAccessibleTab(tab);
+  if (!safeTab || historyMode === "none") {
+    return;
+  }
+  const url = new URL(window.location.href);
+  const currentUrlTab = normalizeTabToken(url.searchParams.get("tab"));
+  url.searchParams.set("tab", safeTab);
+  const currentState = window.history.state && typeof window.history.state === "object"
+    ? window.history.state
+    : {};
+  const nextState = { ...currentState, panelTab: safeTab };
+  if (historyMode === "push" && currentUrlTab !== safeTab) {
+    window.history.pushState(nextState, "", url);
+    return;
+  }
+  window.history.replaceState(nextState, "", url);
+}
+
+function readPanelTabFromUrl() {
+  const urlTab = normalizeTabToken(new URL(window.location.href).searchParams.get("tab"));
+  return urlTab && PANEL_ALLOWED_TAB_SET.has(urlTab) ? urlTab : PANEL_INITIAL_TAB;
+}
+
+async function activateTab(tab, { historyMode = "replace" } = {}) {
   const safeTab = getAccessibleTab(tab);
   if (!safeTab) {
     return;
   }
+  if (!isEventGuestManagerRuntimeTab(safeTab)) {
+    const egmPrizeInterval = window.__egmPrizeStatusInterval;
+    if (typeof egmPrizeInterval === "number") {
+      clearInterval(egmPrizeInterval);
+    }
+    delete window.__egmPrizeStatusInterval;
+  }
+  if (typeof window.__tcPanelDisposeHeavyPanes === "function") {
+    window.__tcPanelDisposeHeavyPanes(safeTab);
+  }
   setActiveTab(safeTab);
+  updatePanelTabUrl(safeTab, historyMode);
   await reloadExternalTab(safeTab);
 }
 function getActivePanelTimezone() {
@@ -6829,7 +6867,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } finally {
     hideAppLoader();
   }
-  await activateTab(PANEL_INITIAL_TAB);
+  await activateTab(PANEL_INITIAL_TAB, { historyMode: "replace" });
   renderUsers();
   updateKpis({ forceMetricsRefresh: true });
   initHomeSubTabs();
@@ -6864,8 +6902,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tab = btn.dataset.tab;
     if (tab) {
       event.preventDefault();
-      await activateTab(tab);
+      await activateTab(tab, { historyMode: "push" });
     }
+  });
+  window.addEventListener("popstate", () => {
+    void activateTab(readPanelTabFromUrl(), { historyMode: "none" });
   });
   bindPermissionsModalCheckboxBehavior();
   qsa('[data-close-permissions]').forEach(btn => {
@@ -6906,7 +6947,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     event.preventDefault();
-    void activateTab(shortcutTab);
+    void activateTab(shortcutTab, { historyMode: "push" });
   };
   document.addEventListener('keydown', handleHomeShortcut);
 

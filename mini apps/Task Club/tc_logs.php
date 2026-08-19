@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/useractivitylogs/activity-logger.php';
 
@@ -20,23 +22,7 @@ function tcLogsJsonResponse(array $payload, int $status = 200): void
 
 function tcLogsAvailableDays(): array
 {
-  $directory = tcActivityLogDirectory();
-  if (!is_dir($directory)) {
-    return [];
-  }
-  $files = glob($directory . DIRECTORY_SEPARATOR . '*.log');
-  if (!is_array($files)) {
-    return [];
-  }
-  $days = [];
-  foreach ($files as $file) {
-    $name = basename((string)$file);
-    if (preg_match('/^(\d{4}-\d{2}-\d{2})\.log$/', $name, $matches)) {
-      $days[] = $matches[1];
-    }
-  }
-  rsort($days, SORT_STRING);
-  return array_values(array_unique($days));
+  return tcDatabaseRuntimeActivityDays(__DIR__);
 }
 
 function tcLogsSafeDay(string $day, array $availableDays): string
@@ -50,13 +36,15 @@ function tcLogsSafeDay(string $day, array $availableDays): string
 
 function tcLogsReadLinesReverse(string $path, int $maxLines = 2000): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-  if (!is_array($lines)) {
+  $content = tcDbFileGetContents($path);
+  if (!is_string($content)) {
     return [];
   }
+  $lines = preg_split('/\R/u', $content, -1, PREG_SPLIT_NO_EMPTY);
+  if (!is_array($lines)) return [];
   $lines = array_slice($lines, -max(1, $maxLines));
   return array_reverse($lines);
 }
@@ -117,14 +105,8 @@ $query = trim((string)($_GET['q'] ?? ''));
 $limit = (int)($_GET['limit'] ?? 100);
 $limit = max(1, min(300, $limit));
 $needle = function_exists('mb_strtolower') ? mb_strtolower($query, 'UTF-8') : strtolower($query);
-$path = tcActivityLogDirectory() . DIRECTORY_SEPARATOR . $day . '.log';
-
 $items = [];
-foreach (tcLogsReadLinesReverse($path) as $line) {
-  $decoded = json_decode((string)$line, true);
-  if (!is_array($decoded)) {
-    continue;
-  }
+foreach (tcDatabaseRuntimeActivityEntriesForDay(__DIR__, $day, 2000) as $decoded) {
   if ($needle !== '') {
     $haystack = tcLogsEntrySearchText($decoded);
     $contains = function_exists('mb_strpos')

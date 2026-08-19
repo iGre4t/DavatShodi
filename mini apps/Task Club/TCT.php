@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
+$tctIncludeOnlyRequest = defined('TCT_INCLUDE_ONLY') && TCT_INCLUDE_ONLY;
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
 $tctSessionUser = requireTabPermissionFromSession('task-club', $tctIsJsonRequest);
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
@@ -12,8 +15,8 @@ $tctManageTasksOverride = null;
 $tctHasTaskSubtabAccess = false;
 if ($tctSessionUserCode !== '') {
   $tctTaskAccessPath = __DIR__ . '/tasks/task-access.json';
-  if (is_file($tctTaskAccessPath)) {
-    $tctTaskAccessRaw = file_get_contents($tctTaskAccessPath);
+  if (tcDbIsFile($tctTaskAccessPath)) {
+    $tctTaskAccessRaw = tcDbFileGetContents($tctTaskAccessPath);
     $tctTaskAccessDecoded = is_string($tctTaskAccessRaw) ? json_decode($tctTaskAccessRaw, true) : null;
     $tctTaskAccessUsers = is_array($tctTaskAccessDecoded['users'] ?? null) ? $tctTaskAccessDecoded['users'] : [];
     foreach ($tctTaskAccessUsers as $rawCode => $entry) {
@@ -69,7 +72,7 @@ if ($tctSessionUserCode !== '') {
 if ($tctManageTasksOverride !== null) {
   $tctCanAccessManageTasks = $tctManageTasksOverride;
 }
-if (!$tctCanAccessManageTasks && !$tctHasTaskSubtabAccess) {
+if (!$tctIncludeOnlyRequest && !$tctCanAccessManageTasks && !$tctHasTaskSubtabAccess) {
   denyPanelAccess(403, 'You do not have permission to access this Task Club section.', $tctIsJsonRequest);
 }
 $tctCsrfToken = tcSecurityGetCsrfToken();
@@ -81,6 +84,8 @@ $tctEventInviteesMapPath = __DIR__ . '/TC Event/TC Mapped.json';
 const TCT_SCORE_SETTINGS_FILE = 'task-score.json';
 const TCT_INFO_SETTINGS_FILE = 'info-task.json';
 const TCT_INFO_SCORES_FILE = 'info-task-scores.json';
+const TCT_SHARED_RESPONSE_LEVELS_FILE = 'response-levels.json';
+const TCT_SHARED_RESPONSE_RESULTS_FILE = 'response-results.json';
 const TCT_TEAM_SETTINGS_FILE = 'team-settings.json';
 const TCT_DESCRIBE_PHOTO_DIR = 'photos';
 const TCT_DESCRIBE_PHOTO_META_FILE = 'photos.json';
@@ -97,6 +102,20 @@ function tctNormalizeTaskType(string $value): string
   }
   if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
     return 'conditional_quiz';
+  }
+  if (in_array($token, [
+    'shared_answers_quiz',
+    'shared-answers-quiz',
+    'shared answers quiz',
+    'shared_quiz',
+    'shared-quiz',
+    'shared quiz',
+    'survey_score_response',
+    'survey-score-response',
+    'survey score response',
+    'survey score'
+  ], true)) {
+    return 'shared_answers_quiz';
   }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
@@ -148,8 +167,8 @@ function tctEnsureTasksStorage(string $tasksDir, string $storePath): bool
   if (!is_dir($tasksDir) && !mkdir($tasksDir, 0777, true) && !is_dir($tasksDir)) {
     return false;
   }
-  if (!is_file($storePath)) {
-    return file_put_contents($storePath, "window.TC_TASKS = [];\n", LOCK_EX) !== false;
+  if (!tcDbIsFile($storePath)) {
+    return tcDbFilePutContents($storePath, "window.TC_TASKS = [];\n", LOCK_EX) !== false;
   }
   return true;
 }
@@ -285,10 +304,10 @@ function tctLoadTaskScoreSettings(string $tasksDir, string $tagCode): array
     'anotherChanceIfZero' => false
   ];
   $path = tctBuildTaskScoreSettingsPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !tcDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -327,7 +346,7 @@ function tctSaveTaskScoreSettings(string $tasksDir, string $tagCode, array $sett
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskInfoSettingsPath(string $tasksDir, string $tagCode): string
@@ -348,6 +367,120 @@ function tctBuildTaskInfoScoresPath(string $tasksDir, string $tagCode): string
   return $taskDir . DIRECTORY_SEPARATOR . TCT_INFO_SCORES_FILE;
 }
 
+function tctBuildTaskSharedResponseLevelsPath(string $tasksDir, string $tagCode): string
+{
+  $taskDir = tctBuildTaskDirPath($tasksDir, $tagCode);
+  return $taskDir === '' ? '' : $taskDir . DIRECTORY_SEPARATOR . TCT_SHARED_RESPONSE_LEVELS_FILE;
+}
+
+function tctBuildTaskSharedResponseResultsPath(string $tasksDir, string $tagCode): string
+{
+  $taskDir = tctBuildTaskDirPath($tasksDir, $tagCode);
+  return $taskDir === '' ? '' : $taskDir . DIRECTORY_SEPARATOR . TCT_SHARED_RESPONSE_RESULTS_FILE;
+}
+
+function tctMakeSharedResponseLevelId(): string
+{
+  try {
+    return 'trl_' . bin2hex(random_bytes(6));
+  } catch (Throwable $e) {
+    return 'trl_' . str_replace('.', '', uniqid('', true));
+  }
+}
+
+function tctNormalizeSharedResponseLevelRangeValue($value): int
+{
+  if (!is_scalar($value)) {
+    return 0;
+  }
+  $token = trim((string)$value);
+  return $token !== '' && is_numeric($token) ? max(0, (int)floor((float)$token)) : 0;
+}
+
+function tctNormalizeSharedResponseLevels(array $levels): array
+{
+  $normalized = [];
+  $seen = [];
+  foreach ($levels as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $name = trim((string)($item['name'] ?? ($item['levelName'] ?? ($item['title'] ?? ''))));
+    $text = str_replace(["\r\n", "\r"], "\n", (string)($item['text'] ?? ($item['responseText'] ?? ($item['response_text'] ?? ''))));
+    $startScore = tctNormalizeSharedResponseLevelRangeValue($item['startScore'] ?? ($item['start_score'] ?? 0));
+    $endScore = tctNormalizeSharedResponseLevelRangeValue($item['endScore'] ?? ($item['end_score'] ?? $startScore));
+    if ($name === '' || $endScore < $startScore) {
+      continue;
+    }
+    $levelId = trim((string)($item['id'] ?? ''));
+    if ($levelId === '' || isset($seen[strtolower($levelId)])) {
+      $levelId = tctMakeSharedResponseLevelId();
+    }
+    $seen[strtolower($levelId)] = true;
+    $normalized[] = [
+      'id' => $levelId,
+      'name' => $name,
+      'text' => $text,
+      'startScore' => $startScore,
+      'endScore' => $endScore,
+      'createdAt' => trim((string)($item['createdAt'] ?? ($item['created_at'] ?? ''))) ?: date('Y-m-d H:i:s')
+    ];
+  }
+  usort($normalized, static function (array $left, array $right): int {
+    $startDiff = ((int)$left['startScore']) <=> ((int)$right['startScore']);
+    return $startDiff !== 0 ? $startDiff : (((int)$left['endScore']) <=> ((int)$right['endScore']));
+  });
+  return array_values($normalized);
+}
+
+function tctValidateSharedResponseLevels(array $levels): ?string
+{
+  $previousEnd = null;
+  foreach ($levels as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $name = trim((string)($item['name'] ?? ''));
+    $startScore = tctNormalizeSharedResponseLevelRangeValue($item['startScore'] ?? 0);
+    $endScore = tctNormalizeSharedResponseLevelRangeValue($item['endScore'] ?? $startScore);
+    if ($name === '') {
+      return 'Each response level must have a name.';
+    }
+    if ($endScore < $startScore) {
+      return 'Response level end score must be equal to or greater than start score.';
+    }
+    if ($previousEnd !== null && $startScore <= $previousEnd) {
+      return 'Response level score ranges must not overlap.';
+    }
+    $previousEnd = $endScore;
+  }
+  return null;
+}
+
+function tctLoadTaskSharedResponseLevels(string $tasksDir, string $tagCode): array
+{
+  $path = tctBuildTaskSharedResponseLevelsPath($tasksDir, $tagCode);
+  if ($path === '' || !tcDbIsFile($path)) {
+    return [];
+  }
+  $decoded = json_decode((string)tcDbFileGetContents($path), true);
+  return is_array($decoded) ? tctNormalizeSharedResponseLevels($decoded) : [];
+}
+
+function tctSaveTaskSharedResponseLevels(string $tasksDir, string $tagCode, array $levels): bool
+{
+  if (!tctEnsureTaskFolder($tasksDir, $tagCode)) {
+    return false;
+  }
+  $path = tctBuildTaskSharedResponseLevelsPath($tasksDir, $tagCode);
+  $normalized = tctNormalizeSharedResponseLevels($levels);
+  if ($path === '' || tctValidateSharedResponseLevels($normalized) !== null) {
+    return false;
+  }
+  $json = json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+  return $json !== false && tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
 function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
 {
   $defaults = [
@@ -357,10 +490,10 @@ function tctLoadTaskInfoSettings(string $tasksDir, string $tagCode): array
     'guideSuffix' => ''
   ];
   $path = tctBuildTaskInfoSettingsPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !tcDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -395,16 +528,16 @@ function tctSaveTaskInfoSettings(string $tasksDir, string $tagCode, array $paylo
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctLoadTaskInfoScores(string $tasksDir, string $tagCode): array
 {
   $path = tctBuildTaskInfoScoresPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -444,7 +577,7 @@ function tctSaveTaskInfoScores(string $tasksDir, string $tagCode, array $scoreMa
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskTeamSettingsPath(string $tasksDir, string $tagCode): string
@@ -464,10 +597,10 @@ function tctLoadTaskTeamSettings(string $tasksDir, string $tagCode): array
     'teamAdditionalNote' => ''
   ];
   $path = tctBuildTaskTeamSettingsPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !tcDbIsFile($path)) {
     return $defaults;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return $defaults;
   }
@@ -518,7 +651,7 @@ function tctSaveTaskTeamSettings(string $tasksDir, string $tagCode, array $setti
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskTeamChallengesPath(string $tasksDir, string $tagCode): string
@@ -542,10 +675,10 @@ function tctMakeTaskTeamChallengeId(): string
 function tctLoadTaskTeamChallenges(string $tasksDir, string $tagCode): array
 {
   $path = tctBuildTaskTeamChallengesPath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -654,7 +787,7 @@ function tctSaveTaskTeamChallenges(string $tasksDir, string $tagCode, array $cha
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskTeamRuntimePath(string $tasksDir, string $tagCode): string
@@ -681,10 +814,10 @@ function tctNormalizeTeamJoinType(string $value): string
 function tctLoadTaskTeamRuntime(string $tasksDir, string $tagCode): array
 {
   $path = tctBuildTaskTeamRuntimePath($tasksDir, $tagCode);
-  if ($path === '' || !is_file($path)) {
+  if ($path === '' || !tcDbIsFile($path)) {
     return ['teams' => []];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return ['teams' => []];
   }
@@ -777,7 +910,7 @@ function tctSaveTaskTeamRuntime(string $tasksDir, string $tagCode, array $runtim
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctFindTaskTeamIndexById(array $teams, string $teamId): int
@@ -902,7 +1035,7 @@ function tctSerializeTeamTaskMap(array $map): string
 function tctSyncTeamTaskCsvState(string $inviteesPath, string $mapPath, string $taskId, array $teams): bool
 {
   $normalizedTaskId = trim($taskId);
-  if ($normalizedTaskId === '' || !is_file($inviteesPath)) {
+  if ($normalizedTaskId === '' || !tcDbIsFile($inviteesPath)) {
     return false;
   }
   $rows = tctReadCsvRows($inviteesPath);
@@ -1020,7 +1153,7 @@ function tctResolveAbsolutePathFromRelative(string $relativePath): string
   }
   $candidate = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normalizedRelative);
   $real = realpath($candidate);
-  if (!is_string($real) || $real === '' || !is_file($real)) {
+  if (!is_string($real) || $real === '' || !tcDbIsFile($real)) {
     return '';
   }
   $rootNormalized = str_replace('\\', '/', rtrim($root, DIRECTORY_SEPARATOR));
@@ -1038,15 +1171,10 @@ function tctBuildTaskDescribePhotoUrl(string $tagCode, string $fileName): string
   if ($normalizedTagCode === '' || $safeFileName === '') {
     return '';
   }
-  $segments = [
-    'mini apps',
-    'Task Club',
-    'tasks',
-    $normalizedTagCode,
-    TCT_DESCRIBE_PHOTO_DIR,
-    $safeFileName
-  ];
-  return implode('/', array_map(static fn(string $segment): string => rawurlencode($segment), $segments));
+  $relative = implode('/', array_map('rawurlencode', [
+    'tasks', $normalizedTagCode, TCT_DESCRIBE_PHOTO_DIR, $safeFileName
+  ]));
+  return 'mini%20apps/Task%20Club/tc_asset.php?path=' . rawurlencode($relative);
 }
 
 function tctMakeTaskDescribePhotoId(): string
@@ -1085,12 +1213,12 @@ function tctEnsureTaskDescribePhotoStore(string $tasksDir, string $tagCode): boo
   if ($metaPath === '') {
     return false;
   }
-  if (!is_file($metaPath)) {
+  if (!tcDbIsFile($metaPath)) {
     $json = json_encode([], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     if ($json === false) {
       return false;
     }
-    if (file_put_contents($metaPath, $json . PHP_EOL, LOCK_EX) === false) {
+    if (tcDbFilePutContents($metaPath, $json . PHP_EOL, LOCK_EX) === false) {
       return false;
     }
   }
@@ -1100,10 +1228,10 @@ function tctEnsureTaskDescribePhotoStore(string $tasksDir, string $tagCode): boo
 function tctLoadTaskDescribePhotos(string $tasksDir, string $tagCode): array
 {
   $metaPath = tctBuildTaskDescribePhotoMetaPath($tasksDir, $tagCode);
-  if ($metaPath === '' || !is_file($metaPath)) {
+  if ($metaPath === '' || !tcDbIsFile($metaPath)) {
     return [];
   }
-  $content = file_get_contents($metaPath);
+  $content = tcDbFileGetContents($metaPath);
   if ($content === false) {
     return [];
   }
@@ -1184,7 +1312,7 @@ function tctSaveTaskDescribePhotos(string $tasksDir, string $tagCode, array $pho
   if ($json === false) {
     return false;
   }
-  return file_put_contents($metaPath, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($metaPath, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctParseDescribePhotoPicksMap(string $raw): array
@@ -1293,10 +1421,10 @@ function tctCollectDescribePhotoSubmissionsByWorkId(
         continue;
       }
       $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $articleFile;
-      if (!is_file($articlePath)) {
+      if (!tcDbIsFile($articlePath)) {
         continue;
       }
-      $content = file_get_contents($articlePath);
+      $content = tcDbFileGetContents($articlePath);
       if (!is_string($content)) {
         continue;
       }
@@ -1388,11 +1516,11 @@ function tctReadDescribePhotoSubmissionArticle(
     return ['ok' => false, 'message' => 'Invalid article directory.'];
   }
   $articlePath = $articlesDirPath . DIRECTORY_SEPARATOR . $articleFile;
-  if (!is_file($articlePath)) {
+  if (!tcDbIsFile($articlePath)) {
     return ['ok' => false, 'message' => 'Result file not found.'];
   }
 
-  $content = file_get_contents($articlePath);
+  $content = tcDbFileGetContents($articlePath);
   if (!is_string($content)) {
     return ['ok' => false, 'message' => 'Failed to read result file.'];
   }
@@ -1447,7 +1575,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
     $task['hasGoldenTime'] = (bool)($scoreSettings['hasGoldenTime'] ?? true);
     $task['anotherChanceIfZero'] = (bool)($scoreSettings['anotherChanceIfZero'] ?? false);
-    if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
+    if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'shared_answers_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
@@ -1464,6 +1592,9 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
         : [];
       $task['taskChallenges'] = $taskType === 'team_task'
         ? tctLoadTaskTeamChallenges($tasksDir, $tagCode)
+        : [];
+      $task['responseLevels'] = $taskType === 'shared_answers_quiz'
+        ? tctLoadTaskSharedResponseLevels($tasksDir, $tagCode)
         : [];
     } else {
       $task['infoTitle'] = '';
@@ -1524,10 +1655,10 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
 
 function tctReadStoreTasks(string $storePath): array
 {
-  if (!is_file($storePath)) {
+  if (!tcDbIsFile($storePath)) {
     return [];
   }
-  $content = file_get_contents($storePath);
+  $content = tcDbFileGetContents($storePath);
   if ($content === false) {
     return [];
   }
@@ -1604,7 +1735,7 @@ function tctSaveStoreTasks(string $storePath, array $tasks): bool
     return false;
   }
   $payload = "window.TC_TASKS = {$json};\n";
-  return file_put_contents($storePath, $payload, LOCK_EX) !== false;
+  return tcDbFilePutContents($storePath, $payload, LOCK_EX) !== false;
 }
 
 function tctReadCsvRows(string $path): array
@@ -1612,11 +1743,11 @@ function tctReadCsvRows(string $path): array
   if (tcInviteesCsvIsManagedPath($path)) {
     return tcInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = tcDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -1624,7 +1755,7 @@ function tctReadCsvRows(string $path): array
     fclose($handle);
     return [];
   }
-  while (($row = fgetcsv($handle)) !== false) {
+  while (($row = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
     $rows[] = $row;
   }
   flock($handle, LOCK_UN);
@@ -1641,7 +1772,7 @@ function tctWriteCsvRows(string $path, array $rows): bool
   if (!is_dir($dir) && !(mkdir($dir, 0777, true) || is_dir($dir))) {
     return false;
   }
-  $handle = fopen($path, 'c+');
+  $handle = tcDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -1655,7 +1786,7 @@ function tctWriteCsvRows(string $path, array $rows): bool
     return false;
   }
   foreach ($rows as $row) {
-    if (fputcsv($handle, is_array($row) ? $row : []) === false) {
+    if (fputcsv($handle, is_array($row) ? $row : [], ',', '"', '\\') === false) {
       flock($handle, LOCK_UN);
       fclose($handle);
       return false;
@@ -1699,10 +1830,10 @@ function tctFindFirstHeaderIndex(array $header, array $names): int
 
 function tctReadJsonArrayFromFile(string $path): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -1931,6 +2062,302 @@ function tctSerializeTaskScoreMap(array $map): string
   return implode(',', $pairs);
 }
 
+function tctParseSurveyAnswersValue(string $raw): array
+{
+  $entries = preg_split('/\s*,\s*/', trim($raw));
+  if (!is_array($entries)) {
+    return [];
+  }
+  $answers = [];
+  foreach ($entries as $entry) {
+    $parts = explode('::', trim((string)$entry), 2);
+    if (count($parts) !== 2) {
+      continue;
+    }
+    $questionToken = strtoupper(trim((string)$parts[0]));
+    $answer = trim((string)$parts[1]);
+    if ($questionToken !== '' && $answer !== '') {
+      $answers[$questionToken] = $answer;
+    }
+  }
+  return $answers;
+}
+
+function tctSurveyQuestionToken(string $code): string
+{
+  $normalized = strtoupper(trim($code));
+  if (preg_match('/^Q0*(\d+)$/', $normalized, $matches)) {
+    return (string)((int)($matches[1] ?? 0));
+  }
+  return $normalized;
+}
+
+function tctResolveSurveyLevel(array $levels, int $innerScore): array
+{
+  foreach ($levels as $index => $level) {
+    if (!is_array($level)) {
+      continue;
+    }
+    $startScore = max(0, (int)($level['startScore'] ?? 0));
+    $endScore = max($startScore, (int)($level['endScore'] ?? $startScore));
+    if ($innerScore >= $startScore && $innerScore <= $endScore) {
+      return [
+        'number' => $index + 1,
+        'id' => trim((string)($level['id'] ?? '')),
+        'name' => trim((string)($level['name'] ?? '')),
+        'startScore' => $startScore,
+        'endScore' => $endScore
+      ];
+    }
+  }
+  return ['number' => 0, 'id' => '', 'name' => '', 'startScore' => 0, 'endScore' => 0];
+}
+
+function tctResolveSurveyInviteeDirectory(string $inviteesPath, string $mapPath): array
+{
+  $rows = tctReadCsvRows($inviteesPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return [];
+  }
+  $header = $rows[0];
+  $mapping = tctReadJsonArrayFromFile($mapPath);
+  $mapped = static function (array $keys) use ($mapping): int {
+    foreach ($keys as $key) {
+      if (isset($mapping[$key]) && is_numeric($mapping[$key])) {
+        return (int)$mapping[$key];
+      }
+    }
+    return -1;
+  };
+  $workIdIndex = $mapped(['workId', 'username']);
+  $workIdIndex = $workIdIndex >= 0 ? $workIdIndex : tctFindFirstHeaderIndex($header, ['Work ID', 'work id', 'workid', 'username']);
+  if ($workIdIndex < 0) {
+    return [];
+  }
+  $firstNameIndex = $mapped(['firstName', 'first_name']);
+  $firstNameIndex = $firstNameIndex >= 0 ? $firstNameIndex : tctFindFirstHeaderIndex($header, ['first name', 'firstname']);
+  $lastNameIndex = $mapped(['lastName', 'last_name']);
+  $lastNameIndex = $lastNameIndex >= 0 ? $lastNameIndex : tctFindFirstHeaderIndex($header, ['last name', 'lastname', 'family', 'surname']);
+  $fullNameIndex = $mapped(['fullName', 'fullname', 'full_name']);
+  $fullNameIndex = $fullNameIndex >= 0 ? $fullNameIndex : tctFindFirstHeaderIndex($header, ['full name', 'fullname', 'name']);
+  $phoneIndex = $mapped(['phoneNumber', 'phone', 'mobile']);
+  $phoneIndex = $phoneIndex >= 0 ? $phoneIndex : tctFindFirstHeaderIndex($header, ['phone number', 'phone', 'mobile', 'cell']);
+  $nationalIdIndex = $mapped(['nationalId', 'national_id']);
+  $nationalIdIndex = $nationalIdIndex >= 0 ? $nationalIdIndex : tctFindFirstHeaderIndex($header, ['National ID', 'national id', 'nationalid']);
+
+  $directory = [];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $firstName = $firstNameIndex >= 0 ? trim((string)($row[$firstNameIndex] ?? '')) : '';
+    $lastName = $lastNameIndex >= 0 ? trim((string)($row[$lastNameIndex] ?? '')) : '';
+    $fullName = $fullNameIndex >= 0 ? trim((string)($row[$fullNameIndex] ?? '')) : '';
+    $name = trim($firstName . ' ' . $lastName);
+    $directory[$workId] = [
+      'fullName' => $name !== '' ? $name : ($fullName !== '' ? $fullName : $workId),
+      'workId' => $workId,
+      'phoneNumber' => $phoneIndex >= 0 ? trim((string)($row[$phoneIndex] ?? '')) : '',
+      'nationalId' => $nationalIdIndex >= 0 ? trim((string)($row[$nationalIdIndex] ?? '')) : ''
+    ];
+  }
+  return $directory;
+}
+
+function tctResolveLegacySurveyRowsFromMappedCsv(string $inviteesPath, string $mapPath, string $taskId): array
+{
+  $rows = tctReadCsvRows($inviteesPath);
+  if (!$rows || !isset($rows[0]) || !is_array($rows[0])) {
+    return [];
+  }
+  $header = $rows[0];
+  $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $mapPath);
+  $answersIndex = tctFindFirstHeaderIndex($header, ['answers']);
+  $innerScoreIndex = tctFindFirstHeaderIndex($header, ['inner score']);
+  $taskCompletedIndex = tctFindFirstHeaderIndex($header, ['task completed', 'task completed ids']);
+  $taskScoreMapIndex = tctFindFirstHeaderIndex($header, ['task score map']);
+  if ($workIdIndex < 0) {
+    return [];
+  }
+  $legacyRows = [];
+  for ($i = 1; $i < count($rows); $i += 1) {
+    $row = is_array($rows[$i] ?? null) ? $rows[$i] : [];
+    $workId = trim((string)($row[$workIdIndex] ?? ''));
+    if ($workId === '') {
+      continue;
+    }
+    $completedIds = $taskCompletedIndex >= 0 ? preg_split('/\s*,\s*/', trim((string)($row[$taskCompletedIndex] ?? ''))) : [];
+    $completedLookup = is_array($completedIds) ? array_flip(array_filter(array_map('trim', $completedIds))) : [];
+    $taskScoreMap = $taskScoreMapIndex >= 0 ? tctParseTaskScoreMap((string)($row[$taskScoreMapIndex] ?? '')) : [];
+    if ($taskId === '' || (!isset($completedLookup[$taskId]) && !array_key_exists($taskId, $taskScoreMap))) {
+      continue;
+    }
+    $legacyRows[$workId] = [
+      'answers' => $answersIndex >= 0 ? tctParseSurveyAnswersValue((string)($row[$answersIndex] ?? '')) : [],
+      'innerScore' => $innerScoreIndex >= 0 ? max(0, (int)($row[$innerScoreIndex] ?? 0)) : 0,
+      'completedAt' => ''
+    ];
+  }
+  return $legacyRows;
+}
+
+function tctBuildSurveyMonitoringData(array $task, string $tasksDir, string $inviteesPath, string $mapPath): array
+{
+  $tagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
+  $taskDir = $tagCode !== '' ? $tasksDir . DIRECTORY_SEPARATOR . $tagCode : '';
+  $questions = $taskDir !== '' ? tctReadJsonArrayFromFile($taskDir . DIRECTORY_SEPARATOR . 'TCQ list.json') : [];
+  $levels = $taskDir !== '' ? tctReadJsonArrayFromFile($taskDir . DIRECTORY_SEPARATOR . TCT_SHARED_RESPONSE_LEVELS_FILE) : [];
+  $results = $taskDir !== '' ? tctReadJsonArrayFromFile($taskDir . DIRECTORY_SEPARATOR . TCT_SHARED_RESPONSE_RESULTS_FILE) : [];
+  $answersRows = $taskDir !== '' ? tctReadCsvRows($taskDir . DIRECTORY_SEPARATOR . 'Answers.csv') : [];
+  $invitees = tctResolveSurveyInviteeDirectory($inviteesPath, $mapPath);
+  $legacyRows = tctResolveLegacySurveyRowsFromMappedCsv($inviteesPath, $mapPath, trim((string)($task['id'] ?? '')));
+
+  $answersByWorkId = [];
+  $innerScoreByWorkId = [];
+  if ($answersRows && isset($answersRows[0]) && is_array($answersRows[0])) {
+    $header = $answersRows[0];
+    $workIdIndex = tctFindFirstHeaderIndex($header, ['Work ID', 'work id', 'workid']);
+    $answersIndex = tctFindFirstHeaderIndex($header, ['answers']);
+    $innerScoreIndex = tctFindFirstHeaderIndex($header, ['inner score']);
+    for ($i = 1; $i < count($answersRows); $i += 1) {
+      $row = is_array($answersRows[$i] ?? null) ? $answersRows[$i] : [];
+      $workId = $workIdIndex >= 0 ? trim((string)($row[$workIdIndex] ?? '')) : '';
+      if ($workId !== '') {
+        $answersByWorkId[$workId] = $answersIndex >= 0 ? tctParseSurveyAnswersValue((string)($row[$answersIndex] ?? '')) : [];
+        $innerScoreByWorkId[$workId] = $innerScoreIndex >= 0 ? max(0, (int)($row[$innerScoreIndex] ?? 0)) : 0;
+      }
+    }
+  }
+  foreach ($legacyRows as $workId => $legacy) {
+    if (!isset($answersByWorkId[$workId]) || !$answersByWorkId[$workId]) {
+      $answersByWorkId[$workId] = is_array($legacy['answers'] ?? null) ? $legacy['answers'] : [];
+    }
+    if (!isset($innerScoreByWorkId[$workId]) || $innerScoreByWorkId[$workId] <= 0) {
+      $innerScoreByWorkId[$workId] = max(0, (int)($legacy['innerScore'] ?? 0));
+    }
+  }
+
+  $questionStats = [];
+  foreach ($questions as $index => $question) {
+    if (!is_array($question)) continue;
+    $code = strtoupper(trim((string)($question['code'] ?? '')));
+    $token = tctSurveyQuestionToken($code);
+    if ($token === '') continue;
+    $choices = [];
+    foreach (array_values(is_array($question['answers'] ?? null) ? $question['answers'] : []) as $choiceIndex => $choice) {
+      $choiceText = trim((string)$choice);
+      if ($choiceText !== '') {
+        $choices[$choiceText] = ['answer' => $choiceText, 'count' => 0, 'rate' => 0.0, 'choiceNumber' => $choiceIndex + 1];
+      }
+    }
+    $questionStats[$token] = [
+      'code' => $code !== '' ? $code : $token,
+      'question' => trim((string)($question['question'] ?? ('Question ' . ($index + 1)))),
+      'answeredCount' => 0,
+      'responseRate' => 0.0,
+      'choices' => $choices
+    ];
+  }
+
+  $levelStats = [];
+  foreach ($levels as $index => $level) {
+    if (!is_array($level) || trim((string)($level['name'] ?? '')) === '') continue;
+    $name = trim((string)$level['name']);
+    $levelStats[$name] = ['name' => $name, 'number' => $index + 1, 'count' => 0, 'rate' => 0.0];
+  }
+
+  $participantIds = [];
+  foreach (array_keys($results) as $workId) $participantIds[trim((string)$workId)] = true;
+  foreach (array_keys($legacyRows) as $workId) $participantIds[trim((string)$workId)] = true;
+  foreach ($answersByWorkId as $workId => $answers) if (is_array($answers) && $answers) $participantIds[(string)$workId] = true;
+  foreach ($innerScoreByWorkId as $workId => $score) if ((int)$score > 0) $participantIds[(string)$workId] = true;
+  unset($participantIds['']);
+
+  $participants = [];
+  $innerScoreSum = 0;
+  $levelNumberSum = 0;
+  $matchedLevelCount = 0;
+  $unmatchedLevelCount = 0;
+  $completionTimes = [];
+  foreach (array_keys($participantIds) as $workId) {
+    $result = is_array($results[$workId] ?? null) ? $results[$workId] : [];
+    $innerScore = max(0, (int)($result['innerScore'] ?? ($innerScoreByWorkId[$workId] ?? 0)));
+    $level = tctResolveSurveyLevel($levels, $innerScore);
+    $levelName = trim((string)($result['levelName'] ?? ($level['name'] ?? '')));
+    $levelNumber = max(0, (int)($level['number'] ?? 0));
+    $completedAt = trim((string)($result['completedAt'] ?? ''));
+    if ($completedAt !== '' && strtotime($completedAt) !== false) $completionTimes[] = $completedAt;
+    $base = is_array($invitees[$workId] ?? null) ? $invitees[$workId] : ['fullName' => $workId, 'workId' => $workId, 'phoneNumber' => '', 'nationalId' => ''];
+    $participants[] = $base + [
+      'responseLevelName' => $levelName,
+      'responseLevelNumber' => $levelNumber,
+      'innerScore' => $innerScore,
+      'answeredQuestions' => count((array)($answersByWorkId[$workId] ?? [])),
+      'questionCount' => count($questionStats),
+      'completedAt' => $completedAt
+    ];
+    $innerScoreSum += $innerScore;
+    if ($levelNumber > 0) { $levelNumberSum += $levelNumber; $matchedLevelCount++; }
+    if ($levelName !== '' && isset($levelStats[$levelName])) $levelStats[$levelName]['count']++;
+    elseif ($levelName === '') $unmatchedLevelCount++;
+    $userAnswers = is_array($answersByWorkId[$workId] ?? null) ? $answersByWorkId[$workId] : [];
+    foreach ($questionStats as $token => &$stat) {
+      $answer = trim((string)($userAnswers[$token] ?? ($userAnswers[strtoupper((string)$stat['code'])] ?? '')));
+      if ($answer === '') continue;
+      $stat['answeredCount']++;
+      if (!isset($stat['choices'][$answer])) $stat['choices'][$answer] = ['answer' => $answer, 'count' => 0, 'rate' => 0.0, 'choiceNumber' => 0];
+      $stat['choices'][$answer]['count']++;
+    }
+    unset($stat);
+  }
+
+  $participantCount = count($participants);
+  $totalInvitees = count($invitees);
+  foreach ($levelStats as &$level) $level['rate'] = $participantCount > 0 ? round($level['count'] * 100 / $participantCount, 2) : 0.0;
+  unset($level);
+  foreach ($questionStats as &$question) {
+    $answeredCount = max(0, (int)$question['answeredCount']);
+    $question['responseRate'] = $participantCount > 0 ? round($answeredCount * 100 / $participantCount, 2) : 0.0;
+    $choices = array_values((array)$question['choices']);
+    foreach ($choices as &$choice) $choice['rate'] = $answeredCount > 0 ? round($choice['count'] * 100 / $answeredCount, 2) : 0.0;
+    unset($choice);
+    $question['choices'] = $choices;
+  }
+  unset($question);
+  usort($participants, static fn(array $a, array $b): int => strcmp((string)($b['completedAt'] ?? ''), (string)($a['completedAt'] ?? '')));
+  sort($completionTimes);
+  return [
+    'task' => [
+      'id' => (string)($task['id'] ?? ''),
+      'title' => (string)($task['title'] ?? ''),
+      'tagCode' => $tagCode,
+      'startDate' => (string)($task['startDate'] ?? ''),
+      'startTime' => (string)($task['startTime'] ?? ''),
+      'endDate' => (string)($task['endDate'] ?? ''),
+      'endTime' => (string)($task['endTime'] ?? '')
+    ],
+    'summary' => [
+      'totalInvitees' => $totalInvitees,
+      'participants' => $participantCount,
+      'notParticipated' => max(0, $totalInvitees - $participantCount),
+      'completionRate' => $totalInvitees > 0 ? round($participantCount * 100 / $totalInvitees, 2) : 0.0,
+      'questionCount' => count($questionStats),
+      'responseLevelCount' => count($levels),
+      'averageInnerScore' => $participantCount > 0 ? round($innerScoreSum / $participantCount, 2) : 0.0,
+      'averageResponseLevelNumber' => $matchedLevelCount > 0 ? round($levelNumberSum / $matchedLevelCount, 2) : 0.0,
+      'unmatchedResponseLevelCount' => $unmatchedLevelCount,
+      'firstCompletedAt' => $completionTimes[0] ?? '',
+      'lastCompletedAt' => $completionTimes ? $completionTimes[count($completionTimes) - 1] : ''
+    ],
+    'levels' => array_values($levelStats),
+    'questions' => array_values($questionStats),
+    'participants' => $participants,
+    'generatedAt' => gmdate('c')
+  ];
+}
+
 function tctResolveTaskScoreColumnByType(string $taskType): string
 {
   if ($taskType === 'describe_photo') {
@@ -1945,6 +2372,9 @@ function tctResolveTaskScoreColumnByType(string $taskType): string
 function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
+  if ($normalizedType === 'shared_answers_quiz') {
+    return ['control', 'information', 'response-level', 'quiz'];
+  }
   if ($normalizedType === 'quiz' || $normalizedType === 'conditional_quiz') {
     if ($normalizedType === 'conditional_quiz') {
       return ['control', 'information', 'quiz', 'crisis-control'];
@@ -1966,10 +2396,10 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
 function tctReadTaskAccessConfig(string $tasksDir): array
 {
   $path = $tasksDir . DIRECTORY_SEPARATOR . TCT_TASK_ACCESS_FILE;
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return ['users' => []];
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content) || trim($content) === '') {
     return ['users' => []];
   }
@@ -1992,7 +2422,7 @@ function tctWriteTaskAccessConfig(string $tasksDir, array $config): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctResolveUserTaskAccessForTask(array $task, string $sessionUserCode, array $taskAccessConfig): array
@@ -2153,9 +2583,12 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
     'TCQ code state.json' => ['nextNumber' => 1],
     'TCQ settings.json' => [
       'answerTimeLimit' => true,
+      'answerTimeLimitMs' => 14000,
       'randomOrder' => true,
       'questionsPerAttempt' => 0,
-      'correctAnswersToScore' => 1
+      'correctAnswersToScore' => 1,
+      'sharedAnswers' => ['', '', '', '', ''],
+      'sharedAnswerScores' => [0, 0, 0, 0, 0]
     ],
     TCT_SCORE_SETTINGS_FILE => [
       'score' => 0,
@@ -2175,30 +2608,32 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       'guideSuffix' => ''
     ],
     TCT_INFO_SCORES_FILE => [],
+    TCT_SHARED_RESPONSE_LEVELS_FILE => [],
+    TCT_SHARED_RESPONSE_RESULTS_FILE => [],
     TCT_TEAM_CHALLENGES_FILE => [],
     TCT_TEAM_RUNTIME_FILE => ['teams' => []]
   ];
   foreach ($defaultJsonFiles as $fileName => $payload) {
     $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
-    if (is_file($filePath)) {
+    if (tcDbIsFile($filePath)) {
       continue;
     }
     $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     if ($json === false) {
       return false;
     }
-    if (file_put_contents($filePath, $json . PHP_EOL, LOCK_EX) === false) {
+    if (tcDbFilePutContents($filePath, $json . PHP_EOL, LOCK_EX) === false) {
       return false;
     }
   }
 
   $defaultCsvFiles = [
     'Answers.csv' => ['Work ID'],
-    'Invitees mapped.csv' => ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'score', 'Answered']
+    'Invitees mapped.csv' => ['Work ID', 'count of rolls', 'invitees', 'prize won', 'answers', 'inner score', 'score', 'Answered']
   ];
   foreach ($defaultCsvFiles as $fileName => $header) {
     $filePath = $taskDir . DIRECTORY_SEPARATOR . $fileName;
-    if (is_file($filePath)) {
+    if (tcDbIsFile($filePath)) {
       continue;
     }
     if (tcInviteesCsvIsManagedPath($filePath)) {
@@ -2207,7 +2642,7 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       }
       continue;
     }
-    $handle = fopen($filePath, 'c+');
+    $handle = tcDbFopen($filePath, 'c+');
     if ($handle === false) {
       return false;
     }
@@ -2220,7 +2655,7 @@ function tctEnsureTaskFolder(string $tasksDir, string $tagCode): bool
       fclose($handle);
       return false;
     }
-    if (fputcsv($handle, $header) === false) {
+    if (fputcsv($handle, $header, ',', '"', '\\') === false) {
       flock($handle, LOCK_UN);
       fclose($handle);
       return false;
@@ -2261,7 +2696,7 @@ function tctRemoveDirectoryRecursive(string $path): bool
       }
       continue;
     }
-    if (!@unlink($full)) {
+    if (!@tcDbUnlink($full)) {
       return false;
     }
   }
@@ -2370,9 +2805,9 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     echo json_encode(['status' => 'error', 'message' => 'Failed to prepare task storage.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
-
   $action = trim((string)($_POST['tct_action'] ?? ''));
-  $tasks = tctReindexTasks(tctReadStoreTasks($tctStorePath));
+  $storedTasks = tctReadStoreTasks($tctStorePath);
+  $tasks = tctReindexTasks($storedTasks);
   $tctTaskAccessConfig = tctReadTaskAccessConfig($tctTasksDir);
   $buildTasksForResponse = static function (array $taskRows) use ($tctTasksDir, $tctSessionUserCode, $tctTaskAccessConfig): array {
     return tctAttachTaskAccessMeta(
@@ -2402,6 +2837,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     'save_task_settings' => 'control',
     'save_task_score_system' => 'control',
     'save_conditional_quiz_crisis_control' => 'crisis-control',
+    'save_shared_response_levels' => 'response-level',
+    'get_survey_monitoring' => 'control',
     'save_team_task_settings' => 'team',
     'save_info_task_content' => 'information',
     'add_describe_task_photo' => 'photo',
@@ -2456,13 +2893,9 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
   }
 
   if ($action === 'list') {
-    foreach ($tasks as $task) {
-      tctEnsureTaskFolder($tctTasksDir, (string)($task['tagCode'] ?? ''));
-    }
-    if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-      echo json_encode(['status' => 'error', 'message' => 'Failed to persist normalized task data.'], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
+    // Listing is deliberately read-only. Creating defaults and normalizing the
+    // store here made every panel open perform dozens of writes/reads and could
+    // block all controls behind database locks.
     echo json_encode(['status' => 'ok', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -2804,7 +3237,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'conditional_quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'conditional_quiz' && $targetTaskType !== 'shared_answers_quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for tasks with information pane.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -2832,6 +3265,64 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       'message' => 'Information content saved.',
       'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_shared_response_levels') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $targetTask = $findTaskById($tasks, $id);
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz')) !== 'shared_answers_quiz') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for Survey Score Response.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $levels = json_decode((string)($_POST['levels_json'] ?? '[]'), true);
+    if (!is_array($levels)) {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid response levels payload.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $normalizedLevels = tctNormalizeSharedResponseLevels($levels);
+    $validationError = tctValidateSharedResponseLevels($normalizedLevels);
+    if ($validationError !== null) {
+      echo json_encode(['status' => 'error', 'message' => $validationError], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!tctSaveTaskSharedResponseLevels($tctTasksDir, (string)($targetTask['tagCode'] ?? ''), $normalizedLevels)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save response levels.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo json_encode([
+      'status' => 'ok',
+      'message' => 'Response levels saved.',
+      'tasks' => $buildTasksForResponse($tasks)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'get_survey_monitoring') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $targetTask = $findTaskById($tasks, $id);
+    if (!is_array($targetTask)) {
+      echo json_encode(['status' => 'error', 'message' => 'Task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz')) !== 'shared_answers_quiz') {
+      echo json_encode(['status' => 'error', 'message' => 'Monitoring is only available for Survey Score Response tasks.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $payload = json_encode([
+      'status' => 'ok',
+      'data' => tctBuildSurveyMonitoringData($targetTask, $tctTasksDir, $tctEventInviteesPath, $tctEventInviteesMapPath)
+    ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($payload === false) {
+      http_response_code(500);
+      echo json_encode(['status' => 'error', 'message' => 'Failed to encode survey monitoring data.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo $payload;
     exit;
   }
 
@@ -2900,7 +3391,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
     $destinationFileName = 'task-photo-' . date('YmdHis') . '-' . $token . '.' . $extension;
     $destinationAbsolutePath = $photosDirPath . DIRECTORY_SEPARATOR . $destinationFileName;
-    if (!@copy($sourceAbsolutePath, $destinationAbsolutePath)) {
+    if (!@tcDbCopy($sourceAbsolutePath, $destinationAbsolutePath)) {
       echo json_encode(['status' => 'error', 'message' => 'Failed to copy selected photo.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -2919,7 +3410,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       'createdAt' => date('Y-m-d H:i:s')
     ];
     if (!tctSaveTaskDescribePhotos($tctTasksDir, $tagCode, $photos)) {
-      @unlink($destinationAbsolutePath);
+      @tcDbUnlink($destinationAbsolutePath);
       echo json_encode(['status' => 'error', 'message' => 'Failed to save photo metadata.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3047,8 +3538,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     $removedFileName = basename(trim((string)($removedPhoto['fileName'] ?? '')));
     if ($photosDirPath !== '' && $removedFileName !== '') {
       $removedAbsolutePath = $photosDirPath . DIRECTORY_SEPARATOR . $removedFileName;
-      if (is_file($removedAbsolutePath)) {
-        @unlink($removedAbsolutePath);
+      if (tcDbIsFile($removedAbsolutePath)) {
+        @tcDbUnlink($removedAbsolutePath);
       }
     }
 
@@ -3351,7 +3842,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!is_file($tctEventInviteesPath)) {
+    if (!tcDbIsFile($tctEventInviteesPath)) {
       echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3530,7 +4021,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!is_file($tctEventInviteesPath)) {
+    if (!tcDbIsFile($tctEventInviteesPath)) {
       echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3719,7 +4210,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)
+    if (tcDbIsFile($tctEventInviteesPath)
       && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
       echo json_encode(['status' => 'error', 'message' => 'Team runtime was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -3779,7 +4270,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to update challenge accepted state.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)
+    if (tcDbIsFile($tctEventInviteesPath)
       && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
       echo json_encode(['status' => 'error', 'message' => 'Challenge state was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -3864,7 +4355,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Failed to update team runtime.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (is_file($tctEventInviteesPath)
+    if (tcDbIsFile($tctEventInviteesPath)
       && !tctSyncTeamTaskCsvState($tctEventInviteesPath, $tctEventInviteesMapPath, $id, $teams)) {
       echo json_encode(['status' => 'error', 'message' => 'Team runtime was saved, but invitee team state could not be synchronized.'], JSON_UNESCAPED_UNICODE);
       exit;
@@ -3958,7 +4449,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => 'Invalid task tag code.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if (!is_file($tctEventInviteesPath)) {
+    if (!tcDbIsFile($tctEventInviteesPath)) {
       echo json_encode(['status' => 'error', 'message' => 'Invitees mapped file not found in TC Event.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -4194,6 +4685,7 @@ if (TCT_INCLUDE_ONLY) {
       <select id="tct-task-type" name="task_type" required>
         <option value="quiz">Quiz Task</option>
         <option value="conditional_quiz">Conditional Quiz</option>
+        <option value="shared_answers_quiz">Survey Score Response</option>
         <option value="info">Info Task</option>
         <option value="team_task">Team Task</option>
         <option value="describe_photo">Describe Photo Task</option>
@@ -4256,6 +4748,9 @@ if (TCT_INCLUDE_ONLY) {
     if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') {
       return 'conditional_quiz';
     }
+    if (token === 'shared_answers_quiz' || token === 'shared-answers-quiz' || token === 'shared answers quiz' || token === 'survey_score_response' || token === 'survey-score-response' || token === 'survey score response' || token === 'survey score') {
+      return 'shared_answers_quiz';
+    }
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
@@ -4283,6 +4778,9 @@ if (TCT_INCLUDE_ONLY) {
         return ['control', 'information', 'quiz', 'crisis-control'];
       }
       return ['control', 'information', 'quiz'];
+    }
+    if (token === 'shared_answers_quiz') {
+      return ['control', 'information', 'response-level', 'quiz'];
     }
     if (token === 'info') {
       return ['control', 'information', 'invitees-rate'];

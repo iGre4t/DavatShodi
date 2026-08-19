@@ -120,7 +120,7 @@
   function updateMissionLinkPreview() {
     if (!(refs.missionLinkPreview instanceof HTMLElement)) return;
     const code = normalizeMissionCode(refs.missionLinkInput instanceof HTMLInputElement ? refs.missionLinkInput.value : state.missionLinkCode);
-    refs.missionLinkPreview.textContent = code ? `/miniapps/EGMs/${code}` : '';
+    refs.missionLinkPreview.textContent = code ? `/mini apps/EGMs/${code}` : '';
   }
 
   function updateLogoPreview() {
@@ -369,7 +369,7 @@
         refs.missionLinkInput.value = state.missionLinkCode;
       }
       updateMissionLinkPreview();
-      setMissionLinkStatus(`لینک مدیریت مهمان رویداد ذخیره شد: /miniapps/EGMs/${state.missionLinkCode}`);
+      setMissionLinkStatus(`لینک مدیریت مهمان رویداد ذخیره شد: /mini apps/EGMs/${state.missionLinkCode}`);
       if (typeof window.showDefaultToast === 'function') {
         window.showDefaultToast('لینک باشگاه ذخیره شد.');
       }

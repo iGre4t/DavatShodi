@@ -1,9 +1,13 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../api/lib/common.php';
+require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_special_access.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
@@ -24,7 +28,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
   exit;
 }
 
-$input = json_decode((string)file_get_contents('php://input'), true);
+$input = json_decode((string)egmDbFileGetContents('php://input'), true);
 if (!is_array($input)) {
   echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
   exit;
@@ -93,10 +97,10 @@ function resolveMappedIndex(array $header, array $mapping, string $mappingKey, a
 
 function readJsonArray(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content) || $content === '') {
     return [];
   }
@@ -109,10 +113,10 @@ function readCsvRows(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -134,7 +138,7 @@ function writeCsvRowsLocked(string $path, array $rows): bool
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvCommitRows($path, $rows);
   }
-  $handle = fopen($path, 'c+');
+  $handle = egmDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -270,6 +274,15 @@ $rows[$rowIndex][$phoneNumberIndex] = $phoneNumber;
 
 if (!writeCsvRowsLocked($mappedFile, $rows)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to update Invitees mapped CSV.']);
+  exit;
+}
+
+try {
+  egmInstanceSyncMissionUsersUsingProjectConfig(dirname(__DIR__, 2), __DIR__, $mappedFile, $mapFile);
+} catch (Throwable $error) {
+  error_log('Failed to synchronize EGM invitees database table: ' . $error->getMessage());
+  http_response_code(500);
+  echo json_encode(['status' => 'error', 'message' => 'Invitee was updated in CSV, but failed to synchronize the EGM users database table.']);
   exit;
 }
 

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
@@ -50,11 +52,11 @@ function tcqReadCsv(string $path): array
   if (egmInviteesCsvIsManagedPath($path)) {
     return egmInviteesCsvReadRowsForUpdate($path);
   }
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
   $rows = [];
-  $handle = fopen($path, 'r');
+  $handle = egmDbFopen($path, 'r');
   if ($handle === false) {
     return [];
   }
@@ -79,7 +81,7 @@ function tcqWriteCsv(string $path, array $rows): bool
   if (!is_dir($dir)) {
     mkdir($dir, 0777, true);
   }
-  $handle = fopen($path, 'c+');
+  $handle = egmDbFopen($path, 'c+');
   if ($handle === false) {
     return false;
   }
@@ -196,10 +198,10 @@ function tcqNormalizeItem(array $item, bool $includeQuestionScores = true): arra
 
 function tcqLoadStore(string $path, bool $includeQuestionScores = true): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -226,17 +228,17 @@ function tcqSaveStore(string $path, array $rows): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tcqLoadSettings(string $path, int $defaultAnswerTimeLimitMs = 14000): array
 {
   $settings = EGMQ_DEFAULT_SETTINGS;
   $settings['answerTimeLimitMs'] = $defaultAnswerTimeLimitMs;
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $settings;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return $settings;
   }
@@ -274,7 +276,7 @@ function tcqSaveSettings(string $path, array $settings, bool $includeCorrectAnsw
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tcqSettingsForTaskType(array $settings, bool $includeCorrectAnswersToScore = true): array
@@ -293,10 +295,10 @@ function tcqSettingsForTaskType(array $settings, bool $includeCorrectAnswersToSc
 
 function tcqLoadCodeState(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return ['nextNumber' => 1];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return ['nextNumber' => 1];
   }
@@ -322,7 +324,7 @@ function tcqSaveCodeState(string $path, array $state): bool
   if ($json === false) {
     return false;
   }
-  return file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tcqNormalizeTaskTagCode(string $value): string
@@ -343,10 +345,10 @@ function tcqNormalizeTaskType(string $value): string
 
 function tcqReadTasksStore(string $path): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return [];
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if ($content === false) {
     return [];
   }
@@ -753,8 +755,8 @@ if (EGMQ_INCLUDE_ONLY) {
 $tcqEmbeddedInPanel = defined('EGMQ_EMBEDDED_IN_PANEL') && EGMQ_EMBEDDED_IN_PANEL === true;
 $tcqStandaloneCoreCssHref = '../../style/styles.css';
 $tcqStandalonePanelCssHref = 'egm-panel.css';
-$tcqStandaloneCoreCssVersion = @filemtime(__DIR__ . '/../../style/styles.css');
-$tcqStandalonePanelCssVersion = @filemtime(__DIR__ . '/egm-panel.css');
+$tcqStandaloneCoreCssVersion = @egmDbFilemtime(__DIR__ . '/../../style/styles.css');
+$tcqStandalonePanelCssVersion = @egmDbFilemtime(__DIR__ . '/egm-panel.css');
 if (is_int($tcqStandaloneCoreCssVersion) && $tcqStandaloneCoreCssVersion > 0) {
   $tcqStandaloneCoreCssHref .= '?v=' . rawurlencode((string)$tcqStandaloneCoreCssVersion);
 }

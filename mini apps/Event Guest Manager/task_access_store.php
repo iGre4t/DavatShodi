@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/egm-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
@@ -20,10 +22,10 @@ $taskAccessPath = __DIR__ . '/tasks/task-access.json';
 
 function egmTaskAccessReadJson(string $path, array $fallback = []): array
 {
-  if (!is_file($path)) {
+  if (!egmDbIsFile($path)) {
     return $fallback;
   }
-  $content = file_get_contents($path);
+  $content = egmDbFileGetContents($path);
   if (!is_string($content) || trim($content) === '') {
     return $fallback;
   }
@@ -41,7 +43,7 @@ function egmTaskAccessWriteJson(string $path, array $payload): bool
   if (!is_string($encoded)) {
     return false;
   }
-  return file_put_contents($path, $encoded . PHP_EOL, LOCK_EX) !== false;
+  return egmDbFilePutContents($path, $encoded . PHP_EOL, LOCK_EX) !== false;
 }
 
 function egmTaskAccessNormalizeToken(string $value): string
@@ -64,25 +66,15 @@ function egmTaskAccessNormalizeBool($value): bool
 
 function egmTaskAccessNormalizeTaskType(string $value): string
 {
-  $token = egmTaskAccessNormalizeToken($value);
-  if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
-    return 'conditional_quiz';
-  }
-  if (in_array($token, ['info', 'info-task', 'info task'], true)) {
-    return 'info';
-  }
-  if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
-    return 'team_task';
-  }
-  if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
-    return 'describe_photo';
-  }
-  return 'quiz';
+  return 'period';
 }
 
 function egmTaskAccessResolvePaneKeys(string $taskType): array
 {
   $type = egmTaskAccessNormalizeTaskType($taskType);
+  if ($type === 'period') {
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
+  }
   if ($type === 'conditional_quiz') {
     return ['control', 'information', 'quiz', 'crisis-control'];
   }
@@ -98,15 +90,15 @@ function egmTaskAccessResolvePaneKeys(string $taskType): array
   if ($type === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
   }
-  return ['control', 'information', 'quiz'];
+  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
 }
 
 function egmTaskAccessLoadTasks(string $tasksStorePath): array
 {
-  if (!is_file($tasksStorePath)) {
+  if (!egmDbIsFile($tasksStorePath)) {
     return [];
   }
-  $content = file_get_contents($tasksStorePath);
+  $content = egmDbFileGetContents($tasksStorePath);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -336,7 +328,7 @@ if ($action === 'save_user_access') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode((string)file_get_contents('php://input'), true);
+  $payload = json_decode((string)egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -392,7 +384,7 @@ if ($action === 'save_user_special_access') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode((string)file_get_contents('php://input'), true);
+  $payload = json_decode((string)egmDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;

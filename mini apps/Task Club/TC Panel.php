@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 $tcPanelUser = requireTabPermissionFromSession('task-club', false);
 $tcAllowedChildTabs = resolveAllowedPanelChildTabsForUser($tcPanelUser, 'task-club');
@@ -30,8 +32,8 @@ $tcManageTasksOverride = null;
 $tcHasTaskSubtabAccess = false;
 if ($tcSessionUserCode !== '') {
   $tcTaskAccessPath = __DIR__ . '/tasks/task-access.json';
-  if (is_file($tcTaskAccessPath)) {
-    $tcTaskAccessRaw = file_get_contents($tcTaskAccessPath);
+  if (tcDbIsFile($tcTaskAccessPath)) {
+    $tcTaskAccessRaw = tcDbFileGetContents($tcTaskAccessPath);
     $tcTaskAccessDecoded = is_string($tcTaskAccessRaw) ? json_decode($tcTaskAccessRaw, true) : null;
     $tcTaskAccessUsers = is_array($tcTaskAccessDecoded['users'] ?? null) ? $tcTaskAccessDecoded['users'] : [];
     foreach ($tcTaskAccessUsers as $rawCode => $entry) {
@@ -97,15 +99,37 @@ foreach ([
 require_once __DIR__ . '/tc-security.php';
 $tcPanelCsrfToken = tcSecurityGetCsrfToken();
 
-$tcPanelCssVer = (string)(@filemtime(__DIR__ . '/tc-panel.css') ?: time());
-$tcPanelLocalJsVer = (string)(@filemtime(__DIR__ . '/tc-panel-local.js') ?: time());
-$tcPrizesJsVer = (string)(@filemtime(__DIR__ . '/TC Prizes.js') ?: time());
-$tcSettingJsVer = (string)(@filemtime(__DIR__ . '/TCSetting.js') ?: time());
-$tcEventStyleJsVer = (string)(@filemtime(__DIR__ . '/TCEventStyle.js') ?: time());
-$tcMonitoringJsVer = (string)(@filemtime(__DIR__ . '/TCMonitoring.js') ?: time());
-$tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time());
+$tcRequestedPane = trim((string)($_GET['tc_pane'] ?? ''));
+$tcIsLazyPaneRequest = $tcRequestedPane !== '';
+$tcLazyPaneAccess = [
+  'tc-main' => $tcCanControlPanel,
+  'tc-rewards-config' => $tcCanMainPane,
+  'tc-invitees' => $tcCanInviteesPane,
+  'tc-manage-tasks' => $tcCanManageTasksPane,
+  'tc-monitoring' => $tcCanMonitoringPane,
+  'tc-logs' => $tcCanLogsPane,
+];
+if ($tcIsLazyPaneRequest && !array_key_exists($tcRequestedPane, $tcLazyPaneAccess)) {
+  http_response_code(400);
+  echo '<div class="card"><p class="muted">Unknown Task Club pane.</p></div>';
+  exit;
+}
+if ($tcIsLazyPaneRequest && empty($tcLazyPaneAccess[$tcRequestedPane])) {
+  http_response_code(403);
+  echo '<div class="card"><p class="muted">You do not have access to this Task Club pane.</p></div>';
+  exit;
+}
+
+$tcPanelCssVer = (string)(@tcDbFilemtime(__DIR__ . '/tc-panel.css') ?: time());
+$tcPanelLocalJsVer = (string)(@tcDbFilemtime(__DIR__ . '/tc-panel-local.js') ?: time());
+$tcPrizesJsVer = (string)(@tcDbFilemtime(__DIR__ . '/TC Prizes.js') ?: time());
+$tcSettingJsVer = (string)(@tcDbFilemtime(__DIR__ . '/TCSetting.js') ?: time());
+$tcEventStyleJsVer = (string)(@tcDbFilemtime(__DIR__ . '/TCEventStyle.js') ?: time());
+$tcMonitoringJsVer = (string)(@tcDbFilemtime(__DIR__ . '/TCMonitoring.js') ?: time());
+$tcTaskAccessJsVer = (string)(@tcDbFilemtime(__DIR__ . '/TCTaskAccess.js') ?: time());
 ?>
 
+<?php if (!$tcIsLazyPaneRequest): ?>
 <link rel="stylesheet" href="mini%20apps/Task%20Club/tc-panel.css?v=<?= htmlspecialchars($tcPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
 <div class="tc-shell" data-tc-csrf="<?= htmlspecialchars($tcPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
 <div class="sub-layout" data-tc-sub-layout>
@@ -136,8 +160,12 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
     </div>
   </aside>
   <div class="sub-content">
-    <?php if ($tcCanControlPanel): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main">
+<?php endif; ?>
+    <?php if ($tcCanControlPanel && (!$tcIsLazyPaneRequest || $tcRequestedPane === 'tc-main')): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-main' ? ' active' : '' ?>" data-pane="tc-main" data-tc-lazy-pane="tc-main">
+      <?php if (!$tcIsLazyPaneRequest): ?>
+        <div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load its controls.</p></div>
+      <?php else: ?>
       <?php $tcControlInitialSection = $tcCanMainPane ? 'general' : ($tcCanTaskAccessPane ? 'admin-access' : ($tcCanExportPane ? 'export' : ($tcCanLinkerPane ? 'linker' : 'event-style'))); ?>
       <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های کنترل پنل">
         <?php if ($tcCanMainPane): ?>
@@ -479,11 +507,47 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
             rel="noopener"
           >خروجی برندگان جوایز ارزشمند</a>
         </div>
+        <div class="field">
+          <button
+            type="button"
+            class="btn primary standard-primary-button"
+            id="tc-invitee-prize-totals-open"
+          >خروجی مجموع جوایز دعوت‌شدگان</button>
+        </div>
+        <div id="tc-invitee-prize-totals-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tc-invitee-prize-totals-title">
+          <div class="modal-card default-modal-card">
+            <div class="modal-card-header">
+              <h3 id="tc-invitee-prize-totals-title">خروجی مجموع جوایز دعوت‌شدگان</h3>
+              <button type="button" class="btn ghost" data-tc-prize-totals-close>بستن</button>
+            </div>
+            <p class="muted" id="tc-invitee-prize-totals-status" aria-live="polite"></p>
+            <div class="modal-actions">
+              <form method="post" action="mini%20apps/Task%20Club/invitees_prize_totals_export.php" target="_blank" data-tc-prize-totals-form>
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($tcPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>" />
+                <input type="hidden" name="action" value="remaining" />
+                <button type="submit" class="btn primary standard-primary-button">خروجی باقی مانده ها و اضافه کردن به لیست دریافت کرده</button>
+              </form>
+              <form method="post" action="mini%20apps/Task%20Club/invitees_prize_totals_export.php" target="_blank" data-tc-prize-totals-form>
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($tcPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>" />
+                <input type="hidden" name="action" value="all" />
+                <button type="submit" class="btn ghost">خروجی همه برندگان</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <a
+            class="btn primary standard-primary-button"
+            href="mini%20apps/Task%20Club/prize_winners_log.php"
+            target="_blank"
+            rel="noopener"
+          >Prize card winners log</a>
+        </div>
         <?php
           $tcPrizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
           $tcPrizeLevels = [];
-          if (is_file($tcPrizeLevelsPath)) {
-            $tcPrizeLevelsDecoded = json_decode((string)file_get_contents($tcPrizeLevelsPath), true);
+          if (tcDbIsFile($tcPrizeLevelsPath)) {
+            $tcPrizeLevelsDecoded = json_decode((string)tcDbFileGetContents($tcPrizeLevelsPath), true);
             if (is_array($tcPrizeLevelsDecoded)) $tcPrizeLevels = $tcPrizeLevelsDecoded;
           }
           foreach ($tcPrizeLevels as $tcPrizeLevel):
@@ -636,10 +700,14 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
       </div>
       </section>
       <?php endif; ?>
+      <?php endif; ?>
     </div>
     <?php endif; ?>
-    <?php if ($tcCanMainPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config">
+    <?php if ($tcCanMainPane && (!$tcIsLazyPaneRequest || $tcRequestedPane === 'tc-rewards-config')): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-rewards-config' ? ' active' : '' ?>" data-pane="tc-rewards-config" data-tc-lazy-pane="tc-rewards-config">
+      <?php if (!$tcIsLazyPaneRequest): ?>
+        <div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load prize settings.</p></div>
+      <?php else: ?>
       <div class="tc-task-top-nav" role="tablist" aria-label="تب‌های جوایز">
         <button type="button" class="tc-task-top-item active" aria-selected="true" data-tc-reward-config-trigger="guide">راهنمای دریافت جایزه</button>
         <button type="button" class="tc-task-top-item" aria-selected="false" data-tc-reward-config-trigger="advanced">Advanced Prize Setting</button>
@@ -814,6 +882,25 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
 
           <div class="card">
             <div class="section-header">
+              <h3>Won prize records</h3>
+              <div class="tc-action-bar">
+                <button type="button" class="btn ghost" id="tc-prize-awards-refresh">Refresh</button>
+                <button type="button" class="btn tc-btn-danger" id="tc-prize-awards-reset-all">Reset all prizes</button>
+              </div>
+            </div>
+            <p class="muted small" id="tc-prize-awards-status" aria-live="polite"></p>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>User</th><th>Prize value</th><th>Card</th><th>Level</th><th>Prize</th><th>Won at</th><th>Action</th></tr>
+                </thead>
+                <tbody id="tc-prize-awards-list"><tr><td colspan="7" class="muted">Loading prize records...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
               <h3>آیتم‌های نمایشی</h3>
             </div>
             <form id="tc-fake-form" class="form">
@@ -839,25 +926,41 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           </div>
         </div>
       </section>
+      <?php endif; ?>
     </div>
     <?php endif; ?>
-    <?php if ($tcCanInviteesPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees">
-      <?php include __DIR__ . '/invitees.php'; ?>
+    <?php if ($tcCanInviteesPane && (!$tcIsLazyPaneRequest || $tcRequestedPane === 'tc-invitees')): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-invitees' ? ' active' : '' ?>" data-pane="tc-invitees" data-tc-lazy-pane="tc-invitees" data-tc-lazy-dispose="1">
+      <?php if (!$tcIsLazyPaneRequest): ?>
+        <div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load invitees.</p></div>
+      <?php else: ?>
+        <?php include __DIR__ . '/invitees.php'; ?>
+      <?php endif; ?>
     </div>
     <?php endif; ?>
-    <?php if ($tcCanManageTasksPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks">
-      <?php include __DIR__ . '/TCT.php'; ?>
+    <?php if ($tcCanManageTasksPane && (!$tcIsLazyPaneRequest || $tcRequestedPane === 'tc-manage-tasks')): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-manage-tasks' ? ' active' : '' ?>" data-pane="tc-manage-tasks" data-tc-lazy-pane="tc-manage-tasks">
+      <?php if (!$tcIsLazyPaneRequest): ?>
+        <div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load task management.</p></div>
+      <?php else: ?>
+        <?php include __DIR__ . '/TCT.php'; ?>
+      <?php endif; ?>
     </div>
     <?php endif; ?>
-    <?php if ($tcCanMonitoringPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring">
-      <?php include __DIR__ . '/TCMonitoring.php'; ?>
+    <?php if ($tcCanMonitoringPane && (!$tcIsLazyPaneRequest || $tcRequestedPane === 'tc-monitoring')): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-monitoring' ? ' active' : '' ?>" data-pane="tc-monitoring" data-tc-lazy-pane="tc-monitoring">
+      <?php if (!$tcIsLazyPaneRequest): ?>
+        <div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load monitoring.</p></div>
+      <?php else: ?>
+        <?php include __DIR__ . '/TCMonitoring.php'; ?>
+      <?php endif; ?>
     </div>
     <?php endif; ?>
-    <?php if ($tcCanLogsPane): ?>
-    <div class="sub-pane<?= $tcInitialPane === 'tc-logs' ? ' active' : '' ?>" data-pane="tc-logs" data-tc-logs-pane="1">
+    <?php if ($tcCanLogsPane && (!$tcIsLazyPaneRequest || $tcRequestedPane === 'tc-logs')): ?>
+    <div class="sub-pane<?= $tcInitialPane === 'tc-logs' ? ' active' : '' ?>" data-pane="tc-logs" data-tc-logs-pane="1" data-tc-lazy-pane="tc-logs">
+      <?php if (!$tcIsLazyPaneRequest): ?>
+        <div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load logs.</p></div>
+      <?php else: ?>
       <div class="card tc-logs-card">
         <div class="section-header">
           <h3>Logs</h3>
@@ -894,12 +997,13 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
           </table>
         </div>
       </div>
+      <?php endif; ?>
     </div>
     <?php endif; ?>
-    <?php if ($tcCanTaskSubtabs): ?>
+    <?php if (!$tcIsLazyPaneRequest && $tcCanTaskSubtabs): ?>
     <div data-tc-task-subtab-panes></div>
     <?php endif; ?>
-    <?php if (!$tcHasAnyPane): ?>
+    <?php if (!$tcIsLazyPaneRequest && !$tcHasAnyPane): ?>
       <div class="card">
         <div class="section-header">
           <h3>Access Restricted</h3>
@@ -907,23 +1011,26 @@ $tcTaskAccessJsVer = (string)(@filemtime(__DIR__ . '/TCTaskAccess.js') ?: time()
         <p class="muted">You do not have access to any Task Club subtab.</p>
       </div>
     <?php endif; ?>
+<?php if (!$tcIsLazyPaneRequest): ?>
   </div>
 </div>
 </div>
 
 <script src="mini%20apps/Task%20Club/tc-panel-local.js?v=<?= htmlspecialchars($tcPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
-<?php if ($tcCanMainPane): ?>
+<?php else: ?>
+<?php if ($tcRequestedPane === 'tc-rewards-config'): ?>
 <script src="mini%20apps/Task%20Club/TC%20Prizes.js?v=<?= htmlspecialchars($tcPrizesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
-<?php if ($tcCanControlPanel): ?>
+<?php if ($tcRequestedPane === 'tc-main' || $tcRequestedPane === 'tc-rewards-config'): ?>
 <script src="mini%20apps/Task%20Club/TCSetting.js?v=<?= htmlspecialchars($tcSettingJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
-<?php if ($tcCanEventStylePane): ?>
+<?php if ($tcRequestedPane === 'tc-main' && $tcCanEventStylePane): ?>
 <script src="mini%20apps/Task%20Club/TCEventStyle.js?v=<?= htmlspecialchars($tcEventStyleJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
-<?php if ($tcCanTaskAccessPane): ?>
+<?php if ($tcRequestedPane === 'tc-main' && $tcCanTaskAccessPane): ?>
 <script src="mini%20apps/Task%20Club/TCTaskAccess.js?v=<?= htmlspecialchars($tcTaskAccessJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>
-<?php if ($tcCanMonitoringPane): ?>
+<?php if ($tcRequestedPane === 'tc-monitoring'): ?>
 <script src="mini%20apps/Task%20Club/TCMonitoring.js?v=<?= htmlspecialchars($tcMonitoringJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php endif; ?>
 <?php endif; ?>

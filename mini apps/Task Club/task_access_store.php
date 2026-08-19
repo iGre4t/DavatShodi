@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+
+require_once __DIR__ . '/tc-database-runtime.php';
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
@@ -20,10 +22,10 @@ $taskAccessPath = __DIR__ . '/tasks/task-access.json';
 
 function tcTaskAccessReadJson(string $path, array $fallback = []): array
 {
-  if (!is_file($path)) {
+  if (!tcDbIsFile($path)) {
     return $fallback;
   }
-  $content = file_get_contents($path);
+  $content = tcDbFileGetContents($path);
   if (!is_string($content) || trim($content) === '') {
     return $fallback;
   }
@@ -41,7 +43,7 @@ function tcTaskAccessWriteJson(string $path, array $payload): bool
   if (!is_string($encoded)) {
     return false;
   }
-  return file_put_contents($path, $encoded . PHP_EOL, LOCK_EX) !== false;
+  return tcDbFilePutContents($path, $encoded . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tcTaskAccessNormalizeToken(string $value): string
@@ -68,6 +70,20 @@ function tcTaskAccessNormalizeTaskType(string $value): string
   if (in_array($token, ['conditional_quiz', 'conditional-quiz', 'conditional quiz', 'conditional-quiz-task', 'conditional quiz task'], true)) {
     return 'conditional_quiz';
   }
+  if (in_array($token, [
+    'shared_answers_quiz',
+    'shared-answers-quiz',
+    'shared answers quiz',
+    'shared_quiz',
+    'shared-quiz',
+    'shared quiz',
+    'survey_score_response',
+    'survey-score-response',
+    'survey score response',
+    'survey score'
+  ], true)) {
+    return 'shared_answers_quiz';
+  }
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
@@ -86,6 +102,9 @@ function tcTaskAccessResolvePaneKeys(string $taskType): array
   if ($type === 'conditional_quiz') {
     return ['control', 'information', 'quiz', 'crisis-control'];
   }
+  if ($type === 'shared_answers_quiz') {
+    return ['control', 'information', 'response-level', 'quiz'];
+  }
   if ($type === 'quiz') {
     return ['control', 'information', 'quiz'];
   }
@@ -103,10 +122,10 @@ function tcTaskAccessResolvePaneKeys(string $taskType): array
 
 function tcTaskAccessLoadTasks(string $tasksStorePath): array
 {
-  if (!is_file($tasksStorePath)) {
+  if (!tcDbIsFile($tasksStorePath)) {
     return [];
   }
-  $content = file_get_contents($tasksStorePath);
+  $content = tcDbFileGetContents($tasksStorePath);
   if (!is_string($content) || trim($content) === '') {
     return [];
   }
@@ -336,7 +355,7 @@ if ($action === 'save_user_access') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode((string)file_get_contents('php://input'), true);
+  $payload = json_decode((string)tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;
@@ -392,7 +411,7 @@ if ($action === 'save_user_special_access') {
     echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
     exit;
   }
-  $payload = json_decode((string)file_get_contents('php://input'), true);
+  $payload = json_decode((string)tcDbFileGetContents('php://input'), true);
   if (!is_array($payload)) {
     echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
     exit;

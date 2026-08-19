@@ -1,4 +1,6 @@
 (() => {
+  const TC_SETTINGS_DOCUMENT_CLICK_HANDLER_KEY = "__tcSettingsDocumentClickHandler";
+
   function getEl(id) {
     return document.getElementById(id);
   }
@@ -1358,25 +1360,41 @@
     }
   }
 
-  document.addEventListener("click", (event) => {
+  const previousDocumentClickHandler = window[TC_SETTINGS_DOCUMENT_CLICK_HANDLER_KEY];
+  if (typeof previousDocumentClickHandler === "function") {
+    document.removeEventListener("click", previousDocumentClickHandler);
+  }
+  const documentClickHandler = (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const button = target.closest("#tc-reward-guide-save");
-    if (!(button instanceof HTMLButtonElement)) return;
-    event.preventDefault();
-    void saveRewardGuideFromDom(button);
-  });
-
-  document.addEventListener("click", (event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const button = target.closest("#tc-reward-advanced-save");
-    if (!(button instanceof HTMLButtonElement)) return;
-    event.preventDefault();
-    void saveRewardPrizeDisplayFromDom(button);
-  });
+    const rewardGuideButton = target.closest("#tc-reward-guide-save");
+    if (rewardGuideButton instanceof HTMLButtonElement) {
+      event.preventDefault();
+      void saveRewardGuideFromDom(rewardGuideButton);
+      return;
+    }
+    const advancedButton = target.closest("#tc-reward-advanced-save");
+    if (advancedButton instanceof HTMLButtonElement) {
+      event.preventDefault();
+      void saveRewardPrizeDisplayFromDom(advancedButton);
+    }
+  };
+  window[TC_SETTINGS_DOCUMENT_CLICK_HANDLER_KEY] = documentClickHandler;
+  document.addEventListener("click", documentClickHandler);
 
   async function initSettings() {
+    const mainPane = document.querySelector('.sub-pane[data-pane="tc-main"]');
+    const rewardsPane = document.querySelector('.sub-pane[data-pane="tc-rewards-config"]');
+    const shouldInitMain = mainPane instanceof HTMLElement
+      && mainPane.querySelector('[data-tc-control-panel-trigger]')
+      && mainPane.dataset.tcSettingsInitialized !== "1";
+    const shouldInitRewards = rewardsPane instanceof HTMLElement
+      && rewardsPane.querySelector('[data-tc-reward-config-trigger]')
+      && rewardsPane.dataset.tcSettingsInitialized !== "1";
+    if (!shouldInitMain && !shouldInitRewards) return;
+    if (shouldInitMain) mainPane.dataset.tcSettingsInitialized = "1";
+    if (shouldInitRewards) rewardsPane.dataset.tcSettingsInitialized = "1";
+
     const saveBtn = getEl("tc-settings-save");
     const activeToggle = getEl("tc-active-toggle");
     const durationToggle = getEl("tc-duration-toggle");
@@ -1385,12 +1403,18 @@
     const endDate = getEl("tc-duration-end");
     const endTime = getEl("tc-duration-end-time");
 
-    initControlPanelTabs();
-    initCampaignLinker();
-    initRewardGuide();
+    if (shouldInitMain) {
+      initControlPanelTabs();
+      initCampaignLinker();
+    }
     const settings = await loadSettings();
+    if (shouldInitRewards) {
+      void initRewardGuide(settings);
+      void initRewardPrizeDisplay(settings);
+    }
+    if (!shouldInitMain) return;
+
     applySettings(settings);
-    initRewardPrizeDisplay(settings);
     initLandingEditor(settings);
     initAssignAdmin();
     activeToggle?.addEventListener("change", () => {
