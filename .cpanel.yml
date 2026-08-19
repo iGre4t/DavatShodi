@@ -1,0 +1,19 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/davats/public_html/
+    - /bin/mkdir -p "$DEPLOYPATH"
+    - /bin/cp -R "General Setting" "$DEPLOYPATH"
+    - /bin/cp -R Invited "$DEPLOYPATH"
+    - /bin/cp -R api "$DEPLOYPATH"
+    - /bin/cp -R assets "$DEPLOYPATH"
+    - /bin/cp -R bots "$DEPLOYPATH"
+    - /bin/cp -R campaigns "$DEPLOYPATH"
+    - /bin/cp -R data "$DEPLOYPATH"
+    - /bin/cp -R "mini apps" "$DEPLOYPATH"
+    - /bin/cp -R modules "$DEPLOYPATH"
+    - /bin/cp -R standalone-draw "$DEPLOYPATH"
+    - /bin/cp -R style "$DEPLOYPATH"
+    - /bin/cp -R system "$DEPLOYPATH"
+    - /bin/cp -R uploads "$DEPLOYPATH"
+    - /bin/cp .htaccess app.js dev-settings.php index.php legacy-egm-path.php login.php logout.php panel.php users.php "$DEPLOYPATH"

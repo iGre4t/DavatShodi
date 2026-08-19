@@ -7,6 +7,7 @@
 /uploads/gallery/
 
 api/config.php
+/api/config.local.php
 /mini apps/Wheel of Fortune/*.json
 /mini apps/Wheel of Fortune/WF Event/*.json
 /mini apps/Wheel of Fortune/WF Event/*.csv

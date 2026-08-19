@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const EGM_INSTANCE_SCHEMA_VERSION = '2026-08-19.2';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
+const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = ['2026-08-19.1', EGM_INSTANCE_SCHEMA_VERSION];
 
 require_once __DIR__ . '/egm-registry.php';
 require_once __DIR__ . '/activity-log-storage.php';
@@ -146,7 +147,12 @@ function ensureEgmInstanceTables(PDO $pdo, string $code): array
             "SELECT `payload` FROM `{$dataTable}` WHERE `data_key` = :data_key LIMIT 1"
         );
         $versionStatement->execute([':data_key' => EGM_INSTANCE_SCHEMA_VERSION_KEY]);
-        if (trim((string)$versionStatement->fetchColumn()) === EGM_INSTANCE_SCHEMA_VERSION) {
+        $storedSchemaVersion = trim((string)$versionStatement->fetchColumn());
+        // Version .2 moved activity logs to their separate database; it did
+        // not change the core instance-table schema. Core dumps made just
+        // before that split carry .1 and are safe to use without repeating
+        // the expensive request-time table migration on shared hosting.
+        if (in_array($storedSchemaVersion, EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS, true)) {
             $cache[$cacheKey] = true;
             return $tables;
         }

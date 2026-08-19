@@ -44,6 +44,49 @@ function mergeDatabaseConfigOverrides(array $config): array
     return array_merge($config, $filtered);
 }
 
+function getLocalDatabaseConfigPath(string $path): string
+{
+    return str_ends_with(strtolower($path), '.php')
+        ? substr($path, 0, -4) . '.local.php'
+        : $path . '.local.php';
+}
+
+function loadLocalDatabaseConfig(string $path): array
+{
+    $localPath = getLocalDatabaseConfigPath($path);
+    if (!is_file($localPath)) {
+        return [];
+    }
+    $config = include $localPath;
+    return is_array($config) ? sanitizeDatabaseConfigPayload($config) : [];
+}
+
+function loadDatabaseEnvironmentOverrides(): array
+{
+    $mapping = [
+        'DB_HOST' => 'host',
+        'DB_PORT' => 'port',
+        'DB_NAME' => 'dbname',
+        'DB_USER' => 'user',
+        'DB_PASSWORD' => 'password',
+        'DB_TABLE' => 'table',
+        'DB_RECORD' => 'record',
+        'LOGS_DB_HOST' => 'logs_host',
+        'LOGS_DB_PORT' => 'logs_port',
+        'LOGS_DB_NAME' => 'logs_dbname',
+        'LOGS_DB_USER' => 'logs_user',
+        'LOGS_DB_PASSWORD' => 'logs_password',
+    ];
+    $overrides = [];
+    foreach ($mapping as $environmentKey => $configKey) {
+        $value = getenv($environmentKey);
+        if ($value !== false) {
+            $overrides[$configKey] = $value;
+        }
+    }
+    return sanitizeDatabaseConfigPayload($overrides);
+}
+
 function sanitizeDatabaseIdentifier(string $value, string $fallback): string
 {
     $clean = preg_replace('/[^a-zA-Z0-9_]/', '', $value) ?? '';
@@ -162,7 +205,12 @@ function loadConfig(string $path): array
     }
     $config = include $path;
     $config = is_array($config) ? $config : [];
-    return mergeDatabaseConfigOverrides($config);
+    // Precedence is intentional: tracked defaults < installer JSON < ignored
+    // deployment-local PHP < server environment. A Git deployment therefore
+    // cannot replace cPanel credentials with the XAMPP defaults.
+    $config = mergeDatabaseConfigOverrides($config);
+    $config = array_replace($config, loadLocalDatabaseConfig($path));
+    return array_replace($config, loadDatabaseEnvironmentOverrides());
 }
 
 function connectDatabase(array $config, bool $ensureApplicationStore = true): ?PDO

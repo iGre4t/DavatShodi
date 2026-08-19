@@ -207,6 +207,7 @@ if (empty($_SESSION['authenticated'])) {
 $sessionUser = $_SESSION['user'] ?? [];
 $userConfig = loadConfig(__DIR__ . '/api/config.php');
 $userPdo = connectDatabase($userConfig);
+$panelBootstrapErrors = [];
 if ($userPdo) {
   ensureUsersExtendedColumns($userPdo);
   egmInstanceEnsureDevelopmentInstance($userPdo, __DIR__ . '/mini apps/Event Guest Manager');
@@ -214,7 +215,15 @@ if ($userPdo) {
     materializeDatabaseBackedInstances($userPdo, __DIR__);
   } catch (Throwable $instanceRestoreError) {
     error_log('Database instance code restoration failed: ' . $instanceRestoreError->getMessage());
+    $panelBootstrapErrors[] = 'Database instance code restoration failed: ' . $instanceRestoreError->getMessage();
   }
+  $connectedDatabase = trim((string)$userPdo->query('SELECT DATABASE()')->fetchColumn());
+  if (listTcRegistry($userPdo) === [] && listEgmRegistry($userPdo) === []) {
+    $panelBootstrapErrors[] = 'The connected main database (' . ($connectedDatabase ?: 'unknown')
+      . ') contains no TaskClub or EGM registry records. Check api/config.local.php and the database import.';
+  }
+} else {
+  $panelBootstrapErrors[] = 'The main database connection failed. Check api/config.local.php and the cPanel database-user privileges.';
 }
 $userCode = normalizeUserValue($sessionUser['code'] ?? '');
 $dbUser = ($userPdo && $userCode !== '') ? loadUserByCode($userPdo, $userCode) : null;
@@ -526,6 +535,15 @@ $accountEmail = $currentUser['email'] ?? '';
           <div class="spacer"></div>
           <div id="live-clock" class="clock" aria-live="polite"></div>
         </header>
+
+        <?php if ($panelBootstrapErrors !== []): ?>
+          <div class="card" role="alert" style="margin:16px;border:1px solid #dc2626;background:#fff1f2;color:#991b1b;">
+            <strong>Deployment/database problem</strong>
+            <?php foreach ($panelBootstrapErrors as $panelBootstrapError): ?>
+              <p style="margin:8px 0 0;"><?= htmlspecialchars($panelBootstrapError, ENT_QUOTES, 'UTF-8') ?></p>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
 
         <?php if (in_array('home', $allowedTabs, true)): ?>
         <!-- Home tab shows quick KPI cards and recent asset system logs populated by app.js. -->
