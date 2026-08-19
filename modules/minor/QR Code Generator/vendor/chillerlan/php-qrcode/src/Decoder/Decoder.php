@@ -8,17 +8,14 @@
  * @copyright    2021 Smiley
  * @license      Apache-2.0
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Decoder;
 
-use chillerlan\QRCode\QROptions;
 use chillerlan\QRCode\Common\{BitBuffer, EccLevel, LuminanceSourceInterface, MaskPattern, Mode, Version};
 use chillerlan\QRCode\Data\{AlphaNum, Byte, ECI, Hanzi, Kanji, Number};
 use chillerlan\QRCode\Detector\Detector;
-use chillerlan\Settings\SettingsContainerInterface;
 use Throwable;
-use function chr, is_iterable, str_replace;
+use function chr, str_replace;
 
 /**
  * The main class which implements QR Code decoding -- as opposed to locating and extracting
@@ -28,22 +25,11 @@ use function chr, is_iterable, str_replace;
  */
 final class Decoder{
 
-	/** @noinspection PhpPropertyOnlyWrittenInspection (currently unused) */
-	private SettingsContainerInterface|QROptions $options;
-	private Version|null                         $version     = null;
-	private EccLevel|null                        $eccLevel    = null;
-	private MaskPattern|null                     $maskPattern = null;
-	private BitBuffer                            $bitBuffer;
-	private Detector                             $detector;
-
-	public function __construct(SettingsContainerInterface|QROptions|iterable $options = new QROptions){
-
-		if(is_iterable($options)){
-			$options = new QROptions($options);
-		}
-
-		$this->options = $options;
-	}
+	private ?Version     $version = null;
+	private ?EccLevel    $eccLevel = null;
+	private ?MaskPattern $maskPattern = null;
+	private BitBuffer    $bitBuffer;
+	private Detector     $detector;
 
 	/**
 	 * Decodes a QR Code represented as a BitMatrix.
@@ -72,7 +58,7 @@ final class Decoder{
 				 */
 				return $this->decodeMatrix($matrix->resetVersionInfo()->mirrorDiagonal());
 			}
-			catch(Throwable){
+			catch(Throwable $f){
 				// Throw the exception from the original reading
 				throw $e;
 			}
@@ -122,16 +108,16 @@ final class Decoder{
 				break;
 			}
 			elseif($datamode === Mode::NUMBER){
-				$result .= (new Number)->decodeSegment($this->bitBuffer, $versionNumber);
+				$result .= Number::decodeSegment($this->bitBuffer, $versionNumber);
 			}
 			elseif($datamode === Mode::ALPHANUM){
 				$result .= $this->decodeAlphanumSegment($versionNumber, $fc1InEffect);
 			}
 			elseif($datamode === Mode::BYTE){
-				$result .= (new Byte)->decodeSegment($this->bitBuffer, $versionNumber);
+				$result .= Byte::decodeSegment($this->bitBuffer, $versionNumber);
 			}
 			elseif($datamode === Mode::KANJI){
-				$result .= (new Kanji)->decodeSegment($this->bitBuffer, $versionNumber);
+				$result .= Kanji::decodeSegment($this->bitBuffer, $versionNumber);
 			}
 			elseif($datamode === Mode::STRCTURED_APPEND){
 
@@ -148,10 +134,10 @@ final class Decoder{
 				$fc1InEffect = true;
 			}
 			elseif($datamode === Mode::ECI){
-				$result .= (new ECI)->decodeSegment($this->bitBuffer, $versionNumber);
+				$result .= ECI::decodeSegment($this->bitBuffer, $versionNumber);
 			}
 			elseif($datamode === Mode::HANZI){
-				$result .= (new Hanzi)->decodeSegment($this->bitBuffer, $versionNumber);
+				$result .= Hanzi::decodeSegment($this->bitBuffer, $versionNumber);
 			}
 			else{
 				throw new QRCodeDecoderException('invalid data mode');
@@ -160,19 +146,22 @@ final class Decoder{
 		}
 
 		return new DecoderResult([
+			'rawBytes'                 => $this->bitBuffer,
 			'data'                     => $result,
+			'version'                  => $this->version,
 			'eccLevel'                 => $this->eccLevel,
 			'finderPatterns'           => $this->detector->getFinderPatterns(),
 			'maskPattern'              => $this->maskPattern,
-			'rawBytes'                 => $this->bitBuffer,
 			'structuredAppendParity'   => $parityData,
 			'structuredAppendSequence' => $symbolSequence,
-			'version'                  => $this->version,
 		]);
 	}
 
+	/**
+	 *
+	 */
 	private function decodeAlphanumSegment(int $versionNumber, bool $fc1InEffect):string{
-		$str = (new AlphaNum)->decodeSegment($this->bitBuffer, $versionNumber);
+		$str = AlphaNum::decodeSegment($this->bitBuffer, $versionNumber);
 
 		// See section 6.4.8.1, 6.4.8.2
 		if($fc1InEffect){ // ???

@@ -7,7 +7,6 @@
  * @copyright    2015 Smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Data;
 
@@ -37,16 +36,29 @@ final class Kanji extends QRDataModeAbstract{
 	 */
 	public const ENCODING = 'SJIS';
 
+	/**
+	 * @inheritDoc
+	 */
 	public const DATAMODE = Mode::KANJI;
 
+	/**
+	 * @inheritDoc
+	 */
 	protected function getCharCount():int{
 		return mb_strlen($this->data, self::ENCODING);
 	}
 
+	/**
+	 * @inheritDoc
+	 */
 	public function getLengthInBits():int{
 		return ($this->getCharCount() * 13);
 	}
 
+	/**
+	 * @inheritDoc
+	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
+	 */
 	public static function convertEncoding(string $string):string{
 		$detected = mb_detect_encoding($string, [mb_internal_encoding(), 'UTF-8', 'SJIS', 'SJIS-2004'], true);
 
@@ -75,7 +87,7 @@ final class Kanji extends QRDataModeAbstract{
 		try{
 			$string = self::convertEncoding($string);
 		}
-		catch(Throwable){
+		catch(Throwable $e){
 			return false;
 		}
 
@@ -109,11 +121,11 @@ final class Kanji extends QRDataModeAbstract{
 	 *
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException on an illegal character occurence
 	 */
-	public function write(BitBuffer $bitBuffer, int $versionNumber):static{
+	public function write(BitBuffer $bitBuffer, int $versionNumber):QRDataModeInterface{
 
 		$bitBuffer
 			->put(self::DATAMODE, 4)
-			->put($this->getCharCount(), $this->getLengthBits($versionNumber))
+			->put($this->getCharCount(), $this::getLengthBits($versionNumber))
 		;
 
 		$len = strlen($this->data);
@@ -146,8 +158,8 @@ final class Kanji extends QRDataModeAbstract{
 	 *
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 */
-	public function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
-		$length = $bitBuffer->read($this->getLengthBits($versionNumber));
+	public static function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
+		$length = $bitBuffer->read(self::getLengthBits($versionNumber));
 
 		if($bitBuffer->available() < ($length * 13)){
 			throw new QRCodeDataException('not enough bits available');  // @codeCoverageIgnore
@@ -172,13 +184,7 @@ final class Kanji extends QRDataModeAbstract{
 			$length--;
 		}
 
-		$encoded = mb_convert_encoding(implode('', $buffer), mb_internal_encoding(), self::ENCODING);
-
-		if($encoded === false){
-			throw new QRCodeDataException('mb_convert_encoding() error'); // @codeCoverageIgnore
-		}
-
-		return $encoded;
+		return mb_convert_encoding(implode('', $buffer), mb_internal_encoding(), self::ENCODING);
 	}
 
 }

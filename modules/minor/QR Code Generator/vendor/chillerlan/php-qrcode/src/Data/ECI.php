@@ -7,7 +7,6 @@
  * @copyright    2020 smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Data;
 
@@ -23,31 +22,33 @@ use function mb_convert_encoding, mb_detect_encoding, mb_internal_encoding, spri
  */
 final class ECI extends QRDataModeAbstract{
 
+	/**
+	 * @inheritDoc
+	 */
 	public const DATAMODE = Mode::ECI;
 
 	/**
-	 * The current ECI encoding id (default to UTF-8)
+	 * The current ECI encoding id
 	 */
-	private int $encoding = ECICharset::ISO_IEC_10646_UTF_8;
+	private int $encoding;
 
 	/**
 	 * @inheritDoc
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 * @noinspection PhpMissingParentConstructorInspection
 	 */
-	public function __construct(int|null $encoding = null){
+	public function __construct(int $encoding){
 
-		if($encoding !== null){
-
-			if($encoding < 0 || $encoding > 999999){
-				throw new QRCodeDataException(sprintf('invalid encoding id: "%s"', $encoding));
-			}
-
-			$this->encoding = $encoding;
+		if($encoding < 0 || $encoding > 999999){
+			throw new QRCodeDataException(sprintf('invalid encoding id: "%s"', $encoding));
 		}
 
+		$this->encoding = $encoding;
 	}
 
+	/**
+	 * @inheritDoc
+	 */
 	public function getLengthInBits():int{
 
 		if($this->encoding < 128){
@@ -67,7 +68,7 @@ final class ECI extends QRDataModeAbstract{
 	 * @inheritDoc
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 */
-	public function write(BitBuffer $bitBuffer, int $versionNumber):static{
+	public function write(BitBuffer $bitBuffer, int $versionNumber):QRDataModeInterface{
 		$bitBuffer->put(self::DATAMODE, 4);
 
 		if($this->encoding < 128){
@@ -80,7 +81,7 @@ final class ECI extends QRDataModeAbstract{
 			$bitBuffer->put(($this->encoding | 0xC00000), 24);
 		}
 		else{
-			throw new QRCodeDataException('invalid ECI ID'); // @codeCoverageIgnore
+			throw new QRCodeDataException('invalid ECI ID');
 		}
 
 		return $this;
@@ -91,7 +92,7 @@ final class ECI extends QRDataModeAbstract{
 	 *
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 */
-	public function parseValue(BitBuffer $bitBuffer):ECICharset{
+	public static function parseValue(BitBuffer $bitBuffer):ECICharset{
 		$firstByte = $bitBuffer->read(8);
 
 		// just one byte
@@ -125,24 +126,11 @@ final class ECI extends QRDataModeAbstract{
 	 *
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 */
-	public function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
-		$eciCharset = $this->parseValue($bitBuffer);
+	public static function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
+		$eciCharset = self::parseValue($bitBuffer);
 		$nextMode   = $bitBuffer->read(4);
+		$data       = self::decodeModeSegment($nextMode, $bitBuffer, $versionNumber);
 		$encoding   = $eciCharset->getName();
-
-		// this is definitely weird, but there are QR Codes out in the wild
-		// that have ECI followed by numeric and alphanum segments
-		// @see https://github.com/chillerlan/php-qrcode/discussions/289
-		$dataMode = match($nextMode){
-			Mode::NUMBER   => new Number,
-			Mode::ALPHANUM => new AlphaNum,
-			Mode::BYTE     => new Byte,
-			default        => throw new QRCodeDataException(
-				sprintf('ECI designator followed by invalid mode: "%04b"', $nextMode),
-			),
-		};
-
-		$data = $dataMode->decodeSegment($bitBuffer, $versionNumber);
 
 		if($encoding === null){
 			// The spec isn't clear on this mode; see
@@ -157,13 +145,21 @@ final class ECI extends QRDataModeAbstract{
 			}
 		}
 
-		$encoded = mb_convert_encoding($data, mb_internal_encoding(), $encoding);
+		return mb_convert_encoding($data, mb_internal_encoding(), $encoding);
+	}
 
-		if($encoded === false){
-			throw new QRCodeDataException('mb_convert_encoding() error'); // @codeCoverageIgnore
+	/**
+	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
+	 */
+	private static function decodeModeSegment(int $mode, BitBuffer $bitBuffer, int $versionNumber):string{
+
+		switch(true){
+			case $mode === Mode::NUMBER:   return Number::decodeSegment($bitBuffer, $versionNumber);
+			case $mode === Mode::ALPHANUM: return AlphaNum::decodeSegment($bitBuffer, $versionNumber);
+			case $mode === Mode::BYTE:     return Byte::decodeSegment($bitBuffer, $versionNumber);
 		}
 
-		return $encoded;
+		throw new QRCodeDataException(sprintf('ECI designator followed by invalid mode: "%04b"', $mode));
 	}
 
 }

@@ -7,7 +7,6 @@
  * @copyright    2022 smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Output;
 
@@ -23,9 +22,12 @@ use function array_values, count, date, implode, is_array, is_numeric, max, min,
  */
 class QREps extends QROutputAbstract{
 
-	final public const MIME_TYPE = 'application/postscript';
+	public const MIME_TYPE = 'application/postscript';
 
-	public static function moduleValueIsValid(mixed $value):bool{
+	/**
+	 * @inheritDoc
+	 */
+	public static function moduleValueIsValid($value):bool{
 
 		if(!is_array($value) || count($value) < 3){
 			return false;
@@ -47,7 +49,12 @@ class QREps extends QROutputAbstract{
 		return true;
 	}
 
-	protected function prepareModuleValue(mixed $value):string{
+	/**
+	 * @param array $value
+	 *
+	 * @inheritDoc
+	 */
+	protected function prepareModuleValue($value):string{
 		$values = [];
 
 		foreach(array_values($value) as $i => $val){
@@ -63,6 +70,9 @@ class QREps extends QROutputAbstract{
 		return $this->formatColor($values);
 	}
 
+	/**
+	 * @inheritDoc
+	 */
 	protected function getDefaultModuleValue(bool $isDark):string{
 		return $this->formatColor(($isDark) ? [0.0, 0.0, 0.0] : [1.0, 1.0, 1.0]);
 	}
@@ -73,8 +83,6 @@ class QREps extends QROutputAbstract{
 	 * 4 values in the color array will be interpreted as CMYK, 3 as RGB
 	 *
 	 * @throws \chillerlan\QRCode\Output\QRCodeOutputException
-	 *
-	 * @param float[] $values
 	 */
 	protected function formatColor(array $values):string{
 		$count = count($values);
@@ -83,37 +91,22 @@ class QREps extends QROutputAbstract{
 			throw new QRCodeOutputException('invalid color value');
 		}
 
-		// the EPS functions "C" and "R" are defined in the header below
 		$format = ($count === 4)
-			? '%f %f %f %f C' // CMYK
-			: '%f %f %f R'; // RGB
+			// CMYK
+			? '%f %f %f %f C'
+			// RGB
+			: '%f %f %f R';
 
 		return sprintf($format, ...$values);
 	}
 
-	public function dump(string|null $file = null):string{
-
-		$eps = implode("\n", [
-			// initialize header
-			$this->header(),
-			// create the path elements
-			$this->paths(),
-			// end file
-			'%%EOF',
-		]);
-
-		$this->saveToFile($eps, $file);
-
-		return $eps;
-	}
-
 	/**
-	 * Returns the main header for the EPS file, including function definitions and background
+	 * @inheritDoc
 	 */
-	protected function header():string{
+	public function dump(?string $file = null):string{
 		[$width, $height] = $this->getOutputDimensions();
 
-		$header = [
+		$eps = [
 			// main header
 			'%!PS-Adobe-3.0 EPSF-3.0',
 			'%%Creator: php-qrcode (https://github.com/chillerlan/php-qrcode)',
@@ -132,19 +125,13 @@ class QREps extends QROutputAbstract{
 		];
 
 		if($this::moduleValueIsValid($this->options->bgColor)){
-			$header[] = $this->prepareModuleValue($this->options->bgColor);
-			$header[] = sprintf('0 0 %s %s F', $width, $height);
+			$eps[] = $this->prepareModuleValue($this->options->bgColor);
+			$eps[] = sprintf('0 0 %s %s F', $width, $height);
 		}
 
-		return implode("\n", $header);
-	}
-
-	/**
-	 * returns one or more EPS path blocks
-	 */
-	protected function paths():string{
-		$paths = $this->collectModules();
-		$eps   = [];
+		// create the path elements
+		/** @phan-suppress-next-line PhanDeprecatedFunction */
+		$paths = $this->collectModules(fn(int $x, int $y, int $M_TYPE):string => $this->module($x, $y, $M_TYPE));
 
 		foreach($paths as $M_TYPE => $path){
 
@@ -156,16 +143,23 @@ class QREps extends QROutputAbstract{
 			$eps[] = implode("\n", $path);
 		}
 
-		return implode("\n", $eps);
+		// end file
+		$eps[] = '%%EOF';
+
+		$data = implode("\n", $eps);
+
+		$this->saveToFile($data, $file);
+
+		return $data;
 	}
 
 	/**
 	 * Returns a path segment for a single module
 	 */
-	protected function moduleTransform(int $x, int $y, int $M_TYPE, int $M_TYPE_LAYER):string|null{
+	protected function module(int $x, int $y, int $M_TYPE):string{
 
 		if(!$this->drawLightModules && !$this->matrix->isDark($M_TYPE)){
-			return null;
+			return '';
 		}
 
 		$outputX = ($x * $this->scale);

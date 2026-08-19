@@ -7,37 +7,48 @@
  * @copyright    2023 smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Output;
 
 use function array_map, implode, is_string, max, min, sprintf;
 
 /**
- * String/plaintext output (for CLI etc.)
+ *
  */
 class QRStringText extends QROutputAbstract{
 
-	final public const MIME_TYPE = 'text/plain';
+	public const MIME_TYPE = 'text/plain';
 
-	public static function moduleValueIsValid(mixed $value):bool{
+	/**
+	 * @inheritDoc
+	 */
+	public static function moduleValueIsValid($value):bool{
 		return is_string($value);
 	}
 
-	protected function prepareModuleValue(mixed $value):string{
+	/**
+	 * @inheritDoc
+	 */
+	protected function prepareModuleValue($value):string{
 		return $value;
 	}
 
+	/**
+	 * @inheritDoc
+	 */
 	protected function getDefaultModuleValue(bool $isDark):string{
 		return ($isDark) ? '██' : '░░';
 	}
 
-	public function dump(string|null $file = null):string{
+	/**
+	 * @inheritDoc
+	 */
+	public function dump(?string $file = null):string{
 		$lines     = [];
 		$linestart = $this->options->textLineStart;
 
 		foreach($this->matrix->getMatrix() as $row){
-			$lines[] = $linestart.implode('', array_map($this->getModuleValue(...), $row));
+			$lines[] = $linestart.implode('', array_map([$this, 'getModuleValue'], $row));
 		}
 
 		$data = implode($this->eol, $lines);
@@ -55,7 +66,7 @@ class QRStringText extends QROutputAbstract{
 	 *
 	 * @codeCoverageIgnore
 	 */
-	public static function ansi8(string $str, int $color, bool|null $background = null):string{
+	public static function ansi8(string $str, int $color, ?bool $background = null):string{
 		$color      = max(0, min($color, 255));
 		$background = ($background === true) ? 48 : 38;
 

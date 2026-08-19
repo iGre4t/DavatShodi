@@ -8,7 +8,6 @@
  * @copyright    2021 Smiley
  * @license      Apache-2.0
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Decoder;
 
@@ -21,33 +20,31 @@ use function property_exists;
  * applies to 2D barcode formats. For now, it contains the raw bytes obtained
  * as well as a String interpretation of those bytes, if applicable.
  *
- * @property string                                      $data
- * @property \chillerlan\QRCode\Common\EccLevel          $eccLevel
- * @property \chillerlan\QRCode\Detector\FinderPattern[] $finderPatterns
- * @property \chillerlan\QRCode\Common\MaskPattern       $maskPattern
  * @property \chillerlan\QRCode\Common\BitBuffer         $rawBytes
+ * @property string                                      $data
+ * @property \chillerlan\QRCode\Common\Version           $version
+ * @property \chillerlan\QRCode\Common\EccLevel          $eccLevel
+ * @property \chillerlan\QRCode\Common\MaskPattern       $maskPattern
  * @property int                                         $structuredAppendParity
  * @property int                                         $structuredAppendSequence
- * @property \chillerlan\QRCode\Common\Version           $version
+ * @property \chillerlan\QRCode\Detector\FinderPattern[] $finderPatterns
  */
 final class DecoderResult{
 
-	private string $data = '';
-	private EccLevel    $eccLevel;
-	/** @var \chillerlan\QRCode\Detector\FinderPattern[] */
-	private array       $finderPatterns = [];
-	private MaskPattern $maskPattern;
 	private BitBuffer   $rawBytes;
+	private Version     $version;
+	private EccLevel    $eccLevel;
+	private MaskPattern $maskPattern;
+	private string      $data = '';
 	private int         $structuredAppendParity = -1;
 	private int         $structuredAppendSequence = -1;
-	private Version     $version;
+	/** @var \chillerlan\QRCode\Detector\FinderPattern[] */
+	private array       $finderPatterns = [];
 
 	/**
 	 * DecoderResult constructor.
-	 *
-	 * @phpstan-param array<string, mixed> $properties
 	 */
-	public function __construct(iterable|null $properties = null){
+	public function __construct(?iterable $properties = null){
 
 		if($properties !== null){
 
@@ -64,7 +61,10 @@ final class DecoderResult{
 
 	}
 
-	public function __get(string $property):mixed{
+	/**
+	 * @return mixed|null
+	 */
+	public function __get(string $property){
 
 		if(property_exists($this, $property)){
 			return $this->{$property};
@@ -73,10 +73,16 @@ final class DecoderResult{
 		return null;
 	}
 
+	/**
+	 *
+	 */
 	public function __toString():string{
 		return $this->data;
 	}
 
+	/**
+	 *
+	 */
 	public function hasStructuredAppend():bool{
 		return $this->structuredAppendParity >= 0 && $this->structuredAppendSequence >= 0;
 	}

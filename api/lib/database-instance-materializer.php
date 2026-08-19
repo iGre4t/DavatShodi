@@ -118,6 +118,42 @@ function databaseInstanceMaterializeCodeShell(string $kind, string $source, stri
 }
 
 /**
+ * Keeps the small set of shared EGM control-panel files in already generated
+ * instances aligned with the developer template. Instance data is not copied
+ * or changed here; it remains in the per-instance database tables.
+ */
+function databaseInstanceMaterializerRefreshEgmPanelCode(string $source, string $target, string $folder): int
+{
+    if (!is_dir($source) || !is_dir($target) || trim($folder) === '') {
+        throw new InvalidArgumentException('Invalid EGM panel refresh request.');
+    }
+
+    $updated = 0;
+    foreach (['EGM Panel.php', 'egm-panel-local.js', 'invitees_csv_safety.php'] as $relative) {
+        $sourcePath = $source . DIRECTORY_SEPARATOR . $relative;
+        if (!is_file($sourcePath)) {
+            throw new RuntimeException('Missing shared EGM template file: ' . $relative);
+        }
+        $content = file_get_contents($sourcePath);
+        if (!is_string($content)) {
+            throw new RuntimeException('Unable to read shared EGM template file: ' . $relative);
+        }
+        $content = databaseInstanceMaterializerPatch('egm', $content, $folder);
+
+        $destination = $target . DIRECTORY_SEPARATOR . $relative;
+        $current = is_file($destination) ? file_get_contents($destination) : false;
+        if (is_string($current) && hash_equals(hash('sha256', $content), hash('sha256', $current))) {
+            continue;
+        }
+        if (file_put_contents($destination, $content, LOCK_EX) === false) {
+            throw new RuntimeException('Unable to refresh generated EGM panel code: ' . $relative);
+        }
+        $updated++;
+    }
+    return $updated;
+}
+
+/**
  * Rebuilds missing generated code shells after a full database import. No
  * event data is written to disk; settings, periods, users, responses, logs,
  * cards and assets continue to be served from their per-instance DB tables.
@@ -140,7 +176,12 @@ function materializeDatabaseBackedInstances(PDO $pdo, string $projectRoot): arra
             if (!str_starts_with($directory, $group['prefix'])) continue;
             $folder = basename($directory);
             $target = $projectRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $directory);
-            if (is_file($target . DIRECTORY_SEPARATOR . $group['panel'])) continue;
+            if (is_file($target . DIRECTORY_SEPARATOR . $group['panel'])) {
+                if ($group['kind'] === 'egm') {
+                    databaseInstanceMaterializerRefreshEgmPanelCode($group['source'], $target, $folder);
+                }
+                continue;
+            }
             $parent = dirname($target);
             if (!is_dir($parent) && !mkdir($parent, 0775, true) && !is_dir($parent)) {
                 throw new RuntimeException('Unable to create database instance parent directory.');
@@ -156,6 +197,9 @@ function materializeDatabaseBackedInstances(PDO $pdo, string $projectRoot): arra
                     databaseInstanceMaterializerRemoveTree($staging);
                 } elseif (!rename($staging, $target)) {
                     throw new RuntimeException('Unable to publish restored instance code: ' . $directory);
+                }
+                if ($group['kind'] === 'egm') {
+                    databaseInstanceMaterializerRefreshEgmPanelCode($group['source'], $target, $folder);
                 }
                 $restored[] = ['kind' => $group['kind'], 'code' => (string)$record['code'], 'directory' => $directory, 'files' => $files];
             } catch (Throwable $error) {

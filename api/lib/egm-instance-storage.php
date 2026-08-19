@@ -886,7 +886,7 @@ function egmInstanceRegistryDirectoryForMission(string $missionDir): string
     return '';
 }
 
-/** @return array{code:string,directory:string} */
+/** @return array{code:string,name:string,directory:string} */
 function egmInstanceEnsureDevelopmentInstance(PDO $pdo, string $missionDir): array
 {
     static $provisioning = false;
@@ -920,10 +920,10 @@ function egmInstanceEnsureDevelopmentInstance(PDO $pdo, string $missionDir): arr
             $provisioning = false;
         }
     }
-    return ['code' => EGM_DEVELOP_CODE, 'directory' => EGM_DEVELOP_DIRECTORY];
+    return ['code' => EGM_DEVELOP_CODE, 'name' => EGM_DEVELOP_NAME, 'directory' => EGM_DEVELOP_DIRECTORY];
 }
 
-/** @return array{code:string,directory:string}|null */
+/** @return array{code:string,name:string,directory:string}|null */
 function egmInstanceRegistryForDirectory(PDO $pdo, string $missionDir): ?array
 {
     $directory = egmInstanceRegistryDirectoryForMission($missionDir);
@@ -931,10 +931,14 @@ function egmInstanceRegistryForDirectory(PDO $pdo, string $missionDir): ?array
     if ($directory === EGM_DEVELOP_DIRECTORY) {
         return egmInstanceEnsureDevelopmentInstance($pdo, $missionDir);
     }
-    $statement = $pdo->prepare('SELECT `code`, `directory` FROM `egm` WHERE `directory` = :directory LIMIT 1');
+    $statement = $pdo->prepare('SELECT `code`, `name`, `directory` FROM `egm` WHERE `directory` = :directory LIMIT 1');
     $statement->execute([':directory' => $directory]);
     $row = $statement->fetch(PDO::FETCH_ASSOC);
-    return is_array($row) ? ['code' => (string)$row['code'], 'directory' => (string)$row['directory']] : null;
+    return is_array($row) ? [
+        'code' => (string)$row['code'],
+        'name' => (string)$row['name'],
+        'directory' => (string)$row['directory'],
+    ] : null;
 }
 
 function egmInstanceSyncUsersFromCsv(PDO $pdo, string $code, string $csvPath, string $mappingPath, bool $refreshPasswords = false): int

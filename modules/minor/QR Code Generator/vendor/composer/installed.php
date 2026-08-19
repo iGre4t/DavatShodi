@@ -3,7 +3,7 @@
         'name' => 'davatshodi/minor-qr-code-generator',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '51a443d240f8ce996bf1c771c1ca6655dde76838',
+        'reference' => '59c4e53b60daa2ec709202af82925c77770c323a',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -11,9 +11,9 @@
     ),
     'versions' => array(
         'chillerlan/php-qrcode' => array(
-            'pretty_version' => '6.0.1',
-            'version' => '6.0.1.0',
-            'reference' => '49006e34bd5328f163e80329e7312f34dceea59b',
+            'pretty_version' => '5.0.5',
+            'version' => '5.0.5.0',
+            'reference' => '7b66282572fc14075c0507d74d9837dab25b38d6',
             'type' => 'library',
             'install_path' => __DIR__ . '/../chillerlan/php-qrcode',
             'aliases' => array(),
@@ -31,7 +31,7 @@
         'davatshodi/minor-qr-code-generator' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '51a443d240f8ce996bf1c771c1ca6655dde76838',
+            'reference' => '59c4e53b60daa2ec709202af82925c77770c323a',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

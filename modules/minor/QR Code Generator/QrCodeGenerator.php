@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace DavatShodi\Modules\Minor\QrCode;
 
+use chillerlan\QRCode\Common\EccLevel;
 use chillerlan\QRCode\Output\QRMarkupSVG;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
@@ -49,10 +50,16 @@ final class QrCodeGenerator
         }
 
         try {
+            $eccLevel = match ($ecc) {
+                'L' => EccLevel::L,
+                'M' => EccLevel::M,
+                'Q' => EccLevel::Q,
+                'H' => EccLevel::H,
+            };
             $qrOptions = new QROptions([
                 'outputInterface' => QRMarkupSVG::class,
                 'outputBase64' => false,
-                'eccLevel' => $ecc,
+                'eccLevel' => $eccLevel,
                 'addQuietzone' => true,
                 'quietzoneSize' => $margin,
                 'svgAddXmlHeader' => true,

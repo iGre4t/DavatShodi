@@ -7,7 +7,6 @@
  * @copyright    2020 smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Data;
 
@@ -44,16 +43,29 @@ final class Hanzi extends QRDataModeAbstract{
 	 */
 	public const GB2312_SUBSET = 0b0001;
 
+	/**
+	 * @inheritDoc
+	 */
 	public const DATAMODE = Mode::HANZI;
 
+	/**
+	 * @inheritDoc
+	 */
 	protected function getCharCount():int{
 		return mb_strlen($this->data, self::ENCODING);
 	}
 
+	/**
+	 * @inheritDoc
+	 */
 	public function getLengthInBits():int{
 		return ($this->getCharCount() * 13);
 	}
 
+	/**
+	 * @inheritDoc
+	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
+	 */
 	public static function convertEncoding(string $string):string{
 
 		$detected = mb_detect_encoding(
@@ -87,7 +99,7 @@ final class Hanzi extends QRDataModeAbstract{
 		try{
 			$string = self::convertEncoding($string);
 		}
-		catch(Throwable){
+		catch(Throwable $e){
 			return false;
 		}
 
@@ -121,12 +133,12 @@ final class Hanzi extends QRDataModeAbstract{
 	 *
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException on an illegal character occurence
 	 */
-	public function write(BitBuffer $bitBuffer, int $versionNumber):static{
+	public function write(BitBuffer $bitBuffer, int $versionNumber):QRDataModeInterface{
 
 		$bitBuffer
 			->put(self::DATAMODE, 4)
-			->put(self::GB2312_SUBSET, 4)
-			->put($this->getCharCount(), $this->getLengthBits($versionNumber))
+			->put($this::GB2312_SUBSET, 4)
+			->put($this->getCharCount(), $this::getLengthBits($versionNumber))
 		;
 
 		$len = strlen($this->data);
@@ -159,14 +171,14 @@ final class Hanzi extends QRDataModeAbstract{
 	 *
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 */
-	public function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
+	public static function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
 
 		// Hanzi mode contains a subset indicator right after mode indicator
 		if($bitBuffer->read(4) !== self::GB2312_SUBSET){
 			throw new QRCodeDataException('ecpected subset indicator for Hanzi mode');
 		}
 
-		$length = $bitBuffer->read($this->getLengthBits($versionNumber));
+		$length = $bitBuffer->read(self::getLengthBits($versionNumber));
 
 		if($bitBuffer->available() < ($length * 13)){
 			throw new QRCodeDataException('not enough bits available');
@@ -191,13 +203,7 @@ final class Hanzi extends QRDataModeAbstract{
 			$length--;
 		}
 
-		$encoded = mb_convert_encoding(implode('', $buffer), mb_internal_encoding(), self::ENCODING);
-
-		if($encoded === false){
-			throw new QRCodeDataException('mb_convert_encoding() error'); // @codeCoverageIgnore
-		}
-
-		return $encoded;
+		return mb_convert_encoding(implode('', $buffer), mb_internal_encoding(), self::ENCODING);
 	}
 
 }

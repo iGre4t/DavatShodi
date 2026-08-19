@@ -3045,21 +3045,96 @@
     return state;
   }
 
-  async function requestPeriodInvites(action, payload = {}, method = 'GET') {
-    if (method === 'GET') {
-      const query = new URLSearchParams({ action, ...payload });
-      const response = await fetch(`${PERIOD_INVITES_ENDPOINT}?${query}`, { credentials: 'same-origin' });
-      const data = await response.json();
-      if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'دریافت اطلاعات دعوت ناموفق بود.');
-      return data;
+  async function readPeriodInviteResponse(response) {
+    const responseText = await response.text();
+    if (responseText.trim() === '') {
+      const status = Number(response.status || 0);
+      if (status === 413) throw new Error('حجم درخواست بیش از حد مجاز سرور است. فایل در بخش‌های کوچک‌تر پردازش خواهد شد؛ دوباره تلاش کنید.');
+      if (status === 502 || status === 503 || status === 504) throw new Error('سرور هنگام پردازش فایل به محدودیت زمانی رسید. دوباره تلاش کنید.');
+      throw new Error(`پاسخ سرور خالی بود (HTTP ${status || 'نامشخص'}).`);
     }
-    const response = await fetch(PERIOD_INVITES_ENDPOINT, {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf: TASK_CLUB_CSRF, ...payload })
-    });
-    const data = await response.json();
-    if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'عملیات دعوت ناموفق بود.');
+    let data = null;
+    try {
+      data = JSON.parse(responseText.replace(/^\uFEFF/, ''));
+    } catch (error) {
+      const status = Number(response.status || 0);
+      if (status === 413) throw new Error('حجم درخواست بیش از حد مجاز سرور است. فایل در بخش‌های کوچک‌تر پردازش خواهد شد؛ دوباره تلاش کنید.');
+      if (status === 502 || status === 503 || status === 504) throw new Error('سرور هنگام پردازش فایل به محدودیت زمانی رسید. دوباره تلاش کنید.');
+      if (response.redirected && /(?:^|\/)login\.php(?:$|[?#])/i.test(String(response.url || ''))) {
+        throw new Error('نشست شما منقضی شده است. دوباره وارد پنل شوید.');
+      }
+      throw new Error(`پاسخ سرور JSON معتبر نبود (HTTP ${status || 'نامشخص'}).`);
+    }
+    if (!response.ok || data?.status !== 'ok') {
+      throw new Error(data?.message || `عملیات دعوت ناموفق بود (HTTP ${response.status || 'نامشخص'}).`);
+    }
     return data;
+  }
+
+  async function requestPeriodInvites(action, payload = {}, method = 'GET') {
+    let response;
+    try {
+      if (method === 'GET') {
+        const query = new URLSearchParams({ action, ...payload });
+        response = await fetch(`${PERIOD_INVITES_ENDPOINT}?${query}`, { credentials: 'same-origin' });
+      } else {
+        response = await fetch(PERIOD_INVITES_ENDPOINT, {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, csrf: TASK_CLUB_CSRF, ...payload })
+        });
+      }
+    } catch (error) {
+      throw new Error('ارتباط با سرور برقرار نشد. اتصال اینترنت را بررسی کرده و دوباره تلاش کنید.');
+    }
+    try {
+      return await readPeriodInviteResponse(response);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new Error('دریافت پاسخ سرور قطع شد. اتصال اینترنت را بررسی کرده و دوباره تلاش کنید.');
+      }
+      throw error;
+    }
+  }
+
+  async function matchPeriodExcelRows(periodCode, rows, onProgress = null) {
+    const originalsById = new Map(rows.map((row) => [String(row.excel_id || ''), row]));
+    const compactRows = rows.map((row) => ({
+      excel_id: String(row.excel_id || ''),
+      source_row: Number(row.source_row || 0),
+      national_id: String(row.national_id || ''),
+      work_id: String(row.work_id || '')
+    }));
+    const batchSize = 400;
+    const batches = [];
+    for (let index = 0; index < compactRows.length; index += batchSize) {
+      batches.push(compactRows.slice(index, index + batchSize));
+    }
+    if (!batches.length) batches.push([]);
+
+    const matchedByCandidate = new Map();
+    const unmatchedByExcelId = new Map();
+    let source = '';
+    for (let index = 0; index < batches.length; index += 1) {
+      if (typeof onProgress === 'function') onProgress(index + 1, batches.length);
+      const data = await requestPeriodInvites('match_excel', { period_code: periodCode, rows: batches[index] }, 'POST');
+      source = String(data.source || source);
+      (Array.isArray(data.rows) ? data.rows : []).forEach((row) => {
+        const candidateId = String(row?.candidate_id || '');
+        if (candidateId !== '') matchedByCandidate.set(candidateId, row);
+      });
+      (Array.isArray(data.unmatched_rows) ? data.unmatched_rows : []).forEach((row) => {
+        const excelId = String(row?.excel_id || '');
+        if (excelId !== '') unmatchedByExcelId.set(excelId, originalsById.get(excelId) || row);
+      });
+    }
+    return {
+      status: 'ok',
+      source,
+      rows: Array.from(matchedByCandidate.values()),
+      matched: matchedByCandidate.size,
+      unmatched: unmatchedByExcelId.size,
+      unmatched_rows: Array.from(unmatchedByExcelId.values())
+    };
   }
 
   async function requestPeriodInviteCards(action, payload = {}, method = 'GET') {
@@ -3749,8 +3824,13 @@
         gender: mappedValue(row, 'gender'), postal_level: mappedValue(row, 'postal-level'),
         raw_data: Object.fromEntries(state.excelHeaders.map((header, columnIndex) => [String(header || `ستون ${columnIndex + 1}`), String(row[columnIndex] ?? '')]))
       }));
+      const matchButton = pane.querySelector('[data-period-excel-match]');
+      if (matchButton instanceof HTMLButtonElement && matchButton.disabled) return;
+      if (matchButton instanceof HTMLButtonElement) matchButton.disabled = true;
       try {
-        const data = await requestPeriodInvites('match_excel', { period_code: periodCodeForPane(pane), rows }, 'POST');
+        const data = await matchPeriodExcelRows(periodCodeForPane(pane), rows, (part, total) => {
+          if (status) status.textContent = total > 1 ? `در حال تطبیق بخش ${part} از ${total}…` : 'در حال تطبیق فایل…';
+        });
         state.matchedMode = true;
         state.selected = new Set((data.rows || []).filter((row) => !row?.invited).map((row) => String(row.candidate_id || '')));
         state.unmatchedRows = Array.isArray(data.unmatched_rows) ? data.unmatched_rows : [];
@@ -3758,7 +3838,11 @@
         renderPeriodCandidates(pane, { rows: data.rows || [], total: data.matched || 0, page: 1, pages: 1 });
         renderPeriodUnmatchedRows(pane);
         if (status) status.textContent = `${data.matched || 0} کاربر تطبیق و انتخاب شد؛ ${data.unmatched || 0} ردیف بدون تطبیق بود.`;
-      } catch (error) { if (status) status.textContent = error?.message || 'تطبیق فایل ناموفق بود.'; }
+      } catch (error) {
+        if (status) status.textContent = error?.message || 'تطبیق فایل ناموفق بود.';
+      } finally {
+        if (matchButton instanceof HTMLButtonElement) matchButton.disabled = false;
+      }
     });
   }
 

@@ -10,11 +10,9 @@
  *
  * @noinspection PhpComposerExtensionStubsInspection
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Common;
 
-use chillerlan\QRCode\QROptions;
 use chillerlan\Settings\SettingsContainerInterface;
 use Imagick;
 use function count;
@@ -23,14 +21,14 @@ use function count;
  * This class is used to help decode images from files which arrive as Imagick Resource
  * It does not support rotation.
  */
-final class IMagickLuminanceSource extends LuminanceSourceAbstract{
+class IMagickLuminanceSource extends LuminanceSourceAbstract{
 
-	private Imagick $imagick;
+	protected Imagick $imagick;
 
 	/**
 	 * IMagickLuminanceSource constructor.
 	 */
-	public function __construct(Imagick $imagick, SettingsContainerInterface|QROptions $options = new QROptions){
+	public function __construct(Imagick $imagick, ?SettingsContainerInterface $options = null){
 		parent::__construct($imagick->getImageWidth(), $imagick->getImageHeight(), $options);
 
 		$this->imagick = $imagick;
@@ -52,7 +50,10 @@ final class IMagickLuminanceSource extends LuminanceSourceAbstract{
 		$this->setLuminancePixels();
 	}
 
-	private function setLuminancePixels():void{
+	/**
+	 *
+	 */
+	protected function setLuminancePixels():void{
 		$pixels = $this->imagick->exportImagePixels(1, 1, $this->width, $this->height, 'RGB', Imagick::PIXEL_CHAR);
 		$count  = count($pixels);
 
@@ -61,11 +62,13 @@ final class IMagickLuminanceSource extends LuminanceSourceAbstract{
 		}
 	}
 
-	public static function fromFile(string $path, SettingsContainerInterface|QROptions $options = new QROptions):static{
+	/** @inheritDoc */
+	public static function fromFile(string $path, ?SettingsContainerInterface $options = null):self{
 		return new self(new Imagick(self::checkFile($path)), $options);
 	}
 
-	public static function fromBlob(string $blob, SettingsContainerInterface|QROptions $options = new QROptions):static{
+	/** @inheritDoc */
+	public static function fromBlob(string $blob, ?SettingsContainerInterface $options = null):self{
 		$im = new Imagick;
 		$im->readImageBlob($blob);
 

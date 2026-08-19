@@ -7,7 +7,6 @@
  * @copyright    2015 Smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Data;
 
@@ -29,22 +28,34 @@ final class AlphaNum extends QRDataModeAbstract{
 	 */
 	private const CHAR_MAP = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
 
+	/**
+	 * @inheritDoc
+	 */
 	public const DATAMODE = Mode::ALPHANUM;
 
+	/**
+	 * @inheritDoc
+	 */
 	public function getLengthInBits():int{
 		return (int)ceil($this->getCharCount() * (11 / 2));
 	}
 
+	/**
+	 * @inheritDoc
+	 */
 	public static function validateString(string $string):bool{
 		return (bool)preg_match('/^[A-Z\d %$*+\-.:\/]+$/', $string);
 	}
 
-	public function write(BitBuffer $bitBuffer, int $versionNumber):static{
+	/**
+	 * @inheritDoc
+	 */
+	public function write(BitBuffer $bitBuffer, int $versionNumber):QRDataModeInterface{
 		$len = $this->getCharCount();
 
 		$bitBuffer
 			->put(self::DATAMODE, 4)
-			->put($len, $this->getLengthBits($versionNumber))
+			->put($len, $this::getLengthBits($versionNumber))
 		;
 
 		// encode 2 characters in 11 bits
@@ -68,8 +79,8 @@ final class AlphaNum extends QRDataModeAbstract{
 	 *
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 */
-	public function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
-		$length = $bitBuffer->read($this->getLengthBits($versionNumber));
+	public static function decodeSegment(BitBuffer $bitBuffer, int $versionNumber):string{
+		$length = $bitBuffer->read(self::getLengthBits($versionNumber));
 		$result = '';
 		// Read two characters at a time
 		while($length > 1){
@@ -79,8 +90,8 @@ final class AlphaNum extends QRDataModeAbstract{
 			}
 
 			$nextTwoCharsBits  = $bitBuffer->read(11);
-			$result           .= $this->chr(intdiv($nextTwoCharsBits, 45));
-			$result           .= $this->chr($nextTwoCharsBits % 45);
+			$result           .= self::chr(intdiv($nextTwoCharsBits, 45));
+			$result           .= self::chr($nextTwoCharsBits % 45);
 			$length           -= 2;
 		}
 
@@ -90,7 +101,7 @@ final class AlphaNum extends QRDataModeAbstract{
 				throw new QRCodeDataException('not enough bits available'); // @codeCoverageIgnore
 			}
 
-			$result .= $this->chr($bitBuffer->read(6));
+			$result .= self::chr($bitBuffer->read(6));
 		}
 
 		return $result;
@@ -113,7 +124,7 @@ final class AlphaNum extends QRDataModeAbstract{
 	/**
 	 * @throws \chillerlan\QRCode\Data\QRCodeDataException
 	 */
-	private function chr(int $ord):string{
+	private static function chr(int $ord):string{
 
 		if($ord < 0 || $ord > 44){
 			throw new QRCodeDataException('invalid character code'); // @codeCoverageIgnore

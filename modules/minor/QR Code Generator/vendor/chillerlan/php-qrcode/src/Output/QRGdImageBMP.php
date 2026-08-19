@@ -9,7 +9,6 @@
  *
  * @noinspection PhpComposerExtensionStubsInspection
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Output;
 
@@ -22,16 +21,13 @@ use function imagebmp;
  */
 class QRGdImageBMP extends QRGdImage{
 
-	final public const MIME_TYPE = 'image/bmp';
+	public const MIME_TYPE = 'image/bmp';
 
 	/**
-	 * @throws \chillerlan\QRCode\Output\QRCodeOutputException
+	 * @inheritDoc
 	 */
 	protected function renderImage():void{
-		// the $compressed parameter is boolean here
-		if(imagebmp(image: $this->image, compressed: ($this->options->quality > 0)) === false){
-			throw new QRCodeOutputException('imagebmp() error');
-		}
+		imagebmp($this->image, null, ($this->options->quality > 0));
 	}
 
 }

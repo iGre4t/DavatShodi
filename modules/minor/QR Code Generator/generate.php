@@ -4,8 +4,6 @@ declare(strict_types=1);
 use DavatShodi\Modules\Minor\QrCode\QrCodeGenerator;
 use DavatShodi\Modules\Minor\QrCode\QrCodeValidationException;
 
-require_once __DIR__ . '/QrCodeGenerator.php';
-
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -23,6 +21,13 @@ function qrGeneratorJson(array $payload, int $status): never
 function qrGeneratorScalarText(mixed $value, string $fallback = ''): string
 {
     return is_scalar($value) ? (string)$value : $fallback;
+}
+
+try {
+    require_once __DIR__ . '/QrCodeGenerator.php';
+} catch (Throwable $error) {
+    error_log('QR code dependency loading failed: ' . $error->getMessage());
+    qrGeneratorJson(['status' => 'error', 'message' => 'QR code dependency loading failed.'], 500);
 }
 
 if (empty($_SESSION['authenticated'])) {

@@ -7,7 +7,6 @@
  * @copyright    2015 Smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Common;
 
@@ -84,8 +83,6 @@ final class BitBuffer{
 
 	/**
 	 * returns the current buffer length
-	 *
-	 * @deprecated 6.0.1 This method will be removed. In v7, use the property "BitBuffer::$length" instead.
 	 */
 	public function getLength():int{
 		return $this->length;
@@ -94,18 +91,14 @@ final class BitBuffer{
 	/**
 	 * returns the buffer content
 	 *
-	 * to debug: `array_map(fn($v) => sprintf('%08b', $v), $bitBuffer->getBuffer())`
-	 *
-	 * @return int[]
-	 *
-	 * @deprecated 6.0.1 This method will be removed in v7, use the property "BitBuffer::$buffer" instead.
+	 * to debug: array_map(fn($v) => sprintf('%08b', $v), $bitBuffer->getBuffer())
 	 */
 	public function getBuffer():array{
 		return $this->buffer;
 	}
 
 	/**
-	 * Returns the number of bits that can be read successfully
+	 * @return int number of bits that can be read successfully
 	 */
 	public function available():int{
 		return ((8 * ($this->length - $this->bytesRead)) - $this->bitsRead);

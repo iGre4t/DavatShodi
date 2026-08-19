@@ -8,7 +8,6 @@
  * @copyright    2021 Smiley
  * @license      Apache-2.0
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Detector;
 
@@ -38,8 +37,6 @@ final class Detector{
 
 	/**
 	 * @return \chillerlan\QRCode\Detector\FinderPattern[]
-	 *
-	 * @deprecated 6.0.1 This method will be removed. In v7, use the property "Detector::$finderPatterns" instead.
 	 */
 	public function getFinderPatterns():array{
 		return $this->finderPatterns;
@@ -288,8 +285,8 @@ final class Detector{
 		float $overallEstModuleSize,
 		int $estAlignmentX,
 		int $estAlignmentY,
-		float $allowanceFactor,
-	):AlignmentPattern|null{
+		float $allowanceFactor
+	):?AlignmentPattern{
 		// Look for an alignment pattern (3 modules in size) around where it should be
 		$dimension           = $this->matrix->getSize();
 		$allowance           = (int)($allowanceFactor * $overallEstModuleSize);
@@ -315,12 +312,15 @@ final class Detector{
 		);
 	}
 
+	/**
+	 *
+	 */
 	private function createTransform(
-		FinderPattern         $nw,
-		FinderPattern         $ne,
-		FinderPattern         $sw,
-		int                   $size,
-		AlignmentPattern|null $ap = null,
+		FinderPattern     $nw,
+		FinderPattern     $ne,
+		FinderPattern     $sw,
+		int               $size,
+		?AlignmentPattern $ap = null
 	):PerspectiveTransform{
 		$dimMinusThree = ($size - 3.5);
 
@@ -354,7 +354,7 @@ final class Detector{
 			$bottomRightX,
 			$bottomRightY,
 			$sw->getX(),
-			$sw->getY(),
+			$sw->getY()
 		);
 	}
 

@@ -43,4 +43,4 @@ POST requests can use JSON or form fields. `?health=1` returns capability inform
 
 ## Dependency
 
-The module pins `chillerlan/php-qrcode` and its settings-container dependency in `composer.lock`. The installed dependency sources and licenses are contained under `vendor/`.
+The module pins the PHP-8.1-compatible `chillerlan/php-qrcode` v5 line and its settings-container dependency in `composer.lock`. The installed dependency sources and licenses are contained under `vendor/`.

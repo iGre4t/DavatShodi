@@ -7,7 +7,6 @@
  * @copyright    2015 Smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Output;
 
@@ -19,27 +18,116 @@ use chillerlan\QRCode\Data\QRMatrix;
 interface QROutputInterface{
 
 	/**
-	 * Map of built-in output class FQN
-	 *
-	 * @var string[]
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
 	 * @see https://github.com/chillerlan/php-qrcode/issues/223
 	 */
+	public const MARKUP_HTML  = 'html';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const MARKUP_SVG   = 'svg';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const GDIMAGE_BMP  = 'bmp';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const GDIMAGE_GIF  = 'gif';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const GDIMAGE_JPG  = 'jpg';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const GDIMAGE_PNG  = 'png';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const GDIMAGE_WEBP = 'webp';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const STRING_JSON  = 'json';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const STRING_TEXT  = 'text';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const IMAGICK      = 'imagick';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const FPDF         = 'fpdf';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const EPS          = 'eps';
+
+	/**
+	 * @var string
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see https://github.com/chillerlan/php-qrcode/issues/223
+	 */
+	public const CUSTOM       = 'custom';
+
+	/**
+	 * Map of built-in output modes => class FQN
+	 *
+	 * @var string[]
+	 * @deprecated 5.0.0 <no replacement>
+	 * @see        https://github.com/chillerlan/php-qrcode/issues/223
+	 */
 	public const MODES = [
-		QREps::class,
-		QRFpdf::class,
-		QRGdImageAVIF::class,
-		QRGdImageBMP::class,
-		QRGdImageGIF::class,
-		QRGdImageJPEG::class,
-		QRGdImagePNG::class,
-		QRGdImageWEBP::class,
-		QRImagick::class,
-		QRInterventionImage::class,
-		QRMarkupHTML::class,
-		QRMarkupSVG::class,
-		QRMarkupXML::class,
-		QRStringJSON::class,
-		QRStringText::class,
+		self::MARKUP_SVG   => QRMarkupSVG::class,
+		self::MARKUP_HTML  => QRMarkupHTML::class,
+		self::GDIMAGE_BMP  => QRGdImageBMP::class,
+		self::GDIMAGE_GIF  => QRGdImageGIF::class,
+		self::GDIMAGE_JPG  => QRGdImageJPEG::class,
+		self::GDIMAGE_PNG  => QRGdImagePNG::class,
+		self::GDIMAGE_WEBP => QRGdImageWEBP::class,
+		self::STRING_JSON  => QRStringJSON::class,
+		self::STRING_TEXT  => QRStringText::class,
+		self::IMAGICK      => QRImagick::class,
+		self::FPDF         => QRFpdf::class,
+		self::EPS          => QREps::class,
 	];
 
 	/**
@@ -109,17 +197,18 @@ interface QROutputInterface{
 	];
 
 	/**
-	 * Note: do not call this constant from the interface, but rather from one of the child classes
-	 *
-	 * @var string
-	 * @see \chillerlan\QRCode\Output\QROutputAbstract::toBase64DataURI()
+	 * @var      string
+	 * @see      \chillerlan\QRCode\Output\QROutputAbstract::toBase64DataURI()
+	 * @internal do not call this constant from the interface, but rather from one of the child classes
 	 */
 	public const MIME_TYPE = '';
 
 	/**
 	 * Determines whether the given value is valid
+	 *
+	 * @param mixed $value
 	 */
-	public static function moduleValueIsValid(mixed $value):bool;
+	public static function moduleValueIsValid($value):bool;
 
 	/**
 	 * Generates the output, optionally dumps it to a file, and returns it
@@ -129,7 +218,9 @@ interface QROutputInterface{
 	 * you need to supply the $file parameter here in that case (or handle the option value in your custom output module).
 	 *
 	 * @see \chillerlan\QRCode\QRCode::renderMatrix()
+	 *
+	 * @return mixed
 	 */
-	public function dump(string|null $file = null):mixed;
+	public function dump(?string $file = null);
 
 }

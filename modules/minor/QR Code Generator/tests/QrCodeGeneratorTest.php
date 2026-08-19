@@ -12,6 +12,13 @@ function qrTestAssert(bool $condition, string $message): void
 }
 
 $generator = new QrCodeGenerator();
+$composer = json_decode((string)file_get_contents(dirname(__DIR__) . '/composer.json'), true);
+qrTestAssert(
+    is_array($composer)
+        && ($composer['require']['php'] ?? '') === '>=8.1'
+        && ($composer['require']['chillerlan/php-qrcode'] ?? '') === '^5.0',
+    'QR dependencies are not compatible with the production PHP 8.1 runtime.'
+);
 $payload = "  https://example.com/دعوت/۱۲۳  ";
 $svg = $generator->generateSvg($payload, [
     'size' => 512,
@@ -26,6 +33,13 @@ qrTestAssert(str_contains($svg, 'width="512"'), 'Requested SVG size is missing.'
 qrTestAssert(str_contains($svg, 'fill="#123456"'), 'Dark color was not applied.');
 qrTestAssert(str_contains($svg, 'fill="#fafafa"'), 'Light color was not applied.');
 qrTestAssert(str_starts_with($generator->generateDataUri('test'), 'data:image/svg+xml;base64,'), 'Data URI is invalid.');
+
+$productionSvg = $generator->generateSvg('0073384161', [
+    'size' => 1024,
+    'margin' => 2,
+    'ecc' => 'M',
+]);
+qrTestAssert(str_contains($productionSvg, 'width="1024"'), 'The production Invite Card QR request could not be rendered.');
 
 $validationRaised = false;
 try {

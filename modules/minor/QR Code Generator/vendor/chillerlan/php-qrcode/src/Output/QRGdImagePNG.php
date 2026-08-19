@@ -9,7 +9,6 @@
  *
  * @noinspection PhpComposerExtensionStubsInspection
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Output;
 
@@ -22,19 +21,13 @@ use function imagepng, max, min;
  */
 class QRGdImagePNG extends QRGdImage{
 
-	final public const MIME_TYPE = 'image/png';
-
-	protected function getQuality():int{
-		return max(-1, min(9, $this->options->quality));
-	}
+	public const MIME_TYPE = 'image/png';
 
 	/**
-	 * @throws \chillerlan\QRCode\Output\QRCodeOutputException
+	 * @inheritDoc
 	 */
 	protected function renderImage():void{
-		if(imagepng(image: $this->image, quality: $this->getQuality()) === false){
-			throw new QRCodeOutputException('imagepng() error');
-		}
+		imagepng($this->image, null, max(-1, min(9, $this->options->quality)));
 	}
 
 }

@@ -7,7 +7,6 @@
  * @copyright    2020 smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Common;
 
@@ -218,7 +217,7 @@ final class Version{
 	/**
 	 * QR Code version number
 	 */
-	private int $versionNumber;
+	private int $version;
 
 	/**
 	 * Version constructor.
@@ -231,37 +230,35 @@ final class Version{
 			throw new QRCodeException('invalid version given');
 		}
 
-		$this->versionNumber = $version;
+		$this->version = $version;
 	}
 
 	/**
 	 * returns the current version number as string
 	 */
 	public function __toString():string{
-		return (string)$this->versionNumber;
+		return (string)$this->version;
 	}
 
 	/**
 	 * returns the current version number
-	 *
-	 * @deprecated 6.0.1 This method will be removed. In v7, use the property "Version::$versionNumber" instead.
 	 */
 	public function getVersionNumber():int{
-		return $this->versionNumber;
+		return $this->version;
 	}
 
 	/**
 	 * the matrix size for the given version
 	 */
 	public function getDimension():int{
-		return (($this->versionNumber * 4) + 17);
+		return (($this->version * 4) + 17);
 	}
 
 	/**
 	 * the version pattern for the given version
 	 */
-	public function getVersionPattern():int|null{
-		return (self::VERSION_PATTERN[$this->versionNumber] ?? null);
+	public function getVersionPattern():?int{
+		return (self::VERSION_PATTERN[$this->version] ?? null);
 	}
 
 	/**
@@ -270,21 +267,21 @@ final class Version{
 	 * @return int[]
 	 */
 	public function getAlignmentPattern():array{
-		return self::ALIGNMENT_PATTERN[$this->versionNumber];
+		return self::ALIGNMENT_PATTERN[$this->version];
 	}
 
 	/**
 	 * returns ECC block information for the given $version and $eccLevel
 	 */
 	public function getRSBlocks(EccLevel $eccLevel):array{
-		return self::RSBLOCKS[$this->versionNumber][$eccLevel->getOrdinal()];
+		return self::RSBLOCKS[$this->version][$eccLevel->getOrdinal()];
 	}
 
 	/**
 	 * returns the maximum codewords for the current version
 	 */
 	public function getTotalCodewords():int{
-		return self::TOTAL_CODEWORDS[$this->versionNumber];
+		return self::TOTAL_CODEWORDS[$this->version];
 	}
 
 }

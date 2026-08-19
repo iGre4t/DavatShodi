@@ -7,7 +7,6 @@
  * @copyright    2015 Smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode;
 
@@ -17,5 +16,5 @@ use chillerlan\Settings\SettingsContainerAbstract;
  * The QRCode settings container
  */
 class QROptions extends SettingsContainerAbstract{
-	use QROptionsTrait, QRCodeReaderOptionsTrait;
+	use QROptionsTrait;
 }

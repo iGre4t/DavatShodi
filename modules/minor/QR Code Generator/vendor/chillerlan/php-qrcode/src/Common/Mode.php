@@ -7,7 +7,6 @@
  * @copyright    2020 smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Common;
 
@@ -59,7 +58,7 @@ final class Mode{
 	/**
 	 * Map of data mode => interface (detection order)
 	 *
-	 * @var array<int, string>
+	 * @var string[]
 	 */
 	public const INTERFACES = [
 		self::NUMBER   => Number::class,

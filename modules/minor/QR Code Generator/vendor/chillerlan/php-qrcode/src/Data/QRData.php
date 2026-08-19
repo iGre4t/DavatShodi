@@ -7,14 +7,12 @@
  * @copyright    2015 Smiley
  * @license      MIT
  */
-declare(strict_types=1);
 
 namespace chillerlan\QRCode\Data;
 
-use chillerlan\QRCode\QROptions;
 use chillerlan\QRCode\Common\{BitBuffer, EccLevel, Mode, Version};
 use chillerlan\Settings\SettingsContainerInterface;
-use function sprintf;
+use function count, sprintf;
 
 /**
  * Processes the binary data and maps it on a QRMatrix which is then being returned
@@ -23,8 +21,10 @@ final class QRData{
 
 	/**
 	 * the options instance
+	 *
+	 * @var \chillerlan\Settings\SettingsContainerInterface|\chillerlan\QRCode\QROptions
 	 */
-	private SettingsContainerInterface|QROptions $options;
+	private SettingsContainerInterface $options;
 
 	/**
 	 * a BitBuffer instance
@@ -55,10 +55,8 @@ final class QRData{
 
 	/**
 	 * QRData constructor.
-	 *
-	 * @param \chillerlan\QRCode\Data\QRDataModeInterface[] $dataSegments
 	 */
-	public function __construct(SettingsContainerInterface|QROptions $options, array $dataSegments = []){
+	public function __construct(SettingsContainerInterface $options, array $dataSegments = []){
 		$this->options       = $options;
 		$this->bitBuffer     = new BitBuffer;
 		$this->eccLevel      = new EccLevel($this->options->eccLevel);
@@ -87,7 +85,6 @@ final class QRData{
 	/**
 	 * Returns the current BitBuffer instance
 	 *
-	 * @deprecated 6.0.1 This method will be removed. In v7, use the property "QRData::$bitBuffer" instead.
 	 * @codeCoverageIgnore
 	 */
 	public function getBitBuffer():BitBuffer{
@@ -150,7 +147,7 @@ final class QRData{
 		}
 
 		$provisionalVersion = null;
-		/** @var int $version */
+
 		foreach($this->maxBitsForEcc as $version => $maxBits){
 
 			if($length <= $maxBits){
@@ -222,7 +219,7 @@ final class QRData{
 		// overflow, likely caused due to invalid version setting
 		if($this->bitBuffer->getLength() > $MAX_BITS){
 			throw new QRCodeDataException(
-				sprintf('code length overflow. (%d > %d bit)', $this->bitBuffer->getLength(), $MAX_BITS),
+				sprintf('code length overflow. (%d > %d bit)', $this->bitBuffer->getLength(), $MAX_BITS)
 			);
 		}
 

@@ -55,6 +55,14 @@ foreach ($egmPanels as $path) {
     );
 }
 
+$egmStorage = file_get_contents($root . '/api/lib/egm-instance-storage.php');
+egmPeriodAssert(is_string($egmStorage), 'Could not inspect EGM registry directory lookup');
+egmPeriodAssert(
+    str_contains($egmStorage, 'SELECT `code`, `name`, `directory` FROM `egm` WHERE `directory` = :directory LIMIT 1')
+        && str_contains($egmStorage, "'name' => (string)\$row['name']"),
+    'The EGM directory lookup does not return the instance name needed by the panel header'
+);
+
 $periodFrontends = [
     $root . '/mini apps/Event Guest Manager/egm-panel-local.js',
     $root . '/mini apps/EGMs/EGM/egm-panel-local.js',
@@ -67,6 +75,11 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, 'applyPeriodExcelSheet(pane, selectedSheet)'), "Selecting a sheet does not trigger column processing in {$path}");
     egmPeriodAssert(str_contains($source, 'state.excelWorkbook.Sheets?.[sheetName]'), "The chosen workbook sheet is not read in {$path}");
     egmPeriodAssert(!str_contains($source, 'workbook.Sheets[workbook.SheetNames[0]]'), "The first workbook sheet is still selected implicitly in {$path}");
+    egmPeriodAssert(str_contains($source, 'async function readPeriodInviteResponse(response)'), "Period invitation responses do not safely handle non-JSON server errors in {$path}");
+    egmPeriodAssert(str_contains($source, 'async function matchPeriodExcelRows(periodCode, rows'), "Excel matching is not split into reliable server batches in {$path}");
+    egmPeriodAssert(str_contains($source, 'const batchSize = 400;'), "Excel matching does not enforce a cPanel-safe request batch size in {$path}");
+    egmPeriodAssert(str_contains($source, 'const compactRows = rows.map'), "Excel matching still sends full duplicate spreadsheet rows in {$path}");
+    egmPeriodAssert(str_contains($source, 'matchButton.disabled = true'), "Excel matching permits overlapping duplicate requests in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-export'), "The Invite Card Excel export button is missing in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-background-file'), "The per-period Invite Card background upload is missing in {$path}");
     egmPeriodAssert(str_contains($source, "'save_period_background'"), "The per-period Invite Card background save action is not wired in {$path}");
@@ -85,6 +98,16 @@ foreach ($periodFrontends as $path) {
         "The dynamically loaded EGM panel does not expose an explicit initializer in {$path}"
     );
 }
+
+$periodInvitesBackend = file_get_contents($root . '/api/lib/egm-period-invites.php');
+egmPeriodAssert(is_string($periodInvitesBackend), 'Could not inspect the EGM period invitation endpoint');
+egmPeriodAssert(
+    str_contains($periodInvitesBackend, 'JSON_THROW_ON_ERROR')
+        && str_contains($periodInvitesBackend, 'JSON_INVALID_UTF8_SUBSTITUTE')
+        && str_contains($periodInvitesBackend, 'ob_clean()')
+        && str_contains($periodInvitesBackend, 'count($inputRows) > 1000'),
+    'The EGM period invitation endpoint cannot guarantee a clean JSON response'
+);
 
 $panelApp = file_get_contents($root . '/app.js');
 egmPeriodAssert(is_string($panelApp), 'Could not inspect the main panel loader');

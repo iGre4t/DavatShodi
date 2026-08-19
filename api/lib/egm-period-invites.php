@@ -720,7 +720,9 @@ function egmPeriodInvitesRemove(array $context, string $periodCode, string $invi
 /** @return array<string,mixed> */
 function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $inputRows): array
 {
-    if (count($inputRows) > 100000) throw new InvalidArgumentException('فایل بیش از ۱۰۰٬۰۰۰ ردیف دارد.');
+    if (count($inputRows) > 1000) {
+        throw new InvalidArgumentException('The Excel match request is too large. Refresh the panel so it can process the file in smaller batches.');
+    }
     $source = egmPeriodInvitesGetSource($context);
     $candidates = egmPeriodInvitesCandidateRows($context, $source);
     $byNational = [];
@@ -777,21 +779,44 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
 
 function egmPeriodInvitesJson(array $payload, int $status = 200): void
 {
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
     http_response_code($status);
     header('Content-Type: application/json; charset=UTF-8');
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $json = json_encode(
+        $payload,
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR
+    );
+    echo is_string($json) ? $json : '{"status":"error","message":"Unable to encode the server response."}';
     exit;
 }
 
 function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): void
 {
+    ob_start();
     try {
         $context = egmPeriodInvitesContext($missionDir);
         $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
         $input = $_REQUEST;
         if ($method === 'POST' && str_contains(strtolower((string)($_SERVER['CONTENT_TYPE'] ?? '')), 'application/json')) {
-            $decoded = json_decode((string)file_get_contents('php://input'), true);
-            if (is_array($decoded)) $input = $decoded;
+            $contentLength = max(0, (int)($_SERVER['CONTENT_LENGTH'] ?? 0));
+            if ($contentLength > 4 * 1024 * 1024) {
+                throw new InvalidArgumentException('The request is too large. Please retry so the Excel file can be processed in smaller batches.');
+            }
+            $rawInput = file_get_contents('php://input');
+            if (!is_string($rawInput) || trim($rawInput) === '') {
+                throw new InvalidArgumentException('The server received an empty request. Please retry the Excel match.');
+            }
+            try {
+                $decoded = json_decode($rawInput, true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException $error) {
+                throw new InvalidArgumentException('The server received invalid JSON. Please retry the Excel match.', 0, $error);
+            }
+            if (!is_array($decoded)) {
+                throw new InvalidArgumentException('The request JSON must contain an object.');
+            }
+            $input = $decoded;
         }
         $action = strtolower(trim((string)($input['action'] ?? 'state')));
         if ($method === 'POST') {
