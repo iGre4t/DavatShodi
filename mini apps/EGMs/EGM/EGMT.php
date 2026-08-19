@@ -1520,6 +1520,12 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
 
 function tctReadStoreTasks(string $storePath): array
 {
+  $databaseContext = egmDatabaseRuntimeContextForPath($storePath);
+  if (is_array($databaseContext) && ($databaseContext['pdo'] ?? null) instanceof PDO) {
+    // Periods are first-class database records. Reading the canonical row
+    // avoids depending on a duplicated runtime-file representation.
+    return egmInstanceReadPeriods($databaseContext['pdo'], (string)$databaseContext['code']);
+  }
   if (!egmDbIsFile($storePath)) {
     return [];
   }

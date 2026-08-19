@@ -4870,13 +4870,21 @@ async function executeExternalTabScripts(host) {
   for (const script of scripts) {
     const replacement = document.createElement("script");
     Array.from(script.attributes).forEach((attribute) => {
+      // Dynamically injected scripts are already executed serially below.
+      // Keeping parser-only scheduling attributes can make their execution
+      // browser-dependent after DOMContentLoaded has fired.
+      if (attribute.name === "defer" || attribute.name === "async") {
+        return;
+      }
       replacement.setAttribute(attribute.name, attribute.value);
     });
     if (script.src) {
       replacement.async = false;
-      const loaded = new Promise((resolve) => {
+      const loaded = new Promise((resolve, reject) => {
         replacement.addEventListener("load", resolve, { once: true });
-        replacement.addEventListener("error", resolve, { once: true });
+        replacement.addEventListener("error", () => {
+          reject(new Error(`Failed to load tab script: ${script.src}`));
+        }, { once: true });
       });
       script.replaceWith(replacement);
       await loaded;
@@ -4946,6 +4954,13 @@ async function fadeOutTabLazyLoader(host, fadeMs = TAB_LAZY_LOADER_FADEOUT_MS) {
 }
 
 function runExternalTabInitializers(tab) {
+  if (isEventGuestManagerRuntimeTab(tab)) {
+    if (typeof window.initEventGuestManagerPanel !== "function") {
+      throw new Error("Event Guest Manager did not initialize correctly.");
+    }
+    window.initEventGuestManagerPanel();
+    return;
+  }
   if (tab === "users") {
     initUsersTabControls();
     return;

@@ -5,6 +5,7 @@
   const PERIOD_EXPORTS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_exports.php';
   const INVITE_CARD_QR_ENDPOINT = 'modules/minor/QR%20Code%20Generator/generate.php';
   const LOGS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/egm_logs.php';
+  const EGM_TASKS_CHANGED_HANDLER_KEY = '__egmPanelTasksChangedHandler';
   const egmShellEl = document.querySelector('.egm-shell');
   const TASK_CLUB_CSRF = egmShellEl instanceof HTMLElement
     ? String(egmShellEl.dataset.egmCsrf || '').trim()
@@ -4830,6 +4831,11 @@
   }
 
   function initWheelSubLayouts() {
+    const previousTasksChangedHandler = window[EGM_TASKS_CHANGED_HANDLER_KEY];
+    if (typeof previousTasksChangedHandler === 'function') {
+      window.removeEventListener('egmTasksChanged', previousTasksChangedHandler);
+    }
+    delete window[EGM_TASKS_CHANGED_HANDLER_KEY];
     const layouts = document.querySelectorAll('[data-egm-sub-layout]');
     layouts.forEach((layout) => {
       if (!(layout instanceof HTMLElement)) return;
@@ -4853,14 +4859,19 @@
       setupEventGuestManagerLogsPane(layout);
       setupTaskPaneInteractions(layout);
 
-      window.addEventListener('egmTasksChanged', (event) => {
+      // Keep the built-in controls usable while the period request runs.
+      ensureAnyActivePane(layout);
+
+      const tasksChangedHandler = (event) => {
         const tasks = event?.detail?.tasks;
         if (Array.isArray(tasks)) {
           renderTaskSubtabs(layout, tasks);
           return;
         }
         refreshTaskSubtabs(layout);
-      });
+      };
+      window[EGM_TASKS_CHANGED_HANDLER_KEY] = tasksChangedHandler;
+      window.addEventListener('egmTasksChanged', tasksChangedHandler);
 
       refreshTaskSubtabs(layout);
       if (layout.querySelector('[data-egm-logs-pane="1"].active')) {
@@ -4869,6 +4880,7 @@
     });
   }
 
+  window.initEventGuestManagerPanel = initWheelSubLayouts;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initWheelSubLayouts);
   } else {

@@ -30,6 +30,10 @@ foreach ($periodManagers as $path) {
         str_contains($source, 'egmInstanceWriteMissionPeriodsUsingProjectConfig'),
         "Period changes are not synchronized to the EGM database table in {$path}"
     );
+    egmPeriodAssert(
+        str_contains($source, 'return egmInstanceReadPeriods('),
+        "Period discovery does not read the canonical EGM database row in {$path}"
+    );
 }
 
 $periodFrontends = [
@@ -56,7 +60,22 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, "url.searchParams.set('action', 'export_excel')"), "The Invite Card Excel export action is not wired in {$path}");
     egmPeriodAssert(str_contains($source, "String(invitee.nationalId || '')"), "Period Invite Card QR data is not sourced from the invitee National ID in {$path}");
     egmPeriodAssert(!str_contains($source, 'const inviteUrl = new URL(`Invited/'), "Period Invite Card QR still contains the public invite URL in {$path}");
+    egmPeriodAssert(
+        str_contains($source, 'window.initEventGuestManagerPanel = initWheelSubLayouts;'),
+        "The dynamically loaded EGM panel does not expose an explicit initializer in {$path}"
+    );
 }
+
+$panelApp = file_get_contents($root . '/app.js');
+egmPeriodAssert(is_string($panelApp), 'Could not inspect the main panel loader');
+egmPeriodAssert(
+    str_contains($panelApp, 'window.initEventGuestManagerPanel();'),
+    'The main panel loader does not explicitly initialize dynamically injected EGM panels'
+);
+egmPeriodAssert(
+    str_contains($panelApp, 'attribute.name === "defer" || attribute.name === "async"'),
+    'The main panel loader still preserves parser-only scheduling attributes on dynamic scripts'
+);
 
 $taskAccessStores = [
     $root . '/mini apps/Event Guest Manager/task_access_store.php',
