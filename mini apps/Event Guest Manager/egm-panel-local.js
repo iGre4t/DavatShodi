@@ -3,6 +3,7 @@
   const PERIOD_INVITES_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invites.php';
   const PERIOD_INVITE_CARDS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invite_cards.php';
   const PERIOD_EXPORTS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_exports.php';
+  const GUEST_CONTROL_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/check-in.php';
   const INVITE_CARD_QR_ENDPOINT = 'modules/minor/QR%20Code%20Generator/generate.php';
   const LOGS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/egm_logs.php';
   const EGM_TASKS_CHANGED_HANDLER_KEY = '__egmPanelTasksChangedHandler';
@@ -2370,7 +2371,7 @@
     const isTeamTask = taskTypeToken === 'team_task';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
     const quizSrc = `mini%20apps/Event%20Guest%20Manager/EGMQ.php?task_id=${encodeURIComponent(task.id)}`;
-    const guestControlSrc = 'mini%20apps/Event%20Guest%20Manager/check-in.php';
+    const guestControlSrc = GUEST_CONTROL_ENDPOINT;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
     const guidePrefix = String(task.guidePrefix || '');
@@ -2480,7 +2481,7 @@
           </div>
         </div>
         <div class="card egm-period-unmatched-card" data-period-unmatched-card hidden>
-          <div class="section-header"><h3>کاربران بدون تطبیق فایل</h3><strong><span data-period-unmatched-total>0</span> ردیف</strong></div>
+          <div class="section-header"><h3>کاربران بدون تطبیق فایل</h3><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-export-uninviteable disabled>Export Uniniviteable</button><strong><span data-period-unmatched-total>0</span> ردیف</strong></div></div>
           <p class="muted">هر کاربری را که تأیید کنید فقط به کاربران همین EGM افزوده و به این بازه دعوت می‌شود؛ این کاربران وارد OEU نمی‌شوند.</p>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
             <th><input type="checkbox" data-period-unmatched-select-all aria-label="انتخاب همه کاربران بدون تطبیق" /></th><th>ردیف Excel</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>شماره همراه</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>جزئیات فایل</th><th>عملیات</th>
@@ -2853,6 +2854,7 @@
               </div>
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-settings">ذخیره</button>
+                ${isPeriod ? '<button type="button" class="btn ghost egm-btn-danger" data-action="reset-period-attendance">Reset Period Records</button>' : ''}
                 <a class="btn ghost" href="${guestControlSrc}" target="_blank" rel="noopener">پنل کنترل مهمان رویداد</a>
               </div>
               <p class="muted small" data-task-save-status aria-live="polite"></p>
@@ -3030,6 +3032,25 @@
     const data = await response.json();
     if (!response.ok || data?.status !== 'ok') {
       throw new Error(data?.message || 'Request failed.');
+    }
+    return data;
+  }
+
+  async function resetGuestControlRecords(periodCode) {
+    const response = await fetch(GUEST_CONTROL_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        action: 'reset_period_records',
+        period_code: String(periodCode || ''),
+        confirmation: 'RESET_PERIOD_ATTENDANCE',
+        csrf: TASK_CLUB_CSRF
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.status !== 'ok') {
+      throw new Error(data?.message || 'بازنشانی سوابق حضور بازه ناموفق بود.');
     }
     return data;
   }
@@ -3488,6 +3509,43 @@
     return `<details class="egm-period-excel-details" ${matchError ? 'open' : ''}><summary>${matchError ? 'نمایش دلیل' : 'نمایش اطلاعات'}</summary><div>${reason}${entries.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</div></details>`;
   }
 
+  function periodUninviteableRows(state) {
+    return (Array.isArray(state?.unmatchedRows) ? state.unmatchedRows : []).filter((row) => (
+      String(row?.national_id || '').trim() === '' && String(row?.work_id || '').trim() === ''
+    ));
+  }
+
+  function exportPeriodUninviteable(pane) {
+    const state = getPeriodInviteState(pane);
+    const rows = periodUninviteableRows(state);
+    const status = pane.querySelector('[data-period-unmatched-status]');
+    if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') {
+      if (status) status.textContent = 'موتور ساخت فایل Excel بارگذاری نشده است. صفحه را بازخوانی کنید.';
+      return;
+    }
+    if (!rows.length) {
+      if (status) status.textContent = 'کاربر غیرقابل دعوتی بدون کد ملی و کد پرسنلی وجود ندارد.';
+      return;
+    }
+    const table = [['Full Name', 'Phone Number']];
+    rows.forEach((row) => table.push([
+      [String(row?.first_name || '').trim(), String(row?.last_name || '').trim()].filter(Boolean).join(' '),
+      String(row?.phone_number || '').trim()
+    ]));
+    const worksheet = window.XLSX.utils.aoa_to_sheet(table);
+    worksheet['!cols'] = [{ wch: 34 }, { wch: 20 }];
+    worksheet['!autofilter'] = { ref: `A1:B${table.length}` };
+    for (let rowNumber = 2; rowNumber <= table.length; rowNumber += 1) {
+      if (worksheet[`B${rowNumber}`]) worksheet[`B${rowNumber}`].z = '@';
+    }
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Uninviteable');
+    const periodCode = periodCodeForPane(pane).replace(/[^A-Za-z0-9_-]+/g, '-');
+    const filename = `EGM-period-${periodCode || 'unknown'}-uninviteable.xlsx`;
+    window.XLSX.writeFile(workbook, filename, { bookType: 'xlsx', compression: true });
+    if (status) status.textContent = `${rows.length} کاربر غیرقابل دعوت در فایل Excel دانلود شد.`;
+  }
+
   function renderPeriodUnmatchedRows(pane) {
     const state = getPeriodInviteState(pane);
     const card = pane.querySelector('[data-period-unmatched-card]');
@@ -3516,6 +3574,8 @@
     if (count) count.textContent = String(state.unmatchedSelected.size);
     const bulkButton = pane.querySelector('[data-period-invite-unmatched-selected]');
     if (bulkButton instanceof HTMLButtonElement) bulkButton.disabled = state.unmatchedSelected.size === 0;
+    const exportButton = pane.querySelector('[data-period-export-uninviteable]');
+    if (exportButton instanceof HTMLButtonElement) exportButton.disabled = periodUninviteableRows(state).length === 0;
     const selectAll = pane.querySelector('[data-period-unmatched-select-all]');
     if (selectAll instanceof HTMLInputElement) {
       const selectable = rows.filter((row) => row?.can_invite !== false && String(row?.national_id || row?.work_id || '').trim());
@@ -3787,6 +3847,7 @@
       } catch (error) { const status = pane.querySelector('[data-period-invitee-status]'); if (status) status.textContent = error?.message || 'حذف دعوت ناموفق بود.'; }
     });
     pane.querySelector('[data-period-invite-unmatched-selected]')?.addEventListener('click', () => void invitePeriodUnmatchedRows(pane, Array.from(state.unmatchedSelected)));
+    pane.querySelector('[data-period-export-uninviteable]')?.addEventListener('click', () => exportPeriodUninviteable(pane));
     const fileInput = pane.querySelector('[data-period-excel-file]');
     const sheetSelect = pane.querySelector('[data-period-excel-sheet]');
     pane.querySelector('[data-period-excel-pick]')?.addEventListener('click', () => {
@@ -4143,6 +4204,26 @@
         }
         if (sectionKey === 'challenge-storage') {
           renderTeamChallengeList(pane);
+        }
+        return;
+      }
+
+      const resetPeriodAttendanceButton = target.closest('[data-action="reset-period-attendance"]');
+      if (resetPeriodAttendanceButton instanceof HTMLButtonElement) {
+        const pane = resetPeriodAttendanceButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const periodCode = periodCodeForPane(pane);
+        const periodTitle = String(pane.querySelector('[data-task-field="taskTitle"]')?.value || periodCode).trim();
+        if (!periodCode || !window.confirm(`تمام تاریخ‌ها و ساعت‌های ورود و خروج، وضعیت حضور و گزارش‌های کنترل مهمان بازه «${periodTitle}» حذف می‌شود. کاربران و دعوت‌ها حذف نمی‌شوند. ادامه می‌دهید؟`)) return;
+        resetPeriodAttendanceButton.disabled = true;
+        setTaskSaveStatus(pane, 'در حال بازنشانی سوابق حضور بازه...');
+        try {
+          const data = await resetGuestControlRecords(periodCode);
+          setTaskSaveStatus(pane, data?.message || 'سوابق حضور بازه بازنشانی شد.');
+        } catch (error) {
+          setTaskSaveStatus(pane, error?.message || 'بازنشانی سوابق حضور بازه ناموفق بود.', true);
+        } finally {
+          resetPeriodAttendanceButton.disabled = false;
         }
         return;
       }

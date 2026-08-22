@@ -26,6 +26,8 @@ foreach (['SCANNER_MAX_KEY_GAP_MS=50', 'SCANNER_MIN_FAST_GAPS=3', 'SCANNER_COMPL
     egmCheckInAssert(str_contains($checkInSource, $scannerRequirement), "Scanner requirement is missing: {$scannerRequirement}");
 }
 egmCheckInAssert(!str_contains($checkInSource, 'setInterval('), 'Scanner detection uses forbidden polling');
+egmCheckInAssert(str_contains($checkInSource, 'data-reset-all-records'), 'The EGM-wide attendance reset button is missing');
+egmCheckInAssert(str_contains($checkInSource, "confirmation:'RESET_ALL_ATTENDANCE'"), 'The full reset does not require explicit confirmation');
 
 $timezone = new DateTimeZone('Asia/Tehran');
 $inside = new DateTimeImmutable('2026-08-18 10:30:00', $timezone);
@@ -283,6 +285,45 @@ try {
     egmCheckInAssert(($persianStatusSearch[0]['status'] ?? '') === 'quit_without_entry', 'Persian condition search returned the wrong log');
     $workIdSearch = egmCheckInRecentLogs($quitContext, 200, 'W-1');
     egmCheckInAssert(count($workIdSearch) === 3, 'Guest Control search did not match the work ID');
+    $invitationCount = (int)$pdo->query("SELECT COUNT(*) FROM `{$tables['user_periods']}`")->fetchColumn();
+    $periodReset = egmCheckInResetAttendanceRecords($quitContext, '02');
+    egmCheckInAssert(($periodReset['scope'] ?? '') === 'period', 'The period reset reported the wrong scope');
+    $resetPeriodState = $pdo->query(
+        "SELECT `entered_date`,`entered_time`,`quit_date`,`quit_time`,`attendance_state`,`last_control_condition`,"
+        . "`last_control_action`,`last_control_message`,`last_control_at` FROM `{$tables['user_periods']}` "
+        . "WHERE `user_id` = {$userId} AND `period_code` = '02'"
+    )->fetch(PDO::FETCH_ASSOC);
+    foreach (['entered_date', 'entered_time', 'quit_date', 'quit_time', 'last_control_condition', 'last_control_action', 'last_control_message', 'last_control_at'] as $resetColumn) {
+        egmCheckInAssert(($resetPeriodState[$resetColumn] ?? null) === null, "Period reset did not clear {$resetColumn}");
+    }
+    egmCheckInAssert(($resetPeriodState['attendance_state'] ?? '') === 'not_entered', 'Period reset did not restore the attendance state');
+    egmCheckInAssert(count(egmCheckInRecentLogs($quitContext)) === 0, 'Period reset did not delete that period Guest Control logs');
+    $periodOneEntry = (int)$pdo->query(
+        "SELECT COUNT(*) FROM `{$tables['user_periods']}` WHERE `period_code`='01' AND `entered_date` IS NOT NULL"
+    )->fetchColumn();
+    egmCheckInAssert($periodOneEntry > 0, 'Period reset changed another period attendance record');
+
+    $fullReset = egmCheckInResetAttendanceRecords($context);
+    egmCheckInAssert(($fullReset['scope'] ?? '') === 'all', 'The EGM reset reported the wrong scope');
+    $remainingAttendance = (int)$pdo->query(
+        "SELECT COUNT(*) FROM `{$tables['user_periods']}` WHERE `entered_date` IS NOT NULL OR `entered_time` IS NOT NULL "
+        . "OR `quit_date` IS NOT NULL OR `quit_time` IS NOT NULL OR `attendance_state` <> 'not_entered' "
+        . "OR `last_control_condition` IS NOT NULL OR `last_control_action` IS NOT NULL "
+        . "OR `last_control_message` IS NOT NULL OR `last_control_at` IS NOT NULL"
+    )->fetchColumn();
+    egmCheckInAssert($remainingAttendance === 0, 'Full EGM reset left attendance state behind');
+    $remainingLogs = (int)$logsPdo->query(
+        "SELECT COUNT(*) FROM `{$tables['activity_logs']}` WHERE `action`='" . EGM_CHECK_IN_ACTION . "'"
+    )->fetchColumn();
+    egmCheckInAssert($remainingLogs === 0, 'Full EGM reset left Guest Control logs behind');
+    egmCheckInAssert(
+        (int)$pdo->query("SELECT COUNT(*) FROM `{$tables['user_periods']}`")->fetchColumn() === $invitationCount,
+        'Attendance reset deleted period invitations'
+    );
+    egmCheckInAssert(
+        (int)$pdo->query("SELECT `is_uninvited_guest` FROM `{$tables['users']}` WHERE `id`=" . (int)$walkInUser['id'])->fetchColumn() === 1,
+        'Attendance reset removed the walk-in guest identity'
+    );
 } finally {
     dropEgmInstanceTables($pdo, $code);
 }

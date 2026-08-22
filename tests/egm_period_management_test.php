@@ -83,6 +83,12 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, 'row?.match_error'), "Excel identity conflicts are not shown per row in {$path}");
     egmPeriodAssert(str_contains($source, 'merged.match_error = String(row.match_error)'), "Batched Excel matching loses server conflict reasons in {$path}");
     egmPeriodAssert(str_contains($source, 'matchButton.disabled = true'), "Excel matching permits overlapping duplicate requests in {$path}");
+    egmPeriodAssert(str_contains($source, 'data-action="reset-period-attendance"'), "The per-period attendance reset button is missing in {$path}");
+    egmPeriodAssert(str_contains($source, "confirmation: 'RESET_PERIOD_ATTENDANCE'"), "The per-period reset does not require explicit confirmation in {$path}");
+    egmPeriodAssert(str_contains($source, 'data-period-export-uninviteable disabled>Export Uniniviteable</button>'), "The uninviteable-user Excel export button is missing in {$path}");
+    egmPeriodAssert(str_contains($source, "String(row?.national_id || '').trim() === '' && String(row?.work_id || '').trim() === ''"), "The uninviteable export does not require both identifiers to be absent in {$path}");
+    egmPeriodAssert(str_contains($source, "const table = [['Full Name', 'Phone Number']]"), "The uninviteable export does not contain the requested columns in {$path}");
+    egmPeriodAssert(str_contains($source, "window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Uninviteable')"), "The uninviteable export does not create an Excel worksheet in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-export'), "The Invite Card Excel export button is missing in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-background-file'), "The per-period Invite Card background upload is missing in {$path}");
     egmPeriodAssert(str_contains($source, "'save_period_background'"), "The per-period Invite Card background save action is not wired in {$path}");

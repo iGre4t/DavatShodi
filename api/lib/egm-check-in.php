@@ -402,6 +402,76 @@ function egmCheckInSavePeriodCondition(
     $statement->execute($params);
 }
 
+/**
+ * Clears Guest Control attendance state without removing users, invitations,
+ * periods, Invite Cards, or walk-in registration identity.
+ *
+ * @return array{scope:string,period_code:string,attendance_records:int,log_records:int,message:string}
+ */
+function egmCheckInResetAttendanceRecords(array $context, ?string $periodCode = null): array
+{
+    $periodCode = trim((string)$periodCode);
+    $resetAll = $periodCode === '';
+    if (!$resetAll) {
+        $knownCodes = [];
+        foreach ((array)($context['periods'] ?? []) as $period) {
+            if (!is_array($period)) continue;
+            $code = egmCheckInPeriodCode($period);
+            if ($code !== '') $knownCodes[$code] = true;
+        }
+        if (!isset($knownCodes[$periodCode])) {
+            throw new InvalidArgumentException('بازه انتخاب‌شده معتبر نیست.');
+        }
+    }
+
+    $pdo = $context['pdo'] ?? null;
+    $logsPdo = $context['logs_pdo'] ?? null;
+    if (!$pdo instanceof PDO || !$logsPdo instanceof PDO) {
+        throw new RuntimeException('پایگاه داده حضور یا گزارش‌ها در دسترس نیست.');
+    }
+    $userPeriodsTable = (string)($context['tables']['user_periods'] ?? '');
+    $logsTable = (string)($context['tables']['activity_logs'] ?? '');
+    if ($userPeriodsTable === '' || $logsTable === '') {
+        throw new RuntimeException('جدول‌های حضور رویداد در دسترس نیستند.');
+    }
+
+    $where = $resetAll ? '' : ' WHERE `period_code` = :period_code';
+    $update = $pdo->prepare(
+        "UPDATE `{$userPeriodsTable}` SET "
+        . '`entered_date`=NULL, `entered_time`=NULL, `quit_date`=NULL, `quit_time`=NULL, '
+        . "`attendance_state`='not_entered', `last_control_condition`=NULL, `last_control_action`=NULL, "
+        . '`last_control_message`=NULL, `last_control_at`=NULL'
+        . $where
+    );
+    $pdo->beginTransaction();
+    try {
+        $update->execute($resetAll ? [] : [':period_code' => $periodCode]);
+        $attendanceRecords = $update->rowCount();
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+
+    $deleteSql = "DELETE FROM `{$logsTable}` WHERE `action` = :action";
+    if (!$resetAll) $deleteSql .= ' AND `entity_id` = :period_code';
+    $delete = $logsPdo->prepare($deleteSql);
+    $deleteParams = [':action' => EGM_CHECK_IN_ACTION];
+    if (!$resetAll) $deleteParams[':period_code'] = $periodCode;
+    $delete->execute($deleteParams);
+    $logRecords = $delete->rowCount();
+
+    return [
+        'scope' => $resetAll ? 'all' : 'period',
+        'period_code' => $resetAll ? '' : $periodCode,
+        'attendance_records' => $attendanceRecords,
+        'log_records' => $logRecords,
+        'message' => $resetAll
+            ? "سوابق حضور همه بازه‌ها بازنشانی شد ({$attendanceRecords} رکورد حضور و {$logRecords} گزارش)."
+            : "سوابق حضور بازه {$periodCode} بازنشانی شد ({$attendanceRecords} رکورد حضور و {$logRecords} گزارش).",
+    ];
+}
+
 function egmCheckInCleanText($value, int $maxLength): string
 {
     $text = trim(is_scalar($value) ? (string)$value : '');
@@ -903,6 +973,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     $phase = is_array($periodState['availability'] ?? null) ? $periodState['availability'] : [];
     $phaseReason = (string)($phase['reason'] ?? ($periodState['result'] ?? 'no_active_period'));
     $canScan = (bool)($context['can_scan'] ?? false);
+    $canReset = (bool)($context['can_reset'] ?? false);
     $hasActivePeriod = (string)($periodState['result'] ?? '') === 'active' && $period !== [];
     $phaseLabels = [
         'inactive' => 'غیرفعال',
@@ -987,6 +1058,9 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .card-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .guest-control-page .card-head h2{margin:0;font-size:18px;color:var(--text,#111)}
     .guest-control-page .card-head .muted{font-size:12px}
+    .guest-control-page .guest-record-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+    .guest-control-page .reset-records-button{min-height:36px;padding:7px 12px;border:1px solid #ef9aa5;border-radius:9px;background:#fff5f6;color:#a12432;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+    .guest-control-page .reset-records-button:hover{background:#a12432;color:#fff}.guest-control-page .reset-records-button:disabled{opacity:.55;cursor:not-allowed}
     .guest-control-page .log-toolbar{display:grid;grid-template-columns:minmax(240px,1fr) auto;gap:10px;align-items:end;margin:0 0 12px}
     .guest-control-page .log-search{display:block;min-width:0}.guest-control-page .log-search span{display:block;margin-bottom:6px;color:var(--text,#111);font-size:12px;font-weight:700}.guest-control-page .log-search input{display:block;width:100%;height:42px;padding:8px 38px 8px 12px;border:1px solid var(--border,#e5e7eb);border-radius:9px;background:#fff;color:var(--text,#111);font:inherit;font-size:13px;outline:0}.guest-control-page .log-search{position:relative}.guest-control-page .log-search::after{content:"⌕";position:absolute;inset-inline-start:13px;bottom:8px;color:var(--muted,#6b7280);font-size:20px;line-height:1}.guest-control-page .log-search input:focus{border-color:var(--primary,#e11d2e);box-shadow:0 0 0 3px var(--primary-focus,rgba(225,29,46,.1))}
     .guest-control-page .log-search-meta{min-width:110px;padding-bottom:11px;color:var(--muted,#6b7280);font-size:12px;text-align:left}
@@ -1017,7 +1091,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   </style>
 </head>
 <body class="guest-control-page">
-<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-initial-logs="<?= $logs ?>">
+<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-can-reset="<?= $canReset ? '1' : '0' ?>" data-initial-logs="<?= $logs ?>">
   <section class="hero guest-card">
     <div class="hero-head">
       <div>
@@ -1047,7 +1121,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     </div>
   </section>
   <section class="guest-card">
-    <div class="card-head"><h2>گزارش کل مهمانان</h2><span class="muted">جدیدترین موارد در بالا</span></div>
+    <div class="card-head"><h2>گزارش کل مهمانان</h2><div class="guest-record-actions"><span class="muted">جدیدترین موارد در بالا</span><?php if ($canReset): ?><button type="button" class="reset-records-button" data-reset-all-records>Reset Full Records</button><?php endif; ?></div></div>
     <div class="log-toolbar">
       <label class="log-search"><span>جستجو در همه گزارش‌ها</span><input type="search" autocomplete="off" placeholder="نام، کد ملی، کد پرسنلی، شماره مهمان، وضعیت، بازه، واحد یا تاریخ" data-log-search /></label>
       <span class="log-search-meta" data-log-search-meta aria-live="polite"></span>
@@ -1090,7 +1164,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
 <script nonce="<?= $nonce ?>">
 (() => {
   const app=document.querySelector('[data-check-in-app]'); if(!app)return;
-  const input=app.querySelector('[data-national-id]'),result=app.querySelector('[data-result]'),tbody=app.querySelector('[data-logs]'),logSearch=app.querySelector('[data-log-search]'),logSearchMeta=app.querySelector('[data-log-search-meta]'),dialog=app.querySelector('[data-guest-dialog]'),dialogTitle=app.querySelector('[data-dialog-title]'),dialogContent=app.querySelector('[data-dialog-content]'),walkInDialog=app.querySelector('[data-walk-in-dialog]'),walkInForm=app.querySelector('[data-walk-in-form]'),walkInStatus=app.querySelector('[data-walk-in-status]');
+   const input=app.querySelector('[data-national-id]'),result=app.querySelector('[data-result]'),tbody=app.querySelector('[data-logs]'),logSearch=app.querySelector('[data-log-search]'),logSearchMeta=app.querySelector('[data-log-search-meta]'),dialog=app.querySelector('[data-guest-dialog]'),dialogTitle=app.querySelector('[data-dialog-title]'),dialogContent=app.querySelector('[data-dialog-content]'),walkInDialog=app.querySelector('[data-walk-in-dialog]'),walkInForm=app.querySelector('[data-walk-in-form]'),walkInStatus=app.querySelector('[data-walk-in-status]'),resetAllButton=app.querySelector('[data-reset-all-records]');
   const canRegisterUninvited=app.dataset.canRegisterUninvited==='1';
   const SCANNER_MAX_KEY_GAP_MS=50,SCANNER_MIN_FAST_GAPS=3,SCANNER_COMPLETION_DELAY_MS=90;
   const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1115,7 +1189,8 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   let searchTimer=0,searchRequest=0;
   const searchLogs=async()=>{const requestId=++searchRequest;const query=String(logSearch?.value||'').trim();if(logSearchMeta)logSearchMeta.textContent='در حال جستجو...';try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','search_logs');if(query)url.searchParams.set('q',query);else url.searchParams.delete('q');const response=await fetch(url,{credentials:'same-origin',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'جستجوی گزارش‌ها ناموفق بود.');if(requestId!==searchRequest)return;logs=Array.isArray(data.logs)?data.logs:[];render(logs)}catch(error){if(requestId!==searchRequest)return;if(logSearchMeta)logSearchMeta.textContent=error instanceof Error?error.message:'جستجو ناموفق بود.'}};
   logSearch?.addEventListener('input',()=>{window.clearTimeout(searchTimer);searchTimer=window.setTimeout(()=>void searchLogs(),280)});
-  const acceptUpdatedLogs=(items)=>{if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
+   const acceptUpdatedLogs=(items)=>{if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
+   resetAllButton?.addEventListener('click',async()=>{if(!window.confirm('تمام تاریخ‌ها و ساعت‌های ورود و خروج، وضعیت حضور و گزارش‌های کنترل مهمان در همه بازه‌های این EGM حذف می‌شود. کاربران، دعوت‌ها و بازه‌ها حذف نمی‌شوند. ادامه می‌دهید؟'))return;if(!window.confirm('این عملیات قابل بازگشت نیست. بازنشانی کامل سوابق حضور انجام شود؟'))return;resetAllButton.disabled=true;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'reset_all_records',confirmation:'RESET_ALL_ATTENDANCE',csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'بازنشانی کامل سوابق ناموفق بود.');if(logSearch)logSearch.value='';acceptUpdatedLogs(Array.isArray(data.logs)?data.logs:[]);result.className='result success';result.textContent=data.message||'سوابق حضور همه بازه‌ها بازنشانی شد.'}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'بازنشانی کامل سوابق ناموفق بود.'}finally{resetAllButton.disabled=false}});
   tbody.addEventListener('click',event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const walkInTrigger=target.closest('[data-register-uninvited]');if(walkInTrigger){const index=Number(walkInTrigger.dataset.registerUninvited);if(Number.isInteger(index)&&logs[index])void openWalkIn(logs[index]);return}const trigger=target.closest('[data-guest-detail]');if(!trigger)return;const index=Number(trigger.dataset.guestDetail);if(Number.isInteger(index)&&logs[index])openDetail(logs[index])});
   app.querySelector('[data-dialog-close]')?.addEventListener('click',()=>dialog?.close());
   dialog?.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
@@ -1142,12 +1217,26 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
 
 function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $sessionUser): never
 {
-    if (!userHasPermissionId($sessionUser, 'event-guest-manager:main')) {
-        denyPanelAccess(403, 'شما اجازه دسترسی به پنل کنترل مهمان را ندارید.', strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST');
+    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    $payload = null;
+    $requestedAction = '';
+    if ($method === 'POST') {
+        $payload = json_decode((string)file_get_contents('php://input'), true);
+        if (!is_array($payload)) $payload = $_POST;
+        $requestedAction = strtolower(trim((string)($payload['action'] ?? 'check_in')));
+    }
+    $isResetRequest = in_array($requestedAction, ['reset_period_records', 'reset_all_records'], true);
+    $canUseGuestControl = userHasPermissionId($sessionUser, 'event-guest-manager:main');
+    $canResetAttendance = userHasPermissionId($sessionUser, 'event-guest-manager:manage-tasks');
+    if (($isResetRequest && !$canResetAttendance) || (!$isResetRequest && !$canUseGuestControl)) {
+        $message = $isResetRequest
+            ? 'شما اجازه بازنشانی سوابق حضور را ندارید.'
+            : 'شما اجازه دسترسی به پنل کنترل مهمان را ندارید.';
+        denyPanelAccess(403, $message, $method === 'POST');
     }
     try {
         $context = egmCheckInContext($projectRoot, $missionDir);
-        $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        $context['can_reset'] = $canResetAttendance;
         if ($method === 'GET') {
             $getAction = strtolower(trim((string)($_GET['action'] ?? '')));
             if ($getAction === 'uninvited_options') {
@@ -1158,12 +1247,26 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
             }
         }
         if ($method === 'POST') {
-            $payload = json_decode((string)file_get_contents('php://input'), true);
-            if (!is_array($payload)) $payload = $_POST;
+            if (!is_array($payload)) $payload = [];
             if (!egmSecurityIsValidCsrfToken(egmSecurityReadCsrfFromRequest($payload))) {
                 egmCheckInJson(['status' => 'error', 'message' => 'توکن امنیتی نامعتبر است.'], 403);
             }
-            $action = strtolower(trim((string)($payload['action'] ?? 'check_in')));
+            $action = $requestedAction !== '' ? $requestedAction : 'check_in';
+            if (in_array($action, ['reset_period_records', 'reset_all_records'], true)) {
+                if (empty($context['can_reset'])) {
+                    egmCheckInJson(['status' => 'error', 'message' => 'شما اجازه بازنشانی سوابق حضور را ندارید.'], 403);
+                }
+                $resetAll = $action === 'reset_all_records';
+                $expectedConfirmation = $resetAll ? 'RESET_ALL_ATTENDANCE' : 'RESET_PERIOD_ATTENDANCE';
+                if (!hash_equals($expectedConfirmation, trim((string)($payload['confirmation'] ?? '')))) {
+                    egmCheckInJson(['status' => 'error', 'message' => 'تأیید بازنشانی سوابق معتبر نیست.'], 422);
+                }
+                $reset = egmCheckInResetAttendanceRecords(
+                    $context,
+                    $resetAll ? null : (string)($payload['period_code'] ?? '')
+                );
+                egmCheckInJson(['status' => 'ok'] + $reset + ['logs' => egmCheckInRecentLogs($context)]);
+            }
             $result = $action === 'register_uninvited'
                 ? egmCheckInRegisterUninvited($context, $payload, $sessionUser)
                 : egmCheckInProcess($context, (string)($payload['guest_code'] ?? ($payload['national_id'] ?? '')));
