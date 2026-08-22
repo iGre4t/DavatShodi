@@ -25,6 +25,7 @@ try {
         'id' => 'period-export-test',
         'tagCode' => '01',
         'title' => 'روز آزمون خروجی',
+        'startDate' => '2026-08-22',
     ]]);
 
     $insertUser = $pdo->prepare(
@@ -49,21 +50,23 @@ try {
 
     $insertPeriod = $pdo->prepare(
         "INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`,`invitation_source`,`invited_at`,"
-        . "`entered_date`,`entered_time`,`quit_date`,`quit_time`,`attendance_state`,`last_control_condition`,"
+        . "`entered_date`,`entered_time`,`quit_date`,`quit_time`,`correct_presence`,`fake_presence`,`attendance_state`,`last_control_condition`,"
         . "`last_control_action`,`last_control_message`,`last_control_at`,`is_uninvited_guest`,`uninvited_registered_at`,"
         . "`uninvited_registered_by`) VALUES (:user_id,'01',:source,'2026-08-18 08:00:00',:entered_date,:entered_time,"
-        . ":quit_date,:quit_time,:attendance_state,:condition,:control_action,:message,:control_at,:is_uninvited,"
+        . ":quit_date,:quit_time,:correct_presence,:fake_presence,:attendance_state,:condition,:control_action,:message,:control_at,:is_uninvited,"
         . ":registered_at,:registered_by)"
     );
     $insertPeriod->execute([
         ':user_id' => $invitedId, ':source' => 'oeu', ':entered_date' => '2026-08-18', ':entered_time' => '09:05:00',
         ':quit_date' => '2026-08-18', ':quit_time' => '16:10:00', ':attendance_state' => 'quit_completed',
+        ':correct_presence' => 1, ':fake_presence' => 0,
         ':condition' => 'quit_success', ':control_action' => 'quit', ':message' => 'خروج ثبت شد.',
         ':control_at' => '2026-08-18 16:10:00', ':is_uninvited' => 0, ':registered_at' => null, ':registered_by' => null,
     ]);
     $insertPeriod->execute([
         ':user_id' => $walkInId, ':source' => 'walk_in', ':entered_date' => '2026-08-18', ':entered_time' => '10:15:00',
         ':quit_date' => null, ':quit_time' => null, ':attendance_state' => 'entered',
+        ':correct_presence' => 0, ':fake_presence' => 1,
         ':condition' => 'success', ':control_action' => 'entry', ':message' => 'ورود ثبت شد.',
         ':control_at' => '2026-08-18 10:15:00', ':is_uninvited' => 1,
         ':registered_at' => '2026-08-18 10:10:00', ':registered_by' => 'admin',
@@ -88,7 +91,7 @@ try {
     ]);
 
     $context = ['pdo' => $pdo, 'logs_pdo' => $logsPdo, 'code' => $code, 'tables' => $tables, 'mission_dir' => dirname(__DIR__)];
-    foreach (['all_guests' => 2, 'uninvited_guests' => 1, 'full_log' => 2, 'user_conditions' => 2] as $type => $expectedRows) {
+    foreach (['all_guests' => 2, 'uninvited_guests' => 1, 'full_log' => 2, 'user_conditions' => 2, 'correct_presence' => 1, 'fake_presence' => 1] as $type => $expectedRows) {
         $export = egmPeriodExportBuild($context, '01', $type);
         egmPeriodExportsAssert($export['row_count'] === $expectedRows, "Unexpected row count for {$type}");
         egmPeriodExportsAssert(str_ends_with($export['filename'], '.xlsx'), "Invalid filename for {$type}");
@@ -96,6 +99,9 @@ try {
         foreach (['نام و نام خانوادگی', 'کد ملی', 'کد پرسنلی', 'شماره همراه', 'وضعیت دقیق', 'تاریخ ورود', 'زمان ورود', 'تاریخ خروج', 'زمان خروج'] as $header) {
             egmPeriodExportsAssert(str_contains($export['content'], $header), "Missing {$header} in {$type}");
         }
+        egmPeriodExportsAssert(str_contains($export['content'], 'Correct Presence'), "Missing Correct Presence in {$type}");
+        egmPeriodExportsAssert(str_contains($export['content'], 'Fake Presence'), "Missing Fake Presence in {$type}");
+        egmPeriodExportsAssert(str_contains($export['filename'], '31 مردادماه'), "Missing Shamsi date in {$type} filename");
     }
 
     $allGuests = egmPeriodExportBuild($context, '01', 'all_guests');

@@ -207,7 +207,10 @@
         // Fall through to the safe Persian filename.
       }
     }
-    return 'گزارش-مانیتورینگ.xlsx';
+    const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', { day: 'numeric', month: 'long', timeZone: 'Asia/Tehran' }).formatToParts(new Date());
+    const day = parts.find((part) => part.type === 'day')?.value || '';
+    const month = parts.find((part) => part.type === 'month')?.value || '';
+    return `گزارش مانیتورینگ ${day} ${month}ماه.xlsx`;
   }
 
   async function downloadMonitoringExport() {

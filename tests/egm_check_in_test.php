@@ -26,8 +26,8 @@ foreach (['SCANNER_MAX_KEY_GAP_MS=50', 'SCANNER_MIN_FAST_GAPS=3', 'SCANNER_COMPL
     egmCheckInAssert(str_contains($checkInSource, $scannerRequirement), "Scanner requirement is missing: {$scannerRequirement}");
 }
 egmCheckInAssert(!str_contains($checkInSource, 'setInterval('), 'Scanner detection uses forbidden polling');
-egmCheckInAssert(str_contains($checkInSource, 'data-reset-all-records'), 'The EGM-wide attendance reset button is missing');
-egmCheckInAssert(str_contains($checkInSource, "confirmation:'RESET_ALL_ATTENDANCE'"), 'The full reset does not require explicit confirmation');
+egmCheckInAssert(!str_contains($checkInSource, 'data-reset-all-records'), 'The destructive full-reset button is exposed in Guest Control');
+egmCheckInAssert(!str_contains($checkInSource, 'reset-records-button'), 'Guest Control still contains reset-button UI');
 
 $timezone = new DateTimeZone('Asia/Tehran');
 $inside = new DateTimeImmutable('2026-08-18 10:30:00', $timezone);
@@ -263,13 +263,15 @@ try {
     $quit = egmCheckInProcess($quitContext, '1234567890', new DateTimeImmutable('2026-08-18 16:30:00', $timezone));
     egmCheckInAssert($quit['result'] === 'quit_success', 'A valid quit scan did not succeed');
     $storedQuit = $pdo->query(
-        "SELECT `quit_date`, `quit_time`, `attendance_state`, `last_control_condition` "
+        "SELECT `quit_date`, `quit_time`, `attendance_state`, `last_control_condition`, `correct_presence`, `fake_presence` "
         . "FROM `{$tables['user_periods']}` WHERE `user_id` = {$userId} AND `period_code` = '02'"
     )->fetch(PDO::FETCH_ASSOC);
     egmCheckInAssert(($storedQuit['quit_date'] ?? '') === '2026-08-18', 'The quit date was not stored separately');
     egmCheckInAssert(($storedQuit['quit_time'] ?? '') === '16:30:00', 'The quit time was not stored separately');
     egmCheckInAssert(($storedQuit['attendance_state'] ?? '') === 'quit_completed', 'Successful quit did not update attendance state');
     egmCheckInAssert(($storedQuit['last_control_condition'] ?? '') === 'quit_success', 'Successful quit condition was not retained');
+    egmCheckInAssert((int)($storedQuit['correct_presence'] ?? 0) === 1, 'Ordinary entry and quit did not flag Correct Presence');
+    egmCheckInAssert((int)($storedQuit['fake_presence'] ?? 0) === 0, 'Ordinary entry and quit incorrectly flagged Fake Presence');
     $periodLogs = egmCheckInRecentLogs($quitContext);
     egmCheckInAssert(count($periodLogs) === 3, 'Period-specific Guest Control logs were not filtered correctly');
     egmCheckInAssert(($periodLogs[0]['period_code'] ?? '') === '02', 'Guest Control returned a log from another period');
@@ -289,7 +291,7 @@ try {
     $periodReset = egmCheckInResetAttendanceRecords($quitContext, '02');
     egmCheckInAssert(($periodReset['scope'] ?? '') === 'period', 'The period reset reported the wrong scope');
     $resetPeriodState = $pdo->query(
-        "SELECT `entered_date`,`entered_time`,`quit_date`,`quit_time`,`attendance_state`,`last_control_condition`,"
+        "SELECT `entered_date`,`entered_time`,`quit_date`,`quit_time`,`correct_presence`,`fake_presence`,`attendance_state`,`last_control_condition`,"
         . "`last_control_action`,`last_control_message`,`last_control_at` FROM `{$tables['user_periods']}` "
         . "WHERE `user_id` = {$userId} AND `period_code` = '02'"
     )->fetch(PDO::FETCH_ASSOC);
@@ -297,11 +299,36 @@ try {
         egmCheckInAssert(($resetPeriodState[$resetColumn] ?? null) === null, "Period reset did not clear {$resetColumn}");
     }
     egmCheckInAssert(($resetPeriodState['attendance_state'] ?? '') === 'not_entered', 'Period reset did not restore the attendance state');
+    egmCheckInAssert((int)($resetPeriodState['correct_presence'] ?? -1) === 0, 'Period reset did not clear Correct Presence');
+    egmCheckInAssert((int)($resetPeriodState['fake_presence'] ?? -1) === 0, 'Period reset did not clear Fake Presence');
     egmCheckInAssert(count(egmCheckInRecentLogs($quitContext)) === 0, 'Period reset did not delete that period Guest Control logs');
     $periodOneEntry = (int)$pdo->query(
         "SELECT COUNT(*) FROM `{$tables['user_periods']}` WHERE `period_code`='01' AND `entered_date` IS NOT NULL"
     )->fetchColumn();
     egmCheckInAssert($periodOneEntry > 0, 'Period reset changed another period attendance record');
+
+    $forcedEntry = egmCheckInProcess(
+        $quitContext,
+        '1234567890',
+        new DateTimeImmutable('2026-08-18 08:30:00', $timezone),
+        'entry',
+        ['code' => 'test-admin']
+    );
+    egmCheckInAssert(($forcedEntry['result'] ?? '') === 'force_entry_success', 'Force Enter did not succeed outside entry time');
+    $forcedQuit = egmCheckInProcess(
+        $quitContext,
+        '1234567890',
+        new DateTimeImmutable('2026-08-18 08:31:00', $timezone),
+        'quit',
+        ['code' => 'test-admin']
+    );
+    egmCheckInAssert(($forcedQuit['result'] ?? '') === 'force_quit_success', 'Force Quit did not succeed before quit opening');
+    $forcedState = $pdo->query(
+        "SELECT `correct_presence`,`fake_presence`,`attendance_state` FROM `{$tables['user_periods']}` "
+        . "WHERE `user_id` = {$userId} AND `period_code` = '02'"
+    )->fetch(PDO::FETCH_ASSOC);
+    egmCheckInAssert((int)($forcedState['correct_presence'] ?? 1) === 0, 'Forced attendance incorrectly flagged Correct Presence');
+    egmCheckInAssert((int)($forcedState['fake_presence'] ?? 0) === 1, 'Forced attendance did not flag Fake Presence');
 
     $fullReset = egmCheckInResetAttendanceRecords($context);
     egmCheckInAssert(($fullReset['scope'] ?? '') === 'all', 'The EGM reset reported the wrong scope');
@@ -309,7 +336,8 @@ try {
         "SELECT COUNT(*) FROM `{$tables['user_periods']}` WHERE `entered_date` IS NOT NULL OR `entered_time` IS NOT NULL "
         . "OR `quit_date` IS NOT NULL OR `quit_time` IS NOT NULL OR `attendance_state` <> 'not_entered' "
         . "OR `last_control_condition` IS NOT NULL OR `last_control_action` IS NOT NULL "
-        . "OR `last_control_message` IS NOT NULL OR `last_control_at` IS NOT NULL"
+        . "OR `last_control_message` IS NOT NULL OR `last_control_at` IS NOT NULL "
+        . "OR `correct_presence` <> 0 OR `fake_presence` <> 0"
     )->fetchColumn();
     egmCheckInAssert($remainingAttendance === 0, 'Full EGM reset left attendance state behind');
     $remainingLogs = (int)$logsPdo->query(

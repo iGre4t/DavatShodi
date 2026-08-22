@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../../api/lib/egm-export-filename.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $egmExportSessionUser = requireTabPermissionFromSession('event-guest-manager', false);
 if (!userHasPermissionId($egmExportSessionUser, 'event-guest-manager:export')) {
@@ -250,7 +251,7 @@ for ($i = 1; $i < count($rows); $i += 1) {
 }
 
 $eventTitle = egmParticipantsEventTitle('Event Guest Manager');
-$filename = egmParticipantsFilenameStem($eventTitle) . '-participants.xlsx';
+$filename = egmExportDatedFilename('شرکت‌کنندگان');
 $asciiFilename = preg_replace('/[^\x20-\x7E]+/', '', $filename);
 $asciiFilename = is_string($asciiFilename) && trim($asciiFilename) !== '' ? $asciiFilename : 'event-participants.xlsx';
 header('Content-Disposition: attachment; filename="' . str_replace('"', '', $asciiFilename) . '"; filename*=UTF-8\'\'' . rawurlencode($filename));

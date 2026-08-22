@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-08-19.2';
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-08-22.1';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
-const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = ['2026-08-19.1', EGM_INSTANCE_SCHEMA_VERSION];
+const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = [EGM_INSTANCE_SCHEMA_VERSION];
 
 require_once __DIR__ . '/egm-registry.php';
 require_once __DIR__ . '/activity-log-storage.php';
@@ -148,10 +148,8 @@ function ensureEgmInstanceTables(PDO $pdo, string $code): array
         );
         $versionStatement->execute([':data_key' => EGM_INSTANCE_SCHEMA_VERSION_KEY]);
         $storedSchemaVersion = trim((string)$versionStatement->fetchColumn());
-        // Version .2 moved activity logs to their separate database; it did
-        // not change the core instance-table schema. Core dumps made just
-        // before that split carry .1 and are safe to use without repeating
-        // the expensive request-time table migration on shared hosting.
+        // Matching the current marker keeps ordinary reads fast. A marker
+        // from an older release runs the one-time schema migration below.
         if (in_array($storedSchemaVersion, EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS, true)) {
             $cache[$cacheKey] = true;
             return $tables;
@@ -265,6 +263,8 @@ CREATE TABLE IF NOT EXISTS `{$userPeriodsTable}` (
   `entered_time` TIME NULL,
   `quit_date` DATE NULL,
   `quit_time` TIME NULL,
+  `correct_presence` TINYINT(1) NOT NULL DEFAULT 0,
+  `fake_presence` TINYINT(1) NOT NULL DEFAULT 0,
   `attendance_state` VARCHAR(32) NOT NULL DEFAULT 'not_entered',
   `last_control_condition` VARCHAR(32) NULL,
   `last_control_action` VARCHAR(16) NULL,
@@ -292,6 +292,18 @@ SQL);
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'entered_time', 'TIME NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'quit_date', 'DATE NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'quit_time', 'TIME NULL');
+    $correctPresenceAdded = !egmInstanceColumnExists($pdo, $userPeriodsTable, 'correct_presence');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'correct_presence', 'TINYINT(1) NOT NULL DEFAULT 0');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'fake_presence', 'TINYINT(1) NOT NULL DEFAULT 0');
+    if ($correctPresenceAdded) {
+        // Forced attendance did not exist before this schema version, so a
+        // complete historical entry/quit pair is safely classified as real.
+        $pdo->exec(
+            "UPDATE `{$userPeriodsTable}` SET `correct_presence` = 1 "
+            . "WHERE `entered_date` IS NOT NULL AND `entered_time` IS NOT NULL "
+            . "AND `quit_date` IS NOT NULL AND `quit_time` IS NOT NULL"
+        );
+    }
     $attendanceStateAdded = !egmInstanceColumnExists($pdo, $userPeriodsTable, 'attendance_state');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'attendance_state', "VARCHAR(32) NOT NULL DEFAULT 'not_entered'");
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'last_control_condition', 'VARCHAR(32) NULL');

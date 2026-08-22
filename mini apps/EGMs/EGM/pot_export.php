@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../../api/lib/egm-export-filename.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/pot_service.php';
 
@@ -39,8 +40,7 @@ if ($exportType === 'winners') {
   $participants = egmPotEligibleParticipants($level, $winners);
 }
 $headers = ['Guest Number', 'fullname', 'Work ID', 'National ID', 'Phone Number', 'Total Score', 'Pot Prize Level'];
-$filename = preg_replace('/[^\pL\pN._-]+/u', '-', (string)$level['name']) ?: 'pot';
-$filename .= $exportType === 'winners' ? '-winners.xlsx' : '-reached-non-winners.xlsx';
+$filename = egmExportDatedFilename($exportType === 'winners' ? 'برندگان قرعه‌کشی' : 'واجدان بدون جایزه');
 header('Content-Disposition: attachment; filename="pot-winners.xlsx"; filename*=UTF-8\'\'' . rawurlencode($filename));
 header('Pragma: no-cache');
 header('Expires: 0');

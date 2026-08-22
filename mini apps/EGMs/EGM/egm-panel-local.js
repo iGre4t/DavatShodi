@@ -112,6 +112,28 @@
     return parsed;
   }
 
+  function normalizeMinimumStayMinutes(value) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    return Number.isFinite(parsed) ? Math.max(1, Math.min(1440, parsed)) : 1;
+  }
+
+  function buildMinimumStayOptions(selectedValue) {
+    const selected = normalizeMinimumStayMinutes(selectedValue);
+    const values = new Set([selected]);
+    for (let minutes = 1; minutes <= 60; minutes += 1) values.add(minutes);
+    for (let minutes = 75; minutes <= 180; minutes += 15) values.add(minutes);
+    for (let minutes = 210; minutes <= 360; minutes += 30) values.add(minutes);
+    for (let minutes = 420; minutes <= 1440; minutes += 60) values.add(minutes);
+    const label = (minutes) => {
+      if (minutes < 60) return `${minutes.toLocaleString('fa-IR')} دقیقه`;
+      if (minutes % 60 === 0) return `${(minutes / 60).toLocaleString('fa-IR')} ساعت`;
+      return `${Math.floor(minutes / 60).toLocaleString('fa-IR')} ساعت و ${(minutes % 60).toLocaleString('fa-IR')} دقیقه`;
+    };
+    return Array.from(values).sort((left, right) => left - right)
+      .map((minutes) => `<option value="${minutes}"${minutes === selected ? ' selected' : ''}>${label(minutes)}</option>`)
+      .join('');
+  }
+
   function normalizeTask(task, index) {
     const raw = task && typeof task === 'object' ? task : {};
     const id = String(raw.id ?? '').trim();
@@ -129,6 +151,8 @@
       active: normalizeBool(raw.active),
       duration: normalizeBool(raw.duration),
       quitRequired: normalizeBool(raw.quitRequired ?? raw.quit_required ?? false),
+      quitTimelineRequired: normalizeBool(raw.quitTimelineRequired ?? raw.quit_timeline_required ?? true),
+      minimumStayMinutes: normalizeMinimumStayMinutes(raw.minimumStayMinutes ?? raw.minimum_stay_minutes ?? 1),
       devPhase: normalizeBool(raw.devPhase ?? raw.dev_phase ?? false),
       startDate: normalizeDate(raw.startDate ?? raw.start_date ?? ''),
       startTime: normalizeTime(raw.startTime ?? raw.start_time ?? ''),
@@ -270,6 +294,7 @@
     const active = normalizeBool(settings.active);
     const duration = normalizeBool(settings.duration);
     const quitRequired = normalizeBool(settings.quitRequired);
+    const quitTimelineRequired = normalizeBool(settings.quitTimelineRequired ?? true);
     const startDate = normalizeDate(settings.startDate);
     const startTime = normalizeTime(settings.startTime);
     const endDate = normalizeDate(settings.endDate);
@@ -308,6 +333,7 @@
       }
 
       if (quitRequired) {
+        if (!quitTimelineRequired) return { label: 'فعال / ورود و خروج شناور', tone: 'active' };
         const startAt = startDate && startTime ? `${startDate}T${startTime}` : '';
         const enterDeadlineAt = enterDeadlineDate && enterDeadlineTime ? `${enterDeadlineDate}T${enterDeadlineTime}` : '';
         const quitOpeningAt = quitOpeningDate && quitOpeningTime ? `${quitOpeningDate}T${quitOpeningTime}` : '';
@@ -452,6 +478,9 @@
     const activeToggle = pane.querySelector('[data-task-field="active"]');
     const durationToggle = pane.querySelector('[data-task-field="duration"]');
     const quitRequiredToggle = pane.querySelector('[data-task-field="quitRequired"]');
+    const quitTimelineRequiredToggle = pane.querySelector('[data-task-field="quitTimelineRequired"]');
+    const minimumStayMinutes = pane.querySelector('[data-task-field="minimumStayMinutes"]');
+    const minimumStayContainer = pane.querySelector('[data-quit-minimum-stay]');
     const devPhaseToggle = pane.querySelector('[data-task-field="devPhase"]');
     const startDate = pane.querySelector('[data-task-field="startDate"]');
     const startTime = pane.querySelector('[data-task-field="startTime"]');
@@ -470,6 +499,8 @@
       !(activeToggle instanceof HTMLInputElement) ||
       !(durationToggle instanceof HTMLInputElement) ||
       !(quitRequiredToggle instanceof HTMLInputElement) ||
+      !(quitTimelineRequiredToggle instanceof HTMLInputElement) ||
+      !(minimumStayMinutes instanceof HTMLSelectElement) ||
       !(devPhaseToggle instanceof HTMLInputElement) ||
       !(startDate instanceof HTMLInputElement) ||
       !(startTime instanceof HTMLSelectElement) ||
@@ -487,6 +518,9 @@
       activeToggle,
       durationToggle,
       quitRequiredToggle,
+      quitTimelineRequiredToggle,
+      minimumStayMinutes,
+      minimumStayContainer: minimumStayContainer instanceof HTMLElement ? minimumStayContainer : null,
       devPhaseToggle,
       startDate,
       startTime,
@@ -2208,12 +2242,16 @@
     controls.startTime.disabled = !enabled;
     controls.endDate.disabled = !enabled;
     controls.endTime.disabled = !enabled;
-    const quitTimelineEnabled = enabled && controls.quitRequiredToggle.checked;
+    const quitRequiredEnabled = enabled && controls.quitRequiredToggle.checked;
+    controls.quitTimelineRequiredToggle.disabled = !quitRequiredEnabled;
+    const quitTimelineEnabled = quitRequiredEnabled && controls.quitTimelineRequiredToggle.checked;
     controls.enterDeadlineDate.disabled = !quitTimelineEnabled;
     controls.enterDeadlineTime.disabled = !quitTimelineEnabled;
     controls.quitOpeningDate.disabled = !quitTimelineEnabled;
     controls.quitOpeningTime.disabled = !quitTimelineEnabled;
-    if (controls.quitTimeline) controls.quitTimeline.hidden = !controls.quitRequiredToggle.checked;
+    if (controls.quitTimeline) controls.quitTimeline.hidden = !quitTimelineEnabled;
+    controls.minimumStayMinutes.disabled = !quitRequiredEnabled || controls.quitTimelineRequiredToggle.checked;
+    if (controls.minimumStayContainer) controls.minimumStayContainer.hidden = !quitRequiredEnabled || controls.quitTimelineRequiredToggle.checked;
   }
 
   function collectTaskSettingsFromPane(pane) {
@@ -2224,6 +2262,8 @@
       active: controls.activeToggle.checked ? '1' : '0',
       duration: controls.durationToggle.checked ? '1' : '0',
       quit_required: controls.quitRequiredToggle.checked ? '1' : '0',
+      quit_timeline_required: controls.quitTimelineRequiredToggle.checked ? '1' : '0',
+      minimum_stay_minutes: String(normalizeMinimumStayMinutes(controls.minimumStayMinutes.value)),
       dev_phase: controls.devPhaseToggle.checked ? '1' : '0',
       start_date: normalizeDate(controls.startDate.value),
       start_time: normalizeTime(controls.startTime.value),
@@ -2267,6 +2307,7 @@
       active: settings.active,
       duration: settings.duration,
       quitRequired: settings.quit_required,
+      quitTimelineRequired: settings.quit_timeline_required,
       startDate: settings.start_date,
       startTime: settings.start_time,
       endDate: settings.end_date,
@@ -2303,6 +2344,9 @@
     controls.activeToggle.checked = normalizeBool(task?.active);
     controls.durationToggle.checked = normalizeBool(task?.duration);
     controls.quitRequiredToggle.checked = normalizeBool(task?.quitRequired);
+    controls.quitTimelineRequiredToggle.checked = normalizeBool(task?.quitTimelineRequired ?? true);
+    controls.minimumStayMinutes.innerHTML = buildMinimumStayOptions(task?.minimumStayMinutes);
+    controls.minimumStayMinutes.value = String(normalizeMinimumStayMinutes(task?.minimumStayMinutes));
     controls.devPhaseToggle.checked = normalizeBool(task?.devPhase);
     controls.startDate.value = normalizeDate(task?.startDate);
     controls.startTime.value = normalizeTime(task?.startTime);
@@ -2503,8 +2547,8 @@
           <div class="section-header"><h3>دعوت‌شدگان این بازه</h3><strong><span data-period-invitee-total>0</span> نفر</strong></div>
           <div class="form"><label class="field full"><span>جستجو</span><input type="search" data-period-invitee-search placeholder="نام، کد ملی یا کد پرسنلی" autocomplete="off" /></label></div>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
-            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>منبع</th><th>عملیات</th>
-          </tr></thead><tbody data-period-invitee-body><tr><td colspan="12" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
+            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>عملیات</th>
+          </tr></thead><tbody data-period-invitee-body><tr><td colspan="14" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
           <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-invitee-prev>قبلی</button><span data-period-invitee-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-invitee-next>بعدی</button></div><button type="button" class="btn ghost" data-period-invitee-refresh>بازخوانی</button></div>
           <p class="hint" data-period-invitee-status aria-live="polite"></p>
         </div>
@@ -2548,6 +2592,8 @@
             <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>فقط مهمانانی که هنگام مراجعه به‌عنوان مهمان ناخوانده ثبت شده‌اند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>تمام تلاش‌های ورود، خروج، تکرار، رد شدن و دیگر رویدادهای کنترل مهمان.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>وضعیت همه کاربران</h4><p>یک ردیف برای هر کاربر با آخرین وضعیت دقیق ثبت‌شده در این بازه.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=user_conditions&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>حضور واقعی</h4><p>مهمانانی که ورود و خروج عادی و معتبر برای این بازه دارند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=correct_presence&amp;period_code=${encodeURIComponent(task.tagCode)}">حضور واقعی</a></article>
+            <article class="egm-period-export-option"><div><h4>حضوری نامعقول</h4><p>مهمانانی که ورود یا خروج آنها با عملیات اجباری ثبت شده است.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=fake_presence&amp;period_code=${encodeURIComponent(task.tagCode)}">حضوری نامعقول</a></article>
           </div>
           <p class="hint">کد ملی، کد پرسنلی و شماره همراه به‌صورت متن ذخیره می‌شوند تا صفرهای ابتدای آن‌ها در Excel حذف نشود.</p>
         </div>
@@ -2796,12 +2842,24 @@
                   </span>
                 </label>
                 <label class="switch egm-switch">
+                  <span class="switch-label">الزام مهلت ورود و آغاز خروج</span>
+                  <span class="switch-toggle">
+                    <input type="checkbox" data-task-field="quitTimelineRequired" aria-label="الزام مهلت ورود و آغاز خروج" />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
+                <label class="switch egm-switch">
                   <span class="switch-label">حالت آزمایشی</span>
                   <span class="switch-toggle">
                     <input type="checkbox" data-task-field="devPhase" aria-label="حالت آزمایشی بازه" />
                     <span class="switch-track"><span class="switch-thumb"></span></span>
                   </span>
                 </label>
+              </div>
+              <div class="field standard-width" data-quit-minimum-stay hidden>
+                <span>حداقل مدت حضور پیش از خروج</span>
+                <select data-task-field="minimumStayMinutes">${buildMinimumStayOptions(task.minimumStayMinutes)}</select>
+                <p class="hint">پس از عبور خروج‌های ثبت‌شده از ۲۰٪ دعوت‌شدگان، ورود بسته و این حداقل زمان نادیده گرفته می‌شود.</p>
               </div>
               <div class="form grid two-column-fields egm-datetime-grid">
                 <div class="egm-datetime-title egm-datetime-title--start">شروع</div>
@@ -3540,8 +3598,7 @@
     }
     const workbook = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Uninviteable');
-    const periodCode = periodCodeForPane(pane).replace(/[^A-Za-z0-9_-]+/g, '-');
-    const filename = `EGM-period-${periodCode || 'unknown'}-uninviteable.xlsx`;
+    const filename = periodExportDatedFilename('کاربران غیرقابل دعوت', pane);
     window.XLSX.writeFile(workbook, filename, { bookType: 'xlsx', compression: true });
     if (status) status.textContent = `${rows.length} کاربر غیرقابل دعوت در فایل Excel دانلود شد.`;
   }
@@ -3625,6 +3682,22 @@
     return String(pane.dataset.taskTagCode || '').trim();
   }
 
+  function periodExportShamsiDayMonth(gregorianDate = '') {
+    const dateText = String(gregorianDate || '').slice(0, 10);
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? new Date(`${dateText}T12:00:00`) : new Date();
+    const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+      day: 'numeric', month: 'long', timeZone: 'Asia/Tehran'
+    }).formatToParts(parsed);
+    const day = parts.find((part) => part.type === 'day')?.value || '';
+    const month = parts.find((part) => part.type === 'month')?.value || '';
+    return `${day} ${month}ماه`.trim();
+  }
+
+  function periodExportDatedFilename(label, pane) {
+    return `${label} ${periodExportShamsiDayMonth(pane?.dataset?.taskStartDate || '')}.xlsx`
+      .replace(/[\\/:*?"<>|]+/g, '-');
+  }
+
   async function loadPeriodCandidates(pane, page = 1) {
     const state = getPeriodInviteState(pane);
     state.matchedMode = false;
@@ -3657,9 +3730,9 @@
       <td><code>${escapeHtml(row?.guest_number || '—')}</code></td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
       <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
       <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
-      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td>
+      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td>
       <td><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></td>
-    </tr>`).join('') : '<tr><td colspan="12" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="14" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
     const total = pane.querySelector('[data-period-invitee-total]');
     if (total) total.textContent = String(data?.total || 0);
     const meta = pane.querySelector('[data-period-invitee-page]');
@@ -3693,7 +3766,38 @@
   }
 
   function normalizePeriodExcelHeader(value) {
-    return String(value || '').toLowerCase().replace(/[\u200c\u200f]/g, ' ').replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return String(value ?? '')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[\u064b-\u065f\u0670\u06d6-\u06ed]/g, '')
+      .replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/g, ' ')
+      .replace(/[يىئ]/g, 'ی')
+      .replace(/[كڪ]/g, 'ک')
+      .replace(/[ةۀ]/g, 'ه')
+      .replace(/ؤ/g, 'و')
+      .replace(/[إأآٱ]/g, 'ا')
+      .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0))
+      .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function periodExcelHeaderSimilarity(left, right) {
+    if (!left || !right) return 0;
+    if (left === right) return 1;
+    const rows = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+      let previous = rows[0];
+      rows[0] = leftIndex;
+      for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+        const current = rows[rightIndex];
+        const substitution = previous + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
+        rows[rightIndex] = Math.min(rows[rightIndex] + 1, rows[rightIndex - 1] + 1, substitution);
+        previous = current;
+      }
+    }
+    return 1 - (rows[right.length] / Math.max(left.length, right.length));
   }
 
   function suggestPeriodExcelColumn(headers, aliases) {
@@ -3702,7 +3806,24 @@
     let index = normalized.findIndex((header) => normalizedAliases.includes(header));
     if (index >= 0) return String(index);
     index = normalized.findIndex((header) => normalizedAliases.some((alias) => alias.length > 3 && header.includes(alias)));
-    return index >= 0 ? String(index) : '';
+    if (index >= 0) return String(index);
+
+    let closestIndex = -1;
+    let closestScore = 0;
+    normalized.forEach((header, headerIndex) => {
+      if (header.length < 4) return;
+      normalizedAliases.forEach((alias) => {
+        if (alias.length < 4) return;
+        const lengthRatio = Math.min(header.length, alias.length) / Math.max(header.length, alias.length);
+        if (lengthRatio < 0.55) return;
+        const score = periodExcelHeaderSimilarity(header, alias);
+        if (score > closestScore) {
+          closestScore = score;
+          closestIndex = headerIndex;
+        }
+      });
+    });
+    return closestIndex >= 0 && closestScore >= 0.72 ? String(closestIndex) : '';
   }
 
   const periodExcelMappings = [
@@ -3761,6 +3882,7 @@
     if (!(pane instanceof HTMLElement) || pane.dataset.periodInvitesReady === '1') return;
     pane.dataset.periodInvitesReady = '1';
     pane.dataset.taskTagCode = String(task?.tagCode || '');
+    pane.dataset.taskStartDate = String(task?.startDate || task?.start_date || '');
     const state = getPeriodInviteState(pane);
     pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
     pane.querySelector('[data-period-invite-card-export]')?.addEventListener('click', () => exportPeriodInviteCardLinks(pane));
@@ -3993,7 +4115,7 @@
       const pane = field.closest('.sub-pane[data-task-pane="1"]');
       if (!(pane instanceof HTMLElement)) return;
       const fieldName = field.getAttribute('data-task-field') || '';
-      if (fieldName === 'active' || fieldName === 'duration' || fieldName === 'quitRequired') {
+      if (fieldName === 'active' || fieldName === 'duration' || fieldName === 'quitRequired' || fieldName === 'quitTimelineRequired') {
         syncTaskPaneToggleState(pane);
         setTaskSaveStatus(pane, '');
         return;
@@ -4011,7 +4133,8 @@
         fieldName === 'enterDeadlineDate' ||
         fieldName === 'enterDeadlineTime' ||
         fieldName === 'quitOpeningDate' ||
-        fieldName === 'quitOpeningTime'
+        fieldName === 'quitOpeningTime' ||
+        fieldName === 'minimumStayMinutes'
       ) {
         updateTaskPaneStatus(pane);
         setTaskSaveStatus(pane, '');

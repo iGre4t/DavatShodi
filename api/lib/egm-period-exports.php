@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/egm-period-invites.php';
 require_once __DIR__ . '/xlsx-export.php';
+require_once __DIR__ . '/egm-export-filename.php';
 
 const EGM_PERIOD_EXPORT_LOG_ACTION = 'egm_period_check_in';
 
@@ -14,6 +15,8 @@ function egmPeriodExportTypes(): array
         'uninvited_guests' => 'مهمانان ناخوانده',
         'full_log' => 'گزارش کامل',
         'user_conditions' => 'وضعیت همه کاربران',
+        'correct_presence' => 'حضور واقعی',
+        'fake_presence' => 'حضوری نامعقول',
     ];
 }
 
@@ -23,6 +26,8 @@ function egmPeriodExportConditionLabels(): array
     return [
         'success' => 'ورود موفق',
         'quit_success' => 'خروج موفق',
+        'force_entry_success' => 'ورود اجباری؛ حضور نامعقول',
+        'force_quit_success' => 'خروج اجباری؛ حضور نامعقول',
         'walk_in_registered' => 'ثبت مهمان ناخوانده',
         'duplicate' => 'ورود تکراری؛ قبلاً وارد شده',
         'quit_duplicate' => 'خروج تکراری؛ قبلاً خارج شده',
@@ -77,7 +82,7 @@ SELECT
   u.`guest_number`, u.`deputy`, u.`general_department`, u.`department`, u.`gender`, u.`postal_level`,
   u.`is_uninvited_guest` AS `user_is_uninvited_guest`, u.`outside_organization`,
   p.`status` AS `period_status`, p.`invitation_source`, p.`invited_at`, p.`entered_date`, p.`entered_time`,
-  p.`quit_date`, p.`quit_time`, p.`attendance_state`, p.`last_control_condition`, p.`last_control_action`,
+  p.`quit_date`, p.`quit_time`, p.`correct_presence`, p.`fake_presence`, p.`attendance_state`, p.`last_control_condition`, p.`last_control_action`,
   p.`last_control_message`, p.`last_control_at`, p.`is_uninvited_guest` AS `period_is_uninvited_guest`,
   p.`uninvited_registered_at`, p.`uninvited_registered_by`
 FROM `{$periodsTable}` p
@@ -135,6 +140,8 @@ SQL);
             'entered_date' => $period['entered_date'] ?? '', 'entered_time' => $period['entered_time'] ?? '',
             'quit_date' => $period['quit_date'] ?? '', 'quit_time' => $period['quit_time'] ?? '',
             'attendance_state' => $period['attendance_state'] ?? 'not_entered',
+            'correct_presence' => $period['correct_presence'] ?? 0,
+            'fake_presence' => $period['fake_presence'] ?? 0,
         ];
         $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
         if (!is_array($metadata)) $metadata = [];
@@ -164,6 +171,8 @@ function egmPeriodExportMainRecord(array $row, ?string $condition = null): array
         'زمان ورود' => trim((string)($row['entered_time'] ?? '')),
         'تاریخ خروج' => trim((string)($row['quit_date'] ?? '')),
         'زمان خروج' => trim((string)($row['quit_time'] ?? '')),
+        'Correct Presence' => (int)($row['correct_presence'] ?? 0) === 1 ? 'بله' : 'خیر',
+        'Fake Presence' => (int)($row['fake_presence'] ?? 0) === 1 ? 'بله' : 'خیر',
     ];
 }
 
@@ -190,6 +199,17 @@ function egmPeriodExportRecords(string $type, array $guestRows, array $logRows =
     if ($type === 'uninvited_guests') {
         $guestRows = array_values(array_filter($guestRows, static fn(array $row): bool =>
             (int)($row['period_is_uninvited_guest'] ?? 0) === 1 || (int)($row['user_is_uninvited_guest'] ?? 0) === 1
+        ));
+    } elseif ($type === 'correct_presence') {
+        $guestRows = array_values(array_filter(
+            $guestRows,
+            static fn(array $row): bool => (int)($row['correct_presence'] ?? 0) === 1
+                && (int)($row['fake_presence'] ?? 0) !== 1
+        ));
+    } elseif ($type === 'fake_presence') {
+        $guestRows = array_values(array_filter(
+            $guestRows,
+            static fn(array $row): bool => (int)($row['fake_presence'] ?? 0) === 1
         ));
     }
 
@@ -304,10 +324,12 @@ function egmPeriodExportBuild(array $context, string $periodCode, string $type):
     if (!isset($types[$type])) throw new InvalidArgumentException('نوع خروجی اکسل معتبر نیست.');
     $periodCode = egmPeriodInvitesValidatePeriod($context, $periodCode);
     $periodTitle = $periodCode;
+    $periodDate = null;
     foreach (egmPeriodInvitesPeriods($context) as $period) {
         $candidateCode = trim((string)($period['tagCode'] ?? ($period['code'] ?? '')));
         if ($candidateCode === $periodCode) {
             $periodTitle = trim((string)($period['title'] ?? '')) ?: $periodCode;
+            $periodDate = trim((string)($period['startDate'] ?? ($period['start_date'] ?? ''))) ?: null;
             break;
         }
     }
@@ -316,8 +338,7 @@ function egmPeriodExportBuild(array $context, string $periodCode, string $type):
     $records = egmPeriodExportRecords($type, $guestRows, $logRows);
     $sheetName = $types[$type];
     $xml = egmPeriodExportSpreadsheetXml($sheetName, $records);
-    $filename = egmPeriodExportSafeFilenamePart($periodTitle, 'period') . '-'
-        . egmPeriodExportSafeFilenamePart($sheetName, 'export') . '-' . date('Ymd-His') . '.xlsx';
+    $filename = egmExportDatedFilename($sheetName, $periodDate);
     return [
         'content' => appXlsxFromSpreadsheetXml($xml),
         'filename' => $filename,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/egm-security.php';
+require_once __DIR__ . '/../../../api/lib/egm-export-filename.php';
 
 function egmMonitoringExportXmlEscape(string $value): string
 {
@@ -322,7 +323,7 @@ function egmMonitoringBuildExcelXml(array $data, string $baseDir): array
 
   $stem = preg_replace('/[\x00-\x1F<>:"\/\\\\|?*]+/u', '-', trim($eventTitle));
   $stem = is_string($stem) && $stem !== '' ? $stem : 'event-guest-manager';
-  return ['content' => $xml, 'filename' => $stem . '-گزارش-مانیتورینگ.xlsx'];
+  return ['content' => $xml, 'filename' => egmExportDatedFilename('گزارش مانیتورینگ')];
 }
 
 function egmMonitoringSendExcelExport(array $data, string $baseDir): void

@@ -691,6 +691,7 @@ function egmPeriodInvitesListInvitedRows(array $context, string $periodCode): ar
     $periodsTable = (string)$context['tables']['user_periods'];
     $statement = $context['pdo']->prepare(<<<SQL
 SELECT p.`id` AS `invite_id`, p.`status`, p.`invitation_source`, p.`invited_by`, p.`invited_at`,
+p.`correct_presence`,p.`fake_presence`,p.`entered_date`,p.`entered_time`,p.`quit_date`,p.`quit_time`,
 u.`work_id`,u.`first_name`,u.`last_name`,u.`national_id`,u.`phone_number`,u.`deputy`,u.`general_department`,u.`department`,u.`gender`,u.`postal_level`,u.`guest_number`,u.`source_row`
 FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id`
 WHERE p.`period_code`=:period_code ORDER BY p.`invited_at` DESC,p.`id` DESC

@@ -45,6 +45,78 @@ function egmCheckInBool($value): bool
     return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
 }
 
+function egmCheckInQuitTimelineRequired(array $period): bool
+{
+    return egmCheckInBool($period['quitTimelineRequired'] ?? ($period['quit_timeline_required'] ?? true));
+}
+
+function egmCheckInMinimumStayMinutes(array $period): int
+{
+    $raw = $period['minimumStayMinutes'] ?? ($period['minimum_stay_minutes'] ?? 1);
+    $minutes = is_numeric($raw) ? (int)$raw : 1;
+    return max(1, min(1440, $minutes));
+}
+
+function egmCheckInQuitWaveActive(int $invitedUsers, int $completedQuits): bool
+{
+    return $invitedUsers > 0 && $completedQuits > 0 && ($completedQuits * 100) > ($invitedUsers * 20);
+}
+
+/**
+ * @return array{eligible:bool,action:?string,reason:string,remaining_minutes:int}
+ */
+function egmCheckInFlexibleAttendanceDecision(
+    array $invitation,
+    DateTimeImmutable $now,
+    int $minimumStayMinutes,
+    bool $quitWaveActive
+): array {
+    $enteredDate = trim((string)($invitation['entered_date'] ?? ''));
+    $enteredTime = trim((string)($invitation['entered_time'] ?? ''));
+    $quitDate = trim((string)($invitation['quit_date'] ?? ''));
+    $quitTime = trim((string)($invitation['quit_time'] ?? ''));
+    $hasEntryDate = $enteredDate !== '';
+    $hasEntryTime = $enteredTime !== '';
+    $hasQuitDate = $quitDate !== '';
+    $hasQuitTime = $quitTime !== '';
+
+    if ($hasEntryDate !== $hasEntryTime || $hasQuitDate !== $hasQuitTime) {
+        return ['eligible' => false, 'action' => null, 'reason' => 'invalid_attendance_record', 'remaining_minutes' => 0];
+    }
+    if (!$hasEntryDate) {
+        return $quitWaveActive
+            ? ['eligible' => false, 'action' => null, 'reason' => 'entry_closed_quit_wave', 'remaining_minutes' => 0]
+            : ['eligible' => true, 'action' => 'entry', 'reason' => 'flexible_entry', 'remaining_minutes' => 0];
+    }
+    if ($hasQuitDate) {
+        return ['eligible' => true, 'action' => 'quit', 'reason' => 'flexible_quit', 'remaining_minutes' => 0];
+    }
+    if ($quitWaveActive) {
+        return ['eligible' => true, 'action' => 'quit', 'reason' => 'quit_wave', 'remaining_minutes' => 0];
+    }
+
+    $enteredAt = DateTimeImmutable::createFromFormat(
+        '!Y-m-d H:i:s',
+        $enteredDate . ' ' . (strlen($enteredTime) === 5 ? $enteredTime . ':00' : $enteredTime),
+        $now->getTimezone()
+    );
+    $errors = DateTimeImmutable::getLastErrors();
+    if (!$enteredAt || (is_array($errors) && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0))) {
+        return ['eligible' => false, 'action' => null, 'reason' => 'invalid_attendance_record', 'remaining_minutes' => 0];
+    }
+    $minimumStayMinutes = max(1, min(1440, $minimumStayMinutes));
+    $remainingSeconds = ($enteredAt->getTimestamp() + ($minimumStayMinutes * 60)) - $now->getTimestamp();
+    if ($remainingSeconds > 0) {
+        return [
+            'eligible' => false,
+            'action' => null,
+            'reason' => 'minimum_stay',
+            'remaining_minutes' => (int)ceil($remainingSeconds / 60),
+        ];
+    }
+    return ['eligible' => true, 'action' => 'quit', 'reason' => 'flexible_quit', 'remaining_minutes' => 0];
+}
+
 function egmCheckInPeriodCode(array $period): string
 {
     return trim((string)($period['tagCode'] ?? ($period['tag_code'] ?? '')));
@@ -72,12 +144,13 @@ function egmCheckInDateTime(string $date, string $time, bool $end, DateTimeZone 
 /**
  * Resolve the attendance phase for one period.
  *
- * @return array{eligible:bool,scheduled:bool,reason:string,action:?string,quit_required:bool}
+ * @return array{eligible:bool,scheduled:bool,reason:string,action:?string,quit_required:bool,quit_timeline_required:bool}
  */
 function egmCheckInPeriodAvailability(array $period, DateTimeImmutable $now): array
 {
     $scheduled = egmCheckInBool($period['duration'] ?? false);
     $quitRequired = egmCheckInBool($period['quitRequired'] ?? ($period['quit_required'] ?? false));
+    $quitTimelineRequired = egmCheckInQuitTimelineRequired($period);
     if (!$scheduled) {
         $active = !array_key_exists('active', $period) || egmCheckInBool($period['active']);
         return [
@@ -86,6 +159,7 @@ function egmCheckInPeriodAvailability(array $period, DateTimeImmutable $now): ar
             'reason' => $active ? ($quitRequired ? 'invalid_schedule' : 'entry_time') : 'inactive',
             'action' => $active && !$quitRequired ? 'entry' : null,
             'quit_required' => $quitRequired,
+            'quit_timeline_required' => $quitTimelineRequired,
         ];
     }
 
@@ -103,16 +177,19 @@ function egmCheckInPeriodAvailability(array $period, DateTimeImmutable $now): ar
         $timezone
     );
     if (!$start || !$end || $end <= $start) {
-        return ['eligible' => false, 'scheduled' => true, 'reason' => 'invalid_schedule', 'action' => null, 'quit_required' => $quitRequired];
+        return ['eligible' => false, 'scheduled' => true, 'reason' => 'invalid_schedule', 'action' => null, 'quit_required' => $quitRequired, 'quit_timeline_required' => $quitTimelineRequired];
     }
     if ($now < $start) {
-        return ['eligible' => false, 'scheduled' => true, 'reason' => 'upcoming', 'action' => null, 'quit_required' => $quitRequired];
+        return ['eligible' => false, 'scheduled' => true, 'reason' => 'upcoming', 'action' => null, 'quit_required' => $quitRequired, 'quit_timeline_required' => $quitTimelineRequired];
     }
     if ($now >= $end) {
-        return ['eligible' => false, 'scheduled' => true, 'reason' => 'ended', 'action' => null, 'quit_required' => $quitRequired];
+        return ['eligible' => false, 'scheduled' => true, 'reason' => 'ended', 'action' => null, 'quit_required' => $quitRequired, 'quit_timeline_required' => $quitTimelineRequired];
     }
     if (!$quitRequired) {
-        return ['eligible' => true, 'scheduled' => true, 'reason' => 'entry_time', 'action' => 'entry', 'quit_required' => false];
+        return ['eligible' => true, 'scheduled' => true, 'reason' => 'entry_time', 'action' => 'entry', 'quit_required' => false, 'quit_timeline_required' => $quitTimelineRequired];
+    }
+    if (!$quitTimelineRequired) {
+        return ['eligible' => true, 'scheduled' => true, 'reason' => 'flexible_attendance', 'action' => 'auto', 'quit_required' => true, 'quit_timeline_required' => false];
     }
 
     $enterDeadline = egmCheckInDateTime(
@@ -128,15 +205,15 @@ function egmCheckInPeriodAvailability(array $period, DateTimeImmutable $now): ar
         $timezone
     );
     if (!$enterDeadline || !$quitOpening || $enterDeadline <= $start || $quitOpening <= $enterDeadline || $quitOpening >= $end) {
-        return ['eligible' => false, 'scheduled' => true, 'reason' => 'invalid_schedule', 'action' => null, 'quit_required' => true];
+        return ['eligible' => false, 'scheduled' => true, 'reason' => 'invalid_schedule', 'action' => null, 'quit_required' => true, 'quit_timeline_required' => true];
     }
     if ($now < $enterDeadline) {
-        return ['eligible' => true, 'scheduled' => true, 'reason' => 'entry_time', 'action' => 'entry', 'quit_required' => true];
+        return ['eligible' => true, 'scheduled' => true, 'reason' => 'entry_time', 'action' => 'entry', 'quit_required' => true, 'quit_timeline_required' => true];
     }
     if ($now < $quitOpening) {
-        return ['eligible' => false, 'scheduled' => true, 'reason' => 'immune_time', 'action' => null, 'quit_required' => true];
+        return ['eligible' => false, 'scheduled' => true, 'reason' => 'immune_time', 'action' => null, 'quit_required' => true, 'quit_timeline_required' => true];
     }
-    return ['eligible' => true, 'scheduled' => true, 'reason' => 'quit_time', 'action' => 'quit', 'quit_required' => true];
+    return ['eligible' => true, 'scheduled' => true, 'reason' => 'quit_time', 'action' => 'quit', 'quit_required' => true, 'quit_timeline_required' => true];
 }
 
 /** @return array{start:?DateTimeImmutable,end:?DateTimeImmutable} */
@@ -176,7 +253,7 @@ function egmCheckInResolveEgmPeriodState(array $periods, DateTimeImmutable $now)
     foreach ($periods as $period) {
         if (!is_array($period) || egmCheckInPeriodCode($period) === '') continue;
         $availability = egmCheckInPeriodAvailability($period, $now);
-        if (in_array((string)$availability['reason'], ['entry_time', 'immune_time', 'quit_time'], true)) {
+        if (in_array((string)$availability['reason'], ['entry_time', 'immune_time', 'quit_time', 'flexible_attendance'], true)) {
             $active[] = ['period' => $period, 'availability' => $availability];
         }
         $window = egmCheckInPeriodWindow($period, $now->getTimezone());
@@ -356,7 +433,7 @@ function egmCheckInWriteLog(array $context, ?array $user, string $submittedCode,
         ':user_id' => is_array($user) ? (int)($user['id'] ?? 0) ?: null : null,
         ':work_id' => $workId !== '' ? $workId : null,
         ':session_id' => session_id() ?: null,
-        ':level' => in_array($status, ['success', 'quit_success', 'walk_in_registered'], true) ? 'info' : 'warning',
+        ':level' => in_array($status, ['success', 'quit_success', 'force_entry_success', 'force_quit_success', 'walk_in_registered'], true) ? 'info' : 'warning',
         ':action' => EGM_CHECK_IN_ACTION,
         ':entity_id' => $periodCode !== '' ? $periodCode : null,
         ':ip_address' => substr(trim((string)($_SERVER['REMOTE_ADDR'] ?? '')), 0, 45) ?: null,
@@ -439,6 +516,7 @@ function egmCheckInResetAttendanceRecords(array $context, ?string $periodCode = 
     $update = $pdo->prepare(
         "UPDATE `{$userPeriodsTable}` SET "
         . '`entered_date`=NULL, `entered_time`=NULL, `quit_date`=NULL, `quit_time`=NULL, '
+        . '`correct_presence`=0, `fake_presence`=0, '
         . "`attendance_state`='not_entered', `last_control_condition`=NULL, `last_control_action`=NULL, "
         . '`last_control_message`=NULL, `last_control_at`=NULL'
         . $where
@@ -638,10 +716,15 @@ function egmCheckInSearchStatusCodes(string $query): array
     $labels = [
         'success' => ['ورود موفق', 'ورود'],
         'quit_success' => ['خروج موفق', 'خروج'],
+        'force_entry_success' => ['ورود اجباری', 'حضور نامعقول'],
+        'force_quit_success' => ['خروج اجباری', 'حضور نامعقول'],
         'walk_in_registered' => ['مهمان ناخوانده', 'ثبت مهمان ناخوانده'],
         'duplicate' => ['قبلاً وارد شده', 'ورود تکراری'],
         'quit_duplicate' => ['قبلاً خارج شده', 'خروج تکراری'],
         'quit_without_entry' => ['ورود ثبت نشده', 'خروج بدون ورود'],
+        'minimum_stay' => ['حداقل مدت حضور', 'خروج زودهنگام'],
+        'entry_closed_quit_wave' => ['ورود بسته', 'موج خروج'],
+        'invalid_attendance_record' => ['سابقه حضور ناسازگار'],
         'invited_other_period' => ['دعوت در بازه دیگر', 'بازه دیگر'],
         'user_inactive' => ['مهمان غیرفعال'],
         'no_active_period' => ['بدون بازه فعال'],
@@ -723,6 +806,8 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'entered_date' => $period['entered_date'] ?? '', 'entered_time' => $period['entered_time'] ?? '',
             'quit_date' => $period['quit_date'] ?? '', 'quit_time' => $period['quit_time'] ?? '',
             'attendance_state' => $period['attendance_state'] ?? 'not_entered',
+            'correct_presence' => $period['correct_presence'] ?? 0,
+            'fake_presence' => $period['fake_presence'] ?? 0,
         ];
     }
     unset($row);
@@ -781,6 +866,8 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'quit_date' => $quitDate,
             'quit_time' => $quitTime,
             'attendance_state' => (string)($row['attendance_state'] ?? 'not_entered'),
+            'correct_presence' => (int)($row['correct_presence'] ?? 0) === 1,
+            'fake_presence' => (int)($row['fake_presence'] ?? 0) === 1,
             'attendance_action' => $attendanceAction,
             'operation_date' => $operationDate,
             'operation_time' => $operationTime,
@@ -789,10 +876,53 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
     }, $rows ?: []);
 }
 
-function egmCheckInProcess(array $context, string $submittedCode, ?DateTimeImmutable $now = null): array
+/** @return array{invited_users:int,completed_quits:int,quit_wave_active:bool} */
+function egmCheckInPeriodAttendanceStats(PDO $pdo, string $userPeriodsTable, string $periodCode): array
+{
+    $statement = $pdo->prepare(
+        "SELECT COUNT(*) AS `invited_users`, "
+        . "SUM(CASE WHEN `quit_date` IS NOT NULL AND `quit_time` IS NOT NULL THEN 1 ELSE 0 END) AS `completed_quits` "
+        . "FROM `{$userPeriodsTable}` WHERE `period_code` = :period_code"
+    );
+    $statement->execute([':period_code' => $periodCode]);
+    $row = $statement->fetch(PDO::FETCH_ASSOC) ?: [];
+    $invitedUsers = max(0, (int)($row['invited_users'] ?? 0));
+    $completedQuits = max(0, (int)($row['completed_quits'] ?? 0));
+    return [
+        'invited_users' => $invitedUsers,
+        'completed_quits' => $completedQuits,
+        'quit_wave_active' => egmCheckInQuitWaveActive($invitedUsers, $completedQuits),
+    ];
+}
+
+/** @return array{force_action:string,force_label:string}|array{} */
+function egmCheckInForceOption(array $invitation): array
+{
+    $hasEntry = trim((string)($invitation['entered_date'] ?? '')) !== ''
+        && trim((string)($invitation['entered_time'] ?? '')) !== '';
+    $hasQuit = trim((string)($invitation['quit_date'] ?? '')) !== ''
+        && trim((string)($invitation['quit_time'] ?? '')) !== '';
+    if ($hasQuit) return [];
+    return $hasEntry
+        ? ['force_action' => 'quit', 'force_label' => 'Force Quit']
+        : ['force_action' => 'entry', 'force_label' => 'Force Enter'];
+}
+
+function egmCheckInProcess(
+    array $context,
+    string $submittedCode,
+    ?DateTimeImmutable $now = null,
+    ?string $forcedAction = null,
+    array $sessionUser = []
+): array
 {
     $submittedCode = egmCheckInNormalizeGuestCode($submittedCode);
     if ($submittedCode === '') throw new InvalidArgumentException('شناسه مهمان باید فقط شامل ۴ تا ۱۰ رقم باشد.');
+    $forcedAction = $forcedAction === null ? null : strtolower(trim($forcedAction));
+    if ($forcedAction !== null && !in_array($forcedAction, ['entry', 'quit'], true)) {
+        throw new InvalidArgumentException('عملیات حضور اجباری معتبر نیست.');
+    }
+    $isForced = $forcedAction !== null;
     $now ??= new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran'));
     $pdo = $context['pdo'];
     $usersTable = (string)$context['tables']['users'];
@@ -823,7 +953,7 @@ function egmCheckInProcess(array $context, string $submittedCode, ?DateTimeImmut
             $pdo->commit();
             return ['result' => 'user_inactive', 'message' => $message];
         }
-        $columns = '`id`, `user_id`, `period_code`, `entered_date`, `entered_time`, `quit_date`, `quit_time`';
+        $columns = '`id`, `user_id`, `period_code`, `entered_date`, `entered_time`, `quit_date`, `quit_time`, `correct_presence`, `fake_presence`';
         $selectedCode = egmCheckInPeriodCode($selectedPeriod);
         $statement = $pdo->prepare(
             "SELECT {$columns} FROM `{$userPeriodsTable}` WHERE `user_id` = :user_id "
@@ -860,7 +990,10 @@ function egmCheckInProcess(array $context, string $submittedCode, ?DateTimeImmut
         }
         $period = $selectedPeriod;
         $availability = egmCheckInPeriodAvailability($period, $now);
-        if (!$availability['eligible']) {
+        if ($isForced && $forcedAction === 'quit' && empty($availability['quit_required'])) {
+            throw new InvalidArgumentException('برای این بازه ثبت خروج الزامی نیست و Force Quit قابل استفاده نیست.');
+        }
+        if (!$isForced && !$availability['eligible']) {
             $result = (string)$availability['reason'];
             $messages = [
                 'inactive' => 'این بازه غیرفعال است.',
@@ -875,9 +1008,61 @@ function egmCheckInProcess(array $context, string $submittedCode, ?DateTimeImmut
             );
             egmCheckInWriteLog($context, $user, $submittedCode, $result, $message, $period, $now, ['attendance_phase' => $result]);
             $pdo->commit();
-            return ['result' => $result, 'message' => $message];
+            $forceOption = !empty($availability['quit_required'])
+                && in_array($result, ['upcoming', 'immune_time', 'ended'], true)
+                ? egmCheckInForceOption($invitation)
+                : [];
+            return ['result' => $result, 'message' => $message] + $forceOption;
         }
-        $attendanceAction = (string)($availability['action'] ?? 'entry');
+        $attendanceAction = $isForced ? (string)$forcedAction : (string)($availability['action'] ?? 'entry');
+        $flexibleMetadata = [];
+        if ($attendanceAction === 'auto') {
+            $attendanceStats = egmCheckInPeriodAttendanceStats($pdo, $userPeriodsTable, $selectedCode);
+            $minimumStayMinutes = egmCheckInMinimumStayMinutes($period);
+            $decision = egmCheckInFlexibleAttendanceDecision(
+                $invitation,
+                $now,
+                $minimumStayMinutes,
+                (bool)$attendanceStats['quit_wave_active']
+            );
+            $flexibleMetadata = [
+                'flexible_attendance' => true,
+                'minimum_stay_minutes' => $minimumStayMinutes,
+                'invited_users' => $attendanceStats['invited_users'],
+                'completed_quits' => $attendanceStats['completed_quits'],
+                'quit_wave_active' => $attendanceStats['quit_wave_active'],
+            ];
+            if (!$decision['eligible']) {
+                $result = (string)$decision['reason'];
+                $remainingMinutes = max(0, (int)($decision['remaining_minutes'] ?? 0));
+                $message = match ($result) {
+                    'entry_closed_quit_wave' => 'موج خروج فعال شده است؛ ثبت ورود جدید برای این بازه بسته شده است.',
+                    'minimum_stay' => "حداقل مدت حضور هنوز کامل نشده است؛ حدود {$remainingMinutes} دقیقه دیگر امکان ثبت خروج وجود دارد.",
+                    default => 'سوابق ورود و خروج این مهمان ناسازگار است و باید توسط مدیر بررسی شود.',
+                };
+                $conditionAction = $result === 'minimum_stay' ? 'quit' : ($result === 'entry_closed_quit_wave' ? 'entry' : 'check');
+                $attendanceState = $result === 'minimum_stay' ? 'entered' : null;
+                egmCheckInSavePeriodCondition(
+                    $context,
+                    (int)$invitation['id'],
+                    $result,
+                    $conditionAction,
+                    $message,
+                    $now,
+                    $attendanceState
+                );
+                egmCheckInWriteLog($context, $user, $submittedCode, $result, $message, $period, $now, $flexibleMetadata + [
+                    'attendance_action' => $conditionAction,
+                    'remaining_minutes' => $remainingMinutes,
+                ]);
+                $pdo->commit();
+                $forceOption = $result === 'minimum_stay'
+                    ? ['force_action' => 'quit', 'force_label' => 'Force Quit']
+                    : [];
+                return ['result' => $result, 'message' => $message] + $forceOption;
+            }
+            $attendanceAction = (string)($decision['action'] ?? 'entry');
+        }
 
         $isQuit = $attendanceAction === 'quit';
         if ($isQuit) {
@@ -892,7 +1077,8 @@ function egmCheckInProcess(array $context, string $submittedCode, ?DateTimeImmut
                     'attendance_action' => 'quit',
                 ]);
                 $pdo->commit();
-                return ['result' => 'quit_without_entry', 'message' => $message];
+                return ['result' => 'quit_without_entry', 'message' => $message]
+                    + ['force_action' => 'entry', 'force_label' => 'Force Enter'];
             }
         }
         $dateColumn = $isQuit ? 'quit_date' : 'entered_date';
@@ -910,43 +1096,61 @@ function egmCheckInProcess(array $context, string $submittedCode, ?DateTimeImmut
             egmCheckInSavePeriodCondition(
                 $context, (int)$invitation['id'], $duplicateResult, $attendanceAction, $message, $now, $storedAttendanceState
             );
-            egmCheckInWriteLog($context, $user, $submittedCode, $duplicateResult, $message, $period, $now, [
+            egmCheckInWriteLog($context, $user, $submittedCode, $duplicateResult, $message, $period, $now, $flexibleMetadata + [
                 $dateColumn => $storedDate,
                 $timeColumn => $storedTime,
                 'attendance_action' => $attendanceAction,
             ]);
             $pdo->commit();
-            return ['result' => $duplicateResult, 'message' => $message];
+            $forceOption = !$isQuit && !empty($availability['quit_required'])
+                && trim((string)($invitation['quit_date'] ?? '')) === ''
+                ? ['force_action' => 'quit', 'force_label' => 'Force Quit']
+                : [];
+            return ['result' => $duplicateResult, 'message' => $message] + $forceOption;
         }
         $storedDate = $now->format('Y-m-d');
         $storedTime = $now->format('H:i:s');
+        $presenceUpdate = $isForced
+            ? ', `correct_presence` = 0, `fake_presence` = 1'
+            : ($isQuit ? ', `correct_presence` = CASE WHEN `fake_presence` = 1 THEN 0 ELSE 1 END' : '');
         $update = $pdo->prepare(
-            "UPDATE `{$userPeriodsTable}` SET `{$dateColumn}` = :event_date, `{$timeColumn}` = :event_time "
+            "UPDATE `{$userPeriodsTable}` SET `{$dateColumn}` = :event_date, `{$timeColumn}` = :event_time{$presenceUpdate} "
             . "WHERE `id` = :id AND `{$dateColumn}` IS NULL AND `{$timeColumn}` IS NULL"
         );
         $update->execute([':event_date' => $storedDate, ':event_time' => $storedTime, ':id' => (int)$invitation['id']]);
         if ($update->rowCount() !== 1) throw new RuntimeException('ثبت هم‌زمان انجام نشد؛ دوباره تلاش کنید.');
         $fullName = trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? ''));
         $periodTitle = trim((string)($period['title'] ?? '')) ?: egmCheckInPeriodCode($period);
-        $successResult = $isQuit ? 'quit_success' : 'success';
+        $successResult = $isForced
+            ? ($isQuit ? 'force_quit_success' : 'force_entry_success')
+            : ($isQuit ? 'quit_success' : 'success');
         $noun = $isQuit ? 'خروج' : 'ورود';
-        $message = "{$noun} {$fullName} در بازه {$periodTitle} با موفقیت ثبت شد.";
+        $message = $isForced
+            ? "{$noun} اجباری {$fullName} در بازه {$periodTitle} ثبت شد و حضور نامعقول علامت خورد."
+            : "{$noun} {$fullName} در بازه {$periodTitle} با موفقیت ثبت شد.";
         egmCheckInSavePeriodCondition(
             $context,
             (int)$invitation['id'],
             $successResult,
-            $attendanceAction,
+            $isForced ? 'force_' . $attendanceAction : $attendanceAction,
             $message,
             $now,
             $isQuit ? 'quit_completed' : 'entered'
         );
-        egmCheckInWriteLog($context, $user, $submittedCode, $successResult, $message, $period, $now, [
+        egmCheckInWriteLog($context, $user, $submittedCode, $successResult, $message, $period, $now, $flexibleMetadata + [
             $dateColumn => $storedDate,
             $timeColumn => $storedTime,
             'attendance_action' => $attendanceAction,
+            'forced_presence' => $isForced,
+            'forced_by' => trim((string)($sessionUser['code'] ?? ($sessionUser['username'] ?? ''))),
         ]);
         $pdo->commit();
-        return ['result' => $successResult, 'message' => $message];
+        return [
+            'result' => $successResult,
+            'message' => $message,
+            'correct_presence' => !$isForced && $isQuit && (int)($invitation['fake_presence'] ?? 0) !== 1,
+            'fake_presence' => $isForced || (int)($invitation['fake_presence'] ?? 0) === 1,
+        ];
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
@@ -973,7 +1177,6 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     $phase = is_array($periodState['availability'] ?? null) ? $periodState['availability'] : [];
     $phaseReason = (string)($phase['reason'] ?? ($periodState['result'] ?? 'no_active_period'));
     $canScan = (bool)($context['can_scan'] ?? false);
-    $canReset = (bool)($context['can_reset'] ?? false);
     $hasActivePeriod = (string)($periodState['result'] ?? '') === 'active' && $period !== [];
     $phaseLabels = [
         'inactive' => 'غیرفعال',
@@ -981,6 +1184,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
         'entry_time' => 'فعال / زمان ورود',
         'immune_time' => 'فعال / زمان ایمن',
         'quit_time' => 'فعال / زمان خروج',
+        'flexible_attendance' => 'فعال / ورود و خروج شناور',
         'ended' => 'پایان‌یافته',
         'invalid_schedule' => 'زمان‌بندی نامعتبر',
         'no_active_period' => 'بدون بازه فعال',
@@ -1032,7 +1236,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .code{direction:ltr;unicode-bidi:isolate;font-family:Consolas,"SFMono-Regular",monospace;font-size:.94em}
     .guest-control-page .phase{--phase-color:#475569;--phase-bg:#f1f5f9;--phase-border:#cbd5e1;display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;min-height:34px;padding:6px 11px;border:1px solid var(--phase-border);border-radius:10px;background:var(--phase-bg);color:var(--phase-color);font-size:13px;font-weight:700}
     .guest-control-page .phase::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px rgba(100,116,139,.12)}
-    .guest-control-page .phase--entry_time{--phase-color:#087443;--phase-bg:#ecfdf3;--phase-border:#a7e5c3}
+    .guest-control-page .phase--entry_time,.guest-control-page .phase--flexible_attendance{--phase-color:#087443;--phase-bg:#ecfdf3;--phase-border:#a7e5c3}
     .guest-control-page .phase--quit_time{--phase-color:#5b21b6;--phase-bg:#f5f3ff;--phase-border:#c4b5fd}
     .guest-control-page .phase--immune_time{--phase-color:#8a5a00;--phase-bg:#fff8e6;--phase-border:#f1ce75}
     .guest-control-page .phase--upcoming{--phase-color:#135ea8;--phase-bg:#eff6ff;--phase-border:#b7d7f8}
@@ -1055,12 +1259,10 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .result.success{border-inline-start-color:#18a566;background:#f1fbf6;color:#087443}
     .guest-control-page .result.duplicate{border-inline-start-color:#d59a12;background:#fffaf0;color:#805900}
     .guest-control-page .result.error{border-inline-start-color:#df4052;background:#fff5f6;color:#a12432}
+    .guest-control-page .force-attendance-action{display:block;width:100%;min-height:42px;margin-top:9px;padding:8px 14px;border:1px solid #b45309;border-radius:9px;background:#fff7ed;color:#9a3412;font:inherit;font-size:13px;font-weight:800;cursor:pointer}.guest-control-page .force-attendance-action:hover{background:#b45309;color:#fff}.guest-control-page .force-attendance-action:disabled{opacity:.55;cursor:not-allowed}
     .guest-control-page .card-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .guest-control-page .card-head h2{margin:0;font-size:18px;color:var(--text,#111)}
     .guest-control-page .card-head .muted{font-size:12px}
-    .guest-control-page .guest-record-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-    .guest-control-page .reset-records-button{min-height:36px;padding:7px 12px;border:1px solid #ef9aa5;border-radius:9px;background:#fff5f6;color:#a12432;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
-    .guest-control-page .reset-records-button:hover{background:#a12432;color:#fff}.guest-control-page .reset-records-button:disabled{opacity:.55;cursor:not-allowed}
     .guest-control-page .log-toolbar{display:grid;grid-template-columns:minmax(240px,1fr) auto;gap:10px;align-items:end;margin:0 0 12px}
     .guest-control-page .log-search{display:block;min-width:0}.guest-control-page .log-search span{display:block;margin-bottom:6px;color:var(--text,#111);font-size:12px;font-weight:700}.guest-control-page .log-search input{display:block;width:100%;height:42px;padding:8px 38px 8px 12px;border:1px solid var(--border,#e5e7eb);border-radius:9px;background:#fff;color:var(--text,#111);font:inherit;font-size:13px;outline:0}.guest-control-page .log-search{position:relative}.guest-control-page .log-search::after{content:"⌕";position:absolute;inset-inline-start:13px;bottom:8px;color:var(--muted,#6b7280);font-size:20px;line-height:1}.guest-control-page .log-search input:focus{border-color:var(--primary,#e11d2e);box-shadow:0 0 0 3px var(--primary-focus,rgba(225,29,46,.1))}
     .guest-control-page .log-search-meta{min-width:110px;padding-bottom:11px;color:var(--muted,#6b7280);font-size:12px;text-align:left}
@@ -1091,7 +1293,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   </style>
 </head>
 <body class="guest-control-page">
-<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-can-reset="<?= $canReset ? '1' : '0' ?>" data-initial-logs="<?= $logs ?>">
+<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-initial-logs="<?= $logs ?>">
   <section class="hero guest-card">
     <div class="hero-head">
       <div>
@@ -1116,17 +1318,18 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
       <div class="result-area">
         <span class="result-label">نتیجه بررسی</span>
         <div class="result <?= $canScan ? 'idle' : 'error' ?>" data-result aria-live="polite"><?= htmlspecialchars($initialResult, ENT_QUOTES, 'UTF-8') ?></div>
+        <button type="button" class="force-attendance-action" data-force-attendance hidden></button>
         <p class="hint">نتیجه آخرین بررسی در این قسمت نمایش داده می‌شود.</p>
       </div>
     </div>
   </section>
   <section class="guest-card">
-    <div class="card-head"><h2>گزارش کل مهمانان</h2><div class="guest-record-actions"><span class="muted">جدیدترین موارد در بالا</span><?php if ($canReset): ?><button type="button" class="reset-records-button" data-reset-all-records>Reset Full Records</button><?php endif; ?></div></div>
+    <div class="card-head"><h2>گزارش کل مهمانان</h2><span class="muted">جدیدترین موارد در بالا</span></div>
     <div class="log-toolbar">
       <label class="log-search"><span>جستجو در همه گزارش‌ها</span><input type="search" autocomplete="off" placeholder="نام، کد ملی، کد پرسنلی، شماره مهمان، وضعیت، بازه، واحد یا تاریخ" data-log-search /></label>
       <span class="log-search-meta" data-log-search-meta aria-live="polite"></span>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>وضعیت</th><th>نام مهمان</th><th>کد ملی</th><th>شماره مهمان</th><th>بازه</th><th>زمان عملیات</th><th>زمان بررسی</th><th>عملیات</th></tr></thead><tbody data-logs></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>وضعیت</th><th>نام مهمان</th><th>کد ملی</th><th>شماره مهمان</th><th>بازه</th><th>Correct Presence</th><th>Fake Presence</th><th>زمان عملیات</th><th>زمان بررسی</th><th>عملیات</th></tr></thead><tbody data-logs></tbody></table></div>
   </section>
   <dialog class="guest-dialog" data-guest-dialog aria-labelledby="guest-dialog-title">
     <div class="dialog-head">
@@ -1164,20 +1367,21 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
 <script nonce="<?= $nonce ?>">
 (() => {
   const app=document.querySelector('[data-check-in-app]'); if(!app)return;
-   const input=app.querySelector('[data-national-id]'),result=app.querySelector('[data-result]'),tbody=app.querySelector('[data-logs]'),logSearch=app.querySelector('[data-log-search]'),logSearchMeta=app.querySelector('[data-log-search-meta]'),dialog=app.querySelector('[data-guest-dialog]'),dialogTitle=app.querySelector('[data-dialog-title]'),dialogContent=app.querySelector('[data-dialog-content]'),walkInDialog=app.querySelector('[data-walk-in-dialog]'),walkInForm=app.querySelector('[data-walk-in-form]'),walkInStatus=app.querySelector('[data-walk-in-status]'),resetAllButton=app.querySelector('[data-reset-all-records]');
+   const input=app.querySelector('[data-national-id]'),result=app.querySelector('[data-result]'),forceAttendanceButton=app.querySelector('[data-force-attendance]'),tbody=app.querySelector('[data-logs]'),logSearch=app.querySelector('[data-log-search]'),logSearchMeta=app.querySelector('[data-log-search-meta]'),dialog=app.querySelector('[data-guest-dialog]'),dialogTitle=app.querySelector('[data-dialog-title]'),dialogContent=app.querySelector('[data-dialog-content]'),walkInDialog=app.querySelector('[data-walk-in-dialog]'),walkInForm=app.querySelector('[data-walk-in-form]'),walkInStatus=app.querySelector('[data-walk-in-status]');
   const canRegisterUninvited=app.dataset.canRegisterUninvited==='1';
   const SCANNER_MAX_KEY_GAP_MS=50,SCANNER_MIN_FAST_GAPS=3,SCANNER_COMPLETION_DELAY_MS=90;
   const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const normalize=(v)=>String(v??'').replace(/[۰-۹]/g,d=>String(d.charCodeAt(0)-0x06f0)).replace(/[٠-٩]/g,d=>String(d.charCodeAt(0)-0x0660)).replace(/\D/g,'').slice(0,10);
-  const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='quit_without_entry'?'ورود ثبت نشده':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
-  const cls=(s)=>(s==='success'||s==='quit_success'||s==='walk_in_registered')?'success':(s==='duplicate'||s==='quit_duplicate')?'duplicate':'error';
+  const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='force_entry_success'?'ورود اجباری':s==='force_quit_success'?'خروج اجباری':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='quit_without_entry'?'ورود ثبت نشده':s==='minimum_stay'?'حداقل مدت حضور کامل نشده':s==='entry_closed_quit_wave'?'ورود به‌دلیل موج خروج بسته است':s==='invalid_attendance_record'?'سابقه حضور ناسازگار':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
+  const cls=(s)=>(s==='success'||s==='quit_success'||s==='force_entry_success'||s==='force_quit_success'||s==='walk_in_registered')?'success':(s==='duplicate'||s==='quit_duplicate')?'duplicate':'error';
   const operationLabel=(row)=>row.attendance_action==='quit'?'خروج':row.attendance_action==='entry'?'ورود':row.attendance_action==='register'?'ثبت مهمان':'بررسی';
   const attendanceStateLabel=(state)=>state==='quit_completed'?'خروج ثبت شده':state==='entered'?'وارد شده':state==='invalid_quit_without_entry'?'خروج ناسازگار بدون ورود':'هنوز وارد نشده';
   const dateTime=(date,time,fallback='')=>[date,time].filter(Boolean).join(' ')||fallback||'—';
   const walkInStatuses=new Set(['not_found','not_invited','invited_other_period']);
-  const render=(items)=>{const rows=Array.isArray(items)?items:[];if(logSearchMeta)logSearchMeta.textContent=`${rows.length.toLocaleString('fa-IR')} نتیجه`;const registeredWalkIns=new Set(rows.filter(row=>row.status==='walk_in_registered').map(row=>`${row.national_id||''}|${row.period_code||''}`));tbody.innerHTML=rows.length?rows.map((row,index)=>{const name=String(row.full_name||'').trim();const registrationKey=`${row.national_id||''}|${row.period_code||''}`;const walkInAction=canRegisterUninvited&&walkInStatuses.has(String(row.status||''))&&!registeredWalkIns.has(registrationKey)?`<button type="button" class="walk-in-action" data-register-uninvited="${index}">ثبت مهمان ناخوانده</button>`:'—';return `<tr><td><span class="badge ${cls(row.status)}">${esc(label(row.status))}</span></td><td>${name?`<button type="button" class="guest-name-link" data-guest-detail="${index}">${esc(name)}</button>`:'—'}</td><td class="code">${esc(row.national_id||'—')}</td><td class="code">${esc(row.guest_number||'—')}</td><td>${esc(row.period_title||'—')}</td><td class="code">${esc(dateTime(row.operation_date,row.operation_time,row.attempted_at))}</td><td class="code">${esc(row.attempted_at||'—')}</td><td>${walkInAction}</td></tr>`}).join(''):`<tr><td colspan="8" class="empty">${logSearch?.value.trim()?'موردی مطابق جستجو پیدا نشد.':'هنوز موردی بررسی نشده است.'}</td></tr>`};
+  const presenceMark=(value)=>value?'بله':'—';
+  const render=(items)=>{const rows=Array.isArray(items)?items:[];if(logSearchMeta)logSearchMeta.textContent=`${rows.length.toLocaleString('fa-IR')} نتیجه`;const registeredWalkIns=new Set(rows.filter(row=>row.status==='walk_in_registered').map(row=>`${row.national_id||''}|${row.period_code||''}`));tbody.innerHTML=rows.length?rows.map((row,index)=>{const name=String(row.full_name||'').trim();const registrationKey=`${row.national_id||''}|${row.period_code||''}`;const walkInAction=canRegisterUninvited&&walkInStatuses.has(String(row.status||''))&&!registeredWalkIns.has(registrationKey)?`<button type="button" class="walk-in-action" data-register-uninvited="${index}">ثبت مهمان ناخوانده</button>`:'—';return `<tr><td><span class="badge ${cls(row.status)}">${esc(label(row.status))}</span></td><td>${name?`<button type="button" class="guest-name-link" data-guest-detail="${index}">${esc(name)}</button>`:'—'}</td><td class="code">${esc(row.national_id||'—')}</td><td class="code">${esc(row.guest_number||'—')}</td><td>${esc(row.period_title||'—')}</td><td>${presenceMark(row.correct_presence)}</td><td>${presenceMark(row.fake_presence)}</td><td class="code">${esc(dateTime(row.operation_date,row.operation_time,row.attempted_at))}</td><td class="code">${esc(row.attempted_at||'—')}</td><td>${walkInAction}</td></tr>`}).join(''):`<tr><td colspan="10" class="empty">${logSearch?.value.trim()?'موردی مطابق جستجو پیدا نشد.':'هنوز موردی بررسی نشده است.'}</td></tr>`};
   const detailItem=(title,value,options='')=>`<div class="detail-item${options.includes('full')?' full':''}"><span class="detail-label">${esc(title)}</span><span class="detail-value${options.includes('code')?' code':''}">${esc(value||'—')}</span></div>`;
-  const openDetail=(row)=>{if(!row||!dialog||!dialogTitle||!dialogContent)return;dialogTitle.textContent=row.full_name||'جزئیات مهمان';dialogContent.innerHTML=`<section class="detail-section"><h4 class="detail-section-title">مشخصات مهمان</h4><div class="detail-grid">${detailItem('نوع مهمان',row.is_uninvited_guest?'مهمان ناخوانده':'دعوت‌شده')}${detailItem('کد ملی',row.national_id,'code')}${detailItem('کد پرسنلی',row.work_id,'code')}${detailItem('شماره همراه',row.phone_number,'code')}${detailItem('شماره مهمان',row.guest_number,'code')}${detailItem('معاونت',row.deputy)}${detailItem('اداره کل',row.general_department)}${detailItem('اداره',row.department)}${detailItem('جنسیت / سطح پستی',[row.gender,row.postal_level].filter(Boolean).join(' / '))}</div></section><section class="detail-section"><h4 class="detail-section-title">اطلاعات حضور در بازه</h4><div class="detail-grid">${detailItem('بازه',row.period_title)}${detailItem('وضعیت فعلی حضور',attendanceStateLabel(row.attendance_state))}${detailItem('وضعیت آخرین بررسی',label(row.status))}${detailItem('زمان ورود',dateTime(row.entered_date,row.entered_time),'code')}${detailItem('زمان خروج',dateTime(row.quit_date,row.quit_time),'code')}${detailItem(`زمان عملیات ${operationLabel(row)}`,dateTime(row.operation_date,row.operation_time,row.attempted_at),'code')}${detailItem('زمان بررسی',row.attempted_at,'code')}</div></section><section class="detail-section"><h4 class="detail-section-title">نتیجه ثبت‌شده</h4><div class="detail-message">${esc(row.message||'—')}</div></section>`;if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','')};
+  const openDetail=(row)=>{if(!row||!dialog||!dialogTitle||!dialogContent)return;dialogTitle.textContent=row.full_name||'جزئیات مهمان';dialogContent.innerHTML=`<section class="detail-section"><h4 class="detail-section-title">مشخصات مهمان</h4><div class="detail-grid">${detailItem('نوع مهمان',row.is_uninvited_guest?'مهمان ناخوانده':'دعوت‌شده')}${detailItem('کد ملی',row.national_id,'code')}${detailItem('کد پرسنلی',row.work_id,'code')}${detailItem('شماره همراه',row.phone_number,'code')}${detailItem('شماره مهمان',row.guest_number,'code')}${detailItem('معاونت',row.deputy)}${detailItem('اداره کل',row.general_department)}${detailItem('اداره',row.department)}${detailItem('جنسیت / سطح پستی',[row.gender,row.postal_level].filter(Boolean).join(' / '))}</div></section><section class="detail-section"><h4 class="detail-section-title">اطلاعات حضور در بازه</h4><div class="detail-grid">${detailItem('بازه',row.period_title)}${detailItem('وضعیت فعلی حضور',attendanceStateLabel(row.attendance_state))}${detailItem('Correct Presence',presenceMark(row.correct_presence))}${detailItem('Fake Presence',presenceMark(row.fake_presence))}${detailItem('وضعیت آخرین بررسی',label(row.status))}${detailItem('زمان ورود',dateTime(row.entered_date,row.entered_time),'code')}${detailItem('زمان خروج',dateTime(row.quit_date,row.quit_time),'code')}${detailItem(`زمان عملیات ${operationLabel(row)}`,dateTime(row.operation_date,row.operation_time,row.attempted_at),'code')}${detailItem('زمان بررسی',row.attempted_at,'code')}</div></section><section class="detail-section"><h4 class="detail-section-title">نتیجه ثبت‌شده</h4><div class="detail-message">${esc(row.message||'—')}</div></section>`;if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','')};
   const walkInControl=(name)=>walkInForm?.elements.namedItem(name)||null;
   const fillWalkInSelect=(name,values,current='')=>{const select=walkInControl(name);if(!(select instanceof HTMLSelectElement))return;select.replaceChildren();const blank=document.createElement('option');blank.value='';blank.textContent='انتخاب کنید';select.append(blank);const unique=new Set(Array.isArray(values)?values.map(value=>String(value||'').trim()).filter(Boolean):[]);if(current)unique.add(String(current));for(const value of unique){const option=document.createElement('option');option.value=value;option.textContent=value;select.append(option)}select.value=String(current||'')};
   let walkInOptionsPromise=null;
@@ -1190,7 +1394,6 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const searchLogs=async()=>{const requestId=++searchRequest;const query=String(logSearch?.value||'').trim();if(logSearchMeta)logSearchMeta.textContent='در حال جستجو...';try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','search_logs');if(query)url.searchParams.set('q',query);else url.searchParams.delete('q');const response=await fetch(url,{credentials:'same-origin',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'جستجوی گزارش‌ها ناموفق بود.');if(requestId!==searchRequest)return;logs=Array.isArray(data.logs)?data.logs:[];render(logs)}catch(error){if(requestId!==searchRequest)return;if(logSearchMeta)logSearchMeta.textContent=error instanceof Error?error.message:'جستجو ناموفق بود.'}};
   logSearch?.addEventListener('input',()=>{window.clearTimeout(searchTimer);searchTimer=window.setTimeout(()=>void searchLogs(),280)});
    const acceptUpdatedLogs=(items)=>{if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
-   resetAllButton?.addEventListener('click',async()=>{if(!window.confirm('تمام تاریخ‌ها و ساعت‌های ورود و خروج، وضعیت حضور و گزارش‌های کنترل مهمان در همه بازه‌های این EGM حذف می‌شود. کاربران، دعوت‌ها و بازه‌ها حذف نمی‌شوند. ادامه می‌دهید؟'))return;if(!window.confirm('این عملیات قابل بازگشت نیست. بازنشانی کامل سوابق حضور انجام شود؟'))return;resetAllButton.disabled=true;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'reset_all_records',confirmation:'RESET_ALL_ATTENDANCE',csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'بازنشانی کامل سوابق ناموفق بود.');if(logSearch)logSearch.value='';acceptUpdatedLogs(Array.isArray(data.logs)?data.logs:[]);result.className='result success';result.textContent=data.message||'سوابق حضور همه بازه‌ها بازنشانی شد.'}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'بازنشانی کامل سوابق ناموفق بود.'}finally{resetAllButton.disabled=false}});
   tbody.addEventListener('click',event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const walkInTrigger=target.closest('[data-register-uninvited]');if(walkInTrigger){const index=Number(walkInTrigger.dataset.registerUninvited);if(Number.isInteger(index)&&logs[index])void openWalkIn(logs[index]);return}const trigger=target.closest('[data-guest-detail]');if(!trigger)return;const index=Number(trigger.dataset.guestDetail);if(Number.isInteger(index)&&logs[index])openDetail(logs[index])});
   app.querySelector('[data-dialog-close]')?.addEventListener('click',()=>dialog?.close());
   dialog?.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
@@ -1202,8 +1405,11 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   walkInForm?.addEventListener('submit',async event=>{event.preventDefault();const submitButton=app.querySelector('[data-walk-in-submit]');if(submitButton instanceof HTMLButtonElement)submitButton.disabled=true;if(walkInStatus){walkInStatus.className='walk-in-status';walkInStatus.textContent='در حال ثبت مهمان ناخوانده...'}try{const formData=new FormData(walkInForm);const payload=Object.fromEntries(formData.entries());payload.action='register_uninvited';payload.csrf=app.dataset.csrf||'';payload.outside_organization=Boolean(walkInControl('outside_organization')?.checked);const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت مهمان ناخوانده ناموفق بود.');if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs);result.className='result success';result.textContent=data.message||'مهمان ناخوانده ثبت شد.';if(walkInStatus){walkInStatus.className='walk-in-status success';walkInStatus.textContent=data.message||'ثبت شد.'}window.setTimeout(closeWalkIn,500)}catch(error){if(walkInStatus){walkInStatus.className='walk-in-status error';walkInStatus.textContent=error instanceof Error?error.message:'ثبت مهمان ناخوانده ناموفق بود.'}}finally{if(submitButton instanceof HTMLButtonElement)submitButton.disabled=false}});
   let isSubmitting=false,lastSubmittedCode='',scannerCompletionTimer=0,lastNumericKeyAt=0,consecutiveFastGaps=0,scannerDetected=false;
   const resetScannerState=()=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=0;lastNumericKeyAt=0;consecutiveFastGaps=0;scannerDetected=false};
+  const clearForceOption=()=>{if(!(forceAttendanceButton instanceof HTMLButtonElement))return;forceAttendanceButton.hidden=true;forceAttendanceButton.disabled=false;forceAttendanceButton.textContent='';delete forceAttendanceButton.dataset.forceAction;delete forceAttendanceButton.dataset.guestCode};
+  const showForceOption=(data,guestCode)=>{clearForceOption();if(!(forceAttendanceButton instanceof HTMLButtonElement)||!['entry','quit'].includes(String(data?.force_action||'')))return;forceAttendanceButton.dataset.forceAction=String(data.force_action);forceAttendanceButton.dataset.guestCode=guestCode;forceAttendanceButton.textContent=String(data.force_label||(`Force ${data.force_action==='entry'?'Enter':'Quit'}`));forceAttendanceButton.hidden=false};
+  forceAttendanceButton?.addEventListener('click',async()=>{if(!(forceAttendanceButton instanceof HTMLButtonElement)||isSubmitting)return;const attendanceAction=String(forceAttendanceButton.dataset.forceAction||''),guestCode=normalize(forceAttendanceButton.dataset.guestCode||'');if(!['entry','quit'].includes(attendanceAction)||guestCode.length<4)return;const title=attendanceAction==='entry'?'Force Enter':'Force Quit';if(!window.confirm(`${title} برای این مهمان ثبت شود؟ این عملیات حضور را Fake Presence علامت می‌زند.`))return;isSubmitting=true;forceAttendanceButton.disabled=true;input.disabled=true;result.className='result loading';result.textContent='در حال ثبت عملیات اجباری...';try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'force_attendance',attendance_action:attendanceAction,guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت عملیات اجباری ناموفق بود.');result.className='result success';result.textContent=data.message||'عملیات اجباری ثبت شد.';clearForceOption();if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'ثبت عملیات اجباری ناموفق بود.';forceAttendanceButton.disabled=false}finally{window.setTimeout(()=>{input.value='';input.disabled=false;isSubmitting=false;lastSubmittedCode='';resetScannerState();input.focus()},350)}});
   const submit=async(rawCode)=>{const guestCode=normalize(rawCode);if(isSubmitting||guestCode.length<4||guestCode.length>10||guestCode===lastSubmittedCode)return;resetScannerState();isSubmitting=true;lastSubmittedCode=guestCode;input.disabled=true;result.className='result loading';result.textContent='در حال بررسی دعوت و وضعیت زمانی بازه...';
-    try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=data.message||'بررسی انجام شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.'}finally{window.setTimeout(()=>{input.value='';input.disabled=false;isSubmitting=false;lastSubmittedCode='';resetScannerState();input.focus()},350)}};
+    clearForceOption();try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=data.message||'بررسی انجام شد.';showForceOption(data,guestCode);if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs)}catch(error){clearForceOption();result.className='result error';result.textContent=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.'}finally{window.setTimeout(()=>{input.value='';input.disabled=false;isSubmitting=false;lastSubmittedCode='';resetScannerState();input.focus()},350)}};
   const scheduleScannerSubmission=(value)=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=window.setTimeout(()=>{scannerCompletionTimer=0;const completedCode=normalize(input.value);if(scannerDetected&&completedCode===value&&completedCode.length>=4&&completedCode.length<=9)void submit(completedCode)},SCANNER_COMPLETION_DELAY_MS)};
   input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10){void submit(value);return}if(scannerDetected&&value.length>=4&&value.length<=9)scheduleScannerSubmission(value)});
   input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(scannerCompletionTimer);const value=normalize(input.value);if(value.length>=4&&value.length<=10)void submit(value);return}if(event.repeat){resetScannerState();return}if(!/^[0-9]$/.test(event.key)){if(!event.ctrlKey&&!event.metaKey&&!event.altKey)resetScannerState();return}const now=performance.now();const gap=lastNumericKeyAt>0?now-lastNumericKeyAt:Number.POSITIVE_INFINITY;if(gap<=SCANNER_MAX_KEY_GAP_MS)consecutiveFastGaps+=1;else{consecutiveFastGaps=0;scannerDetected=false}lastNumericKeyAt=now;if(consecutiveFastGaps>=SCANNER_MIN_FAST_GAPS)scannerDetected=true}); input.focus();
@@ -1267,9 +1473,22 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
                 );
                 egmCheckInJson(['status' => 'ok'] + $reset + ['logs' => egmCheckInRecentLogs($context)]);
             }
-            $result = $action === 'register_uninvited'
-                ? egmCheckInRegisterUninvited($context, $payload, $sessionUser)
-                : egmCheckInProcess($context, (string)($payload['guest_code'] ?? ($payload['national_id'] ?? '')));
+            if ($action === 'register_uninvited') {
+                $result = egmCheckInRegisterUninvited($context, $payload, $sessionUser);
+            } elseif ($action === 'force_attendance') {
+                $result = egmCheckInProcess(
+                    $context,
+                    (string)($payload['guest_code'] ?? ($payload['national_id'] ?? '')),
+                    null,
+                    (string)($payload['attendance_action'] ?? ''),
+                    $sessionUser
+                );
+            } else {
+                $result = egmCheckInProcess(
+                    $context,
+                    (string)($payload['guest_code'] ?? ($payload['national_id'] ?? ''))
+                );
+            }
             egmCheckInJson(['status' => 'ok'] + $result + ['logs' => egmCheckInRecentLogs($context)]);
         }
         $nonce = egmSecurityCreateCspNonce();

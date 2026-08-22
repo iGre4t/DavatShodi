@@ -1033,6 +1033,14 @@ function tctBuildTaskDescribePhotoUrl(string $tagCode, string $fileName): string
   return $base . rawurlencode($relative);
 }
 
+function tctNormalizeMinimumStayMinutes($value): int
+{
+  if (!is_scalar($value) || !is_numeric(trim((string)$value))) {
+    return 1;
+  }
+  return max(1, min(1440, (int)$value));
+}
+
 function tctMakeTaskDescribePhotoId(): string
 {
   try {
@@ -1480,6 +1488,8 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
   $active = tctNormalizeBoolValue($task['active'] ?? false);
   $duration = tctNormalizeBoolValue($task['duration'] ?? false);
   $quitRequired = tctNormalizeBoolValue($task['quitRequired'] ?? ($task['quit_required'] ?? false));
+  $quitTimelineRequired = tctNormalizeBoolValue($task['quitTimelineRequired'] ?? ($task['quit_timeline_required'] ?? true));
+  $minimumStayMinutes = tctNormalizeMinimumStayMinutes($task['minimumStayMinutes'] ?? ($task['minimum_stay_minutes'] ?? 1));
   $devPhase = tctNormalizeBoolValue($task['devPhase'] ?? ($task['dev_phase'] ?? false));
   $startDate = tctNormalizeDateValue((string)($task['startDate'] ?? ($task['start_date'] ?? '')));
   $startTime = tctNormalizeTimeValue((string)($task['startTime'] ?? ($task['start_time'] ?? '')));
@@ -1504,6 +1514,8 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
     'active' => $active,
     'duration' => $duration,
     'quitRequired' => $quitRequired,
+    'quitTimelineRequired' => $quitTimelineRequired,
+    'minimumStayMinutes' => $minimumStayMinutes,
     'devPhase' => $devPhase,
     'startDate' => $startDate,
     'startTime' => $startTime,
@@ -2543,6 +2555,8 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $active = tctNormalizeBoolValue($_POST['active'] ?? '0');
     $duration = tctNormalizeBoolValue($_POST['duration'] ?? '0');
     $quitRequired = tctNormalizeBoolValue($_POST['quit_required'] ?? '0');
+    $quitTimelineRequired = tctNormalizeBoolValue($_POST['quit_timeline_required'] ?? '1');
+    $minimumStayMinutes = tctNormalizeMinimumStayMinutes($_POST['minimum_stay_minutes'] ?? '1');
     $devPhase = tctNormalizeBoolValue($_POST['dev_phase'] ?? '0');
     $startDate = tctNormalizeDateValue((string)($_POST['start_date'] ?? ''));
     $startTime = tctNormalizeTimeValue((string)($_POST['start_time'] ?? ''));
@@ -2557,18 +2571,20 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
         echo json_encode(['status' => 'error', 'message' => 'برای الزام ثبت خروج، زمان‌بندی بازه باید فعال باشد.'], JSON_UNESCAPED_UNICODE);
         exit;
       }
-      $timelineValues = [$startDate, $startTime, $enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime, $endDate, $endTime];
-      if (in_array('', $timelineValues, true)) {
-        echo json_encode(['status' => 'error', 'message' => 'همه تاریخ‌ها و ساعت‌های خط زمانی ورود و خروج الزامی هستند.'], JSON_UNESCAPED_UNICODE);
-        exit;
-      }
-      $startAt = $startDate . ' ' . $startTime;
-      $enterDeadlineAt = $enterDeadlineDate . ' ' . $enterDeadlineTime;
-      $quitOpeningAt = $quitOpeningDate . ' ' . $quitOpeningTime;
-      $endAt = $endDate . ' ' . $endTime;
-      if (!($startAt < $enterDeadlineAt && $enterDeadlineAt < $quitOpeningAt && $quitOpeningAt < $endAt)) {
-        echo json_encode(['status' => 'error', 'message' => 'ترتیب زمان‌ها باید شروع، مهلت ورود، آغاز خروج و سپس پایان باشد.'], JSON_UNESCAPED_UNICODE);
-        exit;
+      if ($quitTimelineRequired) {
+        $timelineValues = [$startDate, $startTime, $enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime, $endDate, $endTime];
+        if (in_array('', $timelineValues, true)) {
+          echo json_encode(['status' => 'error', 'message' => 'همه تاریخ‌ها و ساعت‌های خط زمانی ورود و خروج الزامی هستند.'], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
+        $startAt = $startDate . ' ' . $startTime;
+        $enterDeadlineAt = $enterDeadlineDate . ' ' . $enterDeadlineTime;
+        $quitOpeningAt = $quitOpeningDate . ' ' . $quitOpeningTime;
+        $endAt = $endDate . ' ' . $endTime;
+        if (!($startAt < $enterDeadlineAt && $enterDeadlineAt < $quitOpeningAt && $quitOpeningAt < $endAt)) {
+          echo json_encode(['status' => 'error', 'message' => 'ترتیب زمان‌ها باید شروع، مهلت ورود، آغاز خروج و سپس پایان باشد.'], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
       }
     }
 
@@ -2581,6 +2597,8 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       $tasks[$index]['active'] = $active;
       $tasks[$index]['duration'] = $duration;
       $tasks[$index]['quitRequired'] = $quitRequired;
+      $tasks[$index]['quitTimelineRequired'] = $quitTimelineRequired;
+      $tasks[$index]['minimumStayMinutes'] = $minimumStayMinutes;
       $tasks[$index]['devPhase'] = $devPhase;
       $tasks[$index]['startDate'] = $startDate;
       $tasks[$index]['startTime'] = $startTime;
@@ -4254,6 +4272,8 @@ if (EGMT_INCLUDE_ONLY) {
       active: Boolean(task.active),
       duration: Boolean(task.duration),
       quitRequired: Boolean(task.quitRequired),
+      quitTimelineRequired: task.quitTimelineRequired !== false,
+      minimumStayMinutes: Math.max(1, Math.min(1440, Number.parseInt(task.minimumStayMinutes, 10) || 1)),
       devPhase: Boolean(task.devPhase),
       startDate: String(task.startDate || ''),
       startTime: String(task.startTime || ''),
@@ -4290,6 +4310,8 @@ if (EGMT_INCLUDE_ONLY) {
       active: Boolean(task.active),
       duration: Boolean(task.duration),
       quitRequired: Boolean(task.quitRequired),
+      quitTimelineRequired: task.quitTimelineRequired !== false,
+      minimumStayMinutes: Math.max(1, Math.min(1440, Number.parseInt(task.minimumStayMinutes, 10) || 1)),
       devPhase: Boolean(task.devPhase),
       startDate: String(task.startDate || ''),
       startTime: String(task.startTime || ''),

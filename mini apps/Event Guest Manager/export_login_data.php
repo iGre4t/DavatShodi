@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../api/lib/egm-export-filename.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $egmExportSessionUser = requireTabPermissionFromSession('event-guest-manager', false);
 if (!userHasPermissionId($egmExportSessionUser, 'event-guest-manager:export')) {
@@ -203,8 +204,8 @@ for ($i = 1; $i < count($rows); $i += 1) {
   $exportRows[] = [$workId, $firstName, $lastName, $password, $phone, $nationalId];
 }
 
-$filename = 'egm-login-data-' . date('Ymd-His') . '.xlsx';
-header('Content-Disposition: attachment; filename="' . $filename . '"');
+$filename = egmExportDatedFilename('اطلاعات ورود');
+header('Content-Disposition: attachment; filename="egm-login-data.xlsx"; filename*=UTF-8\'\'' . rawurlencode($filename));
 header('Pragma: no-cache');
 header('Expires: 0');
 

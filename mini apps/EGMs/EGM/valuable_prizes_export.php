@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../../api/lib/tab-permissions.php';
+require_once __DIR__ . '/../../../api/lib/egm-export-filename.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 require_once __DIR__ . '/pot_service.php';
 
@@ -92,7 +93,8 @@ for ($index = 1; $index < count($rows); $index++) {
   ];
 }
 
-header('Content-Disposition: attachment; filename="valuable-prize-winners.xlsx"');
+$filename = egmExportDatedFilename('برندگان جوایز ارزشمند');
+header('Content-Disposition: attachment; filename="valuable-prize-winners.xlsx"; filename*=UTF-8\'\'' . rawurlencode($filename));
 header('Pragma: no-cache');
 header('Expires: 0');
 require_once dirname(__DIR__, 3) . '/api/lib/xlsx-export.php';
@@ -118,4 +120,4 @@ echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
 </Workbook>
 <?php
 $spreadsheetXml = (string)ob_get_clean();
-appXlsxSend(appXlsxFromSpreadsheetXml($spreadsheetXml), 'valuable-prize-winners.xlsx');
+appXlsxSend(appXlsxFromSpreadsheetXml($spreadsheetXml), $filename);

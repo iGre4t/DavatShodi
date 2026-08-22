@@ -5,6 +5,7 @@ require_once __DIR__ . '/egm-period-invites.php';
 require_once __DIR__ . '/egm-invite-card-routes.php';
 require_once __DIR__ . '/egm-invite-card-store.php';
 require_once __DIR__ . '/egm-database-runtime.php';
+require_once __DIR__ . '/egm-export-filename.php';
 
 const EGM_PERIOD_INVITE_CARD_BACKGROUNDS_KEY = 'invite_card_period_backgrounds';
 
@@ -507,7 +508,8 @@ function egmPeriodInviteCardsBuildExportData(
     array $rows,
     string $egmCode,
     string $periodCode,
-    string $publicBaseUrl
+    string $publicBaseUrl,
+    ?string $periodDate = null
 ): array {
     $exportRows = [];
     $base = rtrim($publicBaseUrl, '/');
@@ -529,11 +531,9 @@ function egmPeriodInviteCardsBuildExportData(
         ];
     }
 
-    $safeEgm = preg_replace('/[^A-Za-z0-9_-]+/', '-', $egmCode) ?: 'EGM';
-    $safePeriod = preg_replace('/[^A-Za-z0-9_-]+/', '-', $periodCode) ?: 'period';
     return [
         'rows' => $exportRows,
-        'filename' => "EGM-{$safeEgm}-period-{$safePeriod}-invite-card-links.xlsx",
+        'filename' => egmExportDatedFilename('لینک کارت‌های دعوت', $periodDate),
         'count' => count($exportRows),
     ];
 }
@@ -572,11 +572,19 @@ function handleEgmPeriodInviteCardsRequest(string $missionDir): void
             ]);
         }
         if ($action === 'export_data' && $method === 'GET') {
+            $periodDate = null;
+            foreach (egmPeriodInvitesPeriods($context) as $period) {
+                if (!is_array($period)) continue;
+                if (trim((string)($period['tagCode'] ?? ($period['code'] ?? ''))) !== $periodCode) continue;
+                $periodDate = trim((string)($period['startDate'] ?? ($period['start_date'] ?? ''))) ?: null;
+                break;
+            }
             $export = egmPeriodInviteCardsBuildExportData(
                 egmPeriodInviteCardsGeneratedExportRows($context, $periodCode),
                 (string)$context['code'],
                 $periodCode,
-                egmPeriodInviteCardsPublicBaseUrl($context)
+                egmPeriodInviteCardsPublicBaseUrl($context),
+                $periodDate
             );
             if ($export['count'] < 1) {
                 throw new InvalidArgumentException('هنوز هیچ کارت دعوتی برای این بازه ساخته نشده است.');

@@ -27,10 +27,10 @@ $export = egmPeriodInviteCardsBuildExportData([
         'phone_number' => '09350000000',
         'invite_card_code' => 'XyZ9870000001',
     ],
-], '00000', '01', 'https://example.test/DavatShodi');
+], '00000', '01', 'https://example.test/DavatShodi', '2026-08-22');
 
 egmInviteCardExportAssert($export['count'] === 2, 'The generated row count is incorrect.');
-egmInviteCardExportAssert($export['filename'] === 'EGM-00000-period-01-invite-card-links.xlsx', 'The export filename is incorrect.');
+egmInviteCardExportAssert($export['filename'] === 'لینک کارت‌های دعوت 31 مردادماه.xlsx', 'The Shamsi-dated export filename is incorrect.');
 $firstRow = $export['rows'][0] ?? [];
 egmInviteCardExportAssert(is_array($firstRow) && count($firstRow) === 5, 'The XLSX source columns are malformed.');
 egmInviteCardExportAssert(($firstRow['national_id'] ?? '') === '0012345678', 'National ID leading zeroes were not preserved.');
