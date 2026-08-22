@@ -56,5 +56,34 @@ egmPresenceAssert(
     str_contains($source, '`correct_presence` = CASE WHEN `fake_presence` = 1 THEN 0 ELSE 1 END'),
     'Ordinary quit no longer finalizes Correct Presence safely.'
 );
+egmPresenceAssert(
+    str_contains($source, 'data-force-log=') && str_contains($source, '<th>عملیات</th>'),
+    'Forced attendance is no longer rendered inside the records operations column.'
+);
+egmPresenceAssert(
+    !str_contains($source, 'data-force-attendance'),
+    'The obsolete forced-attendance button still exists above the records list.'
+);
+egmPresenceAssert(
+    str_contains($source, '.table-wrap{overflow:visible')
+        && str_contains($source, 'table-layout:fixed')
+        && str_contains($source, 'white-space:normal'),
+    'The records table can regress to horizontal scrolling.'
+);
+egmPresenceAssert(
+    str_contains($source, 'class="log-summary-row"')
+        && str_contains($source, 'class="log-detail-row"')
+        && str_contains($source, 'colspan="6"'),
+    'Guest records are no longer rendered as two responsive rows.'
+);
+egmPresenceAssert(
+    !str_contains($source, '<small>صحیح: ${presenceMark(row.correct_presence)} · نامعقول: ${presenceMark(row.fake_presence)}</small>'),
+    'The records list still exposes Correct/Fake Presence classification.'
+);
+egmPresenceAssert(
+    str_contains($source, "'force_action' => 'entry'")
+        && str_contains($source, "] + \$forceOption"),
+    'Forced actions are no longer persisted with their relevant log record.'
+);
 
 fwrite(STDOUT, "EGM presence classification test passed.\n");

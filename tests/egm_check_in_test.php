@@ -25,7 +25,15 @@ egmCheckInAssert(is_string($checkInSource), 'Could not inspect the Guest Control
 foreach (['SCANNER_MAX_KEY_GAP_MS=50', 'SCANNER_MIN_FAST_GAPS=3', 'SCANNER_COMPLETION_DELAY_MS=90', 'performance.now()', 'isSubmitting', "event.key==='Enter'", 'guest_code:guestCode'] as $scannerRequirement) {
     egmCheckInAssert(str_contains($checkInSource, $scannerRequirement), "Scanner requirement is missing: {$scannerRequirement}");
 }
-egmCheckInAssert(!str_contains($checkInSource, 'setInterval('), 'Scanner detection uses forbidden polling');
+egmCheckInAssert(
+    str_contains($checkInSource, 'setInterval(()=>void syncVisibleLogs(),LOG_SYNC_INTERVAL_MS)'),
+    'Cross-PC record synchronization polling is missing'
+);
+egmCheckInAssert(
+    !str_contains($checkInSource, 'setInterval(()=>void submit')
+        && !str_contains($checkInSource, 'setInterval(enqueueScan'),
+    'Scanner detection itself uses forbidden polling'
+);
 egmCheckInAssert(!str_contains($checkInSource, 'data-reset-all-records'), 'The destructive full-reset button is exposed in Guest Control');
 egmCheckInAssert(!str_contains($checkInSource, 'reset-records-button'), 'Guest Control still contains reset-button UI');
 
