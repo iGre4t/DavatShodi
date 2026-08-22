@@ -40,6 +40,7 @@ try {
     materializerTestAssert(is_string($tcPanel) && str_contains($tcPanel, 'mini apps/missions/RestoredMission'), 'TC code path was not patched.');
 
     file_put_contents($egmSource . '/EGM Panel.php', "<?php // mini apps/Event Guest Manager\n");
+    file_put_contents($egmSource . '/EGMT.php', "<?php // mini apps/Event Guest Manager task settings\n");
     file_put_contents($egmSource . '/egm-panel-local.js', "const root = 'mini%20apps/Event%20Guest%20Manager';\n");
     file_put_contents($egmSource . '/invitees_csv_safety.php', "<?php // mini apps/Event Guest Manager\n");
     file_put_contents($egmSource . '/worker.php', "<?php return __DIR__ . '/../../api/config.php';\n");
@@ -47,7 +48,7 @@ try {
     file_put_contents($egmSource . '/EGM Event/Answers.csv', "Work ID\n");
     $egmTarget = $root . '/egm-target';
     $egmFiles = databaseInstanceMaterializeCodeShell('egm', $egmSource, $egmTarget, 'RestoredEgm');
-    materializerTestAssert($egmFiles === 4, 'EGM materializer copied an unexpected number of code files.');
+    materializerTestAssert($egmFiles === 5, 'EGM materializer copied an unexpected number of code files.');
     materializerTestAssert(is_file($egmTarget . '/EGM Panel.php'), 'EGM panel code was not restored.');
     materializerTestAssert(!is_file($egmTarget . '/Setting.json'), 'EGM settings escaped the database during restore.');
     materializerTestAssert(!is_file($egmTarget . '/EGM Event/Answers.csv'), 'EGM answers escaped the database during restore.');
@@ -55,10 +56,13 @@ try {
     materializerTestAssert(is_string($egmPanel) && str_contains($egmPanel, 'mini apps/EGMs/RestoredEgm'), 'EGM code path was not patched.');
 
     file_put_contents($egmTarget . '/EGM Panel.php', "<?php // stale generated EGM panel\n");
+    file_put_contents($egmTarget . '/EGMT.php', "<?php // stale generated EGM task settings\n");
     $refreshed = databaseInstanceMaterializerRefreshEgmPanelCode($egmSource, $egmTarget, 'RestoredEgm');
-    materializerTestAssert($refreshed === 1, 'Existing EGM shared panel code was not refreshed selectively.');
+    materializerTestAssert($refreshed === 2, 'Existing EGM shared panel/task code was not refreshed selectively.');
     $egmPanel = file_get_contents($egmTarget . '/EGM Panel.php');
     materializerTestAssert(is_string($egmPanel) && str_contains($egmPanel, 'mini apps/EGMs/RestoredEgm'), 'Refreshed EGM panel has the wrong generated path.');
+    $egmTasks = file_get_contents($egmTarget . '/EGMT.php');
+    materializerTestAssert(is_string($egmTasks) && str_contains($egmTasks, 'mini apps/EGMs/RestoredEgm'), 'Refreshed EGM task controller has the wrong generated path.');
     materializerTestAssert(databaseInstanceMaterializerRefreshEgmPanelCode($egmSource, $egmTarget, 'RestoredEgm') === 0, 'Current EGM shared panel code was rewritten unnecessarily.');
 
     echo "Database instance materializer test passed.\n";

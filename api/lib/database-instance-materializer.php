@@ -129,7 +129,7 @@ function databaseInstanceMaterializerRefreshEgmPanelCode(string $source, string 
     }
 
     $updated = 0;
-    foreach (['EGM Panel.php', 'egm-panel-local.js', 'invitees_csv_safety.php'] as $relative) {
+    foreach (['EGM Panel.php', 'EGMT.php', 'egm-panel-local.js', 'invitees_csv_safety.php'] as $relative) {
         $sourcePath = $source . DIRECTORY_SEPARATOR . $relative;
         if (!is_file($sourcePath)) {
             throw new RuntimeException('Missing shared EGM template file: ' . $relative);

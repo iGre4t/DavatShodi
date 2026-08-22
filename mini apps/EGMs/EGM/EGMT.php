@@ -2570,6 +2570,12 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $enterDeadlineTime = tctNormalizeTimeValue((string)($_POST['enter_deadline_time'] ?? ''));
     $quitOpeningDate = tctNormalizeDateValue((string)($_POST['quit_opening_date'] ?? ''));
     $quitOpeningTime = tctNormalizeTimeValue((string)($_POST['quit_opening_time'] ?? ''));
+    $optionalTimelineValues = [$enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime];
+    if ($quitTimelineRequired && count(array_filter($optionalTimelineValues, static fn(string $value): bool => $value !== '')) === 0) {
+      // A cached panel can incorrectly submit the switch as enabled while all
+      // four disabled optional controls are empty. Empty means flexible mode.
+      $quitTimelineRequired = false;
+    }
     if ($duration) {
       if (in_array('', [$startDate, $startTime, $endDate, $endTime], true)) {
         echo json_encode(['status' => 'error', 'message' => 'تاریخ و ساعت شروع و پایان بازه الزامی هستند.'], JSON_UNESCAPED_UNICODE);
@@ -2586,8 +2592,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
         exit;
       }
       if ($quitTimelineRequired) {
-        $timelineValues = [$enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime];
-        if (in_array('', $timelineValues, true)) {
+        if (in_array('', $optionalTimelineValues, true)) {
           echo json_encode(['status' => 'error', 'message' => 'همه تاریخ‌ها و ساعت‌های خط زمانی ورود و خروج الزامی هستند.'], JSON_UNESCAPED_UNICODE);
           exit;
         }
