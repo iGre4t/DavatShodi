@@ -65,16 +65,23 @@ egmPresenceAssert(
     'The obsolete forced-attendance button still exists above the records list.'
 );
 egmPresenceAssert(
-    str_contains($source, '.table-wrap{overflow:visible')
+    str_contains($source, '.table-wrap{overflow:hidden')
         && str_contains($source, 'table-layout:fixed')
         && str_contains($source, 'white-space:normal'),
     'The records table can regress to horizontal scrolling.'
 );
 egmPresenceAssert(
-    str_contains($source, 'class="log-summary-row"')
-        && str_contains($source, 'class="log-detail-row"')
-        && str_contains($source, 'colspan="6"'),
+    str_contains($source, 'class="log-summary-row ')
+        && str_contains($source, 'class="log-detail-row ')
+        && str_contains($source, 'colspan="5"'),
     'Guest records are no longer rendered as two responsive rows.'
+);
+egmPresenceAssert(
+    str_contains($source, 'class="status-dot"')
+        && str_contains($source, 'class="log-detail-line"')
+        && str_contains($source, '<th>آخرین عملیات</th>')
+        && !str_contains($source, 'log-detail-grid'),
+    'The simplified status-focused records design has regressed.'
 );
 egmPresenceAssert(
     !str_contains($source, '<small>صحیح: ${presenceMark(row.correct_presence)} · نامعقول: ${presenceMark(row.fake_presence)}</small>'),
