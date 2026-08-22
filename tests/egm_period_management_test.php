@@ -27,6 +27,9 @@ foreach ($periodManagers as $path) {
     egmPeriodAssert(str_contains($source, "'quitTimelineRequired' => \$quitTimelineRequired"), "The optional quit timeline mode is not persisted in {$path}");
     egmPeriodAssert(str_contains($source, "'minimumStayMinutes' => \$minimumStayMinutes"), "The minimum stay is not persisted in {$path}");
     egmPeriodAssert(str_contains($source, 'if ($quitTimelineRequired)'), "Timeline dates are not conditionally validated in {$path}");
+    egmPeriodAssert(str_contains($source, "\$_POST['quit_timeline_required'] ?? '0'"), "A missing optional timeline switch still defaults to enabled in {$path}");
+    egmPeriodAssert(str_contains($source, '[$startDate, $startTime, $endDate, $endTime]'), "The main period start/end are not validated independently in {$path}");
+    egmPeriodAssert(str_contains($source, '[$enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime]'), "Optional timeline validation includes unrelated fields in {$path}");
     egmPeriodAssert(str_contains($source, "unset(\$task['taskType'], \$task['task_type']);"), "Legacy task type data is not removed from periods in {$path}");
     egmPeriodAssert(str_contains($source, "return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];"), "Period invitation/card/export panes are missing in {$path}");
     egmPeriodAssert(
@@ -78,7 +81,9 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, 'applyPeriodExcelSheet(pane, selectedSheet)'), "Selecting a sheet does not trigger column processing in {$path}");
     egmPeriodAssert(str_contains($source, 'data-task-field="quitTimelineRequired"'), "The optional deadline/opening switch is missing in {$path}");
     egmPeriodAssert(str_contains($source, 'data-task-field="minimumStayMinutes"'), "The minimum-stay dropdown is missing in {$path}");
-    egmPeriodAssert(str_contains($source, "quit_timeline_required: controls.quitTimelineRequiredToggle.checked ? '1' : '0'"), "The quit timeline mode is not submitted in {$path}");
+    egmPeriodAssert(str_contains($source, 'const quitTimelineRequired = quitRequired && controls.quitTimelineRequiredToggle.checked;'), "The effective quit timeline mode is not computed in {$path}");
+    egmPeriodAssert(str_contains($source, "quit_timeline_required: quitTimelineRequired ? '1' : '0'"), "The quit timeline mode is not submitted in {$path}");
+    egmPeriodAssert(str_contains($source, "enter_deadline_date: quitTimelineRequired ?"), "Disabled timeline fields are still submitted in {$path}");
     egmPeriodAssert(str_contains($source, 'minimum_stay_minutes: String(normalizeMinimumStayMinutes'), "The minimum stay is not submitted in {$path}");
     egmPeriodAssert(str_contains($source, 'state.excelWorkbook.Sheets?.[sheetName]'), "The chosen workbook sheet is not read in {$path}");
     egmPeriodAssert(!str_contains($source, 'workbook.Sheets[workbook.SheetNames[0]]'), "The first workbook sheet is still selected implicitly in {$path}");

@@ -2555,7 +2555,11 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $active = tctNormalizeBoolValue($_POST['active'] ?? '0');
     $duration = tctNormalizeBoolValue($_POST['duration'] ?? '0');
     $quitRequired = tctNormalizeBoolValue($_POST['quit_required'] ?? '0');
-    $quitTimelineRequired = tctNormalizeBoolValue($_POST['quit_timeline_required'] ?? '1');
+    // Save requests from older/cached clients may omit this field. Missing is
+    // treated as off so optional deadline/opening fields never become required
+    // unless the user explicitly enables the switch.
+    $quitTimelineRequired = $quitRequired
+      && tctNormalizeBoolValue($_POST['quit_timeline_required'] ?? '0');
     $minimumStayMinutes = tctNormalizeMinimumStayMinutes($_POST['minimum_stay_minutes'] ?? '1');
     $devPhase = tctNormalizeBoolValue($_POST['dev_phase'] ?? '0');
     $startDate = tctNormalizeDateValue((string)($_POST['start_date'] ?? ''));
@@ -2566,13 +2570,23 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $enterDeadlineTime = tctNormalizeTimeValue((string)($_POST['enter_deadline_time'] ?? ''));
     $quitOpeningDate = tctNormalizeDateValue((string)($_POST['quit_opening_date'] ?? ''));
     $quitOpeningTime = tctNormalizeTimeValue((string)($_POST['quit_opening_time'] ?? ''));
+    if ($duration) {
+      if (in_array('', [$startDate, $startTime, $endDate, $endTime], true)) {
+        echo json_encode(['status' => 'error', 'message' => 'تاریخ و ساعت شروع و پایان بازه الزامی هستند.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      if (!(($startDate . ' ' . $startTime) < ($endDate . ' ' . $endTime))) {
+        echo json_encode(['status' => 'error', 'message' => 'زمان پایان بازه باید بعد از زمان شروع باشد.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+    }
     if ($quitRequired) {
       if (!$duration) {
         echo json_encode(['status' => 'error', 'message' => 'برای الزام ثبت خروج، زمان‌بندی بازه باید فعال باشد.'], JSON_UNESCAPED_UNICODE);
         exit;
       }
       if ($quitTimelineRequired) {
-        $timelineValues = [$startDate, $startTime, $enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime, $endDate, $endTime];
+        $timelineValues = [$enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime];
         if (in_array('', $timelineValues, true)) {
           echo json_encode(['status' => 'error', 'message' => 'همه تاریخ‌ها و ساعت‌های خط زمانی ورود و خروج الزامی هستند.'], JSON_UNESCAPED_UNICODE);
           exit;
@@ -2585,6 +2599,12 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
           echo json_encode(['status' => 'error', 'message' => 'ترتیب زمان‌ها باید شروع، مهلت ورود، آغاز خروج و سپس پایان باشد.'], JSON_UNESCAPED_UNICODE);
           exit;
         }
+      }
+      if (!$quitTimelineRequired) {
+        $enterDeadlineDate = '';
+        $enterDeadlineTime = '';
+        $quitOpeningDate = '';
+        $quitOpeningTime = '';
       }
     }
 

@@ -2257,22 +2257,24 @@
   function collectTaskSettingsFromPane(pane) {
     const controls = getTaskPaneControls(pane);
     if (!controls) return null;
+    const quitRequired = controls.quitRequiredToggle.checked;
+    const quitTimelineRequired = quitRequired && controls.quitTimelineRequiredToggle.checked;
     return {
       title: String(controls.titleInput.value || '').trim(),
       active: controls.activeToggle.checked ? '1' : '0',
       duration: controls.durationToggle.checked ? '1' : '0',
-      quit_required: controls.quitRequiredToggle.checked ? '1' : '0',
-      quit_timeline_required: controls.quitTimelineRequiredToggle.checked ? '1' : '0',
+      quit_required: quitRequired ? '1' : '0',
+      quit_timeline_required: quitTimelineRequired ? '1' : '0',
       minimum_stay_minutes: String(normalizeMinimumStayMinutes(controls.minimumStayMinutes.value)),
       dev_phase: controls.devPhaseToggle.checked ? '1' : '0',
       start_date: normalizeDate(controls.startDate.value),
       start_time: normalizeTime(controls.startTime.value),
       end_date: normalizeDate(controls.endDate.value),
       end_time: normalizeTime(controls.endTime.value),
-      enter_deadline_date: normalizeDate(controls.enterDeadlineDate.value),
-      enter_deadline_time: normalizeTime(controls.enterDeadlineTime.value),
-      quit_opening_date: normalizeDate(controls.quitOpeningDate.value),
-      quit_opening_time: normalizeTime(controls.quitOpeningTime.value)
+      enter_deadline_date: quitTimelineRequired ? normalizeDate(controls.enterDeadlineDate.value) : '',
+      enter_deadline_time: quitTimelineRequired ? normalizeTime(controls.enterDeadlineTime.value) : '',
+      quit_opening_date: quitTimelineRequired ? normalizeDate(controls.quitOpeningDate.value) : '',
+      quit_opening_time: quitTimelineRequired ? normalizeTime(controls.quitOpeningTime.value) : ''
     };
   }
 
