@@ -83,9 +83,30 @@ function appXlsxStylesXml(): string
 
 function appXlsxSend(string $content, string $filename): void
 {
+    if (!str_starts_with($content, "PK\x03\x04") || !str_contains(substr($content, -22), "PK\x05\x06")) {
+        throw new RuntimeException('The XLSX download payload is invalid.');
+    }
+
+    // An XLSX response must start with the ZIP signature. A warning, BOM, or
+    // whitespace emitted by any required production file makes Excel reject
+    // an otherwise valid workbook. Export endpoints start a buffer early and
+    // this removes that buffer (plus any nested buffers) before sending bytes.
+    while (ob_get_level() > 0) {
+        if (!@ob_end_clean()) {
+            break;
+        }
+    }
+    if (headers_sent($sourceFile, $sourceLine)) {
+        throw new RuntimeException("Cannot send XLSX after output at {$sourceFile}:{$sourceLine}.");
+    }
+
     $filename = preg_replace('/\.xls$/i', '.xlsx', $filename) ?: 'export.xlsx';
     $ascii = preg_replace('/[^\x20-\x7E]+/', '', $filename);
     $ascii = is_string($ascii) && trim($ascii, '.-_ ') !== '' ? $ascii : 'export.xlsx';
+    if (function_exists('apache_setenv')) {
+        @apache_setenv('no-gzip', '1');
+    }
+    @ini_set('zlib.output_compression', '0');
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Length: ' . strlen($content));
     header('Content-Disposition: attachment; filename="' . str_replace(['"', "\r", "\n"], '', $ascii) . '"; filename*=UTF-8\'\'' . rawurlencode($filename));

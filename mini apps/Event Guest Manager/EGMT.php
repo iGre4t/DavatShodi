@@ -6,6 +6,7 @@ require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
+require_once __DIR__ . '/../../api/lib/egm-period-end.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
@@ -1507,6 +1508,13 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
   if ($createdAt === '') {
     $createdAt = date('Y-m-d H:i:s');
   }
+  $endedAt = trim((string)($task['endedAt'] ?? ($task['ended_at'] ?? '')));
+  $endedBy = trim((string)($task['endedBy'] ?? ($task['ended_by'] ?? '')));
+  $endedNoQuitResolution = trim((string)($task['endedNoQuitResolution'] ?? ($task['ended_no_quit_resolution'] ?? '')));
+  if (!in_array($endedNoQuitResolution, ['correct_presence', 'fake_presence'], true)) {
+    $endedNoQuitResolution = '';
+  }
+  $endedNoQuitCount = max(0, (int)($task['endedNoQuitCount'] ?? ($task['ended_no_quit_count'] ?? 0)));
   return [
     'id' => $id,
     'title' => $title,
@@ -1526,7 +1534,11 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
     'quitOpeningDate' => $quitOpeningDate,
     'quitOpeningTime' => $quitOpeningTime,
     'order' => $order,
-    'createdAt' => $createdAt
+    'createdAt' => $createdAt,
+    'endedAt' => $endedAt,
+    'endedBy' => $endedBy,
+    'endedNoQuitResolution' => $endedNoQuitResolution,
+    'endedNoQuitCount' => $endedNoQuitCount
   ];
 }
 
@@ -2357,6 +2369,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     'remove' => 'control',
     'save_task_title' => 'control',
     'save_task_settings' => 'control',
+    'end_period' => 'control',
     'save_task_score_system' => 'control',
     'save_conditional_quiz_crisis_control' => 'crisis-control',
     'save_team_task_settings' => 'team',
@@ -2502,6 +2515,116 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       exit;
     }
     echo json_encode(['status' => 'ok', 'message' => 'بازه و اطلاعات وابسته به آن حذف شد.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'end_period') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $resolution = trim((string)($_POST['no_quit_resolution'] ?? ''));
+    if ($id === '') {
+      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    try {
+      $resolution = egmPeriodEndNormalizeResolution($resolution);
+    } catch (InvalidArgumentException $error) {
+      http_response_code(422);
+      echo json_encode(['status' => 'error', 'message' => $error->getMessage()], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $targetIndex = null;
+    foreach ($tasks as $index => $task) {
+      if ((string)($task['id'] ?? '') === $id) {
+        $targetIndex = $index;
+        break;
+      }
+    }
+    if ($targetIndex === null) {
+      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (trim((string)($tasks[$targetIndex]['endedAt'] ?? '')) !== '') {
+      echo json_encode(['status' => 'error', 'message' => 'این بازه قبلاً پایان یافته است.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $databaseContext = egmDatabaseRuntimeContextForPath($tctStorePath);
+    if (!is_array($databaseContext) || !($databaseContext['pdo'] ?? null) instanceof PDO) {
+      http_response_code(503);
+      echo json_encode(['status' => 'error', 'message' => 'اتصال پایگاه داده بازه در دسترس نیست.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $pdo = $databaseContext['pdo'];
+    $dataTable = (string)($databaseContext['tables']['data'] ?? '');
+    $userPeriodsTable = (string)($databaseContext['tables']['user_periods'] ?? '');
+    $endedAt = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i:s');
+    try {
+      $pdo->beginTransaction();
+      // Serialize simultaneous End Period requests. The periods JSON row is
+      // the canonical state, so locking it also prevents a stale settings save
+      // from being silently overwritten while attendance is classified.
+      $lockStatement = $pdo->query("SELECT `periods` FROM `{$dataTable}` WHERE `data_key` = 'periods' LIMIT 1 FOR UPDATE");
+      $lockedJson = $lockStatement ? $lockStatement->fetchColumn() : false;
+      $lockedDecoded = is_string($lockedJson) ? json_decode($lockedJson, true) : null;
+      if (!is_array($lockedDecoded)) {
+        throw new RuntimeException('period_state_unavailable');
+      }
+      $tasks = tctReindexTasks($lockedDecoded);
+      $targetIndex = null;
+      foreach ($tasks as $index => $task) {
+        if ((string)($task['id'] ?? '') === $id) {
+          $targetIndex = $index;
+          break;
+        }
+      }
+      if ($targetIndex === null) {
+        throw new RuntimeException('period_not_found');
+      }
+      if (trim((string)($tasks[$targetIndex]['endedAt'] ?? '')) !== '') {
+        throw new RuntimeException('period_already_ended');
+      }
+      $periodCode = tctNormalizeTagCode((string)($tasks[$targetIndex]['tagCode'] ?? ''));
+      if ($periodCode === '') {
+        throw new RuntimeException('period_code_invalid');
+      }
+      $classification = egmPeriodEndClassifyOpenAttendance($pdo, $userPeriodsTable, $periodCode, $resolution);
+      $tasks[$targetIndex]['active'] = false;
+      $tasks[$targetIndex]['endedAt'] = $endedAt;
+      $tasks[$targetIndex]['endedBy'] = $tctSessionUserCode;
+      $tasks[$targetIndex]['endedNoQuitResolution'] = $resolution;
+      $tasks[$targetIndex]['endedNoQuitCount'] = (int)($classification['classified'] ?? 0);
+      $tasks = tctReindexTasks($tasks);
+      if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
+        throw new RuntimeException('ذخیره وضعیت پایان بازه ناموفق بود.');
+      }
+      $pdo->commit();
+    } catch (Throwable $error) {
+      if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+      }
+      if ($error->getMessage() === 'period_already_ended') {
+        http_response_code(409);
+        echo json_encode(['status' => 'error', 'message' => 'این بازه قبلاً پایان یافته است.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      error_log('Failed to end EGM period: ' . $error->getMessage());
+      http_response_code(500);
+      echo json_encode(['status' => 'error', 'message' => 'پایان بازه ناموفق بود؛ هیچ تغییری ثبت نشد.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $classifiedCount = (int)($classification['classified'] ?? 0);
+    $presenceLabel = $resolution === 'correct_presence' ? 'حضور واقعی' : 'حضور نامعقول';
+    echo json_encode([
+      'status' => 'ok',
+      'message' => "بازه پایان یافت و وضعیت {$classifiedCount} مهمان بدون خروج به «{$presenceLabel}» تغییر کرد.",
+      'classified_count' => $classifiedCount,
+      'resolution' => $resolution,
+      'ended_at' => $endedAt,
+      'tasks' => $buildTasksForResponse($tasks)
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -4308,6 +4431,10 @@ if (EGMT_INCLUDE_ONLY) {
       enterDeadlineTime: String(task.enterDeadlineTime || ''),
       quitOpeningDate: String(task.quitOpeningDate || ''),
       quitOpeningTime: String(task.quitOpeningTime || ''),
+      endedAt: String(task.endedAt || ''),
+      endedBy: String(task.endedBy || ''),
+      endedNoQuitResolution: String(task.endedNoQuitResolution || ''),
+      endedNoQuitCount: Math.max(0, Number.parseInt(task.endedNoQuitCount, 10) || 0),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
       hasGoldenTime: task.hasGoldenTime !== false,
@@ -4346,6 +4473,10 @@ if (EGMT_INCLUDE_ONLY) {
       enterDeadlineTime: String(task.enterDeadlineTime || ''),
       quitOpeningDate: String(task.quitOpeningDate || ''),
       quitOpeningTime: String(task.quitOpeningTime || ''),
+      endedAt: String(task.endedAt || ''),
+      endedBy: String(task.endedBy || ''),
+      endedNoQuitResolution: String(task.endedNoQuitResolution || ''),
+      endedNoQuitCount: Math.max(0, Number.parseInt(task.endedNoQuitCount, 10) || 0),
       score: normalizeScore(task.score),
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
       hasGoldenTime: task.hasGoldenTime !== false,

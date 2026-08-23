@@ -172,6 +172,38 @@ try {
     $missingWorkId = egmCheckInProcess($context, '87654321', new DateTimeImmutable('2026-08-18 10:22:00', $timezone));
     egmCheckInAssert(($missingWorkId['result'] ?? '') === 'not_found', 'An unknown Work ID did not use the existing not-found flow');
 
+    $pdo->exec("UPDATE `{$tables['users']}` SET `gender` = 'مرد' WHERE `id` = {$userId}");
+    $pdo->exec("UPDATE `{$tables['users']}` SET `gender` = 'زن' WHERE `id` = {$workIdUserId}");
+    $pdo->exec(
+        "UPDATE `{$tables['user_periods']}` SET `quit_date` = '2026-08-18', `quit_time` = '10:30:00', "
+        . "`attendance_state` = 'quit_completed' WHERE `user_id` = {$userId} AND `period_code` = '01'"
+    );
+    $pdo->exec(
+        "INSERT INTO `{$tables['users']}` (`work_id`, `first_name`, `last_name`, `national_id`, `phone_number`, "
+        . "`deputy`, `general_department`, `department`, `gender`, `postal_level`, `source_row`) "
+        . "VALUES ('W-STATS', 'Waiting', 'Guest', '4234567890', '', '', '', '', 'زن', '', 3)"
+    );
+    $waitingUserId = (int)$pdo->lastInsertId();
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`, `period_code`, `invited_at`) "
+        . "VALUES (:user_id, '01', '2026-08-18 09:00:00')"
+    )->execute([':user_id' => $waitingUserId]);
+    $dashboardStats = egmCheckInDashboardStats($context);
+    egmCheckInAssert(($dashboardStats['active'] ?? false) === true, 'Active-period dashboard statistics were unavailable');
+    egmCheckInAssert(($dashboardStats['total'] ?? 0) === 3, 'Dashboard total invitation count is incorrect');
+    egmCheckInAssert(($dashboardStats['entered'] ?? 0) === 2, 'Dashboard entered count is incorrect');
+    egmCheckInAssert(($dashboardStats['waiting'] ?? 0) === 1, 'Dashboard waiting count is incorrect');
+    egmCheckInAssert(($dashboardStats['inside'] ?? 0) === 1, 'Dashboard currently-inside count is incorrect');
+    egmCheckInAssert(($dashboardStats['quit'] ?? 0) === 1, 'Dashboard quit count is incorrect');
+    egmCheckInAssert(($dashboardStats['entry_percent'] ?? 0) === 66.7, 'Dashboard entry percentage is incorrect');
+    egmCheckInAssert(($dashboardStats['gender']['male']['entered'] ?? 0) === 1, 'Male entry statistics are incorrect');
+    egmCheckInAssert(
+        ($dashboardStats['gender']['female']['total'] ?? 0) === 2
+            && ($dashboardStats['gender']['female']['entered'] ?? 0) === 1
+            && ($dashboardStats['gender']['female']['waiting'] ?? 0) === 1,
+        'Female entry statistics are incorrect'
+    );
+
     $shortCodeRejected = false;
     try {
         egmCheckInProcess($context, '123', new DateTimeImmutable('2026-08-18 10:23:00', $timezone));

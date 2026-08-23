@@ -162,6 +162,10 @@
       enterDeadlineTime: normalizeTime(raw.enterDeadlineTime ?? raw.enter_deadline_time ?? ''),
       quitOpeningDate: normalizeDate(raw.quitOpeningDate ?? raw.quit_opening_date ?? ''),
       quitOpeningTime: normalizeTime(raw.quitOpeningTime ?? raw.quit_opening_time ?? ''),
+      endedAt: String(raw.endedAt ?? raw.ended_at ?? '').trim(),
+      endedBy: String(raw.endedBy ?? raw.ended_by ?? '').trim(),
+      endedNoQuitResolution: String(raw.endedNoQuitResolution ?? raw.ended_no_quit_resolution ?? '').trim(),
+      endedNoQuitCount: Math.max(0, Number.parseInt(raw.endedNoQuitCount ?? raw.ended_no_quit_count ?? 0, 10) || 0),
       score: normalizeScoreValue(raw.score ?? raw.taskScore ?? 0),
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
       hasGoldenTime: normalizeBool(raw.hasGoldenTime ?? raw.has_golden_time ?? true),
@@ -2413,6 +2417,7 @@
     const hasInformationPane = hasInformationPaneTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
     const isPeriod = taskTypeToken === 'period';
+    const isPeriodEnded = isPeriod && String(task.endedAt || '').trim() !== '';
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
@@ -2914,9 +2919,11 @@
               </div>
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-settings">ذخیره</button>
+                ${isPeriod ? `<button type="button" class="btn ghost egm-btn-end-period" data-action="end-period"${isPeriodEnded ? ' disabled' : ''}>${isPeriodEnded ? 'بازه پایان یافته است' : 'پایان بازه'}</button>` : ''}
                 ${isPeriod ? '<button type="button" class="btn ghost egm-btn-danger" data-action="reset-period-attendance">Reset Period Records</button>' : ''}
                 <a class="btn ghost" href="${guestControlSrc}" target="_blank" rel="noopener">پنل کنترل مهمان رویداد</a>
               </div>
+              ${isPeriodEnded ? `<p class="egm-period-ended-note">این بازه در <span dir="ltr">${escapeHtml(task.endedAt)}</span> پایان یافته است. سوابق و دعوت‌ها همچنان محفوظ هستند.</p>` : ''}
               <p class="muted small" data-task-save-status aria-live="polite"></p>
             </div>
           </div>
@@ -3094,6 +3101,57 @@
       throw new Error(data?.message || 'Request failed.');
     }
     return data;
+  }
+
+  function requestPeriodEndResolution(periodTitle) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'egm-period-end-overlay';
+      overlay.setAttribute('role', 'presentation');
+      overlay.innerHTML = `
+        <section class="egm-period-end-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-period-end-title" dir="rtl">
+          <div class="egm-period-end-icon" aria-hidden="true">✓</div>
+          <h3 id="egm-period-end-title">پایان بازه «${escapeHtml(periodTitle)}»</h3>
+          <p>برای مهمانانی که ورودشان ثبت شده اما خروج ندارند، یکی از وضعیت‌های زیر را انتخاب کنید.</p>
+          <div class="egm-period-end-choices">
+            <button type="button" class="btn primary standard-primary-button" data-period-end-choice="correct_presence">
+              حضور واقعی
+              <small>به فهرست حضور واقعی افزوده شوند</small>
+            </button>
+            <button type="button" class="btn ghost egm-btn-danger" data-period-end-choice="fake_presence">
+              حضور نامعقول
+              <small>به فهرست حضور نامعقول افزوده شوند</small>
+            </button>
+          </div>
+          <button type="button" class="btn ghost egm-period-end-cancel" data-period-end-cancel>انصراف</button>
+          <p class="egm-period-end-warning">این کار بازه را فوراً می‌بندد. زمان ورود و خروج، دعوت‌ها و اطلاعات کاربران حذف یا ساخته نمی‌شوند.</p>
+        </section>`;
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', onKeyDown);
+        overlay.remove();
+        resolve(value);
+      };
+      const onKeyDown = (event) => {
+        if (event.key === 'Escape') finish('');
+      };
+      overlay.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const choice = target.closest('[data-period-end-choice]');
+        if (choice instanceof HTMLButtonElement) {
+          finish(choice.dataset.periodEndChoice || '');
+          return;
+        }
+        if (target === overlay || target.closest('[data-period-end-cancel]')) finish('');
+      });
+      document.addEventListener('keydown', onKeyDown);
+      document.body.appendChild(overlay);
+      const firstChoice = overlay.querySelector('[data-period-end-choice]');
+      if (firstChoice instanceof HTMLButtonElement) firstChoice.focus();
+    });
   }
 
   async function resetGuestControlRecords(periodCode) {
@@ -4349,6 +4407,40 @@
           setTaskSaveStatus(pane, error?.message || 'بازنشانی سوابق حضور بازه ناموفق بود.', true);
         } finally {
           resetPeriodAttendanceButton.disabled = false;
+        }
+        return;
+      }
+
+      const endPeriodButton = target.closest('[data-action="end-period"]');
+      if (endPeriodButton instanceof HTMLButtonElement) {
+        const pane = endPeriodButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const periodTitle = String(pane.querySelector('[data-task-field="taskTitle"]')?.value || pane.dataset.taskTagCode || '').trim();
+        if (!taskId) return;
+        const resolution = await requestPeriodEndResolution(periodTitle || 'بدون عنوان');
+        if (!resolution) return;
+
+        endPeriodButton.disabled = true;
+        setTaskSaveStatus(pane, 'در حال پایان دادن به بازه و تعیین وضعیت مهمانان بدون خروج...');
+        try {
+          const data = await postTaskAction('end_period', {
+            id: taskId,
+            no_quit_resolution: resolution
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try { window.EGM_TASKS = returnedTasks; } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            setTaskSaveStatus(activePane, data.message || 'بازه با موفقیت پایان یافت.');
+          }
+        } catch (error) {
+          setTaskSaveStatus(pane, error?.message || 'پایان بازه ناموفق بود.', true);
+          endPeriodButton.disabled = false;
         }
         return;
       }

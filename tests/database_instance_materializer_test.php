@@ -43,13 +43,15 @@ try {
     file_put_contents($egmSource . '/EGMT.php', "<?php // mini apps/Event Guest Manager task settings\n");
     file_put_contents($egmSource . '/egm-panel-local.js', "const root = 'mini%20apps/Event%20Guest%20Manager';\n");
     file_put_contents($egmSource . '/invitees_csv_safety.php', "<?php // mini apps/Event Guest Manager\n");
+    file_put_contents($egmSource . '/period_exports.php', "<?php // mini apps/Event Guest Manager export endpoint\n");
     file_put_contents($egmSource . '/worker.php', "<?php return __DIR__ . '/../../api/config.php';\n");
     file_put_contents($egmSource . '/Setting.json', '{"must":"stay-in-db"}');
     file_put_contents($egmSource . '/EGM Event/Answers.csv', "Work ID\n");
     $egmTarget = $root . '/egm-target';
     $egmFiles = databaseInstanceMaterializeCodeShell('egm', $egmSource, $egmTarget, 'RestoredEgm');
-    materializerTestAssert($egmFiles === 5, 'EGM materializer copied an unexpected number of code files.');
+    materializerTestAssert($egmFiles === 6, 'EGM materializer copied an unexpected number of code files.');
     materializerTestAssert(is_file($egmTarget . '/EGM Panel.php'), 'EGM panel code was not restored.');
+    materializerTestAssert(is_file($egmTarget . '/period_exports.php'), 'EGM period export endpoint was not restored.');
     materializerTestAssert(!is_file($egmTarget . '/Setting.json'), 'EGM settings escaped the database during restore.');
     materializerTestAssert(!is_file($egmTarget . '/EGM Event/Answers.csv'), 'EGM answers escaped the database during restore.');
     $egmPanel = file_get_contents($egmTarget . '/EGM Panel.php');

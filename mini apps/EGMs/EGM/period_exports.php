@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+// Capture anything emitted by production-only includes so the XLSX response
+// can discard it before sending the workbook ZIP.
+ob_start();
 
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/egm-security.php';
