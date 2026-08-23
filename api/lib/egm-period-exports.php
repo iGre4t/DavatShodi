@@ -12,6 +12,7 @@ function egmPeriodExportTypes(): array
 {
     return [
         'all_guests' => 'همه مهمانان',
+        'entered_no_quit' => 'ورود ثبت‌شده بدون خروج',
         'uninvited_guests' => 'مهمانان ناخوانده',
         'full_log' => 'گزارش کامل',
         'user_conditions' => 'وضعیت همه کاربران',
@@ -196,7 +197,15 @@ function egmPeriodExportRecords(string $type, array $guestRows, array $logRows =
         }, $logRows);
     }
 
-    if ($type === 'uninvited_guests') {
+    if ($type === 'entered_no_quit') {
+        $guestRows = array_values(array_filter($guestRows, static function (array $row): bool {
+            $hasEntry = trim((string)($row['entered_date'] ?? '')) !== ''
+                && trim((string)($row['entered_time'] ?? '')) !== '';
+            $hasQuit = trim((string)($row['quit_date'] ?? '')) !== ''
+                && trim((string)($row['quit_time'] ?? '')) !== '';
+            return $hasEntry && !$hasQuit;
+        }));
+    } elseif ($type === 'uninvited_guests') {
         $guestRows = array_values(array_filter($guestRows, static fn(array $row): bool =>
             (int)($row['period_is_uninvited_guest'] ?? 0) === 1 || (int)($row['user_is_uninvited_guest'] ?? 0) === 1
         ));
@@ -214,7 +223,9 @@ function egmPeriodExportRecords(string $type, array $guestRows, array $logRows =
     }
 
     return array_map(static function (array $row) use ($type): array {
-        $condition = egmPeriodExportResolveCondition($row);
+        // This is an operational "currently inside" list, not a final
+        // Correct/Fake Presence classification.
+        $condition = $type === 'entered_no_quit' ? 'entered' : egmPeriodExportResolveCondition($row);
         $record = egmPeriodExportMainRecord($row, $condition) + [
             'کد وضعیت' => $condition,
             'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),

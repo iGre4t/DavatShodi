@@ -91,7 +91,7 @@ try {
     ]);
 
     $context = ['pdo' => $pdo, 'logs_pdo' => $logsPdo, 'code' => $code, 'tables' => $tables, 'mission_dir' => dirname(__DIR__)];
-    foreach (['all_guests' => 2, 'uninvited_guests' => 1, 'full_log' => 2, 'user_conditions' => 2, 'correct_presence' => 1, 'fake_presence' => 1] as $type => $expectedRows) {
+    foreach (['all_guests' => 2, 'entered_no_quit' => 1, 'uninvited_guests' => 1, 'full_log' => 2, 'user_conditions' => 2, 'correct_presence' => 1, 'fake_presence' => 1] as $type => $expectedRows) {
         $export = egmPeriodExportBuild($context, '01', $type);
         egmPeriodExportsAssert($export['row_count'] === $expectedRows, "Unexpected row count for {$type}");
         egmPeriodExportsAssert(str_ends_with($export['filename'], '.xlsx'), "Invalid filename for {$type}");
@@ -110,6 +110,17 @@ try {
     $walkIns = egmPeriodExportBuild($context, '01', 'uninvited_guests');
     egmPeriodExportsAssert(str_contains($walkIns['content'], '0012345678'), 'Walk-in guest is missing');
     egmPeriodExportsAssert(!str_contains($walkIns['content'], '0381647730'), 'Invited guest leaked into walk-in export');
+    $enteredNoQuit = egmPeriodExportBuild($context, '01', 'entered_no_quit');
+    egmPeriodExportsAssert(str_contains($enteredNoQuit['content'], '0012345678'), 'Entered guest without quit is missing');
+    egmPeriodExportsAssert(!str_contains($enteredNoQuit['content'], '0381647730'), 'Guest with a completed quit leaked into entered-without-quit export');
+    egmPeriodExportsAssert(str_contains($enteredNoQuit['content'], 'ورود ثبت شده؛ خروج ثبت نشده'), 'Operational export incorrectly validates final presence');
+    $unchangedPresence = $pdo->query(
+        "SELECT `correct_presence`,`fake_presence` FROM `{$tables['user_periods']}` WHERE `user_id` = {$walkInId} AND `period_code` = '01'"
+    )->fetch(PDO::FETCH_ASSOC);
+    egmPeriodExportsAssert(
+        (int)($unchangedPresence['correct_presence'] ?? -1) === 0 && (int)($unchangedPresence['fake_presence'] ?? -1) === 1,
+        'Entered-without-quit export mutated attendance classification'
+    );
     $fullLog = egmPeriodExportBuild($context, '01', 'full_log');
     egmPeriodExportsAssert(str_contains($fullLog['content'], '0099999999'), 'Unmatched National ID is missing from the full log');
     egmPeriodExportsAssert(str_contains($fullLog['content'], 'کاربر پیدا نشد'), 'Rejected condition is missing from the full log');

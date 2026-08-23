@@ -2622,3 +2622,245 @@
   }
 }
 
+body.egm-period-invitee-editor-open {
+  overflow: hidden;
+}
+
+.egm-period-invitee-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.egm-period-invitee-editor[hidden] {
+  display: none;
+}
+
+.egm-period-invitee-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(3px);
+}
+
+.egm-period-invitee-editor-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 100%);
+  max-height: min(90vh, 900px);
+  overflow: hidden;
+  border: 1px solid #dce3ec;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.22);
+}
+
+.egm-period-invitee-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e7ebf0;
+}
+
+.egm-period-invitee-editor-head span {
+  display: block;
+  margin-bottom: 3px;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.egm-period-invitee-editor-head h3,
+.egm-period-invitee-editor-section h4 {
+  margin: 0;
+}
+
+.egm-period-invitee-editor-dialog form {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.egm-period-invitee-editor-body {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 20px;
+  gap: 14px;
+}
+
+.egm-period-invitee-editor-section {
+  padding: 15px;
+  border: 1px solid #e4e9f0;
+  border-radius: 12px;
+  background: #fbfcfe;
+}
+
+.egm-period-invitee-editor-attendance {
+  border-color: #cfe0f5;
+  background: #f8fbff;
+}
+
+.egm-period-invitee-editor-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.egm-period-invitee-editor-section-head h4 {
+  color: #172033;
+  font-size: 14px;
+}
+
+.egm-period-invitee-editor-section-head small {
+  color: #667085;
+  font-size: 11px;
+}
+
+.egm-period-invitee-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.egm-period-invitee-editor-grid .field {
+  display: block;
+  min-width: 0;
+}
+
+.egm-period-invitee-editor-grid .field.full {
+  grid-column: 1 / -1;
+}
+
+.egm-period-invitee-editor-grid .field > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #344054;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.egm-period-invitee-editor-grid input,
+.egm-period-invitee-editor-grid select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.egm-period-invitee-editor-grid input:focus,
+.egm-period-invitee-editor-grid select:focus {
+  border-color: var(--primary, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.egm-period-invitee-editor-grid input:disabled,
+.egm-period-invitee-editor-grid select:disabled {
+  background: #eef1f5;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.egm-period-invitee-editor-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.egm-period-invitee-editor-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid #e2e7ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.egm-period-invitee-editor-checks input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary, #2563eb);
+}
+
+.egm-period-invitee-editor-section > .hint {
+  margin: 11px 0 0;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.egm-period-invitee-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 20px;
+  border-top: 1px solid #e7ebf0;
+  background: #fff;
+}
+
+.egm-period-invitee-editor-actions > div {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.egm-period-invitee-editor-actions .hint {
+  min-height: 18px;
+  margin: 0;
+  color: #a12432;
+  font-size: 12px;
+}
+
+@media (max-width: 680px) {
+  .egm-period-invitee-editor {
+    align-items: end;
+    padding: 0;
+  }
+
+  .egm-period-invitee-editor-dialog {
+    width: 100%;
+    max-height: 94vh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .egm-period-invitee-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .egm-period-invitee-editor-grid .field.full {
+    grid-column: auto;
+  }
+
+  .egm-period-invitee-editor-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .egm-period-invitee-editor-actions > div,
+  .egm-period-invitee-editor-actions .btn {
+    flex: 1;
+  }
+}
+

@@ -67,6 +67,14 @@ egmRealtimeAssert(
     'Visibility-aware cross-PC log synchronization is missing.'
 );
 egmRealtimeAssert(
+    str_contains($source, 'function egmCheckInStatsVersion(')
+        && str_contains($source, 'data-stats-version=')
+        && str_contains($source, "url.searchParams.set('action','stats')")
+        && str_contains($source, 'statsVersion!==lastStatsVersion')
+        && str_contains($source, "'stats_version' => egmCheckInStatsVersion(\$context)"),
+    'Core roster changes can no longer refresh Guest Control statistics independently of logs.'
+);
+egmRealtimeAssert(
     str_contains($source, 'function egmCheckInLogsVersion(')
         && str_contains($source, "data-logs-version=\"")
         && str_contains($source, "\$getAction === 'logs_version'"),
@@ -80,6 +88,8 @@ egmRealtimeAssert(
         && str_contains($source, 'data-stat="waiting"')
         && str_contains($source, 'data-stat="inside"')
         && str_contains($source, 'data-stat="quit"')
+        && str_contains($source, 'data-stat="walk_in_total"')
+        && str_contains($source, 'data-stat="walk_in_entered"')
         && str_contains($source, 'data-gender="male"')
         && str_contains($source, 'data-gender="female"')
         && str_contains($source, 'renderStats(data.stats)')

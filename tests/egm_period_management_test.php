@@ -103,6 +103,11 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, "window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Uninviteable')"), "The uninviteable export does not create an Excel worksheet in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-export'), "The Invite Card Excel export button is missing in {$path}");
     egmPeriodAssert(str_contains($source, 'data-period-invite-card-background-file'), "The per-period Invite Card background upload is missing in {$path}");
+    egmPeriodAssert(str_contains($source, 'data-period-edit-invite='), "The per-period invited-user edit action is missing in {$path}");
+    egmPeriodAssert(str_contains($source, 'data-period-invitee-editor-form'), "The invited-user profile/attendance dialog is missing in {$path}");
+    egmPeriodAssert(str_contains($source, "requestPeriodInvites('update_invitee'"), "The invited-user editor is not connected to the database endpoint in {$path}");
+    egmPeriodAssert(str_contains($source, 'name="presence_classification"'), "The invited-user editor cannot change presence classification in {$path}");
+    egmPeriodAssert(str_contains($source, 'name="attendance_state"'), "The invited-user editor cannot change recorded attendance state in {$path}");
     egmPeriodAssert(str_contains($source, "'save_period_background'"), "The per-period Invite Card background save action is not wired in {$path}");
     egmPeriodAssert(str_contains($source, "'remove_period_background'"), "The per-period Invite Card background fallback action is not wired in {$path}");
     egmPeriodAssert(str_contains($source, 'data-task-top-trigger="export"'), "The period export pane is missing in {$path}");
@@ -129,6 +134,13 @@ egmPeriodAssert(
         && str_contains($periodInvitesBackend, 'ob_clean()')
         && str_contains($periodInvitesBackend, 'count($inputRows) > 1000'),
     'The EGM period invitation endpoint cannot guarantee a clean JSON response'
+);
+egmPeriodAssert(
+    str_contains($periodInvitesBackend, 'function egmPeriodInvitesUpdateInvitedRow(')
+        && str_contains($periodInvitesBackend, "\$action === 'update_invitee'")
+        && str_contains($periodInvitesBackend, "`last_control_condition`='manual_edit'")
+        && str_contains($periodInvitesBackend, "'egm.period_invitee_manual_edit'"),
+    'The EGM period invitation endpoint does not safely persist and audit manual profile/attendance edits'
 );
 
 $panelApp = file_get_contents($root . '/app.js');

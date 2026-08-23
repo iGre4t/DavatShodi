@@ -3120,7 +3120,7 @@
   function getPeriodInviteState(pane) {
     let state = periodInviteStates.get(pane);
     if (!state) {
-      state = { source: '', candidates: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
+      state = { source: '', candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
       periodInviteStates.set(pane, state);
     }
     return state;
@@ -3722,18 +3722,192 @@
     }
   }
 
+  let periodInviteeEditorContext = null;
+
+  function ensurePeriodInviteeEditor() {
+    let modal = document.querySelector('[data-period-invitee-editor]');
+    if (modal instanceof HTMLElement) return modal;
+    modal = document.createElement('div');
+    modal.className = 'egm-period-invitee-editor';
+    modal.dataset.periodInviteeEditor = '1';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <section class="egm-period-invitee-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-period-invitee-editor-title" dir="rtl">
+        <header class="egm-period-invitee-editor-head">
+          <div><span>ویرایش دعوت‌شونده و حضور</span><h3 id="egm-period-invitee-editor-title" data-period-invitee-editor-title>ویرایش مهمان</h3></div>
+          <button type="button" class="btn ghost" data-period-invitee-editor-close aria-label="بستن">بستن</button>
+        </header>
+        <form data-period-invitee-editor-form>
+          <div class="egm-period-invitee-editor-body">
+            <section class="egm-period-invitee-editor-section">
+              <div class="egm-period-invitee-editor-section-head"><h4>اطلاعات مهمان</h4><small data-period-invitee-editor-source></small></div>
+              <div class="egm-period-invitee-editor-grid">
+                <label class="field"><span>نام</span><input name="first_name" type="text" maxlength="191" /></label>
+                <label class="field"><span>نام خانوادگی</span><input name="last_name" type="text" maxlength="191" /></label>
+                <label class="field"><span>کد ملی</span><input name="national_id" type="text" inputmode="numeric" maxlength="10" dir="ltr" /></label>
+                <label class="field"><span>کد پرسنلی</span><input name="work_id" type="text" maxlength="128" dir="ltr" /></label>
+                <label class="field"><span>شماره همراه</span><input name="phone_number" type="text" maxlength="32" dir="ltr" /></label>
+                <label class="field"><span>شماره مهمان</span><input name="guest_number" type="text" maxlength="32" dir="ltr" /></label>
+                <label class="field"><span>معاونت</span><input name="deputy" type="text" maxlength="191" /></label>
+                <label class="field"><span>اداره کل</span><input name="general_department" type="text" maxlength="191" /></label>
+                <label class="field"><span>اداره</span><input name="department" type="text" maxlength="191" /></label>
+                <label class="field"><span>جنسیت</span><input name="gender" type="text" maxlength="32" /></label>
+                <label class="field"><span>سطح پستی</span><input name="postal_level" type="text" maxlength="64" /></label>
+              </div>
+              <div class="egm-period-invitee-editor-checks">
+                <label><input name="is_active" type="checkbox" /> کاربر فعال است</label>
+                <label><input name="is_uninvited_guest" type="checkbox" /> مهمان ناخوانده است</label>
+                <label><input name="outside_organization" type="checkbox" /> خارج از سازمان است</label>
+              </div>
+              <p class="hint" data-period-invitee-editor-profile-note>تغییر مشخصات مهمان در همه بازه‌های همین EGM دیده می‌شود؛ سوابق حضور فقط در همین بازه تغییر می‌کند.</p>
+            </section>
+            <section class="egm-period-invitee-editor-section egm-period-invitee-editor-attendance">
+              <div class="egm-period-invitee-editor-section-head"><h4>حضور در همین بازه</h4><small>ثبت یا اصلاح دستی</small></div>
+              <div class="egm-period-invitee-editor-grid">
+                <label class="field full"><span>وضعیت حضور</span><select name="attendance_state">
+                  <option value="not_entered">ورود ثبت نشده</option><option value="entered">وارد شده، خروج ثبت نشده</option><option value="quit_completed">ورود و خروج ثبت شده</option>
+                </select></label>
+                <label class="field"><span>تاریخ ورود</span><input name="entered_date" type="date" /></label>
+                <label class="field"><span>ساعت ورود</span><input name="entered_time" type="time" step="1" /></label>
+                <label class="field"><span>تاریخ خروج</span><input name="quit_date" type="date" /></label>
+                <label class="field"><span>ساعت خروج</span><input name="quit_time" type="time" step="1" /></label>
+                <label class="field full"><span>طبقه‌بندی حضور</span><select name="presence_classification">
+                  <option value="none">بدون پرچم حضور</option><option value="correct_presence">Correct Presence — حضور واقعی</option><option value="fake_presence">Fake Presence — حضور نامعقول</option>
+                </select></label>
+              </div>
+              <p class="hint">انتخاب «ورود ثبت نشده» تاریخ‌ها، ساعت‌ها و پرچم حضور همین بازه را پاک می‌کند.</p>
+            </section>
+          </div>
+          <footer class="egm-period-invitee-editor-actions">
+            <p class="hint" data-period-invitee-editor-status aria-live="polite"></p>
+            <div><button type="button" class="btn ghost" data-period-invitee-editor-cancel>انصراف</button><button type="submit" class="btn primary standard-primary-button" data-period-invitee-editor-save>ذخیره تغییرات</button></div>
+          </footer>
+        </form>
+      </section>`;
+    const close = () => {
+      modal.hidden = true;
+      document.body.classList.remove('egm-period-invitee-editor-open');
+      periodInviteeEditorContext = null;
+    };
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal || (event.target instanceof Element && event.target.closest('[data-period-invitee-editor-close],[data-period-invitee-editor-cancel]'))) close();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !modal.hidden) close();
+    });
+    modal.querySelector('select[name="attendance_state"]')?.addEventListener('change', () => syncPeriodInviteeEditorAttendance(modal));
+    modal.querySelector('[data-period-invitee-editor-form]')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const context = periodInviteeEditorContext;
+      const form = event.currentTarget;
+      if (!context || !(form instanceof HTMLFormElement)) return;
+      const saveButton = modal.querySelector('[data-period-invitee-editor-save]');
+      const status = modal.querySelector('[data-period-invitee-editor-status]');
+      if (saveButton instanceof HTMLButtonElement) saveButton.disabled = true;
+      if (status) status.textContent = 'در حال ذخیره تغییرات...';
+      try {
+        const values = Object.fromEntries(new FormData(form).entries());
+        for (const name of ['is_active', 'is_uninvited_guest', 'outside_organization']) {
+          const control = form.elements.namedItem(name);
+          values[name] = control instanceof HTMLInputElement && control.checked;
+        }
+        const data = await requestPeriodInvites('update_invitee', {
+          ...values,
+          period_code: periodCodeForPane(context.pane),
+          invite_id: String(context.row?.invite_id || '')
+        }, 'POST');
+        await loadPeriodInvitees(context.pane, getPeriodInviteState(context.pane).inviteePage);
+        const listStatus = context.pane.querySelector('[data-period-invitee-status]');
+        if (listStatus) listStatus.textContent = data?.message || 'اطلاعات مهمان و حضور ذخیره شد.';
+        close();
+      } catch (error) {
+        if (status) status.textContent = error?.message || 'ذخیره اطلاعات مهمان ناموفق بود.';
+      } finally {
+        if (saveButton instanceof HTMLButtonElement) saveButton.disabled = false;
+      }
+    });
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function syncPeriodInviteeEditorAttendance(modal) {
+    const form = modal?.querySelector('[data-period-invitee-editor-form]');
+    if (!(form instanceof HTMLFormElement)) return;
+    const attendanceControl = form.elements.namedItem('attendance_state');
+    const state = attendanceControl instanceof HTMLSelectElement ? attendanceControl.value : 'not_entered';
+    for (const name of ['entered_date', 'entered_time']) {
+      const control = form.elements.namedItem(name);
+      if (control instanceof HTMLInputElement) control.disabled = state === 'not_entered';
+    }
+    for (const name of ['quit_date', 'quit_time']) {
+      const control = form.elements.namedItem(name);
+      if (control instanceof HTMLInputElement) control.disabled = state !== 'quit_completed';
+    }
+    const classification = form.elements.namedItem('presence_classification');
+    if (classification instanceof HTMLSelectElement) {
+      classification.disabled = state === 'not_entered';
+      if (state === 'not_entered') classification.value = 'none';
+    }
+  }
+
+  function openPeriodInviteeEditor(pane, row) {
+    const modal = ensurePeriodInviteeEditor();
+    const form = modal.querySelector('[data-period-invitee-editor-form]');
+    if (!(form instanceof HTMLFormElement)) return;
+    periodInviteeEditorContext = { pane, row };
+    const setValue = (name, value) => {
+      const control = form.elements.namedItem(name);
+      if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = String(value ?? '');
+    };
+    for (const name of ['first_name', 'last_name', 'national_id', 'work_id', 'phone_number', 'guest_number', 'deputy', 'general_department', 'department', 'gender', 'postal_level', 'entered_date', 'entered_time', 'quit_date', 'quit_time']) {
+      setValue(name, row?.[name] || '');
+    }
+    const attendanceState = ['entered', 'quit_completed'].includes(String(row?.attendance_state || ''))
+      ? String(row.attendance_state)
+      : (row?.quit_date && row?.quit_time ? 'quit_completed' : (row?.entered_date && row?.entered_time ? 'entered' : 'not_entered'));
+    setValue('attendance_state', attendanceState);
+    setValue('presence_classification', Number(row?.correct_presence || 0) === 1 ? 'correct_presence' : (Number(row?.fake_presence || 0) === 1 ? 'fake_presence' : 'none'));
+    for (const [name, checked] of Object.entries({
+      is_active: Number(row?.is_active ?? 1) === 1,
+      is_uninvited_guest: Number(row?.is_uninvited_guest || row?.period_is_uninvited_guest || 0) === 1,
+      outside_organization: Number(row?.outside_organization || 0) === 1
+    })) {
+      const control = form.elements.namedItem(name);
+      if (control instanceof HTMLInputElement) control.checked = checked;
+    }
+    const fullName = [row?.first_name, row?.last_name].filter(Boolean).join(' ').trim();
+    const title = modal.querySelector('[data-period-invitee-editor-title]');
+    if (title) title.textContent = fullName || `مهمان ${row?.guest_number || ''}`.trim();
+    const source = modal.querySelector('[data-period-invitee-editor-source]');
+    if (source) source.textContent = `منبع: ${periodSourceLabel(row?.invitation_source || row?.source_type || '')}`;
+    const profileNote = modal.querySelector('[data-period-invitee-editor-profile-note]');
+    if (profileNote) profileNote.textContent = String(row?.source_type || '').toLowerCase() === 'oeu'
+      ? 'این مهمان از OEU آمده است؛ تغییر مشخصات او برای ماندگاری با رکورد OEU نیز همگام می‌شود. سوابق حضور فقط در همین بازه تغییر می‌کند.'
+      : 'تغییر مشخصات مهمان در همه بازه‌های همین EGM دیده می‌شود؛ سوابق حضور فقط در همین بازه تغییر می‌کند.';
+    const status = modal.querySelector('[data-period-invitee-editor-status]');
+    if (status) status.textContent = '';
+    syncPeriodInviteeEditorAttendance(modal);
+    modal.hidden = false;
+    document.body.classList.add('egm-period-invitee-editor-open');
+    window.setTimeout(() => {
+      const firstName = form.elements.namedItem('first_name');
+      if (firstName instanceof HTMLInputElement) firstName.focus();
+    }, 0);
+  }
+
   function renderPeriodInvitees(pane, data) {
     const state = getPeriodInviteState(pane);
     state.inviteePage = Number(data?.page || 1);
     state.inviteePages = Number(data?.pages || 1);
     const rows = Array.isArray(data?.rows) ? data.rows : [];
+    state.invitees = rows;
     const body = pane.querySelector('[data-period-invitee-body]');
     if (body) body.innerHTML = rows.length ? rows.map((row) => `<tr>
       <td><code>${escapeHtml(row?.guest_number || '—')}</code></td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
       <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
       <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
       <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td>
-      <td><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></td>
+      <td><div class="egm-period-invitee-row-actions"><button type="button" class="btn ghost" data-period-edit-invite="${escapeHtml(row?.invite_id || '')}">ویرایش</button><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></div></td>
     </tr>`).join('') : '<tr><td colspan="14" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
     const total = pane.querySelector('[data-period-invitee-total]');
     if (total) total.textContent = String(data?.total || 0);
@@ -3959,6 +4133,12 @@
       const unmatchedInvite = event.target instanceof Element ? event.target.closest('[data-period-invite-unmatched-one]') : null;
       if (unmatchedInvite instanceof HTMLButtonElement) {
         await invitePeriodUnmatchedRows(pane, [unmatchedInvite.dataset.periodInviteUnmatchedOne || '']);
+        return;
+      }
+      const edit = event.target instanceof Element ? event.target.closest('[data-period-edit-invite]') : null;
+      if (edit instanceof HTMLButtonElement) {
+        const row = state.invitees.find((item) => String(item?.invite_id || '') === String(edit.dataset.periodEditInvite || ''));
+        if (row) openPeriodInviteeEditor(pane, row);
         return;
       }
       const remove = event.target instanceof Element ? event.target.closest('[data-period-remove-invite]') : null;

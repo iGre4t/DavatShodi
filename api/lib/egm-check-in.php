@@ -916,6 +916,42 @@ function egmCheckInLogsVersion(array $context): string
     return (string)($row['max_id'] ?? '0') . ':' . (string)($row['row_count'] ?? '0');
 }
 
+/**
+ * A lightweight version for the core period roster. Unlike activity-log
+ * versioning, this changes when Excel invitations are added/removed even when
+ * no scan log is written.
+ */
+function egmCheckInStatsVersion(array $context): string
+{
+    $pdo = $context['pdo'] ?? null;
+    $periodCode = trim((string)($context['period_code'] ?? ''));
+    if (!$pdo instanceof PDO || $periodCode === '') return 'inactive';
+    $usersTable = (string)$context['tables']['users'];
+    $userPeriodsTable = (string)$context['tables']['user_periods'];
+    try {
+        $statement = $pdo->prepare(
+            "SELECT COUNT(*) AS `row_count`, COALESCE(MAX(p.`id`),0) AS `max_id`, "
+            . "COALESCE(SUM(p.`user_id`),0) AS `user_sum`, COALESCE(MAX(p.`updated_at`),'') AS `period_updated`, "
+            . "COALESCE(MAX(u.`egm_updated_at`),'') AS `user_updated` "
+            . "FROM `{$userPeriodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` "
+            . "WHERE p.`period_code`=:period_code"
+        );
+        $statement->execute([':period_code' => $periodCode]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC) ?: [];
+        return hash('sha256', implode('|', [
+            $periodCode,
+            (string)($row['row_count'] ?? '0'),
+            (string)($row['max_id'] ?? '0'),
+            (string)($row['user_sum'] ?? '0'),
+            (string)($row['period_updated'] ?? ''),
+            (string)($row['user_updated'] ?? ''),
+        ]));
+    } catch (Throwable $error) {
+        error_log('EGM Guest Control statistics version unavailable: ' . $error->getMessage());
+        return 'unavailable';
+    }
+}
+
 function egmCheckInGenderGroup(string $gender): string
 {
     $normalized = trim(strtr($gender, ['ي' => 'ی', 'ك' => 'ک', 'ۀ' => 'ه']));
@@ -936,7 +972,7 @@ function egmCheckInGenderGroup(string $gender): string
  * Compact attendance totals for the active period. "Entered" includes guests
  * who later quit; "inside" includes only entered guests without a quit record.
  *
- * @return array{active:bool,period_code:string,total:int,entered:int,waiting:int,inside:int,quit:int,entry_percent:float,gender:array<string,array{total:int,entered:int,waiting:int,inside:int,quit:int}>}
+ * @return array{active:bool,period_code:string,total:int,invited_total:int,walk_in_total:int,walk_in_entered:int,entered:int,waiting:int,inside:int,quit:int,entry_percent:float,gender:array<string,array{total:int,entered:int,waiting:int,inside:int,quit:int}>}
  */
 function egmCheckInDashboardStats(array $context): array
 {
@@ -945,6 +981,9 @@ function egmCheckInDashboardStats(array $context): array
         'active' => false,
         'period_code' => '',
         'total' => 0,
+        'invited_total' => 0,
+        'walk_in_total' => 0,
+        'walk_in_entered' => 0,
         'entered' => 0,
         'waiting' => 0,
         'inside' => 0,
@@ -962,13 +1001,16 @@ function egmCheckInDashboardStats(array $context): array
         . "AND p.`entered_time` IS NOT NULL AND TRIM(p.`entered_time`) <> ''";
     $hasQuit = "p.`quit_date` IS NOT NULL AND TRIM(p.`quit_date`) <> '' "
         . "AND p.`quit_time` IS NOT NULL AND TRIM(p.`quit_time`) <> ''";
+    $isWalkIn = "(COALESCE(p.`is_uninvited_guest`,0)=1 OR COALESCE(u.`is_uninvited_guest`,0)=1)";
     try {
         $statement = $pdo->prepare(
             "SELECT COALESCE(NULLIF(TRIM(u.`gender`), ''), '') AS `gender`, COUNT(*) AS `total`, "
             . "SUM(CASE WHEN {$hasEntry} THEN 1 ELSE 0 END) AS `entered`, "
             . "SUM(CASE WHEN {$hasQuit} THEN 1 ELSE 0 END) AS `quit`, "
-            . "SUM(CASE WHEN {$hasEntry} AND NOT ({$hasQuit}) THEN 1 ELSE 0 END) AS `inside` "
-            . "FROM `{$userPeriodsTable}` p LEFT JOIN `{$usersTable}` u ON u.`id` = p.`user_id` "
+            . "SUM(CASE WHEN {$hasEntry} AND NOT ({$hasQuit}) THEN 1 ELSE 0 END) AS `inside`, "
+            . "SUM(CASE WHEN {$isWalkIn} THEN 1 ELSE 0 END) AS `walk_in_total`, "
+            . "SUM(CASE WHEN {$isWalkIn} AND {$hasEntry} THEN 1 ELSE 0 END) AS `walk_in_entered` "
+            . "FROM `{$userPeriodsTable}` p JOIN `{$usersTable}` u ON u.`id` = p.`user_id` "
             . "WHERE p.`period_code` = :period_code GROUP BY COALESCE(NULLIF(TRIM(u.`gender`), ''), '')"
         );
         $statement->execute([':period_code' => $periodCode]);
@@ -978,6 +1020,8 @@ function egmCheckInDashboardStats(array $context): array
             $entered = min($total, max(0, (int)($row['entered'] ?? 0)));
             $quit = min($total, max(0, (int)($row['quit'] ?? 0)));
             $inside = min($entered, max(0, (int)($row['inside'] ?? 0)));
+            $walkInTotal = min($total, max(0, (int)($row['walk_in_total'] ?? 0)));
+            $walkInEntered = min($walkInTotal, max(0, (int)($row['walk_in_entered'] ?? 0)));
             $stats['gender'][$group]['total'] += $total;
             $stats['gender'][$group]['entered'] += $entered;
             $stats['gender'][$group]['waiting'] += max(0, $total - $entered);
@@ -987,6 +1031,8 @@ function egmCheckInDashboardStats(array $context): array
             $stats['entered'] += $entered;
             $stats['inside'] += $inside;
             $stats['quit'] += $quit;
+            $stats['walk_in_total'] += $walkInTotal;
+            $stats['walk_in_entered'] += $walkInEntered;
         }
     } catch (Throwable $error) {
         error_log('EGM Guest Control statistics unavailable: ' . $error->getMessage());
@@ -995,6 +1041,7 @@ function egmCheckInDashboardStats(array $context): array
     $stats['active'] = true;
     $stats['period_code'] = $periodCode;
     $stats['waiting'] = max(0, $stats['total'] - $stats['entered']);
+    $stats['invited_total'] = max(0, $stats['total'] - $stats['walk_in_total']);
     $stats['entry_percent'] = $stats['total'] > 0
         ? round(($stats['entered'] / $stats['total']) * 100, 1)
         : 0.0;
@@ -1343,6 +1390,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     $appearanceUrl = htmlspecialchars($projectWebBase . '/style/appearance.js', ENT_QUOTES, 'UTF-8');
     $panelStylesUrl = htmlspecialchars($projectWebBase . '/style/styles.css', ENT_QUOTES, 'UTF-8');
     $logsVersion = htmlspecialchars(egmCheckInLogsVersion($context), ENT_QUOTES, 'UTF-8');
+    $statsVersion = htmlspecialchars(egmCheckInStatsVersion($context), ENT_QUOTES, 'UTF-8');
     $logs = htmlspecialchars((string)json_encode(egmCheckInRecentLogs($context), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8');
     $dashboardStats = htmlspecialchars((string)json_encode(egmCheckInDashboardStats($context), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8');
     $csrfValue = htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8');
@@ -1375,11 +1423,11 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .phase--ended,.guest-control-page .phase--inactive,.guest-control-page .phase--no_active_period{--phase-color:#475569;--phase-bg:#f1f5f9;--phase-border:#cbd5e1}
     .guest-control-page .phase--invalid_schedule,.guest-control-page .phase--multiple_active_periods{--phase-color:#a12432;--phase-bg:#fff1f2;--phase-border:#f7b6bf}
     .guest-control-page .attendance-overview{margin-top:16px;padding:12px;border:1px solid #e1e6ed;border-radius:12px;background:linear-gradient(135deg,#fbfcfe 0%,#f7f9fc 100%)}
-    .guest-control-page .attendance-stats-content{display:grid;grid-template-columns:minmax(230px,1.5fr) repeat(3,minmax(82px,.55fr)) minmax(235px,1.25fr);gap:8px;align-items:stretch}
+    .guest-control-page .attendance-stats-content{display:grid;grid-template-columns:minmax(230px,1.5fr) repeat(4,minmax(78px,.55fr)) minmax(235px,1.25fr);gap:8px;align-items:stretch}
     .guest-control-page .attendance-overview.is-inactive .attendance-stats-content{display:none}.guest-control-page .attendance-stats-empty{display:none;min-height:54px;align-items:center;justify-content:center;color:var(--muted,#6b7280);font-size:12px}.guest-control-page .attendance-overview.is-inactive .attendance-stats-empty{display:flex}
     .guest-control-page .entry-summary,.guest-control-page .stat-tile,.guest-control-page .gender-summary{min-width:0;border:1px solid #e5e9ef;border-radius:9px;background:rgba(255,255,255,.88)}
-    .guest-control-page .entry-summary{padding:10px 12px}.guest-control-page .entry-summary-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.guest-control-page .entry-summary-label{color:#667085;font-size:11px;font-weight:700}.guest-control-page .entry-summary-value{display:flex;align-items:baseline;gap:5px;white-space:nowrap}.guest-control-page .entry-summary-value strong{color:#15243a;font-size:22px;line-height:1}.guest-control-page .entry-summary-value span{color:#667085;font-size:11px}.guest-control-page .entry-progress{height:5px;margin-top:10px;overflow:hidden;border-radius:999px;background:#e8edf3}.guest-control-page .entry-progress span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--primary,#e11d2e),#f06a76);transition:width .28s ease}.guest-control-page .entry-percent{display:block;margin-top:5px;color:#667085;font-size:10px;text-align:left}
-    .guest-control-page .stat-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 7px;text-align:center}.guest-control-page .stat-tile span{color:#667085;font-size:10px;font-weight:700}.guest-control-page .stat-tile strong{margin-top:3px;color:#243246;font-size:18px;line-height:1.2}.guest-control-page .stat-tile.inside strong{color:#087443}.guest-control-page .stat-tile.quit strong{color:#5b21b6}.guest-control-page .stat-tile.waiting strong{color:#8a5a00}
+    .guest-control-page .entry-summary{padding:10px 12px}.guest-control-page .entry-summary-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.guest-control-page .entry-summary-label{color:#667085;font-size:11px;font-weight:700}.guest-control-page .entry-summary-value{display:flex;align-items:baseline;gap:5px;white-space:nowrap}.guest-control-page .entry-summary-value strong{color:#15243a;font-size:22px;line-height:1}.guest-control-page .entry-summary-value span{color:#667085;font-size:11px}.guest-control-page .entry-progress{height:5px;margin-top:10px;overflow:hidden;border-radius:999px;background:#e8edf3}.guest-control-page .entry-progress span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--primary,#e11d2e),#f06a76);transition:width .28s ease}.guest-control-page .entry-summary-foot{display:flex;justify-content:space-between;gap:8px;margin-top:5px;color:#667085;font-size:10px}.guest-control-page .entry-percent{text-align:left}.guest-control-page .audience-mix{white-space:nowrap}
+    .guest-control-page .stat-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 7px;text-align:center}.guest-control-page .stat-tile span{color:#667085;font-size:10px;font-weight:700}.guest-control-page .stat-tile strong{margin-top:3px;color:#243246;font-size:18px;line-height:1.2}.guest-control-page .stat-tile small{margin-top:2px;color:#667085;font-size:9px}.guest-control-page .stat-tile.inside strong{color:#087443}.guest-control-page .stat-tile.quit strong{color:#5b21b6}.guest-control-page .stat-tile.waiting strong{color:#8a5a00}.guest-control-page .stat-tile.walk-in strong{color:#b54708}
     .guest-control-page .gender-summary{display:grid;align-content:center;gap:6px;padding:9px 11px}.guest-control-page .gender-title{color:#667085;font-size:10px;font-weight:700}.guest-control-page .gender-row{display:flex;align-items:center;gap:8px;font-size:11px}.guest-control-page .gender-row-label{flex:0 0 42px;color:#344054;font-weight:700}.guest-control-page .gender-row-track{flex:1 1 auto;height:4px;overflow:hidden;border-radius:999px;background:#e8edf3}.guest-control-page .gender-row-track span{display:block;width:0;height:100%;border-radius:inherit;background:#4f8edc;transition:width .28s ease}.guest-control-page .gender-row.female .gender-row-track span{background:#bf6ab1}.guest-control-page .gender-row.unspecified .gender-row-track span{background:#98a2b3}.guest-control-page .gender-row-value{flex:0 0 auto;color:#667085;font-size:10px;direction:rtl;white-space:nowrap}.guest-control-page .gender-row[hidden]{display:none}
     .guest-control-page .period-navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
     .guest-control-page .period-neighbor{min-width:0;padding:11px 13px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:#fafbfc}.guest-control-page .period-neighbor-label{display:block;margin-bottom:3px;color:var(--muted,#6b7280);font-size:11px}.guest-control-page .period-neighbor strong{display:block;font-size:13px;overflow-wrap:anywhere}.guest-control-page .period-neighbor small{display:block;margin-top:3px;color:var(--muted,#6b7280);font-size:11px;direction:ltr;text-align:right;unicode-bidi:isolate}
@@ -1444,12 +1492,12 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--border,#e5e7eb);border:1px solid var(--border,#e5e7eb);border-radius:10px;overflow:hidden}
     .guest-control-page .detail-item{min-width:0;padding:10px 12px;background:#fff}.guest-control-page .detail-item.full{grid-column:1/-1}.guest-control-page .detail-label{display:block;margin-bottom:4px;color:var(--muted,#6b7280);font-size:11px}.guest-control-page .detail-value{display:block;font-size:13px;font-weight:600;line-height:1.7;overflow-wrap:anywhere}.guest-control-page .detail-message{padding:11px 12px;border-inline-start:3px solid var(--primary,#e11d2e);border-radius:6px;background:#f8fafc;font-size:13px;line-height:1.8}
     .guest-control-page .walk-in-form{margin:0}.guest-control-page .walk-in-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.guest-control-page .walk-in-field{display:block;min-width:0}.guest-control-page .walk-in-field.full{grid-column:1/-1}.guest-control-page .walk-in-field>span{display:block;margin-bottom:6px;color:var(--text,#111);font-size:12px;font-weight:700}.guest-control-page .walk-in-field input,.guest-control-page .walk-in-field select{display:block;width:100%;height:42px;padding:8px 10px;border:1px solid var(--border,#e5e7eb);border-radius:9px;background:#fff;color:var(--text,#111);font:inherit;font-size:13px;outline:0}.guest-control-page .walk-in-field input:focus,.guest-control-page .walk-in-field select:focus{border-color:var(--primary,#e11d2e);box-shadow:0 0 0 3px var(--primary-focus,rgba(225,29,46,.1))}.guest-control-page .walk-in-field select:disabled{background:#f3f4f6;color:#9ca3af}.guest-control-page .walk-in-check{display:flex;align-items:center;gap:8px;grid-column:1/-1;padding:10px 12px;border-radius:9px;background:#f8fafc;font-size:13px;font-weight:700}.guest-control-page .walk-in-check input{width:17px;height:17px;accent-color:var(--primary,#e11d2e)}.guest-control-page .dialog-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border,#e5e7eb)}.guest-control-page .dialog-action{min-height:38px;padding:8px 14px;border:1px solid var(--border,#e5e7eb);border-radius:9px;background:#fff;color:var(--text,#111);font:inherit;font-size:13px;font-weight:700;cursor:pointer}.guest-control-page .dialog-action.primary{border-color:var(--primary,#e11d2e);background:var(--primary,#e11d2e);color:#fff}.guest-control-page .dialog-action:disabled{opacity:.55;cursor:not-allowed}.guest-control-page .walk-in-status{min-height:20px;margin:10px 0 0;color:var(--muted,#6b7280);font-size:12px}.guest-control-page .walk-in-status.error{color:#a12432}.guest-control-page .walk-in-status.success{color:#087443}
-    @media(max-width:900px){.guest-control-page .attendance-stats-content{grid-template-columns:minmax(220px,1.4fr) repeat(3,minmax(74px,.55fr))}.guest-control-page .gender-summary{grid-column:1/-1;grid-template-columns:auto repeat(3,minmax(0,1fr));align-items:center}.guest-control-page .gender-row{min-width:0}}
-    @media(max-width:760px){.guest-control-page .guest-shell{width:min(100% - 20px,1180px);padding:14px 0 28px}.guest-control-page .guest-card{padding:16px 8px}.guest-control-page .hero-head{display:block}.guest-control-page .phase{margin-top:12px}.guest-control-page .attendance-overview{padding:8px}.guest-control-page .attendance-stats-content{grid-template-columns:repeat(3,minmax(0,1fr))}.guest-control-page .entry-summary{grid-column:1/-1}.guest-control-page .gender-summary{grid-column:1/-1;grid-template-columns:1fr;gap:7px}.guest-control-page .period-navigation{grid-template-columns:1fr}.guest-control-page .scan-grid{grid-template-columns:1fr;gap:16px}.guest-control-page .scanner input{height:54px;font-size:24px}.guest-control-page .card-head{align-items:flex-start}.guest-control-page .card-head .muted{display:none}.guest-control-page .log-toolbar{grid-template-columns:1fr}.guest-control-page .log-search-meta{padding:0;text-align:right}.guest-control-page th,.guest-control-page td{padding-inline:5px;font-size:10px}.guest-control-page th{font-size:9px}.guest-control-page .log-card-cell{padding:10px 5px}.guest-control-page .log-detail-line{align-items:flex-start;gap:4px 10px;flex-wrap:wrap}.guest-control-page .log-main-message{flex-basis:100%}.guest-control-page .detail-grid,.guest-control-page .walk-in-grid{grid-template-columns:1fr}.guest-control-page .detail-item.full,.guest-control-page .walk-in-field.full{grid-column:auto}}
+    @media(max-width:900px){.guest-control-page .attendance-stats-content{grid-template-columns:minmax(220px,1.4fr) repeat(4,minmax(68px,.55fr))}.guest-control-page .gender-summary{grid-column:1/-1;grid-template-columns:auto repeat(3,minmax(0,1fr));align-items:center}.guest-control-page .gender-row{min-width:0}}
+    @media(max-width:760px){.guest-control-page .guest-shell{width:min(100% - 20px,1180px);padding:14px 0 28px}.guest-control-page .guest-card{padding:16px 8px}.guest-control-page .hero-head{display:block}.guest-control-page .phase{margin-top:12px}.guest-control-page .attendance-overview{padding:8px}.guest-control-page .attendance-stats-content{grid-template-columns:repeat(2,minmax(0,1fr))}.guest-control-page .entry-summary{grid-column:1/-1}.guest-control-page .gender-summary{grid-column:1/-1;grid-template-columns:1fr;gap:7px}.guest-control-page .period-navigation{grid-template-columns:1fr}.guest-control-page .scan-grid{grid-template-columns:1fr;gap:16px}.guest-control-page .scanner input{height:54px;font-size:24px}.guest-control-page .card-head{align-items:flex-start}.guest-control-page .card-head .muted{display:none}.guest-control-page .log-toolbar{grid-template-columns:1fr}.guest-control-page .log-search-meta{padding:0;text-align:right}.guest-control-page th,.guest-control-page td{padding-inline:5px;font-size:10px}.guest-control-page th{font-size:9px}.guest-control-page .log-card-cell{padding:10px 5px}.guest-control-page .log-detail-line{align-items:flex-start;gap:4px 10px;flex-wrap:wrap}.guest-control-page .log-main-message{flex-basis:100%}.guest-control-page .detail-grid,.guest-control-page .walk-in-grid{grid-template-columns:1fr}.guest-control-page .detail-item.full,.guest-control-page .walk-in-field.full{grid-column:auto}}
   </style>
 </head>
 <body class="guest-control-page">
-<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-logs-version="<?= $logsVersion ?>" data-initial-logs="<?= $logs ?>" data-initial-stats="<?= $dashboardStats ?>">
+<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-logs-version="<?= $logsVersion ?>" data-stats-version="<?= $statsVersion ?>" data-initial-logs="<?= $logs ?>" data-initial-stats="<?= $dashboardStats ?>">
   <section class="hero guest-card">
     <div class="hero-head">
       <div>
@@ -1465,11 +1513,12 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
         <div class="entry-summary">
           <div class="entry-summary-head"><span class="entry-summary-label">ورود مهمانان</span><span class="entry-summary-value"><strong data-stat="entered">۰</strong><span>از <b data-stat="total">۰</b> نفر</span></span></div>
           <div class="entry-progress" role="progressbar" aria-label="درصد ورود مهمانان" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-stat-progress></span></div>
-          <span class="entry-percent" data-stat="entry_percent">۰٪ وارد شده‌اند</span>
+          <div class="entry-summary-foot"><span class="audience-mix"><b data-stat="invited_total">۰</b> دعوت‌شده + <b data-stat="walk_in_total">۰</b> ناخوانده</span><span class="entry-percent" data-stat="entry_percent">۰٪ وارد شده‌اند</span></div>
         </div>
         <div class="stat-tile waiting"><span>مانده تا ورود</span><strong data-stat="waiting">۰</strong></div>
         <div class="stat-tile inside"><span>اکنون داخل</span><strong data-stat="inside">۰</strong></div>
         <div class="stat-tile quit"><span>خروج ثبت‌شده</span><strong data-stat="quit">۰</strong></div>
+        <div class="stat-tile walk-in"><span>مهمان ناخوانده</span><strong data-stat="walk_in_total">۰</strong><small><b data-stat="walk_in_entered">۰</b> نفر وارد شده</small></div>
         <div class="gender-summary">
           <span class="gender-title">تفکیک ورود بر اساس جنسیت</span>
           <div class="gender-row male" data-gender="male"><span class="gender-row-label">مرد</span><span class="gender-row-track"><span></span></span><span class="gender-row-value">۰ از ۰</span></div>
@@ -1550,7 +1599,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const keyDigit=(key)=>/^[0-9۰-۹٠-٩]$/.test(String(key??''))?normalize(key):'';
   const statCount=(value)=>Math.max(0,Number.parseInt(String(value??0),10)||0);
   const faCount=(value)=>statCount(value).toLocaleString('fa-IR');
-  const renderStats=(value)=>{if(!statsRoot)return;const stats=value&&typeof value==='object'?value:{};const active=stats.active===true;statsRoot.classList.toggle('is-inactive',!active);if(!active)return;for(const key of ['total','entered','waiting','inside','quit']){const target=statsRoot.querySelector(`[data-stat="${key}"]`);if(target)target.textContent=faCount(stats[key])}const percent=Math.max(0,Math.min(100,Number(stats.entry_percent)||0)),progress=statsRoot.querySelector('[data-stat-progress]'),progressBox=progress?.parentElement,percentLabel=statsRoot.querySelector('[data-stat="entry_percent"]');if(progress)progress.style.width=`${percent}%`;if(progressBox)progressBox.setAttribute('aria-valuenow',String(percent));if(percentLabel)percentLabel.textContent=`${percent.toLocaleString('fa-IR',{maximumFractionDigits:1})}٪ وارد شده‌اند`;for(const group of ['male','female','unspecified']){const row=statsRoot.querySelector(`[data-gender="${group}"]`),groupStats=stats.gender?.[group]||{},total=statCount(groupStats.total),entered=statCount(groupStats.entered),fill=row?.querySelector('.gender-row-track span'),labelValue=row?.querySelector('.gender-row-value');if(!row)continue;row.hidden=group==='unspecified'&&total===0;if(fill)fill.style.width=`${total>0?Math.min(100,(entered/total)*100):0}%`;if(labelValue)labelValue.textContent=`${faCount(entered)} از ${faCount(total)}`}};
+  const renderStats=(value)=>{if(!statsRoot)return;const stats=value&&typeof value==='object'?value:{};const active=stats.active===true;statsRoot.classList.toggle('is-inactive',!active);if(!active)return;for(const key of ['total','invited_total','walk_in_total','walk_in_entered','entered','waiting','inside','quit']){statsRoot.querySelectorAll(`[data-stat="${key}"]`).forEach(target=>{target.textContent=faCount(stats[key])})}const percent=Math.max(0,Math.min(100,Number(stats.entry_percent)||0)),progress=statsRoot.querySelector('[data-stat-progress]'),progressBox=progress?.parentElement,percentLabel=statsRoot.querySelector('[data-stat="entry_percent"]');if(progress)progress.style.width=`${percent}%`;if(progressBox)progressBox.setAttribute('aria-valuenow',String(percent));if(percentLabel)percentLabel.textContent=`${percent.toLocaleString('fa-IR',{maximumFractionDigits:1})}٪ وارد شده‌اند`;for(const group of ['male','female','unspecified']){const row=statsRoot.querySelector(`[data-gender="${group}"]`),groupStats=stats.gender?.[group]||{},total=statCount(groupStats.total),entered=statCount(groupStats.entered),fill=row?.querySelector('.gender-row-track span'),labelValue=row?.querySelector('.gender-row-value');if(!row)continue;row.hidden=group==='unspecified'&&total===0;if(fill)fill.style.width=`${total>0?Math.min(100,(entered/total)*100):0}%`;if(labelValue)labelValue.textContent=`${faCount(entered)} از ${faCount(total)}`}};
   const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='force_entry_success'?'ورود اجباری':s==='force_quit_success'?'خروج اجباری':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='quit_without_entry'?'ورود ثبت نشده':s==='minimum_stay'?'حداقل مدت حضور کامل نشده':s==='entry_closed_quit_wave'?'ورود به‌دلیل موج خروج بسته است':s==='invalid_attendance_record'?'سابقه حضور ناسازگار':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
   const cls=(s)=>(s==='success'||s==='quit_success'||s==='force_entry_success'||s==='force_quit_success'||s==='walk_in_registered')?'success':(s==='duplicate'||s==='quit_duplicate')?'duplicate':'error';
   const SCAN_TOAST_DURATION_MS=4000;
@@ -1596,12 +1645,12 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const syncOutsideOrganization=()=>{const outside=walkInControl('outside_organization');const checked=outside instanceof HTMLInputElement&&outside.checked;walkInForm?.querySelectorAll('[data-organization-field]').forEach(select=>{select.disabled=checked;select.required=!checked;if(checked)select.value=''});const workId=walkInControl('work_id');if(workId instanceof HTMLInputElement)workId.required=!checked};
   const closeWalkIn=()=>{if(!walkInDialog)return;if(typeof walkInDialog.close==='function'&&walkInDialog.open)walkInDialog.close();else walkInDialog.removeAttribute('open')};
   const openWalkIn=async(row)=>{if(!walkInDialog||!walkInForm||!row)return;walkInForm.reset();if(walkInStatus){walkInStatus.className='walk-in-status';walkInStatus.textContent='در حال دریافت گزینه‌های سازمانی...'}const values={first_name:String(row.first_name||''),last_name:String(row.last_name||''),national_id:String(row.national_id||''),work_id:String(row.work_id||''),phone_number:String(row.phone_number||'')};for(const [name,value] of Object.entries(values)){const control=walkInControl(name);if(control instanceof HTMLInputElement)control.value=value}const outside=walkInControl('outside_organization');if(outside instanceof HTMLInputElement)outside.checked=Boolean(row.outside_organization);syncOutsideOrganization();if(typeof walkInDialog.showModal==='function')walkInDialog.showModal();else walkInDialog.setAttribute('open','');try{const options=await loadWalkInOptions();fillWalkInSelect('deputy',options.deputy,row.deputy||'');fillWalkInSelect('general_department',options.general_department,row.general_department||'');fillWalkInSelect('department',options.department,row.department||'');fillWalkInSelect('gender',options.gender?.length?options.gender:['مرد','زن'],row.gender||'');fillWalkInSelect('postal_level',options.postal_level,row.postal_level||'');syncOutsideOrganization();if(walkInStatus)walkInStatus.textContent='اطلاعات را تکمیل و ثبت کنید.'}catch(error){if(walkInStatus){walkInStatus.className='walk-in-status error';walkInStatus.textContent=error instanceof Error?error.message:'دریافت گزینه‌ها ناموفق بود.'}}};
-  let logs=[],initialStats={},lastLogsVersion=String(app.dataset.logsVersion||''); try{logs=JSON.parse(app.dataset.initialLogs||'[]')}catch{} try{initialStats=JSON.parse(app.dataset.initialStats||'{}')}catch{} render(logs);renderStats(initialStats);
+  let logs=[],initialStats={},lastLogsVersion=String(app.dataset.logsVersion||''),lastStatsVersion=String(app.dataset.statsVersion||''); try{logs=JSON.parse(app.dataset.initialLogs||'[]')}catch{} try{initialStats=JSON.parse(app.dataset.initialStats||'{}')}catch{} render(logs);renderStats(initialStats);
   let searchTimer=0,searchRequest=0,logRefreshInFlight=false;
-  const searchLogs=async({silent=false}={})=>{if(logRefreshInFlight&&silent)return;const requestId=++searchRequest;const query=String(logSearch?.value||'').trim();if(!silent&&logSearchMeta)logSearchMeta.textContent='در حال جستجو...';logRefreshInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','search_logs');if(query)url.searchParams.set('q',query);else url.searchParams.delete('q');if(silent)url.searchParams.set('include_stats','1');else url.searchParams.delete('include_stats');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'جستجوی گزارش‌ها ناموفق بود.');if(requestId!==searchRequest)return;lastLogsVersion=String(data.logs_version||lastLogsVersion);logs=Array.isArray(data.logs)?data.logs:[];render(logs);if(data.stats)renderStats(data.stats)}catch(error){if(requestId!==searchRequest||silent)return;if(logSearchMeta)logSearchMeta.textContent=error instanceof Error?error.message:'جستجو ناموفق بود.'}finally{logRefreshInFlight=false}};
+  const searchLogs=async({silent=false}={})=>{if(logRefreshInFlight&&silent)return;const requestId=++searchRequest;const query=String(logSearch?.value||'').trim();if(!silent&&logSearchMeta)logSearchMeta.textContent='در حال جستجو...';logRefreshInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','search_logs');if(query)url.searchParams.set('q',query);else url.searchParams.delete('q');if(silent)url.searchParams.set('include_stats','1');else url.searchParams.delete('include_stats');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'جستجوی گزارش‌ها ناموفق بود.');if(requestId!==searchRequest)return;lastLogsVersion=String(data.logs_version||lastLogsVersion);logs=Array.isArray(data.logs)?data.logs:[];render(logs);if(data.stats){lastStatsVersion=String(data.stats_version||lastStatsVersion);renderStats(data.stats)}}catch(error){if(requestId!==searchRequest||silent)return;if(logSearchMeta)logSearchMeta.textContent=error instanceof Error?error.message:'جستجو ناموفق بود.'}finally{logRefreshInFlight=false}};
   logSearch?.addEventListener('input',()=>{window.clearTimeout(searchTimer);searchTimer=window.setTimeout(()=>void searchLogs(),280)});
-   const acceptUpdatedLogs=(items,version='',stats=null)=>{searchRequest+=1;if(version)lastLogsVersion=String(version);if(stats)renderStats(stats);if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
-  const forceAttendanceFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement)||isSubmitting||scanProcessing)return;const attendanceAction=String(button.dataset.forceAction||row.force_action||''),guestCode=normalize(row.national_id||row.work_id||'');if(!['entry','quit'].includes(attendanceAction)||guestCode.length<4)return;const title=attendanceAction==='entry'?'Force Enter':'Force Quit';if(!window.confirm(`${title} برای این مهمان ثبت شود؟ این عملیات حضور را Fake Presence علامت می‌زند.`))return;isSubmitting=true;button.disabled=true;input.focus();result.className='result loading';result.textContent='در حال ثبت عملیات اجباری...';try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'force_attendance',attendance_action:attendanceAction,guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت عملیات اجباری ناموفق بود.');result.className='result success';result.textContent=data.message||'عملیات اجباری ثبت شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'ثبت عملیات اجباری ناموفق بود.';button.disabled=false}finally{isSubmitting=false;input.focus();void processScanQueue()}};
+   const acceptUpdatedLogs=(items,version='',stats=null,statsVersion='')=>{searchRequest+=1;if(version)lastLogsVersion=String(version);if(stats){if(statsVersion)lastStatsVersion=String(statsVersion);renderStats(stats)}if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
+  const forceAttendanceFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement)||isSubmitting||scanProcessing)return;const attendanceAction=String(button.dataset.forceAction||row.force_action||''),guestCode=normalize(row.national_id||row.work_id||'');if(!['entry','quit'].includes(attendanceAction)||guestCode.length<4)return;const title=attendanceAction==='entry'?'Force Enter':'Force Quit';if(!window.confirm(`${title} برای این مهمان ثبت شود؟ این عملیات حضور را Fake Presence علامت می‌زند.`))return;isSubmitting=true;button.disabled=true;input.focus();result.className='result loading';result.textContent='در حال ثبت عملیات اجباری...';try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'force_attendance',attendance_action:attendanceAction,guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت عملیات اجباری ناموفق بود.');result.className='result success';result.textContent=data.message||'عملیات اجباری ثبت شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'ثبت عملیات اجباری ناموفق بود.';button.disabled=false}finally{isSubmitting=false;input.focus();void processScanQueue()}};
   tbody.addEventListener('click',event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const forceTrigger=target.closest('[data-force-log]');if(forceTrigger){const index=Number(forceTrigger.dataset.forceLog);if(Number.isInteger(index)&&logs[index])void forceAttendanceFromLog(index,forceTrigger);return}const walkInTrigger=target.closest('[data-register-uninvited]');if(walkInTrigger){const index=Number(walkInTrigger.dataset.registerUninvited);if(Number.isInteger(index)&&logs[index])void openWalkIn(logs[index]);return}const trigger=target.closest('[data-guest-detail]');if(!trigger)return;const index=Number(trigger.dataset.guestDetail);if(Number.isInteger(index)&&logs[index])openDetail(logs[index])});
   app.querySelector('[data-dialog-close]')?.addEventListener('click',()=>dialog?.close());
   dialog?.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
@@ -1610,12 +1659,12 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   walkInDialog?.addEventListener('click',event=>{if(event.target===walkInDialog)closeWalkIn()});
   walkInControl('outside_organization')?.addEventListener('change',syncOutsideOrganization);
   walkInControl('national_id')?.addEventListener('input',event=>{event.target.value=normalize(event.target.value)});
-  walkInForm?.addEventListener('submit',async event=>{event.preventDefault();const submitButton=app.querySelector('[data-walk-in-submit]');if(submitButton instanceof HTMLButtonElement)submitButton.disabled=true;if(walkInStatus){walkInStatus.className='walk-in-status';walkInStatus.textContent='در حال ثبت مهمان ناخوانده...'}try{const formData=new FormData(walkInForm);const payload=Object.fromEntries(formData.entries());payload.action='register_uninvited';payload.csrf=app.dataset.csrf||'';payload.outside_organization=Boolean(walkInControl('outside_organization')?.checked);const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت مهمان ناخوانده ناموفق بود.');if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats);result.className='result success';result.textContent=data.message||'مهمان ناخوانده ثبت شد.';if(walkInStatus){walkInStatus.className='walk-in-status success';walkInStatus.textContent=data.message||'ثبت شد.'}window.setTimeout(closeWalkIn,500)}catch(error){if(walkInStatus){walkInStatus.className='walk-in-status error';walkInStatus.textContent=error instanceof Error?error.message:'ثبت مهمان ناخوانده ناموفق بود.'}}finally{if(submitButton instanceof HTMLButtonElement)submitButton.disabled=false}});
+  walkInForm?.addEventListener('submit',async event=>{event.preventDefault();const submitButton=app.querySelector('[data-walk-in-submit]');if(submitButton instanceof HTMLButtonElement)submitButton.disabled=true;if(walkInStatus){walkInStatus.className='walk-in-status';walkInStatus.textContent='در حال ثبت مهمان ناخوانده...'}try{const formData=new FormData(walkInForm);const payload=Object.fromEntries(formData.entries());payload.action='register_uninvited';payload.csrf=app.dataset.csrf||'';payload.outside_organization=Boolean(walkInControl('outside_organization')?.checked);const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت مهمان ناخوانده ناموفق بود.');if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);result.className='result success';result.textContent=data.message||'مهمان ناخوانده ثبت شد.';if(walkInStatus){walkInStatus.className='walk-in-status success';walkInStatus.textContent=data.message||'ثبت شد.'}window.setTimeout(closeWalkIn,500)}catch(error){if(walkInStatus){walkInStatus.className='walk-in-status error';walkInStatus.textContent=error instanceof Error?error.message:'ثبت مهمان ناخوانده ناموفق بود.'}}finally{if(submitButton instanceof HTMLButtonElement)submitButton.disabled=false}});
   let isSubmitting=false,scanProcessing=false,scannerCompletionTimer=0,lastNumericKeyAt=0,consecutiveFastGaps=0,scannerDetected=false;
   const scanQueue=[];
   const resetScannerState=()=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=0;lastNumericKeyAt=0;consecutiveFastGaps=0;scannerDetected=false};
   const queueStatus=()=>scanQueue.length>0?` (${scanQueue.length.toLocaleString('fa-IR')} اسکن در صف)`:'';
-  const processScanQueue=async()=>{if(scanProcessing||isSubmitting||scanQueue.length===0)return;scanProcessing=true;try{while(scanQueue.length>0){const guestCode=scanQueue.shift();result.className='result loading';result.textContent=`در حال بررسی شناسه ${guestCode}${queueStatus()}...`;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=`${data.message||'بررسی انجام شد.'}${queueStatus()}`;if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats);showScanFeedback(data,guestCode)}catch(error){const failureMessage=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.';result.className='result error';result.textContent=`${failureMessage}${queueStatus()}`;showScanFeedback({result:'request_error',message:failureMessage},guestCode,'error')}}}finally{scanProcessing=false;input.focus();if(scanQueue.length>0)void processScanQueue()}};
+  const processScanQueue=async()=>{if(scanProcessing||isSubmitting||scanQueue.length===0)return;scanProcessing=true;try{while(scanQueue.length>0){const guestCode=scanQueue.shift();result.className='result loading';result.textContent=`در حال بررسی شناسه ${guestCode}${queueStatus()}...`;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=`${data.message||'بررسی انجام شد.'}${queueStatus()}`;if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);showScanFeedback(data,guestCode)}catch(error){const failureMessage=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.';result.className='result error';result.textContent=`${failureMessage}${queueStatus()}`;showScanFeedback({result:'request_error',message:failureMessage},guestCode,'error')}}}finally{scanProcessing=false;input.focus();if(scanQueue.length>0)void processScanQueue()}};
   const enqueueScan=(rawCode)=>{const guestCode=normalize(rawCode);if(guestCode.length<4||guestCode.length>10)return;unlockScanAudio();scanQueue.push(guestCode);input.value='';resetScannerState();input.focus();if(scanProcessing||isSubmitting){result.className='result loading';result.textContent=`اسکن دریافت شد${queueStatus()}. در صف پردازش است.`}void processScanQueue()};
   const scheduleScannerSubmission=(value)=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=window.setTimeout(()=>{scannerCompletionTimer=0;const completedCode=normalize(input.value);if(scannerDetected&&completedCode===value&&completedCode.length>=4&&completedCode.length<=9)enqueueScan(completedCode)},SCANNER_COMPLETION_DELAY_MS)};
   input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10){enqueueScan(value);return}if(scannerDetected&&value.length>=4&&value.length<=9)scheduleScannerSubmission(value)});
@@ -1629,7 +1678,8 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   document.addEventListener('keydown',event=>{if(event.target===input||input.disabled||event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.metaKey||event.altKey||dialog?.open||walkInDialog?.open)return;const digit=keyDigit(event.key);if(digit===''){if(event.key!=='Enter')resetPageScannerCandidate();return}unlockScanAudio();const now=performance.now(),gap=pageScannerLastKeyAt>0?now-pageScannerLastKeyAt:Number.POSITIVE_INFINITY;if(gap>SCANNER_MAX_KEY_GAP_MS){resetPageScannerCandidate();pageScannerBuffer=digit;pageScannerSourceSnapshot=captureScannerSource(event.target);pageScannerFastGaps=0}else{pageScannerBuffer=(pageScannerBuffer+digit).slice(0,10);pageScannerFastGaps+=1}pageScannerLastKeyAt=now;armPageScannerReset();if(pageScannerFastGaps<SCANNER_MIN_FAST_GAPS)return;event.preventDefault();event.stopPropagation();const capturedCode=pageScannerBuffer;restoreScannerSource();resetPageScannerCandidate();input.focus();input.value=capturedCode;showCapturedFocus();scannerDetected=true;lastNumericKeyAt=now;consecutiveFastGaps=SCANNER_MIN_FAST_GAPS;if(capturedCode.length===10)enqueueScan(capturedCode);else scheduleScannerSubmission(capturedCode)},true);
   const LOG_SYNC_INTERVAL_MS=2500;
   let logVersionCheckInFlight=false;
-  const syncVisibleLogs=async()=>{if(document.visibilityState!=='visible'||logRefreshInFlight||logVersionCheckInFlight)return;logVersionCheckInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','logs_version');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')return;const version=String(data.logs_version||'');if(version&&version!==lastLogsVersion)await searchLogs({silent:true})}finally{logVersionCheckInFlight=false}};
+  const syncStats=async()=>{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','stats');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')return;lastStatsVersion=String(data.stats_version||lastStatsVersion);renderStats(data.stats)};
+  const syncVisibleLogs=async()=>{if(document.visibilityState!=='visible'||logRefreshInFlight||logVersionCheckInFlight)return;logVersionCheckInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','logs_version');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')return;const version=String(data.logs_version||''),statsVersion=String(data.stats_version||'');if(version&&version!==lastLogsVersion){await searchLogs({silent:true});return}if(statsVersion&&statsVersion!==lastStatsVersion)await syncStats()}finally{logVersionCheckInFlight=false}};
   const logSyncTimer=window.setInterval(()=>void syncVisibleLogs(),LOG_SYNC_INTERVAL_MS);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void syncVisibleLogs()});
   window.addEventListener('pagehide',()=>window.clearInterval(logSyncTimer),{once:true});
@@ -1670,7 +1720,18 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
                 egmCheckInJson(['status' => 'ok', 'options' => egmCheckInUninvitedOptions($context)]);
             }
             if ($getAction === 'logs_version') {
-                egmCheckInJson(['status' => 'ok', 'logs_version' => egmCheckInLogsVersion($context)]);
+                egmCheckInJson([
+                    'status' => 'ok',
+                    'logs_version' => egmCheckInLogsVersion($context),
+                    'stats_version' => egmCheckInStatsVersion($context),
+                ]);
+            }
+            if ($getAction === 'stats') {
+                egmCheckInJson([
+                    'status' => 'ok',
+                    'stats_version' => egmCheckInStatsVersion($context),
+                    'stats' => egmCheckInDashboardStats($context),
+                ]);
             }
             if ($getAction === 'search_logs') {
                 $logsVersion = egmCheckInLogsVersion($context);
@@ -1678,6 +1739,7 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
                     'status' => 'ok',
                     'logs_version' => $logsVersion,
                     'logs' => egmCheckInRecentLogs($context, 200, (string)($_GET['q'] ?? '')),
+                    'stats_version' => egmCheckInStatsVersion($context),
                     'stats' => egmCheckInBool($_GET['include_stats'] ?? false)
                         ? egmCheckInDashboardStats($context)
                         : null,
@@ -1707,6 +1769,7 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
                 egmCheckInJson(['status' => 'ok'] + $reset + [
                     'logs_version' => $logsVersion,
                     'logs' => egmCheckInRecentLogs($context),
+                    'stats_version' => egmCheckInStatsVersion($context),
                     'stats' => egmCheckInDashboardStats($context),
                 ]);
             }
@@ -1730,6 +1793,7 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
             egmCheckInJson(['status' => 'ok'] + $result + [
                 'logs_version' => $logsVersion,
                 'logs' => egmCheckInRecentLogs($context),
+                'stats_version' => egmCheckInStatsVersion($context),
                 'stats' => egmCheckInDashboardStats($context),
             ]);
         }

@@ -692,12 +692,265 @@ function egmPeriodInvitesListInvitedRows(array $context, string $periodCode): ar
     $statement = $context['pdo']->prepare(<<<SQL
 SELECT p.`id` AS `invite_id`, p.`status`, p.`invitation_source`, p.`invited_by`, p.`invited_at`,
 p.`correct_presence`,p.`fake_presence`,p.`entered_date`,p.`entered_time`,p.`quit_date`,p.`quit_time`,
-u.`work_id`,u.`first_name`,u.`last_name`,u.`national_id`,u.`phone_number`,u.`deputy`,u.`general_department`,u.`department`,u.`gender`,u.`postal_level`,u.`guest_number`,u.`source_row`
+p.`attendance_state`,p.`last_control_condition`,p.`last_control_action`,p.`last_control_message`,p.`last_control_at`,
+p.`is_uninvited_guest` AS `period_is_uninvited_guest`,
+u.`id` AS `user_id`,u.`work_id`,u.`first_name`,u.`last_name`,u.`national_id`,u.`phone_number`,u.`deputy`,u.`general_department`,u.`department`,u.`gender`,u.`postal_level`,u.`guest_number`,u.`source_row`,
+u.`source_type`,u.`source_user_id`,u.`is_active`,u.`is_uninvited_guest`,u.`outside_organization`
 FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id`
 WHERE p.`period_code`=:period_code ORDER BY p.`invited_at` DESC,p.`id` DESC
 SQL);
     $statement->execute([':period_code' => $periodCode]);
     return $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+function egmPeriodInvitesInputBool($value): bool
+{
+    if (is_bool($value)) return $value;
+    if (is_int($value) || is_float($value)) return (int)$value === 1;
+    return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
+}
+
+function egmPeriodInvitesOptionalDate($value, string $label): ?string
+{
+    $date = trim((string)$value);
+    if ($date === '') return null;
+    $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+    if (!$parsed instanceof DateTimeImmutable || $parsed->format('Y-m-d') !== $date) {
+        throw new InvalidArgumentException("{$label} معتبر نیست.");
+    }
+    return $date;
+}
+
+function egmPeriodInvitesOptionalTime($value, string $label): ?string
+{
+    $time = trim((string)$value);
+    if ($time === '') return null;
+    if (preg_match('/^([0-9]{2}):([0-9]{2})(?::([0-9]{2}))?$/D', $time, $matches) !== 1) {
+        throw new InvalidArgumentException("{$label} معتبر نیست.");
+    }
+    $hour = (int)$matches[1];
+    $minute = (int)$matches[2];
+    $second = isset($matches[3]) ? (int)$matches[3] : 0;
+    if ($hour > 23 || $minute > 59 || $second > 59) {
+        throw new InvalidArgumentException("{$label} معتبر نیست.");
+    }
+    return sprintf('%02d:%02d:%02d', $hour, $minute, $second);
+}
+
+/** @return array<string,mixed> */
+function egmPeriodInvitesUpdateInvitedRow(
+    array $context,
+    string $periodCode,
+    string $inviteId,
+    array $input,
+    string $actor
+): array {
+    if ($context['code'] === '') {
+        throw new InvalidArgumentException('ویرایش دعوت‌شونده فقط برای EGM متصل به پایگاه داده در دسترس است.');
+    }
+    $inviteIdNumber = (int)$inviteId;
+    if ($inviteIdNumber < 1) {
+        throw new InvalidArgumentException('دعوت‌شونده انتخاب‌شده معتبر نیست.');
+    }
+
+    $pdo = $context['pdo'];
+    $usersTable = (string)$context['tables']['users'];
+    $periodsTable = (string)$context['tables']['user_periods'];
+    $profile = [
+        'work_id' => tctPeriodInviteClean($input['work_id'] ?? '', 128),
+        'first_name' => tctPeriodInviteClean($input['first_name'] ?? '', 191),
+        'last_name' => tctPeriodInviteClean($input['last_name'] ?? '', 191),
+        'phone_number' => tctPeriodInviteClean($input['phone_number'] ?? '', 32),
+        'deputy' => tctPeriodInviteClean($input['deputy'] ?? '', 191),
+        'general_department' => tctPeriodInviteClean($input['general_department'] ?? '', 191),
+        'department' => tctPeriodInviteClean($input['department'] ?? '', 191),
+        'gender' => tctPeriodInviteClean($input['gender'] ?? '', 32),
+        'postal_level' => tctPeriodInviteClean($input['postal_level'] ?? '', 64),
+        'guest_number' => tctPeriodInviteClean($input['guest_number'] ?? '', 32),
+    ];
+    $nationalInput = orgUsersNormalizeNationalId($input['national_id'] ?? '');
+    if ($nationalInput !== '' && preg_match('/^[0-9]{10}$/D', $nationalInput) !== 1) {
+        throw new InvalidArgumentException('کد ملی باید دقیقاً ۱۰ رقم باشد یا خالی بماند.');
+    }
+    $profile['national_id'] = $nationalInput !== '' ? $nationalInput : null;
+
+    $attendanceState = strtolower(trim((string)($input['attendance_state'] ?? 'not_entered')));
+    if (!in_array($attendanceState, ['not_entered', 'entered', 'quit_completed'], true)) {
+        throw new InvalidArgumentException('وضعیت حضور انتخاب‌شده معتبر نیست.');
+    }
+    $enteredDate = egmPeriodInvitesOptionalDate($input['entered_date'] ?? '', 'تاریخ ورود');
+    $enteredTime = egmPeriodInvitesOptionalTime($input['entered_time'] ?? '', 'ساعت ورود');
+    $quitDate = egmPeriodInvitesOptionalDate($input['quit_date'] ?? '', 'تاریخ خروج');
+    $quitTime = egmPeriodInvitesOptionalTime($input['quit_time'] ?? '', 'ساعت خروج');
+    if ($attendanceState === 'not_entered') {
+        $enteredDate = $enteredTime = $quitDate = $quitTime = null;
+    } elseif ($enteredDate === null || $enteredTime === null) {
+        throw new InvalidArgumentException('برای حضور ثبت‌شده، تاریخ و ساعت ورود الزامی است.');
+    } elseif ($attendanceState === 'entered') {
+        $quitDate = $quitTime = null;
+    } elseif ($quitDate === null || $quitTime === null) {
+        throw new InvalidArgumentException('برای خروج ثبت‌شده، تاریخ و ساعت خروج الزامی است.');
+    } elseif (($quitDate . ' ' . $quitTime) < ($enteredDate . ' ' . $enteredTime)) {
+        throw new InvalidArgumentException('زمان خروج نمی‌تواند قبل از زمان ورود باشد.');
+    }
+
+    $presence = strtolower(trim((string)($input['presence_classification'] ?? 'none')));
+    if (!in_array($presence, ['none', 'correct_presence', 'fake_presence'], true)) {
+        throw new InvalidArgumentException('نوع حضور انتخاب‌شده معتبر نیست.');
+    }
+    if ($attendanceState === 'not_entered') $presence = 'none';
+    $correctPresence = $presence === 'correct_presence' ? 1 : 0;
+    $fakePresence = $presence === 'fake_presence' ? 1 : 0;
+    $isActive = egmPeriodInvitesInputBool($input['is_active'] ?? false) ? 1 : 0;
+    $isUninvited = egmPeriodInvitesInputBool($input['is_uninvited_guest'] ?? false) ? 1 : 0;
+    $outsideOrganization = egmPeriodInvitesInputBool($input['outside_organization'] ?? false) ? 1 : 0;
+    $actor = tctPeriodInviteClean($actor, 191) ?: 'admin';
+
+    $pdo->beginTransaction();
+    try {
+        $find = $pdo->prepare(
+            "SELECT p.`id` AS `invite_id`,p.`user_id`,p.`period_code`,p.`entered_date`,p.`entered_time`,p.`quit_date`,p.`quit_time`,"
+            . "p.`attendance_state`,p.`correct_presence`,p.`fake_presence`,p.`is_uninvited_guest` AS `period_is_uninvited_guest`,"
+            . "u.`work_id`,u.`first_name`,u.`last_name`,u.`national_id`,u.`phone_number`,u.`deputy`,u.`general_department`,u.`department`,"
+            . "u.`gender`,u.`postal_level`,u.`guest_number`,u.`source_type`,u.`source_user_id`,u.`is_active`,u.`is_uninvited_guest`,u.`outside_organization` "
+            . "FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` "
+            . "WHERE p.`id`=:invite_id AND p.`period_code`=:period_code LIMIT 1 FOR UPDATE"
+        );
+        $find->execute([':invite_id' => $inviteIdNumber, ':period_code' => $periodCode]);
+        $before = $find->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($before)) {
+            throw new InvalidArgumentException('این دعوت در بازه انتخاب‌شده پیدا نشد.');
+        }
+        $userId = (int)$before['user_id'];
+
+        if ($profile['national_id'] !== null) {
+            $duplicateNational = $pdo->prepare(
+                "SELECT `id` FROM `{$usersTable}` WHERE `national_id`=:national_id AND `id`<>:user_id LIMIT 1 FOR UPDATE"
+            );
+            $duplicateNational->execute([':national_id' => $profile['national_id'], ':user_id' => $userId]);
+            if ((int)$duplicateNational->fetchColumn() > 0) {
+                throw new InvalidArgumentException('این کد ملی قبلاً برای مهمان دیگری در همین EGM ثبت شده است.');
+            }
+        }
+        if ($profile['guest_number'] !== '') {
+            $duplicateGuest = $pdo->prepare(
+                "SELECT `id` FROM `{$usersTable}` WHERE `guest_number`=:guest_number AND `id`<>:user_id LIMIT 1 FOR UPDATE"
+            );
+            $duplicateGuest->execute([':guest_number' => $profile['guest_number'], ':user_id' => $userId]);
+            if ((int)$duplicateGuest->fetchColumn() > 0) {
+                throw new InvalidArgumentException('این شماره مهمان قبلاً برای شخص دیگری ثبت شده است.');
+            }
+        }
+
+        $oeuUpdated = false;
+        $sourceType = strtolower(trim((string)($before['source_type'] ?? '')));
+        $sourceUserId = (int)($before['source_user_id'] ?? 0);
+        if ($sourceType === 'oeu' && $sourceUserId > 0) {
+            $findOeu = $pdo->prepare(
+                'SELECT `id` FROM `' . ORG_USERS_ACTIVE_TABLE . '` WHERE `id`=:id LIMIT 1 FOR UPDATE'
+            );
+            $findOeu->execute([':id' => $sourceUserId]);
+            if ((int)$findOeu->fetchColumn() > 0) {
+                if ($profile['national_id'] !== null) {
+                    $duplicateOeuNational = $pdo->prepare(
+                        'SELECT `id` FROM `' . ORG_USERS_ACTIVE_TABLE . '` WHERE `national_id`=:national_id AND `id`<>:id LIMIT 1 FOR UPDATE'
+                    );
+                    $duplicateOeuNational->execute([':national_id' => $profile['national_id'], ':id' => $sourceUserId]);
+                    if ((int)$duplicateOeuNational->fetchColumn() > 0) {
+                        throw new InvalidArgumentException('این کد ملی قبلاً برای کاربر دیگری در OEU ثبت شده است.');
+                    }
+                }
+                $updateOeu = $pdo->prepare(
+                    'UPDATE `' . ORG_USERS_ACTIVE_TABLE . '` SET `work_id`=:work_id,`first_name`=:first_name,`last_name`=:last_name,'
+                    . '`national_id`=:national_id,`phone_number`=:phone_number,`deputy`=:deputy,`general_department`=:general_department,'
+                    . '`department`=:department,`gender`=:gender,`postal_level`=:postal_level WHERE `id`=:id'
+                );
+                $updateOeu->execute([
+                    ':work_id' => $profile['work_id'], ':first_name' => $profile['first_name'], ':last_name' => $profile['last_name'],
+                    ':national_id' => $profile['national_id'] ?? '', ':phone_number' => $profile['phone_number'], ':deputy' => $profile['deputy'],
+                    ':general_department' => $profile['general_department'], ':department' => $profile['department'],
+                    ':gender' => $profile['gender'], ':postal_level' => $profile['postal_level'], ':id' => $sourceUserId,
+                ]);
+                $oeuUpdated = true;
+            }
+        }
+
+        $updateUser = $pdo->prepare(
+            "UPDATE `{$usersTable}` SET `work_id`=:work_id,`first_name`=:first_name,`last_name`=:last_name,"
+            . "`national_id`=:national_id,`phone_number`=:phone_number,`deputy`=:deputy,`general_department`=:general_department,"
+            . "`department`=:department,`gender`=:gender,`postal_level`=:postal_level,`guest_number`=:guest_number,"
+            . "`is_active`=:is_active,`is_uninvited_guest`=:is_uninvited_guest,`outside_organization`=:outside_organization WHERE `id`=:user_id"
+        );
+        $updateUser->execute([
+            ':work_id' => $profile['work_id'], ':first_name' => $profile['first_name'], ':last_name' => $profile['last_name'],
+            ':national_id' => $profile['national_id'], ':phone_number' => $profile['phone_number'], ':deputy' => $profile['deputy'],
+            ':general_department' => $profile['general_department'], ':department' => $profile['department'], ':gender' => $profile['gender'],
+            ':postal_level' => $profile['postal_level'], ':guest_number' => $profile['guest_number'] !== '' ? $profile['guest_number'] : null,
+            ':is_active' => $isActive, ':is_uninvited_guest' => $isUninvited, ':outside_organization' => $outsideOrganization,
+            ':user_id' => $userId,
+        ]);
+
+        $message = $attendanceState === 'not_entered'
+            ? 'سوابق حضور این مهمان به‌صورت دستی پاک شد.'
+            : 'مشخصات و سوابق حضور این مهمان به‌صورت دستی ویرایش شد.';
+        $updatePeriod = $pdo->prepare(
+            "UPDATE `{$periodsTable}` SET `entered_date`=:entered_date,`entered_time`=:entered_time,"
+            . "`quit_date`=:quit_date,`quit_time`=:quit_time,`attendance_state`=:attendance_state,"
+            . "`correct_presence`=:correct_presence,`fake_presence`=:fake_presence,`is_uninvited_guest`=:is_uninvited_guest,"
+            . "`last_control_condition`='manual_edit',`last_control_action`='manual',`last_control_message`=:message,`last_control_at`=NOW() "
+            . "WHERE `id`=:invite_id AND `period_code`=:period_code"
+        );
+        $updatePeriod->execute([
+            ':entered_date' => $enteredDate, ':entered_time' => $enteredTime, ':quit_date' => $quitDate, ':quit_time' => $quitTime,
+            ':attendance_state' => $attendanceState, ':correct_presence' => $correctPresence, ':fake_presence' => $fakePresence,
+            ':is_uninvited_guest' => $isUninvited, ':message' => $message,
+            ':invite_id' => $inviteIdNumber, ':period_code' => $periodCode,
+        ]);
+        $pdo->commit();
+
+        try {
+            $metadata = json_encode([
+                'period_code' => $periodCode,
+                'invite_id' => $inviteIdNumber,
+                'actor' => $actor,
+                'oeu_updated' => $oeuUpdated,
+                'previous_attendance_state' => (string)($before['attendance_state'] ?? ''),
+                'attendance_state' => $attendanceState,
+                'presence_classification' => $presence,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+            $logTable = (string)$context['tables']['activity_logs'];
+            $log = $context['logs_pdo']->prepare(
+                "INSERT INTO `{$logTable}` (`source_key`,`user_id`,`work_id`,`session_id`,`level`,`action`,`entity_type`,`entity_id`,`ip_address`,`user_agent`,`status`,`message`,`metadata_json`,`occurred_at`) "
+                . "VALUES (:source_key,:user_id,:work_id,:session_id,'info','egm.period_invitee_manual_edit','period_invite',:entity_id,:ip_address,:user_agent,'success',:message,:metadata_json,NOW())"
+            );
+            $log->execute([
+                ':source_key' => hash('sha256', implode('|', [$context['code'], $inviteIdNumber, microtime(true), bin2hex(random_bytes(8))])),
+                ':user_id' => $userId,
+                ':work_id' => $profile['work_id'] !== '' ? $profile['work_id'] : null,
+                ':session_id' => session_id() !== '' ? session_id() : null,
+                ':entity_id' => $periodCode . ':' . $inviteIdNumber,
+                ':ip_address' => tctPeriodInviteClean($_SERVER['REMOTE_ADDR'] ?? '', 45) ?: null,
+                ':user_agent' => tctPeriodInviteClean($_SERVER['HTTP_USER_AGENT'] ?? '', 512) ?: null,
+                ':message' => $message,
+                ':metadata_json' => is_string($metadata) ? $metadata : '{}',
+            ]);
+        } catch (Throwable $logError) {
+            error_log('EGM period invitee manual-edit audit log failed: ' . $logError->getMessage());
+        }
+
+        return [
+            'updated' => true,
+            'invite_id' => $inviteIdNumber,
+            'user_id' => $userId,
+            'attendance_state' => $attendanceState,
+            'presence_classification' => $presence,
+            'oeu_updated' => $oeuUpdated,
+            'message' => $message,
+        ];
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
 }
 
 function egmPeriodInvitesRemove(array $context, string $periodCode, string $inviteId): bool
@@ -894,6 +1147,17 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
             $pages = max(1, (int)ceil($total / $pageSize));
             $page = max(1, min($pages, (int)($input['page'] ?? 1)));
             egmPeriodInvitesJson(['status' => 'ok', 'rows' => array_slice($rows, ($page - 1) * $pageSize, $pageSize), 'total' => $total, 'page' => $page, 'pages' => $pages]);
+        }
+        if ($action === 'update_invitee' && $method === 'POST') {
+            $actor = tctPeriodInviteClean($sessionUser['code'] ?? ($sessionUser['username'] ?? ''), 191);
+            $result = egmPeriodInvitesUpdateInvitedRow(
+                $context,
+                $periodCode,
+                trim((string)($input['invite_id'] ?? '')),
+                $input,
+                $actor
+            );
+            egmPeriodInvitesJson(['status' => 'ok'] + $result);
         }
         if ($action === 'remove' && $method === 'POST') {
             $removed = egmPeriodInvitesRemove($context, $periodCode, trim((string)($input['invite_id'] ?? '')));
