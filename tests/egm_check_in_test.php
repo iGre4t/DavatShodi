@@ -193,6 +193,7 @@ try {
     egmCheckInAssert(($dashboardStats['total'] ?? 0) === 3, 'Dashboard total invitation count is incorrect');
     egmCheckInAssert(($dashboardStats['invited_total'] ?? 0) === 3, 'Dashboard invited-guest count is incorrect');
     egmCheckInAssert(($dashboardStats['walk_in_total'] ?? -1) === 0, 'Dashboard walk-in count is incorrect before registration');
+    egmCheckInAssert(($dashboardStats['overall_total'] ?? 0) === 3, 'Dashboard overall total is incorrect before walk-in registration');
     egmCheckInAssert(($dashboardStats['entered'] ?? 0) === 2, 'Dashboard entered count is incorrect');
     egmCheckInAssert(($dashboardStats['waiting'] ?? 0) === 1, 'Dashboard waiting count is incorrect');
     egmCheckInAssert(($dashboardStats['inside'] ?? 0) === 1, 'Dashboard currently-inside count is incorrect');
@@ -322,10 +323,13 @@ try {
     egmCheckInAssert(($walkInInvitation['attendance_state'] ?? '') === 'not_entered', 'Walk-in registration incorrectly marked entry');
     egmCheckInAssert(($walkInInvitation['last_control_condition'] ?? '') === 'walk_in_registered', 'Walk-in condition was not stored');
     $registeredWalkInStats = egmCheckInDashboardStats($context);
-    egmCheckInAssert(($registeredWalkInStats['total'] ?? 0) === 4, 'Registered walk-in was not added to the dashboard total');
+    egmCheckInAssert(($registeredWalkInStats['total'] ?? 0) === 3, 'Registered walk-in incorrectly increased the invited dashboard total');
     egmCheckInAssert(($registeredWalkInStats['invited_total'] ?? 0) === 3, 'Registered walk-in changed the ordinary invited count');
     egmCheckInAssert(($registeredWalkInStats['walk_in_total'] ?? 0) === 1, 'Registered walk-in was not shown in dashboard stats');
     egmCheckInAssert(($registeredWalkInStats['walk_in_entered'] ?? -1) === 0, 'Walk-in registration was incorrectly counted as entry');
+    egmCheckInAssert(($registeredWalkInStats['overall_total'] ?? 0) === 4, 'Dashboard overall total did not retain the walk-in count');
+    egmCheckInAssert(($registeredWalkInStats['entered'] ?? 0) === 2, 'Walk-in registration changed the invited entered count');
+    egmCheckInAssert(($registeredWalkInStats['waiting'] ?? 0) === 1, 'Walk-in registration changed the invited waiting count');
     egmCheckInAssert(egmCheckInStatsVersion($context) !== $statsVersionBeforeWalkIn, 'Roster stats version did not change after walk-in registration');
     $oeuWalkInAfter = (int)$pdo->query(
         "SELECT COUNT(*) FROM `organizational_event_users` WHERE `national_id` = '3234567890'"
@@ -334,8 +338,14 @@ try {
     $walkInEntry = egmCheckInProcess($context, '3234567890', new DateTimeImmutable('2026-08-18 10:26:00', $timezone));
     egmCheckInAssert(($walkInEntry['result'] ?? '') === 'success', 'Registered walk-in guest could not enter on the next scan');
     $enteredWalkInStats = egmCheckInDashboardStats($context);
+    egmCheckInAssert(($enteredWalkInStats['total'] ?? 0) === 3, 'Entered walk-in incorrectly increased the invited dashboard total');
+    egmCheckInAssert(($enteredWalkInStats['entered'] ?? 0) === 2, 'Entered walk-in incorrectly increased the invited entry count');
     egmCheckInAssert(($enteredWalkInStats['walk_in_total'] ?? 0) === 1, 'Walk-in total changed after entry');
     egmCheckInAssert(($enteredWalkInStats['walk_in_entered'] ?? 0) === 1, 'Entered walk-in was not shown in dashboard stats');
+    egmCheckInAssert(($enteredWalkInStats['walk_in_inside'] ?? 0) === 1, 'Entered walk-in was not shown as currently inside');
+    egmCheckInAssert(($enteredWalkInStats['walk_in_quit'] ?? -1) === 0, 'Entered walk-in was incorrectly shown as exited');
+    egmCheckInAssert(($enteredWalkInStats['overall_total'] ?? 0) === 4, 'Overall total changed after walk-in entry');
+    egmCheckInAssert(($enteredWalkInStats['overall_entered'] ?? 0) === 3, 'Overall entry count omitted the entered walk-in');
 
     $pdo->prepare(
         "INSERT INTO `{$tables['user_periods']}` (`user_id`, `period_code`, `invited_at`) "

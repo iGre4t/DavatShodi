@@ -1037,10 +1037,13 @@ function egmCheckInGenderGroup(string $gender): string
 }
 
 /**
- * Compact attendance totals for the active period. "Entered" includes guests
- * who later quit; "inside" includes only entered guests without a quit record.
+ * Compact attendance totals for the active period. The primary totals and
+ * gender groups describe invited guests only; walk-ins are reported in their
+ * own counters and never increase the invited roster denominator. "Entered"
+ * includes guests who later quit; "inside" includes only entered guests
+ * without a quit record.
  *
- * @return array{active:bool,period_code:string,total:int,invited_total:int,walk_in_total:int,walk_in_entered:int,entered:int,waiting:int,inside:int,quit:int,entry_percent:float,gender:array<string,array{total:int,entered:int,waiting:int,inside:int,quit:int}>}
+ * @return array{active:bool,period_code:string,total:int,invited_total:int,walk_in_total:int,walk_in_entered:int,walk_in_inside:int,walk_in_quit:int,overall_total:int,overall_entered:int,overall_inside:int,overall_quit:int,entered:int,waiting:int,inside:int,quit:int,entry_percent:float,gender:array<string,array{total:int,entered:int,waiting:int,inside:int,quit:int}>}
  */
 function egmCheckInDashboardStats(array $context): array
 {
@@ -1052,6 +1055,12 @@ function egmCheckInDashboardStats(array $context): array
         'invited_total' => 0,
         'walk_in_total' => 0,
         'walk_in_entered' => 0,
+        'walk_in_inside' => 0,
+        'walk_in_quit' => 0,
+        'overall_total' => 0,
+        'overall_entered' => 0,
+        'overall_inside' => 0,
+        'overall_quit' => 0,
         'entered' => 0,
         'waiting' => 0,
         'inside' => 0,
@@ -1077,7 +1086,9 @@ function egmCheckInDashboardStats(array $context): array
             . "SUM(CASE WHEN {$hasQuit} THEN 1 ELSE 0 END) AS `quit`, "
             . "SUM(CASE WHEN {$hasEntry} AND NOT ({$hasQuit}) THEN 1 ELSE 0 END) AS `inside`, "
             . "SUM(CASE WHEN {$isWalkIn} THEN 1 ELSE 0 END) AS `walk_in_total`, "
-            . "SUM(CASE WHEN {$isWalkIn} AND {$hasEntry} THEN 1 ELSE 0 END) AS `walk_in_entered` "
+            . "SUM(CASE WHEN {$isWalkIn} AND {$hasEntry} THEN 1 ELSE 0 END) AS `walk_in_entered`, "
+            . "SUM(CASE WHEN {$isWalkIn} AND {$hasEntry} AND NOT ({$hasQuit}) THEN 1 ELSE 0 END) AS `walk_in_inside`, "
+            . "SUM(CASE WHEN {$isWalkIn} AND {$hasQuit} THEN 1 ELSE 0 END) AS `walk_in_quit` "
             . "FROM `{$userPeriodsTable}` p JOIN `{$usersTable}` u ON u.`id` = p.`user_id` "
             . "WHERE p.`period_code` = :period_code GROUP BY COALESCE(NULLIF(TRIM(u.`gender`), ''), '')"
         );
@@ -1090,17 +1101,29 @@ function egmCheckInDashboardStats(array $context): array
             $inside = min($entered, max(0, (int)($row['inside'] ?? 0)));
             $walkInTotal = min($total, max(0, (int)($row['walk_in_total'] ?? 0)));
             $walkInEntered = min($walkInTotal, max(0, (int)($row['walk_in_entered'] ?? 0)));
-            $stats['gender'][$group]['total'] += $total;
-            $stats['gender'][$group]['entered'] += $entered;
-            $stats['gender'][$group]['waiting'] += max(0, $total - $entered);
-            $stats['gender'][$group]['inside'] += $inside;
-            $stats['gender'][$group]['quit'] += $quit;
-            $stats['total'] += $total;
-            $stats['entered'] += $entered;
-            $stats['inside'] += $inside;
-            $stats['quit'] += $quit;
+            $walkInInside = min($walkInEntered, max(0, (int)($row['walk_in_inside'] ?? 0)));
+            $walkInQuit = min($walkInTotal, max(0, (int)($row['walk_in_quit'] ?? 0)));
+            $invitedTotal = max(0, $total - $walkInTotal);
+            $invitedEntered = min($invitedTotal, max(0, $entered - $walkInEntered));
+            $invitedInside = min($invitedEntered, max(0, $inside - $walkInInside));
+            $invitedQuit = min($invitedTotal, max(0, $quit - $walkInQuit));
+            $stats['gender'][$group]['total'] += $invitedTotal;
+            $stats['gender'][$group]['entered'] += $invitedEntered;
+            $stats['gender'][$group]['waiting'] += max(0, $invitedTotal - $invitedEntered);
+            $stats['gender'][$group]['inside'] += $invitedInside;
+            $stats['gender'][$group]['quit'] += $invitedQuit;
+            $stats['total'] += $invitedTotal;
+            $stats['entered'] += $invitedEntered;
+            $stats['inside'] += $invitedInside;
+            $stats['quit'] += $invitedQuit;
             $stats['walk_in_total'] += $walkInTotal;
             $stats['walk_in_entered'] += $walkInEntered;
+            $stats['walk_in_inside'] += $walkInInside;
+            $stats['walk_in_quit'] += $walkInQuit;
+            $stats['overall_total'] += $total;
+            $stats['overall_entered'] += $entered;
+            $stats['overall_inside'] += $inside;
+            $stats['overall_quit'] += $quit;
         }
     } catch (Throwable $error) {
         error_log('EGM Guest Control statistics unavailable: ' . $error->getMessage());
@@ -1109,7 +1132,7 @@ function egmCheckInDashboardStats(array $context): array
     $stats['active'] = true;
     $stats['period_code'] = $periodCode;
     $stats['waiting'] = max(0, $stats['total'] - $stats['entered']);
-    $stats['invited_total'] = max(0, $stats['total'] - $stats['walk_in_total']);
+    $stats['invited_total'] = $stats['total'];
     $stats['entry_percent'] = $stats['total'] > 0
         ? round(($stats['entered'] / $stats['total']) * 100, 1)
         : 0.0;
@@ -1510,7 +1533,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .attendance-overview.is-inactive .attendance-stats-content{display:none}.guest-control-page .attendance-stats-empty{display:none;min-height:54px;align-items:center;justify-content:center;color:var(--muted,#6b7280);font-size:12px}.guest-control-page .attendance-overview.is-inactive .attendance-stats-empty{display:flex}
     .guest-control-page .entry-summary,.guest-control-page .stat-tile,.guest-control-page .gender-summary{min-width:0;border:1px solid #e5e9ef;border-radius:9px;background:rgba(255,255,255,.88)}
     .guest-control-page .entry-summary{padding:10px 12px}.guest-control-page .entry-summary-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.guest-control-page .entry-summary-label{color:#667085;font-size:11px;font-weight:700}.guest-control-page .entry-summary-value{display:flex;align-items:baseline;gap:5px;white-space:nowrap}.guest-control-page .entry-summary-value strong{color:#15243a;font-size:22px;line-height:1}.guest-control-page .entry-summary-value span{color:#667085;font-size:11px}.guest-control-page .entry-progress{height:5px;margin-top:10px;overflow:hidden;border-radius:999px;background:#e8edf3}.guest-control-page .entry-progress span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--primary,#e11d2e),#f06a76);transition:width .28s ease}.guest-control-page .entry-summary-foot{display:flex;justify-content:space-between;gap:8px;margin-top:5px;color:#667085;font-size:10px}.guest-control-page .entry-percent{text-align:left}.guest-control-page .audience-mix{white-space:nowrap}
-    .guest-control-page .stat-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 7px;text-align:center}.guest-control-page .stat-tile span{color:#667085;font-size:10px;font-weight:700}.guest-control-page .stat-tile strong{margin-top:3px;color:#243246;font-size:18px;line-height:1.2}.guest-control-page .stat-tile small{margin-top:2px;color:#667085;font-size:9px}.guest-control-page .stat-tile.inside strong{color:#087443}.guest-control-page .stat-tile.quit strong{color:#5b21b6}.guest-control-page .stat-tile.waiting strong{color:#8a5a00}.guest-control-page .stat-tile.walk-in strong{color:#b54708}
+    .guest-control-page .stat-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 7px;text-align:center}.guest-control-page .stat-tile span{color:#667085;font-size:10px;font-weight:700}.guest-control-page .stat-tile strong{margin-top:3px;color:#243246;font-size:18px;line-height:1.2}.guest-control-page .stat-tile small{margin-top:2px;color:#667085;font-size:9px}.guest-control-page .stat-tile.inside strong{color:#087443}.guest-control-page .stat-tile.quit strong{color:#5b21b6}.guest-control-page .stat-tile.waiting strong{color:#8a5a00}.guest-control-page .stat-tile.walk-in{background:#fffaf5}.guest-control-page .stat-tile.walk-in>strong{color:#b54708}.guest-control-page .walk-in-breakdown{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:0 5px;line-height:1.6}.guest-control-page .walk-in-breakdown b{color:#7a2e0e}
     .guest-control-page .gender-summary{display:grid;align-content:center;gap:6px;padding:9px 11px}.guest-control-page .gender-title{color:#667085;font-size:10px;font-weight:700}.guest-control-page .gender-row{display:flex;align-items:center;gap:8px;font-size:11px}.guest-control-page .gender-row-label{flex:0 0 42px;color:#344054;font-weight:700}.guest-control-page .gender-row-track{flex:1 1 auto;height:4px;overflow:hidden;border-radius:999px;background:#e8edf3}.guest-control-page .gender-row-track span{display:block;width:0;height:100%;border-radius:inherit;background:#4f8edc;transition:width .28s ease}.guest-control-page .gender-row.female .gender-row-track span{background:#bf6ab1}.guest-control-page .gender-row.unspecified .gender-row-track span{background:#98a2b3}.guest-control-page .gender-row-value{flex:0 0 auto;color:#667085;font-size:10px;direction:rtl;white-space:nowrap}.guest-control-page .gender-row[hidden]{display:none}
     .guest-control-page .period-navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
     .guest-control-page .period-neighbor{min-width:0;padding:11px 13px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:#fafbfc}.guest-control-page .period-neighbor-label{display:block;margin-bottom:3px;color:var(--muted,#6b7280);font-size:11px}.guest-control-page .period-neighbor strong{display:block;font-size:13px;overflow-wrap:anywhere}.guest-control-page .period-neighbor small{display:block;margin-top:3px;color:var(--muted,#6b7280);font-size:11px;direction:ltr;text-align:right;unicode-bidi:isolate}
@@ -1594,14 +1617,14 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
       <div class="attendance-stats-empty">آمار با فعال شدن بازه رویداد نمایش داده می‌شود.</div>
       <div class="attendance-stats-content">
         <div class="entry-summary">
-          <div class="entry-summary-head"><span class="entry-summary-label">ورود مهمانان</span><span class="entry-summary-value"><strong data-stat="entered">۰</strong><span>از <b data-stat="total">۰</b> نفر</span></span></div>
-          <div class="entry-progress" role="progressbar" aria-label="درصد ورود مهمانان" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-stat-progress></span></div>
-          <div class="entry-summary-foot"><span class="audience-mix"><b data-stat="invited_total">۰</b> دعوت‌شده + <b data-stat="walk_in_total">۰</b> ناخوانده</span><span class="entry-percent" data-stat="entry_percent">۰٪ وارد شده‌اند</span></div>
+          <div class="entry-summary-head"><span class="entry-summary-label">ورود دعوت‌شدگان</span><span class="entry-summary-value"><strong data-stat="entered">۰</strong><span>از <b data-stat="total">۰</b> نفر</span></span></div>
+          <div class="entry-progress" role="progressbar" aria-label="درصد ورود دعوت‌شدگان" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-stat-progress></span></div>
+          <div class="entry-summary-foot"><span class="audience-mix">فهرست دعوت‌شدگان: <b data-stat="invited_total">۰</b> نفر</span><span class="entry-percent" data-stat="entry_percent">۰٪ وارد شده‌اند</span></div>
         </div>
         <div class="stat-tile waiting"><span>مانده تا ورود</span><strong data-stat="waiting">۰</strong></div>
         <div class="stat-tile inside"><span>اکنون داخل</span><strong data-stat="inside">۰</strong></div>
         <div class="stat-tile quit"><span>خروج ثبت‌شده</span><strong data-stat="quit">۰</strong></div>
-        <div class="stat-tile walk-in"><span>مهمان ناخوانده</span><strong data-stat="walk_in_total">۰</strong><small><b data-stat="walk_in_entered">۰</b> نفر وارد شده</small></div>
+        <div class="stat-tile walk-in"><span>ناخوانده (جدا از کل)</span><strong data-stat="walk_in_total">۰</strong><small class="walk-in-breakdown"><span>وارد <b data-stat="walk_in_entered">۰</b></span><span>داخل <b data-stat="walk_in_inside">۰</b></span><span>خارج <b data-stat="walk_in_quit">۰</b></span></small></div>
         <div class="gender-summary">
           <span class="gender-title">تفکیک ورود بر اساس جنسیت</span>
           <div class="gender-row male" data-gender="male"><span class="gender-row-label">مرد</span><span class="gender-row-track"><span></span></span><span class="gender-row-value">۰ از ۰</span></div>
@@ -1682,7 +1705,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const keyDigit=(key)=>/^[0-9۰-۹٠-٩]$/.test(String(key??''))?normalize(key):'';
   const statCount=(value)=>Math.max(0,Number.parseInt(String(value??0),10)||0);
   const faCount=(value)=>statCount(value).toLocaleString('fa-IR');
-  const renderStats=(value)=>{if(!statsRoot)return;const stats=value&&typeof value==='object'?value:{};const active=stats.active===true;statsRoot.classList.toggle('is-inactive',!active);if(!active)return;for(const key of ['total','invited_total','walk_in_total','walk_in_entered','entered','waiting','inside','quit']){statsRoot.querySelectorAll(`[data-stat="${key}"]`).forEach(target=>{target.textContent=faCount(stats[key])})}const percent=Math.max(0,Math.min(100,Number(stats.entry_percent)||0)),progress=statsRoot.querySelector('[data-stat-progress]'),progressBox=progress?.parentElement,percentLabel=statsRoot.querySelector('[data-stat="entry_percent"]');if(progress)progress.style.width=`${percent}%`;if(progressBox)progressBox.setAttribute('aria-valuenow',String(percent));if(percentLabel)percentLabel.textContent=`${percent.toLocaleString('fa-IR',{maximumFractionDigits:1})}٪ وارد شده‌اند`;for(const group of ['male','female','unspecified']){const row=statsRoot.querySelector(`[data-gender="${group}"]`),groupStats=stats.gender?.[group]||{},total=statCount(groupStats.total),entered=statCount(groupStats.entered),fill=row?.querySelector('.gender-row-track span'),labelValue=row?.querySelector('.gender-row-value');if(!row)continue;row.hidden=group==='unspecified'&&total===0;if(fill)fill.style.width=`${total>0?Math.min(100,(entered/total)*100):0}%`;if(labelValue)labelValue.textContent=`${faCount(entered)} از ${faCount(total)}`}};
+  const renderStats=(value)=>{if(!statsRoot)return;const stats=value&&typeof value==='object'?value:{};const active=stats.active===true;statsRoot.classList.toggle('is-inactive',!active);if(!active)return;for(const key of ['total','invited_total','walk_in_total','walk_in_entered','walk_in_inside','walk_in_quit','entered','waiting','inside','quit']){statsRoot.querySelectorAll(`[data-stat="${key}"]`).forEach(target=>{target.textContent=faCount(stats[key])})}const percent=Math.max(0,Math.min(100,Number(stats.entry_percent)||0)),progress=statsRoot.querySelector('[data-stat-progress]'),progressBox=progress?.parentElement,percentLabel=statsRoot.querySelector('[data-stat="entry_percent"]');if(progress)progress.style.width=`${percent}%`;if(progressBox)progressBox.setAttribute('aria-valuenow',String(percent));if(percentLabel)percentLabel.textContent=`${percent.toLocaleString('fa-IR',{maximumFractionDigits:1})}٪ وارد شده‌اند`;for(const group of ['male','female','unspecified']){const row=statsRoot.querySelector(`[data-gender="${group}"]`),groupStats=stats.gender?.[group]||{},total=statCount(groupStats.total),entered=statCount(groupStats.entered),fill=row?.querySelector('.gender-row-track span'),labelValue=row?.querySelector('.gender-row-value');if(!row)continue;row.hidden=group==='unspecified'&&total===0;if(fill)fill.style.width=`${total>0?Math.min(100,(entered/total)*100):0}%`;if(labelValue)labelValue.textContent=`${faCount(entered)} از ${faCount(total)}`}};
   const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='force_entry_success'?'ورود اجباری':s==='force_quit_success'?'خروج اجباری':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='attended_previous_period'?'حضور در بازه قبلی':s==='quit_without_entry'?'ورود ثبت نشده':s==='minimum_stay'?'حداقل مدت حضور کامل نشده':s==='entry_closed_quit_wave'?'ورود به‌دلیل موج خروج بسته است':s==='invalid_attendance_record'?'سابقه حضور ناسازگار':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
   const cls=(s)=>(s==='success'||s==='quit_success'||s==='force_entry_success'||s==='force_quit_success'||s==='walk_in_registered')?'success':(s==='duplicate'||s==='quit_duplicate'||s==='attended_previous_period')?'duplicate':'error';
   const SCAN_TOAST_DURATION_MS=4000;
