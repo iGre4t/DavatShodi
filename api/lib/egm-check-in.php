@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/tab-permissions.php';
 require_once __DIR__ . '/egm-instance-storage.php';
+require_once __DIR__ . '/egm-export-filename.php';
 
 const EGM_CHECK_IN_ACTION = 'egm_period_check_in';
 
@@ -411,6 +412,72 @@ function egmCheckInFindUser(PDO $pdo, string $usersTable, string $submittedCode)
     return $match;
 }
 
+/** @return array<string,mixed>|null */
+function egmCheckInPreviousAttendance(
+    array $context,
+    int $userId,
+    string $currentPeriodCode,
+    DateTimeImmutable $now,
+    array $user = []
+): ?array {
+    if ($userId < 1 || $currentPeriodCode === '') return null;
+    $userPeriodsTable = (string)$context['tables']['user_periods'];
+    $statement = $context['pdo']->prepare(
+        "SELECT `period_code`,`entered_date`,`entered_time`,`quit_date`,`quit_time`,`correct_presence`,`fake_presence`,`is_uninvited_guest` "
+        . "FROM `{$userPeriodsTable}` WHERE `user_id`=:user_id AND `period_code`<>:period_code "
+        . "AND `entered_date` IS NOT NULL AND `entered_time` IS NOT NULL "
+        . "AND TIMESTAMP(`entered_date`,`entered_time`)<=:now ORDER BY `entered_date` DESC,`entered_time` DESC,`id` DESC LIMIT 1 FOR UPDATE"
+    );
+    $statement->execute([
+        ':user_id' => $userId,
+        ':period_code' => $currentPeriodCode,
+        ':now' => $now->format('Y-m-d H:i:s'),
+    ]);
+    $row = $statement->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($row)) return null;
+
+    $periodCode = trim((string)($row['period_code'] ?? ''));
+    $periodTitle = $periodCode;
+    foreach ((array)($context['periods'] ?? []) as $period) {
+        if (!is_array($period) || egmCheckInPeriodCode($period) !== $periodCode) continue;
+        $periodTitle = trim((string)($period['title'] ?? '')) ?: $periodCode;
+        break;
+    }
+    $enteredDate = trim((string)($row['entered_date'] ?? ''));
+    $enteredTime = trim((string)($row['entered_time'] ?? ''));
+    $wasWalkIn = (int)($row['is_uninvited_guest'] ?? 0) === 1
+        || (int)($user['is_uninvited_guest'] ?? 0) === 1;
+    $guestType = $wasWalkIn ? 'walk_in' : 'invited';
+    $guestTypeLabel = $wasWalkIn ? 'مهمان ناخوانده' : 'مهمان دعوت‌شده';
+    $dateLabel = $enteredDate !== '' ? egmExportShamsiDayMonth($enteredDate) : '';
+    $message = 'این مهمان قبلاً در بازه «' . $periodTitle . '»'
+        . ($dateLabel !== '' ? ' در ' . $dateLabel : '')
+        . ($enteredTime !== '' ? ' ساعت ' . $enteredTime : '')
+        . ' وارد شده است (' . $guestTypeLabel . ').';
+    return [
+        'period_code' => $periodCode,
+        'period_title' => $periodTitle,
+        'entered_date' => $enteredDate,
+        'entered_date_label' => $dateLabel,
+        'entered_time' => $enteredTime,
+        'quit_date' => trim((string)($row['quit_date'] ?? '')),
+        'quit_time' => trim((string)($row['quit_time'] ?? '')),
+        'guest_type' => $guestType,
+        'guest_type_label' => $guestTypeLabel,
+        'correct_presence' => (int)($row['correct_presence'] ?? 0) === 1,
+        'fake_presence' => (int)($row['fake_presence'] ?? 0) === 1,
+        'message' => $message,
+    ];
+}
+
+/** @return array<string,mixed> */
+function egmCheckInAttachPreviousAttendance(array $response, ?array $previousAttendance): array
+{
+    if (!is_array($previousAttendance)) return $response;
+    $response['previous_attendance'] = $previousAttendance;
+    return $response;
+}
+
 function egmCheckInWriteLog(array $context, ?array $user, string $submittedCode, string $status, string $message, ?array $period, DateTimeImmutable $now, array $extra = []): void
 {
     $table = (string)$context['tables']['activity_logs'];
@@ -736,6 +803,7 @@ function egmCheckInSearchStatusCodes(string $query): array
         'minimum_stay' => ['حداقل مدت حضور', 'خروج زودهنگام'],
         'entry_closed_quit_wave' => ['ورود بسته', 'موج خروج'],
         'invalid_attendance_record' => ['سابقه حضور ناسازگار'],
+        'attended_previous_period' => ['حضور در بازه قبلی', 'قبلاً در بازه', 'روز قبل'],
         'invited_other_period' => ['دعوت در بازه دیگر', 'بازه دیگر'],
         'user_inactive' => ['مهمان غیرفعال'],
         'no_active_period' => ['بدون بازه فعال'],
@@ -1127,6 +1195,13 @@ function egmCheckInProcess(
         }
         $columns = '`id`, `user_id`, `period_code`, `entered_date`, `entered_time`, `quit_date`, `quit_time`, `correct_presence`, `fake_presence`';
         $selectedCode = egmCheckInPeriodCode($selectedPeriod);
+        $previousAttendance = egmCheckInPreviousAttendance(
+            $context,
+            (int)$user['id'],
+            $selectedCode,
+            $now,
+            $user
+        );
         $statement = $pdo->prepare(
             "SELECT {$columns} FROM `{$userPeriodsTable}` WHERE `user_id` = :user_id "
             . "AND `period_code` = :period_code LIMIT 1 FOR UPDATE"
@@ -1149,16 +1224,21 @@ function egmCheckInProcess(
                 if (!in_array($candidateCode, $otherCodes, true)) continue;
                 $periodTitles[] = trim((string)($candidatePeriod['title'] ?? '')) ?: $candidateCode;
             }
-            $result = $otherCodes ? 'invited_other_period' : 'not_invited';
-            $message = $otherCodes
-                ? 'این مهمان به بازه فعال دعوت نشده و دعوت او مربوط به بازه دیگری است'
-                    . ($periodTitles ? ': ' . implode('، ', $periodTitles) : '.')
-                : 'این مهمان به هیچ بازه‌ای در این رویداد دعوت نشده است.';
+            $result = is_array($previousAttendance)
+                ? 'attended_previous_period'
+                : ($otherCodes ? 'invited_other_period' : 'not_invited');
+            $message = is_array($previousAttendance)
+                ? (string)$previousAttendance['message'] . ' این مهمان به بازه فعال فعلی دعوت نشده و ورود جدیدی ثبت نشد.'
+                : ($otherCodes
+                    ? 'این مهمان به بازه فعال دعوت نشده و دعوت او مربوط به بازه دیگری است'
+                        . ($periodTitles ? ': ' . implode('، ', $periodTitles) : '.')
+                    : 'این مهمان به هیچ بازه‌ای در این رویداد دعوت نشده است.');
             egmCheckInWriteLog($context, $user, $submittedCode, $result, $message, $selectedPeriod, $now, [
                 'invited_period_codes' => $otherCodes,
+                'previous_attendance' => $previousAttendance,
             ]);
             $pdo->commit();
-            return ['result' => $result, 'message' => $message];
+            return egmCheckInAttachPreviousAttendance(['result' => $result, 'message' => $message], $previousAttendance);
         }
         $period = $selectedPeriod;
         $availability = egmCheckInPeriodAvailability($period, $now);
@@ -1186,7 +1266,7 @@ function egmCheckInProcess(
                 'attendance_phase' => $result,
             ] + $forceOption);
             $pdo->commit();
-            return ['result' => $result, 'message' => $message] + $forceOption;
+            return egmCheckInAttachPreviousAttendance(['result' => $result, 'message' => $message] + $forceOption, $previousAttendance);
         }
         $attendanceAction = $isForced ? (string)$forcedAction : (string)($availability['action'] ?? 'entry');
         $flexibleMetadata = [];
@@ -1233,7 +1313,7 @@ function egmCheckInProcess(
                     'remaining_minutes' => $remainingMinutes,
                 ] + $forceOption);
                 $pdo->commit();
-                return ['result' => $result, 'message' => $message] + $forceOption;
+                return egmCheckInAttachPreviousAttendance(['result' => $result, 'message' => $message] + $forceOption, $previousAttendance);
             }
             $attendanceAction = (string)($decision['action'] ?? 'entry');
         }
@@ -1253,8 +1333,11 @@ function egmCheckInProcess(
                     'force_label' => 'Force Enter',
                 ]);
                 $pdo->commit();
-                return ['result' => 'quit_without_entry', 'message' => $message]
-                    + ['force_action' => 'entry', 'force_label' => 'Force Enter'];
+                return egmCheckInAttachPreviousAttendance(
+                    ['result' => 'quit_without_entry', 'message' => $message]
+                        + ['force_action' => 'entry', 'force_label' => 'Force Enter'],
+                    $previousAttendance
+                );
             }
         }
         $dateColumn = $isQuit ? 'quit_date' : 'entered_date';
@@ -1282,7 +1365,7 @@ function egmCheckInProcess(
                 'attendance_action' => $attendanceAction,
             ] + $forceOption);
             $pdo->commit();
-            return ['result' => $duplicateResult, 'message' => $message] + $forceOption;
+            return egmCheckInAttachPreviousAttendance(['result' => $duplicateResult, 'message' => $message] + $forceOption, $previousAttendance);
         }
         $storedDate = $now->format('Y-m-d');
         $storedTime = $now->format('H:i:s');
@@ -1321,12 +1404,12 @@ function egmCheckInProcess(
             'forced_by' => trim((string)($sessionUser['code'] ?? ($sessionUser['username'] ?? ''))),
         ]);
         $pdo->commit();
-        return [
+        return egmCheckInAttachPreviousAttendance([
             'result' => $successResult,
             'message' => $message,
             'correct_presence' => !$isForced && $isQuit && (int)($invitation['fake_presence'] ?? 0) !== 1,
             'fake_presence' => $isForced || (int)($invitation['fake_presence'] ?? 0) === 1,
-        ];
+        ], $previousAttendance);
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
@@ -1600,18 +1683,19 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const statCount=(value)=>Math.max(0,Number.parseInt(String(value??0),10)||0);
   const faCount=(value)=>statCount(value).toLocaleString('fa-IR');
   const renderStats=(value)=>{if(!statsRoot)return;const stats=value&&typeof value==='object'?value:{};const active=stats.active===true;statsRoot.classList.toggle('is-inactive',!active);if(!active)return;for(const key of ['total','invited_total','walk_in_total','walk_in_entered','entered','waiting','inside','quit']){statsRoot.querySelectorAll(`[data-stat="${key}"]`).forEach(target=>{target.textContent=faCount(stats[key])})}const percent=Math.max(0,Math.min(100,Number(stats.entry_percent)||0)),progress=statsRoot.querySelector('[data-stat-progress]'),progressBox=progress?.parentElement,percentLabel=statsRoot.querySelector('[data-stat="entry_percent"]');if(progress)progress.style.width=`${percent}%`;if(progressBox)progressBox.setAttribute('aria-valuenow',String(percent));if(percentLabel)percentLabel.textContent=`${percent.toLocaleString('fa-IR',{maximumFractionDigits:1})}٪ وارد شده‌اند`;for(const group of ['male','female','unspecified']){const row=statsRoot.querySelector(`[data-gender="${group}"]`),groupStats=stats.gender?.[group]||{},total=statCount(groupStats.total),entered=statCount(groupStats.entered),fill=row?.querySelector('.gender-row-track span'),labelValue=row?.querySelector('.gender-row-value');if(!row)continue;row.hidden=group==='unspecified'&&total===0;if(fill)fill.style.width=`${total>0?Math.min(100,(entered/total)*100):0}%`;if(labelValue)labelValue.textContent=`${faCount(entered)} از ${faCount(total)}`}};
-  const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='force_entry_success'?'ورود اجباری':s==='force_quit_success'?'خروج اجباری':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='quit_without_entry'?'ورود ثبت نشده':s==='minimum_stay'?'حداقل مدت حضور کامل نشده':s==='entry_closed_quit_wave'?'ورود به‌دلیل موج خروج بسته است':s==='invalid_attendance_record'?'سابقه حضور ناسازگار':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
-  const cls=(s)=>(s==='success'||s==='quit_success'||s==='force_entry_success'||s==='force_quit_success'||s==='walk_in_registered')?'success':(s==='duplicate'||s==='quit_duplicate')?'duplicate':'error';
+  const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='force_entry_success'?'ورود اجباری':s==='force_quit_success'?'خروج اجباری':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='attended_previous_period'?'حضور در بازه قبلی':s==='quit_without_entry'?'ورود ثبت نشده':s==='minimum_stay'?'حداقل مدت حضور کامل نشده':s==='entry_closed_quit_wave'?'ورود به‌دلیل موج خروج بسته است':s==='invalid_attendance_record'?'سابقه حضور ناسازگار':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
+  const cls=(s)=>(s==='success'||s==='quit_success'||s==='force_entry_success'||s==='force_quit_success'||s==='walk_in_registered')?'success':(s==='duplicate'||s==='quit_duplicate'||s==='attended_previous_period')?'duplicate':'error';
   const SCAN_TOAST_DURATION_MS=4000;
   let scanAudioContext=null;
   const unlockScanAudio=()=>{const AudioContextClass=window.AudioContext||window.webkitAudioContext;if(!AudioContextClass)return null;try{if(!scanAudioContext)scanAudioContext=new AudioContextClass();if(scanAudioContext.state==='suspended')void scanAudioContext.resume().catch(()=>{});return scanAudioContext}catch{return null}};
   const playScanSound=(successful)=>{const context=unlockScanAudio();if(!context)return;const play=()=>{const start=context.currentTime+.025;const notes=successful?[{frequency:620,offset:0,duration:.11},{frequency:880,offset:.115,duration:.14}]:[{frequency:270,offset:0,duration:.14},{frequency:175,offset:.13,duration:.2}];notes.forEach(note=>{const oscillator=context.createOscillator(),gain=context.createGain(),noteStart=start+note.offset;oscillator.type=successful?'sine':'triangle';oscillator.frequency.setValueAtTime(note.frequency,noteStart);gain.gain.setValueAtTime(.0001,noteStart);gain.gain.exponentialRampToValueAtTime(successful ? .045 : .035,noteStart+.018);gain.gain.exponentialRampToValueAtTime(.0001,noteStart+note.duration);oscillator.connect(gain);gain.connect(context.destination);oscillator.start(noteStart);oscillator.stop(noteStart+note.duration+.025)})};if(context.state==='running')play();else void context.resume().then(play).catch(()=>{})};
   const findScanLog=(items,guestCode,status)=>{const rows=Array.isArray(items)?items:[];return rows.find(row=>String(row.status||'')===status&&(normalize(row.national_id||'')===guestCode||normalize(row.work_id||'')===guestCode))||rows.find(row=>String(row.status||'')===status)||null};
   const showScanFeedback=(data,guestCode,forcedTone='')=>{if(!toastStack)return;const status=String(data?.result||'request_error'),tone=forcedTone||cls(status),row=findScanLog(data?.logs,guestCode,status),guest=String(row?.full_name||'').trim()||('شناسه '+guestCode),message=String(data?.message||'نتیجه اسکن دریافت شد.').trim();const toast=document.createElement('section'),title=document.createElement('strong'),guestLine=document.createElement('span'),messageLine=document.createElement('span'),progress=document.createElement('span');toast.className='scan-toast '+tone;toast.setAttribute('role',tone==='success'?'status':'alert');title.className='scan-toast-title';title.textContent=label(status);guestLine.className='scan-toast-guest';guestLine.textContent=guest;messageLine.className='scan-toast-message';messageLine.textContent=message;progress.className='scan-toast-progress';toast.append(title,guestLine,messageLine,progress);toastStack.prepend(toast);while(toastStack.children.length>4)toastStack.lastElementChild?.remove();window.setTimeout(()=>toast.classList.add('leaving'),SCAN_TOAST_DURATION_MS-220);window.setTimeout(()=>toast.remove(),SCAN_TOAST_DURATION_MS);playScanSound(tone==='success')};
+  const showPreviousAttendanceAlert=(previous)=>{if(!toastStack||!previous||typeof previous!=='object')return;const toast=document.createElement('section'),title=document.createElement('strong'),periodLine=document.createElement('span'),messageLine=document.createElement('span'),progress=document.createElement('span');toast.className='scan-toast duplicate previous-attendance-alert';toast.setAttribute('role','alert');title.className='scan-toast-title';title.textContent='هشدار حضور در بازه قبلی';periodLine.className='scan-toast-guest';periodLine.textContent=`${String(previous.period_title||previous.period_code||'بازه قبلی')} — ${String(previous.guest_type_label||'مهمان')}`;messageLine.className='scan-toast-message';messageLine.textContent=String(previous.message||'برای این مهمان سابقه ورود در بازه قبلی وجود دارد.');progress.className='scan-toast-progress';toast.append(title,periodLine,messageLine,progress);toastStack.prepend(toast);while(toastStack.children.length>4)toastStack.lastElementChild?.remove();window.setTimeout(()=>toast.classList.add('leaving'),SCAN_TOAST_DURATION_MS+1780);window.setTimeout(()=>toast.remove(),SCAN_TOAST_DURATION_MS+2000)};
   const operationLabel=(row)=>row.attendance_action==='quit'?'خروج':row.attendance_action==='entry'?'ورود':row.attendance_action==='register'?'ثبت مهمان':'بررسی';
   const attendanceStateLabel=(state)=>state==='quit_completed'?'خروج ثبت شده':state==='entered'?'وارد شده':state==='invalid_quit_without_entry'?'خروج ناسازگار بدون ورود':'هنوز وارد نشده';
   const dateTime=(date,time,fallback='')=>[date,time].filter(Boolean).join(' ')||fallback||'—';
-  const walkInStatuses=new Set(['not_found','not_invited','invited_other_period']);
+  const walkInStatuses=new Set(['not_found','not_invited','invited_other_period','attended_previous_period']);
   const presenceMark=(value)=>value?'بله':'—';
   const render=(items)=>{
     const rows=Array.isArray(items)?items:[];
@@ -1664,7 +1748,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const scanQueue=[];
   const resetScannerState=()=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=0;lastNumericKeyAt=0;consecutiveFastGaps=0;scannerDetected=false};
   const queueStatus=()=>scanQueue.length>0?` (${scanQueue.length.toLocaleString('fa-IR')} اسکن در صف)`:'';
-  const processScanQueue=async()=>{if(scanProcessing||isSubmitting||scanQueue.length===0)return;scanProcessing=true;try{while(scanQueue.length>0){const guestCode=scanQueue.shift();result.className='result loading';result.textContent=`در حال بررسی شناسه ${guestCode}${queueStatus()}...`;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=`${data.message||'بررسی انجام شد.'}${queueStatus()}`;if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);showScanFeedback(data,guestCode)}catch(error){const failureMessage=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.';result.className='result error';result.textContent=`${failureMessage}${queueStatus()}`;showScanFeedback({result:'request_error',message:failureMessage},guestCode,'error')}}}finally{scanProcessing=false;input.focus();if(scanQueue.length>0)void processScanQueue()}};
+  const processScanQueue=async()=>{if(scanProcessing||isSubmitting||scanQueue.length===0)return;scanProcessing=true;try{while(scanQueue.length>0){const guestCode=scanQueue.shift();result.className='result loading';result.textContent=`در حال بررسی شناسه ${guestCode}${queueStatus()}...`;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate'||data.result==='attended_previous_period';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=`${data.message||'بررسی انجام شد.'}${queueStatus()}`;if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);showScanFeedback(data,guestCode);if(data.result!=='attended_previous_period')showPreviousAttendanceAlert(data.previous_attendance)}catch(error){const failureMessage=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.';result.className='result error';result.textContent=`${failureMessage}${queueStatus()}`;showScanFeedback({result:'request_error',message:failureMessage},guestCode,'error')}}}finally{scanProcessing=false;input.focus();if(scanQueue.length>0)void processScanQueue()}};
   const enqueueScan=(rawCode)=>{const guestCode=normalize(rawCode);if(guestCode.length<4||guestCode.length>10)return;unlockScanAudio();scanQueue.push(guestCode);input.value='';resetScannerState();input.focus();if(scanProcessing||isSubmitting){result.className='result loading';result.textContent=`اسکن دریافت شد${queueStatus()}. در صف پردازش است.`}void processScanQueue()};
   const scheduleScannerSubmission=(value)=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=window.setTimeout(()=>{scannerCompletionTimer=0;const completedCode=normalize(input.value);if(scannerDetected&&completedCode===value&&completedCode.length>=4&&completedCode.length<=9)enqueueScan(completedCode)},SCANNER_COMPLETION_DELAY_MS)};
   input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10){enqueueScan(value);return}if(scannerDetected&&value.length>=4&&value.length<=9)scheduleScannerSubmission(value)});

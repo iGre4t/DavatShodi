@@ -232,6 +232,65 @@ try {
         'A guest invited only to another period was not identified correctly'
     );
 
+    $previousAttendanceContext = $otherPeriodContext;
+    $previousAttendanceContext['periods'][] = ['tagCode' => '03', 'title' => 'Second Day', 'duration' => false];
+    $previousAttendanceContext['period'] = $previousAttendanceContext['periods'][2];
+    $previousAttendanceContext['period_code'] = '03';
+    $pdo->exec(
+        "INSERT INTO `{$tables['users']}` (`work_id`, `first_name`, `last_name`, `national_id`, `phone_number`, "
+        . "`deputy`, `general_department`, `department`, `gender`, `postal_level`, `source_row`, `is_uninvited_guest`) "
+        . "VALUES ('W-PREV-WALK', 'Previous', 'Walk In', '6234567890', '', '', '', '', '', '', 20, 1)"
+    );
+    $previousWalkInUserId = (int)$pdo->lastInsertId();
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`,`invitation_source`,`invited_at`,`entered_date`,`entered_time`,`attendance_state`,`is_uninvited_guest`) "
+        . "VALUES (:user_id,'02','walk_in','2026-08-17 09:00:00','2026-08-17','10:05:00','entered',1)"
+    )->execute([':user_id' => $previousWalkInUserId]);
+    $previousWalkInResult = egmCheckInProcess(
+        $previousAttendanceContext,
+        '6234567890',
+        new DateTimeImmutable('2026-08-18 10:30:00', $timezone)
+    );
+    egmCheckInAssert(
+        ($previousWalkInResult['result'] ?? '') === 'attended_previous_period',
+        'A yesterday walk-in was not reported as previous-period attendance'
+    );
+    egmCheckInAssert(
+        ($previousWalkInResult['previous_attendance']['period_title'] ?? '') === 'Other Period'
+            && ($previousWalkInResult['previous_attendance']['guest_type'] ?? '') === 'walk_in',
+        'The previous-period alert lost its period title or walk-in type'
+    );
+    egmCheckInAssert(
+        str_contains((string)($previousWalkInResult['message'] ?? ''), 'Other Period'),
+        'The previous-period alert message does not name the attended period'
+    );
+
+    $pdo->exec(
+        "INSERT INTO `{$tables['users']}` (`work_id`, `first_name`, `last_name`, `national_id`, `phone_number`, "
+        . "`deputy`, `general_department`, `department`, `gender`, `postal_level`, `source_row`) "
+        . "VALUES ('W-PREV-INV', 'Previous', 'Invited', '7234567890', '', '', '', '', '', '', 21)"
+    );
+    $previousInvitedUserId = (int)$pdo->lastInsertId();
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`,`invitation_source`,`invited_at`,`entered_date`,`entered_time`,`attendance_state`) "
+        . "VALUES (:user_id,'02','custom','2026-08-17 09:00:00','2026-08-17','11:10:00','entered')"
+    )->execute([':user_id' => $previousInvitedUserId]);
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`,`invitation_source`,`invited_at`) "
+        . "VALUES (:user_id,'03','custom','2026-08-18 09:00:00')"
+    )->execute([':user_id' => $previousInvitedUserId]);
+    $validTodayResult = egmCheckInProcess(
+        $previousAttendanceContext,
+        '7234567890',
+        new DateTimeImmutable('2026-08-18 10:31:00', $timezone)
+    );
+    egmCheckInAssert(($validTodayResult['result'] ?? '') === 'success', 'A guest invited today was blocked by previous attendance');
+    egmCheckInAssert(
+        ($validTodayResult['previous_attendance']['period_title'] ?? '') === 'Other Period'
+            && ($validTodayResult['previous_attendance']['guest_type'] ?? '') === 'invited',
+        'A valid current guest did not receive the invited previous-period warning'
+    );
+
     $statsVersionBeforeWalkIn = egmCheckInStatsVersion($context);
     $oeuWalkInBefore = (int)$pdo->query(
         "SELECT COUNT(*) FROM `organizational_event_users` WHERE `national_id` = '3234567890'"

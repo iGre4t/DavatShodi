@@ -75,6 +75,13 @@ egmRealtimeAssert(
     'Core roster changes can no longer refresh Guest Control statistics independently of logs.'
 );
 egmRealtimeAssert(
+    str_contains($source, 'function egmCheckInPreviousAttendance(')
+        && str_contains($source, "'attended_previous_period'")
+        && str_contains($source, 'previous_attendance')
+        && str_contains($source, 'showPreviousAttendanceAlert(data.previous_attendance)'),
+    'Cross-period attendance warnings are missing from Guest Control.'
+);
+egmRealtimeAssert(
     str_contains($source, 'function egmCheckInLogsVersion(')
         && str_contains($source, "data-logs-version=\"")
         && str_contains($source, "\$getAction === 'logs_version'"),
