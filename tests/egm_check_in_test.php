@@ -349,6 +349,47 @@ try {
     egmCheckInAssert(($enteredWalkInStats['overall_total'] ?? 0) === 4, 'Overall total changed after walk-in entry');
     egmCheckInAssert(($enteredWalkInStats['overall_entered'] ?? 0) === 3, 'Overall entry count omitted the entered walk-in');
 
+    $otherPeriodWalkIn = egmCheckInRegisterUninvited($context, [
+        'first_name' => 'Other',
+        'last_name' => 'Period',
+        'national_id' => '2234567890',
+        'work_id' => '',
+        'phone_number' => '',
+        'outside_organization' => true,
+    ], ['username' => 'test-admin'], new DateTimeImmutable('2026-08-18 10:27:00', $timezone));
+    egmCheckInAssert(
+        ($otherPeriodWalkIn['result'] ?? '') === 'walk_in_registered',
+        'A guest invited to another period could not be registered as a current-period walk-in'
+    );
+    $otherPeriodEntry = egmCheckInProcess(
+        $context,
+        '2234567890',
+        new DateTimeImmutable('2026-08-18 10:28:00', $timezone)
+    );
+    egmCheckInAssert(($otherPeriodEntry['result'] ?? '') === 'success', 'Other-period walk-in entry was not recorded');
+    $threeWayStats = egmCheckInDashboardStats($context);
+    egmCheckInAssert(($threeWayStats['total'] ?? 0) === 3, 'Other-period guest incorrectly increased the current invitation total');
+    egmCheckInAssert(($threeWayStats['entered'] ?? 0) === 4, 'Main entered count omitted the other-period guest');
+    egmCheckInAssert(($threeWayStats['invited_entered'] ?? 0) === 2, 'Current-period invited entry count is incorrect');
+    egmCheckInAssert(($threeWayStats['other_period_total'] ?? 0) === 1, 'Other-period guest total is incorrect');
+    egmCheckInAssert(($threeWayStats['other_period_entered'] ?? 0) === 1, 'Other-period entered count is incorrect');
+    egmCheckInAssert(($threeWayStats['walk_in_total'] ?? 0) === 1, 'Pure walk-in total was mixed with other-period guests');
+    egmCheckInAssert(($threeWayStats['walk_in_entered'] ?? 0) === 1, 'Pure walk-in entered count was mixed with other-period guests');
+    egmCheckInAssert(($threeWayStats['waiting'] ?? 0) === 1, 'Non-current invitations changed the current invited waiting count');
+
+    // The user-level walk-in flag is historical. A genuine invitation in a
+    // different period must remain an invitation in that period's own stats.
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`,`invitation_source`,`invited_at`,`entered_date`,`entered_time`,`attendance_state`,`is_uninvited_guest`) "
+        . "VALUES (:user_id,'04','custom','2026-08-19 09:00:00','2026-08-19','10:00:00','entered',0)"
+    )->execute([':user_id' => $otherPeriodUserId]);
+    $periodFourStatsContext = array_replace($context, ['period_code' => '04']);
+    $periodFourStats = egmCheckInDashboardStats($periodFourStatsContext);
+    egmCheckInAssert(($periodFourStats['total'] ?? 0) === 1, 'Historical user walk-in flag hid a genuine period invitation');
+    egmCheckInAssert(($periodFourStats['invited_entered'] ?? 0) === 1, 'Genuine invitation was not counted as invited entry');
+    egmCheckInAssert(($periodFourStats['other_period_entered'] ?? -1) === 0, 'Genuine current invitation was classified as another-period guest');
+    egmCheckInAssert(($periodFourStats['walk_in_entered'] ?? -1) === 0, 'Genuine current invitation was classified as a walk-in');
+
     $pdo->prepare(
         "INSERT INTO `{$tables['user_periods']}` (`user_id`, `period_code`, `invited_at`) "
         . "VALUES (:user_id, '02', '2026-08-18 09:00:00')"
