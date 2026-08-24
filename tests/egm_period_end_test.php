@@ -36,6 +36,7 @@ $insert->execute(['01', '2026-08-23', '08:01:00', null, null, 0, 1, 'entered']);
 $insert->execute(['01', '2026-08-23', '08:02:00', '2026-08-23', '12:00:00', 1, 0, 'quit_completed']);
 $insert->execute(['01', '2026-08-23', null, null, null, 0, 0, 'not_entered']);
 $insert->execute(['02', '2026-08-23', '08:03:00', null, null, 0, 0, 'entered']);
+$insert->execute(['03', '2026-08-23', '08:04:00', null, null, 0, 0, 'entered']);
 
 $result = egmPeriodEndClassifyOpenAttendance($pdo, 'user_periods', '01', 'correct_presence');
 egmPeriodEndAssert($result['pending'] === 1, 'The unresolved entered/no-quit count is wrong.');
@@ -46,6 +47,14 @@ egmPeriodEndAssert((int)$rows[1]['fake_presence'] === 1, 'An existing Fake Prese
 egmPeriodEndAssert($rows[0]['quit_date'] === null && $rows[0]['quit_time'] === null, 'A fake quit timestamp was created.');
 egmPeriodEndAssert($rows[0]['attendance_state'] === 'entered', 'Ending the period rewrote attendance state.');
 egmPeriodEndAssert((int)$rows[4]['correct_presence'] === 0, 'Another period was modified.');
+
+$fakeResult = egmPeriodEndClassifyOpenAttendance($pdo, 'user_periods', '03', 'fake_presence');
+$fakeRow = $pdo->query("SELECT `correct_presence`,`fake_presence` FROM user_periods WHERE `period_code`='03'")->fetch(PDO::FETCH_ASSOC);
+egmPeriodEndAssert($fakeResult['classified'] === 1, 'Fake Presence resolution did not classify the unresolved guest.');
+egmPeriodEndAssert(
+    (int)($fakeRow['correct_presence'] ?? -1) === 0 && (int)($fakeRow['fake_presence'] ?? -1) === 1,
+    'Fake Presence resolution marked both presence flags.'
+);
 
 $invalidRejected = false;
 try {
@@ -72,7 +81,28 @@ $panelSource = (string)file_get_contents(__DIR__ . '/../mini apps/Event Guest Ma
 $endpointSource = (string)file_get_contents(__DIR__ . '/../mini apps/Event Guest Manager/EGMT.php');
 egmPeriodEndAssert(str_contains($panelSource, 'data-action="end-period"'), 'The End Period control is missing.');
 egmPeriodEndAssert(str_contains($panelSource, 'correct_presence') && str_contains($panelSource, 'fake_presence'), 'The period-end resolution choices are missing.');
+egmPeriodEndAssert(
+    str_contains($panelSource, 'endedResolutionLabel') && str_contains($panelSource, 'endedNoQuitCount'),
+    'An ended period does not show which presence classification was saved.'
+);
 egmPeriodEndAssert(str_contains($endpointSource, "\$action === 'end_period'"), 'The period-end endpoint action is missing.');
 egmPeriodEndAssert(str_contains($endpointSource, 'beginTransaction()') && str_contains($endpointSource, 'rollBack()'), 'Period ending is no longer transactional.');
+egmPeriodEndAssert(
+    str_contains($endpointSource, 'JSON_INVALID_UTF8_SUBSTITUTE')
+        && str_contains($endpointSource, "'already_ended' => \$alreadyEnded")
+        && str_contains($endpointSource, "period_resolution_conflict"),
+    'Period-end responses are not safely encoded or retryable.'
+);
+$responseBuildPosition = strpos($endpointSource, '$responseJson = json_encode([');
+$commitPosition = strpos($endpointSource, '$pdo->commit();', $responseBuildPosition === false ? 0 : $responseBuildPosition);
+egmPeriodEndAssert(
+    $responseBuildPosition !== false && $commitPosition !== false && $responseBuildPosition < $commitPosition,
+    'The period end can commit before its success response has been validated.'
+);
+egmPeriodEndAssert(
+    str_contains($panelSource, 'async function readTaskActionResponse(response)')
+        && str_contains($panelSource, "responseText.indexOf('{')"),
+    'Task actions cannot recover valid JSON wrapped by cPanel output.'
+);
 
 fwrite(STDOUT, "EGM period end test passed.\n");

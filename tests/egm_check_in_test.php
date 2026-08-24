@@ -340,6 +340,7 @@ try {
     $enteredWalkInStats = egmCheckInDashboardStats($context);
     egmCheckInAssert(($enteredWalkInStats['total'] ?? 0) === 3, 'Entered walk-in incorrectly increased the invited dashboard total');
     egmCheckInAssert(($enteredWalkInStats['entered'] ?? 0) === 3, 'Main entered count omitted the entered walk-in');
+    egmCheckInAssert(($enteredWalkInStats['invited_entered'] ?? 0) === 2, 'Invited-entry breakdown changed after walk-in entry');
     egmCheckInAssert(($enteredWalkInStats['waiting'] ?? 0) === 1, 'Entered walk-in incorrectly reduced the invited waiting count');
     egmCheckInAssert(($enteredWalkInStats['walk_in_total'] ?? 0) === 1, 'Walk-in total changed after entry');
     egmCheckInAssert(($enteredWalkInStats['walk_in_entered'] ?? 0) === 1, 'Entered walk-in was not shown in dashboard stats');

@@ -54,6 +54,41 @@ function egmExportSafeFilenamePart(string $value, string $fallback = 'export'): 
     return $value !== '' ? $value : $fallback;
 }
 
+function egmExportNormalizeGregorianDate(?string $value): ?string
+{
+    $candidate = substr(trim((string)$value), 0, 10);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $candidate) !== 1) return null;
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $candidate, new DateTimeZone('Asia/Tehran'));
+    $errors = DateTimeImmutable::getLastErrors();
+    if (!$date instanceof DateTimeImmutable || (is_array($errors) && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0))) {
+        return null;
+    }
+    return $date->format('Y-m-d') === $candidate ? $candidate : null;
+}
+
+function egmExportPeriodDate(array $period): ?string
+{
+    foreach ([
+        'startDate', 'start_date',
+        'enterDeadlineDate', 'enter_deadline_date',
+        'quitOpeningDate', 'quit_opening_date',
+        'endDate', 'end_date',
+    ] as $key) {
+        $date = egmExportNormalizeGregorianDate(isset($period[$key]) ? (string)$period[$key] : null);
+        if ($date !== null) return $date;
+    }
+    return null;
+}
+
+function egmExportPeriodDatedFilename(string $label, ?string $gregorianDate, string $extension = 'xlsx'): string
+{
+    $periodDate = egmExportNormalizeGregorianDate($gregorianDate);
+    if ($periodDate === null) {
+        throw new InvalidArgumentException('تاریخ بازه تنظیم نشده است؛ نام فایل نمی‌تواند از تاریخ امروز ساخته شود.');
+    }
+    return egmExportDatedFilename($label, $periodDate, $extension);
+}
+
 function egmExportDatedFilename(string $label, ?string $gregorianDate = null, string $extension = 'xlsx'): string
 {
     $extension = strtolower(trim($extension));

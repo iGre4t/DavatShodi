@@ -31,6 +31,22 @@ $export = egmPeriodInviteCardsBuildExportData([
 
 egmInviteCardExportAssert($export['count'] === 2, 'The generated row count is incorrect.');
 egmInviteCardExportAssert($export['filename'] === 'لینک کارت‌های دعوت 31 مردادماه.xlsx', 'The Shamsi-dated export filename is incorrect.');
+egmInviteCardExportAssert(($export['period_date'] ?? '') === '2026-08-22', 'The export did not retain its period date.');
+egmInviteCardExportAssert(
+    egmExportPeriodDatedFilename('لینک کارت‌های دعوت', '2026-08-25') === 'لینک کارت‌های دعوت 3 شهریورماه.xlsx',
+    'A future period export was named with the wrong Shamsi date.'
+);
+egmInviteCardExportAssert(
+    egmExportPeriodDate(['startDate' => '', 'endDate' => '2026-08-25']) === '2026-08-25',
+    'The period date did not fall back to another configured timeline date.'
+);
+$missingPeriodDateRejected = false;
+try {
+    egmPeriodInviteCardsBuildExportData([], '00000', '01', 'https://example.test/DavatShodi', null);
+} catch (InvalidArgumentException) {
+    $missingPeriodDateRejected = true;
+}
+egmInviteCardExportAssert($missingPeriodDateRejected, 'A period export silently fell back to today.');
 $firstRow = $export['rows'][0] ?? [];
 egmInviteCardExportAssert(is_array($firstRow) && count($firstRow) === 5, 'The XLSX source columns are malformed.');
 egmInviteCardExportAssert(($firstRow['national_id'] ?? '') === '0012345678', 'National ID leading zeroes were not preserved.');

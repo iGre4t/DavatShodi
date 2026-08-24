@@ -3487,7 +3487,10 @@
         throw new Error('موتور ساخت فایل Excel بارگذاری نشده است. صفحه را بازخوانی کنید.');
       }
       if (status) status.textContent = 'در حال ساخت فایل Excel...';
-      const data = await requestPeriodInviteCards('export_data', { period_code: periodCodeForPane(pane) });
+      const data = await requestPeriodInviteCards('export_data', {
+        period_code: periodCodeForPane(pane),
+        period_date: periodDateForPane(pane)
+      });
       const rows = Array.isArray(data.rows) ? data.rows : [];
       if (!rows.length) throw new Error('هنوز هیچ کارت دعوتی برای این بازه ساخته نشده است.');
       const table = [['نام و نام خانوادگی', 'کد ملی', 'کد پرسنلی', 'شماره همراه', 'لینک کارت دعوت']];
@@ -3505,7 +3508,7 @@
       });
       const workbook = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(workbook, worksheet, 'لینک کارت‌ها');
-      const filename = String(data.filename || 'EGM-invite-card-links.xlsx').replace(/[\\/:*?"<>|]+/g, '-');
+      const filename = periodExportDatedFilename('لینک کارت‌های دعوت', pane, data.period_date);
       window.XLSX.writeFile(workbook, filename, { bookType: 'xlsx', compression: true });
       if (status) status.textContent = 'فایل واقعی Excel (.xlsx) لینک کارت‌ها دانلود شد.';
     } catch (error) {
@@ -3684,9 +3687,31 @@
     return String(pane.dataset.taskTagCode || '').trim();
   }
 
+  function periodDateForPane(pane) {
+    const candidates = [
+      pane?.dataset?.taskStartDate,
+      pane?.dataset?.taskEnterDeadlineDate,
+      pane?.dataset?.taskQuitOpeningDate,
+      pane?.dataset?.taskEndDate
+    ];
+    for (const value of candidates) {
+      const date = String(value || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const [year, month, day] = date.split('-').map(Number);
+      const parsed = new Date(`${date}T12:00:00`);
+      if (!Number.isNaN(parsed.getTime())
+        && parsed.getFullYear() === year
+        && parsed.getMonth() + 1 === month
+        && parsed.getDate() === day) return date;
+    }
+    return '';
+  }
+
   function periodExportShamsiDayMonth(gregorianDate = '') {
     const dateText = String(gregorianDate || '').slice(0, 10);
-    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? new Date(`${dateText}T12:00:00`) : new Date();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) return '';
+    const parsed = new Date(`${dateText}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return '';
     const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
       day: 'numeric', month: 'long', timeZone: 'Asia/Tehran'
     }).formatToParts(parsed);
@@ -3695,8 +3720,10 @@
     return `${day} ${month}ماه`.trim();
   }
 
-  function periodExportDatedFilename(label, pane) {
-    return `${label} ${periodExportShamsiDayMonth(pane?.dataset?.taskStartDate || '')}.xlsx`
+  function periodExportDatedFilename(label, pane, explicitDate = '') {
+    const shamsiDate = periodExportShamsiDayMonth(explicitDate || periodDateForPane(pane));
+    if (!shamsiDate) throw new Error('تاریخ بازه تنظیم نشده است؛ نام فایل از تاریخ امروز ساخته نمی‌شود.');
+    return `${label} ${shamsiDate}.xlsx`
       .replace(/[\\/:*?"<>|]+/g, '-');
   }
 
@@ -4059,6 +4086,9 @@
     pane.dataset.periodInvitesReady = '1';
     pane.dataset.taskTagCode = String(task?.tagCode || '');
     pane.dataset.taskStartDate = String(task?.startDate || task?.start_date || '');
+    pane.dataset.taskEnterDeadlineDate = String(task?.enterDeadlineDate || task?.enter_deadline_date || '');
+    pane.dataset.taskQuitOpeningDate = String(task?.quitOpeningDate || task?.quit_opening_date || '');
+    pane.dataset.taskEndDate = String(task?.endDate || task?.end_date || '');
     const state = getPeriodInviteState(pane);
     pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
     pane.querySelector('[data-period-invite-card-export]')?.addEventListener('click', () => exportPeriodInviteCardLinks(pane));

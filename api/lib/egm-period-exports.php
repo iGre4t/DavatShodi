@@ -340,7 +340,7 @@ function egmPeriodExportBuild(array $context, string $periodCode, string $type):
         $candidateCode = trim((string)($period['tagCode'] ?? ($period['code'] ?? '')));
         if ($candidateCode === $periodCode) {
             $periodTitle = trim((string)($period['title'] ?? '')) ?: $periodCode;
-            $periodDate = trim((string)($period['startDate'] ?? ($period['start_date'] ?? ''))) ?: null;
+            $periodDate = egmExportPeriodDate($period);
             break;
         }
     }
@@ -349,7 +349,7 @@ function egmPeriodExportBuild(array $context, string $periodCode, string $type):
     $records = egmPeriodExportRecords($type, $guestRows, $logRows);
     $sheetName = $types[$type];
     $xml = egmPeriodExportSpreadsheetXml($sheetName, $records);
-    $filename = egmExportDatedFilename($sheetName, $periodDate);
+    $filename = egmExportPeriodDatedFilename($sheetName, $periodDate);
     return [
         'content' => appXlsxFromSpreadsheetXml($xml),
         'filename' => $filename,

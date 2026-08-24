@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+$tctEarlyJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
+if ($tctEarlyJsonRequest) {
+  ob_start();
+}
 
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
@@ -9,7 +13,7 @@ require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
 require_once __DIR__ . '/../../api/lib/egm-period-end.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
-$tctIsJsonRequest = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action']);
+$tctIsJsonRequest = $tctEarlyJsonRequest;
 $tctSessionUser = requireTabPermissionFromSession('event-guest-manager', $tctIsJsonRequest);
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
 $tctCanAccessManageTasks = userHasPermissionId($tctSessionUser, 'event-guest-manager:manage-tasks');
@@ -93,6 +97,19 @@ const EGMT_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 const EGMT_TEAM_CHALLENGES_FILE = 'team-challenges.json';
 const EGMT_TEAM_RUNTIME_FILE = 'team-runtime.json';
 const EGMT_TASK_ACCESS_FILE = 'task-access.json';
+
+function tctEncodeResponseJson(array $payload): string
+{
+  try {
+    return json_encode(
+      $payload,
+      JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR
+    );
+  } catch (JsonException $error) {
+    error_log('Failed to encode EGM control response: ' . $error->getMessage());
+    return '{"status":"error","message":"The server could not encode the response. Please reload the panel to verify the saved state."}';
+  }
+}
 
 function tctNormalizeTaskType(string $value): string
 {
@@ -2328,6 +2345,15 @@ if (!defined('EGMT_INCLUDE_ONLY')) {
 
 if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && isset($_POST['tct_action'])) {
   header('Content-Type: application/json; charset=utf-8');
+  $emitTaskJson = static function (array $payload, int $httpStatus = 200): never {
+    http_response_code($httpStatus);
+    header('Content-Type: application/json; charset=utf-8');
+    if (ob_get_level() > 0) {
+      ob_clean();
+    }
+    echo tctEncodeResponseJson($payload);
+    exit;
+  };
   $csrfToken = egmSecurityReadCsrfFromRequest($_POST, 'csrf');
   if (!egmSecurityIsValidCsrfToken($csrfToken)) {
     http_response_code(403);
@@ -2522,15 +2548,12 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $id = trim((string)($_POST['id'] ?? ''));
     $resolution = trim((string)($_POST['no_quit_resolution'] ?? ''));
     if ($id === '') {
-      echo json_encode(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], JSON_UNESCAPED_UNICODE);
-      exit;
+      $emitTaskJson(['status' => 'error', 'message' => 'شناسه بازه نامعتبر است.'], 422);
     }
     try {
       $resolution = egmPeriodEndNormalizeResolution($resolution);
     } catch (InvalidArgumentException $error) {
-      http_response_code(422);
-      echo json_encode(['status' => 'error', 'message' => $error->getMessage()], JSON_UNESCAPED_UNICODE);
-      exit;
+      $emitTaskJson(['status' => 'error', 'message' => $error->getMessage()], 422);
     }
 
     $targetIndex = null;
@@ -2541,25 +2564,20 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       }
     }
     if ($targetIndex === null) {
-      echo json_encode(['status' => 'error', 'message' => 'بازه پیدا نشد.'], JSON_UNESCAPED_UNICODE);
-      exit;
+      $emitTaskJson(['status' => 'error', 'message' => 'بازه پیدا نشد.'], 404);
     }
-    if (trim((string)($tasks[$targetIndex]['endedAt'] ?? '')) !== '') {
-      echo json_encode(['status' => 'error', 'message' => 'این بازه قبلاً پایان یافته است.'], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
-
     $databaseContext = egmDatabaseRuntimeContextForPath($tctStorePath);
     if (!is_array($databaseContext) || !($databaseContext['pdo'] ?? null) instanceof PDO) {
-      http_response_code(503);
-      echo json_encode(['status' => 'error', 'message' => 'اتصال پایگاه داده بازه در دسترس نیست.'], JSON_UNESCAPED_UNICODE);
-      exit;
+      $emitTaskJson(['status' => 'error', 'message' => 'اتصال پایگاه داده بازه در دسترس نیست.'], 503);
     }
 
     $pdo = $databaseContext['pdo'];
     $dataTable = (string)($databaseContext['tables']['data'] ?? '');
     $userPeriodsTable = (string)($databaseContext['tables']['user_periods'] ?? '');
     $endedAt = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i:s');
+    $alreadyEnded = false;
+    $conflictingResolution = '';
+    $responseJson = '';
     try {
       $pdo->beginTransaction();
       // Serialize simultaneous End Period requests. The periods JSON row is
@@ -2582,49 +2600,76 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       if ($targetIndex === null) {
         throw new RuntimeException('period_not_found');
       }
-      if (trim((string)($tasks[$targetIndex]['endedAt'] ?? '')) !== '') {
-        throw new RuntimeException('period_already_ended');
+      $storedEndedAt = trim((string)($tasks[$targetIndex]['endedAt'] ?? ''));
+      if ($storedEndedAt !== '') {
+        $storedResolution = trim((string)($tasks[$targetIndex]['endedNoQuitResolution'] ?? ''));
+        if ($storedResolution !== '' && $storedResolution !== $resolution) {
+          $conflictingResolution = $storedResolution;
+          throw new RuntimeException('period_resolution_conflict');
+        }
+        $alreadyEnded = true;
+        $endedAt = $storedEndedAt;
+        if ($storedResolution !== '') {
+          $resolution = $storedResolution;
+        }
+        $classification = [
+          'pending' => (int)($tasks[$targetIndex]['endedNoQuitCount'] ?? 0),
+          'classified' => (int)($tasks[$targetIndex]['endedNoQuitCount'] ?? 0),
+          'resolution' => $resolution,
+        ];
+      } else {
+        $periodCode = tctNormalizeTagCode((string)($tasks[$targetIndex]['tagCode'] ?? ''));
+        if ($periodCode === '') {
+          throw new RuntimeException('period_code_invalid');
+        }
+        $classification = egmPeriodEndClassifyOpenAttendance($pdo, $userPeriodsTable, $periodCode, $resolution);
+        $tasks[$targetIndex]['active'] = false;
+        $tasks[$targetIndex]['endedAt'] = $endedAt;
+        $tasks[$targetIndex]['endedBy'] = $tctSessionUserCode;
+        $tasks[$targetIndex]['endedNoQuitResolution'] = $resolution;
+        $tasks[$targetIndex]['endedNoQuitCount'] = (int)($classification['classified'] ?? 0);
+        $tasks = tctReindexTasks($tasks);
+        if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
+          throw new RuntimeException('ذخیره وضعیت پایان بازه ناموفق بود.');
+        }
       }
-      $periodCode = tctNormalizeTagCode((string)($tasks[$targetIndex]['tagCode'] ?? ''));
-      if ($periodCode === '') {
-        throw new RuntimeException('period_code_invalid');
-      }
-      $classification = egmPeriodEndClassifyOpenAttendance($pdo, $userPeriodsTable, $periodCode, $resolution);
-      $tasks[$targetIndex]['active'] = false;
-      $tasks[$targetIndex]['endedAt'] = $endedAt;
-      $tasks[$targetIndex]['endedBy'] = $tctSessionUserCode;
-      $tasks[$targetIndex]['endedNoQuitResolution'] = $resolution;
-      $tasks[$targetIndex]['endedNoQuitCount'] = (int)($classification['classified'] ?? 0);
-      $tasks = tctReindexTasks($tasks);
-      if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
-        throw new RuntimeException('ذخیره وضعیت پایان بازه ناموفق بود.');
-      }
+
+      $classifiedCount = max(0, (int)($classification['classified'] ?? 0));
+      $presenceLabel = $resolution === 'correct_presence' ? 'حضور واقعی' : 'حضور نامعقول';
+      $message = $alreadyEnded
+        ? "بازه قبلاً با موفقیت پایان یافته بود و وضعیت {$classifiedCount} مهمان بدون خروج به «{$presenceLabel}» ثبت شده است."
+        : "بازه پایان یافت و وضعیت {$classifiedCount} مهمان بدون خروج به «{$presenceLabel}» تغییر کرد.";
+      $responseJson = json_encode([
+        'status' => 'ok',
+        'message' => $message,
+        'classified_count' => $classifiedCount,
+        'resolution' => $resolution,
+        'ended_at' => $endedAt,
+        'already_ended' => $alreadyEnded,
+        'tasks' => $buildTasksForResponse($tasks),
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
       $pdo->commit();
     } catch (Throwable $error) {
       if ($pdo->inTransaction()) {
         $pdo->rollBack();
       }
-      if ($error->getMessage() === 'period_already_ended') {
-        http_response_code(409);
-        echo json_encode(['status' => 'error', 'message' => 'این بازه قبلاً پایان یافته است.'], JSON_UNESCAPED_UNICODE);
-        exit;
+      if ($error->getMessage() === 'period_resolution_conflict') {
+        $savedPresenceLabel = $conflictingResolution === 'correct_presence' ? 'حضور واقعی' : 'حضور نامعقول';
+        $emitTaskJson([
+          'status' => 'error',
+          'message' => "این بازه قبلاً پایان یافته و مهمانان بدون خروج با وضعیت «{$savedPresenceLabel}» ثبت شده‌اند؛ وضعیت ذخیره‌شده تغییر نکرد.",
+          'resolution' => $conflictingResolution,
+          'already_ended' => true,
+        ], 409);
       }
       error_log('Failed to end EGM period: ' . $error->getMessage());
-      http_response_code(500);
-      echo json_encode(['status' => 'error', 'message' => 'پایان بازه ناموفق بود؛ هیچ تغییری ثبت نشد.'], JSON_UNESCAPED_UNICODE);
-      exit;
+      $emitTaskJson(['status' => 'error', 'message' => 'پایان بازه ناموفق بود؛ هیچ تغییری ثبت نشد.'], 500);
     }
 
-    $classifiedCount = (int)($classification['classified'] ?? 0);
-    $presenceLabel = $resolution === 'correct_presence' ? 'حضور واقعی' : 'حضور نامعقول';
-    echo json_encode([
-      'status' => 'ok',
-      'message' => "بازه پایان یافت و وضعیت {$classifiedCount} مهمان بدون خروج به «{$presenceLabel}» تغییر کرد.",
-      'classified_count' => $classifiedCount,
-      'resolution' => $resolution,
-      'ended_at' => $endedAt,
-      'tasks' => $buildTasksForResponse($tasks)
-    ], JSON_UNESCAPED_UNICODE);
+    if (ob_get_level() > 0) {
+      ob_clean();
+    }
+    echo $responseJson;
     exit;
   }
 

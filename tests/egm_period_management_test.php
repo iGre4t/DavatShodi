@@ -116,6 +116,9 @@ foreach ($periodFrontends as $path) {
     egmPeriodAssert(str_contains($source, 'type=full_log'), "The full period log export is not linked in {$path}");
     egmPeriodAssert(str_contains($source, 'type=user_conditions'), "The user-conditions period export is not linked in {$path}");
     egmPeriodAssert(str_contains($source, "requestPeriodInviteCards('export_data'"), "The Invite Card XLSX export data action is not wired in {$path}");
+    egmPeriodAssert(str_contains($source, 'period_date: periodDateForPane(pane)'), "The Invite Card export does not send its selected period date in {$path}");
+    egmPeriodAssert(str_contains($source, 'function periodDateForPane(pane)'), "Period-specific filenames cannot resolve their configured timeline date in {$path}");
+    egmPeriodAssert(str_contains($source, "if (!shamsiDate) throw new Error('تاریخ بازه تنظیم نشده است"), "A missing period date can still silently fall back to today in {$path}");
     egmPeriodAssert(str_contains($source, 'window.XLSX.writeFile(workbook, filename'), "The Invite Card export is not written as a client-side XLSX in {$path}");
     egmPeriodAssert(str_contains($source, "String(invitee.nationalId || invitee.workId || '')"), "Period Invite Card QR data does not fall back from National ID to Work ID in {$path}");
     egmPeriodAssert(!str_contains($source, 'const inviteUrl = new URL(`Invited/'), "Period Invite Card QR still contains the public invite URL in {$path}");

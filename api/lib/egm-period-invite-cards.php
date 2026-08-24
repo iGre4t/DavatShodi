@@ -503,7 +503,7 @@ function egmPeriodInviteCardsPublicBaseUrl(array $context): string
     return $scheme . '://' . $host . ($encodedPath !== '' ? '/' . $encodedPath : '');
 }
 
-/** @return array{rows:array<int,array<string,string>>,filename:string,count:int} */
+/** @return array{rows:array<int,array<string,string>>,filename:string,count:int,period_date:string} */
 function egmPeriodInviteCardsBuildExportData(
     array $rows,
     string $egmCode,
@@ -511,6 +511,10 @@ function egmPeriodInviteCardsBuildExportData(
     string $publicBaseUrl,
     ?string $periodDate = null
 ): array {
+    $resolvedPeriodDate = egmExportNormalizeGregorianDate($periodDate);
+    if ($resolvedPeriodDate === null) {
+        throw new InvalidArgumentException('تاریخ این بازه مشخص نیست؛ خروجی با تاریخ امروز نام‌گذاری نمی‌شود.');
+    }
     $exportRows = [];
     $base = rtrim($publicBaseUrl, '/');
     foreach ($rows as $row) {
@@ -533,8 +537,9 @@ function egmPeriodInviteCardsBuildExportData(
 
     return [
         'rows' => $exportRows,
-        'filename' => egmExportDatedFilename('لینک کارت‌های دعوت', $periodDate),
+        'filename' => egmExportPeriodDatedFilename('لینک کارت‌های دعوت', $resolvedPeriodDate),
         'count' => count($exportRows),
+        'period_date' => $resolvedPeriodDate,
     ];
 }
 
@@ -576,8 +581,11 @@ function handleEgmPeriodInviteCardsRequest(string $missionDir): void
             foreach (egmPeriodInvitesPeriods($context) as $period) {
                 if (!is_array($period)) continue;
                 if (trim((string)($period['tagCode'] ?? ($period['code'] ?? ''))) !== $periodCode) continue;
-                $periodDate = trim((string)($period['startDate'] ?? ($period['start_date'] ?? ''))) ?: null;
+                $periodDate = egmExportPeriodDate($period);
                 break;
+            }
+            if ($periodDate === null) {
+                $periodDate = egmExportNormalizeGregorianDate((string)($input['period_date'] ?? ''));
             }
             $export = egmPeriodInviteCardsBuildExportData(
                 egmPeriodInviteCardsGeneratedExportRows($context, $periodCode),
