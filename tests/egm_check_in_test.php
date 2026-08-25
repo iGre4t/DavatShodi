@@ -306,6 +306,7 @@ try {
     ], ['username' => 'test-admin'], new DateTimeImmutable('2026-08-18 10:25:00', $timezone));
     egmCheckInAssert(($walkIn['result'] ?? '') === 'walk_in_registered', 'Walk-in guest registration failed');
     egmCheckInAssert(($walkIn['guest_number'] ?? '') !== '', 'Walk-in guest did not receive a guest number');
+    egmCheckInAssert(($walkIn['entry_recorded'] ?? false) === true, 'Walk-in registration did not immediately record entry');
     $walkInUser = $pdo->query(
         "SELECT `id`, `source_type`, `is_uninvited_guest`, `outside_organization`, `uninvited_registered_by` "
         . "FROM `{$tables['users']}` WHERE `national_id` = '3234567890'"
@@ -320,15 +321,15 @@ try {
     )->fetch(PDO::FETCH_ASSOC);
     egmCheckInAssert(($walkInInvitation['invitation_source'] ?? '') === 'walk_in', 'Walk-in period invitation source is incorrect');
     egmCheckInAssert((int)($walkInInvitation['is_uninvited_guest'] ?? 0) === 1, 'Walk-in period flag was not stored');
-    egmCheckInAssert(($walkInInvitation['attendance_state'] ?? '') === 'not_entered', 'Walk-in registration incorrectly marked entry');
+    egmCheckInAssert(($walkInInvitation['attendance_state'] ?? '') === 'entered', 'Walk-in registration did not mark entry');
     egmCheckInAssert(($walkInInvitation['last_control_condition'] ?? '') === 'walk_in_registered', 'Walk-in condition was not stored');
     $registeredWalkInStats = egmCheckInDashboardStats($context);
     egmCheckInAssert(($registeredWalkInStats['total'] ?? 0) === 3, 'Registered walk-in incorrectly increased the invited dashboard total');
     egmCheckInAssert(($registeredWalkInStats['invited_total'] ?? 0) === 3, 'Registered walk-in changed the ordinary invited count');
     egmCheckInAssert(($registeredWalkInStats['walk_in_total'] ?? 0) === 1, 'Registered walk-in was not shown in dashboard stats');
-    egmCheckInAssert(($registeredWalkInStats['walk_in_entered'] ?? -1) === 0, 'Walk-in registration was incorrectly counted as entry');
+    egmCheckInAssert(($registeredWalkInStats['walk_in_entered'] ?? 0) === 1, 'Walk-in registration was not immediately counted as entry');
     egmCheckInAssert(($registeredWalkInStats['overall_total'] ?? 0) === 4, 'Dashboard overall total did not retain the walk-in count');
-    egmCheckInAssert(($registeredWalkInStats['entered'] ?? 0) === 2, 'Walk-in registration changed the invited entered count');
+    egmCheckInAssert(($registeredWalkInStats['entered'] ?? 0) === 3, 'Main entered count omitted the newly admitted walk-in');
     egmCheckInAssert(($registeredWalkInStats['waiting'] ?? 0) === 1, 'Walk-in registration changed the invited waiting count');
     egmCheckInAssert(egmCheckInStatsVersion($context) !== $statsVersionBeforeWalkIn, 'Roster stats version did not change after walk-in registration');
     $oeuWalkInAfter = (int)$pdo->query(
@@ -336,7 +337,7 @@ try {
     )->fetchColumn();
     egmCheckInAssert($oeuWalkInAfter === $oeuWalkInBefore, 'Walk-in guest was incorrectly added to OEU');
     $walkInEntry = egmCheckInProcess($context, '3234567890', new DateTimeImmutable('2026-08-18 10:26:00', $timezone));
-    egmCheckInAssert(($walkInEntry['result'] ?? '') === 'success', 'Registered walk-in guest could not enter on the next scan');
+    egmCheckInAssert(($walkInEntry['result'] ?? '') === 'duplicate', 'A second scan overwrote or duplicated the walk-in entry');
     $enteredWalkInStats = egmCheckInDashboardStats($context);
     egmCheckInAssert(($enteredWalkInStats['total'] ?? 0) === 3, 'Entered walk-in incorrectly increased the invited dashboard total');
     egmCheckInAssert(($enteredWalkInStats['entered'] ?? 0) === 3, 'Main entered count omitted the entered walk-in');
@@ -361,12 +362,21 @@ try {
         ($otherPeriodWalkIn['result'] ?? '') === 'walk_in_registered',
         'A guest invited to another period could not be registered as a current-period walk-in'
     );
+    egmCheckInAssert(
+        ($otherPeriodWalkIn['entry_recorded'] ?? false) === true,
+        'Admitting a guest invited to another period did not immediately record entry'
+    );
+    $otherPeriodImmediateStats = egmCheckInDashboardStats($context);
+    egmCheckInAssert(($otherPeriodImmediateStats['total'] ?? 0) === 3, 'Other-period admission changed the genuine invited denominator');
+    egmCheckInAssert(($otherPeriodImmediateStats['entered'] ?? 0) === 4, 'Other-period admission did not immediately increase the main entered count');
+    egmCheckInAssert(($otherPeriodImmediateStats['other_period_entered'] ?? 0) === 1, 'Other-period admission was not placed in its dashboard category');
+    egmCheckInAssert(($otherPeriodImmediateStats['walk_in_entered'] ?? 0) === 1, 'Other-period admission was mixed with pure walk-ins');
     $otherPeriodEntry = egmCheckInProcess(
         $context,
         '2234567890',
         new DateTimeImmutable('2026-08-18 10:28:00', $timezone)
     );
-    egmCheckInAssert(($otherPeriodEntry['result'] ?? '') === 'success', 'Other-period walk-in entry was not recorded');
+    egmCheckInAssert(($otherPeriodEntry['result'] ?? '') === 'duplicate', 'A second scan duplicated the other-period guest entry');
     $threeWayStats = egmCheckInDashboardStats($context);
     egmCheckInAssert(($threeWayStats['total'] ?? 0) === 3, 'Other-period guest incorrectly increased the current invitation total');
     egmCheckInAssert(($threeWayStats['entered'] ?? 0) === 4, 'Main entered count omitted the other-period guest');
@@ -376,6 +386,43 @@ try {
     egmCheckInAssert(($threeWayStats['walk_in_total'] ?? 0) === 1, 'Pure walk-in total was mixed with other-period guests');
     egmCheckInAssert(($threeWayStats['walk_in_entered'] ?? 0) === 1, 'Pure walk-in entered count was mixed with other-period guests');
     egmCheckInAssert(($threeWayStats['waiting'] ?? 0) === 1, 'Non-current invitations changed the current invited waiting count');
+
+    // Production-shaped legacy row: the old registration flow created the
+    // current walk-in row without entry, while a migration copied the global
+    // uninvited flag onto a genuine invitation in another period. Dashboard
+    // repair must restore entry and classify by the explicit invitation source.
+    $pdo->exec(
+        "INSERT INTO `{$tables['users']}` (`work_id`, `first_name`, `last_name`, `national_id`, `phone_number`, "
+        . "`deputy`, `general_department`, `department`, `gender`, `postal_level`, `source_row`, `is_uninvited_guest`) "
+        . "VALUES ('W-LEGACY-OTHER', 'Legacy', 'Other Period', '8234567890', '', '', '', '', '', '', 22, 1)"
+    );
+    $legacyOtherPeriodUserId = (int)$pdo->lastInsertId();
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`,`invitation_source`,`invited_at`,`is_uninvited_guest`) "
+        . "VALUES (:user_id,'02','oeu','2026-08-17 09:00:00',1)"
+    )->execute([':user_id' => $legacyOtherPeriodUserId]);
+    $pdo->prepare(
+        "INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`,`invitation_source`,`invited_at`,`attendance_state`,"
+        . "`last_control_condition`,`last_control_action`,`last_control_at`,`is_uninvited_guest`,`uninvited_registered_at`) "
+        . "VALUES (:user_id,'01','walk_in','2026-08-18 10:29:00','not_entered','not_invited','register',"
+        . "'2026-08-18 10:29:00',1,'2026-08-18 10:29:00')"
+    )->execute([':user_id' => $legacyOtherPeriodUserId]);
+    $legacyThreeWayStats = egmCheckInDashboardStats($context);
+    egmCheckInAssert(($legacyThreeWayStats['total'] ?? 0) === 3, 'Legacy other-period admission changed the genuine invited denominator');
+    egmCheckInAssert(($legacyThreeWayStats['entered'] ?? 0) === 5, 'Legacy registered admission was omitted from the main entered count');
+    egmCheckInAssert(($legacyThreeWayStats['other_period_entered'] ?? 0) === 2, 'Legacy other-period invitation was hidden by its stale uninvited flag');
+    egmCheckInAssert(($legacyThreeWayStats['walk_in_entered'] ?? 0) === 1, 'Legacy other-period invitation was counted as a pure walk-in');
+    $legacyCurrentAttendance = $pdo->query(
+        "SELECT `entered_date`,`entered_time`,`attendance_state` FROM `{$tables['user_periods']}` "
+        . "WHERE `user_id`={$legacyOtherPeriodUserId} AND `period_code`='01'"
+    )->fetch(PDO::FETCH_ASSOC);
+    egmCheckInAssert(
+        is_array($legacyCurrentAttendance)
+            && trim((string)($legacyCurrentAttendance['entered_date'] ?? '')) === '2026-08-18'
+            && trim((string)($legacyCurrentAttendance['entered_time'] ?? '')) === '10:29:00'
+            && ($legacyCurrentAttendance['attendance_state'] ?? '') === 'entered',
+        'Legacy registered admission was not repaired from its registration timestamp'
+    );
 
     // The user-level walk-in flag is historical. A genuine invitation in a
     // different period must remain an invitation in that period's own stats.

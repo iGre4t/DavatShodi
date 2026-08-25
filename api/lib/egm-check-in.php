@@ -660,7 +660,7 @@ function egmCheckInUninvitedOptions(array $context): array
     return $result;
 }
 
-/** @return array{result:string,message:string,user_id:int,guest_number:string} */
+/** @return array{result:string,message:string,user_id:int,guest_number:string,entry_recorded:bool,attendance_state:string} */
 function egmCheckInRegisterUninvited(
     array $context,
     array $input,
@@ -755,21 +755,66 @@ function egmCheckInRegisterUninvited(
         ]);
         $invitationIdStatement = $pdo->prepare(
             "SELECT `id`, `entered_date`, `entered_time`, `quit_date`, `quit_time` FROM `{$periodsTable}` "
-            . "WHERE `user_id` = :user_id AND `period_code` = :period_code LIMIT 1"
+            . "WHERE `user_id` = :user_id AND `period_code` = :period_code LIMIT 1 FOR UPDATE"
         );
         $invitationIdStatement->execute([':user_id' => $userId, ':period_code' => $periodCode]);
         $storedInvitation = $invitationIdStatement->fetch(PDO::FETCH_ASSOC);
         $invitationId = (int)($storedInvitation['id'] ?? 0);
-        $attendanceState = trim((string)($storedInvitation['quit_date'] ?? '')) !== ''
-            && trim((string)($storedInvitation['quit_time'] ?? '')) !== ''
+        if (!is_array($storedInvitation) || $invitationId < 1) {
+            throw new RuntimeException('The current-period guest row could not be loaded after registration.');
+        }
+        $hasEntryDate = trim((string)($storedInvitation['entered_date'] ?? '')) !== '';
+        $hasEntryTime = trim((string)($storedInvitation['entered_time'] ?? '')) !== '';
+        $hasQuitDate = trim((string)($storedInvitation['quit_date'] ?? '')) !== '';
+        $hasQuitTime = trim((string)($storedInvitation['quit_time'] ?? '')) !== '';
+        if ($hasEntryDate !== $hasEntryTime || $hasQuitDate !== $hasQuitTime || (!$hasEntryDate && $hasQuitDate)) {
+            throw new RuntimeException('The current-period attendance row is inconsistent and was not overwritten.');
+        }
+
+        // Confirming the walk-in dialog is the operator's admission decision.
+        // Record entry in this transaction so dashboard totals update at once.
+        // The conditional write preserves an entry created concurrently.
+        $entryRecorded = false;
+        if (!$hasEntryDate && !$hasQuitDate) {
+            $entryStatement = $pdo->prepare(
+                "UPDATE `{$periodsTable}` SET `entered_date` = :entered_date, `entered_time` = :entered_time, "
+                . "`attendance_state` = 'entered' WHERE `id` = :id "
+                . "AND (`entered_date` IS NULL OR TRIM(`entered_date`) = '') "
+                . "AND (`entered_time` IS NULL OR TRIM(`entered_time`) = '') "
+                . "AND (`quit_date` IS NULL OR TRIM(`quit_date`) = '') "
+                . "AND (`quit_time` IS NULL OR TRIM(`quit_time`) = '')"
+            );
+            $entryStatement->execute([
+                ':entered_date' => $now->format('Y-m-d'),
+                ':entered_time' => $now->format('H:i:s'),
+                ':id' => $invitationId,
+            ]);
+            $entryRecorded = $entryStatement->rowCount() === 1;
+            if ($entryRecorded) {
+                $hasEntryDate = true;
+                $hasEntryTime = true;
+            }
+        }
+        $attendanceState = $hasQuitDate && $hasQuitTime
             ? 'quit_completed'
-            : (trim((string)($storedInvitation['entered_date'] ?? '')) !== ''
-                && trim((string)($storedInvitation['entered_time'] ?? '')) !== '' ? 'entered' : 'not_entered');
-        $message = "مهمان ناخوانده {$firstName} {$lastName} به بازه فعال اضافه شد؛ برای ثبت ورود، کد ملی را دوباره اسکن کنید.";
-        egmCheckInSavePeriodCondition($context, $invitationId, 'walk_in_registered', 'register', $message, $now, $attendanceState);
+            : ($hasEntryDate && $hasEntryTime ? 'entered' : 'not_entered');
+        $message = $entryRecorded
+            ? "مهمان ناخوانده {$firstName} {$lastName} به بازه فعال اضافه شد و ورود او ثبت شد."
+            : "مهمان ناخوانده {$firstName} {$lastName} در بازه فعال ثبت شده بود و سابقه حضور او تغییر نکرد.";
+        $attendanceAction = $entryRecorded ? 'entry' : 'register';
+        egmCheckInSavePeriodCondition(
+            $context,
+            $invitationId,
+            'walk_in_registered',
+            $attendanceAction,
+            $message,
+            $now,
+            $attendanceState
+        );
         $loggedUser = ['id' => $userId, 'work_id' => $workId];
         egmCheckInWriteLog($context, $loggedUser, $nationalId, 'walk_in_registered', $message, $period, $now, [
-            'attendance_action' => 'register',
+            'attendance_action' => $attendanceAction,
+            'entry_recorded' => $entryRecorded,
             'outside_organization' => $outsideOrganization,
             'registered_by' => $actor,
         ]);
@@ -779,6 +824,8 @@ function egmCheckInRegisterUninvited(
             'message' => $message,
             'user_id' => $userId,
             'guest_number' => (string)($guestNumbers[$userId] ?? ''),
+            'entry_recorded' => $entryRecorded,
+            'attendance_state' => $attendanceState,
         ];
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1037,6 +1084,38 @@ function egmCheckInGenderGroup(string $gender): string
 }
 
 /**
+ * Older Guest Control registrations required a second scan before entry was
+ * stored. Registration confirmation is now the admission decision, so repair
+ * those existing rows from their recorded registration timestamp. This is
+ * idempotent and never overwrites an entry, a quit, or a normal invitation.
+ */
+function egmCheckInRepairRegisteredWalkInEntries(array $context, string $periodCode): int
+{
+    $pdo = $context['pdo'] ?? null;
+    $userPeriodsTable = trim((string)($context['tables']['user_periods'] ?? ''));
+    $periodCode = trim($periodCode);
+    if (!$pdo instanceof PDO || $userPeriodsTable === '' || $periodCode === '') return 0;
+
+    $registeredAt = 'COALESCE(`uninvited_registered_at`, `last_control_at`, `invited_at`, `created_at`, NOW())';
+    $statement = $pdo->prepare(
+        "UPDATE `{$userPeriodsTable}` SET "
+        . "`entered_date` = DATE({$registeredAt}), `entered_time` = TIME({$registeredAt}), "
+        . "`attendance_state` = 'entered', `last_control_action` = 'entry' "
+        . "WHERE `period_code` = :period_code "
+        . "AND (COALESCE(`is_uninvited_guest`,0)=1 "
+        . "OR LOWER(TRIM(COALESCE(`invitation_source`,'')))='walk_in') "
+        . "AND (`uninvited_registered_at` IS NOT NULL "
+        . "OR LOWER(TRIM(COALESCE(`last_control_condition`,'')))='walk_in_registered') "
+        . "AND (`entered_date` IS NULL OR TRIM(`entered_date`)='') "
+        . "AND (`entered_time` IS NULL OR TRIM(`entered_time`)='') "
+        . "AND (`quit_date` IS NULL OR TRIM(`quit_date`)='') "
+        . "AND (`quit_time` IS NULL OR TRIM(`quit_time`)='')"
+    );
+    $statement->execute([':period_code' => $periodCode]);
+    return max(0, $statement->rowCount());
+}
+
+/**
  * Compact attendance totals for the active period. The roster denominator and
  * waiting count describe invited guests only, while entered/inside/quit include
  * everyone physically processed. The entry breakdown separates guests invited
@@ -1080,6 +1159,13 @@ function egmCheckInDashboardStats(array $context): array
 
     $usersTable = (string)$context['tables']['users'];
     $userPeriodsTable = (string)$context['tables']['user_periods'];
+    try {
+        egmCheckInRepairRegisteredWalkInEntries($context, $periodCode);
+    } catch (Throwable $error) {
+        // Keep statistics available even when a malformed legacy row cannot
+        // be repaired. New registrations already store entry transactionally.
+        error_log('EGM legacy walk-in entry repair unavailable: ' . $error->getMessage());
+    }
     $hasEntry = "p.`entered_date` IS NOT NULL AND TRIM(p.`entered_date`) <> '' "
         . "AND p.`entered_time` IS NOT NULL AND TRIM(p.`entered_time`) <> ''";
     $hasQuit = "p.`quit_date` IS NOT NULL AND TRIM(p.`quit_date`) <> '' "
@@ -1091,7 +1177,8 @@ function egmCheckInDashboardStats(array $context): array
         . "OR LOWER(TRIM(COALESCE(p.`invitation_source`,'')))='walk_in')";
     $hasOtherPeriodInvitation = "EXISTS (SELECT 1 FROM `{$userPeriodsTable}` op "
         . "WHERE op.`user_id`=p.`user_id` AND op.`period_code`<>p.`period_code` "
-        . "AND COALESCE(op.`is_uninvited_guest`,0)=0 "
+        // The explicit source is authoritative. Some migrated databases copied
+        // the historical user walk-in flag onto genuine period invitations.
         . "AND LOWER(TRIM(COALESCE(op.`invitation_source`,'')))<>'walk_in')";
     $isOtherPeriodGuest = "({$isCurrentWalkIn} AND {$hasOtherPeriodInvitation})";
     $isPureWalkIn = "({$isCurrentWalkIn} AND NOT ({$hasOtherPeriodInvitation}))";
