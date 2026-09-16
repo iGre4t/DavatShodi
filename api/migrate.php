@@ -71,10 +71,14 @@ try {
     $report['restoredShells'] = materializeDatabaseBackedInstances($pdo, dirname(__DIR__));
 } catch (Throwable $error) {
     $report['errors'][] = $error->getMessage();
+    error_log('Database migration failed: ' . $error->getMessage());
 }
 
 $ok = $report['errors'] === [];
-http_response_code($ok ? 200 : 500);
+// Keep this page at HTTP 200 even when a migration fails. The production CDN
+// replaces upstream 5xx bodies with its own generic page, which would hide the
+// actionable database error from the administrator running this tool.
+http_response_code(200);
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store');
 ?>
