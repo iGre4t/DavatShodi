@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>DavatShodi.GuestManager</AssemblyName>
+    <RootNamespace>DavatShodi.GuestManager</RootNamespace>
+    <ApplicationIcon>Assets\Brand\HamrahIcon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <Resource Include="Assets\Fonts\*.ttf" />
+    <Resource Include="Assets\Brand\HamrahIcon.png" />
+    <Resource Include="Assets\Brand\HamrahIcon.ico" />
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

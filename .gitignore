@@ -43,3 +43,10 @@ api/config.php
 /mini apps/Task Club/TC Prize Levels.json.bak.tmp
 /mini apps/Task Club/TC Prize Levels.json.rollback
 /mini apps/Task Club/TC Prize Levels.json.corrupt-*
+/WinApp/**/bin/
+/WinApp/**/obj/
+
+# Local exports, database backups, and Windows publish artifacts
+/.codex-behavior-export/
+/outputs/
+/WinApp/publish-*/

@@ -134,14 +134,15 @@
   }
 
   async function saveSettings(settings) {
-    try {
-      await fetch(`${API_URL}?action=save_settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ settings, csrf: csrfToken })
-      });
-    } catch {}
+    const response = await fetch(`${API_URL}?action=save_settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ settings, csrf: csrfToken })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.status !== "ok") throw new Error(payload.message || "ذخیره تنظیمات ناموفق بود.");
+    return payload;
   }
 
   function initAssignAdmin() {
@@ -530,25 +531,50 @@
 
   const settingsCache = {};
 
+  function renderTicketTypes(rawTickets) {
+    const root = getEl("egm-ticket-types");
+    if (!root) return;
+    const tickets = Array.isArray(rawTickets) && rawTickets.length ? rawTickets : [{ id: "default", title: "Custom Number Ticket" }];
+    root.innerHTML = tickets.map((ticket, index) => `<div class="field" data-ticket-type-row style="display:grid;grid-template-columns:1fr auto;gap:8px"><input type="text" maxlength="100" value="${String(ticket.title || `Ticket ${index + 1}`).replace(/[&<>\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]))}" data-ticket-title data-ticket-id="${String(ticket.id || `ticket-${index + 1}`).replace(/[^a-z0-9_-]/gi, '')}" aria-label="عنوان بلیت ${index + 1}" /><button type="button" class="btn ghost" data-remove-ticket-type>حذف</button></div>`).join("");
+  }
+
+  function collectTicketTypes() {
+    return Array.from(document.querySelectorAll("[data-ticket-type-row]")).map((row, index) => {
+      const input = row.querySelector("[data-ticket-title]");
+      return { id: input?.dataset.ticketId || `ticket-${Date.now()}-${index}`, title: String(input?.value || `Ticket ${index + 1}`).trim() };
+    }).filter(ticket => ticket.title);
+  }
+
   function applySettings(settings) {
     const activeToggle = getEl("egm-active-toggle");
     const durationToggle = getEl("egm-duration-toggle");
     const maintenanceToggle = getEl("egm-maintenance-toggle");
     const eventAccessLockToggle = getEl("egm-event-access-lock-toggle");
+    const autoPrintToggle = getEl("egm-auto-print-toggle");
+    const doublePrintToggle = getEl("egm-double-print-toggle");
+    const customNumberTicketToggle = getEl("egm-custom-number-ticket-toggle");
+    const ticketOnlyToggle = getEl("egm-ticket-only-toggle");
     const startDate = getEl("egm-duration-start");
     const startTime = getEl("egm-duration-start-time");
     const endDate = getEl("egm-duration-end");
     const endTime = getEl("egm-duration-end-time");
+    const adminPasscodeState = getEl("egm-admin-passcode-state");
 
     Object.assign(settingsCache, settings);
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
     if (maintenanceToggle) maintenanceToggle.checked = Boolean(settings.maintenanceMode);
     if (eventAccessLockToggle) eventAccessLockToggle.checked = Boolean(settings.eventAccessLocked);
+    if (autoPrintToggle) autoPrintToggle.checked = Boolean(settings.printSettings?.autoPrint);
+    if (doublePrintToggle) doublePrintToggle.checked = Boolean(settings.printSettings?.doublePrint);
+    if (customNumberTicketToggle) customNumberTicketToggle.checked = Boolean(settings.customNumberTicketSettings?.active);
+    if (ticketOnlyToggle) ticketOnlyToggle.checked = Boolean(settings.customNumberTicketSettings?.ticketOnly);
+    renderTicketTypes(settings.customNumberTicketSettings?.tickets);
     if (startDate && typeof settings.startDate === "string") startDate.value = settings.startDate;
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
     if (endDate && typeof settings.endDate === "string") endDate.value = settings.endDate;
     if (endTime && typeof settings.endTime === "string") endTime.value = settings.endTime;
+    if (adminPasscodeState) adminPasscodeState.textContent = settings.adminPasscode?.configured ? "کد تنظیم شده است" : "تنظیم نشده";
     syncToggles({ activeToggle, durationToggle });
   }
 
@@ -557,21 +583,45 @@
     const durationToggle = getEl("egm-duration-toggle");
     const maintenanceToggle = getEl("egm-maintenance-toggle");
     const eventAccessLockToggle = getEl("egm-event-access-lock-toggle");
+    const autoPrintToggle = getEl("egm-auto-print-toggle");
+    const doublePrintToggle = getEl("egm-double-print-toggle");
+    const customNumberTicketToggle = getEl("egm-custom-number-ticket-toggle");
+    const ticketOnlyToggle = getEl("egm-ticket-only-toggle");
     const startDate = getEl("egm-duration-start");
     const startTime = getEl("egm-duration-start-time");
     const endDate = getEl("egm-duration-end");
     const endTime = getEl("egm-duration-end-time");
+    const adminPasscode = getEl("egm-admin-passcode");
+    const adminPasscodeConfirm = getEl("egm-admin-passcode-confirm");
 
-    return {
+    const passcode = String(adminPasscode?.value || "").trim();
+    const confirmation = String(adminPasscodeConfirm?.value || "").trim();
+    if (passcode || confirmation) {
+      if (!/^\d{4,6}$/.test(passcode)) throw new Error("Admin Passcode باید ۴ تا ۶ رقم باشد.");
+      if (passcode !== confirmation) throw new Error("Admin Passcode و تکرار آن یکسان نیستند.");
+    }
+
+    const collected = {
       active: Boolean(activeToggle?.checked),
       duration: Boolean(durationToggle?.checked),
       maintenanceMode: Boolean(maintenanceToggle?.checked),
       eventAccessLocked: Boolean(eventAccessLockToggle?.checked),
+      printSettings: {
+        autoPrint: Boolean(autoPrintToggle?.checked),
+        doublePrint: Boolean(doublePrintToggle?.checked)
+      },
+      customNumberTicketSettings: {
+        active: Boolean(customNumberTicketToggle?.checked),
+        ticketOnly: Boolean(ticketOnlyToggle?.checked),
+        tickets: collectTicketTypes()
+      },
       startDate: startDate?.value ?? "",
       startTime: startTime?.value ?? "",
       endDate: endDate?.value ?? "",
       endTime: endTime?.value ?? ""
     };
+    if (passcode) collected.adminPasscode = { code: passcode };
+    return collected;
   }
 
   function normalizeLandingSection(section, index = 0, options = {}) {
@@ -1390,6 +1440,62 @@
     initRewardGuide();
     const settings = await loadSettings();
     applySettings(settings);
+    getEl("egm-admin-passcode-save")?.addEventListener("click", async event => {
+      const button = event.currentTarget;
+      const status = getEl("egm-admin-passcode-status");
+      const input = getEl("egm-admin-passcode");
+      const confirm = getEl("egm-admin-passcode-confirm");
+      const normalize = value => String(value || "").trim()
+        .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+        .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+      const code = normalize(input?.value);
+      const confirmation = normalize(confirm?.value);
+      button.disabled = true;
+      if (status) status.textContent = "در حال ذخیره...";
+      try {
+        if (!/^\d{4,6}$/.test(code)) throw new Error("کد باید ۴ تا ۶ رقم باشد.");
+        if (code !== confirmation) throw new Error("کد و تکرار آن یکسان نیستند.");
+        await saveSettings({ adminPasscode: { code } });
+        if (input) input.value = "";
+        if (confirm) confirm.value = "";
+        if (status) status.textContent = "کد با موفقیت ذخیره شد.";
+        const state = getEl("egm-admin-passcode-state");
+        if (state) state.textContent = "کد تنظیم شده است";
+        settingsCache.adminPasscode = { ...settingsCache.adminPasscode, configured: true };
+        try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
+      } catch (error) {
+        if (status) status.textContent = error?.message || "ذخیره کد ناموفق بود.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+    getEl("egm-add-ticket-type")?.addEventListener("click", async event => {
+      const button = event.currentTarget;
+      const tickets = collectTicketTypes();
+      tickets.push({ id: `ticket-${Date.now()}`, title: `Ticket ${tickets.length + 1}` });
+      renderTicketTypes(tickets);
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = true;
+        button.textContent = "در حال ذخیره...";
+      }
+      try {
+        await saveSettings(collectSettings());
+        try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
+        window.location.reload();
+      } catch (error) {
+        if (button instanceof HTMLButtonElement) {
+          button.disabled = false;
+          button.textContent = error?.message || "خطا در ذخیره";
+        }
+      }
+    });
+    getEl("egm-ticket-types")?.addEventListener("click", event => {
+      const button = event.target instanceof Element ? event.target.closest("[data-remove-ticket-type]") : null;
+      if (!button) return;
+      const rows = document.querySelectorAll("[data-ticket-type-row]");
+      if (rows.length <= 1) return;
+      button.closest("[data-ticket-type-row]")?.remove();
+    });
     initRewardPrizeDisplay(settings);
     initLandingEditor(settings);
     initAssignAdmin();
@@ -1404,10 +1510,19 @@
       field?.addEventListener("input", updateStatus);
     });
     saveBtn?.addEventListener("click", async () => {
-      await saveSettings(collectSettings());
+      const original = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.textContent = "در حال ذخیره...";
       try {
-        localStorage.setItem("egmSettingsUpdated", String(Date.now()));
-      } catch {}
+        await saveSettings(collectSettings());
+        saveBtn.textContent = "ذخیره شد";
+        try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
+        window.setTimeout(() => { saveBtn.textContent = original; }, 1200);
+      } catch (error) {
+        saveBtn.textContent = error?.message || "خطا در ذخیره";
+      } finally {
+        saveBtn.disabled = false;
+      }
     });
     updateStatus();
   }

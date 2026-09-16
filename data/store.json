@@ -1,0 +1,261 @@
+{
+    "users": [],
+    "branches": [
+        {
+            "id": "branch-main",
+            "name": "Main Branch",
+            "systems": [
+                {
+                    "id": "system-1",
+                    "name": "Gaming Station",
+                    "pricesByPeriod": []
+                }
+            ],
+            "periods": [
+                {
+                    "id": "default",
+                    "start": 0,
+                    "end": 1440,
+                    "defaultPrices": {
+                        "p1": 150000,
+                        "p2": 200000,
+                        "p3": 260000,
+                        "p4": 320000,
+                        "birthday": 500000,
+                        "film": 350000
+                    }
+                }
+            ]
+        }
+    ],
+    "settings": {
+        "title": "Great Panel",
+        "timezone": "Asia\/Tehran",
+        "panelName": "Great Panel",
+        "siteIcon": "",
+        "appearance": {
+            "primary": "#1d75e1",
+            "background": "#ffffff",
+            "text": "#111111",
+            "toggle": "#1d75e1"
+        },
+        "backupSettings": {
+            "autoIntervalMinutes": 0,
+            "autoLimit": 0,
+            "lastAutoBackupAt": null
+        }
+    },
+    "printerSettings": {
+        "printerId": "printer-main",
+        "layout": "Portrait",
+        "paperSize": "A4",
+        "pagesPerPaper": "1",
+        "margin": "5mm",
+        "scale": "90"
+    },
+    "printerDevices": [
+        {
+            "id": "printer-default",
+            "name": "OneNote (Desktop) - Protected",
+            "layouts": [
+                "Portrait",
+                "Landscape"
+            ],
+            "paperSizes": [
+                "A4",
+                "A5",
+                "Letter",
+                "Custom"
+            ],
+            "pagesPerPaper": [
+                "1",
+                "2",
+                "4"
+            ],
+            "margins": [
+                "5mm",
+                "10mm",
+                "15mm"
+            ],
+            "scales": [
+                "90",
+                "100",
+                "110"
+            ]
+        },
+        {
+            "id": "printer-default-1",
+            "name": "POSPrinter POS80",
+            "layouts": [
+                "Portrait",
+                "Landscape"
+            ],
+            "paperSizes": [
+                "A4",
+                "A5",
+                "Letter",
+                "Custom"
+            ],
+            "pagesPerPaper": [
+                "1",
+                "2",
+                "4"
+            ],
+            "margins": [
+                "5mm",
+                "10mm",
+                "15mm"
+            ],
+            "scales": [
+                "90",
+                "100",
+                "110"
+            ]
+        },
+        {
+            "id": "printer-default-2",
+            "name": "OneNote (Desktop)",
+            "layouts": [
+                "Portrait",
+                "Landscape"
+            ],
+            "paperSizes": [
+                "A4",
+                "A5",
+                "Letter",
+                "Custom"
+            ],
+            "pagesPerPaper": [
+                "1",
+                "2",
+                "4"
+            ],
+            "margins": [
+                "5mm",
+                "10mm",
+                "15mm"
+            ],
+            "scales": [
+                "90",
+                "100",
+                "110"
+            ]
+        },
+        {
+            "id": "printer-default-3",
+            "name": "Microsoft Print to PDF",
+            "layouts": [
+                "Portrait",
+                "Landscape"
+            ],
+            "paperSizes": [
+                "A4",
+                "A5",
+                "Letter",
+                "Custom"
+            ],
+            "pagesPerPaper": [
+                "1",
+                "2",
+                "4"
+            ],
+            "margins": [
+                "5mm",
+                "10mm",
+                "15mm"
+            ],
+            "scales": [
+                "90",
+                "100",
+                "110"
+            ]
+        },
+        {
+            "id": "printer-default-4",
+            "name": "BTP-R180II(U) 2",
+            "layouts": [
+                "Portrait",
+                "Landscape"
+            ],
+            "paperSizes": [
+                "A4",
+                "A5",
+                "Letter",
+                "Custom"
+            ],
+            "pagesPerPaper": [
+                "1",
+                "2",
+                "4"
+            ],
+            "margins": [
+                "5mm",
+                "10mm",
+                "15mm"
+            ],
+            "scales": [
+                "90",
+                "100",
+                "110"
+            ]
+        },
+        {
+            "id": "printer-default-5",
+            "name": "BTP-R180II(U) 1",
+            "layouts": [
+                "Portrait",
+                "Landscape"
+            ],
+            "paperSizes": [
+                "A4",
+                "A5",
+                "Letter",
+                "Custom"
+            ],
+            "pagesPerPaper": [
+                "1",
+                "2",
+                "4"
+            ],
+            "margins": [
+                "5mm",
+                "10mm",
+                "15mm"
+            ],
+            "scales": [
+                "90",
+                "100",
+                "110"
+            ]
+        },
+        {
+            "id": "printer-default-6",
+            "name": "AnyDesk Printer",
+            "layouts": [
+                "Portrait",
+                "Landscape"
+            ],
+            "paperSizes": [
+                "A4",
+                "A5",
+                "Letter",
+                "Custom"
+            ],
+            "pagesPerPaper": [
+                "1",
+                "2",
+                "4"
+            ],
+            "margins": [
+                "5mm",
+                "10mm",
+                "15mm"
+            ],
+            "scales": [
+                "90",
+                "100",
+                "110"
+            ]
+        }
+    ]
+}

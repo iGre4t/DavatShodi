@@ -9,6 +9,7 @@
   const modalEl = document.getElementById('egm-task-access-modal');
   const modalTitleEl = document.getElementById('egm-task-access-modal-title');
   const manageTasksToggleEl = document.getElementById('egm-task-access-manage-tasks');
+  const winAppAccessLevelEl = document.getElementById('egm-winapp-access-level');
   const treeEl = document.getElementById('egm-task-access-tree');
   const saveBtnEl = document.getElementById('egm-task-access-save');
   const statusEl = document.getElementById('egm-task-access-status');
@@ -38,6 +39,7 @@
     !(usersBodyEl instanceof HTMLElement)
     || !(modalEl instanceof HTMLElement)
     || !(manageTasksToggleEl instanceof HTMLInputElement)
+    || !(winAppAccessLevelEl instanceof HTMLSelectElement)
     || !(treeEl instanceof HTMLElement)
     || !(saveBtnEl instanceof HTMLButtonElement)
     || !(statusEl instanceof HTMLElement)
@@ -96,6 +98,13 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function normalizeWinAppAccessLevel(value) {
+    const level = normalizeToken(value);
+    return ['full_access', 'scan_and_details', 'scan_and_event', 'scan_only'].includes(level)
+      ? level
+      : 'full_access';
   }
 
   function setStatus(message, isError = false) {
@@ -174,6 +183,11 @@
     return normalizeBool(entry.allowManageTasksTab ?? entry.allow_manage_tasks_tab ?? false);
   }
 
+  function getUserWinAppAccessLevel(userCode) {
+    const entry = getUserAccessEntry(userCode);
+    return normalizeWinAppAccessLevel(entry.winAppAccessLevel ?? entry.win_app_access_level ?? 'full_access');
+  }
+
   function getUserInviteesSpecialAccess(userCode) {
     const entry = getUserAccessEntry(userCode);
     const defaults = defaultInviteesSpecialAccess();
@@ -248,6 +262,8 @@
     const hasUser = Boolean(editingUser);
     manageTasksToggleEl.disabled = !hasUser;
     manageTasksToggleEl.checked = hasUser ? getUserManageTasksFlag(editingUser.code) : false;
+    winAppAccessLevelEl.disabled = !hasUser;
+    winAppAccessLevelEl.value = hasUser ? getUserWinAppAccessLevel(editingUser.code) : 'full_access';
   }
 
   function renderSpecialAccessForm() {
@@ -410,18 +426,21 @@
       const response = await requestPost('save_user_access', {
         userCode: String(editingUser.code || '').trim(),
         rules,
-        allowManageTasksTab: manageTasksToggleEl.checked ? 1 : 0
+        allowManageTasksTab: manageTasksToggleEl.checked ? 1 : 0,
+        winAppAccessLevel: normalizeWinAppAccessLevel(winAppAccessLevelEl.value)
       });
       const key = normalizeToken(editingUser.code);
       const normalizedRules = response?.data?.rules && typeof response.data.rules === 'object'
         ? response.data.rules
         : rules;
       const allowManageTasksTab = normalizeBool(response?.data?.allowManageTasksTab ?? manageTasksToggleEl.checked);
+      const winAppAccessLevel = normalizeWinAppAccessLevel(response?.data?.winAppAccessLevel ?? winAppAccessLevelEl.value);
       const currentSpecial = getUserInviteesSpecialAccess(editingUser.code);
       state.accessByUser[key] = {
         allowManageTasksTab,
         tasks: normalizedRules,
-        inviteesSpecialAccess: response?.data?.inviteesSpecialAccess ?? currentSpecial
+        inviteesSpecialAccess: response?.data?.inviteesSpecialAccess ?? currentSpecial,
+        winAppAccessLevel
       };
       setStatus(response?.message || 'دسترسی‌ها ذخیره شد.');
       renderUsersTable();
@@ -455,7 +474,8 @@
       state.accessByUser[key] = {
         allowManageTasksTab: getUserManageTasksFlag(editingUser.code),
         tasks: currentEntry.tasks && typeof currentEntry.tasks === 'object' ? currentEntry.tasks : {},
-        inviteesSpecialAccess: response?.data?.inviteesSpecialAccess ?? inviteesSpecialAccess
+        inviteesSpecialAccess: response?.data?.inviteesSpecialAccess ?? inviteesSpecialAccess,
+        winAppAccessLevel: getUserWinAppAccessLevel(editingUser.code)
       };
       setSpecialStatus(response?.message || 'دسترسی‌های خاص ذخیره شد.');
       renderUsersTable();

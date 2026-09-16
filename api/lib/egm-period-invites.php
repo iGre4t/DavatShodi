@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/egm-instance-storage.php';
+require_once __DIR__ . '/egm-groups.php';
 require_once dirname(__DIR__, 2) . '/modules/minor/Organizational Event Userbase/org_users_store.php';
 
 /** @return array{root:string,mission_dir:string,pdo:PDO,registry:?array,tables:?array,code:string} */
@@ -450,13 +451,14 @@ function egmPeriodInvitesRowsByCandidateIds(array $rows, array $candidateIds): a
     return array_values(array_filter($rows, static fn(array $row): bool => isset($wanted[(string)($row['candidate_id'] ?? '')])));
 }
 
-function egmPeriodInvitesInsertRegistered(array $context, string $periodCode, string $source, array $candidateIds, string $actor): int
+function egmPeriodInvitesInsertRegistered(array $context, string $periodCode, string $source, array $candidateIds, string $actor, string $groupId = ''): int
 {
     $pdo = $context['pdo'];
     $usersTable = (string)$context['tables']['users'];
     $periodsTable = (string)$context['tables']['user_periods'];
     $candidateRows = egmPeriodInvitesRowsByCandidateIds(egmPeriodInvitesCandidateRows($context, $source), $candidateIds);
     if (!$candidateRows) return 0;
+    $groupId = egmGroupsValidateMembership($context, $groupId);
     $pdo->beginTransaction();
     try {
         $userIds = [];
@@ -527,13 +529,13 @@ SQL);
         $userIds = array_values(array_unique($userIds));
         egmInstanceAssignGuestNumbers($pdo, (string)$context['code'], $userIds);
         $insert = $pdo->prepare(<<<SQL
-INSERT INTO `{$periodsTable}` (`user_id`,`period_code`,`status`,`invitation_source`,`invited_by`,`invited_at`)
-VALUES (:user_id,:period_code,'invited',:source,:invited_by,NOW())
-ON DUPLICATE KEY UPDATE `invitation_source`=VALUES(`invitation_source`),`invited_by`=VALUES(`invited_by`),`invited_at`=COALESCE(`invited_at`,VALUES(`invited_at`))
+INSERT INTO `{$periodsTable}` (`user_id`,`period_code`,`status`,`invitation_source`,`invited_by`,`invited_at`,`group_id`)
+VALUES (:user_id,:period_code,'invited',:source,:invited_by,NOW(),:group_id)
+ON DUPLICATE KEY UPDATE `invitation_source`=VALUES(`invitation_source`),`invited_by`=VALUES(`invited_by`),`invited_at`=COALESCE(`invited_at`,VALUES(`invited_at`)),`group_id`=VALUES(`group_id`)
 SQL);
         $count = 0;
         foreach ($userIds as $userId) {
-            $insert->execute([':user_id' => $userId, ':period_code' => $periodCode, ':source' => $source, ':invited_by' => $actor]);
+            $insert->execute([':user_id' => $userId, ':period_code' => $periodCode, ':source' => $source, ':invited_by' => $actor, ':group_id' => $groupId !== '' ? $groupId : null]);
             $count += 1;
         }
         $pdo->commit();
@@ -545,7 +547,7 @@ SQL);
 }
 
 /** @return array{added_users:int,invited:int,skipped:int} */
-function egmPeriodInvitesInsertUnmatchedRegistered(array $context, string $periodCode, array $inputRows, string $actor): array
+function egmPeriodInvitesInsertUnmatchedRegistered(array $context, string $periodCode, array $inputRows, string $actor, string $groupId = ''): array
 {
     if ($context['code'] === '') {
         throw new InvalidArgumentException('افزودن کاربران بدون تطبیق فقط داخل یک EGM ثبت‌شده امکان‌پذیر است.');
@@ -564,6 +566,7 @@ function egmPeriodInvitesInsertUnmatchedRegistered(array $context, string $perio
         if ($identity !== '') $rows[$identity] = $row;
     }
     if (!$rows) return ['added_users' => 0, 'invited' => 0, 'skipped' => count($inputRows)];
+    $groupId = egmGroupsValidateMembership($context, $groupId);
 
     $findNational = $pdo->prepare("SELECT `id` FROM `{$usersTable}` WHERE `national_id` = :national_id LIMIT 1");
     $findWork = $pdo->prepare("SELECT `id` FROM `{$usersTable}` WHERE `work_id` = :work_id ORDER BY `is_active` DESC, `id` DESC LIMIT 1");
@@ -586,8 +589,9 @@ INSERT INTO `{$usersTable}`
 VALUES (:work_id,:first_name,:last_name,:national_id,:phone_number,:deputy,:general_department,:department,:gender,:postal_level,:source_row,NOW(),1,:state_json,'period_excel',:source_user_id)
 SQL);
     $insertPeriod = $pdo->prepare(<<<SQL
-INSERT IGNORE INTO `{$periodsTable}` (`user_id`,`period_code`,`status`,`invitation_source`,`invited_by`,`invited_at`)
-VALUES (:user_id,:period_code,'invited','period_excel',:invited_by,NOW())
+INSERT INTO `{$periodsTable}` (`user_id`,`period_code`,`status`,`invitation_source`,`invited_by`,`invited_at`,`group_id`)
+VALUES (:user_id,:period_code,'invited','period_excel',:invited_by,NOW(),:group_id)
+ON DUPLICATE KEY UPDATE `group_id`=VALUES(`group_id`),`invited_by`=VALUES(`invited_by`)
 SQL);
 
     $addedUsers = 0;
@@ -644,7 +648,7 @@ SQL);
             }
             if ($userId > 0) {
                 $invitedUserIds[] = $userId;
-                $insertPeriod->execute([':user_id' => $userId, ':period_code' => $periodCode, ':invited_by' => $actor]);
+                $insertPeriod->execute([':user_id' => $userId, ':period_code' => $periodCode, ':invited_by' => $actor, ':group_id' => $groupId !== '' ? $groupId : null]);
                 $invited += $insertPeriod->rowCount() > 0 ? 1 : 0;
             }
         }
@@ -693,7 +697,7 @@ function egmPeriodInvitesListInvitedRows(array $context, string $periodCode): ar
 SELECT p.`id` AS `invite_id`, p.`status`, p.`invitation_source`, p.`invited_by`, p.`invited_at`,
 p.`correct_presence`,p.`fake_presence`,p.`entered_date`,p.`entered_time`,p.`quit_date`,p.`quit_time`,
 p.`attendance_state`,p.`last_control_condition`,p.`last_control_action`,p.`last_control_message`,p.`last_control_at`,
-p.`is_uninvited_guest` AS `period_is_uninvited_guest`,
+p.`is_uninvited_guest` AS `period_is_uninvited_guest`,p.`group_id`,
 u.`id` AS `user_id`,u.`work_id`,u.`first_name`,u.`last_name`,u.`national_id`,u.`phone_number`,u.`deputy`,u.`general_department`,u.`department`,u.`gender`,u.`postal_level`,u.`guest_number`,u.`source_row`,
 u.`source_type`,u.`source_user_id`,u.`is_active`,u.`is_uninvited_guest`,u.`outside_organization`
 FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id`
@@ -804,6 +808,7 @@ function egmPeriodInvitesUpdateInvitedRow(
     $isActive = egmPeriodInvitesInputBool($input['is_active'] ?? false) ? 1 : 0;
     $isUninvited = egmPeriodInvitesInputBool($input['is_uninvited_guest'] ?? false) ? 1 : 0;
     $outsideOrganization = egmPeriodInvitesInputBool($input['outside_organization'] ?? false) ? 1 : 0;
+    $groupId = egmGroupsValidateMembership($context, $input['group_id'] ?? '');
     $actor = tctPeriodInviteClean($actor, 191) ?: 'admin';
 
     $pdo->beginTransaction();
@@ -896,14 +901,14 @@ function egmPeriodInvitesUpdateInvitedRow(
         $updatePeriod = $pdo->prepare(
             "UPDATE `{$periodsTable}` SET `entered_date`=:entered_date,`entered_time`=:entered_time,"
             . "`quit_date`=:quit_date,`quit_time`=:quit_time,`attendance_state`=:attendance_state,"
-            . "`correct_presence`=:correct_presence,`fake_presence`=:fake_presence,`is_uninvited_guest`=:is_uninvited_guest,"
+            . "`correct_presence`=:correct_presence,`fake_presence`=:fake_presence,`is_uninvited_guest`=:is_uninvited_guest,`group_id`=:group_id,"
             . "`last_control_condition`='manual_edit',`last_control_action`='manual',`last_control_message`=:message,`last_control_at`=NOW() "
             . "WHERE `id`=:invite_id AND `period_code`=:period_code"
         );
         $updatePeriod->execute([
             ':entered_date' => $enteredDate, ':entered_time' => $enteredTime, ':quit_date' => $quitDate, ':quit_time' => $quitTime,
             ':attendance_state' => $attendanceState, ':correct_presence' => $correctPresence, ':fake_presence' => $fakePresence,
-            ':is_uninvited_guest' => $isUninvited, ':message' => $message,
+            ':is_uninvited_guest' => $isUninvited, ':group_id' => $groupId !== '' ? $groupId : null, ':message' => $message,
             ':invite_id' => $inviteIdNumber, ':period_code' => $periodCode,
         ]);
         $pdo->commit();
@@ -1125,7 +1130,7 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
         if ($action === 'invite_unmatched' && $method === 'POST') {
             $rows = is_array($input['rows'] ?? null) ? $input['rows'] : [];
             $actor = tctPeriodInviteClean($sessionUser['code'] ?? '', 191);
-            $result = egmPeriodInvitesInsertUnmatchedRegistered($context, $periodCode, $rows, $actor);
+            $result = egmPeriodInvitesInsertUnmatchedRegistered($context, $periodCode, $rows, $actor, (string)($input['group_id'] ?? ''));
             egmPeriodInvitesJson(['status' => 'ok'] + $result + [
                 'message' => "{$result['invited']} کاربر بدون تطبیق به EGM افزوده و به بازه دعوت شدند.",
             ]);
@@ -1135,7 +1140,7 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
             $candidateIds = is_array($input['candidate_ids'] ?? null) ? $input['candidate_ids'] : [];
             $actor = tctPeriodInviteClean($sessionUser['code'] ?? '', 191);
             $count = $context['code'] !== ''
-                ? egmPeriodInvitesInsertRegistered($context, $periodCode, $source, $candidateIds, $actor)
+                ? egmPeriodInvitesInsertRegistered($context, $periodCode, $source, $candidateIds, $actor, (string)($input['group_id'] ?? ''))
                 : egmPeriodInvitesInsertLocal($context, $periodCode, $source, $candidateIds, $actor);
             egmPeriodInvitesJson(['status' => 'ok', 'invited' => $count, 'message' => "{$count} نفر به بازه دعوت شدند."]);
         }

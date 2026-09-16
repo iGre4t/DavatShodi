@@ -5,9 +5,9 @@ window.GENERAL_SETTINGS = {
     "panelName": "Great Panel",
     "siteIcon": "",
     "appearance": {
-        "primary": "#e11d2e",
+        "primary": "#1d75e1",
         "background": "#ffffff",
         "text": "#111111",
-        "toggle": "#e11d2e"
+        "toggle": "#1d75e1"
     }
 };

@@ -1,22 +1,86 @@
 <?php
 declare(strict_types=1);
 
-function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): void
+function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, array $options = []): void
 {
     $activeClass = $active ? ' active' : '';
     $endpoint = htmlspecialchars($storeEndpoint, ENT_QUOTES, 'UTF-8');
+    $paneKey = (string)($options['paneKey'] ?? 'egm-invite-card');
+    $cardKind = (string)($options['kind'] ?? 'invite');
+    $isPrintCard = $cardKind === 'print';
+    $isTicketCard = $cardKind === 'ticket';
+    $isReceiptCard = $isPrintCard || $isTicketCard;
+    $title = $isTicketCard ? (string)($options['title'] ?? 'Custom Number Ticket') : ($isPrintCard ? 'Print Card' : 'کارت دعوت');
+    $artworkTitle = $isTicketCard ? htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . ' — صفحه بلیت ۱:۱' : ($isPrintCard ? 'صفحه رسید ۱:۱' : 'تصویر کارت دعوت');
+    $textTitle = $isTicketCard ? 'متن بلیت شماره‌دار' : ($isPrintCard ? 'متن رسید' : 'متن دعوت');
+    $paneKeyHtml = htmlspecialchars($paneKey, ENT_QUOTES, 'UTF-8');
     ?>
-    <div class="sub-pane<?= $activeClass ?>" data-pane="egm-invite-card" data-egm-invite-card-pane="1" data-store-endpoint="<?= $endpoint ?>" data-qr-endpoint="modules/minor/QR%20Code%20Generator/generate.php">
+    <div class="sub-pane<?= $activeClass ?>" data-pane="<?= $paneKeyHtml ?>" data-egm-invite-card-pane="1" data-card-kind="<?= htmlspecialchars($cardKind, ENT_QUOTES, 'UTF-8') ?>" data-store-endpoint="<?= $endpoint ?>" data-qr-endpoint="modules/minor/QR%20Code%20Generator/generate.php">
       <div class="card egm-invite-card-artwork-card">
         <div class="section-header">
           <div>
-            <h3>تصویر کارت دعوت</h3>
-            <p class="muted small">تصویر مستقیماً برای همین EGM ذخیره می‌شود و وارد کتابخانه تصاویر نخواهد شد.</p>
+            <h3><?= $artworkTitle ?></h3>
+            <p class="muted small"><?= $isReceiptCard ? 'رسید همیشه مربع است. می‌توانید تصویر زمینه انتخاب کنید یا از صفحه سفید استفاده کنید.' : 'تصویر مستقیماً برای همین EGM ذخیره می‌شود و وارد کتابخانه تصاویر نخواهد شد.' ?></p>
           </div>
         </div>
+        <?php if ($isTicketCard): ?>
+        <section class="egm-receipt-templates" data-receipt-templates data-template-font-url="style/fonts/IRANSansXFaNum-Bold.ttf" aria-labelledby="<?= $paneKeyHtml ?>-template-title">
+          <div class="egm-receipt-template-heading">
+            <div>
+              <h4 id="<?= $paneKeyHtml ?>-template-title">Receipt Templates — قالب‌های آماده رسید</h4>
+              <p class="muted small">یک قالب را انتخاب کنید تا تصویر زمینه، کادرها، متن فارسی، محل نام، QR و شماره بلیت با فونت ایران‌سنس آماده و ذخیره شود.</p>
+            </div>
+            <span class="egm-receipt-template-font">IRANSansX FaNum</span>
+          </div>
+          <div class="egm-receipt-template-grid">
+            <button type="button" class="egm-receipt-template-card is-food-classic" data-receipt-template="food-classic">
+              <span class="egm-receipt-template-art"><span>رسید غذا</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">غذا — سنتی سبز</span>
+              <span class="muted small">حاشیه ایرانی و زمینه گرم</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-food-modern" data-receipt-template="food-modern">
+              <span class="egm-receipt-template-art"><span>بن غذا</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">غذا — مدرن نارنجی</span>
+              <span class="muted small">هندسی، ساده و خوانا</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-gift-gold" data-receipt-template="gift-gold">
+              <span class="egm-receipt-template-art"><span>رسید هدیه</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">هدیه — سرمه‌ای طلایی</span>
+              <span class="muted small">رسمی و مناسب مراسم</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-gift-rose" data-receipt-template="gift-rose">
+              <span class="egm-receipt-template-art"><span>کارت هدیه</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">هدیه — ارغوانی</span>
+              <span class="muted small">لطیف با نقش روبان</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-mci-white" data-receipt-template="mci-food-white">
+              <span class="egm-receipt-template-art"><span>رسید غذا</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">سفید — غذا</span><span class="muted small">سفید، رسمی، شماره درشت</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-mci-white" data-receipt-template="mci-gift-white">
+              <span class="egm-receipt-template-art"><span>رسید هدیه</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">سفید — هدیه</span><span class="muted small">سفید، رسمی، شماره درشت</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-mci-white" data-receipt-template="mci-drink-white">
+              <span class="egm-receipt-template-art"><span>رسید نوشیدنی</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">سفید — نوشیدنی</span><span class="muted small">سفید، مناسب پذیرایی</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-mci-white" data-receipt-template="mci-parking-white">
+              <span class="egm-receipt-template-art"><span>مجوز پارکینگ</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">سفید — پارکینگ</span><span class="muted small">سفید، مجوز ورود خودرو</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-mci-white" data-receipt-template="mci-service-white">
+              <span class="egm-receipt-template-art"><span>رسید خدمات</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">سفید — خدمات</span><span class="muted small">قالب عمومی قابل ویرایش</span>
+            </button>
+          </div>
+          <p class="muted small egm-receipt-template-status" data-receipt-template-status aria-live="polite"></p>
+        </section>
+        <?php endif; ?>
         <input type="file" accept="image/png,image/jpeg,image/webp" data-invite-card-file hidden />
         <div class="egm-invite-card-upload-row">
           <button type="button" class="btn ghost" data-action="choose-invite-card-photo">انتخاب تصویر</button>
+          <?php if ($isReceiptCard): ?><button type="button" class="btn ghost" data-action="use-blank-print-card">بدون پس‌زمینه</button><?php endif; ?>
           <span class="muted small" data-invite-card-file-name>هنوز تصویری انتخاب نشده است.</span>
         </div>
         <div class="egm-invite-card-source" data-invite-card-source>
@@ -28,6 +92,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): v
           <div class="egm-invite-card-area-state" aria-live="polite">
             <span data-area-state="qr">ناحیه QR: تعیین نشده</span>
             <span data-area-state="text">ناحیه متن: تعیین نشده</span>
+            <?php if ($isTicketCard): ?><span data-area-state="ticket">ناحیه Count of Ticket: تعیین نشده</span><?php endif; ?>
           </div>
         </div>
       </div>
@@ -35,13 +100,13 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): v
       <div class="card egm-invite-card-content-card">
         <div class="section-header">
           <div>
-            <h3>متن دعوت</h3>
+            <h3><?= $textTitle ?></h3>
             <p class="muted small">متن در همان ناحیه‌ای که با Selection Tool تعیین می‌کنید نمایش داده می‌شود.</p>
           </div>
         </div>
         <div class="form" style="gap:12px;">
           <div class="field full">
-            <span>متن کارت دعوت</span>
+            <span><?= htmlspecialchars($textTitle, ENT_QUOTES, 'UTF-8') ?></span>
             <div class="egm-invite-card-editor">
               <div class="egm-invite-card-editor-toolbar" role="toolbar" aria-label="ابزارهای ویرایش متن دعوت">
                 <button type="button" class="btn ghost" data-editor-command="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button>
@@ -82,6 +147,28 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): v
             </div>
             <span class="muted small">بخشی از متن را انتخاب کنید و Bold یا رنگ را اعمال کنید. فرمت متغیرها نیز پس از جایگزینی حفظ می‌شود.</span>
           </div>
+          <?php if ($isReceiptCard): ?>
+          <div class="field full egm-print-card-extra-areas">
+            <div class="section-header">
+              <div>
+                <strong>متن‌های مستقل بیشتر</strong>
+                <p class="muted small">هر تعداد متن لازم دارید اضافه کنید؛ هر متن ناحیه و محتوای مستقل خود را دارد و متغیرهایی مانند <span dir="ltr">[fullname]</span> را پشتیبانی می‌کند.</p>
+              </div>
+              <button type="button" class="btn primary standard-primary-button" data-action="add-print-text-area">+ افزودن متن</button>
+            </div>
+            <div class="egm-print-card-extra-list" data-print-text-areas></div>
+          </div>
+          <?php endif; ?>
+          <?php if ($isTicketCard): ?>
+          <div class="field full egm-ticket-count-area">
+            <strong>Count of Ticket — ناحیه الزامی مستقل</strong>
+            <span class="muted small">این مقدار یک عنصر مستقل است و هنگام ورود مهمان از اپراتور دریافت می‌شود. ناحیه آن را جداگانه روی رسید رسم کنید؛ لازم نیست آن را داخل متن اصلی یا متن‌های اضافه بنویسید.</span>
+            <div class="egm-print-card-extra-actions">
+              <code dir="ltr">[ticketcount]</code>
+              <button type="button" class="btn primary standard-primary-button" data-action="select-ticket-count-area">تعیین ناحیه Count of Ticket</button>
+            </div>
+          </div>
+          <?php endif; ?>
           <div class="egm-invite-card-conditional-builder" data-invite-card-conditional-builder>
             <div class="egm-invite-card-conditional-heading">
               <div>
@@ -158,7 +245,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): v
       <div class="card egm-invite-card-preview-card">
         <div class="section-header">
           <div>
-            <h3>پیش‌نمایش کارت دعوت</h3>
+            <h3>پیش‌نمایش <?= $title ?></h3>
             <p class="muted small">خروجی یک تصویر PNG واقعی با ابعاد کامل تصویر اصلی است؛ QR و متن داخل خود فایل تصویر قرار می‌گیرند.</p>
           </div>
         </div>
@@ -168,7 +255,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): v
         </div>
         <div class="egm-invite-card-export-row" data-invite-card-export-row hidden>
           <span class="muted small" data-invite-card-output-meta></span>
-          <a class="btn primary standard-primary-button" data-invite-card-download download="invite-card.png">دانلود تصویر PNG</a>
+          <a class="btn primary standard-primary-button" data-invite-card-download download="<?= $isTicketCard ? 'custom-number-ticket.png' : ($isPrintCard ? 'print-card.png' : 'invite-card.png') ?>">دانلود تصویر PNG</a>
         </div>
       </div>
 
@@ -185,6 +272,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): v
           <div class="egm-invite-card-tool-row" role="toolbar" aria-label="ابزارهای تعیین ناحیه">
             <button type="button" class="btn primary standard-primary-button active" data-selection-tool="qr" aria-pressed="true">ناحیه QR Code</button>
             <button type="button" class="btn ghost" data-selection-tool="text" aria-pressed="false">ناحیه Invite Text Area</button>
+            <?php if ($isTicketCard): ?><button type="button" class="btn ghost" data-selection-tool="ticket" aria-pressed="false">ناحیه Count of Ticket</button><?php endif; ?>
             <button type="button" class="btn ghost" data-action="clear-current-selection">پاک‌کردن ناحیه فعال</button>
           </div>
           <div class="egm-invite-card-selection-scroll">
@@ -193,6 +281,8 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false): v
               <div class="egm-invite-card-selection-layer" data-invite-card-selection-layer>
                 <div class="egm-invite-card-selection-box is-qr" data-selection-box="qr" hidden><span>QR Code</span></div>
                 <div class="egm-invite-card-selection-box is-text" data-selection-box="text" hidden><span>Invite Text Area</span></div>
+                <div class="egm-invite-card-selection-box is-text is-context" data-selection-box="main-text-context" hidden><span>Main Text Area</span></div>
+                <?php if ($isTicketCard): ?><div class="egm-invite-card-selection-box is-text is-ticket" data-selection-box="ticket" hidden><span>Count of Ticket</span></div><?php endif; ?>
                 <div class="egm-invite-card-selection-box is-draft" data-selection-draft hidden></div>
               </div>
             </div>

@@ -13,7 +13,7 @@
     fullname: 'نام کامل', firstname: 'نام', lastname: 'نام خانوادگی', nationalid: 'کد ملی',
     workid: 'کد پرسنلی', guestnumber: 'شماره مهمان', phonenumber: 'شماره تلفن',
     deputy: 'معاونت', generaldepartment: 'اداره کل', department: 'اداره', gender: 'جنسیت',
-    postallevel: 'سطح پستی', score: 'امتیاز'
+    postallevel: 'سطح پستی', score: 'امتیاز', ticketcount: 'Count of Ticket', tickettitle: 'Ticket Title'
   });
   const CONDITIONAL_OPERATOR_LABELS = Object.freeze({
     equals: 'برابر است با', not_equals: 'برابر نیست با', contains: 'شامل می‌شود',
@@ -140,6 +140,248 @@
     return canvasToBlob(canvas, 'image/png');
   }
 
+  const RECEIPT_TEMPLATE_DEFINITIONS = Object.freeze({
+    'food-classic': {
+      name: 'غذا — سنتی سبز', fileName: 'receipt-food-classic.png', heading: 'رسید غذا',
+      background: '#fbf7e9', ink: '#245b43', accent: '#c49a52', panel: '#fffdf7', pattern: 'food'
+    },
+    'food-modern': {
+      name: 'غذا — مدرن نارنجی', fileName: 'receipt-food-modern.png', heading: 'بن غذا',
+      background: '#fff7ed', ink: '#9a3412', accent: '#f59e0b', panel: '#ffffff', pattern: 'geometric'
+    },
+    'gift-gold': {
+      name: 'هدیه — سرمه‌ای طلایی', fileName: 'receipt-gift-gold.png', heading: 'رسید هدیه',
+      background: '#14213d', ink: '#f5d47d', accent: '#c99a35', panel: '#fffaf0', pattern: 'gift', dark: true
+    },
+    'gift-rose': {
+      name: 'هدیه — ارغوانی', fileName: 'receipt-gift-rose.png', heading: 'کارت هدیه',
+      background: '#fff1f5', ink: '#831843', accent: '#e879a2', panel: '#fff8fa', pattern: 'ribbon'
+    },
+    'mci-food-white': {
+      name: 'سفید — غذا', fileName: 'mci-food-white.png', heading: 'رسید غذا',
+      background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'غذا'
+    },
+    'mci-gift-white': {
+      name: 'سفید — هدیه', fileName: 'mci-gift-white.png', heading: 'رسید هدیه',
+      background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'هدیه'
+    },
+    'mci-drink-white': {
+      name: 'سفید — نوشیدنی', fileName: 'mci-drink-white.png', heading: 'رسید نوشیدنی',
+      background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'نوشیدنی'
+    },
+    'mci-parking-white': {
+      name: 'سفید — پارکینگ', fileName: 'mci-parking-white.png', heading: 'مجوز پارکینگ',
+      background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'پارکینگ'
+    },
+    'mci-service-white': {
+      name: 'سفید — خدمات', fileName: 'mci-service-white.png', heading: 'رسید خدمات',
+      background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'خدمات'
+    }
+  });
+  let receiptTemplateFontPromise = null;
+
+  async function loadReceiptTemplateFont(fontUrl) {
+    if (!receiptTemplateFontPromise) {
+      receiptTemplateFontPromise = (async () => {
+        const response = await fetch(new URL(fontUrl, window.location.href).toString(), { credentials: 'same-origin' });
+        if (!response.ok) throw new Error('فونت ایران‌سنس قالب دریافت نشد.');
+        const blob = await response.blob();
+        const file = new File([blob], 'IRANSansXFaNum-Bold.ttf', { type: 'font/ttf' });
+        const normalized = await normalizedFontDataUrl(file);
+        return { ...normalized, name: file.name };
+      })().catch((error) => {
+        receiptTemplateFontPromise = null;
+        throw error;
+      });
+    }
+    return receiptTemplateFontPromise;
+  }
+
+  function addRoundedRectPath(context, x, y, width, height, radius) {
+    const corner = Math.max(0, Math.min(radius, width / 2, height / 2));
+    context.beginPath();
+    context.moveTo(x + corner, y);
+    context.lineTo(x + width - corner, y);
+    context.quadraticCurveTo(x + width, y, x + width, y + corner);
+    context.lineTo(x + width, y + height - corner);
+    context.quadraticCurveTo(x + width, y + height, x + width - corner, y + height);
+    context.lineTo(x + corner, y + height);
+    context.quadraticCurveTo(x, y + height, x, y + height - corner);
+    context.lineTo(x, y + corner);
+    context.quadraticCurveTo(x, y, x + corner, y);
+    context.closePath();
+  }
+
+  function drawMciMark(context, x, y, width, height, color) {
+    context.save();
+    context.translate(x, y);
+    context.scale(width / 1173, height / 773);
+    context.beginPath();
+    context.moveTo(1173, 407.266);
+    context.lineTo(1173, 773);
+    context.bezierCurveTo(791.7, 589.486, 381.3, 521.402, 0, 573.591);
+    context.lineTo(0, 16.8977);
+    context.bezierCurveTo(319.721, -26.5479, 659.341, 13.9796, 985.446, 136.213);
+    context.bezierCurveTo(1099.03, 178.364, 1173, 286.979, 1173, 406.947);
+    context.lineTo(1173, 407.266);
+    context.closePath();
+    context.fillStyle = color;
+    context.fill();
+    context.restore();
+  }
+
+  function receiptTemplateBackground(definition, fontFamily) {
+    const canvas = document.createElement('canvas');
+    const outputScale = 2.4;
+    canvas.width = 2400;
+    canvas.height = 2400;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) throw new Error('ساخت تصویر زمینه قالب ممکن نیست.');
+    context.scale(outputScale, outputScale);
+    const { background, ink, accent, panel, pattern, dark } = definition;
+    context.fillStyle = background;
+    context.fillRect(0, 0, 1000, 1000);
+
+    if (definition.brand === 'mci') {
+      context.strokeStyle = '#000000';
+      context.lineWidth = 6;
+      addRoundedRectPath(context, 5, 5, 990, 990, 18);
+      context.stroke();
+      drawMciMark(context, 405, 38, 190, 125, '#000000');
+
+      context.strokeStyle = '#000000';
+      context.lineWidth = 6;
+      addRoundedRectPath(context, 70, 345, 860, 325, 32);
+      context.stroke();
+      return canvas.toDataURL('image/png');
+    }
+
+    const gradient = context.createRadialGradient(500, 420, 40, 500, 500, 700);
+    gradient.addColorStop(0, dark ? 'rgba(255,255,255,.055)' : 'rgba(255,255,255,.88)');
+    gradient.addColorStop(1, dark ? 'rgba(0,0,0,.2)' : 'rgba(15,23,42,.035)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 1000, 1000);
+
+    context.strokeStyle = accent;
+    context.lineWidth = 10;
+    context.strokeRect(34, 34, 932, 932);
+    context.lineWidth = 3;
+    context.strokeRect(51, 51, 898, 898);
+    context.strokeStyle = ink;
+    context.lineWidth = 2;
+    context.strokeRect(63, 63, 874, 874);
+
+    if (dark) {
+      context.fillStyle = '#fffaf0';
+      addRoundedRectPath(context, 125, 88, 750, 205, 28); context.fill();
+      addRoundedRectPath(context, 340, 307, 320, 62, 22); context.fill();
+      addRoundedRectPath(context, 225, 918, 550, 58, 20); context.fill();
+    }
+
+    context.save();
+    context.globalAlpha = dark ? .12 : .08;
+    context.fillStyle = accent;
+    for (let y = 90; y < 930; y += 82) {
+      for (let x = 90; x < 930; x += 82) {
+        context.save();
+        context.translate(x, y);
+        context.rotate(Math.PI / 4);
+        context.fillRect(-7, -7, 14, 14);
+        context.restore();
+      }
+    }
+    context.restore();
+
+    context.fillStyle = panel;
+    context.strokeStyle = accent;
+    context.lineWidth = 4;
+    addRoundedRectPath(context, 245, 345, 510, 285, 34);
+    context.fill();
+    context.stroke();
+    context.strokeStyle = ink;
+    context.lineWidth = 2;
+    addRoundedRectPath(context, 262, 362, 476, 251, 25);
+    context.stroke();
+
+    context.save();
+    context.strokeStyle = accent;
+    context.fillStyle = accent;
+    context.globalAlpha = dark ? .78 : .58;
+    context.lineWidth = 6;
+    if (pattern === 'food') {
+      context.beginPath(); context.arc(138, 830, 61, 0, Math.PI * 2); context.stroke();
+      context.beginPath(); context.arc(138, 830, 43, 0, Math.PI * 2); context.stroke();
+      context.beginPath(); context.moveTo(72, 750); context.lineTo(72, 910); context.stroke();
+      context.beginPath(); context.moveTo(204, 750); context.lineTo(204, 910); context.stroke();
+    } else if (pattern === 'geometric') {
+      for (let index = 0; index < 4; index += 1) {
+        context.save(); context.translate(115 + index * 52, 850); context.rotate(Math.PI / 4);
+        context.strokeRect(-26, -26, 52, 52); context.restore();
+      }
+    } else {
+      context.strokeRect(93, 785, 150, 116);
+      context.fillRect(157, 785, 22, 116);
+      context.fillRect(93, 823, 150, 22);
+      context.beginPath();
+      context.moveTo(168, 785); context.bezierCurveTo(100, 720, 102, 815, 168, 806);
+      context.moveTo(168, 785); context.bezierCurveTo(236, 720, 234, 815, 168, 806);
+      context.stroke();
+    }
+    context.restore();
+
+    context.save();
+    context.globalAlpha = .88;
+    context.fillStyle = ink;
+    context.font = `700 25px ${fontFamily}`;
+    context.textAlign = 'center';
+    context.direction = 'rtl';
+    context.fillText('قابل استفاده فقط برای دارنده رسید', 500, 690);
+    context.restore();
+    return canvas.toDataURL('image/png');
+  }
+
+  function receiptTemplateConfig(templateId, imageData, font) {
+    const definition = RECEIPT_TEMPLATE_DEFINITIONS[templateId];
+    if (!definition) throw new Error('قالب انتخاب‌شده معتبر نیست.');
+    const textColor = definition.dark ? '#f5d47d' : definition.ink;
+    if (definition.brand === 'mci') {
+      return {
+        imageData,
+        imageName: definition.fileName,
+        fontData: font.data,
+        fontName: font.name,
+        qrRect: { x: 42, y: 82, width: 16, height: 16 },
+        textRect: { x: 8, y: 19, width: 84, height: 12 },
+        ticketCountRect: { x: 10, y: 35, width: 80, height: 30 },
+        textHtml: `<p><strong><span style="color:#000000">${definition.heading}</span></strong></p>`,
+        textAreas: [
+          { id: 'mci_guest', text: '[fullname]', textHtml: '<p><strong><span style="color:#000000">[fullname]</span></strong></p>', rect: { x: 10, y: 68, width: 80, height: 8 } },
+          { id: 'mci_guest_number', text: '[guestnumber]', textHtml: '<p><strong><span style="color:#000000">[guestnumber]</span></strong></p>', rect: { x: 10, y: 76, width: 80, height: 6 } }
+        ],
+        conditionalVariables: [],
+        conditionalBuilderDraft: {},
+        qrData: '[nationalid]'
+      };
+    }
+    return {
+      imageData,
+      imageName: definition.fileName,
+      fontData: font.data,
+      fontName: font.name,
+      qrRect: { x: 40, y: 72, width: 20, height: 20 },
+      textRect: { x: 15, y: 11, width: 70, height: 18 },
+      ticketCountRect: { x: 30, y: 40, width: 40, height: 20 },
+      textHtml: `<p><strong><span style="color:${textColor}">${definition.heading}</span></strong></p><p><span style="color:${textColor}">[fullname]</span></p>`,
+      textAreas: [
+        { id: 'template_number_label', text: 'شماره', textHtml: `<p><span style="color:${textColor}">شماره</span></p>`, rect: { x: 37, y: 32, width: 26, height: 5 } },
+        { id: 'template_ticket_title', text: '[tickettitle]', textHtml: `<p><span style="color:${textColor}">[tickettitle]</span></p>`, rect: { x: 24, y: 93, width: 52, height: 4 } }
+      ],
+      conditionalVariables: [],
+      conditionalBuilderDraft: {},
+      qrData: '[nationalid]'
+    };
+  }
+
   function normalizedEditorColor(value) {
     const text = String(value || '').trim().toLowerCase();
     const shortHex = text.match(/^#([0-9a-f]{3})$/i);
@@ -211,7 +453,9 @@
       department: String(invitee?.department || ''),
       gender: String(invitee?.gender || ''),
       postallevel: String(invitee?.postalLevel || ''),
-      score: String(invitee?.score || '0')
+      score: String(invitee?.score || '0'),
+      ticketcount: String(invitee?.ticketCount || invitee?.numberOfTicket || '1'),
+      tickettitle: String(invitee?.ticketTitle || '')
     };
   }
 
@@ -278,7 +522,7 @@
       const replacement = matched ? matched.text : definition.fallback;
       output = output.replace(new RegExp(`\\[${definition.token}\\]`, 'gi'), () => replacement);
     });
-    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
+    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score|ticketcount|tickettitle)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
   }
 
   function richTextBlocks(html, invitee, conditionalVariables = []) {
@@ -485,6 +729,24 @@
       width: width * Number(textRect.width || 0) / 100,
       height: height * Number(textRect.height || 0) / 100
     }, config?.conditionalVariables, fontFamily);
+    (Array.isArray(config?.textAreas) ? config.textAreas : []).forEach((area) => {
+      const rect = area?.rect || {};
+      drawInviteText(context, String(area?.textHtml || area?.text || ''), invitee, {
+        x: width * Number(rect.x || 0) / 100,
+        y: height * Number(rect.y || 0) / 100,
+        width: width * Number(rect.width || 0) / 100,
+        height: height * Number(rect.height || 0) / 100
+      }, config?.conditionalVariables, fontFamily);
+    });
+    if (config?.ticketCountRect) {
+      const rect = config.ticketCountRect;
+      drawInviteText(context, '[ticketcount]', invitee, {
+        x: width * Number(rect.x || 0) / 100,
+        y: height * Number(rect.y || 0) / 100,
+        width: width * Number(rect.width || 0) / 100,
+        height: height * Number(rect.height || 0) / 100
+      }, config?.conditionalVariables, fontFamily);
+    }
     const mimeType = options.mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png';
     const blob = await canvasToBlob(canvas, mimeType, mimeType === 'image/jpeg' ? Number(options.quality || 0.92) : undefined);
     return { blob, width, height };
@@ -506,6 +768,9 @@
     const shell = pane.closest('.egm-shell');
     const endpoint = String(pane.dataset.storeEndpoint || '').trim();
     const qrEndpoint = String(pane.dataset.qrEndpoint || '').trim();
+    const isPrintCard = pane.dataset.cardKind === 'print';
+    const isTicketCard = pane.dataset.cardKind === 'ticket';
+    const isReceiptCard = isPrintCard || isTicketCard;
     const fileInput = one(pane, '[data-invite-card-file]');
     const fileName = one(pane, '[data-invite-card-file-name]');
     const sourceEmpty = one(pane, '.egm-invite-card-empty');
@@ -541,6 +806,8 @@
     const selectionLayer = one(pane, '[data-invite-card-selection-layer]');
     const qrBox = one(pane, '[data-selection-box="qr"]');
     const textBox = one(pane, '[data-selection-box="text"]');
+    const mainTextContextBox = one(pane, '[data-selection-box="main-text-context"]');
+    const ticketBox = one(pane, '[data-selection-box="ticket"]');
     const draftBox = one(pane, '[data-selection-draft]');
     const selectionHelp = one(pane, '[data-selection-help]');
     const preview = one(pane, '[data-invite-card-preview]');
@@ -549,6 +816,9 @@
     const outputMeta = one(pane, '[data-invite-card-output-meta]');
     const exportRow = one(pane, '[data-invite-card-export-row]');
     const downloadLink = one(pane, '[data-invite-card-download]');
+    const extraTextAreasRoot = one(pane, '[data-print-text-areas]');
+    const receiptTemplatesRoot = one(pane, '[data-receipt-templates]');
+    const receiptTemplateStatus = one(pane, '[data-receipt-template-status]');
 
     if (!(fileInput instanceof HTMLInputElement) || !(sourceImage instanceof HTMLImageElement)
       || !(selectionImage instanceof HTMLImageElement) || !(selectionLayer instanceof HTMLElement)
@@ -567,8 +837,12 @@
       fontFamily: DEFAULT_INVITE_FONT_FAMILY,
       qrRect: null,
       textRect: null,
+      ticketCountRect: null,
+      textAreas: [],
+      selectionTextAreaId: '',
       workingQrRect: null,
       workingTextRect: null,
+      workingTicketCountRect: null,
       activeTool: 'qr',
       dragStart: null,
       pointerId: null,
@@ -582,6 +856,7 @@
       conditionalValueOptions: [],
       conditionalValueField: '',
       conditionalValueRequest: 0,
+      configLoaded: false,
       draftReady: false,
       draftTimer: 0,
       draftSaving: false,
@@ -602,6 +877,28 @@
       if (!(autosaveStatus instanceof HTMLElement)) return;
       autosaveStatus.textContent = message || '';
       autosaveStatus.style.color = isError ? '#b91c1c' : '';
+    }
+
+    function setReceiptTemplateStatus(message, isError) {
+      if (!(receiptTemplateStatus instanceof HTMLElement)) return;
+      receiptTemplateStatus.textContent = message || '';
+      receiptTemplateStatus.style.color = isError ? '#b91c1c' : '';
+    }
+
+    function updateReceiptTemplateSelection(selectedTemplateId = '') {
+      if (!(receiptTemplatesRoot instanceof HTMLElement)) return;
+      let activeId = String(selectedTemplateId || '');
+      if (!activeId && state.imageName) {
+        activeId = Object.keys(RECEIPT_TEMPLATE_DEFINITIONS).find((templateId) => (
+          RECEIPT_TEMPLATE_DEFINITIONS[templateId].fileName === state.imageName
+        )) || '';
+      }
+      receiptTemplatesRoot.querySelectorAll('[data-receipt-template]').forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        const selected = String(button.dataset.receiptTemplate || '') === activeId;
+        button.classList.toggle('is-selected', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
     }
 
     function collectConditionalBuilderDraft() {
@@ -633,6 +930,7 @@
         payload.qrData = '[nationalid]';
         payload.conditionalVariables = normalizedConditionalVariables(state.conditionalVariables);
         payload.conditionalBuilderDraft = collectConditionalBuilderDraft();
+        if (isReceiptCard) payload.textAreas = state.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
       }
       if (sections.includes('font')) {
         payload.fontData = state.fontData;
@@ -641,6 +939,8 @@
       if (sections.includes('layout')) {
         payload.qrRect = cloneRect(state.qrRect);
         payload.textRect = cloneRect(state.textRect);
+        if (isTicketCard) payload.ticketCountRect = cloneRect(state.ticketCountRect);
+        if (isReceiptCard) payload.textAreas = state.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
       }
       return payload;
     }
@@ -1098,7 +1398,8 @@
     function updateAreaStates() {
       const entries = [
         ['qr', state.qrRect, 'QR'],
-        ['text', state.textRect, 'متن']
+        ['text', state.textRect, 'متن'],
+        ...(isTicketCard ? [['ticket', state.ticketCountRect, 'Count of Ticket']] : [])
       ];
       entries.forEach(([key, rect, label]) => {
         const element = one(pane, `[data-area-state="${key}"]`);
@@ -1110,13 +1411,57 @@
       });
     }
 
+    function renderExtraTextAreas() {
+      if (!(extraTextAreasRoot instanceof HTMLElement) || !isReceiptCard) return;
+      extraTextAreasRoot.replaceChildren();
+      if (!state.textAreas.length) {
+        const empty = document.createElement('p');
+        empty.className = 'muted small';
+        empty.textContent = 'هنوز متن مستقلی اضافه نشده است.';
+        extraTextAreasRoot.append(empty);
+        return;
+      }
+      state.textAreas.forEach((area, index) => {
+        const row = document.createElement('div');
+        row.className = 'egm-print-card-extra-row';
+        row.dataset.textAreaId = area.id;
+        const textarea = document.createElement('textarea');
+        textarea.dataset.printTextContent = area.id;
+        textarea.dir = 'rtl';
+        textarea.placeholder = 'متن این ناحیه؛ مثال: [fullname]';
+        textarea.value = String(area.text || '');
+        const stateLabel = document.createElement('span');
+        stateLabel.className = 'egm-print-card-extra-state';
+        stateLabel.textContent = area.rect
+          ? `متن ${index + 2} — ناحیه ${area.rect.width.toFixed(1)}×${area.rect.height.toFixed(1)}٪`
+          : `متن ${index + 2} — ناحیه تعیین نشده`;
+        const actions = document.createElement('div');
+        actions.className = 'egm-print-card-extra-actions';
+        const select = document.createElement('button');
+        select.type = 'button';
+        select.className = 'btn ghost';
+        select.dataset.selectPrintTextArea = area.id;
+        select.textContent = area.rect ? 'تغییر ناحیه روی کارت' : 'تعیین ناحیه روی کارت';
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn ghost';
+        remove.dataset.removePrintTextArea = area.id;
+        remove.textContent = 'حذف';
+        actions.append(select, remove);
+        row.append(textarea, stateLabel, actions);
+        extraTextAreasRoot.append(row);
+      });
+    }
+
     function updateSelectionBoxes() {
       applyRect(qrBox, state.workingQrRect);
       applyRect(textBox, state.workingTextRect);
+      applyRect(ticketBox, state.workingTicketCountRect);
+      applyRect(mainTextContextBox, state.selectionTextAreaId ? state.textRect : null);
     }
 
     function setActiveTool(tool) {
-      state.activeTool = tool === 'text' ? 'text' : 'qr';
+      state.activeTool = tool === 'ticket' && isTicketCard ? 'ticket' : (tool === 'text' ? 'text' : 'qr');
       pane.querySelectorAll('[data-selection-tool]').forEach((button) => {
         const active = button instanceof HTMLElement && button.dataset.selectionTool === state.activeTool;
         button.classList.toggle('active', active);
@@ -1128,14 +1473,21 @@
       if (selectionHelp instanceof HTMLElement) {
         selectionHelp.textContent = state.activeTool === 'qr'
           ? 'ابزار QR Code فعال است؛ روی تصویر بکشید.'
-          : 'ابزار Invite Text Area فعال است؛ روی تصویر بکشید.';
+          : state.activeTool === 'ticket'
+            ? 'ابزار Count of Ticket فعال است؛ ناحیه مستقل شماره را روی تصویر بکشید.'
+            : 'ابزار Invite Text Area فعال است؛ روی تصویر بکشید.';
       }
     }
 
-    function openSelectionModal() {
+    function openSelectionModal(textAreaId = '') {
       if (!state.imageData || !(modal instanceof HTMLElement)) return;
+      state.selectionTextAreaId = isReceiptCard ? String(textAreaId || '') : '';
       state.workingQrRect = cloneRect(state.qrRect);
-      state.workingTextRect = cloneRect(state.textRect);
+      state.workingTicketCountRect = cloneRect(state.ticketCountRect);
+      const selectedExtra = state.selectionTextAreaId
+        ? state.textAreas.find((area) => area.id === state.selectionTextAreaId)
+        : null;
+      state.workingTextRect = cloneRect(selectedExtra ? selectedExtra.rect : state.textRect);
       state.dragStart = null;
       state.pointerId = null;
       if (draftBox instanceof HTMLElement) draftBox.hidden = true;
@@ -1152,8 +1504,15 @@
       if (!(modal instanceof HTMLElement)) return;
       if (commit) {
         state.qrRect = cloneRect(state.workingQrRect);
-        state.textRect = cloneRect(state.workingTextRect);
+        if (isTicketCard) state.ticketCountRect = cloneRect(state.workingTicketCountRect);
+        if (state.selectionTextAreaId) {
+          const selectedExtra = state.textAreas.find((area) => area.id === state.selectionTextAreaId);
+          if (selectedExtra) selectedExtra.rect = cloneRect(state.workingTextRect);
+        } else {
+          state.textRect = cloneRect(state.workingTextRect);
+        }
         updateAreaStates();
+        renderExtraTextAreas();
         markPreviewStale();
         scheduleInviteCardDraft('layout', 0);
       }
@@ -1214,12 +1573,13 @@
         return;
       }
       if (state.activeTool === 'qr') state.workingQrRect = nextRect;
+      else if (state.activeTool === 'ticket') state.workingTicketCountRect = nextRect;
       else state.workingTextRect = nextRect;
       updateSelectionBoxes();
       if (selectionHelp instanceof HTMLElement) {
         selectionHelp.textContent = state.activeTool === 'qr'
           ? 'ناحیه QR Code ثبت شد. اکنون می‌توانید ناحیه متن را تعیین کنید.'
-          : 'ناحیه Invite Text Area ثبت شد.';
+          : state.activeTool === 'ticket' ? 'ناحیه مستقل Count of Ticket ثبت شد.' : 'ناحیه Invite Text Area ثبت شد.';
       }
     }
 
@@ -1237,13 +1597,79 @@
     one(pane, '[data-action="confirm-invite-card-selection"]')?.addEventListener('click', () => closeSelectionModal(true));
     one(pane, '[data-action="clear-current-selection"]')?.addEventListener('click', () => {
       if (state.activeTool === 'qr') state.workingQrRect = null;
+      else if (state.activeTool === 'ticket') state.workingTicketCountRect = null;
       else state.workingTextRect = null;
       updateSelectionBoxes();
       if (selectionHelp instanceof HTMLElement) selectionHelp.textContent = 'ناحیه فعال پاک شد.';
     });
 
     chooseButton?.addEventListener('click', () => fileInput.click());
-    selectionButton?.addEventListener('click', openSelectionModal);
+    selectionButton?.addEventListener('click', () => openSelectionModal(''));
+    one(pane, '[data-action="select-ticket-count-area"]')?.addEventListener('click', () => {
+      setActiveTool('ticket');
+      openSelectionModal('');
+    });
+
+    one(pane, '[data-action="add-print-text-area"]')?.addEventListener('click', () => {
+      const id = `text_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      state.textAreas.push({ id, text: '', textHtml: '', rect: null });
+      renderExtraTextAreas();
+      markPreviewStale();
+    });
+    extraTextAreasRoot?.addEventListener('input', (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLTextAreaElement)) return;
+      const area = state.textAreas.find((item) => item.id === input.dataset.printTextContent);
+      if (!area) return;
+      area.text = input.value;
+      area.textHtml = plainTextToEditorHtml(input.value);
+      markPreviewStale();
+      scheduleInviteCardDraft('content');
+    });
+    extraTextAreasRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const select = target?.closest('[data-select-print-text-area]');
+      if (select instanceof HTMLElement) {
+        setActiveTool('text');
+        openSelectionModal(String(select.dataset.selectPrintTextArea || ''));
+        return;
+      }
+      const remove = target?.closest('[data-remove-print-text-area]');
+      if (remove instanceof HTMLElement) {
+        state.textAreas = state.textAreas.filter((area) => area.id !== String(remove.dataset.removePrintTextArea || ''));
+        renderExtraTextAreas();
+        markPreviewStale();
+        scheduleInviteCardDraft(['content', 'layout'], 0);
+      }
+    });
+
+    one(pane, '[data-action="use-blank-print-card"]')?.addEventListener('click', async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1000;
+      canvas.height = 1000;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) return;
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      state.imageData = canvas.toDataURL('image/png');
+      state.imageName = 'blank-print-card.png';
+      state.imageWidth = 1000;
+      state.imageHeight = 1000;
+      state.qrRect = null;
+      state.textRect = null;
+      state.ticketCountRect = null;
+      state.textAreas.forEach((area) => { area.rect = null; });
+      updateSource();
+      updateAreaStates();
+      markPreviewStale();
+      try {
+        setStatus('در حال ساخت صفحه سفید ۱:۱...', false);
+        await saveUploadedImage();
+        setStatus('صفحه سفید آماده است؛ ناحیه QR و اطلاعات مهمان را تعیین کنید.', false);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'ساخت صفحه سفید ناموفق بود.', true);
+      }
+    });
 
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files && fileInput.files[0];
@@ -1262,6 +1688,9 @@
       try {
         const dataUrl = await readFileAsDataUrl(file);
         const dimensions = await readImageDimensions(dataUrl);
+        if (isReceiptCard && dimensions.width !== dimensions.height) {
+          throw new Error('تصویر زمینه Print Card باید دقیقاً مربع (نسبت ۱:۱) باشد.');
+        }
         if (dimensions.width * dimensions.height > MAX_IMAGE_PIXELS) {
           throw new Error('ابعاد تصویر نباید بیشتر از 40 میلیون پیکسل باشد.');
         }
@@ -1271,6 +1700,8 @@
         state.imageHeight = dimensions.height;
         state.qrRect = null;
         state.textRect = null;
+        state.ticketCountRect = null;
+        state.textAreas.forEach((area) => { area.rect = null; });
         updateSource();
         updateAreaStates();
         markPreviewStale();
@@ -1435,10 +1866,22 @@
       if (!state.imageData) throw new Error('ابتدا تصویر کارت دعوت را انتخاب کنید.');
       if (!state.qrRect) throw new Error('ناحیه QR Code را با Selection Tool تعیین کنید.');
       if (!state.textRect) throw new Error('ناحیه Invite Text Area را با Selection Tool تعیین کنید.');
+      if (isTicketCard && !state.ticketCountRect) throw new Error('ناحیه مستقل Count of Ticket را روی رسید تعیین کنید.');
       const textHtml = sanitizeEditorHtml(editor.innerHTML);
       const text = editor.innerText.trim();
       const qrData = '[nationalid]';
       if (!text) throw new Error('متن کارت دعوت را وارد کنید.');
+      const textAreas = isReceiptCard ? state.textAreas.map((area, index) => {
+        const areaText = String(area.text || '').trim();
+        if (!areaText) throw new Error(`متن ناحیه ${index + 2} را وارد کنید.`);
+        if (!area.rect) throw new Error(`ناحیه متن ${index + 2} را روی کارت تعیین کنید.`);
+        return {
+          id: area.id,
+          text: areaText,
+          textHtml: area.textHtml || plainTextToEditorHtml(areaText),
+          rect: cloneRect(area.rect)
+        };
+      }) : [];
       return {
         imageData: state.imageData,
         imageName: state.imageName,
@@ -1446,8 +1889,10 @@
         fontName: state.fontName,
         qrRect: cloneRect(state.qrRect),
         textRect: cloneRect(state.textRect),
+        ticketCountRect: cloneRect(state.ticketCountRect),
         text,
         textHtml,
+        textAreas,
         conditionalVariables: normalizedConditionalVariables(state.conditionalVariables),
         conditionalBuilderDraft: collectConditionalBuilderDraft(),
         qrData
@@ -1496,6 +1941,69 @@
       }
       return data;
     }
+
+    receiptTemplatesRoot?.addEventListener('click', async (event) => {
+      const target = event.target instanceof Element ? event.target.closest('[data-receipt-template]') : null;
+      if (!(target instanceof HTMLButtonElement) || !isTicketCard) return;
+      const templateId = String(target.dataset.receiptTemplate || '');
+      const definition = RECEIPT_TEMPLATE_DEFINITIONS[templateId];
+      if (!definition) return;
+      if (!state.configLoaded) {
+        setReceiptTemplateStatus('لطفاً تا پایان بارگذاری تنظیمات فعلی صبر کنید.', true);
+        return;
+      }
+      const buttons = Array.from(receiptTemplatesRoot.querySelectorAll('[data-receipt-template]'));
+      buttons.forEach((button) => { if (button instanceof HTMLButtonElement) button.disabled = true; });
+      setReceiptTemplateStatus(`در حال ساخت و ذخیره قالب «${definition.name}»...`, false);
+      setStatus('در حال آماده‌سازی قالب رسید با فونت ایران‌سنس...', false);
+      try {
+        const fontUrl = String(receiptTemplatesRoot.dataset.templateFontUrl || '').trim();
+        if (!fontUrl) throw new Error('آدرس فونت قالب تنظیم نشده است.');
+        const font = await loadReceiptTemplateFont(fontUrl);
+        const fontFamily = await ensureInviteCardFont(font.data);
+        const imageData = await receiptTemplateBackground(definition, fontFamily);
+        const config = receiptTemplateConfig(templateId, imageData, font);
+
+        state.imageData = config.imageData;
+        state.imageName = config.imageName;
+        state.imageWidth = 2400;
+        state.imageHeight = 2400;
+        state.fontData = config.fontData;
+        state.fontName = config.fontName;
+        state.fontMime = font.mime;
+        state.fontBytes = font.bytes;
+        state.fontFamily = fontFamily;
+        state.qrRect = cloneRect(config.qrRect);
+        state.textRect = cloneRect(config.textRect);
+        state.ticketCountRect = cloneRect(config.ticketCountRect);
+        state.textAreas = config.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
+        state.conditionalVariables = [];
+        editor.innerHTML = sanitizeEditorHtml(config.textHtml);
+        editor.style.fontFamily = fontFamily;
+        renderConditionalVariables();
+        fillConditionalBuilder();
+        updateFontUi();
+        updateSource();
+        updateAreaStates();
+        renderExtraTextAreas();
+        markPreviewStale();
+
+        const data = await saveConfig(config);
+        updateReceiptTemplateSelection(templateId);
+        window.clearTimeout(state.draftTimer);
+        state.pendingDraftSections.clear();
+        state.draftReady = true;
+        setAutosaveStatus('قالب و همه تنظیمات آن در پایگاه داده ذخیره شدند.', false);
+        setReceiptTemplateStatus(`قالب «${definition.name}» اعمال و ذخیره شد؛ اکنون می‌توانید همه بخش‌ها را ویرایش کنید.`, false);
+        setStatus(responseMessage(data, 'قالب آماده رسید ذخیره شد.'), false);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'اعمال قالب رسید ناموفق بود.';
+        setReceiptTemplateStatus(message, true);
+        setStatus(message, true);
+      } finally {
+        buttons.forEach((button) => { if (button instanceof HTMLButtonElement) button.disabled = false; });
+      }
+    });
 
     saveButton?.addEventListener('click', async () => {
       if (saveButton instanceof HTMLButtonElement) saveButton.disabled = true;
@@ -1569,6 +2077,14 @@
           width: width * config.textRect.width / 100,
           height: height * config.textRect.height / 100
         }, config.conditionalVariables, fontFamily);
+        config.textAreas.forEach((area) => {
+          drawInviteText(context, area.textHtml || area.text, invitee, {
+            x: width * area.rect.x / 100,
+            y: height * area.rect.y / 100,
+            width: width * area.rect.width / 100,
+            height: height * area.rect.height / 100
+          }, config.conditionalVariables, fontFamily);
+        });
         const pngBlob = await canvasToPngBlob(canvas);
         if (state.generatedUrl) URL.revokeObjectURL(state.generatedUrl);
         state.generatedUrl = URL.createObjectURL(pngBlob);
@@ -1596,6 +2112,7 @@
     async function loadConfig() {
       updateSource();
       updateAreaStates();
+      renderExtraTextAreas();
       if (!endpoint) return;
       setStatus('در حال بارگذاری تنظیمات کارت دعوت...', false);
       try {
@@ -1606,6 +2123,7 @@
         }
         const config = result.data;
         if (!config || typeof config !== 'object') {
+          state.configLoaded = true;
           state.draftReady = true;
           setAutosaveStatus('ذخیره خودکار فعال است.', false);
           setStatus('هنوز تنظیماتی برای کارت دعوت ذخیره نشده است.', false);
@@ -1621,6 +2139,15 @@
         state.fontBytes = Number(config.fontBytes) || 0;
         state.qrRect = normalizedRect(config.qrRect);
         state.textRect = normalizedRect(config.textRect);
+        state.ticketCountRect = normalizedRect(config.ticketCountRect);
+        state.textAreas = isReceiptCard && Array.isArray(config.textAreas)
+          ? config.textAreas.map((area, index) => ({
+              id: String(area?.id || `text_${index + 1}`),
+              text: String(area?.text || '').trim(),
+              textHtml: sanitizeEditorHtml(area?.textHtml || plainTextToEditorHtml(area?.text || '')),
+              rect: normalizedRect(area?.rect)
+            })).filter((area) => area.text)
+          : [];
         editor.innerHTML = sanitizeEditorHtml(
           typeof config.textHtml === 'string' && config.textHtml
             ? config.textHtml
@@ -1648,10 +2175,14 @@
         qrDataInput.value = '[nationalid]';
         updateSource();
         updateAreaStates();
+        renderExtraTextAreas();
+        state.configLoaded = true;
         state.draftReady = true;
+        updateReceiptTemplateSelection();
         setAutosaveStatus('همه اطلاعات ذخیره‌شده بازیابی شد؛ ذخیره خودکار فعال است.', false);
         setStatus(fontWarning || `تنظیمات ذخیره‌شده EGM ${result.egmCode || ''} بارگذاری شد.`, Boolean(fontWarning));
       } catch (error) {
+        state.configLoaded = false;
         state.draftReady = false;
         setAutosaveStatus('ذخیره خودکار به‌دلیل خطای بارگذاری غیرفعال است.', true);
         setStatus(error instanceof Error ? error.message : 'بارگذاری تنظیمات کارت دعوت ناموفق بود.', true);
@@ -1672,8 +2203,19 @@
   }
 
   function initAll() {
-    document.querySelectorAll('[data-egm-invite-card-pane]').forEach(initPane);
+    document.querySelectorAll('[data-egm-invite-card-pane].active').forEach(initPane);
   }
+
+  document.addEventListener('click', (event) => {
+    const trigger = event.target instanceof Element ? event.target.closest('[data-pane]') : null;
+    const paneKey = trigger?.getAttribute('data-pane');
+    if (!paneKey) return;
+    window.setTimeout(() => {
+      document.querySelectorAll('[data-egm-invite-card-pane]').forEach((pane) => {
+        if (pane.getAttribute('data-pane') === paneKey) initPane(pane);
+      });
+    }, 0);
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAll, { once: true });
   else initAll();

@@ -3,6 +3,7 @@
   const PERIOD_INVITES_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invites.php';
   const PERIOD_INVITE_CARDS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invite_cards.php';
   const PERIOD_EXPORTS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_exports.php';
+  const GROUPS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/groups.php';
   const GUEST_CONTROL_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/check-in.php';
   const INVITE_CARD_QR_ENDPOINT = 'modules/minor/QR%20Code%20Generator/generate.php';
   const LOGS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/egm_logs.php';
@@ -2545,7 +2546,7 @@
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
             <th><input type="checkbox" data-period-unmatched-select-all aria-label="انتخاب همه کاربران بدون تطبیق" /></th><th>ردیف Excel</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>شماره همراه</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>جزئیات فایل</th><th>عملیات</th>
           </tr></thead><tbody data-period-unmatched-body></tbody></table></div>
-          <div class="egm-period-list-footer"><span class="muted"><span data-period-unmatched-selected-count>0</span> ردیف انتخاب شده</span><button type="button" class="btn primary" data-period-invite-unmatched-selected disabled>افزودن و دعوت انتخاب‌شده‌ها</button></div>
+          <div class="egm-period-list-footer"><span class="muted"><span data-period-unmatched-selected-count>0</span> ردیف انتخاب شده</span><div class="egm-period-actions"><select data-period-unmatched-group aria-label="گروه مهمان"><option value="">بدون گروه</option></select><button type="button" class="btn primary" data-period-invite-unmatched-selected disabled>افزودن و دعوت انتخاب‌شده‌ها</button></div></div>
           <p class="hint" data-period-unmatched-status aria-live="polite"></p>
         </div>
         <div class="card egm-period-candidates-card">
@@ -2553,7 +2554,7 @@
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
             <th><input type="checkbox" data-period-candidate-select-all aria-label="انتخاب همه کاربران نمایان" /></th><th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>وضعیت</th>
           </tr></thead><tbody data-period-candidate-body><tr><td colspan="12" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
-          <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-candidate-prev>قبلی</button><span data-period-candidate-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-candidate-next>بعدی</button></div><button type="button" class="btn primary" data-period-invite-selected disabled>دعوت کاربران انتخاب‌شده</button></div>
+          <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-candidate-prev>قبلی</button><span data-period-candidate-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-candidate-next>بعدی</button></div><div class="egm-period-actions"><select data-period-candidate-group aria-label="گروه مهمان"><option value="">بدون گروه</option></select><button type="button" class="btn primary" data-period-invite-selected disabled>دعوت کاربران انتخاب‌شده</button></div></div>
           <p class="hint" data-period-candidate-status aria-live="polite"></p>
         </div>
       </div>
@@ -2562,8 +2563,8 @@
           <div class="section-header"><h3>دعوت‌شدگان این بازه</h3><strong><span data-period-invitee-total>0</span> نفر</strong></div>
           <div class="form"><label class="field full"><span>جستجو</span><input type="search" data-period-invitee-search placeholder="نام، کد ملی یا کد پرسنلی" autocomplete="off" /></label></div>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
-            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>عملیات</th>
-          </tr></thead><tbody data-period-invitee-body><tr><td colspan="14" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
+            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>گروه</th><th>عملیات</th>
+          </tr></thead><tbody data-period-invitee-body><tr><td colspan="15" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
           <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-invitee-prev>قبلی</button><span data-period-invitee-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-invitee-next>بعدی</button></div><button type="button" class="btn ghost" data-period-invitee-refresh>بازخوانی</button></div>
           <p class="hint" data-period-invitee-status aria-live="polite"></p>
         </div>
@@ -2604,6 +2605,7 @@
           <div class="section-header"><div><h3>خروجی اکسل بازه</h3><p class="muted small">تمام فایل‌ها مستقیماً از اطلاعات ذخیره‌شده همین بازه در پایگاه داده ساخته می‌شوند.</p></div></div>
           <div class="egm-period-export-grid">
             <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد هر نوع بلیت برای هر مهمان، جمع هر مهمان، جمع هر نوع بلیت و جمع کل.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>ورود ثبت‌شده، بدون خروج</h4><p>فهرست لحظه‌ای مهمانانی که وارد شده‌اند اما هنوز خروج ندارند. این گزارش به معنی تأیید حضور واقعی نیست.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>فقط مهمانانی که هنگام مراجعه به‌عنوان مهمان ناخوانده ثبت شده‌اند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>تمام تلاش‌های ورود، خروج، تکرار، رد شدن و دیگر رویدادهای کنترل مهمان.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
@@ -3219,11 +3221,30 @@
   function getPeriodInviteState(pane) {
     let state = periodInviteStates.get(pane);
     if (!state) {
-      state = { source: '', candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
+      state = { source: '', groups: [], candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
       periodInviteStates.set(pane, state);
     }
     return state;
   }
+
+  async function loadPeriodGroups(pane) {
+    const state = getPeriodInviteState(pane);
+    try {
+      const response = await fetch(`${GROUPS_ENDPOINT}?action=list&_=${Date.now()}`, { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'دریافت گروه‌ها ناموفق بود.');
+      state.groups = Array.isArray(data.groups) ? data.groups : [];
+      pane.querySelectorAll('[data-period-candidate-group],[data-period-unmatched-group]').forEach((select) => {
+        const current = select.value;
+        select.innerHTML = '<option value="">بدون گروه</option>' + state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
+        if (state.groups.some((group) => group.id === current)) select.value = current;
+      });
+    } catch (error) {
+      const status = pane.querySelector('[data-period-candidate-status]');
+      if (status) status.textContent = error?.message || 'دریافت گروه‌ها ناموفق بود.';
+    }
+  }
+  window.addEventListener('egm-groups-updated', () => document.querySelectorAll('[data-period-invites-ready="1"]').forEach((pane) => void loadPeriodGroups(pane)));
 
   async function readPeriodInviteResponse(response) {
     const responseText = await response.text();
@@ -3753,7 +3774,7 @@
     const status = pane.querySelector('[data-period-unmatched-status]');
     if (status) status.textContent = 'در حال افزودن کاربران به EGM...';
     try {
-      const data = await requestPeriodInvites('invite_unmatched', { period_code: periodCodeForPane(pane), rows }, 'POST');
+      const data = await requestPeriodInvites('invite_unmatched', { period_code: periodCodeForPane(pane), group_id: pane.querySelector('[data-period-unmatched-group]')?.value || '', rows }, 'POST');
       state.unmatchedRows = state.unmatchedRows.filter((row) => !wanted.has(String(row?.excel_id || '')));
       wanted.forEach((id) => state.unmatchedSelected.delete(id));
       renderPeriodUnmatchedRows(pane);
@@ -3879,6 +3900,7 @@
                 <label class="field"><span>اداره</span><input name="department" type="text" maxlength="191" /></label>
                 <label class="field"><span>جنسیت</span><input name="gender" type="text" maxlength="32" /></label>
                 <label class="field"><span>سطح پستی</span><input name="postal_level" type="text" maxlength="64" /></label>
+                <label class="field"><span>گروه</span><select name="group_id"><option value="">بدون گروه</option></select></label>
               </div>
               <div class="egm-period-invitee-editor-checks">
                 <label><input name="is_active" type="checkbox" /> کاربر فعال است</label>
@@ -3981,6 +4003,9 @@
     const form = modal.querySelector('[data-period-invitee-editor-form]');
     if (!(form instanceof HTMLFormElement)) return;
     periodInviteeEditorContext = { pane, row };
+    const groupSelect = form.elements.namedItem('group_id');
+    const groups = getPeriodInviteState(pane).groups;
+    if (groupSelect instanceof HTMLSelectElement) groupSelect.innerHTML = '<option value="">بدون گروه</option>' + groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
     const setValue = (name, value) => {
       const control = form.elements.namedItem(name);
       if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = String(value ?? '');
@@ -3988,6 +4013,7 @@
     for (const name of ['first_name', 'last_name', 'national_id', 'work_id', 'phone_number', 'guest_number', 'deputy', 'general_department', 'department', 'gender', 'postal_level', 'entered_date', 'entered_time', 'quit_date', 'quit_time']) {
       setValue(name, row?.[name] || '');
     }
+    setValue('group_id', row?.group_id || '');
     const attendanceState = ['entered', 'quit_completed'].includes(String(row?.attendance_state || ''))
       ? String(row.attendance_state)
       : (row?.quit_date && row?.quit_time ? 'quit_completed' : (row?.entered_date && row?.entered_time ? 'entered' : 'not_entered'));
@@ -4032,9 +4058,9 @@
       <td><code>${escapeHtml(row?.guest_number || '—')}</code></td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
       <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
       <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
-      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td>
+      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td><td>${escapeHtml(state.groups.find((group) => group.id === row?.group_id)?.title || 'بدون گروه')}</td>
       <td><div class="egm-period-invitee-row-actions"><button type="button" class="btn ghost" data-period-edit-invite="${escapeHtml(row?.invite_id || '')}">ویرایش</button><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></div></td>
-    </tr>`).join('') : '<tr><td colspan="14" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="15" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
     const total = pane.querySelector('[data-period-invitee-total]');
     if (total) total.textContent = String(data?.total || 0);
     const meta = pane.querySelector('[data-period-invitee-page]');
@@ -4189,6 +4215,7 @@
     pane.dataset.taskQuitOpeningDate = String(task?.quitOpeningDate || task?.quit_opening_date || '');
     pane.dataset.taskEndDate = String(task?.endDate || task?.end_date || '');
     const state = getPeriodInviteState(pane);
+    void loadPeriodGroups(pane).then(() => loadPeriodInvitees(pane, state.inviteePage));
     pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
     pane.querySelector('[data-period-invite-card-export]')?.addEventListener('click', () => exportPeriodInviteCardLinks(pane));
     pane.querySelector('[data-period-invite-card-refresh]')?.addEventListener('click', () => void Promise.all([loadPeriodInviteCardStatus(pane), loadPeriodInviteCardBackground(pane)]));
@@ -4251,7 +4278,7 @@
     pane.querySelector('[data-period-invite-selected]')?.addEventListener('click', async () => {
       const status = pane.querySelector('[data-period-candidate-status]');
       try {
-        const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), candidate_ids: Array.from(state.selected) }, 'POST');
+        const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), group_id: pane.querySelector('[data-period-candidate-group]')?.value || '', candidate_ids: Array.from(state.selected) }, 'POST');
         state.selected.clear();
         if (status) status.textContent = data?.message || 'دعوت‌ها ذخیره شدند.';
         await loadPeriodCandidates(pane, 1);

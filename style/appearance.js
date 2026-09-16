@@ -47,13 +47,13 @@
       : {};
 
   const defaults = {
-    primary: normalizeHex(sharedAppearance.primary ?? "") || "#111111",
+    primary: normalizeHex(sharedAppearance.primary ?? "") || "#1d75e1",
     background: normalizeHex(sharedAppearance.background ?? "") || "#ffffff",
     text: normalizeHex(sharedAppearance.text ?? "") || "#111111",
     toggle:
       normalizeHex(sharedAppearance.toggle ?? "") ||
       normalizeHex(sharedAppearance.primary ?? "") ||
-      "#111111"
+      "#1d75e1"
   };
 
   const palette = Object.keys(defaults).reduce((acc, key) => {

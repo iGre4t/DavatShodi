@@ -87,6 +87,14 @@ try {
     $largeDataUri = 'data:image/png;base64,' . base64_encode(str_repeat('invite-card-binary-', 80000));
     egmInviteCardWriteAsset($pdo, EGM_DEVELOP_CODE, $testAsset, $largeDataUri);
     inviteCardPersistenceAssert(egmInviteCardReadAsset($pdo, EGM_DEVELOP_CODE, $testAsset) === $largeDataUri, 'A large uploaded asset did not survive chunked database storage');
+    $printDataUri = 'data:image/png;base64,' . base64_encode('print-card-' . getmypid());
+    egmInviteCardWriteAsset($pdo, EGM_DEVELOP_CODE, $testAsset, $printDataUri, 'print-card');
+    inviteCardPersistenceAssert(egmInviteCardReadAsset($pdo, EGM_DEVELOP_CODE, $testAsset, 'print-card') === $printDataUri, 'Print Card asset did not survive isolated storage');
+    inviteCardPersistenceAssert(egmInviteCardReadAsset($pdo, EGM_DEVELOP_CODE, $testAsset) === $largeDataUri, 'Print Card asset overwrote the Invite Card asset');
+    $ticketDataUri = 'data:image/png;base64,' . base64_encode('custom-number-ticket-' . getmypid());
+    egmInviteCardWriteAsset($pdo, EGM_DEVELOP_CODE, $testAsset, $ticketDataUri, 'custom-number-ticket');
+    inviteCardPersistenceAssert(egmInviteCardReadAsset($pdo, EGM_DEVELOP_CODE, $testAsset, 'custom-number-ticket') === $ticketDataUri, 'Custom Number Ticket asset did not survive isolated storage');
+    inviteCardPersistenceAssert(egmInviteCardReadAsset($pdo, EGM_DEVELOP_CODE, $testAsset, 'print-card') === $printDataUri, 'Custom Number Ticket asset overwrote the Print Card asset');
     $chunkStatement = $pdo->prepare("SELECT COUNT(*) FROM `{$tables['data']}` WHERE `file_path` = :file_path AND `storage_kind` = 'invite_card_chunk'");
     $chunkStatement->execute([':file_path' => 'invite-card/' . $testAsset]);
     inviteCardPersistenceAssert((int)$chunkStatement->fetchColumn() > 1, 'The large uploaded asset was not divided into safe database chunks');
@@ -94,6 +102,8 @@ try {
     $statement = $pdo->prepare("DELETE FROM `{$tables['data']}` WHERE `data_key` = :data_key");
     $statement->execute([':data_key' => $testKey]);
     egmInviteCardDeleteAsset($pdo, EGM_DEVELOP_CODE, $testAsset);
+    egmInviteCardDeleteAsset($pdo, EGM_DEVELOP_CODE, $testAsset, 'print-card');
+    egmInviteCardDeleteAsset($pdo, EGM_DEVELOP_CODE, $testAsset, 'custom-number-ticket');
 }
 
 fwrite(STDOUT, "EGM Invite Card persistence test passed.\n");

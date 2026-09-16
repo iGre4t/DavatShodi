@@ -1,7 +1,9 @@
 <?php
 declare(strict_types=1);
 
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-08-22.1';
+// Bump whenever a request-time compatible table migration is added. Existing
+// instances use this marker to decide whether the migration block must run.
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-09-16.1';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
 const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = [EGM_INSTANCE_SCHEMA_VERSION];
 
@@ -273,6 +275,10 @@ CREATE TABLE IF NOT EXISTS `{$userPeriodsTable}` (
   `is_uninvited_guest` TINYINT(1) NOT NULL DEFAULT 0,
   `uninvited_registered_at` DATETIME NULL,
   `uninvited_registered_by` VARCHAR(191) NULL,
+  `number_of_ticket` VARCHAR(64) NULL,
+  `ticket_numbers_json` LONGTEXT NULL,
+  `ticket_number_recorded_at` DATETIME NULL,
+  `group_id` VARCHAR(64) NULL,
   `invite_card_code` VARCHAR(191) NULL,
   `invite_card_file` VARCHAR(512) NULL,
   `invite_card_generated_at` DATETIME NULL,
@@ -313,6 +319,10 @@ SQL);
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'is_uninvited_guest', 'TINYINT(1) NOT NULL DEFAULT 0');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'uninvited_registered_at', 'DATETIME NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'uninvited_registered_by', 'VARCHAR(191) NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'number_of_ticket', 'VARCHAR(64) NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'ticket_numbers_json', 'LONGTEXT NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'ticket_number_recorded_at', 'DATETIME NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'group_id', 'VARCHAR(64) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'invite_card_code', 'VARCHAR(191) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'invite_card_file', 'VARCHAR(512) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'invite_card_generated_at', 'DATETIME NULL');

@@ -6,11 +6,13 @@ require_once __DIR__ . '/egm-database-runtime.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/../../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../../api/lib/egm-invite-card-pane.php';
+require_once __DIR__ . '/../../../api/lib/egm-groups-pane.php';
 $egmPanelUser = requireTabPermissionFromSession('event-guest-manager', false);
 $egmAllowedChildTabs = resolveAllowedPanelChildTabsForUser($egmPanelUser, 'event-guest-manager');
 $egmAllowedChildSet = array_fill_keys($egmAllowedChildTabs, true);
 $egmCanMainPane = isset($egmAllowedChildSet['event-guest-manager:main']);
 $egmCanInviteCardPane = $egmCanMainPane;
+$egmCanPrintCardPane = $egmCanMainPane;
 $egmCanInviteesPane = isset($egmAllowedChildSet['event-guest-manager:invitees']);
 $egmCanManageTasksPane = isset($egmAllowedChildSet['event-guest-manager:manage-tasks']);
 $egmCanTaskAccessPane = isset($egmAllowedChildSet['event-guest-manager:task-access']);
@@ -78,6 +80,7 @@ $egmCanTaskSubtabs = $egmCanManageTasksPane || $egmHasTaskSubtabAccess;
 $egmHasAnyPane = $egmCanMainPane
   || $egmCanInviteesPane
   || $egmCanInviteCardPane
+  || $egmCanPrintCardPane
   || $egmCanManageTasksPane
   || $egmCanTaskSubtabs
   || $egmCanTaskAccessPane
@@ -90,8 +93,11 @@ $egmInitialPane = '';
 foreach ([
   'egm-main' => $egmCanControlPanel,
   'egm-rewards-config' => $egmCanMainPane,
+  'egm-groups' => $egmCanMainPane,
   'egm-invitees' => $egmCanInviteesPane,
   'egm-invite-card' => $egmCanInviteCardPane,
+  'egm-print-card' => $egmCanPrintCardPane,
+  'egm-custom-number-ticket' => $egmCanPrintCardPane,
   'egm-manage-tasks' => $egmCanManageTasksPane,
   'egm-monitoring' => $egmCanMonitoringPane,
   'egm-logs' => $egmCanLogsPane,
@@ -113,6 +119,12 @@ $egmPanelInstanceName = trim((string)($egmPanelRegistry['name'] ?? ''));
 if ($egmPanelInstanceName === '') {
   $egmPanelInstanceName = $egmPanelInstanceCode === '00000' ? 'EGM Develop' : 'EGM';
 }
+$egmPanelStoredSettings = is_array($egmPanelRuntimeContext) && ($egmPanelRuntimeContext['pdo'] ?? null) instanceof PDO
+  ? egmInstanceReadData($egmPanelRuntimeContext['pdo'], $egmPanelInstanceCode, 'settings', [])
+  : [];
+$egmPanelTicketSettings = is_array($egmPanelStoredSettings['customNumberTicketSettings'] ?? null) ? $egmPanelStoredSettings['customNumberTicketSettings'] : [];
+$egmPanelTicketDefinitions = is_array($egmPanelTicketSettings['tickets'] ?? null) ? $egmPanelTicketSettings['tickets'] : [];
+if ($egmPanelTicketDefinitions === []) $egmPanelTicketDefinitions = [['id' => 'default', 'title' => 'Custom Number Ticket']];
 
 $egmPanelCssVer = (string)(@egmDbFilemtime(__DIR__ . '/egm-panel.css') ?: time());
 $egmPanelLocalJsVer = (string)(@egmDbFilemtime(__DIR__ . '/egm-panel-local.js') ?: time());
@@ -123,10 +135,13 @@ $egmMonitoringJsVer = (string)(@egmDbFilemtime(__DIR__ . '/EGMMonitoring.js') ?:
 $egmTaskAccessJsVer = (string)(@egmDbFilemtime(__DIR__ . '/EGMTaskAccess.js') ?: time());
 $egmInviteCardCssVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-invite-card.css') ?: time());
 $egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-invite-card.js') ?: time());
+$egmGroupsCssVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-groups.css') ?: time());
+$egmGroupsJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-groups.js') ?: time());
 ?>
 
 <link rel="stylesheet" href="mini%20apps/EGMs/EGM/egm-panel.css?v=<?= htmlspecialchars($egmPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
-<?php if ($egmCanInviteCardPane || $egmCanManageTasksPane): ?>
+<?php if ($egmCanMainPane): ?><link rel="stylesheet" href="assets/egm-groups.css?v=<?= htmlspecialchars($egmGroupsCssVer, ENT_QUOTES, 'UTF-8') ?>" /><?php endif; ?>
+<?php if ($egmCanInviteCardPane || $egmCanPrintCardPane || $egmCanManageTasksPane): ?>
 <link rel="stylesheet" href="assets/egm-invite-card.css?v=<?= htmlspecialchars($egmInviteCardCssVer, ENT_QUOTES, 'UTF-8') ?>" />
 <?php endif; ?>
 <div class="egm-shell" data-egm-csrf="<?= htmlspecialchars($egmPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
@@ -139,12 +154,19 @@ $egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-i
       <?php endif; ?>
       <?php if ($egmCanMainPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-rewards-config' ? ' active' : '' ?>" data-pane="egm-rewards-config">جوایز</button>
+        <button type="button" class="sub-item<?= $egmInitialPane === 'egm-groups' ? ' active' : '' ?>" data-pane="egm-groups">Groups</button>
       <?php endif; ?>
       <?php if ($egmCanInviteesPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-invitees' ? ' active' : '' ?>" data-pane="egm-invitees">دعوت‌شدگان</button>
       <?php endif; ?>
       <?php if ($egmCanInviteCardPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-invite-card' ? ' active' : '' ?>" data-pane="egm-invite-card">Invite Card</button>
+      <?php endif; ?>
+      <?php if ($egmCanPrintCardPane): ?>
+        <button type="button" class="sub-item<?= $egmInitialPane === 'egm-print-card' ? ' active' : '' ?>" data-pane="egm-print-card">Print Card</button>
+        <?php foreach ($egmPanelTicketDefinitions as $egmTicketIndex => $egmTicket): $egmTicketId = preg_replace('/[^a-z0-9_-]+/', '-', strtolower((string)($egmTicket['id'] ?? 'default'))) ?: 'default'; $egmTicketPane = 'egm-custom-number-ticket-' . $egmTicketId; ?>
+          <button type="button" class="sub-item" data-pane="<?= htmlspecialchars($egmTicketPane, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)($egmTicket['title'] ?? ('Ticket ' . ($egmTicketIndex + 1))), ENT_QUOTES, 'UTF-8') ?></button>
+        <?php endforeach; ?>
       <?php endif; ?>
       <?php if ($egmCanManageTasksPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-manage-tasks' ? ' active' : '' ?>" data-pane="egm-manage-tasks">بازه‌ها</button>
@@ -229,7 +251,59 @@ $egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-i
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </span>
       </label>
+      <label class="switch egm-switch">
+        <span class="switch-label">چاپ خودکار همه خروجی‌های فعال پس از ورود موفق</span>
+        <span class="switch-toggle">
+          <input type="checkbox" id="egm-auto-print-toggle" aria-label="چاپ خودکار همه خروجی‌های فعال" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
+      </label>
+      <label class="switch egm-switch">
+        <span class="switch-label">چاپ دو نسخه</span>
+        <span class="switch-toggle">
+          <input type="checkbox" id="egm-double-print-toggle" aria-label="چاپ دو نسخه Print Card" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
+      </label>
+      <label class="switch egm-switch">
+        <span class="switch-label">فعال‌سازی Custom Number Ticket هنگام ورود موفق</span>
+        <span class="switch-toggle">
+          <input type="checkbox" id="egm-custom-number-ticket-toggle" aria-label="فعال‌سازی Custom Number Ticket" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
+      </label>
+      <label class="switch egm-switch">
+        <span class="switch-label">فقط Custom Number Ticket چاپ شود</span>
+        <span class="switch-toggle">
+          <input type="checkbox" id="egm-ticket-only-toggle" aria-label="چاپ فقط Custom Number Ticket" />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </span>
+      </label>
     </div>
+    <div class="card" style="margin-top:12px">
+      <div class="section-header"><h3>بلیت‌های شماره‌دار</h3><button type="button" class="btn ghost" id="egm-add-ticket-type">افزودن بلیت</button></div>
+      <div id="egm-ticket-types" class="form" style="gap:10px"></div>
+      <p class="muted small">پس از ذخیره، صفحه را تازه‌سازی کنید تا تب طراحی جداگانه هر بلیت نمایش داده شود. عنوان در پنجره ورود شماره و تنظیمات چاپگر نسخه ویندوز نیز نمایش داده می‌شود.</p>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="section-header"><h3>Admin Passcode</h3><span class="muted small" id="egm-admin-passcode-state">تنظیم نشده</span></div>
+      <div class="form grid two-column-fields" style="gap:10px">
+        <label class="field standard-width">
+          <span>کد مدیریت اپلیکیشن ویندوز</span>
+          <input type="password" id="egm-admin-passcode" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="new-password" placeholder="۴ تا ۶ رقم" />
+        </label>
+        <label class="field standard-width">
+          <span>تکرار کد</span>
+          <input type="password" id="egm-admin-passcode-confirm" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="new-password" placeholder="تکرار کد" />
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <button type="button" class="btn" id="egm-admin-passcode-save">ذخیره کد</button>
+        <span class="small" id="egm-admin-passcode-status" role="status" aria-live="polite"></span>
+      </div>
+      <p class="muted small">کد به‌صورت هش امن ذخیره می‌شود. برای حفظ کد فعلی، هر دو فیلد را خالی بگذارید.</p>
+    </div>
+    <p class="muted small">با فعال‌کردن «فقط Custom Number Ticket چاپ شود»، Print Card حذف و فقط بلیت شماره‌دار چاپ می‌شود. در نسخه وب، چاپ پنجره چاپ مرورگر را باز می‌کند؛ در نسخه ویندوز چاپگر بلیت روی همان رایانه انتخاب می‌شود.</p>
     <div class="form grid two-column-fields egm-datetime-grid">
       <div class="egm-datetime-title egm-datetime-title--start">شروع</div>
       <label class="field standard-width egm-datetime-start">
@@ -428,6 +502,15 @@ $egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-i
           <label class="egm-task-access-manage-row">
             <input type="checkbox" id="egm-task-access-manage-tasks" />
             <span>دسترسی به تب بازه‌ها</span>
+          </label>
+          <label class="field full">
+            <span>سطح دسترسی اپلیکیشن ویندوز</span>
+            <select id="egm-winapp-access-level">
+              <option value="full_access">دسترسی کامل به اسکن، اطلاعات و تنظیمات</option>
+              <option value="scan_and_details">اسکن و تمام اطلاعات کاربران و رویداد، بدون تنظیمات</option>
+              <option value="scan_and_event">فقط اسکن و اطلاعات عمومی رویداد</option>
+              <option value="scan_only">فقط اسکن</option>
+            </select>
           </label>
           <p class="muted small" id="egm-task-access-status" aria-live="polite"></p>
           <div id="egm-task-access-tree" class="egm-task-access-tree"></div>
@@ -871,8 +954,19 @@ $egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-i
       <?php include __DIR__ . '/invitees.php'; ?>
     </div>
     <?php endif; ?>
+    <?php if ($egmCanMainPane): ?>
+      <?php renderEgmGroupsPane('mini%20apps/EGMs/EGM/groups.php', $egmInitialPane === 'egm-groups'); ?>
+    <?php endif; ?>
     <?php if ($egmCanInviteCardPane): ?>
       <?php renderEgmInviteCardPane('mini%20apps/EGMs/EGM/invite_card_store.php', $egmInitialPane === 'egm-invite-card'); ?>
+    <?php endif; ?>
+    <?php if ($egmCanPrintCardPane): ?>
+      <?php renderEgmInviteCardPane('mini%20apps/EGMs/EGM/print_card_store.php', $egmInitialPane === 'egm-print-card', ['paneKey' => 'egm-print-card', 'kind' => 'print']); ?>
+      <?php foreach ($egmPanelTicketDefinitions as $egmTicketIndex => $egmTicket):
+        $egmTicketId = preg_replace('/[^a-z0-9_-]+/', '-', strtolower((string)($egmTicket['id'] ?? 'default'))) ?: 'default';
+        $egmTicketTitle = (string)($egmTicket['title'] ?? ('Ticket ' . ($egmTicketIndex + 1)));
+        renderEgmInviteCardPane('mini%20apps/EGMs/EGM/custom_number_ticket_store.php?ticket_id=' . rawurlencode($egmTicketId), false, ['paneKey' => 'egm-custom-number-ticket-' . $egmTicketId, 'kind' => 'ticket', 'title' => $egmTicketTitle]);
+      endforeach; ?>
     <?php endif; ?>
     <?php if ($egmCanManageTasksPane): ?>
     <div class="sub-pane<?= $egmInitialPane === 'egm-manage-tasks' ? ' active' : '' ?>" data-pane="egm-manage-tasks">
@@ -943,6 +1037,7 @@ $egmInviteCardJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-i
 <script src="mini%20apps/EGMs/EGM/vendor/xlsx/xlsx.full.min.js" defer></script>
 <?php endif; ?>
 <script src="mini%20apps/EGMs/EGM/egm-panel-local.js?v=<?= htmlspecialchars($egmPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php if ($egmCanMainPane): ?><script src="assets/egm-groups.js?v=<?= htmlspecialchars($egmGroupsJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script><?php endif; ?>
 <?php if ($egmCanInviteCardPane): ?>
 <script src="assets/egm-invite-card.js?v=<?= htmlspecialchars($egmInviteCardJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
 <?php endif; ?>

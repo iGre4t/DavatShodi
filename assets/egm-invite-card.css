@@ -14,6 +14,128 @@
   gap: 10px;
 }
 
+.egm-shell .egm-receipt-templates {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+  font-family: 'IRANSansXFaNum-Bold', 'PeydaWebFaNum', Tahoma, sans-serif;
+}
+
+.egm-shell .egm-receipt-template-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.egm-shell .egm-receipt-template-heading h4 { margin: 0 0 4px; }
+.egm-shell .egm-receipt-template-heading p { margin: 0; }
+.egm-shell .egm-receipt-template-font {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #475569;
+  direction: ltr;
+  font-size: 11px;
+}
+
+.egm-shell .egm-receipt-template-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(135px, 1fr));
+  gap: 12px;
+}
+
+.egm-shell .egm-receipt-template-card {
+  display: flex;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border, #d7dde7);
+  border-radius: 12px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: right;
+  flex-direction: column;
+  gap: 5px;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+.egm-shell .egm-receipt-template-card:hover,
+.egm-shell .egm-receipt-template-card:focus-visible {
+  border-color: #94a3b8;
+  outline: none;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .1);
+  transform: translateY(-2px);
+}
+
+.egm-shell .egm-receipt-template-card.is-selected {
+  border-color: var(--primary, #1d75e1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, #1d75e1) 18%, transparent);
+}
+
+.egm-shell .egm-receipt-template-card.is-selected::after {
+  content: 'انتخاب شد';
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--primary, #1d75e1);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.egm-shell .egm-receipt-template-card:disabled { cursor: wait; opacity: .6; transform: none; }
+.egm-shell .egm-receipt-template-name { font-weight: 700; }
+.egm-shell .egm-receipt-template-art {
+  position: relative;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-bottom: 4px;
+  overflow: hidden;
+  place-content: center;
+  border: 5px double currentColor;
+  border-radius: 7px;
+  text-align: center;
+}
+.egm-shell .egm-receipt-template-art::before,
+.egm-shell .egm-receipt-template-art::after {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border: 3px solid currentColor;
+  content: '';
+  opacity: .45;
+  transform: rotate(45deg);
+}
+.egm-shell .egm-receipt-template-art::before { top: -22px; right: -22px; }
+.egm-shell .egm-receipt-template-art::after { bottom: -22px; left: -22px; }
+.egm-shell .egm-receipt-template-art span { font-size: 12px; }
+.egm-shell .egm-receipt-template-art strong { font-size: 27px; line-height: 1.2; }
+.egm-shell .is-food-classic .egm-receipt-template-art { background: #fbf7e9; color: #276749; }
+.egm-shell .is-food-modern .egm-receipt-template-art { background: #fff7ed; color: #c2410c; }
+.egm-shell .is-gift-gold .egm-receipt-template-art { background: #14213d; color: #e7bd58; }
+.egm-shell .is-gift-rose .egm-receipt-template-art { background: #fff1f5; color: #9d174d; }
+.egm-shell .is-mci-white .egm-receipt-template-art { background: #fff; color: #0095da; border-style: solid; }
+.egm-shell .is-mci-white .egm-receipt-template-art::before { width: 72px; height: 42px; top: 8px; right: -20px; border: 0; border-radius: 50%; background: #0095da; opacity: .18; transform: rotate(-12deg); }
+.egm-shell .is-mci-white .egm-receipt-template-art::after { width: 80%; height: 1px; bottom: 16px; left: 10%; border: 0; background: #dbe5ec; opacity: 1; transform: none; }
+.egm-shell .egm-receipt-template-status { min-height: 18px; margin: 10px 0 0; }
+
+@media (max-width: 980px) {
+  .egm-shell .egm-receipt-template-grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .egm-shell .egm-receipt-template-heading { display: block; }
+  .egm-shell .egm-receipt-template-font { display: inline-block; margin-top: 8px; }
+  .egm-shell .egm-receipt-template-grid { grid-template-columns: 1fr 1fr; }
+}
+
 .egm-shell .egm-invite-card-source {
   position: relative;
   display: grid;
@@ -69,6 +191,14 @@
 .egm-shell .egm-invite-card-command-row {
   justify-content: flex-end;
 }
+
+.egm-shell .egm-print-card-extra-areas{padding:14px;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:#f8fafc}
+.egm-shell .egm-print-card-extra-list{display:grid;gap:10px;margin-top:12px}
+.egm-shell .egm-print-card-extra-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:12px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:#fff}
+.egm-shell .egm-print-card-extra-row textarea{grid-row:span 2;min-height:76px;resize:vertical}
+.egm-shell .egm-print-card-extra-actions{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.egm-shell .egm-print-card-extra-state{font-size:12px;color:var(--muted,#667085)}
+@media(max-width:720px){.egm-shell .egm-print-card-extra-row{grid-template-columns:1fr}}
 
 .egm-shell .egm-invite-card-editor {
   overflow: hidden;

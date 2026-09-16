@@ -19,6 +19,13 @@ egmCheckInAssert(egmCheckInNormalizeGuestCode('12345678901') === '', 'A Guest ID
 egmCheckInAssert(egmCheckInNormalizeWorkId('1234') === '1234', 'A 4-digit Work ID was rejected');
 egmCheckInAssert(egmCheckInNormalizeWorkId('123456789') === '123456789', 'A 9-digit Work ID was rejected');
 egmCheckInAssert(egmCheckInNormalizeWorkId('1234567890') === '', 'A 10-digit value was accepted as a Work ID');
+$ticketDefinitions = egmCheckInTicketDefinitions(['tickets' => [
+    ['id' => 'food', 'title' => 'Food Ticket'],
+    ['id' => 'gift', 'title' => 'Gift Ticket'],
+]]);
+egmCheckInAssert(count($ticketDefinitions) === 2, 'Multiple number-ticket definitions were not preserved');
+egmCheckInAssert(($ticketDefinitions[0]['title'] ?? '') === 'Food Ticket', 'First ticket title was not preserved');
+egmCheckInAssert(($ticketDefinitions[1]['id'] ?? '') === 'gift', 'Second ticket ID was not preserved');
 
 $checkInSource = file_get_contents(dirname(__DIR__) . '/api/lib/egm-check-in.php');
 egmCheckInAssert(is_string($checkInSource), 'Could not inspect the Guest Control frontend');
@@ -97,6 +104,7 @@ try {
             "{$conditionColumn} was not provisioned"
         );
     }
+    egmCheckInAssert(egmInstanceColumnExists($pdo, $tables['user_periods'], 'group_id'), 'group_id was not provisioned');
     foreach (['is_uninvited_guest', 'uninvited_registered_at', 'uninvited_registered_by'] as $walkInPeriodColumn) {
         egmCheckInAssert(
             egmInstanceColumnExists($pdo, $tables['user_periods'], $walkInPeriodColumn),
@@ -134,6 +142,26 @@ try {
         'period_state' => ['result' => 'active'],
         'can_scan' => true,
     ];
+    egmInstanceWriteData($pdo, $code, 'settings', [
+        'printSettings' => ['autoPrint' => false, 'doublePrint' => false],
+        'customNumberTicketSettings' => ['active' => true, 'ticketOnly' => false, 'tickets' => [
+            ['id' => 'food', 'title' => 'Food'], ['id' => 'gift', 'title' => 'Gift'],
+        ]],
+    ]);
+    egmGroupsWrite($context, [['id' => 'group-a', 'title' => 'Group A', 'outputs' => ['print_card', 'ticket:food']]]);
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET `group_id`='group-a' WHERE `user_id`={$userId} AND `period_code`='01'");
+    $groupProfile = egmCheckInPrintProfile($context, '1234567890');
+    egmCheckInAssert(($groupProfile['group_policy_applied'] ?? false) === true, 'The guest group print policy was not applied');
+    egmCheckInAssert(($groupProfile['auto_print'] ?? false) === true && ($groupProfile['ticket_active'] ?? false) === true, 'The group did not enable its Print Card and number ticket');
+    egmCheckInAssert(count($groupProfile['tickets'] ?? []) === 1 && ($groupProfile['tickets'][0]['id'] ?? '') === 'food', 'The group did not filter number tickets');
+    egmGroupsWrite($context, [['id' => 'group-a', 'title' => 'Group A', 'outputs' => ['ticket:food']]]);
+    $ticketOnlyGroupProfile = egmCheckInAutomaticPrintProfile($context, '1234567890');
+    egmCheckInAssert(($ticketOnlyGroupProfile['auto_print'] ?? false) === true, 'A group number-ticket output was not automatically queued');
+    egmCheckInAssert(($ticketOnlyGroupProfile['ticket_only'] ?? false) === true && ($ticketOnlyGroupProfile['double_print'] ?? true) === false, 'Group output policy inherited global card/copy settings');
+    $ungroupedProfile = egmCheckInPrintProfile($context, '45678901');
+    egmCheckInAssert(($ungroupedProfile['group_policy_applied'] ?? true) === false && ($ungroupedProfile['ticket_active'] ?? false) === true, 'An ungrouped guest did not retain default printing settings');
+    $ungroupedAutomaticProfile = egmCheckInAutomaticPrintProfile($context, '45678901');
+    egmCheckInAssert(($ungroupedAutomaticProfile['ticket_active'] ?? true) === false, 'Automatic Print off did not suppress ungrouped ticket output');
     $firstTime = new DateTimeImmutable('2026-08-18 10:15:30', $timezone);
     $first = egmCheckInProcess($context, '1234567890', $firstTime);
     egmCheckInAssert($first['result'] === 'success', 'The first valid check-in did not succeed');

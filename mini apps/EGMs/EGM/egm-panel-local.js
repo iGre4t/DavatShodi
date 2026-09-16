@@ -3,6 +3,7 @@
   const PERIOD_INVITES_ENDPOINT = 'mini%20apps/EGMs/EGM/period_invites.php';
   const PERIOD_INVITE_CARDS_ENDPOINT = 'mini%20apps/EGMs/EGM/period_invite_cards.php';
   const PERIOD_EXPORTS_ENDPOINT = 'mini%20apps/EGMs/EGM/period_exports.php';
+  const GROUPS_ENDPOINT = 'mini%20apps/EGMs/EGM/groups.php';
   const GUEST_CONTROL_ENDPOINT = 'mini%20apps/EGMs/EGM/check-in.php';
   const INVITE_CARD_QR_ENDPOINT = 'modules/minor/QR%20Code%20Generator/generate.php';
   const LOGS_ENDPOINT = 'mini%20apps/EGMs/EGM/egm_logs.php';
@@ -162,6 +163,10 @@
       enterDeadlineTime: normalizeTime(raw.enterDeadlineTime ?? raw.enter_deadline_time ?? ''),
       quitOpeningDate: normalizeDate(raw.quitOpeningDate ?? raw.quit_opening_date ?? ''),
       quitOpeningTime: normalizeTime(raw.quitOpeningTime ?? raw.quit_opening_time ?? ''),
+      endedAt: String(raw.endedAt ?? raw.ended_at ?? '').trim(),
+      endedBy: String(raw.endedBy ?? raw.ended_by ?? '').trim(),
+      endedNoQuitResolution: String(raw.endedNoQuitResolution ?? raw.ended_no_quit_resolution ?? '').trim(),
+      endedNoQuitCount: Math.max(0, Number.parseInt(raw.endedNoQuitCount ?? raw.ended_no_quit_count ?? 0, 10) || 0),
       score: normalizeScoreValue(raw.score ?? raw.taskScore ?? 0),
       afterEndtimeScore: normalizeScoreValue(raw.afterEndtimeScore ?? raw.after_endtime_score ?? 0),
       hasGoldenTime: normalizeBool(raw.hasGoldenTime ?? raw.has_golden_time ?? true),
@@ -2413,6 +2418,15 @@
     const hasInformationPane = hasInformationPaneTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
     const isPeriod = taskTypeToken === 'period';
+    const isPeriodEnded = isPeriod && String(task.endedAt || '').trim() !== '';
+    const endedResolution = String(task.endedNoQuitResolution || '').trim();
+    const endedResolutionLabel = endedResolution === 'correct_presence'
+      ? 'حضور واقعی'
+      : (endedResolution === 'fake_presence' ? 'حضور نامعقول' : '');
+    const endedNoQuitCount = Math.max(0, Number.parseInt(task.endedNoQuitCount, 10) || 0);
+    const endedClassificationNote = endedResolutionLabel
+      ? ` تعداد ${endedNoQuitCount.toLocaleString('fa-IR')} مهمان بدون خروج در «${endedResolutionLabel}» ثبت شدند.`
+      : '';
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
@@ -2532,7 +2546,7 @@
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
             <th><input type="checkbox" data-period-unmatched-select-all aria-label="انتخاب همه کاربران بدون تطبیق" /></th><th>ردیف Excel</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>شماره همراه</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>جزئیات فایل</th><th>عملیات</th>
           </tr></thead><tbody data-period-unmatched-body></tbody></table></div>
-          <div class="egm-period-list-footer"><span class="muted"><span data-period-unmatched-selected-count>0</span> ردیف انتخاب شده</span><button type="button" class="btn primary" data-period-invite-unmatched-selected disabled>افزودن و دعوت انتخاب‌شده‌ها</button></div>
+          <div class="egm-period-list-footer"><span class="muted"><span data-period-unmatched-selected-count>0</span> ردیف انتخاب شده</span><div class="egm-period-actions"><select data-period-unmatched-group aria-label="گروه مهمان"><option value="">بدون گروه</option></select><button type="button" class="btn primary" data-period-invite-unmatched-selected disabled>افزودن و دعوت انتخاب‌شده‌ها</button></div></div>
           <p class="hint" data-period-unmatched-status aria-live="polite"></p>
         </div>
         <div class="card egm-period-candidates-card">
@@ -2540,7 +2554,7 @@
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
             <th><input type="checkbox" data-period-candidate-select-all aria-label="انتخاب همه کاربران نمایان" /></th><th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>وضعیت</th>
           </tr></thead><tbody data-period-candidate-body><tr><td colspan="12" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
-          <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-candidate-prev>قبلی</button><span data-period-candidate-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-candidate-next>بعدی</button></div><button type="button" class="btn primary" data-period-invite-selected disabled>دعوت کاربران انتخاب‌شده</button></div>
+          <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-candidate-prev>قبلی</button><span data-period-candidate-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-candidate-next>بعدی</button></div><div class="egm-period-actions"><select data-period-candidate-group aria-label="گروه مهمان"><option value="">بدون گروه</option></select><button type="button" class="btn primary" data-period-invite-selected disabled>دعوت کاربران انتخاب‌شده</button></div></div>
           <p class="hint" data-period-candidate-status aria-live="polite"></p>
         </div>
       </div>
@@ -2549,8 +2563,8 @@
           <div class="section-header"><h3>دعوت‌شدگان این بازه</h3><strong><span data-period-invitee-total>0</span> نفر</strong></div>
           <div class="form"><label class="field full"><span>جستجو</span><input type="search" data-period-invitee-search placeholder="نام، کد ملی یا کد پرسنلی" autocomplete="off" /></label></div>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
-            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>عملیات</th>
-          </tr></thead><tbody data-period-invitee-body><tr><td colspan="14" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
+            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>گروه</th><th>عملیات</th>
+          </tr></thead><tbody data-period-invitee-body><tr><td colspan="15" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
           <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-invitee-prev>قبلی</button><span data-period-invitee-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-invitee-next>بعدی</button></div><button type="button" class="btn ghost" data-period-invitee-refresh>بازخوانی</button></div>
           <p class="hint" data-period-invitee-status aria-live="polite"></p>
         </div>
@@ -2591,6 +2605,8 @@
           <div class="section-header"><div><h3>خروجی اکسل بازه</h3><p class="muted small">تمام فایل‌ها مستقیماً از اطلاعات ذخیره‌شده همین بازه در پایگاه داده ساخته می‌شوند.</p></div></div>
           <div class="egm-period-export-grid">
             <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد هر نوع بلیت برای هر مهمان، جمع هر مهمان، جمع هر نوع بلیت و جمع کل.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>ورود ثبت‌شده، بدون خروج</h4><p>فهرست لحظه‌ای مهمانانی که وارد شده‌اند اما هنوز خروج ندارند. این گزارش به معنی تأیید حضور واقعی نیست.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>فقط مهمانانی که هنگام مراجعه به‌عنوان مهمان ناخوانده ثبت شده‌اند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>تمام تلاش‌های ورود، خروج، تکرار، رد شدن و دیگر رویدادهای کنترل مهمان.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
             <article class="egm-period-export-option"><div><h4>وضعیت همه کاربران</h4><p>یک ردیف برای هر کاربر با آخرین وضعیت دقیق ثبت‌شده در این بازه.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=user_conditions&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
@@ -2914,9 +2930,11 @@
               </div>
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-settings">ذخیره</button>
+                ${isPeriod ? `<button type="button" class="btn ghost egm-btn-end-period" data-action="end-period"${isPeriodEnded ? ' disabled' : ''}>${isPeriodEnded ? 'بازه پایان یافته است' : 'پایان بازه'}</button>` : ''}
                 ${isPeriod ? '<button type="button" class="btn ghost egm-btn-danger" data-action="reset-period-attendance">Reset Period Records</button>' : ''}
                 <a class="btn ghost" href="${guestControlSrc}" target="_blank" rel="noopener">پنل کنترل مهمان رویداد</a>
               </div>
+              ${isPeriodEnded ? `<p class="egm-period-ended-note">این بازه در <span dir="ltr">${escapeHtml(task.endedAt)}</span> پایان یافته است.${endedClassificationNote} سوابق و دعوت‌ها همچنان محفوظ هستند.</p>` : ''}
               <p class="muted small" data-task-save-status aria-live="polite"></p>
             </div>
           </div>
@@ -3075,6 +3093,42 @@
     });
   }
 
+  async function readTaskActionResponse(response) {
+    const responseText = await response.text();
+    let data = null;
+    if (responseText.trim() !== '') {
+      try {
+        data = JSON.parse(responseText.replace(/^\uFEFF/, ''));
+      } catch {
+        const firstBrace = responseText.indexOf('{');
+        const lastBrace = responseText.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+          try {
+            data = JSON.parse(responseText.slice(firstBrace, lastBrace + 1));
+          } catch {
+            data = null;
+          }
+        }
+      }
+    }
+    if (!data || typeof data !== 'object') {
+      const status = Number(response.status || 0);
+      if (response.redirected && /(?:^|\/)login\.php(?:$|[?#])/i.test(String(response.url || ''))) {
+        throw new Error('نشست شما منقضی شده است. دوباره وارد پنل شوید.');
+      }
+      if (status === 502 || status === 503 || status === 504) {
+        throw new Error('سرور در زمان انجام عملیات پاسخ نداد. صفحه را تازه‌سازی کنید تا وضعیت ذخیره‌شده مشخص شود.');
+      }
+      throw new Error(responseText.trim() === ''
+        ? `پاسخ سرور خالی بود (HTTP ${status || 'نامشخص'}). صفحه را تازه‌سازی کنید.`
+        : `پاسخ سرور JSON معتبر نبود (HTTP ${status || 'نامشخص'}). صفحه را تازه‌سازی کنید.`);
+    }
+    if (!response.ok || data?.status !== 'ok') {
+      throw new Error(data?.message || 'Request failed.');
+    }
+    return data;
+  }
+
   async function postTaskAction(action, payload = {}) {
     const formData = new FormData();
     formData.append('tct_action', action);
@@ -3089,11 +3143,58 @@
       body: formData,
       credentials: 'same-origin'
     });
-    const data = await response.json();
-    if (!response.ok || data?.status !== 'ok') {
-      throw new Error(data?.message || 'Request failed.');
-    }
-    return data;
+    return readTaskActionResponse(response);
+  }
+
+  function requestPeriodEndResolution(periodTitle) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'egm-period-end-overlay';
+      overlay.setAttribute('role', 'presentation');
+      overlay.innerHTML = `
+        <section class="egm-period-end-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-period-end-title" dir="rtl">
+          <div class="egm-period-end-icon" aria-hidden="true">✓</div>
+          <h3 id="egm-period-end-title">پایان بازه «${escapeHtml(periodTitle)}»</h3>
+          <p>برای مهمانانی که ورودشان ثبت شده اما خروج ندارند، یکی از وضعیت‌های زیر را انتخاب کنید.</p>
+          <div class="egm-period-end-choices">
+            <button type="button" class="btn primary standard-primary-button" data-period-end-choice="correct_presence">
+              حضور واقعی
+              <small>به فهرست حضور واقعی افزوده شوند</small>
+            </button>
+            <button type="button" class="btn ghost egm-btn-danger" data-period-end-choice="fake_presence">
+              حضور نامعقول
+              <small>به فهرست حضور نامعقول افزوده شوند</small>
+            </button>
+          </div>
+          <button type="button" class="btn ghost egm-period-end-cancel" data-period-end-cancel>انصراف</button>
+          <p class="egm-period-end-warning">این کار بازه را فوراً می‌بندد. زمان ورود و خروج، دعوت‌ها و اطلاعات کاربران حذف یا ساخته نمی‌شوند.</p>
+        </section>`;
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', onKeyDown);
+        overlay.remove();
+        resolve(value);
+      };
+      const onKeyDown = (event) => {
+        if (event.key === 'Escape') finish('');
+      };
+      overlay.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const choice = target.closest('[data-period-end-choice]');
+        if (choice instanceof HTMLButtonElement) {
+          finish(choice.dataset.periodEndChoice || '');
+          return;
+        }
+        if (target === overlay || target.closest('[data-period-end-cancel]')) finish('');
+      });
+      document.addEventListener('keydown', onKeyDown);
+      document.body.appendChild(overlay);
+      const firstChoice = overlay.querySelector('[data-period-end-choice]');
+      if (firstChoice instanceof HTMLButtonElement) firstChoice.focus();
+    });
   }
 
   async function resetGuestControlRecords(periodCode) {
@@ -3120,11 +3221,30 @@
   function getPeriodInviteState(pane) {
     let state = periodInviteStates.get(pane);
     if (!state) {
-      state = { source: '', candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
+      state = { source: '', groups: [], candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
       periodInviteStates.set(pane, state);
     }
     return state;
   }
+
+  async function loadPeriodGroups(pane) {
+    const state = getPeriodInviteState(pane);
+    try {
+      const response = await fetch(`${GROUPS_ENDPOINT}?action=list&_=${Date.now()}`, { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'دریافت گروه‌ها ناموفق بود.');
+      state.groups = Array.isArray(data.groups) ? data.groups : [];
+      pane.querySelectorAll('[data-period-candidate-group],[data-period-unmatched-group]').forEach((select) => {
+        const current = select.value;
+        select.innerHTML = '<option value="">بدون گروه</option>' + state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
+        if (state.groups.some((group) => group.id === current)) select.value = current;
+      });
+    } catch (error) {
+      const status = pane.querySelector('[data-period-candidate-status]');
+      if (status) status.textContent = error?.message || 'دریافت گروه‌ها ناموفق بود.';
+    }
+  }
+  window.addEventListener('egm-groups-updated', () => document.querySelectorAll('[data-period-invites-ready="1"]').forEach((pane) => void loadPeriodGroups(pane)));
 
   async function readPeriodInviteResponse(response) {
     const responseText = await response.text();
@@ -3654,7 +3774,7 @@
     const status = pane.querySelector('[data-period-unmatched-status]');
     if (status) status.textContent = 'در حال افزودن کاربران به EGM...';
     try {
-      const data = await requestPeriodInvites('invite_unmatched', { period_code: periodCodeForPane(pane), rows }, 'POST');
+      const data = await requestPeriodInvites('invite_unmatched', { period_code: periodCodeForPane(pane), group_id: pane.querySelector('[data-period-unmatched-group]')?.value || '', rows }, 'POST');
       state.unmatchedRows = state.unmatchedRows.filter((row) => !wanted.has(String(row?.excel_id || '')));
       wanted.forEach((id) => state.unmatchedSelected.delete(id));
       renderPeriodUnmatchedRows(pane);
@@ -3780,6 +3900,7 @@
                 <label class="field"><span>اداره</span><input name="department" type="text" maxlength="191" /></label>
                 <label class="field"><span>جنسیت</span><input name="gender" type="text" maxlength="32" /></label>
                 <label class="field"><span>سطح پستی</span><input name="postal_level" type="text" maxlength="64" /></label>
+                <label class="field"><span>گروه</span><select name="group_id"><option value="">بدون گروه</option></select></label>
               </div>
               <div class="egm-period-invitee-editor-checks">
                 <label><input name="is_active" type="checkbox" /> کاربر فعال است</label>
@@ -3882,6 +4003,9 @@
     const form = modal.querySelector('[data-period-invitee-editor-form]');
     if (!(form instanceof HTMLFormElement)) return;
     periodInviteeEditorContext = { pane, row };
+    const groupSelect = form.elements.namedItem('group_id');
+    const groups = getPeriodInviteState(pane).groups;
+    if (groupSelect instanceof HTMLSelectElement) groupSelect.innerHTML = '<option value="">بدون گروه</option>' + groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
     const setValue = (name, value) => {
       const control = form.elements.namedItem(name);
       if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = String(value ?? '');
@@ -3889,6 +4013,7 @@
     for (const name of ['first_name', 'last_name', 'national_id', 'work_id', 'phone_number', 'guest_number', 'deputy', 'general_department', 'department', 'gender', 'postal_level', 'entered_date', 'entered_time', 'quit_date', 'quit_time']) {
       setValue(name, row?.[name] || '');
     }
+    setValue('group_id', row?.group_id || '');
     const attendanceState = ['entered', 'quit_completed'].includes(String(row?.attendance_state || ''))
       ? String(row.attendance_state)
       : (row?.quit_date && row?.quit_time ? 'quit_completed' : (row?.entered_date && row?.entered_time ? 'entered' : 'not_entered'));
@@ -3933,9 +4058,9 @@
       <td><code>${escapeHtml(row?.guest_number || '—')}</code></td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
       <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
       <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
-      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td>
+      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td><td>${escapeHtml(state.groups.find((group) => group.id === row?.group_id)?.title || 'بدون گروه')}</td>
       <td><div class="egm-period-invitee-row-actions"><button type="button" class="btn ghost" data-period-edit-invite="${escapeHtml(row?.invite_id || '')}">ویرایش</button><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></div></td>
-    </tr>`).join('') : '<tr><td colspan="14" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="15" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
     const total = pane.querySelector('[data-period-invitee-total]');
     if (total) total.textContent = String(data?.total || 0);
     const meta = pane.querySelector('[data-period-invitee-page]');
@@ -4090,6 +4215,7 @@
     pane.dataset.taskQuitOpeningDate = String(task?.quitOpeningDate || task?.quit_opening_date || '');
     pane.dataset.taskEndDate = String(task?.endDate || task?.end_date || '');
     const state = getPeriodInviteState(pane);
+    void loadPeriodGroups(pane).then(() => loadPeriodInvitees(pane, state.inviteePage));
     pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
     pane.querySelector('[data-period-invite-card-export]')?.addEventListener('click', () => exportPeriodInviteCardLinks(pane));
     pane.querySelector('[data-period-invite-card-refresh]')?.addEventListener('click', () => void Promise.all([loadPeriodInviteCardStatus(pane), loadPeriodInviteCardBackground(pane)]));
@@ -4152,7 +4278,7 @@
     pane.querySelector('[data-period-invite-selected]')?.addEventListener('click', async () => {
       const status = pane.querySelector('[data-period-candidate-status]');
       try {
-        const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), candidate_ids: Array.from(state.selected) }, 'POST');
+        const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), group_id: pane.querySelector('[data-period-candidate-group]')?.value || '', candidate_ids: Array.from(state.selected) }, 'POST');
         state.selected.clear();
         if (status) status.textContent = data?.message || 'دعوت‌ها ذخیره شدند.';
         await loadPeriodCandidates(pane, 1);
@@ -4559,6 +4685,40 @@
           setTaskSaveStatus(pane, error?.message || 'بازنشانی سوابق حضور بازه ناموفق بود.', true);
         } finally {
           resetPeriodAttendanceButton.disabled = false;
+        }
+        return;
+      }
+
+      const endPeriodButton = target.closest('[data-action="end-period"]');
+      if (endPeriodButton instanceof HTMLButtonElement) {
+        const pane = endPeriodButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const taskId = String(pane.dataset.taskId || '').trim();
+        const periodTitle = String(pane.querySelector('[data-task-field="taskTitle"]')?.value || pane.dataset.taskTagCode || '').trim();
+        if (!taskId) return;
+        const resolution = await requestPeriodEndResolution(periodTitle || 'بدون عنوان');
+        if (!resolution) return;
+
+        endPeriodButton.disabled = true;
+        setTaskSaveStatus(pane, 'در حال پایان دادن به بازه و تعیین وضعیت مهمانان بدون خروج...');
+        try {
+          const data = await postTaskAction('end_period', {
+            id: taskId,
+            no_quit_resolution: resolution
+          });
+          const returnedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const keepPane = pane.dataset.pane || '';
+          if (returnedTasks.length) {
+            renderTaskSubtabs(layout, returnedTasks, keepPane);
+            try { window.EGM_TASKS = returnedTasks; } catch {}
+          }
+          const activePane = findPaneByKey(layout, keepPane);
+          if (activePane instanceof HTMLElement) {
+            setTaskSaveStatus(activePane, data.message || 'بازه با موفقیت پایان یافت.');
+          }
+        } catch (error) {
+          setTaskSaveStatus(pane, error?.message || 'پایان بازه ناموفق بود.', true);
+          endPeriodButton.disabled = false;
         }
         return;
       }

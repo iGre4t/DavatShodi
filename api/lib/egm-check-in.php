@@ -5,8 +5,123 @@ require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/tab-permissions.php';
 require_once __DIR__ . '/egm-instance-storage.php';
 require_once __DIR__ . '/egm-export-filename.php';
+require_once __DIR__ . '/egm-invite-card-store.php';
+require_once __DIR__ . '/egm-groups.php';
 
 const EGM_CHECK_IN_ACTION = 'egm_period_check_in';
+
+function egmCheckInTicketCardConfigured($card): bool
+{
+    return is_array($card) && !empty($card['imageData']) && is_array($card['qrRect'] ?? null)
+        && is_array($card['textRect'] ?? null) && is_array($card['ticketCountRect'] ?? null);
+}
+
+function egmCheckInTicketDefinitions(array $settings): array
+{
+    $raw = is_array($settings['tickets'] ?? null) ? $settings['tickets'] : [];
+    $tickets = [];
+    $seen = [];
+    foreach (array_slice($raw, 0, 20) as $index => $item) {
+        if (!is_array($item)) continue;
+        $id = strtolower(trim((string)($item['id'] ?? '')));
+        $id = preg_replace('/[^a-z0-9_-]+/', '-', $id) ?? '';
+        $id = trim(substr($id, 0, 24), '-_');
+        if ($id === '' || isset($seen[$id])) $id = 'ticket-' . ($index + 1);
+        $title = trim((string)($item['title'] ?? ''));
+        if ($title === '') $title = 'Ticket ' . ($index + 1);
+        $tickets[] = ['id' => $id, 'title' => function_exists('mb_substr') ? mb_substr($title, 0, 100) : substr($title, 0, 100)];
+        $seen[$id] = true;
+    }
+    return $tickets !== [] ? $tickets : [['id' => 'default', 'title' => 'Custom Number Ticket']];
+}
+
+function egmCheckInPrintProfile(array $context, string $guestCode = ''): array
+{
+    $settings = egmInstanceReadData($context['pdo'], (string)$context['code'], 'settings', []);
+    $printSettings = is_array($settings['printSettings'] ?? null) ? $settings['printSettings'] : [];
+    $card = egmInstanceReadData($context['pdo'], (string)$context['code'], 'print_card', null);
+    $card = egmInviteCardHydrateAssets($context['pdo'], (string)$context['code'], $card, 'print-card');
+    $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];
+    $ticketCard = egmInstanceReadData($context['pdo'], (string)$context['code'], 'custom_number_ticket', null);
+    $ticketCard = egmInviteCardHydrateAssets($context['pdo'], (string)$context['code'], $ticketCard, 'custom-number-ticket');
+    $tickets = array_map(static function (array $definition) use ($context, $ticketCard): array {
+        $isDefault = $definition['id'] === 'default';
+        $card = $isDefault ? $ticketCard : egmInstanceReadData($context['pdo'], (string)$context['code'], 'custom_number_ticket:' . $definition['id'], null);
+        $card = $isDefault ? $card : egmInviteCardHydrateAssets($context['pdo'], (string)$context['code'], $card, 'cnt-' . $definition['id']);
+        if (!$isDefault && !egmCheckInTicketCardConfigured($card)) $card = $ticketCard;
+        return $definition + ['configured' => egmCheckInTicketCardConfigured($card), 'card' => $card];
+    }, egmCheckInTicketDefinitions($ticketSettings));
+    $profile = [
+        'auto_print' => (bool)($printSettings['autoPrint'] ?? false),
+        'double_print' => (bool)($printSettings['doublePrint'] ?? false),
+        'configured' => is_array($card) && !empty($card['imageData']) && is_array($card['qrRect'] ?? null) && is_array($card['textRect'] ?? null),
+        'card' => $card,
+        'ticket_active' => (bool)($ticketSettings['active'] ?? false),
+        'ticket_only' => (bool)($ticketSettings['ticketOnly'] ?? false),
+        'ticket_configured' => egmCheckInTicketCardConfigured($ticketCard),
+        'ticket_card' => $ticketCard,
+        'tickets' => $tickets,
+    ];
+    return $guestCode !== '' ? egmGroupsApplyPrintPolicy($context, $profile, $guestCode) : $profile;
+}
+
+function egmCheckInAutomaticPrintProfile(array $context, string $guestCode): array
+{
+    $profile = egmCheckInPrintProfile($context, $guestCode);
+    if (empty($profile['group_policy_applied']) && empty($profile['auto_print'])) {
+        // For ungrouped guests Automatic Print is the master queue switch for
+        // both the main card and all number-ticket outputs.
+        $profile['ticket_active'] = false;
+    }
+    return $profile;
+}
+
+function egmCheckInRecordTicketNumber(array $context, string $guestCode, string $ticketNumber, string $ticketId = 'default'): array
+{
+    $guestCode = egmCheckInNormalizeGuestCode($guestCode);
+    $ticketNumber = egmCheckInNormalizeDigits($ticketNumber);
+    if ($guestCode === '') throw new InvalidArgumentException('شناسه مهمان معتبر نیست.');
+    if ($ticketNumber === '' || strlen($ticketNumber) > 32) throw new InvalidArgumentException('Number of Ticket باید یک عدد معتبر باشد.');
+    $ticketId = strtolower(trim($ticketId));
+    $ticketId = preg_replace('/[^a-z0-9_-]+/', '-', $ticketId) ?? 'default';
+    if ($ticketId === '') $ticketId = 'default';
+    $printProfile = egmCheckInPrintProfile($context, $guestCode);
+    $allowedTicketIds = array_map(static fn($ticket): string => is_array($ticket) ? (string)($ticket['id'] ?? '') : '', (array)($printProfile['tickets'] ?? []));
+    if (empty($printProfile['ticket_active']) || !in_array($ticketId, $allowedTicketIds, true)) {
+        throw new InvalidArgumentException('این Custom Number Ticket برای مهمان انتخاب‌شده فعال نیست.');
+    }
+    $period = is_array($context['period'] ?? null) ? $context['period'] : null;
+    if (!is_array($period)) throw new InvalidArgumentException('بازه فعال برای ثبت Number of Ticket پیدا نشد.');
+    $pdo = $context['pdo'];
+    $usersTable = (string)$context['tables']['users'];
+    $periodsTable = (string)$context['tables']['user_periods'];
+    $user = egmCheckInFindUser($pdo, $usersTable, $guestCode);
+    if (!is_array($user)) throw new InvalidArgumentException('مهمان برای ثبت Number of Ticket پیدا نشد.');
+    $current = $pdo->prepare("SELECT `ticket_numbers_json` FROM `{$periodsTable}` WHERE `user_id`=:user_id AND `period_code`=:period_code LIMIT 1");
+    $current->execute([':user_id'=>(int)$user['id'], ':period_code'=>egmCheckInPeriodCode($period)]);
+    $numbers = json_decode((string)($current->fetchColumn() ?: ''), true);
+    if (!is_array($numbers)) $numbers = [];
+    $numbers[$ticketId] = $ticketNumber;
+    $numbersJson = json_encode($numbers, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $statement = $pdo->prepare(
+        "UPDATE `{$periodsTable}` SET `number_of_ticket`=:ticket, `ticket_numbers_json`=:numbers, `ticket_number_recorded_at`=:recorded_at "
+        . "WHERE `user_id`=:user_id AND `period_code`=:period_code "
+        . "AND `entered_date` IS NOT NULL AND `entered_time` IS NOT NULL"
+    );
+    $statement->execute([
+        ':ticket' => $ticketNumber,
+        ':numbers' => is_string($numbersJson) ? $numbersJson : '{}',
+        ':recorded_at' => (new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')))->format('Y-m-d H:i:s'),
+        ':user_id' => (int)$user['id'],
+        ':period_code' => egmCheckInPeriodCode($period),
+    ]);
+    if ($statement->rowCount() < 1) {
+        $check = $pdo->prepare("SELECT `id` FROM `{$periodsTable}` WHERE `user_id`=:user_id AND `period_code`=:period_code AND `number_of_ticket`=:ticket LIMIT 1");
+        $check->execute([':user_id'=>(int)$user['id'], ':period_code'=>egmCheckInPeriodCode($period), ':ticket'=>$ticketNumber]);
+        if (!$check->fetchColumn()) throw new InvalidArgumentException('ورود موفق مهمان برای ثبت Number of Ticket پیدا نشد.');
+    }
+    return ['number_of_ticket' => $ticketNumber, 'ticket_id' => $ticketId, 'ticket_numbers' => $numbers];
+}
 
 function egmCheckInNormalizeDigits($value): string
 {
@@ -596,7 +711,7 @@ function egmCheckInResetAttendanceRecords(array $context, ?string $periodCode = 
         . '`entered_date`=NULL, `entered_time`=NULL, `quit_date`=NULL, `quit_time`=NULL, '
         . '`correct_presence`=0, `fake_presence`=0, '
         . "`attendance_state`='not_entered', `last_control_condition`=NULL, `last_control_action`=NULL, "
-        . '`last_control_message`=NULL, `last_control_at`=NULL'
+        . '`last_control_message`=NULL, `last_control_at`=NULL, `number_of_ticket`=NULL, `ticket_number_recorded_at`=NULL'
         . $where
     );
     $pdo->beginTransaction();
@@ -934,6 +1049,7 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'attendance_state' => $period['attendance_state'] ?? 'not_entered',
             'correct_presence' => $period['correct_presence'] ?? 0,
             'fake_presence' => $period['fake_presence'] ?? 0,
+            'number_of_ticket' => $period['number_of_ticket'] ?? '',
         ];
     }
     unset($row);
@@ -1000,6 +1116,7 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'attendance_state' => (string)($row['attendance_state'] ?? 'not_entered'),
             'correct_presence' => (int)($row['correct_presence'] ?? 0) === 1,
             'fake_presence' => (int)($row['fake_presence'] ?? 0) === 1,
+            'number_of_ticket' => (string)($row['number_of_ticket'] ?? ''),
             'attendance_action' => $attendanceAction,
             'force_action' => $forceAction,
             'force_label' => $forceAction !== ''
@@ -1613,6 +1730,8 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     $generalSettingsUrl = htmlspecialchars($projectWebBase . '/General%20Setting/general-settings.js', ENT_QUOTES, 'UTF-8');
     $appearanceUrl = htmlspecialchars($projectWebBase . '/style/appearance.js', ENT_QUOTES, 'UTF-8');
     $panelStylesUrl = htmlspecialchars($projectWebBase . '/style/styles.css', ENT_QUOTES, 'UTF-8');
+    $printCardRendererUrl = htmlspecialchars($projectWebBase . '/assets/egm-invite-card.js', ENT_QUOTES, 'UTF-8');
+    $qrGeneratorUrl = htmlspecialchars($projectWebBase . '/modules/minor/QR%20Code%20Generator/generate.php', ENT_QUOTES, 'UTF-8');
     $logsVersion = htmlspecialchars(egmCheckInLogsVersion($context), ENT_QUOTES, 'UTF-8');
     $statsVersion = htmlspecialchars(egmCheckInStatsVersion($context), ENT_QUOTES, 'UTF-8');
     $logs = htmlspecialchars((string)json_encode(egmCheckInRecentLogs($context), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8');
@@ -1673,6 +1792,8 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .result.duplicate{border-inline-start-color:#d59a12;background:#fffaf0;color:#805900}
     .guest-control-page .result.error{border-inline-start-color:#df4052;background:#fff5f6;color:#a12432}
     .guest-control-page .force-attendance-action{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:5px 9px;border:1px solid #b45309;border-radius:8px;background:#fff7ed;color:#9a3412;font:inherit;font-size:11px;font-weight:800;white-space:normal;cursor:pointer}.guest-control-page .force-attendance-action:hover{background:#b45309;color:#fff}.guest-control-page .force-attendance-action:disabled{opacity:.55;cursor:not-allowed}
+    .guest-control-page .print-card-action{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:32px;padding:5px 10px;border:1px solid var(--primary,#1d96e1);border-radius:8px;background:var(--primary,#1d96e1);color:#fff;font:inherit;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}.guest-control-page .print-card-action:hover{filter:brightness(.92)}.guest-control-page .print-card-action:disabled{opacity:.55;cursor:wait}
+    .guest-control-page .ticket-number-dialog{border:0;border-radius:18px;padding:0;box-shadow:0 24px 70px rgba(16,24,40,.28);width:min(440px,calc(100vw - 32px));direction:rtl}.guest-control-page .ticket-number-dialog::backdrop{background:rgba(15,23,42,.55)}.guest-control-page .ticket-number-form{padding:24px;display:grid;gap:16px}.guest-control-page .ticket-number-form h3{margin:0;font-size:20px}.guest-control-page .ticket-number-form p{margin:0;color:#667085}.guest-control-page .ticket-number-form input{height:52px;border:2px solid var(--primary,#1d96e1);border-radius:10px;padding:0 14px;font:inherit;font-size:22px;text-align:center;direction:ltr}.guest-control-page .ticket-number-actions{display:flex;gap:10px}.guest-control-page .ticket-number-actions button{flex:1;min-height:42px;border-radius:9px;font:inherit;font-weight:800;cursor:pointer}.guest-control-page .ticket-number-submit{border:0;background:var(--primary,#1d96e1);color:#fff}.guest-control-page .ticket-number-cancel{border:1px solid #d0d5dd;background:#fff;color:#344054}
     .guest-control-page .card-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
     .guest-control-page .card-head h2{margin:0;font-size:18px;color:var(--text,#111)}
     .guest-control-page .card-head .muted{font-size:12px}
@@ -1721,7 +1842,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   </style>
 </head>
 <body class="guest-control-page">
-<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-logs-version="<?= $logsVersion ?>" data-stats-version="<?= $statsVersion ?>" data-initial-logs="<?= $logs ?>" data-initial-stats="<?= $dashboardStats ?>">
+<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-qr-endpoint="<?= $qrGeneratorUrl ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-logs-version="<?= $logsVersion ?>" data-stats-version="<?= $statsVersion ?>" data-initial-logs="<?= $logs ?>" data-initial-stats="<?= $dashboardStats ?>">
   <section class="hero guest-card">
     <div class="hero-head">
       <div>
@@ -1811,14 +1932,23 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   </dialog>
   <div class="scan-toast-stack" data-scan-toasts aria-live="polite" aria-atomic="false"></div>
 </main>
+<script nonce="<?= $nonce ?>" src="<?= $printCardRendererUrl ?>"></script>
 <script nonce="<?= $nonce ?>">
 (() => {
   const app=document.querySelector('[data-check-in-app]'); if(!app)return;
    const input=app.querySelector('[data-national-id]'),result=app.querySelector('[data-result]'),tbody=app.querySelector('[data-logs]'),logSearch=app.querySelector('[data-log-search]'),logSearchMeta=app.querySelector('[data-log-search-meta]'),statsRoot=app.querySelector('[data-attendance-stats]'),dialog=app.querySelector('[data-guest-dialog]'),dialogTitle=app.querySelector('[data-dialog-title]'),dialogContent=app.querySelector('[data-dialog-content]'),walkInDialog=app.querySelector('[data-walk-in-dialog]'),walkInForm=app.querySelector('[data-walk-in-form]'),walkInStatus=app.querySelector('[data-walk-in-status]'),toastStack=app.querySelector('[data-scan-toasts]');
   const canRegisterUninvited=app.dataset.canRegisterUninvited==='1';
+  let printProfilePromise=null;
+  const loadPrintProfile=(guestCode='')=>{if(printProfilePromise)return printProfilePromise;const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','print_profile');if(guestCode)url.searchParams.set('guest_code',guestCode);url.searchParams.set('_print_sync',String(Date.now()));printProfilePromise=fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(async response=>{const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'دریافت تنظیمات چاپ ناموفق بود.');return data.print_profile||{}}).finally(()=>{printProfilePromise=null});return printProfilePromise};
+  const printGuest=(row)=>({firstName:row.first_name,lastName:row.last_name,nationalId:row.national_id,workId:row.work_id,guestNumber:row.guest_number,phoneNumber:row.phone_number,deputy:row.deputy,generalDepartment:row.general_department,department:row.department,gender:row.gender,postalLevel:row.postal_level,score:row.total_score||'0',ticketCount:row.number_of_ticket||'',ticketTitle:row.ticket_title||''});
+  const printCardForRow=async(row,profile,copies=1)=>{if(!profile?.configured||!profile.card)throw new Error('طرح Print Card کامل نشده است. ابتدا آن را در تب Print Card ذخیره کنید.');if(!window.EGMInviteCardRenderer)throw new Error('ماژول ساخت کارت چاپی در مرورگر بارگذاری نشده است. صفحه را با Ctrl+F5 تازه‌سازی کنید.');const guest=printGuest(row);const output=await window.EGMInviteCardRenderer.render(profile.card,guest,guest.nationalId||guest.workId,{qrEndpoint:app.dataset.qrEndpoint||''});const imageUrl=URL.createObjectURL(output.blob),frame=document.createElement('iframe');frame.title='چاپ کارت مهمان';frame.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';const pageCount=Math.max(1,Number(copies)||1),pages=Array.from({length:pageCount},()=>`<img src="${imageUrl}" alt="" />`).join('');await new Promise((resolve,reject)=>{const cleanup=()=>window.setTimeout(()=>{URL.revokeObjectURL(imageUrl);frame.remove()},10000);frame.addEventListener('load',()=>window.setTimeout(()=>{try{const printWindow=frame.contentWindow;if(!printWindow)throw new Error('پنجره چاپ در دسترس نیست.');printWindow.focus();printWindow.print();cleanup();resolve()}catch(error){cleanup();reject(error)}},180),{once:true});frame.srcdoc=`<!doctype html><html><head><meta charset="utf-8"><style>@page{size:auto;margin:0}html,body{margin:0;padding:0}img{display:block;width:100vw;height:100vw;object-fit:contain;break-after:page;page-break-after:always}img:last-child{break-after:auto;page-break-after:auto}</style></head><body>${pages}</body></html>`;document.body.append(frame)});};
+  const requestTicketNumber=(row,title)=>new Promise(resolve=>{const dialog=document.createElement('dialog');dialog.className='ticket-number-dialog';dialog.innerHTML=`<form class="ticket-number-form"><h3>${esc(title||'Custom Number Ticket')}</h3><p>شماره «${esc(title||'بلیت')}» برای ${esc(row.full_name||'مهمان')} را وارد کنید.</p><input name="ticket" inputmode="numeric" pattern="[0-9۰-۹٠-٩]+" maxlength="32" required autocomplete="off" aria-label="Number of Ticket - ${esc(title||'Ticket')}" /><div class="ticket-number-actions"><button type="submit" class="ticket-number-submit">ثبت و چاپ</button><button type="button" class="ticket-number-cancel">انصراف</button></div></form>`;document.body.append(dialog);const finish=value=>{if(dialog.open)dialog.close();dialog.remove();resolve(value)};dialog.querySelector('.ticket-number-cancel')?.addEventListener('click',()=>finish(null));dialog.addEventListener('cancel',event=>{event.preventDefault();finish(null)},{once:true});dialog.querySelector('form')?.addEventListener('submit',event=>{event.preventDefault();const field=dialog.querySelector('input');const value=normalizeTicket(field?.value||'');if(!value){field?.focus();return}finish(value)});dialog.showModal();window.setTimeout(()=>dialog.querySelector('input')?.focus(),30)});
+  const recordTicketNumber=async(row,ticket,ticketNumber)=>{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'record_ticket_number',guest_code:row.national_id||row.work_id,ticket_id:ticket.id,number_of_ticket:ticketNumber,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت Number of Ticket ناموفق بود.');row.number_of_ticket=String(data.number_of_ticket||ticketNumber);row.ticket_title=String(ticket.title||'');return row};
+  const autoPrintEntry=async(data,guestCode)=>{if(!['success','force_entry_success'].includes(String(data?.result||'')))return;try{const profile=await loadPrintProfile();const rows=Array.isArray(data.logs)?data.logs:[];const row=rows.find(item=>['success','force_entry_success'].includes(String(item.status||''))&&(normalize(item.national_id)===guestCode||normalize(item.work_id)===guestCode))||rows.find(item=>['success','force_entry_success'].includes(String(item.status||'')));if(!row)throw new Error('اطلاعات مهمان واردشده برای چاپ پیدا نشد.');if(profile.ticket_active){if(!profile.ticket_only&&(!profile.configured||!profile.card))throw new Error('طرح Print Card کامل نشده است.');const tickets=Array.isArray(profile.tickets)&&profile.tickets.length?profile.tickets:[{id:'default',title:'Custom Number Ticket',configured:profile.ticket_configured,card:profile.ticket_card}];if(tickets.some(ticket=>!ticket.configured||!ticket.card))throw new Error('طرح Custom Number Ticket کامل نشده یا متغیر [ticketcount] در آن قرار نگرفته است.');if(!profile.ticket_only)await printCardForRow(row,profile,profile.double_print?2:1);for(const ticket of tickets){const ticketNumber=await requestTicketNumber(row,ticket.title);if(ticketNumber===null){result.className='result duplicate';result.textContent=`ورود ثبت شد؛ چاپ ${ticket.title||'بلیت'} لغو شد.`;return}await recordTicketNumber(row,ticket,ticketNumber);await printCardForRow(row,{configured:ticket.configured,card:ticket.card},1)}result.className='result success';result.textContent=`${tickets.length.toLocaleString('fa-IR')} بلیت شماره‌دار برای چاپ ارسال شد.`;return}if(!profile.auto_print)return;await printCardForRow(row,profile,profile.double_print?2:1);result.className='result success';result.textContent=profile.double_print?'ورود ثبت شد و دو نسخه برای چاپ ارسال شد.':'ورود ثبت شد و پنجره چاپ باز شد.'}catch(error){console.error('Receipt print failed:',error);result.className='result error';result.textContent=`ورود ثبت شد، اما فرآیند رسید کامل نشد: ${error instanceof Error?error.message:'خطای ناشناخته چاپ'}`}};
   const SCANNER_MAX_KEY_GAP_MS=50,SCANNER_MIN_FAST_GAPS=3,SCANNER_COMPLETION_DELAY_MS=90;
   const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const normalize=(v)=>String(v??'').replace(/[۰-۹]/g,d=>String(d.charCodeAt(0)-0x06f0)).replace(/[٠-٩]/g,d=>String(d.charCodeAt(0)-0x0660)).replace(/\D/g,'').slice(0,10);
+  const normalizeTicket=(v)=>String(v??'').replace(/[۰-۹]/g,d=>String(d.charCodeAt(0)-0x06f0)).replace(/[٠-٩]/g,d=>String(d.charCodeAt(0)-0x0660)).replace(/\D/g,'').slice(0,32);
   const keyDigit=(key)=>/^[0-9۰-۹٠-٩]$/.test(String(key??''))?normalize(key):'';
   const statCount=(value)=>Math.max(0,Number.parseInt(String(value??0),10)||0);
   const faCount=(value)=>statCount(value).toLocaleString('fa-IR');
@@ -1849,6 +1979,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
       const guestCode=normalize(row.national_id||row.work_id||'');
       const registrationKey=`${row.national_id||''}|${row.period_code||''}`;
       const actions=[];
+      if(['success','force_entry_success'].includes(String(row.status||'')))actions.push(`<button type="button" class="print-card-action" data-print-log="${index}" aria-label="چاپ مجدد کارت مهمان">چاپ مجدد</button>`);
       if(canRegisterUninvited&&walkInStatuses.has(String(row.status||''))&&!registeredWalkIns.has(registrationKey))actions.push(`<button type="button" class="walk-in-action" data-register-uninvited="${index}">ثبت مهمان ناخوانده</button>`);
       if(!actionRows.has(actionKey)&&guestCode.length>=4&&['entry','quit'].includes(String(row.force_action||''))){
         actionRows.add(actionKey);
@@ -1861,7 +1992,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     }).join(''):`<tr><td colspan="5" class="empty">${logSearch?.value.trim()?'موردی مطابق جستجو پیدا نشد.':'هنوز موردی بررسی نشده است.'}</td></tr>`;
   };
   const detailItem=(title,value,options='')=>`<div class="detail-item${options.includes('full')?' full':''}"><span class="detail-label">${esc(title)}</span><span class="detail-value${options.includes('code')?' code':''}">${esc(value||'—')}</span></div>`;
-  const openDetail=(row)=>{if(!row||!dialog||!dialogTitle||!dialogContent)return;dialogTitle.textContent=row.full_name||'جزئیات مهمان';dialogContent.innerHTML=`<section class="detail-section"><h4 class="detail-section-title">مشخصات مهمان</h4><div class="detail-grid">${detailItem('نوع مهمان',row.is_uninvited_guest?'مهمان ناخوانده':'دعوت‌شده')}${detailItem('کد ملی',row.national_id,'code')}${detailItem('کد پرسنلی',row.work_id,'code')}${detailItem('شماره همراه',row.phone_number,'code')}${detailItem('شماره مهمان',row.guest_number,'code')}${detailItem('معاونت',row.deputy)}${detailItem('اداره کل',row.general_department)}${detailItem('اداره',row.department)}${detailItem('جنسیت / سطح پستی',[row.gender,row.postal_level].filter(Boolean).join(' / '))}</div></section><section class="detail-section"><h4 class="detail-section-title">اطلاعات حضور در بازه</h4><div class="detail-grid">${detailItem('بازه',row.period_title)}${detailItem('وضعیت فعلی حضور',attendanceStateLabel(row.attendance_state))}${detailItem('Correct Presence',presenceMark(row.correct_presence))}${detailItem('Fake Presence',presenceMark(row.fake_presence))}${detailItem('وضعیت آخرین بررسی',label(row.status))}${detailItem('زمان ورود',dateTime(row.entered_date,row.entered_time),'code')}${detailItem('زمان خروج',dateTime(row.quit_date,row.quit_time),'code')}${detailItem(`زمان عملیات ${operationLabel(row)}`,dateTime(row.operation_date,row.operation_time,row.attempted_at),'code')}${detailItem('زمان بررسی',row.attempted_at,'code')}</div></section><section class="detail-section"><h4 class="detail-section-title">نتیجه ثبت‌شده</h4><div class="detail-message">${esc(row.message||'—')}</div></section>`;if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','')};
+  const openDetail=(row)=>{if(!row||!dialog||!dialogTitle||!dialogContent)return;dialogTitle.textContent=row.full_name||'جزئیات مهمان';dialogContent.innerHTML=`<section class="detail-section"><h4 class="detail-section-title">مشخصات مهمان</h4><div class="detail-grid">${detailItem('نوع مهمان',row.is_uninvited_guest?'مهمان ناخوانده':'دعوت‌شده')}${detailItem('کد ملی',row.national_id,'code')}${detailItem('کد پرسنلی',row.work_id,'code')}${detailItem('شماره همراه',row.phone_number,'code')}${detailItem('شماره مهمان',row.guest_number,'code')}${detailItem('معاونت',row.deputy)}${detailItem('اداره کل',row.general_department)}${detailItem('اداره',row.department)}${detailItem('جنسیت / سطح پستی',[row.gender,row.postal_level].filter(Boolean).join(' / '))}</div></section><section class="detail-section"><h4 class="detail-section-title">اطلاعات حضور در بازه</h4><div class="detail-grid">${detailItem('بازه',row.period_title)}${detailItem('Number of Ticket',row.number_of_ticket,'code')}${detailItem('وضعیت فعلی حضور',attendanceStateLabel(row.attendance_state))}${detailItem('Correct Presence',presenceMark(row.correct_presence))}${detailItem('Fake Presence',presenceMark(row.fake_presence))}${detailItem('وضعیت آخرین بررسی',label(row.status))}${detailItem('زمان ورود',dateTime(row.entered_date,row.entered_time),'code')}${detailItem('زمان خروج',dateTime(row.quit_date,row.quit_time),'code')}${detailItem(`زمان عملیات ${operationLabel(row)}`,dateTime(row.operation_date,row.operation_time,row.attempted_at),'code')}${detailItem('زمان بررسی',row.attempted_at,'code')}</div></section><section class="detail-section"><h4 class="detail-section-title">نتیجه ثبت‌شده</h4><div class="detail-message">${esc(row.message||'—')}</div></section>`;if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','')};
   const walkInControl=(name)=>walkInForm?.elements.namedItem(name)||null;
   const fillWalkInSelect=(name,values,current='')=>{const select=walkInControl(name);if(!(select instanceof HTMLSelectElement))return;select.replaceChildren();const blank=document.createElement('option');blank.value='';blank.textContent='انتخاب کنید';select.append(blank);const unique=new Set(Array.isArray(values)?values.map(value=>String(value||'').trim()).filter(Boolean):[]);if(current)unique.add(String(current));for(const value of unique){const option=document.createElement('option');option.value=value;option.textContent=value;select.append(option)}select.value=String(current||'')};
   let walkInOptionsPromise=null;
@@ -1873,9 +2004,10 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   let searchTimer=0,searchRequest=0,logRefreshInFlight=false;
   const searchLogs=async({silent=false}={})=>{if(logRefreshInFlight&&silent)return;const requestId=++searchRequest;const query=String(logSearch?.value||'').trim();if(!silent&&logSearchMeta)logSearchMeta.textContent='در حال جستجو...';logRefreshInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','search_logs');if(query)url.searchParams.set('q',query);else url.searchParams.delete('q');if(silent)url.searchParams.set('include_stats','1');else url.searchParams.delete('include_stats');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'جستجوی گزارش‌ها ناموفق بود.');if(requestId!==searchRequest)return;lastLogsVersion=String(data.logs_version||lastLogsVersion);logs=Array.isArray(data.logs)?data.logs:[];render(logs);if(data.stats){lastStatsVersion=String(data.stats_version||lastStatsVersion);renderStats(data.stats)}}catch(error){if(requestId!==searchRequest||silent)return;if(logSearchMeta)logSearchMeta.textContent=error instanceof Error?error.message:'جستجو ناموفق بود.'}finally{logRefreshInFlight=false}};
   logSearch?.addEventListener('input',()=>{window.clearTimeout(searchTimer);searchTimer=window.setTimeout(()=>void searchLogs(),280)});
-   const acceptUpdatedLogs=(items,version='',stats=null,statsVersion='')=>{searchRequest+=1;if(version)lastLogsVersion=String(version);if(stats){if(statsVersion)lastStatsVersion=String(statsVersion);renderStats(stats)}if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
-  const forceAttendanceFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement)||isSubmitting||scanProcessing)return;const attendanceAction=String(button.dataset.forceAction||row.force_action||''),guestCode=normalize(row.national_id||row.work_id||'');if(!['entry','quit'].includes(attendanceAction)||guestCode.length<4)return;const title=attendanceAction==='entry'?'Force Enter':'Force Quit';if(!window.confirm(`${title} برای این مهمان ثبت شود؟ این عملیات حضور را Fake Presence علامت می‌زند.`))return;isSubmitting=true;button.disabled=true;input.focus();result.className='result loading';result.textContent='در حال ثبت عملیات اجباری...';try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'force_attendance',attendance_action:attendanceAction,guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت عملیات اجباری ناموفق بود.');result.className='result success';result.textContent=data.message||'عملیات اجباری ثبت شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'ثبت عملیات اجباری ناموفق بود.';button.disabled=false}finally{isSubmitting=false;input.focus();void processScanQueue()}};
-  tbody.addEventListener('click',event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const forceTrigger=target.closest('[data-force-log]');if(forceTrigger){const index=Number(forceTrigger.dataset.forceLog);if(Number.isInteger(index)&&logs[index])void forceAttendanceFromLog(index,forceTrigger);return}const walkInTrigger=target.closest('[data-register-uninvited]');if(walkInTrigger){const index=Number(walkInTrigger.dataset.registerUninvited);if(Number.isInteger(index)&&logs[index])void openWalkIn(logs[index]);return}const trigger=target.closest('[data-guest-detail]');if(!trigger)return;const index=Number(trigger.dataset.guestDetail);if(Number.isInteger(index)&&logs[index])openDetail(logs[index])});
+  const acceptUpdatedLogs=(items,version='',stats=null,statsVersion='')=>{searchRequest+=1;if(version)lastLogsVersion=String(version);if(stats){if(statsVersion)lastStatsVersion=String(statsVersion);renderStats(stats)}if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
+  const printFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement))return;const originalLabel=button.textContent;button.disabled=true;button.textContent='در حال آماده‌سازی...';result.className='result loading';result.textContent='در حال ساخت کارت مهمان برای چاپ...';try{const profile=await loadPrintProfile();await printCardForRow(row,profile,1);result.className='result success';result.textContent='پنجره چاپ مجدد باز شد.'}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'چاپ مجدد کارت ناموفق بود.'}finally{button.disabled=false;button.textContent=originalLabel;input.focus()}};
+  const forceAttendanceFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement)||isSubmitting||scanProcessing)return;const attendanceAction=String(button.dataset.forceAction||row.force_action||''),guestCode=normalize(row.national_id||row.work_id||'');if(!['entry','quit'].includes(attendanceAction)||guestCode.length<4)return;const title=attendanceAction==='entry'?'Force Enter':'Force Quit';if(!window.confirm(`${title} برای این مهمان ثبت شود؟ این عملیات حضور را Fake Presence علامت می‌زند.`))return;isSubmitting=true;button.disabled=true;input.focus();result.className='result loading';result.textContent='در حال ثبت عملیات اجباری...';try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'force_attendance',attendance_action:attendanceAction,guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت عملیات اجباری ناموفق بود.');result.className='result success';result.textContent=data.message||'عملیات اجباری ثبت شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);if(data.result==='force_entry_success')await autoPrintEntry(data,guestCode)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'ثبت عملیات اجباری ناموفق بود.';button.disabled=false}finally{isSubmitting=false;input.focus();void processScanQueue()}};
+  tbody.addEventListener('click',event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const printTrigger=target.closest('[data-print-log]');if(printTrigger){const index=Number(printTrigger.dataset.printLog);if(Number.isInteger(index)&&logs[index])void printFromLog(index,printTrigger);return}const forceTrigger=target.closest('[data-force-log]');if(forceTrigger){const index=Number(forceTrigger.dataset.forceLog);if(Number.isInteger(index)&&logs[index])void forceAttendanceFromLog(index,forceTrigger);return}const walkInTrigger=target.closest('[data-register-uninvited]');if(walkInTrigger){const index=Number(walkInTrigger.dataset.registerUninvited);if(Number.isInteger(index)&&logs[index])void openWalkIn(logs[index]);return}const trigger=target.closest('[data-guest-detail]');if(!trigger)return;const index=Number(trigger.dataset.guestDetail);if(Number.isInteger(index)&&logs[index])openDetail(logs[index])});
   app.querySelector('[data-dialog-close]')?.addEventListener('click',()=>dialog?.close());
   dialog?.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
   app.querySelector('[data-walk-in-close]')?.addEventListener('click',closeWalkIn);
@@ -1888,7 +2020,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const scanQueue=[];
   const resetScannerState=()=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=0;lastNumericKeyAt=0;consecutiveFastGaps=0;scannerDetected=false};
   const queueStatus=()=>scanQueue.length>0?` (${scanQueue.length.toLocaleString('fa-IR')} اسکن در صف)`:'';
-  const processScanQueue=async()=>{if(scanProcessing||isSubmitting||scanQueue.length===0)return;scanProcessing=true;try{while(scanQueue.length>0){const guestCode=scanQueue.shift();result.className='result loading';result.textContent=`در حال بررسی شناسه ${guestCode}${queueStatus()}...`;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate'||data.result==='attended_previous_period';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=`${data.message||'بررسی انجام شد.'}${queueStatus()}`;if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);showScanFeedback(data,guestCode);if(data.result!=='attended_previous_period')showPreviousAttendanceAlert(data.previous_attendance)}catch(error){const failureMessage=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.';result.className='result error';result.textContent=`${failureMessage}${queueStatus()}`;showScanFeedback({result:'request_error',message:failureMessage},guestCode,'error')}}}finally{scanProcessing=false;input.focus();if(scanQueue.length>0)void processScanQueue()}};
+  const processScanQueue=async()=>{if(scanProcessing||isSubmitting||scanQueue.length===0)return;scanProcessing=true;try{while(scanQueue.length>0){const guestCode=scanQueue.shift();result.className='result loading';result.textContent=`در حال بررسی شناسه ${guestCode}${queueStatus()}...`;try{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({guest_code:guestCode,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'بررسی مهمان ناموفق بود.');const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate'||data.result==='attended_previous_period';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=`${data.message||'بررسی انجام شد.'}${queueStatus()}`;if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);showScanFeedback(data,guestCode);await autoPrintEntry(data,guestCode);if(data.result!=='attended_previous_period')showPreviousAttendanceAlert(data.previous_attendance)}catch(error){const failureMessage=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.';result.className='result error';result.textContent=`${failureMessage}${queueStatus()}`;showScanFeedback({result:'request_error',message:failureMessage},guestCode,'error')}}}finally{scanProcessing=false;input.focus();if(scanQueue.length>0)void processScanQueue()}};
   const enqueueScan=(rawCode)=>{const guestCode=normalize(rawCode);if(guestCode.length<4||guestCode.length>10)return;unlockScanAudio();scanQueue.push(guestCode);input.value='';resetScannerState();input.focus();if(scanProcessing||isSubmitting){result.className='result loading';result.textContent=`اسکن دریافت شد${queueStatus()}. در صف پردازش است.`}void processScanQueue()};
   const scheduleScannerSubmission=(value)=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=window.setTimeout(()=>{scannerCompletionTimer=0;const completedCode=normalize(input.value);if(scannerDetected&&completedCode===value&&completedCode.length>=4&&completedCode.length<=9)enqueueScan(completedCode)},SCANNER_COMPLETION_DELAY_MS)};
   input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10){enqueueScan(value);return}if(scannerDetected&&value.length>=4&&value.length<=9)scheduleScannerSubmission(value)});
@@ -1942,6 +2074,10 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
             $getAction = strtolower(trim((string)($_GET['action'] ?? '')));
             if ($getAction === 'uninvited_options') {
                 egmCheckInJson(['status' => 'ok', 'options' => egmCheckInUninvitedOptions($context)]);
+            }
+            if ($getAction === 'print_profile') {
+                $profileGuestCode = (string)($_GET['guest_code'] ?? ($_SESSION['egm_last_print_guest_code'] ?? ''));
+                egmCheckInJson(['status' => 'ok', 'print_profile' => egmCheckInAutomaticPrintProfile($context, $profileGuestCode)]);
             }
             if ($getAction === 'logs_version') {
                 egmCheckInJson([
@@ -1997,7 +2133,14 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
                     'stats' => egmCheckInDashboardStats($context),
                 ]);
             }
-            if ($action === 'register_uninvited') {
+            if ($action === 'record_ticket_number') {
+                $result = egmCheckInRecordTicketNumber(
+                    $context,
+                    (string)($payload['guest_code'] ?? ''),
+                    (string)($payload['number_of_ticket'] ?? ''),
+                    (string)($payload['ticket_id'] ?? 'default')
+                );
+            } elseif ($action === 'register_uninvited') {
                 $result = egmCheckInRegisterUninvited($context, $payload, $sessionUser);
             } elseif ($action === 'force_attendance') {
                 $result = egmCheckInProcess(
@@ -2012,6 +2155,9 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
                     $context,
                     (string)($payload['guest_code'] ?? ($payload['national_id'] ?? ''))
                 );
+            }
+            if (in_array((string)($result['result'] ?? ''), ['success', 'force_entry_success'], true)) {
+                $_SESSION['egm_last_print_guest_code'] = egmCheckInNormalizeGuestCode((string)($payload['guest_code'] ?? ($payload['national_id'] ?? '')));
             }
             $logsVersion = egmCheckInLogsVersion($context);
             egmCheckInJson(['status' => 'ok'] + $result + [

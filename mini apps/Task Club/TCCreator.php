@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/tc-database-runtime.php';
 require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/tc-security.php';
+require_once __DIR__ . '/../../api/lib/tc-templates.php';
 
 $tcCreatorIsJsonRequest = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST';
 requireTabPermissionFromSession('task-club', $tcCreatorIsJsonRequest);
@@ -357,7 +358,7 @@ function tcCreatorCopyTaskClubUpdates(string $sourceDir, string $targetDir, stri
   }
 }
 
-function tcCreatorInitializeMission(string $targetDir, string $name, string $folderName, string $webPath): void
+function tcCreatorInitializeMission(string $targetDir, string $name, string $folderName, string $webPath, string $sourceLabel = TC_CREATOR_SOURCE_LABEL): void
 {
   tcCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'tasks');
   tcCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'TC Event');
@@ -396,7 +397,7 @@ function tcCreatorInitializeMission(string $targetDir, string $name, string $fol
     'folder' => $folderName,
     'directory' => tcCreatorMissionDirectoryLabel($folderName),
     'webPath' => $webPath,
-    'source' => TC_CREATOR_SOURCE_LABEL,
+    'source' => $sourceLabel,
     'generatorVersion' => TC_CREATOR_GENERATOR_VERSION,
     'createdAt' => gmdate('c')
   ]);
@@ -414,7 +415,12 @@ function tcCreatorListMissions(): array
     if (!is_dir($missionDir)) continue;
     $webPath = tcCreatorMissionWebPath($folder);
     $createdAt = trim((string)($record['created_at'] ?? ''));
+    $selection = tcTemplateReadSelection(tcCreatorDatabase(), (string)$record['code']);
+    $catalog = tcTemplateCatalog();
     $items[] = [
+      'type' => $selection['type'],
+      'templateId' => $selection['templateId'],
+      'templateName' => $catalog[$selection['templateId']]['name'] ?? $selection['templateId'],
       'name' => trim((string)($record['name'] ?? $folder)) ?: $folder,
       'code' => (string)($record['code'] ?? ''),
       'folder' => $folder,
@@ -460,7 +466,7 @@ function tcCreatorResolveMissionFolder(string $rawFolder): string
   return $folderName;
 }
 
-function tcCreatorCreateMission(string $rawName): array
+function tcCreatorCreateMission(string $rawName, string $type = 'standard', string $templateId = 'standard'): array
 {
   tcCreatorEnsureGeneratorStorage();
   $folderName = tcCreatorNormalizeMissionName($rawName);
@@ -468,6 +474,8 @@ function tcCreatorCreateMission(string $rawName): array
     throw new InvalidArgumentException('Enter a valid Task Club name.');
   }
 
+  $selection = tcTemplateSelection($type, $templateId);
+  $template = tcTemplateResolve($selection['templateId']);
   $missionsRoot = tcCreatorMissionsRoot();
   $targetDir = $missionsRoot . DIRECTORY_SEPARATOR . $folderName;
   if (tcDbFileExists($targetDir)) {
@@ -479,14 +487,15 @@ function tcCreatorCreateMission(string $rawName): array
   $code = tcCreatorAllocateUniqueCode();
   $registryInserted = false;
   try {
-    tcCreatorCopyTaskClubTemplate(__DIR__, $buildDir, $folderName, $webPath);
+    tcCreatorCopyTaskClubTemplate($template['source'], $buildDir, $folderName, $webPath);
     if (!tcDbRename($buildDir, $targetDir)) {
       throw new RuntimeException('Failed to publish generated Task Club.');
     }
     insertTcRegistry(tcCreatorDatabase(), $code, $folderName, tcCreatorMissionDirectoryLabel($folderName));
     $registryInserted = true;
     ensureTcInstanceTables(tcCreatorDatabase(), $code);
-    tcCreatorInitializeMission($targetDir, $folderName, $folderName, $webPath);
+    tcCreatorInitializeMission($targetDir, $folderName, $folderName, $webPath, $template['directory']);
+    tcInstanceWriteData(tcCreatorDatabase(), $code, 'code_template', $selection);
     tcInstanceWriteData(tcCreatorDatabase(), $code, 'metadata', [
       'code' => $code,
       'name' => $folderName,
@@ -544,7 +553,9 @@ function tcCreatorUpdateMissionBranchSetting(string $rawFolder): array
   if (!is_array($registryRecord)) throw new InvalidArgumentException('Task Club is not registered in the database.');
 
   $webPath = tcCreatorMissionWebPath($folderName);
-  tcCreatorCopyTaskClubUpdates(__DIR__, $targetDir, $folderName, $webPath);
+  $selection = tcTemplateReadSelection(tcCreatorDatabase(), (string)$registryRecord['code']);
+  $template = tcTemplateResolve($selection['templateId']);
+  tcCreatorCopyTaskClubUpdates($template['source'], $targetDir, $folderName, $webPath);
 
   $metaPath = $targetDir . DIRECTORY_SEPARATOR . 'mission.json';
   $meta = tcCreatorReadJsonFile($metaPath);
@@ -552,7 +563,7 @@ function tcCreatorUpdateMissionBranchSetting(string $rawFolder): array
   $meta['folder'] = $folderName;
   $meta['directory'] = tcCreatorMissionDirectoryLabel($folderName);
   $meta['webPath'] = $webPath;
-  $meta['source'] = TC_CREATOR_SOURCE_LABEL;
+  $meta['source'] = $template['directory'];
   $meta['generatorVersion'] = TC_CREATOR_GENERATOR_VERSION;
   $meta['updatedAt'] = gmdate('c');
   if (trim((string)($meta['createdAt'] ?? '')) === '') {
@@ -615,7 +626,7 @@ if ($tcCreatorIsJsonRequest) {
   $action = strtolower(trim((string)($payload['action'] ?? '')));
   try {
     if ($action === 'create') {
-      $mission = tcCreatorCreateMission((string)($payload['name'] ?? ''));
+      $mission = tcCreatorCreateMission((string)($payload['name'] ?? ''), (string)($payload['type'] ?? 'standard'), (string)($payload['templateId'] ?? 'standard'));
       $missions = tcCreatorListMissions();
       tcCreatorJsonResponse([
         'status' => 'ok',
@@ -660,6 +671,12 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
 <section id="tab-task-club-creator" class="tab">
 <link rel="stylesheet" href="mini%20apps/Task%20Club/tc-panel.css?v=<?= htmlspecialchars($tcCreatorPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
 <style>
+  .tc-creator-types { display: flex; gap: 12px; flex-wrap: wrap; border: 0; padding: 0; margin: 0; }
+  .tc-creator-types legend { margin-bottom: 8px; }
+  .tc-creator-type { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 200px; padding: 14px; border: 1px solid var(--border, #e5e7eb); border-radius: 8px; cursor: pointer; }
+  .tc-creator-type:has(input:checked) { border-color: var(--primary, #2f8fff); background: #f0f7ff; }
+  .tc-creator-type input { width: auto; margin-top: 4px; }
+  .tc-creator-type strong, .tc-creator-type small { display: block; }
   .tc-creator-shell { display: grid; gap: 16px; }
   .tc-creator-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr); gap: 16px; align-items: start; }
   .tc-creator-muted { color: var(--muted, #6b7280); font-size: 13px; line-height: 1.7; }
@@ -691,6 +708,27 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
         <h3>Create Task Club</h3>
       </div>
       <form class="form" data-tc-creator-form>
+        <fieldset class="tc-creator-types">
+          <legend>Task Club type</legend>
+          <label class="tc-creator-type">
+            <input type="radio" name="tc-club-type" data-tc-club-type value="standard" checked />
+            <span><strong>Task Club</strong><small class="tc-creator-muted">Create a standard Task Club.</small></span>
+          </label>
+          <label class="tc-creator-type">
+            <input type="radio" name="tc-club-type" data-tc-club-type value="custom" />
+            <span><strong>Custom TaskClub</strong><small class="tc-creator-muted">Choose a template and use its features.</small></span>
+          </label>
+        </fieldset>
+        <label class="field standard-width" data-tc-template-field>
+          <span>Template</span>
+          <select data-tc-club-template disabled>
+            <?php foreach (tcTemplateCatalog() as $templateId => $template): ?>
+              <option value="<?= htmlspecialchars($templateId, ENT_QUOTES, 'UTF-8') ?>" data-description="<?= htmlspecialchars($template['description'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($template['name'], ENT_QUOTES, 'UTF-8') ?></option>
+            <?php endforeach; ?>
+          </select>
+          <small data-tc-template-description></small>
+          <small class="tc-creator-muted">Each template includes its own predefined features.</small>
+        </label>
         <label class="field standard-width">
           <span>Task Club name</span>
           <input type="text" data-tc-club-name maxlength="80" autocomplete="off" required />
@@ -704,15 +742,10 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
 
     <div class="card settings-section">
       <div class="section-header">
-        <h3>Generation storage</h3>
+        <h3>Custom TaskClub templates</h3>
       </div>
-      <p class="tc-creator-muted">
-        New Task Clubs are created under <code>mini apps/missions/&lt;Task Club name&gt;</code> and appear as new tabs in this panel sidebar.
-        Generator settings are kept under <code>mini apps/missions/generate</code>.
-      </p>
-      <p class="tc-creator-muted">
-        The current default Task Club stays in <code>mini apps/Task Club</code>.
-      </p>
+      <p class="tc-creator-muted">Choose Custom TaskClub and select a template to create a club with that template's features. Each template provides a predefined experience.</p>
+      <p class="tc-creator-muted">New clubs start with their own participants, tasks and settings. Updates use the template selected when the club was created.</p>
     </div>
   </div>
 
@@ -730,6 +763,7 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
               <strong><?= htmlspecialchars((string)$mission['name'], ENT_QUOTES, 'UTF-8') ?></strong>
               <span class="tc-creator-muted"><?= htmlspecialchars((string)$mission['createdAtLabel'], ENT_QUOTES, 'UTF-8') ?></span>
             </div>
+            <div class="tc-creator-muted"><?= $mission['type'] === 'custom' ? 'Custom TaskClub' : 'Task Club' ?> &middot; <?= htmlspecialchars($mission['templateName'], ENT_QUOTES, 'UTF-8') ?></div>
             <div class="tc-creator-muted">Directory: <code><?= htmlspecialchars((string)$mission['directory'], ENT_QUOTES, 'UTF-8') ?></code></div>
             <div class="tc-creator-actions">
               <a class="btn primary" href="<?= htmlspecialchars((string)$mission['panelUrl'], ENT_QUOTES, 'UTF-8') ?>">Panel tab</a>
@@ -757,6 +791,21 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
   const listEl = root.querySelector('[data-tc-creator-list]');
   const form = root.querySelector('[data-tc-creator-form]');
   const input = root.querySelector('[data-tc-club-name]');
+  const typeInputs = Array.from(root.querySelectorAll('[data-tc-club-type]'));
+  const selectedType = () => typeInputs.find((input) => input.checked)?.value || 'standard';
+  const templateInput = root.querySelector('[data-tc-club-template]');
+  const syncTemplate = () => {
+    const custom = selectedType() === 'custom';
+    templateInput.disabled = !custom;
+    root.querySelector('[data-tc-template-description]').textContent = custom
+      ? templateInput.selectedOptions[0]?.dataset.description || ''
+      : 'Select Custom TaskClub above to choose a template.';
+    const button = root.querySelector('[data-tc-create-submit]');
+    button.textContent = custom ? 'Create Custom TaskClub' : 'Create Task Club';
+  };
+  typeInputs.forEach((input) => input.addEventListener('change', syncTemplate));
+  templateInput.addEventListener('change', syncTemplate);
+  syncTemplate();
   const submitBtn = root.querySelector('[data-tc-create-submit]');
   const statusEl = root.querySelector('[data-tc-creator-status]');
   const endpoint = String(root.dataset.endpoint || '');
@@ -799,6 +848,7 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
             <strong>${name}</strong>
             <span class="tc-creator-muted">${createdAt}</span>
           </div>
+          <div class="tc-creator-muted">${club?.type === 'custom' ? 'Custom TaskClub' : 'Task Club'} &middot; ${escapeHtml(club?.templateName || 'Standard Task Club')}</div>
           <div class="tc-creator-muted">Directory: <code>${directory}</code></div>
           <div class="tc-creator-actions">
             <a class="btn primary" href="${panelUrl}">Panel tab</a>
@@ -849,7 +899,7 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
       }
       setStatus('Creating Task Club...');
       try {
-        const payload = await postCreatorAction({ action: 'create', name });
+        const payload = await postCreatorAction({ action: 'create', name, type: selectedType(), templateId: templateInput.value });
         clubs = Array.isArray(payload?.clubs) ? payload.clubs : clubs;
         renderClubs();
         if (input instanceof HTMLInputElement) {
@@ -890,7 +940,7 @@ $tcCreatorEndpoint = 'mini%20apps/Task%20Club/TCCreator.php';
         if (!window.confirm(`Delete "${clubName}" and all of its mission data? This cannot be undone.`)) {
           return;
         }
-      } else if (!window.confirm('Update this Task Club from the source Task Club files? Mission data will be kept.')) {
+      } else if (!window.confirm('Update this Task Club from its selected template? Mission data will be kept.')) {
         return;
       }
 

@@ -284,6 +284,14 @@ function egmTaskAccessNormalizeInviteesSpecialAccess($raw): array
   return egmInviteesSpecialAccessNormalize($raw);
 }
 
+function egmTaskAccessNormalizeWinAppLevel($raw): string
+{
+  $level = egmTaskAccessNormalizeToken((string)$raw);
+  return in_array($level, ['full_access', 'scan_and_details', 'scan_and_event', 'scan_only'], true)
+    ? $level
+    : 'full_access';
+}
+
 $action = trim((string)($_GET['action'] ?? $_POST['action'] ?? 'bootstrap'));
 $tasks = egmTaskAccessLoadTasks($tasksStorePath);
 $tasksByIdLower = [];
@@ -307,7 +315,8 @@ if ($action === 'bootstrap') {
     $accessByUser[$userCode] = [
       'allowManageTasksTab' => egmTaskAccessNormalizeBool($entry['allowManageTasksTab'] ?? ($entry['allow_manage_tasks_tab'] ?? false)),
       'tasks' => $rules,
-      'inviteesSpecialAccess' => egmTaskAccessNormalizeInviteesSpecialAccess($entry['inviteesSpecialAccess'] ?? null)
+      'inviteesSpecialAccess' => egmTaskAccessNormalizeInviteesSpecialAccess($entry['inviteesSpecialAccess'] ?? null),
+      'winAppAccessLevel' => egmTaskAccessNormalizeWinAppLevel($entry['winAppAccessLevel'] ?? ($entry['win_app_access_level'] ?? 'full_access'))
     ];
   }
   echo json_encode([
@@ -347,6 +356,7 @@ if ($action === 'save_user_access') {
   }
   $rawRules = is_array($payload['rules'] ?? null) ? $payload['rules'] : [];
   $allowManageTasksTab = egmTaskAccessNormalizeBool($payload['allowManageTasksTab'] ?? ($payload['allow_manage_tasks_tab'] ?? false));
+  $winAppAccessLevel = egmTaskAccessNormalizeWinAppLevel($payload['winAppAccessLevel'] ?? ($payload['win_app_access_level'] ?? 'full_access'));
   $normalizedRules = egmTaskAccessNormalizeRulesForTasks($rawRules, $tasksByIdLower);
 
   $config = egmTaskAccessReadJson($taskAccessPath, []);
@@ -357,7 +367,8 @@ if ($action === 'save_user_access') {
     'updatedAt' => date('Y-m-d H:i:s'),
     'allowManageTasksTab' => $allowManageTasksTab,
     'tasks' => $normalizedRules,
-    'inviteesSpecialAccess' => $inviteesSpecialAccess
+    'inviteesSpecialAccess' => $inviteesSpecialAccess,
+    'winAppAccessLevel' => $winAppAccessLevel
   ];
   $config['users'] = $users;
   $config['updatedAt'] = date('Y-m-d H:i:s');
@@ -372,7 +383,8 @@ if ($action === 'save_user_access') {
       'userCode' => $userCodeRaw,
       'allowManageTasksTab' => $allowManageTasksTab,
       'rules' => $normalizedRules,
-      'inviteesSpecialAccess' => $inviteesSpecialAccess
+      'inviteesSpecialAccess' => $inviteesSpecialAccess,
+      'winAppAccessLevel' => $winAppAccessLevel
     ]
   ], JSON_UNESCAPED_UNICODE);
   exit;
@@ -407,6 +419,7 @@ if ($action === 'save_user_special_access') {
   $users = is_array($config['users'] ?? null) ? $config['users'] : [];
   $existingEntry = is_array($users[$userCode] ?? null) ? $users[$userCode] : [];
   $existingRules = egmTaskAccessNormalizeRulesForTasks(is_array($existingEntry['tasks'] ?? null) ? $existingEntry['tasks'] : [], $tasksByIdLower);
+  $winAppAccessLevel = egmTaskAccessNormalizeWinAppLevel($existingEntry['winAppAccessLevel'] ?? ($existingEntry['win_app_access_level'] ?? 'full_access'));
   if (array_key_exists('allowManageTasksTab', $existingEntry) || array_key_exists('allow_manage_tasks_tab', $existingEntry)) {
     $allowManageTasksTab = egmTaskAccessNormalizeBool($existingEntry['allowManageTasksTab'] ?? ($existingEntry['allow_manage_tasks_tab'] ?? false));
   } else {
@@ -416,7 +429,8 @@ if ($action === 'save_user_special_access') {
     'updatedAt' => date('Y-m-d H:i:s'),
     'allowManageTasksTab' => $allowManageTasksTab,
     'tasks' => $existingRules,
-    'inviteesSpecialAccess' => $specialAccess
+    'inviteesSpecialAccess' => $specialAccess,
+    'winAppAccessLevel' => $winAppAccessLevel
   ];
   $config['users'] = $users;
   $config['updatedAt'] = date('Y-m-d H:i:s');

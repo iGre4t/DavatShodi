@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/egm-registry.php';
 require_once __DIR__ . '/tc-registry.php';
+require_once __DIR__ . '/tc-instance-storage.php';
+require_once __DIR__ . '/tc-templates.php';
 
 function databaseInstanceMaterializerRelative(string $root, string $path): string
 {
@@ -129,7 +131,11 @@ function databaseInstanceMaterializerRefreshEgmPanelCode(string $source, string 
     }
 
     $updated = 0;
-    foreach (['EGM Panel.php', 'EGMT.php', 'egm-panel-local.js', 'invitees_csv_safety.php', 'period_exports.php'] as $relative) {
+    foreach ([
+        'EGM Panel.php', 'EGMT.php', 'egm-panel-local.js', 'EGMSetting.js', 'EGMTaskAccess.js',
+        'egm_store.php', 'task_access_store.php', 'invitees_csv_safety.php', 'period_exports.php',
+        'print_card_store.php', 'custom_number_ticket_store.php',
+    ] as $relative) {
         $sourcePath = $source . DIRECTORY_SEPARATOR . $relative;
         if (!is_file($sourcePath)) {
             throw new RuntimeException('Missing shared EGM template file: ' . $relative);
@@ -183,18 +189,23 @@ function materializeDatabaseBackedInstances(PDO $pdo, string $projectRoot): arra
                 }
                 continue;
             }
+            $source = $group['source'];
+            if ($group['kind'] === 'tc') {
+                $selection = tcTemplateReadSelection($pdo, (string)$record['code']);
+                $source = tcTemplateResolve($selection['templateId'], $projectRoot)['source'];
+            }
             $parent = dirname($target);
             if (!is_dir($parent) && !mkdir($parent, 0775, true) && !is_dir($parent)) {
                 throw new RuntimeException('Unable to create database instance parent directory.');
             }
             $staging = $parent . DIRECTORY_SEPARATOR . '.restore-code-' . $folder . '-' . bin2hex(random_bytes(5));
             try {
-                $files = databaseInstanceMaterializeCodeShell($group['kind'], $group['source'], $staging, $folder);
+                $files = databaseInstanceMaterializeCodeShell($group['kind'], $source, $staging, $folder);
                 if (!is_file($staging . DIRECTORY_SEPARATOR . $group['panel'])) {
                     throw new RuntimeException('Restored instance code shell is incomplete: ' . $directory);
                 }
                 if (is_dir($target)) {
-                    databaseInstanceMaterializeCodeShell($group['kind'], $group['source'], $target, $folder);
+                    databaseInstanceMaterializeCodeShell($group['kind'], $source, $target, $folder);
                     databaseInstanceMaterializerRemoveTree($staging);
                 } elseif (!rename($staging, $target)) {
                     throw new RuntimeException('Unable to publish restored instance code: ' . $directory);

@@ -1,0 +1,60 @@
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Block hidden files and dot-path access.
+  RewriteRule "(^|/)\.(?!well-known/)" - [F,L]
+
+  # Never allow executable scripts inside storage directories.
+  RewriteRule "(?i)(^|/)(TC Event|tasks)/.*\.(php[0-9]?|phtml|phar)$" - [F,L]
+
+  # Block direct reads of sensitive data/config files.
+  RewriteRule "(?i)\.(csv|tsv|xls|xlsx|ods|json|txt|log|sql|bak|backup|ini|env|db|sqlite|sqlite3|yml|yaml)$" - [F,L]
+  RewriteRule "(?i)(^|/)(TC Prizes\.json|TC Prize Awards Log\.json)(\.|$)" - [F,L]
+
+  # Block common package/config lock files and task list store.
+  RewriteRule "(?i)(^|/)(composer\.(json|lock)|package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tasks\.js)$" - [F,L]
+</IfModule>
+
+<IfModule mod_authz_core.c>
+  <FilesMatch "(?i)\.(csv|tsv|xls|xlsx|ods|json|txt|log|sql|bak|backup|ini|env|db|sqlite|sqlite3|yml|yaml)$">
+    Require all denied
+  </FilesMatch>
+  <FilesMatch "(?i)^(TC Prizes\.json|TC Prize Awards Log\.json)(\.|$)">
+    Require all denied
+  </FilesMatch>
+  <Files "tasks.js">
+    Require all denied
+  </Files>
+  <FilesMatch "(?i)^(composer\.(json|lock)|package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|\.env(\..*)?)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>
+
+<IfModule !mod_authz_core.c>
+  <FilesMatch "(?i)\.(csv|tsv|xls|xlsx|ods|json|txt|log|sql|bak|backup|ini|env|db|sqlite|sqlite3|yml|yaml)$">
+    Order allow,deny
+    Deny from all
+  </FilesMatch>
+  <FilesMatch "(?i)^(TC Prizes\.json|TC Prize Awards Log\.json)(\.|$)">
+    Order allow,deny
+    Deny from all
+  </FilesMatch>
+  <Files "tasks.js">
+    Order allow,deny
+    Deny from all
+  </Files>
+  <FilesMatch "(?i)^(composer\.(json|lock)|package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|\.env(\..*)?)$">
+    Order allow,deny
+    Deny from all
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Cross-Origin-Resource-Policy "same-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+</IfModule>

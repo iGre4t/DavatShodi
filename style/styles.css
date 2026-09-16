@@ -3,17 +3,17 @@
   --text: #111111;
   --muted: #6b7280;
   --border: #e5e7eb;
-  --primary: #111111;
-  --primary-600: #111111;
-  --primary-focus: rgba(0, 0, 0, 0.12);
-  --primary-border-soft: rgba(0, 0, 0, 0.45);
-  --primary-shadow: rgba(0, 0, 0, 0.25);
-  --primary-shadow-heavy: rgba(0, 0, 0, 0.4);
+  --primary: #1d75e1;
+  --primary-600: #1558aa;
+  --primary-focus: rgba(29, 117, 225, 0.12);
+  --primary-border-soft: rgba(29, 117, 225, 0.45);
+  --primary-shadow: rgba(29, 117, 225, 0.25);
+  --primary-shadow-heavy: rgba(29, 117, 225, 0.4);
   --secondary: #000000;
   --success: #059669;
   --success-600: #047857;
-  --sidebar-active: rgba(0, 0, 0, 0.08);
-  --sidebar-active-border: rgba(0, 0, 0, 0.22);
+  --sidebar-active: rgba(29, 117, 225, 0.12);
+  --sidebar-active-border: rgba(29, 117, 225, 0.22);
 }
 
 #app-loader {

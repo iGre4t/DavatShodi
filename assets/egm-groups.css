@@ -1,0 +1,8 @@
+.egm-groups-create{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.egm-groups-create .field{min-width:min(100%,320px)}
+.egm-groups-card .section-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.egm-groups-modal{position:fixed;inset:0;z-index:10050;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}
+.egm-groups-modal[hidden]{display:none}.egm-groups-dialog{width:min(620px,100%);max-height:calc(100vh - 40px);overflow:auto;background:#fff;border-radius:18px;padding:22px;box-shadow:0 24px 70px rgba(15,23,42,.28)}
+.egm-groups-output-fieldset{margin:18px 0;border:1px solid #e2e8f0;border-radius:14px;padding:14px}.egm-groups-output-fieldset legend{padding:0 8px;font-weight:700}
+.egm-groups-output-option{display:flex;align-items:center;gap:10px;padding:10px 4px}.egm-groups-output-option input{width:18px;height:18px}
+.egm-groups-dialog-actions{display:flex;justify-content:space-between;gap:12px;margin-top:18px}.egm-group-output-summary{display:flex;gap:6px;flex-wrap:wrap}.egm-group-output-summary span{padding:4px 9px;border-radius:999px;background:#f1f5f9;font-size:.84rem}
+@media(max-width:640px){.egm-groups-dialog-actions{flex-direction:column}.egm-groups-dialog-actions .btn{width:100%}}

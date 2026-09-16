@@ -71,6 +71,21 @@ try {
         ':control_at' => '2026-08-18 10:15:00', ':is_uninvited' => 1,
         ':registered_at' => '2026-08-18 10:10:00', ':registered_by' => 'admin',
     ]);
+    egmInstanceWriteData($pdo, $code, 'settings', [
+        'customNumberTicketSettings' => [
+            'active' => true,
+            'tickets' => [
+                ['id' => 'food', 'title' => 'غذا'],
+                ['id' => 'gift', 'title' => 'هدیه'],
+            ],
+        ],
+    ]);
+    $ticketUpdate = $pdo->prepare(
+        "UPDATE `{$tables['user_periods']}` SET `number_of_ticket`=:legacy, `ticket_numbers_json`=:numbers "
+        . "WHERE `user_id`=:user_id AND `period_code`='01'"
+    );
+    $ticketUpdate->execute([':legacy' => '2', ':numbers' => '{"food":"6","gift":"2"}', ':user_id' => $invitedId]);
+    $ticketUpdate->execute([':legacy' => '4', ':numbers' => '{"food":"9","gift":"4"}', ':user_id' => $walkInId]);
 
     $insertLog = $logsPdo->prepare(
         "INSERT INTO `{$tables['activity_logs']}` (`source_key`,`user_id`,`work_id`,`level`,`action`,`entity_type`,"
@@ -124,6 +139,17 @@ try {
     $fullLog = egmPeriodExportBuild($context, '01', 'full_log');
     egmPeriodExportsAssert(str_contains($fullLog['content'], '0099999999'), 'Unmatched National ID is missing from the full log');
     egmPeriodExportsAssert(str_contains($fullLog['content'], 'کاربر پیدا نشد'), 'Rejected condition is missing from the full log');
+    $ticketNumbers = egmPeriodExportBuild($context, '01', 'ticket_numbers');
+    egmPeriodExportsAssert($ticketNumbers['row_count'] === 3, 'Ticket export must contain two guests and one total row');
+    egmPeriodExportsAssert(str_contains($ticketNumbers['content'], 'تعداد: غذا'), 'Food ticket column is missing');
+    egmPeriodExportsAssert(str_contains($ticketNumbers['content'], 'تعداد: هدیه'), 'Gift ticket column is missing');
+    egmPeriodExportsAssert(($ticketNumbers['records'][0]['جمع بلیت‌های کاربر'] ?? '') === '8', 'First guest ticket sum is wrong');
+    egmPeriodExportsAssert(($ticketNumbers['records'][1]['جمع بلیت‌های کاربر'] ?? '') === '13', 'Second guest ticket sum is wrong');
+    $ticketTotal = $ticketNumbers['records'][2] ?? [];
+    egmPeriodExportsAssert(($ticketTotal['نام و نام خانوادگی'] ?? '') === 'جمع کل', 'Ticket total row is missing');
+    egmPeriodExportsAssert(($ticketTotal['تعداد: غذا'] ?? '') === '15', 'Food ticket total is wrong');
+    egmPeriodExportsAssert(($ticketTotal['تعداد: هدیه'] ?? '') === '6', 'Gift ticket total is wrong');
+    egmPeriodExportsAssert(($ticketTotal['جمع بلیت‌های کاربر'] ?? '') === '21', 'Grand ticket total is wrong');
 } finally {
     dropEgmInstanceTables($pdo, $code);
 }

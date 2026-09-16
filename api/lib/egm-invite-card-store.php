@@ -89,6 +89,27 @@ function egmInviteCardOptionalRect($value, string $label): ?array
     return $value === null || $value === '' ? null : egmInviteCardRect($value, $label);
 }
 
+function egmInviteCardTextAreas($value, bool $requireRects = false): array
+{
+    if ($value === null || $value === '') return [];
+    if (!is_array($value)) throw new InvalidArgumentException('ساختار ناحیه‌های متن نامعتبر است.');
+    if (count($value) > 500) throw new InvalidArgumentException('تعداد ناحیه‌های متن بیش از حد مجاز است.');
+    $result = [];
+    foreach ($value as $index => $item) {
+        if (!is_array($item)) continue;
+        $id = preg_replace('/[^a-zA-Z0-9_-]+/', '', egmInviteCardString($item['id'] ?? '', 64));
+        if ($id === '') $id = 'text_' . ($index + 1);
+        $html = egmInviteCardSanitizeEditorHtml($item['textHtml'] ?? ($item['text'] ?? ''));
+        $text = egmInviteCardString(egmInviteCardPlainTextFromHtml($html), 10000);
+        if ($text === '') continue;
+        $rect = $requireRects
+            ? egmInviteCardRect($item['rect'] ?? null, 'متن ' . ($index + 2))
+            : egmInviteCardOptionalRect($item['rect'] ?? null, 'متن ' . ($index + 2));
+        $result[] = ['id' => $id, 'text' => $text, 'textHtml' => $html, 'rect' => $rect];
+    }
+    return $result;
+}
+
 function egmInviteCardImage($value): array
 {
     if (!is_scalar($value)) {
@@ -167,17 +188,26 @@ function egmInviteCardFont($value, $name = ''): array
     ];
 }
 
-function egmInviteCardAssetPath(string $asset): string
+function egmInviteCardAssetPath(string $asset, string $scope = 'invite-card'): string
 {
     if (preg_match('/^[a-z][a-z0-9_-]{0,31}$/D', $asset) !== 1) {
         throw new InvalidArgumentException('نوع فایل کارت دعوت نامعتبر است.');
     }
-    return 'invite-card/' . $asset;
+    if (preg_match('/^[a-z][a-z0-9_-]{0,31}$/D', $scope) !== 1) {
+        throw new InvalidArgumentException('نوع کارت نامعتبر است.');
+    }
+    return $scope . '/' . $asset;
 }
 
-function egmInviteCardWriteAsset(PDO $pdo, string $code, string $asset, string $dataUri): void
+function egmInviteCardWriteAsset(PDO $pdo, string $code, string $asset, string $dataUri, string $scope = 'invite-card'): void
 {
-    $path = egmInviteCardAssetPath($asset);
+    $path = egmInviteCardAssetPath($asset, $scope);
+    $storagePrefix = $scope === 'invite-card'
+        ? 'invite_card'
+        : preg_replace('/[^a-z0-9_]+/', '_', strtolower($scope));
+    if (!is_string($storagePrefix) || $storagePrefix === '') {
+        throw new InvalidArgumentException('فضای ذخیره‌سازی کارت نامعتبر است.');
+    }
     if (preg_match('#^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=\r\n]+)$#i', $dataUri, $matches) !== 1) {
         throw new InvalidArgumentException('محتوای فایل کارت دعوت نامعتبر است.');
     }
@@ -216,7 +246,7 @@ function egmInviteCardWriteAsset(PDO $pdo, string $code, string $asset, string $
             "INSERT INTO `{$table}` (`data_key`, `payload`, `storage_kind`, `file_path`, `content_sha256`, `file_size`, `file_chunk`) "
             . "VALUES (:data_key, :payload, 'invite_card_asset', :file_path, :sha256, :file_size, NULL)"
         );
-        $header->bindValue(':data_key', 'invite_card_asset:' . $asset);
+        $header->bindValue(':data_key', $storagePrefix . '_asset:' . $asset);
         $header->bindValue(':payload', $metadata);
         $header->bindValue(':file_path', $path);
         $header->bindValue(':sha256', $hash);
@@ -229,7 +259,7 @@ function egmInviteCardWriteAsset(PDO $pdo, string $code, string $asset, string $
         );
         for ($chunkIndex = 0; $chunkIndex < $chunkCount; $chunkIndex++) {
             $chunk = substr($binary, $chunkIndex * $chunkSize, $chunkSize);
-            $chunkStatement->bindValue(':data_key', 'invite_card_chunk:' . $asset . ':' . str_pad((string)$chunkIndex, 8, '0', STR_PAD_LEFT));
+            $chunkStatement->bindValue(':data_key', $storagePrefix . '_chunk:' . $asset . ':' . str_pad((string)$chunkIndex, 8, '0', STR_PAD_LEFT));
             $chunkStatement->bindValue(':payload', '{}');
             $chunkStatement->bindValue(':file_path', $path);
             $chunkStatement->bindValue(':file_data', $chunk, PDO::PARAM_LOB);
@@ -249,18 +279,18 @@ function egmInviteCardWriteAsset(PDO $pdo, string $code, string $asset, string $
     }
 }
 
-function egmInviteCardDeleteAsset(PDO $pdo, string $code, string $asset): void
+function egmInviteCardDeleteAsset(PDO $pdo, string $code, string $asset, string $scope = 'invite-card'): void
 {
-    $path = egmInviteCardAssetPath($asset);
+    $path = egmInviteCardAssetPath($asset, $scope);
     $tables = ensureEgmInstanceTables($pdo, $code);
     $table = (string)$tables['data'];
     $statement = $pdo->prepare("DELETE FROM `{$table}` WHERE `file_path` = :file_path AND `storage_kind` IN ('invite_card_asset', 'invite_card_chunk')");
     $statement->execute([':file_path' => $path]);
 }
 
-function egmInviteCardHasAsset(PDO $pdo, string $code, string $asset): bool
+function egmInviteCardHasAsset(PDO $pdo, string $code, string $asset, string $scope = 'invite-card'): bool
 {
-    $path = egmInviteCardAssetPath($asset);
+    $path = egmInviteCardAssetPath($asset, $scope);
     $tables = ensureEgmInstanceTables($pdo, $code);
     $table = (string)$tables['data'];
     $statement = $pdo->prepare("SELECT 1 FROM `{$table}` WHERE `file_path` = :file_path AND `storage_kind` = 'invite_card_asset' LIMIT 1");
@@ -268,9 +298,9 @@ function egmInviteCardHasAsset(PDO $pdo, string $code, string $asset): bool
     return $statement->fetchColumn() !== false;
 }
 
-function egmInviteCardReadAsset(PDO $pdo, string $code, string $asset): string
+function egmInviteCardReadAsset(PDO $pdo, string $code, string $asset, string $scope = 'invite-card'): string
 {
-    $path = egmInviteCardAssetPath($asset);
+    $path = egmInviteCardAssetPath($asset, $scope);
     $tables = ensureEgmInstanceTables($pdo, $code);
     $table = (string)$tables['data'];
     $header = $pdo->prepare(
@@ -308,38 +338,38 @@ function egmInviteCardReadAsset(PDO $pdo, string $code, string $asset): string
     return 'data:' . strtolower((string)$metadata['mime']) . ';base64,' . base64_encode($binary);
 }
 
-function egmInviteCardHydrateAssets(PDO $pdo, string $code, $configuration): ?array
+function egmInviteCardHydrateAssets(PDO $pdo, string $code, $configuration, string $scope = 'invite-card'): ?array
 {
     if (!is_array($configuration)) {
         return null;
     }
     if (trim((string)($configuration['imageData'] ?? '')) === '') {
-        $configuration['imageData'] = egmInviteCardReadAsset($pdo, $code, 'image');
+        $configuration['imageData'] = egmInviteCardReadAsset($pdo, $code, 'image', $scope);
     }
     if (trim((string)($configuration['fontData'] ?? '')) === '' && (int)($configuration['fontBytes'] ?? 0) > 0) {
-        $configuration['fontData'] = egmInviteCardReadAsset($pdo, $code, 'font');
+        $configuration['fontData'] = egmInviteCardReadAsset($pdo, $code, 'font', $scope);
     }
     return $configuration;
 }
 
-function egmInviteCardPersistAssets(PDO $pdo, string $code, array $configuration, array $assets): array
+function egmInviteCardPersistAssets(PDO $pdo, string $code, array $configuration, array $assets, string $scope = 'invite-card'): array
 {
     if (in_array('image', $assets, true)) {
         $imageData = (string)($configuration['imageData'] ?? '');
         if ($imageData === '') {
             throw new InvalidArgumentException('تصویر کارت دعوت برای ذخیره ارسال نشده است.');
         }
-        egmInviteCardWriteAsset($pdo, $code, 'image', $imageData);
+        egmInviteCardWriteAsset($pdo, $code, 'image', $imageData, $scope);
         $configuration['imageData'] = '';
         $configuration['imageStorage'] = 'database_chunks';
     }
     if (in_array('font', $assets, true)) {
         $fontData = (string)($configuration['fontData'] ?? '');
         if ($fontData !== '') {
-            egmInviteCardWriteAsset($pdo, $code, 'font', $fontData);
+            egmInviteCardWriteAsset($pdo, $code, 'font', $fontData, $scope);
             $configuration['fontStorage'] = 'database_chunks';
         } else {
-            egmInviteCardDeleteAsset($pdo, $code, 'font');
+            egmInviteCardDeleteAsset($pdo, $code, 'font', $scope);
             $configuration['fontStorage'] = '';
         }
         $configuration['fontData'] = '';
@@ -361,6 +391,14 @@ function egmInviteCardMergeImageDraft($stored, array $payload): array
     // Coordinates from the previous artwork cannot safely be reused on a new image.
     $next['qrRect'] = null;
     $next['textRect'] = null;
+    $next['ticketCountRect'] = null;
+    if (is_array($next['textAreas'] ?? null)) {
+        $next['textAreas'] = array_map(static function ($item) {
+            if (!is_array($item)) return $item;
+            $item['rect'] = null;
+            return $item;
+        }, $next['textAreas']);
+    }
     $next['updatedAt'] = gmdate('c');
     return $next;
 }
@@ -507,6 +545,9 @@ function egmInviteCardMergeDraft($stored, array $payload): array
         $next['qrData'] = EGM_INVITE_CARD_QR_DATA;
         $next['conditionalVariables'] = egmInviteCardNormalizeConditionalVariables($payload['conditionalVariables'] ?? []);
         $next['conditionalBuilderDraft'] = egmInviteCardNormalizeConditionalBuilderDraft($payload['conditionalBuilderDraft'] ?? []);
+        if (array_key_exists('textAreas', $payload)) {
+            $next['textAreas'] = egmInviteCardTextAreas($payload['textAreas'], false);
+        }
         $changed = true;
     }
     if (in_array('font', $sections, true)) {
@@ -520,6 +561,12 @@ function egmInviteCardMergeDraft($stored, array $payload): array
     if (in_array('layout', $sections, true)) {
         $next['qrRect'] = egmInviteCardOptionalRect($payload['qrRect'] ?? null, 'QR Code');
         $next['textRect'] = egmInviteCardOptionalRect($payload['textRect'] ?? null, 'Invite Text Area');
+        if (array_key_exists('ticketCountRect', $payload)) {
+            $next['ticketCountRect'] = egmInviteCardOptionalRect($payload['ticketCountRect'], 'Count of Ticket');
+        }
+        if (array_key_exists('textAreas', $payload)) {
+            $next['textAreas'] = egmInviteCardTextAreas($payload['textAreas'], false);
+        }
         $changed = true;
     }
     if (!$changed) {
@@ -558,6 +605,8 @@ function egmInviteCardNormalizeConfig(array $payload): array
         'fontBytes' => $font['bytes'],
         'qrRect' => egmInviteCardRect($payload['qrRect'] ?? null, 'QR Code'),
         'textRect' => egmInviteCardRect($payload['textRect'] ?? null, 'Invite Text Area'),
+        'ticketCountRect' => egmInviteCardOptionalRect($payload['ticketCountRect'] ?? null, 'Count of Ticket'),
+        'textAreas' => egmInviteCardTextAreas($payload['textAreas'] ?? [], true),
         'text' => $text,
         'textHtml' => $textHtml,
         'conditionalVariables' => egmInviteCardNormalizeConditionalVariables($payload['conditionalVariables'] ?? []),
@@ -567,8 +616,9 @@ function egmInviteCardNormalizeConfig(array $payload): array
     ];
 }
 
-function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array $user): never
+function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array $user, string $storageKey = 'invite_card', string $assetScope = 'invite-card'): never
 {
+    $isNumberTicket = $storageKey === 'custom_number_ticket' || str_starts_with($storageKey, 'custom_number_ticket:');
     if (!userHasPermissionId($user, 'event-guest-manager:main')) {
         denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
     }
@@ -670,8 +720,8 @@ function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array
             egmInviteCardJson(['status' => 'ok', 'rows' => $invitees, 'hasMore' => $hasMore, 'egmCode' => $code]);
         }
         if ($method === 'GET') {
-            $stored = egmInstanceReadData($pdo, $code, 'invite_card', null);
-            $stored = egmInviteCardHydrateAssets($pdo, $code, $stored);
+            $stored = egmInstanceReadData($pdo, $code, $storageKey, null);
+            $stored = egmInviteCardHydrateAssets($pdo, $code, $stored, $assetScope);
             egmInviteCardJson(['status' => 'ok', 'data' => $stored, 'egmCode' => $code]);
         }
         if ($method !== 'POST') {
@@ -691,10 +741,13 @@ function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array
             egmInviteCardJson(['status' => 'error', 'message' => 'توکن امنیتی نامعتبر است.'], 403);
         }
         if ($action === 'image') {
-            $stored = egmInstanceReadData($pdo, $code, 'invite_card', null);
+            $stored = egmInstanceReadData($pdo, $code, $storageKey, null);
             $next = egmInviteCardMergeImageDraft($stored, $payload);
-            $next = egmInviteCardPersistAssets($pdo, $code, $next, ['image']);
-            egmInstanceWriteData($pdo, $code, 'invite_card', $next);
+            if (($storageKey === 'print_card' || $isNumberTicket) && (int)($next['imageWidth'] ?? 0) !== (int)($next['imageHeight'] ?? 0)) {
+                throw new InvalidArgumentException('تصویر زمینه رسید باید دقیقاً مربع (نسبت ۱:۱) باشد.');
+            }
+            $next = egmInviteCardPersistAssets($pdo, $code, $next, ['image'], $assetScope);
+            egmInstanceWriteData($pdo, $code, $storageKey, $next);
             egmInviteCardJson([
                 'status' => 'ok',
                 'message' => 'تصویر کارت دعوت بلافاصله در پایگاه داده ذخیره شد.',
@@ -703,12 +756,12 @@ function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array
             ]);
         }
         if ($action === 'draft') {
-            $stored = egmInstanceReadData($pdo, $code, 'invite_card', null);
+            $stored = egmInstanceReadData($pdo, $code, $storageKey, null);
             $next = egmInviteCardMergeDraft($stored, $payload);
             if (in_array('font', is_array($payload['sections'] ?? null) ? $payload['sections'] : [], true)) {
-                $next = egmInviteCardPersistAssets($pdo, $code, $next, ['font']);
+                $next = egmInviteCardPersistAssets($pdo, $code, $next, ['font'], $assetScope);
             }
-            egmInstanceWriteData($pdo, $code, 'invite_card', $next);
+            egmInstanceWriteData($pdo, $code, $storageKey, $next);
             egmInviteCardJson([
                 'status' => 'ok',
                 'message' => 'تغییرات کارت دعوت به‌صورت خودکار ذخیره شد.',
@@ -717,8 +770,14 @@ function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array
             ]);
         }
         $normalized = egmInviteCardNormalizeConfig($payload);
-        $normalized = egmInviteCardPersistAssets($pdo, $code, $normalized, ['image', 'font']);
-        egmInstanceWriteData($pdo, $code, 'invite_card', $normalized);
+        if (($storageKey === 'print_card' || $isNumberTicket) && (int)$normalized['imageWidth'] !== (int)$normalized['imageHeight']) {
+            throw new InvalidArgumentException('تصویر زمینه رسید باید دقیقاً مربع (نسبت ۱:۱) باشد.');
+        }
+        if ($isNumberTicket) {
+            if (!is_array($normalized['ticketCountRect'] ?? null)) throw new InvalidArgumentException('ناحیه مستقل Count of Ticket باید روی رسید تعیین شود.');
+        }
+        $normalized = egmInviteCardPersistAssets($pdo, $code, $normalized, ['image', 'font'], $assetScope);
+        egmInstanceWriteData($pdo, $code, $storageKey, $normalized);
         egmInviteCardJson(['status' => 'ok', 'message' => 'تنظیمات کارت دعوت در پایگاه داده ذخیره شد.', 'data' => $normalized, 'egmCode' => $code]);
     } catch (InvalidArgumentException $error) {
         egmInviteCardJson(['status' => 'error', 'message' => $error->getMessage()], 422);

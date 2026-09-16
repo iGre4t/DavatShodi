@@ -146,6 +146,15 @@ function egmStoreNormalizeMissionCode(string $value): string
 
 function egmStoreMissionContext(string $baseDir): array
 {
+  if (basename($baseDir) === 'Event Guest Manager') {
+    $pdo = egmStoreDatabase();
+    $registry = $pdo instanceof PDO ? findEgmRegistryByDirectory($pdo, 'mini apps/Event Guest Manager') : null;
+    if (is_array($registry)) {
+      return ['isMission' => true, 'code' => (string)$registry['code'], 'name' => (string)$registry['name'],
+        'folder' => 'Event Guest Manager', 'missionDir' => $baseDir, 'missionsRoot' => dirname($baseDir),
+        'webPath' => 'mini%20apps/Event%20Guest%20Manager', 'directory' => 'mini apps/Event Guest Manager'];
+    }
+  }
   $missionDir = realpath($baseDir);
   $missionsRoot = realpath(dirname($baseDir));
   if (!is_string($missionDir) || !is_string($missionsRoot) || basename($missionsRoot) !== 'EGMs') {
@@ -789,6 +798,32 @@ function egmStoreNormalizeBool($value): bool
   if (is_bool($value)) return $value;
   if (is_int($value) || is_float($value)) return (int)$value === 1;
   return in_array(strtolower(trim((string)$value)), ['1', 'true', 'on', 'yes'], true);
+}
+
+function egmStoreNormalizeTicketSettings($value): array
+{
+  $source = is_array($value) ? $value : [];
+  $rawTickets = is_array($source['tickets'] ?? null) ? array_slice($source['tickets'], 0, 20) : [];
+  $tickets = [];
+  $seen = [];
+  foreach ($rawTickets as $index => $ticket) {
+    if (!is_array($ticket)) continue;
+    $id = strtolower(trim((string)($ticket['id'] ?? '')));
+    $id = preg_replace('/[^a-z0-9_-]+/', '-', $id) ?? '';
+    $id = trim(substr($id, 0, 24), '-_');
+    if ($id === '' || isset($seen[$id])) $id = 'ticket-' . ($index + 1);
+    $title = trim((string)($ticket['title'] ?? ''));
+    if ($title === '') $title = 'Ticket ' . ($index + 1);
+    $title = function_exists('mb_substr') ? mb_substr($title, 0, 100, 'UTF-8') : substr($title, 0, 100);
+    $tickets[] = ['id' => $id, 'title' => $title];
+    $seen[$id] = true;
+  }
+  if ($tickets === []) $tickets[] = ['id' => 'default', 'title' => 'Custom Number Ticket'];
+  return [
+    'active' => egmStoreNormalizeBool($source['active'] ?? false),
+    'ticketOnly' => egmStoreNormalizeBool($source['ticketOnly'] ?? false),
+    'tickets' => $tickets,
+  ];
 }
 
 function egmStoreParseNonnegativeInt($value): ?int
@@ -1444,6 +1479,12 @@ if ($action === 'get_settings') {
     'duration' => false,
     'maintenanceMode' => false,
     'eventAccessLocked' => false,
+    'adminPasscode' => ['hash' => '', 'pageLocks' => []],
+    'printSettings' => [
+      'autoPrint' => false,
+      'doublePrint' => false
+    ],
+    'customNumberTicketSettings' => egmStoreNormalizeTicketSettings([]),
     'startDate' => '',
     'startTime' => '',
     'endDate' => '',
@@ -1473,6 +1514,24 @@ if ($action === 'get_settings') {
   $settings = array_merge($defaults, is_array($stored) ? $stored : []);
   $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
   $settings['eventAccessLocked'] = (bool)($settings['eventAccessLocked'] ?? false);
+  $adminPasscode = is_array($settings['adminPasscode'] ?? null) ? $settings['adminPasscode'] : [];
+  $adminLocks = is_array($adminPasscode['pageLocks'] ?? null) ? $adminPasscode['pageLocks'] : [];
+  $settings['adminPasscode'] = [
+    'configured' => trim((string)($adminPasscode['hash'] ?? '')) !== '',
+    'pageLocks' => [
+      'scan' => (bool)($adminLocks['scan'] ?? false),
+      'event-info' => (bool)($adminLocks['event-info'] ?? false),
+      'printer' => (bool)($adminLocks['printer'] ?? false),
+      'settings' => (bool)($adminLocks['settings'] ?? false),
+    ],
+  ];
+  $printSettings = is_array($settings['printSettings'] ?? null) ? $settings['printSettings'] : [];
+  $settings['printSettings'] = [
+    'autoPrint' => (bool)($printSettings['autoPrint'] ?? false),
+    'doublePrint' => (bool)($printSettings['doublePrint'] ?? false)
+  ];
+  $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];
+  $settings['customNumberTicketSettings'] = egmStoreNormalizeTicketSettings($ticketSettings);
   $storedColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
   $settings['eventName'] = is_string($settings['eventName'] ?? null) ? trim(preg_replace('/\s+/u', ' ', $settings['eventName'])) : '';
   $settings['eventLogo'] = trim((string)($settings['eventLogo'] ?? ''));
@@ -1505,6 +1564,8 @@ if ($action === 'save_settings') {
     exit;
   }
   $storedSettings = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
+  $storedAdminPasscode = is_array($storedSettings['adminPasscode'] ?? null) ? $storedSettings['adminPasscode'] : [];
+  $incomingAdminPasscode = is_array($incomingSettings['adminPasscode'] ?? null) ? $incomingSettings['adminPasscode'] : [];
   $settings = array_merge(is_array($storedSettings) ? $storedSettings : [], $incomingSettings);
   $settings['duration'] = egmStoreNormalizeBool($settings['duration'] ?? false);
   $settings['active'] = $settings['duration'] ? false : egmStoreNormalizeBool($settings['active'] ?? false);
@@ -1513,6 +1574,33 @@ if ($action === 'save_settings') {
   $settings['hintAlign'] = is_string($settings['hintAlign'] ?? null) ? trim($settings['hintAlign']) : 'right';
   $settings['maintenanceMode'] = egmStoreNormalizeBool($settings['maintenanceMode'] ?? false);
   $settings['eventAccessLocked'] = egmStoreNormalizeBool($settings['eventAccessLocked'] ?? false);
+  $adminHash = trim((string)($storedAdminPasscode['hash'] ?? ''));
+  $newAdminCode = trim((string)($incomingAdminPasscode['code'] ?? ''));
+  if ($newAdminCode !== '') {
+    if (!preg_match('/^\d{4,6}$/', $newAdminCode)) {
+      http_response_code(422);
+      echo json_encode(['status' => 'error', 'message' => 'Admin Passcode must contain 4 to 6 digits.']);
+      exit;
+    }
+    $adminHash = password_hash($newAdminCode, PASSWORD_DEFAULT);
+  }
+  $storedPageLocks = is_array($storedAdminPasscode['pageLocks'] ?? null) ? $storedAdminPasscode['pageLocks'] : [];
+  $settings['adminPasscode'] = [
+    'hash' => $adminHash,
+    'pageLocks' => [
+      'scan' => egmStoreNormalizeBool($storedPageLocks['scan'] ?? false),
+      'event-info' => egmStoreNormalizeBool($storedPageLocks['event-info'] ?? false),
+      'printer' => egmStoreNormalizeBool($storedPageLocks['printer'] ?? false),
+      'settings' => egmStoreNormalizeBool($storedPageLocks['settings'] ?? false),
+    ],
+  ];
+  $printSettings = is_array($settings['printSettings'] ?? null) ? $settings['printSettings'] : [];
+  $settings['printSettings'] = [
+    'autoPrint' => egmStoreNormalizeBool($printSettings['autoPrint'] ?? false),
+    'doublePrint' => egmStoreNormalizeBool($printSettings['doublePrint'] ?? false)
+  ];
+  $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];
+  $settings['customNumberTicketSettings'] = egmStoreNormalizeTicketSettings($ticketSettings);
   $incomingColors = is_array($settings['eventColors'] ?? null) ? $settings['eventColors'] : [];
   $eventName = is_string($settings['eventName'] ?? null) ? trim(preg_replace('/\s+/u', ' ', $settings['eventName'])) : '';
   $settings['eventName'] = function_exists('mb_substr') ? mb_substr($eventName, 0, 120, 'UTF-8') : substr($eventName, 0, 120);

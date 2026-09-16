@@ -18,6 +18,7 @@ function egmPeriodExportTypes(): array
         'user_conditions' => 'وضعیت همه کاربران',
         'correct_presence' => 'حضور واقعی',
         'fake_presence' => 'حضوری نامعقول',
+        'ticket_numbers' => 'گزارش تعداد بلیت‌ها',
     ];
 }
 
@@ -85,7 +86,8 @@ SELECT
   p.`status` AS `period_status`, p.`invitation_source`, p.`invited_at`, p.`entered_date`, p.`entered_time`,
   p.`quit_date`, p.`quit_time`, p.`correct_presence`, p.`fake_presence`, p.`attendance_state`, p.`last_control_condition`, p.`last_control_action`,
   p.`last_control_message`, p.`last_control_at`, p.`is_uninvited_guest` AS `period_is_uninvited_guest`,
-  p.`uninvited_registered_at`, p.`uninvited_registered_by`
+  p.`uninvited_registered_at`, p.`uninvited_registered_by`, p.`number_of_ticket`,
+  p.`ticket_numbers_json`, p.`ticket_number_recorded_at`
 FROM `{$periodsTable}` p
 JOIN `{$usersTable}` u ON u.`id` = p.`user_id`
 WHERE p.`period_code` = :period_code
@@ -177,9 +179,107 @@ function egmPeriodExportMainRecord(array $row, ?string $condition = null): array
     ];
 }
 
-/** @return array<int,array<string,string>> */
-function egmPeriodExportRecords(string $type, array $guestRows, array $logRows = []): array
+/** @return array<int,array{id:string,title:string}> */
+function egmPeriodExportTicketDefinitions(array $context, array $guestRows): array
 {
+    $settings = egmInstanceReadData($context['pdo'], (string)$context['code'], 'settings', []);
+    $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null)
+        ? $settings['customNumberTicketSettings']
+        : [];
+    $rawDefinitions = is_array($ticketSettings['tickets'] ?? null) ? $ticketSettings['tickets'] : [];
+    $definitions = [];
+    $seen = [];
+    foreach (array_slice($rawDefinitions, 0, 20) as $index => $definition) {
+        if (!is_array($definition)) continue;
+        $id = strtolower(trim((string)($definition['id'] ?? '')));
+        $id = preg_replace('/[^a-z0-9_-]+/', '-', $id) ?? '';
+        if ($id === '' || isset($seen[$id])) continue;
+        $title = trim((string)($definition['title'] ?? '')) ?: ('Ticket ' . ($index + 1));
+        $definitions[] = ['id' => $id, 'title' => $title];
+        $seen[$id] = true;
+    }
+    foreach ($guestRows as $row) {
+        $stored = json_decode((string)($row['ticket_numbers_json'] ?? ''), true);
+        if (!is_array($stored)) continue;
+        foreach (array_keys($stored) as $rawId) {
+            $id = strtolower(trim((string)$rawId));
+            $id = preg_replace('/[^a-z0-9_-]+/', '-', $id) ?? '';
+            if ($id === '' || isset($seen[$id])) continue;
+            $definitions[] = ['id' => $id, 'title' => $id];
+            $seen[$id] = true;
+        }
+    }
+    if ($definitions === []) $definitions[] = ['id' => 'default', 'title' => 'Custom Number Ticket'];
+    return $definitions;
+}
+
+/** @return array<string,int> */
+function egmPeriodExportTicketValues(array $row): array
+{
+    $stored = json_decode((string)($row['ticket_numbers_json'] ?? ''), true);
+    if (!is_array($stored)) $stored = [];
+    if (!array_key_exists('default', $stored) && trim((string)($row['number_of_ticket'] ?? '')) !== '') {
+        $stored['default'] = $row['number_of_ticket'];
+    }
+    $values = [];
+    foreach ($stored as $id => $value) {
+        $digits = trim((string)$value);
+        if (preg_match('/^[0-9]+$/D', $digits) !== 1) continue;
+        $values[(string)$id] = strlen(ltrim($digits, '0')) > 18 ? PHP_INT_MAX : (int)$digits;
+    }
+    return $values;
+}
+
+/** @param array<int,array{id:string,title:string}> $ticketDefinitions
+ *  @return array<int,array<string,string>>
+ */
+function egmPeriodExportTicketRecords(array $guestRows, array $ticketDefinitions): array
+{
+    $records = [];
+    $totals = array_fill_keys(array_column($ticketDefinitions, 'id'), 0);
+    $grandTotal = 0;
+    foreach ($guestRows as $row) {
+        $hasEntry = trim((string)($row['entered_date'] ?? '')) !== ''
+            && trim((string)($row['entered_time'] ?? '')) !== '';
+        if (!$hasEntry) continue;
+        $values = egmPeriodExportTicketValues($row);
+        $record = [
+            'نام و نام خانوادگی' => trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? '')),
+            'کد ملی' => trim((string)($row['national_id'] ?? '')),
+            'کد پرسنلی' => trim((string)($row['work_id'] ?? '')),
+            'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),
+        ];
+        $userTotal = 0;
+        foreach ($ticketDefinitions as $definition) {
+            $value = max(0, (int)($values[$definition['id']] ?? 0));
+            $record['تعداد: ' . $definition['title']] = (string)$value;
+            $totals[$definition['id']] = min(PHP_INT_MAX, $totals[$definition['id']] + $value);
+            $userTotal = min(PHP_INT_MAX, $userTotal + $value);
+        }
+        $record['جمع بلیت‌های کاربر'] = (string)$userTotal;
+        $grandTotal = min(PHP_INT_MAX, $grandTotal + $userTotal);
+        $records[] = $record;
+    }
+    $totalRecord = [
+        'نام و نام خانوادگی' => 'جمع کل',
+        'کد ملی' => '',
+        'کد پرسنلی' => '',
+        'شماره مهمان' => '',
+    ];
+    foreach ($ticketDefinitions as $definition) {
+        $totalRecord['تعداد: ' . $definition['title']] = (string)($totals[$definition['id']] ?? 0);
+    }
+    $totalRecord['جمع بلیت‌های کاربر'] = (string)$grandTotal;
+    $records[] = $totalRecord;
+    return $records;
+}
+
+/** @return array<int,array<string,string>> */
+function egmPeriodExportRecords(string $type, array $guestRows, array $logRows = [], array $ticketDefinitions = []): array
+{
+    if ($type === 'ticket_numbers') {
+        return egmPeriodExportTicketRecords($guestRows, $ticketDefinitions);
+    }
     if ($type === 'full_log') {
         return array_map(static function (array $row): array {
             $condition = trim((string)($row['log_condition'] ?? '')) ?: 'not_started';
@@ -346,7 +446,8 @@ function egmPeriodExportBuild(array $context, string $periodCode, string $type):
     }
     $guestRows = egmPeriodExportGuestRows($context, $periodCode);
     $logRows = $type === 'full_log' ? egmPeriodExportLogRows($context, $periodCode) : [];
-    $records = egmPeriodExportRecords($type, $guestRows, $logRows);
+    $ticketDefinitions = $type === 'ticket_numbers' ? egmPeriodExportTicketDefinitions($context, $guestRows) : [];
+    $records = egmPeriodExportRecords($type, $guestRows, $logRows, $ticketDefinitions);
     $sheetName = $types[$type];
     $xml = egmPeriodExportSpreadsheetXml($sheetName, $records);
     $filename = egmExportPeriodDatedFilename($sheetName, $periodDate);
