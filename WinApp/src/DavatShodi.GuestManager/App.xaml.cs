@@ -32,6 +32,10 @@ public partial class App : Application
             // The actionable URL and file name are included in the error below.
         }
         MessageBox.Show($"ApiUrl در فایل زیر معتبر نیست:\n{path}", "تنظیمات برنامه", MessageBoxButton.OK, MessageBoxImage.Error);
+#if ONLINE_RELEASE
+        return "https://davatshodi.ir/api/winapp.php";
+#else
         return "http://localhost/DavatShodi/api/winapp.php";
+#endif
     }
 }

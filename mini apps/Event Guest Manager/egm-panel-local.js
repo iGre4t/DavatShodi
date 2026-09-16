@@ -1,12 +1,14 @@
 (() => {
-  const TASKS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/EGMT.php';
-  const PERIOD_INVITES_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invites.php';
-  const PERIOD_INVITE_CARDS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_invite_cards.php';
-  const PERIOD_EXPORTS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/period_exports.php';
-  const GROUPS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/groups.php';
-  const GUEST_CONTROL_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/check-in.php';
+  const scriptUrl = document.currentScript?.src;
+  const eventEndpoint = (file, fallback) => scriptUrl ? new URL(file, scriptUrl).href : fallback;
+  const TASKS_ENDPOINT = eventEndpoint('EGMT.php', 'mini%20apps/Event%20Guest%20Manager/EGMT.php');
+  const PERIOD_INVITES_ENDPOINT = eventEndpoint('period_invites.php', 'mini%20apps/Event%20Guest%20Manager/period_invites.php');
+  const PERIOD_INVITE_CARDS_ENDPOINT = eventEndpoint('period_invite_cards.php', 'mini%20apps/Event%20Guest%20Manager/period_invite_cards.php');
+  const PERIOD_EXPORTS_ENDPOINT = eventEndpoint('period_exports.php', 'mini%20apps/Event%20Guest%20Manager/period_exports.php');
+  const GROUPS_ENDPOINT = eventEndpoint('groups.php', 'mini%20apps/Event%20Guest%20Manager/groups.php');
+  const GUEST_CONTROL_ENDPOINT = eventEndpoint('check-in.php', 'mini%20apps/Event%20Guest%20Manager/check-in.php');
   const INVITE_CARD_QR_ENDPOINT = 'modules/minor/QR%20Code%20Generator/generate.php';
-  const LOGS_ENDPOINT = 'mini%20apps/Event%20Guest%20Manager/egm_logs.php';
+  const LOGS_ENDPOINT = eventEndpoint('egm_logs.php', 'mini%20apps/Event%20Guest%20Manager/egm_logs.php');
   const EGM_TASKS_CHANGED_HANDLER_KEY = '__egmPanelTasksChangedHandler';
   const egmShellEl = document.querySelector('.egm-shell');
   const TASK_CLUB_CSRF = egmShellEl instanceof HTMLElement
@@ -3369,8 +3371,11 @@
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, csrf: TASK_CLUB_CSRF, ...payload })
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || 'ساخت کارت‌های دعوت ناموفق بود.');
+    const body = await response.text();
+    let data;
+    try { data = JSON.parse(body); }
+    catch { throw new Error(`سرور به‌جای JSON یک پاسخ غیرمنتظره با کد ${response.status} فرستاد؛ متن اصلی خطا ممکن است توسط هاست جایگزین شده باشد.`); }
+    if (!response.ok || data?.status !== 'ok') throw new Error(data?.message || `ساخت کارت‌های دعوت ناموفق بود (HTTP ${response.status}).`);
     return data;
   }
 
@@ -3547,7 +3552,35 @@
     return data;
   }
 
-  async function generatePeriodInviteCards(pane) {
+  function renderPeriodCardProblems(pane, prepared) {
+    pane.querySelector('[data-card-validation-report]')?.remove();
+    const box = document.createElement('div');
+    box.dataset.cardValidationReport = '1';
+    box.className = 'card';
+    const heading = document.createElement('strong');
+    heading.textContent = prepared.message || 'مشکلات ساخت کارت';
+    box.append(heading);
+    const list = document.createElement('div');
+    list.style.cssText = 'max-height:260px;overflow:auto;margin:12px 0';
+    for (const problem of prepared.problems || []) {
+      const row = document.createElement('p');
+      row.textContent = `${problem.name || 'کاربر #' + problem.user_id}${problem.work_id ? ' — کد پرسنلی: ' + problem.work_id : ''}: ${problem.reason}`;
+      list.append(row);
+    }
+    box.append(list);
+    if (prepared.can_skip) {
+      const skip = document.createElement('button');
+      skip.type = 'button'; skip.className = 'btn primary';
+      skip.textContent = 'نادیده گرفتن این مهمان‌ها و ساخت کارت بقیه';
+      skip.addEventListener('click', () => {
+        if (window.confirm('برای مهمان‌های دارای مشکل کارت یا QR ساخته نمی‌شود. دعوت آن‌ها حذف نمی‌شود و بعد از اصلاح اطلاعات می‌توانید دوباره ساخت کارت را اجرا کنید. ادامه می‌دهید؟')) void generatePeriodInviteCards(pane, true);
+      });
+      box.append(skip);
+    }
+    pane.querySelector('[data-period-invite-card-status]')?.after(box);
+  }
+
+  async function generatePeriodInviteCards(pane, skipInvalid = false) {
     const state = getPeriodInviteState(pane);
     if (state.inviteCardRunning) return;
     const button = pane.querySelector('[data-period-invite-card-generate]');
@@ -3566,7 +3599,13 @@
         }
       }
       if (status) status.textContent = 'در حال آماده‌سازی کدهای امن...';
-      const prepared = await requestPeriodInviteCards('prepare', { period_code: periodCode, regenerate }, 'POST');
+      const prepared = await requestPeriodInviteCards('prepare', { period_code: periodCode, regenerate, skip_invalid: skipInvalid }, 'POST');
+      if (prepared.validation_error) {
+        renderPeriodCardProblems(pane, prepared);
+        if (status) status.textContent = prepared.message;
+        return;
+      }
+      pane.querySelector('[data-card-validation-report]')?.remove();
       const config = prepared.configuration;
       renderPeriodInviteCardProgress(pane, prepared, 'ساخت کارت‌ها آغاز شد...');
       if (!window.EGMInviteCardRenderer || typeof window.EGMInviteCardRenderer.render !== 'function') {
@@ -3576,15 +3615,21 @@
         const batch = await requestPeriodInviteCards('next_batch', { period_code: periodCode, limit: '3' });
         const rows = Array.isArray(batch.rows) ? batch.rows : [];
         if (!rows.length) {
-          renderPeriodInviteCardProgress(pane, batch, batch.total > 0 ? 'همه کارت‌های دعوت با موفقیت ساخته شدند.' : 'دعوت‌شونده‌ای وجود ندارد.');
+          renderPeriodInviteCardProgress(pane, batch, Number(batch.skipped || 0) > 0
+            ? `ساخت کارت‌ها پایان یافت؛ ${batch.generated} کارت ساخته شد و ${batch.skipped} مهمان دارای مشکل نادیده گرفته شدند.`
+            : batch.total > 0 ? 'همه کارت‌های دعوت با موفقیت ساخته شدند.' : 'دعوت‌شونده‌ای وجود ندارد.');
           break;
         }
         for (const [batchIndex, invitee] of rows.entries()) {
+          try {
           if (status) status.textContent = `در حال ساخت کارت ${Number(batch.generated || 0) + batchIndex + 1} از ${batch.total}...`;
           const rendered = await window.EGMInviteCardRenderer.render(config, invitee, String(invitee.nationalId || invitee.workId || ''), {
             qrEndpoint: INVITE_CARD_QR_ENDPOINT, mimeType: 'image/jpeg', quality: 0.92
           });
           await uploadPeriodInviteCard(pane, periodCode, invitee, rendered.blob);
+          } catch (error) {
+            throw new Error(`خطا برای ${[invitee.firstName, invitee.lastName].filter(Boolean).join(' ') || invitee.id} (کد پرسنلی: ${invitee.workId || '—'}): ${error?.message || 'ساخت یا ذخیره کارت ناموفق بود.'}`);
+          }
         }
       }
     } catch (error) {

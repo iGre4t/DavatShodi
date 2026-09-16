@@ -174,7 +174,7 @@ function egmPeriodInviteCardsNormalizeWorkId($value): string
     return preg_match('/^[0-9]{4,9}$/D', $workId) === 1 ? $workId : '';
 }
 
-function egmPeriodInviteCardsAssertQrIdentifiers(array $context, string $periodCode): void
+function egmPeriodInviteCardsQrProblems(array $context, string $periodCode): array
 {
     $periodsTable = (string)$context['tables']['user_periods'];
     $usersTable = (string)$context['tables']['users'];
@@ -213,6 +213,7 @@ function egmPeriodInviteCardsAssertQrIdentifiers(array $context, string $periodC
     $update = $context['pdo']->prepare("UPDATE `{$usersTable}` SET `national_id` = :national_id WHERE `id` = :id");
     $invalid = 0;
     $invalidLabels = [];
+    $problems = [];
     foreach ($invitees as $invitee) {
         if (egmPeriodInviteCardsNormalizeNationalId($invitee['national_id'] ?? '') !== '') {
             continue;
@@ -241,7 +242,17 @@ function egmPeriodInviteCardsAssertQrIdentifiers(array $context, string $periodC
         $invalidLabels[] = $name !== ''
             ? $name . ($workId !== '' ? " (کد پرسنلی {$workId})" : '')
             : ($workId !== '' ? "کد پرسنلی {$workId}" : "کاربر #" . (int)$invitee['id']);
+        $problems[] = ['user_id'=>(int)$invitee['id'], 'name'=>$name, 'work_id'=>$workId,
+            'reason'=>'کد ملی ۱۰ رقمی یا کد پرسنلی عددی ۴ تا ۹ رقمی موجود نیست؛ QR و کارت این مهمان ساخته نمی‌شود.'];
     }
+    return $problems;
+}
+
+function egmPeriodInviteCardsAssertQrIdentifiers(array $context, string $periodCode): void
+{
+    $problems = egmPeriodInviteCardsQrProblems($context, $periodCode);
+    $invalid = count($problems);
+    $invalidLabels = array_map(static fn(array $row): string => $row['name'] ?: ('کاربر #' . $row['user_id']), $problems);
     if ($invalid > 0) {
         $examples = implode('، ', array_slice($invalidLabels, 0, 10));
         throw new InvalidArgumentException(
@@ -253,6 +264,7 @@ function egmPeriodInviteCardsAssertQrIdentifiers(array $context, string $periodC
 
 function egmPeriodInviteCardsSummary(array $context, string $periodCode): array
 {
+    $skipIds = egmPeriodInviteCardsSkippedIds($context, $periodCode);
     $table = (string)$context['tables']['user_periods'];
     $statement = $context['pdo']->prepare(
         "SELECT COUNT(*) AS `total`, "
@@ -263,12 +275,19 @@ function egmPeriodInviteCardsSummary(array $context, string $periodCode): array
     $row = $statement->fetch(PDO::FETCH_ASSOC) ?: [];
     $total = max(0, (int)($row['total'] ?? 0));
     $generated = max(0, min($total, (int)($row['generated'] ?? 0)));
+    $skipped = 0;
+    if ($skipIds !== []) {
+        $skipStatement = $context['pdo']->prepare("SELECT COUNT(*) FROM `{$table}` WHERE period_code=:period AND user_id IN (" . implode(',', $skipIds) . ") AND invite_card_generated_at IS NULL");
+        $skipStatement->execute([':period'=>$periodCode]);
+        $skipped = (int)$skipStatement->fetchColumn();
+    }
     $configuration = egmInstanceReadData($context['pdo'], $context['code'], 'invite_card', null);
     $periodBackground = egmPeriodInviteCardsBackground($context, $periodCode, false);
     return [
         'total' => $total,
         'generated' => $generated,
-        'pending' => max(0, $total - $generated),
+        'pending' => max(0, $total - $generated - $skipped),
+        'skipped' => $skipped,
         'percent' => $total > 0 ? (int)floor(($generated * 100) / $total) : 0,
         'configuration_ready' => is_array($configuration)
             && $periodBackground['source'] !== 'none'
@@ -279,13 +298,27 @@ function egmPeriodInviteCardsSummary(array $context, string $periodCode): array
     ];
 }
 
-function egmPeriodInviteCardsPrepare(array $context, string $periodCode, bool $regenerate): array
+function egmPeriodInviteCardsSkippedIds(array $context, string $periodCode): array
+{
+    return array_values(array_filter(array_map('intval', $_SESSION['egm_card_skips'][$context['code']][$periodCode] ?? []), static fn(int $id): bool => $id > 0));
+}
+
+function egmPeriodInviteCardsPrepare(array $context, string $periodCode, bool $regenerate, bool $skipInvalid = false): array
 {
     $configuration = egmPeriodInviteCardsConfiguration($context, $periodCode);
     if (!is_array($configuration) || trim((string)($configuration['imageData'] ?? '')) === '') {
         throw new InvalidArgumentException('ابتدا تنظیمات کارت دعوت EGM و تصویر پس‌زمینه را ذخیره کنید.');
     }
-    egmPeriodInviteCardsAssertQrIdentifiers($context, $periodCode);
+    if (!is_array($configuration['qrRect'] ?? null) || !is_array($configuration['textRect'] ?? null)) {
+        throw new InvalidArgumentException('محدوده QR یا متن کارت دعوت تنظیم نشده است؛ در تب کارت دعوت، جای QR و متن را مشخص و ذخیره کنید.');
+    }
+    if (!$skipInvalid) $_SESSION['egm_card_skips'][$context['code']][$periodCode] = [];
+    $problems = egmPeriodInviteCardsQrProblems($context, $periodCode);
+    if ($problems !== [] && !$skipInvalid) {
+        return ['validation_error'=>true, 'message'=>count($problems) . ' مهمان شناسه معتبر برای QR ندارند.', 'problems'=>$problems, 'can_skip'=>true];
+    }
+    $skipIds = array_column($problems, 'user_id');
+    $_SESSION['egm_card_skips'][$context['code']][$periodCode] = $skipIds;
     $pdo = $context['pdo'];
     $periodsTable = (string)$context['tables']['user_periods'];
     ensureEgmInviteCardRoutesTable($pdo);
@@ -311,6 +344,7 @@ function egmPeriodInviteCardsPrepare(array $context, string $periodCode, bool $r
             $reset->execute([':period_code' => $periodCode]);
         }
         foreach ($rows as $row) {
+            if (in_array((int)$row['user_id'], $skipIds, true)) continue;
             $inviteCode = trim((string)($row['invite_card_code'] ?? ''));
             if ($inviteCode === '') {
                 $inviteCode = egmInviteCardAllocateCode($pdo, $context['code'], $periodCode);
@@ -344,13 +378,15 @@ function egmPeriodInviteCardsNextBatch(array $context, string $periodCode, int $
     $limit = max(1, min(10, $limit));
     $periodsTable = (string)$context['tables']['user_periods'];
     $usersTable = (string)$context['tables']['users'];
+    $skipIds = egmPeriodInviteCardsSkippedIds($context, $periodCode);
+    $skipSql = $skipIds === [] ? '' : ' AND p.user_id NOT IN (' . implode(',', $skipIds) . ')';
     $statement = $context['pdo']->prepare(
         "SELECT p.`user_id`, p.`invite_card_code`, u.`work_id`, u.`first_name`, u.`last_name`, "
         . "u.`national_id`, u.`phone_number`, u.`deputy`, u.`general_department`, u.`department`, "
         . "u.`gender`, u.`postal_level`, u.`guest_number`, u.`total_score` "
         . "FROM `{$periodsTable}` p INNER JOIN `{$usersTable}` u ON u.`id` = p.`user_id` "
         . "WHERE p.`period_code` = :period_code AND p.`invite_card_code` IS NOT NULL "
-        . "AND p.`invite_card_generated_at` IS NULL ORDER BY p.`id` LIMIT {$limit}"
+        . "AND p.`invite_card_generated_at` IS NULL {$skipSql} ORDER BY p.`id` LIMIT {$limit}"
     );
     $statement->execute([':period_code' => $periodCode]);
     $rows = array_map(static function (array $row): array {
@@ -601,7 +637,8 @@ function handleEgmPeriodInviteCardsRequest(string $missionDir): void
         }
         if ($action === 'prepare' && $method === 'POST') {
             egmPeriodInvitesJson(['status' => 'ok'] + egmPeriodInviteCardsPrepare(
-                $context, $periodCode, filter_var($input['regenerate'] ?? false, FILTER_VALIDATE_BOOLEAN)
+                $context, $periodCode, filter_var($input['regenerate'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                filter_var($input['skip_invalid'] ?? false, FILTER_VALIDATE_BOOLEAN)
             ));
         }
         if ($action === 'save_period_background' && $method === 'POST') {
@@ -655,9 +692,11 @@ function handleEgmPeriodInviteCardsRequest(string $missionDir): void
         }
         egmPeriodInvitesJson(['status' => 'error', 'message' => 'عملیات پشتیبانی نمی‌شود.'], 400);
     } catch (InvalidArgumentException $error) {
-        egmPeriodInvitesJson(['status' => 'error', 'message' => $error->getMessage()], 422);
+        // Business validation uses HTTP 200 so proxies preserve the exact JSON message.
+        egmPeriodInvitesJson(['status' => 'error', 'validation_error'=>true, 'message' => $error->getMessage()]);
     } catch (Throwable $error) {
-        error_log('EGM period invite cards failed: ' . $error->getMessage());
-        egmPeriodInvitesJson(['status' => 'error', 'message' => 'ساخت کارت‌های دعوت ناموفق بود.'], 500);
+        $reference = bin2hex(random_bytes(6));
+        error_log('EGM period invite cards [' . $reference . '] action=' . ($action ?? '') . ' period=' . ($periodCode ?? '') . ': ' . $error->getMessage());
+        egmPeriodInvitesJson(['status' => 'error', 'error_reference'=>$reference, 'message' => 'خطای داخلی سرور در مرحله «' . ($action ?? 'شروع') . '». کد پیگیری: ' . $reference . '؛ جزئیات در لاگ PHP ثبت شد.']);
     }
 }
