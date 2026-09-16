@@ -281,9 +281,10 @@ $egmGroupsJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../../assets/egm-group
       </label>
     </div>
     <div class="card" style="margin-top:12px">
-      <div class="section-header"><h3>بلیت‌های شماره‌دار</h3><button type="button" class="btn ghost" id="egm-add-ticket-type">افزودن بلیت</button></div>
+      <div class="section-header"><h3>بلیت‌های شماره‌دار</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn ghost" id="egm-add-ticket-type">افزودن بلیت</button><button type="button" class="btn primary standard-primary-button" id="egm-save-ticket-types">ذخیره بلیت‌ها</button></div></div>
       <div id="egm-ticket-types" class="form" style="gap:10px"></div>
       <p class="muted small">پس از ذخیره، صفحه را تازه‌سازی کنید تا تب طراحی جداگانه هر بلیت نمایش داده شود. عنوان در پنجره ورود شماره و تنظیمات چاپگر نسخه ویندوز نیز نمایش داده می‌شود.</p>
+      <p class="muted small" id="egm-ticket-types-status" role="status" aria-live="polite"></p>
     </div>
     <div class="card" style="margin-top:12px">
       <div class="section-header"><h3>Admin Passcode</h3><span class="muted small" id="egm-admin-passcode-state">تنظیم نشده</span></div>

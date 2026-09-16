@@ -1469,23 +1469,32 @@
         button.disabled = false;
       }
     });
-    getEl("egm-add-ticket-type")?.addEventListener("click", async event => {
-      const button = event.currentTarget;
+    getEl("egm-add-ticket-type")?.addEventListener("click", () => {
       const tickets = collectTicketTypes();
       tickets.push({ id: `ticket-${Date.now()}`, title: `Ticket ${tickets.length + 1}` });
       renderTicketTypes(tickets);
+      const input = getEl("egm-ticket-types")?.querySelector("[data-ticket-type-row]:last-child [data-ticket-title]");
+      if (input instanceof HTMLInputElement) input.focus();
+    });
+    getEl("egm-save-ticket-types")?.addEventListener("click", async event => {
+      const button = event.currentTarget;
+      const status = getEl("egm-ticket-types-status");
+      const original = button instanceof HTMLButtonElement ? button.textContent : "";
       if (button instanceof HTMLButtonElement) {
         button.disabled = true;
         button.textContent = "در حال ذخیره...";
       }
+      if (status) status.textContent = "";
       try {
         await saveSettings(collectSettings());
         try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
+        if (status) status.textContent = "بلیت‌ها ذخیره شدند؛ صفحه در حال تازه‌سازی است...";
         window.location.reload();
       } catch (error) {
+        if (status) status.textContent = error?.message || "ذخیره بلیت‌ها ناموفق بود.";
         if (button instanceof HTMLButtonElement) {
           button.disabled = false;
-          button.textContent = error?.message || "خطا در ذخیره";
+          button.textContent = original || "ذخیره بلیت‌ها";
         }
       }
     });
