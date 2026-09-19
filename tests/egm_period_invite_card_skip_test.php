@@ -33,6 +33,22 @@ try {
     skipAssert($repaired['skipped'] === 0 && $repaired['pending'] === 2, 'Corrected guest remained skipped');
     $pdo->exec("UPDATE `{$tables['user_periods']}` SET invite_card_generated_at=NOW(), invite_card_file='test.jpg'");
     skipAssert(egmPeriodInviteCardsNextBatch($context, '001', 10)['rows'] === [], 'Completed rows returned again');
+    $pdo->exec("UPDATE `{$tables['users']}` SET work_id='9195145245' WHERE id=" . $ids[1]);
+    $preview = egmPeriodPersonnelCopy($context, '001', false, '', 'test-admin');
+    skipAssert(count($preview['eligible']) === 1 && count($preview['skipped']) === 1, 'Transfer did not protect existing national IDs');
+    skipAssert($pdo->query("SELECT national_id FROM `{$tables['users']}` WHERE id=" . $ids[1])->fetchColumn() === null, 'Preview mutated guest');
+    $copied = egmPeriodPersonnelCopy($context, '001', true, $preview['token'], 'test-admin');
+    skipAssert($copied['copied'] === 1, 'Confirmed transfer failed');
+    $user = $pdo->query("SELECT national_id,work_id FROM `{$tables['users']}` WHERE id=" . $ids[1])->fetch(PDO::FETCH_ASSOC);
+    skipAssert($user['national_id'] === '9195145245' && $user['work_id'] === '9195145245', 'Personnel code was lost or not copied');
+    skipAssert($pdo->query("SELECT national_id FROM `{$tables['users']}` WHERE id=" . $ids[0])->fetchColumn() === '1234567890', 'Existing national ID overwritten');
+    $conflicts = egmPeriodPersonnelCopyPlan([
+        ['id'=>1,'national_id'=>null,'work_id'=>'9195145245'],
+        ['id'=>2,'national_id'=>'9195145245','work_id'=>'1234'],
+        ['id'=>3,'national_id'=>null,'work_id'=>'9120078237'],
+        ['id'=>4,'national_id'=>null,'work_id'=>'9120078237']
+    ], [1,3,4]);
+    skipAssert($conflicts['eligible'] === [] && count($conflicts['skipped']) === 3, 'Identity collisions accepted');
     echo "EGM period card validation/skip/resume test passed.\n";
 } finally {
     if ($pdo->inTransaction()) $pdo->rollBack();

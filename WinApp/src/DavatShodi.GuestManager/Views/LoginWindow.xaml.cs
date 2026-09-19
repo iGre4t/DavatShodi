@@ -46,7 +46,7 @@ public partial class LoginWindow : Window
     {
         BrandingManager.ApplyPrimaryColor(_branding);
         PanelNameText.Text = string.IsNullOrWhiteSpace(_branding.PanelName) ? "مدیریت مهمانان رویداد" : _branding.PanelName;
-        Title = $"ورود | {PanelNameText.Text}";
+        Title = "MCI Event Guest Manager";
         var logo = await BrandingManager.LoadLogoAsync(_api, _branding);
         BrandLogoImage.Source = logo;
         BrandLogoImage.Visibility = logo is null ? Visibility.Collapsed : Visibility.Visible;

@@ -61,6 +61,9 @@ public sealed class ApiClient : IDisposable
     public Task<AdminSecurityResponse> SetPageLockAsync(string eventCode, string pageKey, bool locked, string passcode) =>
         PostAsync<AdminSecurityResponse>(new { action = "set_page_lock", event_code = eventCode, page_key = pageKey, locked, passcode, csrf = _csrf });
 
+    public Task<EventStatusResponse> GetEventUpdatesAsync(string eventCode) =>
+        PostAsync<EventStatusResponse>(new { action = "event_updates", event_code = eventCode });
+
     public Task<ReprintOptionsResponse> GetReprintOptionsAsync(string eventCode, string guestCode, string periodCode) =>
         PostAsync<ReprintOptionsResponse>(new { action = "reprint_options", event_code = eventCode, guest_code = guestCode, period_code = periodCode });
 

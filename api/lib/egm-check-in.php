@@ -1242,11 +1242,45 @@ function egmCheckInRepairRegisteredWalkInEntries(array $context, string $periodC
  *
  * @return array{active:bool,period_code:string,total:int,invited_total:int,invited_entered:int,other_period_total:int,other_period_entered:int,other_period_inside:int,other_period_quit:int,walk_in_total:int,walk_in_entered:int,walk_in_inside:int,walk_in_quit:int,overall_total:int,overall_entered:int,overall_inside:int,overall_quit:int,entered:int,waiting:int,inside:int,quit:int,entry_percent:float,gender:array<string,array{total:int,entered:int,waiting:int,inside:int,quit:int}>}
  */
+function egmCheckInAddTicketQuantity(string $left, string $right): string
+{
+    $result = ''; $carry = 0; $i = strlen($left)-1; $j = strlen($right)-1;
+    while ($i >= 0 || $j >= 0 || $carry > 0) {
+        $sum = ($i >= 0 ? (int)$left[$i--] : 0) + ($j >= 0 ? (int)$right[$j--] : 0) + $carry;
+        $result = (string)($sum % 10) . $result; $carry = intdiv($sum, 10);
+    }
+    return ltrim($result, '0') ?: '0';
+}
+
+function egmCheckInTicketAndGroupStats(array $rows, array $tickets, array $groups): array
+{
+    $totals = []; $progress = [];
+    foreach ($tickets as $ticket) $totals[(string)$ticket['id']] = ['id'=>(string)$ticket['id'], 'title'=>$ticket['title'], 'sum'=>'0'];
+    foreach ($groups as $group) $progress[(string)$group['id']] = ['id'=>(string)$group['id'], 'title'=>$group['title'], 'total'=>0, 'entered'=>0];
+    foreach ($rows as $row) {
+        $entered = trim((string)($row['entered_date'] ?? '')) !== '' && trim((string)($row['entered_time'] ?? '')) !== '';
+        $groupId = trim((string)($row['group_id'] ?? ''));
+        if (isset($progress[$groupId])) { $progress[$groupId]['total']++; if ($entered) $progress[$groupId]['entered']++; }
+        if (!$entered) continue;
+        $numbers = json_decode((string)($row['ticket_numbers_json'] ?? ''), true);
+        if (!is_array($numbers)) $numbers = [];
+        if (!array_key_exists('default', $numbers) && trim((string)($row['number_of_ticket'] ?? '')) !== '') $numbers['default'] = $row['number_of_ticket'];
+        foreach ($numbers as $id=>$number) {
+            if (!isset($totals[$id]) || !is_scalar($number)) continue;
+            $digits = egmCheckInNormalizeDigits($number);
+            if ($digits !== '') $totals[$id]['sum'] = egmCheckInAddTicketQuantity($totals[$id]['sum'], $digits);
+        }
+    }
+    return ['ticket_totals'=>array_values($totals), 'groups'=>array_values($progress)];
+}
+
 function egmCheckInDashboardStats(array $context): array
 {
     $emptyGroup = static fn(): array => ['total' => 0, 'entered' => 0, 'waiting' => 0, 'inside' => 0, 'quit' => 0];
     $stats = [
         'active' => false,
+        'ticket_totals' => [],
+        'groups' => [],
         'period_code' => '',
         'total' => 0,
         'invited_total' => 0,
@@ -1371,6 +1405,11 @@ function egmCheckInDashboardStats(array $context): array
     $stats['entry_percent'] = $stats['total'] > 0
         ? round(($stats['entered'] / $stats['total']) * 100, 1)
         : 0.0;
+    $details = $pdo->prepare("SELECT group_id,entered_date,entered_time,number_of_ticket,ticket_numbers_json FROM `{$userPeriodsTable}` WHERE period_code=:period");
+    $details->execute([':period'=>$periodCode]);
+    $settings = egmInstanceReadData($pdo, (string)$context['code'], 'settings', []);
+    $definitions = egmCheckInTicketDefinitions(is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : []);
+    $stats = array_merge($stats, egmCheckInTicketAndGroupStats($details->fetchAll(PDO::FETCH_ASSOC), $definitions, egmGroupsRead($context)));
     return $stats;
 }
 

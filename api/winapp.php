@@ -399,6 +399,16 @@ try {
     $missionDirectory = winAppMissionDirectory($pdo, $eventCode);
     $access = winAppAccessPolicy($missionDirectory, $_SESSION['user']);
     $context = egmCheckInContext(dirname(__DIR__), $missionDirectory);
+    if ($method === 'POST' && $action === 'event_updates') {
+        // Read-only refresh: do not transmit receipt images or trigger print queues.
+        session_write_close();
+        winAppJson([
+            'status'=>'ok', 'access'=>$access, 'event'=>winAppEventSummary($context),
+            'stats'=>!empty($access['can_view_event_info']) ? egmCheckInDashboardStats($context) : null,
+            'logs'=>!empty($access['can_view_user_info']) ? egmCheckInRecentLogs($context, 30) : [],
+            'admin_security'=>winAppAdminSecurity($context),
+        ]);
+    }
     if ($method === 'POST' && $action === 'reprint_options') {
         if (empty($access['can_use_printer'])) winAppJson(['status'=>'error', 'message'=>'اجازه چاپ ندارید.'], 403);
         $guestCode = egmCheckInNormalizeGuestCode($payload['guest_code'] ?? '');

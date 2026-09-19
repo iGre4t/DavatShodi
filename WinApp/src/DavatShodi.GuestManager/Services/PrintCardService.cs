@@ -270,17 +270,41 @@ public static class PrintCardService
         var width = imageable?.ExtentWidth ?? dialog.PrintableAreaWidth;
         var height = imageable?.ExtentHeight ?? dialog.PrintableAreaHeight;
         if (width <= 0 || height <= 0) throw new InvalidOperationException("ابعاد قابل چاپ چاپگر معتبر نیست؛ اندازه کاغذ را در تنظیمات چاپگر بررسی کنید.");
-        var area = Math.Min(width, height);
-        var container = new Viewbox { Width = area, Height = area, Stretch = Stretch.Uniform, Child = (UIElement)visual };
         var pageWidth = dialog.PrintTicket.PageMediaSize?.Width ?? width;
         var pageHeight = dialog.PrintTicket.PageMediaSize?.Height ?? height;
+        var originX = imageable?.OriginWidth ?? 0;
+        var originY = imageable?.OriginHeight ?? 0;
+        if (paperWidthMillimeters is > 0)
+        {
+            // Roll drivers may validate a custom receipt back to a very long
+            // default form. Never use that form's height as the document size.
+            pageWidth = pageHeight = paperWidthMillimeters.Value / 25.4d * 96d;
+            dialog.PrintTicket.PageMediaSize = new PageMediaSize(pageWidth, pageHeight);
+            dialog.PrintTicket.PageScalingFactor = 100;
+            width = Math.Min(width, pageWidth - 2 * originX);
+            height = Math.Min(height, pageHeight - 2 * originY);
+            if (width <= 0 || height <= 0) throw new InvalidOperationException("حاشیه چاپگر با رسید ۷۵×۷۵ میلی‌متر سازگار نیست؛ فرم کاغذ چاپگر را بررسی کنید.");
+        }
+        var area = Math.Min(width, height);
+        var container = new Viewbox { Width = area, Height = area, Stretch = Stretch.Uniform, Child = (UIElement)visual };
         var page = new Canvas { Width = pageWidth, Height = pageHeight, Background = Brushes.White };
-        Canvas.SetLeft(container, (imageable?.OriginWidth ?? 0) + (width - area) / 2);
-        Canvas.SetTop(container, (imageable?.OriginHeight ?? 0) + (height - area) / 2);
+        Canvas.SetLeft(container, originX + (width - area) / 2);
+        Canvas.SetTop(container, originY + (height - area) / 2);
         page.Children.Add(container);
         page.Measure(new Size(pageWidth, pageHeight));
         page.Arrange(new Rect(0, 0, pageWidth, pageHeight));
-        dialog.PrintVisual(page, title);
+        if (paperWidthMillimeters is > 0)
+        {
+            var fixedPage = new System.Windows.Documents.FixedPage { Width = pageWidth, Height = pageHeight };
+            fixedPage.Children.Add(page);
+            var pageContent = new System.Windows.Documents.PageContent();
+            ((System.Windows.Markup.IAddChild)pageContent).AddChild(fixedPage);
+            var document = new System.Windows.Documents.FixedDocument();
+            document.DocumentPaginator.PageSize = new Size(pageWidth, pageHeight);
+            document.Pages.Add(pageContent);
+            dialog.PrintDocument(document.DocumentPaginator, title);
+        }
+        else dialog.PrintVisual(page, title);
         container.Child = null;
     }
 }

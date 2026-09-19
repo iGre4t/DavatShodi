@@ -2594,7 +2594,7 @@
         <div class="card egm-period-invite-card-generator">
           <div class="section-header"><div><h3>کارت دعوت بازه</h3><p class="muted small">برای تمام دعوت‌شدگان این بازه، کارت JPG اختصاصی و لینک امن ساخته می‌شود.</p></div></div>
           <p class="hint">طرح، متن و جای QR از تنظیمات «کارت دعوت» همین EGM خوانده می‌شود. هر کد یکتا به کد EGM و کد بازه ختم می‌شود.</p>
-          <div class="egm-period-actions"><button type="button" class="btn primary standard-primary-button" data-period-invite-card-generate>Generate Invite Cards</button><button type="button" class="btn" data-period-invite-card-export disabled>خروجی Excel لینک کارت‌ها</button><button type="button" class="btn ghost" data-period-invite-card-refresh>بازخوانی وضعیت</button></div>
+          <div class="egm-period-actions"><button type="button" class="btn primary standard-primary-button" data-period-invite-card-generate>Generate Invite Cards</button><button type="button" class="btn" data-period-invite-card-export disabled>خروجی Excel لینک کارت‌ها</button><button type="button" class="btn ghost" data-period-invite-card-refresh>بازخوانی وضعیت</button><button type="button" class="btn ghost" data-personnel-copy-preview>کپی کد پرسنلی در کد ملی خالی</button></div>
           <div class="egm-period-invite-card-progress" data-period-invite-card-progress-wrap>
             <progress max="100" value="0" data-period-invite-card-progress></progress>
             <div class="egm-period-list-footer"><strong><span data-period-invite-card-generated>0</span> از <span data-period-invite-card-total>0</span> کارت</strong><span class="muted"><span data-period-invite-card-percent>0</span>٪</span></div>
@@ -3552,6 +3552,51 @@
     return data;
   }
 
+  async function previewPersonnelCopy(pane) {
+    const button = pane.querySelector('[data-personnel-copy-preview]');
+    const status = pane.querySelector('[data-period-invite-card-status]');
+    if (getPeriodInviteState(pane).inviteCardRunning) return;
+    if (button) button.disabled = true;
+    try {
+      const preview = await requestPeriodInviteCards('preview_personnel_copy', { period_code: periodCodeForPane(pane) }, 'POST');
+      pane.querySelector('[data-personnel-copy-report]')?.remove();
+      const box = document.createElement('div');
+      box.dataset.personnelCopyReport = '1'; box.className = 'card';
+      const warning = document.createElement('p');
+      warning.textContent = 'هشدار: این شماره‌ها کد ملی واقعی نیستند. با تأیید شما در فیلد کد ملی ذخیره و در خروجی‌ها به همین عنوان نمایش داده می‌شوند. کد پرسنلی باقی می‌ماند؛ تغییر روی پرونده مهمان در تمام بازه‌های همین EGM اثر دارد، نه فقط این بازه.';
+      box.append(warning);
+      const list = document.createElement('div');
+      list.style.cssText = 'max-height:260px;overflow:auto;margin:12px 0';
+      for (const row of preview.eligible || []) {
+        const item = document.createElement('p'); item.textContent = `قابل کپی: ${row.name || row.user_id} — ${row.code}`; list.append(item);
+      }
+      for (const row of preview.skipped || []) {
+        const item = document.createElement('p'); item.textContent = `بدون تغییر: ${row.name || row.user_id} — ${row.reason}`; list.append(item);
+      }
+      box.append(list);
+      const apply = document.createElement('button'); apply.type = 'button'; apply.className = 'btn primary';
+      apply.textContent = `تأیید کپی برای ${preview.eligible?.length || 0} مهمان`;
+      apply.disabled = !preview.eligible?.length;
+      apply.addEventListener('click', async () => {
+        if (!window.confirm(`کد پرسنلی ${preview.eligible.length} مهمان در فیلد کد ملی خالی کپی شود؟ این مقدار کد ملی واقعی نیست و در خروجی‌ها به عنوان کد ملی نمایش داده می‌شود.`)) return;
+        apply.disabled = true;
+        try {
+          const result = await requestPeriodInviteCards('apply_personnel_copy', { period_code: periodCodeForPane(pane), token: preview.token }, 'POST');
+          if (status) status.textContent = `${result.copied} کد کپی شد. اکنون دوباره ساخت کارت را بزنید.`;
+          box.remove();
+          pane.querySelector('[data-card-validation-report]')?.remove();
+        } catch (error) {
+          if (status) status.textContent = error?.message || 'کپی ناموفق بود.';
+          apply.disabled = false;
+        }
+      });
+      box.append(apply);
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn ghost'; cancel.textContent = 'انصراف'; cancel.addEventListener('click', () => box.remove()); box.append(cancel);
+      status?.after(box);
+    } catch (error) { if (status) status.textContent = error?.message || 'بررسی ناموفق بود.'; }
+    finally { if (button) button.disabled = false; }
+  }
+
   function renderPeriodCardProblems(pane, prepared) {
     pane.querySelector('[data-card-validation-report]')?.remove();
     const box = document.createElement('div');
@@ -4262,6 +4307,7 @@
     const state = getPeriodInviteState(pane);
     void loadPeriodGroups(pane).then(() => loadPeriodInvitees(pane, state.inviteePage));
     pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
+    pane.querySelector('[data-personnel-copy-preview]')?.addEventListener('click', () => void previewPersonnelCopy(pane));
     pane.querySelector('[data-period-invite-card-export]')?.addEventListener('click', () => exportPeriodInviteCardLinks(pane));
     pane.querySelector('[data-period-invite-card-refresh]')?.addEventListener('click', () => void Promise.all([loadPeriodInviteCardStatus(pane), loadPeriodInviteCardBackground(pane)]));
     pane.querySelector('[data-period-invite-card-background-pick]')?.addEventListener('click', () => {

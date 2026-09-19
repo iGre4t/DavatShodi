@@ -106,6 +106,25 @@ public sealed class AttendanceStats
     [JsonPropertyName("waiting")] public int Waiting { get; set; }
     [JsonPropertyName("entry_percent")] public double EntryPercent { get; set; }
     [JsonPropertyName("gender")] public AttendanceGenderStats Gender { get; set; } = new();
+    [JsonPropertyName("ticket_totals")] public List<TicketTotalStats> TicketTotals { get; set; } = [];
+    [JsonPropertyName("groups")] public List<GroupEntryProgress> Groups { get; set; } = [];
+}
+
+public sealed class TicketTotalStats
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("title")] public string Title { get; set; } = "";
+    [JsonPropertyName("sum")] public string Sum { get; set; } = "0";
+}
+
+public sealed class GroupEntryProgress
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("title")] public string Title { get; set; } = "";
+    [JsonPropertyName("total")] public int Total { get; set; }
+    [JsonPropertyName("entered")] public int Entered { get; set; }
+    public int ProgressMaximum => Math.Max(1, Total);
+    public string Caption => $"{Entered:N0} از {Total:N0} • {(Total > 0 ? Entered * 100d / Total : 0):0}%";
 }
 
 public sealed class AttendanceGenderStats

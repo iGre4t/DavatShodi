@@ -20,6 +20,10 @@ public partial class App : Application
 
     private static string LoadApiUrl()
     {
+#if ONLINE_RELEASE
+        // Standalone online builds never require or read an external settings file.
+        return "https://davatshodi.ir/api/winapp.php";
+#else
         var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
         try
         {
@@ -32,9 +36,6 @@ public partial class App : Application
             // The actionable URL and file name are included in the error below.
         }
         MessageBox.Show($"ApiUrl در فایل زیر معتبر نیست:\n{path}", "تنظیمات برنامه", MessageBoxButton.OK, MessageBoxImage.Error);
-#if ONLINE_RELEASE
-        return "https://davatshodi.ir/api/winapp.php";
-#else
         return "http://localhost/DavatShodi/api/winapp.php";
 #endif
     }

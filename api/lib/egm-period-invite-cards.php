@@ -9,6 +9,58 @@ require_once __DIR__ . '/egm-export-filename.php';
 
 const EGM_PERIOD_INVITE_CARD_BACKGROUNDS_KEY = 'invite_card_period_backgrounds';
 
+function egmPeriodPersonnelCopyPlan(array $users, array $invitedIds): array
+{
+    $eligible = []; $skipped = [];
+    foreach ($users as $user) {
+        if (!in_array((int)$user['id'], $invitedIds, true)) continue;
+        $name = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
+        $code = egmPeriodInviteCardsNormalizeNationalId($user['work_id'] ?? '');
+        $reason = '';
+        if (trim((string)($user['national_id'] ?? '')) !== '') $reason = 'کد ملی از قبل ثبت شده؛ تغییر نمی‌کند.';
+        elseif ($code === '') $reason = 'کد پرسنلی باید دقیقاً ۱۰ رقم باشد.';
+        else foreach ($users as $other) {
+            if ((int)$other['id'] === (int)$user['id']) continue;
+            if (egmPeriodInviteCardsNormalizeNationalId($other['national_id'] ?? '') === $code
+                || egmPeriodInviteCardsNormalizeNationalId($other['work_id'] ?? '') === $code) {
+                $reason = 'این شماره با کد ملی یا کد پرسنلی مهمان دیگری تداخل دارد.'; break;
+            }
+        }
+        $row = ['user_id'=>(int)$user['id'], 'name'=>$name, 'code'=>$code, 'reason'=>$reason];
+        if ($reason === '') $eligible[] = $row; else $skipped[] = $row;
+    }
+    return ['eligible'=>$eligible, 'skipped'=>$skipped];
+}
+
+function egmPeriodPersonnelCopy(array $context, string $periodCode, bool $apply, string $token, string $actor): array
+{
+    $pdo = $context['pdo']; $tables = $context['tables'];
+    $pdo->beginTransaction();
+    try {
+        $users = $pdo->query("SELECT id,first_name,last_name,national_id,work_id FROM `{$tables['users']}` ORDER BY id FOR UPDATE")->fetchAll(PDO::FETCH_ASSOC);
+        $statement = $pdo->prepare("SELECT user_id FROM `{$tables['user_periods']}` WHERE period_code=:period");
+        $statement->execute([':period'=>$periodCode]);
+        $plan = egmPeriodPersonnelCopyPlan($users, array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN)));
+        if (!$apply) {
+            $token = bin2hex(random_bytes(20));
+            $_SESSION['egm_personnel_copy'][$token] = ['event'=>$context['code'], 'period'=>$periodCode, 'expires'=>time()+600, 'eligible'=>$plan['eligible']];
+            $pdo->commit();
+            return ['token'=>$token] + $plan;
+        }
+        $preview = $_SESSION['egm_personnel_copy'][$token] ?? [];
+        if (($preview['event'] ?? '') !== $context['code'] || ($preview['period'] ?? '') !== $periodCode || ($preview['expires'] ?? 0) < time()) throw new InvalidArgumentException('پیش‌نمایش منقضی شده؛ دوباره بررسی کنید.');
+        if (($preview['eligible'] ?? []) !== $plan['eligible']) throw new InvalidArgumentException('اطلاعات مهمان‌ها تغییر کرده؛ پیش‌نمایش را دوباره باز کنید.');
+        $update = $pdo->prepare("UPDATE `{$tables['users']}` SET national_id=:code WHERE id=:id AND (national_id IS NULL OR TRIM(national_id)='')");
+        foreach ($plan['eligible'] as $row) $update->execute([':code'=>$row['code'], ':id'=>$row['user_id']]);
+        egmInstanceWriteData($pdo, $context['code'], 'personnel_copy_' . substr($token,0,20), [
+            'actor'=>$actor, 'at'=>gmdate('c'), 'period'=>$periodCode, 'changes'=>$plan['eligible'], 'old_national_id'=>'empty', 'operation'=>'copy_personnel_to_national'
+        ]);
+        $pdo->commit();
+        unset($_SESSION['egm_personnel_copy'][$token]);
+        return ['copied'=>count($plan['eligible'])] + $plan;
+    } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
+}
+
 function egmPeriodInviteCardsBackgroundAsset(string $periodCode): string
 {
     return 'period_bg_' . substr(hash('sha256', $periodCode), 0, 20);
@@ -603,6 +655,11 @@ function handleEgmPeriodInviteCardsRequest(string $missionDir): void
             }
         }
         $periodCode = egmPeriodInvitesValidatePeriod($context, (string)($input['period_code'] ?? ''));
+        if ($method === 'POST' && in_array($action, ['preview_personnel_copy','apply_personnel_copy'], true)) {
+            $result = egmPeriodPersonnelCopy($context, $periodCode, $action === 'apply_personnel_copy',
+                (string)($input['token'] ?? ''), (string)($_SESSION['user']['code'] ?? ''));
+            egmPeriodInvitesJson(['status'=>'ok'] + $result);
+        }
         if ($action === 'status' && $method === 'GET') {
             egmPeriodInvitesJson(['status' => 'ok'] + egmPeriodInviteCardsSummary($context, $periodCode));
         }

@@ -9,6 +9,12 @@
     <AssemblyName>DavatShodi.GuestManager</AssemblyName>
     <RootNamespace>DavatShodi.GuestManager</RootNamespace>
     <ApplicationIcon>Assets\Brand\HamrahIcon.ico</ApplicationIcon>
+    <Title>MCI EGM</Title>
+    <AssemblyTitle>MCI EGM</AssemblyTitle>
+    <Product>MCI Event Guest Manager</Product>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OnlineRelease)' == 'true'">
+    <DefineConstants>$(DefineConstants);ONLINE_RELEASE</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
@@ -19,6 +25,7 @@
     <Resource Include="Assets\Brand\HamrahIcon.ico" />
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory Condition="'$(OnlineRelease)' == 'true'">Never</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 </Project>

@@ -31,6 +31,9 @@ public partial class MainWindow : Window
     private string _temporaryAdminPasscode = "";
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private bool _fullyQuitting;
+    private readonly System.Windows.Threading.DispatcherTimer _liveRefreshTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private bool _liveRefreshInFlight;
+    private long _foregroundRevision;
     private bool _fullscreen;
     private WindowStyle _previousWindowStyle;
     private ResizeMode _previousResizeMode;
@@ -66,7 +69,9 @@ public partial class MainWindow : Window
             }
             _fullscreen = !_fullscreen;
         };
-        Closed += (_, _) => _trayIcon?.Dispose();
+        _liveRefreshTimer.Tick += async (_, _) => await RefreshLiveAsync();
+        Closed += (_, _) => { _liveRefreshTimer.Stop(); _trayIcon?.Dispose(); };
+        Activated += async (_, _) => await RefreshLiveAsync();
     }
 
     private EventInfo? SelectedEvent => EventCombo.SelectedItem as EventInfo;
@@ -88,6 +93,7 @@ public partial class MainWindow : Window
                 string.Equals(item.Code, rememberedCode, StringComparison.OrdinalIgnoreCase)) ?? response.Events[0];
         }
         else ShowResult("هیچ رویداد EGM در دسترس نیست.", "error");
+        _liveRefreshTimer.Start();
     }
 
     private async Task ApplyBrandingAsync()
@@ -119,7 +125,7 @@ public partial class MainWindow : Window
     {
         BrandingManager.ApplyPrimaryColor(branding);
         var panelName = string.IsNullOrWhiteSpace(branding.PanelName) ? "DavatShodi" : branding.PanelName;
-        Title = $"{panelName} | EGM Guest Manager";
+        Title = "MCI Event Guest Manager";
         var logo = await BrandingManager.LoadLogoAsync(_api, branding);
         SidebarLogoImage.Source = logo;
         SidebarLogoImage.Visibility = logo is null ? Visibility.Collapsed : Visibility.Visible;
@@ -160,6 +166,31 @@ public partial class MainWindow : Window
         ApplyStatus(response);
         ShowResult(response.Event?.CanScan == true ? "شناسه مهمان را اسکن کنید." : "در حال حاضر بازه فعالی برای اسکن وجود ندارد.", response.Event?.CanScan == true ? "idle" : "error");
         ScanBox.Focus();
+    }
+
+    private async Task RefreshLiveAsync()
+    {
+        if (_liveRefreshInFlight || _busy || _switchingWindows || _fullyQuitting || !IsVisible || SelectedEvent is null) return;
+        _liveRefreshInFlight = true;
+        var eventCode = SelectedEvent.Code;
+        var revision = _foregroundRevision;
+        try
+        {
+            var response = await _api.GetEventUpdatesAsync(eventCode);
+            if (_busy || revision != _foregroundRevision || SelectedEvent?.Code != eventCode) return;
+            if (response.Status != "ok")
+            {
+                LiveSyncText.Text = $"همگام‌سازی قطع شد؛ تلاش مجدد — {response.Message}";
+                _liveRefreshTimer.Interval = TimeSpan.FromSeconds(5);
+                return;
+            }
+            response.PrintProfile = _printProfile;
+            ApplyStatus(response, liveRefresh: true);
+            LiveSyncText.Text = $"به‌روز: {DateTime.Now:HH:mm:ss} • همگام‌سازی هر ۲ ثانیه";
+            _liveRefreshTimer.Interval = TimeSpan.FromSeconds(2);
+        }
+        catch (Exception error) { LiveSyncText.Text = $"همگام‌سازی ناموفق؛ تلاش مجدد — {error.Message}"; }
+        finally { _liveRefreshInFlight = false; }
     }
 
     private async Task SubmitScanAsync()
@@ -244,6 +275,7 @@ public partial class MainWindow : Window
         var settingsPageWasOpen = SettingsPage.Visibility == Visibility.Visible;
         EventInfoNavButton.Visibility = access.CanViewEventInfo ? Visibility.Visible : Visibility.Collapsed;
         PrinterNavButton.Visibility = access.CanUsePrinter ? Visibility.Visible : Visibility.Collapsed;
+        ManualTicketButton.Visibility = access.CanUsePrinter ? Visibility.Visible : Visibility.Collapsed;
         SettingsNavButton.Visibility = access.CanManageSettings ? Visibility.Visible : Visibility.Collapsed;
         LogsPanel.Visibility = access.CanViewUserInfo ? Visibility.Visible : Visibility.Collapsed;
         HeaderEventText.Text = access.CanViewEventInfo
@@ -258,7 +290,7 @@ public partial class MainWindow : Window
         UpdatePageLockButtons();
     }
 
-    private void ApplyStatus(EventStatusResponse response)
+    private void ApplyStatus(EventStatusResponse response, bool liveRefresh = false)
     {
         if (response.AdminSecurity is not null)
         {
@@ -266,7 +298,7 @@ public partial class MainWindow : Window
             UpdatePageLockButtons();
         }
         _printProfile = response.PrintProfile ?? new PrintProfile();
-        ApplyPrintSettings(_printProfile);
+        if (!liveRefresh) ApplyPrintSettings(_printProfile);
         ApplyAccess(response.Access);
         var state = response.Event;
         _currentPeriodCode = state?.PeriodCode ?? "";
@@ -280,6 +312,11 @@ public partial class MainWindow : Window
         PhaseText.Foreground = new SolidColorBrush(canScan ? Color.FromRgb(8, 116, 67) : Color.FromRgb(102, 112, 133));
         ScanBox.IsEnabled = state?.CanScan == true;
         var stats = response.Stats ?? new AttendanceStats();
+        TicketTotalsItems.ItemsSource = stats.TicketTotals;
+        RefreshManualTicketTotals();
+        GroupProgressItems.ItemsSource = stats.Groups;
+        TicketTotalsEmpty.Visibility = stats.TicketTotals.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        GroupProgressEmpty.Visibility = stats.Groups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         var invitedTotal = stats.InvitedTotal > 0 ? stats.InvitedTotal : stats.Total;
         var invitedEntered = Math.Min(invitedTotal, Math.Max(0, stats.InvitedEntered));
         EntrySummaryText.Text = $"{invitedEntered:N0} از {invitedTotal:N0} نفر دعوت‌شده";
@@ -333,9 +370,82 @@ public partial class MainWindow : Window
 
     private void SetBusy(bool busy)
     {
+        if (busy) _foregroundRevision++;
         _busy = busy;
         EventCombo.IsEnabled = !busy;
+        ManualTicketButton.IsEnabled = !busy && SelectedEvent is not null && _access.CanUsePrinter;
         ScanBox.IsEnabled = !busy && (SelectedEvent is not null);
+    }
+
+    private void RefreshManualTicketTotals()
+    {
+        try
+        {
+            var totals = ManualTicketStore.Totals(SelectedEvent?.Code ?? "");
+            ManualTicketTotalsItems.ItemsSource = totals;
+            ManualTicketTotalsEmpty.Text = "هنوز بلیت دستی ثبت نشده است.";
+            ManualTicketTotalsEmpty.Visibility = totals.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            ManualTicketTotalsItems.ItemsSource = null;
+            ManualTicketTotalsEmpty.Text = $"خواندن آمار محلی ناموفق بود: {error.Message}";
+            ManualTicketTotalsEmpty.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void ManualTicketButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || SelectedEvent is null || !_access.CanUsePrinter) return;
+        var eventCode = SelectedEvent.Code;
+        SetBusy(true);
+        try
+        {
+            // Read the event-wide definitions, not the last scanned guest's group-filtered profile.
+            var response = await _api.GetEventStatusAsync(eventCode);
+            if (response.Status != "ok") throw new InvalidOperationException(response.Message);
+            if (!response.Access.CanUsePrinter) throw new InvalidOperationException("اجازه چاپ ندارید.");
+            var profile = response.PrintProfile ?? new PrintProfile();
+            var tickets = profile.Tickets.Count > 0 ? profile.Tickets :
+                new List<NumberTicketDefinition> { new() { Id = "default", Title = "Custom Number Ticket", Configured = profile.TicketConfigured, Card = profile.TicketCard } };
+            tickets = tickets.Where(t => t.Configured && t.Card is not null).ToList();
+            if (tickets.Count == 0) throw new InvalidOperationException("هیچ طرح بلیت شماره‌دار آماده‌ای برای این رویداد موجود نیست.");
+            var content = new StackPanel { Margin = new Thickness(24), FlowDirection = FlowDirection.RightToLeft };
+            content.Children.Add(new TextBlock { Text = "چاپ دستی بلیت مهمان", FontSize = 22, FontWeight = FontWeights.Bold });
+            content.Children.Add(new TextBlock { Text = "نوع بلیت را انتخاب کنید. نام: مهمان — QR: 000000000\nاین چاپ فقط در آمار محلی این دستگاه ثبت می‌شود.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,12,0,16) });
+            var selection = new ComboBox { ItemsSource = tickets, DisplayMemberPath = "Title", SelectedIndex = 0, MinHeight = 44 };
+            content.Children.Add(selection);
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0,20,0,0) };
+            var proceed = new Button { Content = "ورود عدد و چاپ", MinHeight = 44, Padding = new Thickness(16,8,16,8), IsDefault = true };
+            var dialog = new Window { Owner = this, Title = "چاپ دستی بلیت", Width = 460, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Content = content };
+            proceed.Click += (_, _) => dialog.DialogResult = true;
+            actions.Children.Add(proceed);
+            actions.Children.Add(new Button { Content = "انصراف", MinHeight = 44, IsCancel = true, Margin = new Thickness(10,0,0,0), Padding = new Thickness(16,8,16,8) });
+            content.Children.Add(actions);
+            if (dialog.ShowDialog() != true || selection.SelectedItem is not NumberTicketDefinition ticket) return;
+            var numberDialog = new TicketNumberWindow("مهمان", ticket.Title) { Owner = this };
+            if (numberDialog.ShowDialog() != true) return;
+            var guest = new AttendanceLog { FullName = "مهمان", FirstName = "مهمان", NationalId = "000000000", NumberOfTicket = numberDialog.TicketNumber, TicketTitle = ticket.Title };
+            var record = ManualTicketStore.Begin(eventCode, ticket.Id, ticket.Title, numberDialog.TicketNumber);
+            try
+            {
+                await PrintCardService.PrintNumberTicketAsync(_api, ticket, guest, _printerOptions);
+            }
+            catch
+            {
+                ManualTicketStore.SetStatus(record.Id, "failed");
+                throw;
+            }
+            try { ManualTicketStore.SetStatus(record.Id, "submitted"); }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException($"بلیت به صف چاپ ارسال شد، اما ذخیره جمع محلی ناموفق بود؛ دوباره چاپ نکنید. {error.Message}");
+            }
+            RefreshManualTicketTotals();
+            ShowResult($"«{ticket.Title}» با عدد {numberDialog.TicketNumber} به صف چاپ ارسال و در آمار محلی ثبت شد.", "success");
+        }
+        catch (Exception error) { ShowResult($"چاپ دستی: {error.Message}", "error"); }
+        finally { SetBusy(false); ScanBox.Focus(); }
     }
 
     private void ShowResult(string message, string tone)
@@ -614,7 +724,7 @@ public partial class MainWindow : Window
         foreach (var ticket in tickets)
         {
             TicketPrintersPanel.Children.Add(new TextBlock { Text = ticket.Title, Margin = new Thickness(0, 4, 0, 5), FontWeight = FontWeights.SemiBold });
-            var combo = new ComboBox { Height = 44, Margin = new Thickness(0, 0, 0, 10), FlowDirection = FlowDirection.LeftToRight, ItemsSource = _installedPrinters };
+            var combo = new ComboBox { Height = 44, Margin = new Thickness(0, 0, 0, 10), FlowDirection = FlowDirection.LeftToRight, HorizontalContentAlignment = HorizontalAlignment.Right, ItemsSource = _installedPrinters };
             var legacy = string.IsNullOrWhiteSpace(_printerOptions.TicketPrinter) ? _installedPrinters.FirstOrDefault() : _printerOptions.TicketPrinter;
             var saved = _printerOptions.TicketPrinters.TryGetValue(ticket.Id, out var selected) ? selected : legacy;
             combo.SelectedItem = _installedPrinters.Contains(saved ?? "") ? saved : _installedPrinters.FirstOrDefault();
@@ -892,7 +1002,7 @@ public partial class MainWindow : Window
                 _trayIcon = new System.Windows.Forms.NotifyIcon
                 {
                     Icon = resource is null ? System.Drawing.SystemIcons.Application : new System.Drawing.Icon(resource.Stream),
-                    Text = "EGM Guest Manager", ContextMenuStrip = menu
+                    Text = "MCI Event Guest Manager", ContextMenuStrip = menu
                 };
                 _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(RestoreFromTray);
             }

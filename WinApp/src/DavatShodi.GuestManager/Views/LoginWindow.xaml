@@ -1,7 +1,7 @@
 <Window x:Class="DavatShodi.GuestManager.Views.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ورود | EGM Guest Manager" Width="430" SizeToContent="Height" MinHeight="650"
+        Title="MCI Event Guest Manager" Width="430" SizeToContent="Height" MinHeight="650"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         FlowDirection="LeftToRight" FontFamily="{StaticResource PanelFont}" Background="#F5F6F8"
         Icon="/DavatShodi.GuestManager;component/Assets/Brand/HamrahIcon.ico">

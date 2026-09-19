@@ -148,11 +148,11 @@ function egmStoreMissionContext(string $baseDir): array
 {
   if (basename($baseDir) === 'Event Guest Manager') {
     $pdo = egmStoreDatabase();
-    $registry = $pdo instanceof PDO ? findEgmRegistryByDirectory($pdo, 'mini apps/Event Guest Manager') : null;
+    $registry = $pdo instanceof PDO ? findEgmRegistryByDirectory($pdo, 'mini apps/EGMs/EGM') : null;
     if (is_array($registry)) {
       return ['isMission' => true, 'code' => (string)$registry['code'], 'name' => (string)$registry['name'],
         'folder' => 'Event Guest Manager', 'missionDir' => $baseDir, 'missionsRoot' => dirname($baseDir),
-        'webPath' => 'mini%20apps/Event%20Guest%20Manager', 'directory' => 'mini apps/Event Guest Manager'];
+        'webPath' => 'mini%20apps/EGMs/EGM', 'directory' => 'mini apps/EGMs/EGM'];
     }
   }
   $missionDir = realpath($baseDir);

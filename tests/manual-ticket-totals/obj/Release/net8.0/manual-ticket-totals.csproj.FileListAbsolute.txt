@@ -1,0 +1,15 @@
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\bin\Release\net8.0\manual-ticket-totals.exe
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\bin\Release\net8.0\manual-ticket-totals.deps.json
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\bin\Release\net8.0\manual-ticket-totals.runtimeconfig.json
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\bin\Release\net8.0\manual-ticket-totals.dll
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\bin\Release\net8.0\manual-ticket-totals.pdb
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.GeneratedMSBuildEditorConfig.editorconfig
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.AssemblyInfoInputs.cache
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.AssemblyInfo.cs
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.csproj.CoreCompileInputs.cache
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.sourcelink.json
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.dll
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\refint\manual-ticket-totals.dll
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.pdb
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\manual-ticket-totals.genruntimeconfig.cache
+C:\xampp\htdocs\DavatShodi\tests\manual-ticket-totals\obj\Release\net8.0\ref\manual-ticket-totals.dll
