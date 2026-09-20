@@ -93,6 +93,8 @@ const TCT_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
 const TCT_TEAM_CHALLENGES_FILE = 'team-challenges.json';
 const TCT_TEAM_RUNTIME_FILE = 'team-runtime.json';
 const TCT_TASK_ACCESS_FILE = 'task-access.json';
+const TCT_DONATION_SETTINGS_FILE = 'donation-settings.json';
+const TCT_DONATION_SUBMISSIONS_FILE = 'donation-submissions.json';
 
 function tctNormalizeTaskType(string $value): string
 {
@@ -120,11 +122,20 @@ function tctNormalizeTaskType(string $value): string
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
+  if (in_array($token, ['donation', 'donation-task', 'donation task'], true)) {
+    return 'donation';
+  }
   if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
     return 'team_task';
   }
   if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
     return 'describe_photo';
+  }
+  if (in_array($token, ['write_letter', 'write-letter', 'write letter', 'write-letter-task', 'write letter task'], true)) {
+    return 'write_letter';
+  }
+  if (in_array($token, ['iran_map_letter', 'iran-map-letter', 'iran map letter'], true)) {
+    return 'iran_map_letter';
   }
   return 'quiz';
 }
@@ -365,6 +376,78 @@ function tctBuildTaskInfoScoresPath(string $tasksDir, string $tagCode): string
     return '';
   }
   return $taskDir . DIRECTORY_SEPARATOR . TCT_INFO_SCORES_FILE;
+}
+
+function tctBuildDonationFilePath(string $tasksDir, string $tagCode, string $fileName): string
+{
+  $taskDir = tctBuildTaskDirPath($tasksDir, $tagCode);
+  return $taskDir === '' ? '' : $taskDir . DIRECTORY_SEPARATOR . $fileName;
+}
+
+function tctLoadDonationSettings(string $tasksDir, string $tagCode): array
+{
+  $defaults = [
+    'amountTitle' => 'مبلغ اهدایی خود را مشخص کنید',
+    'depositTitle' => 'راهنمای واریز مستقیم مبلغ',
+    'depositText' => ''
+  ];
+  $path = tctBuildDonationFilePath($tasksDir, $tagCode, TCT_DONATION_SETTINGS_FILE);
+  if ($path === '' || !tcDbIsFile($path)) return $defaults;
+  $decoded = json_decode((string)tcDbFileGetContents($path), true);
+  if (!is_array($decoded)) return $defaults;
+  return [
+    'amountTitle' => trim((string)($decoded['amountTitle'] ?? ($decoded['amount_title'] ?? $defaults['amountTitle']))) ?: $defaults['amountTitle'],
+    'depositTitle' => trim((string)($decoded['depositTitle'] ?? ($decoded['deposit_title'] ?? $defaults['depositTitle']))) ?: $defaults['depositTitle'],
+    'depositText' => str_replace(["\r\n", "\r"], "\n", (string)($decoded['depositText'] ?? ($decoded['deposit_text'] ?? '')))
+  ];
+}
+
+function tctSaveDonationSettings(string $tasksDir, string $tagCode, array $settings): bool
+{
+  if (!tctEnsureTaskFolder($tasksDir, $tagCode)) return false;
+  $path = tctBuildDonationFilePath($tasksDir, $tagCode, TCT_DONATION_SETTINGS_FILE);
+  if ($path === '') return false;
+  $payload = [
+    'amountTitle' => trim((string)($settings['amountTitle'] ?? '')) ?: 'مبلغ اهدایی خود را مشخص کنید',
+    'depositTitle' => trim((string)($settings['depositTitle'] ?? '')) ?: 'راهنمای واریز مستقیم مبلغ',
+    'depositText' => str_replace(["\r\n", "\r"], "\n", (string)($settings['depositText'] ?? ''))
+  ];
+  $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  return is_string($json) && tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function tctLoadDonationSubmissions(string $tasksDir, string $tagCode): array
+{
+  $path = tctBuildDonationFilePath($tasksDir, $tagCode, TCT_DONATION_SUBMISSIONS_FILE);
+  if ($path === '' || !tcDbIsFile($path)) return [];
+  $decoded = json_decode((string)tcDbFileGetContents($path), true);
+  if (!is_array($decoded)) return [];
+  $result = [];
+  foreach ($decoded as $workId => $entry) {
+    $workId = trim((string)$workId);
+    if ($workId === '' || !is_array($entry)) continue;
+    $status = strtolower(trim((string)($entry['status'] ?? 'pending')));
+    if (!in_array($status, ['pending', 'approved', 'rejected', 'completed'], true)) $status = 'pending';
+    $method = strtolower(trim((string)($entry['method'] ?? 'direct')));
+    $result[$workId] = [
+      'amount' => max(0, (int)($entry['amount'] ?? 0)),
+      'method' => $method === 'payroll' ? 'payroll' : 'direct',
+      'status' => $status,
+      'submittedAt' => trim((string)($entry['submittedAt'] ?? '')),
+      'reviewedAt' => trim((string)($entry['reviewedAt'] ?? '')),
+      'reviewedBy' => trim((string)($entry['reviewedBy'] ?? ''))
+    ];
+  }
+  return $result;
+}
+
+function tctSaveDonationSubmissions(string $tasksDir, string $tagCode, array $submissions): bool
+{
+  if (!tctEnsureTaskFolder($tasksDir, $tagCode)) return false;
+  $path = tctBuildDonationFilePath($tasksDir, $tagCode, TCT_DONATION_SUBMISSIONS_FILE);
+  if ($path === '') return false;
+  $json = json_encode($submissions, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  return is_string($json) && tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
 }
 
 function tctBuildTaskSharedResponseLevelsPath(string $tasksDir, string $tagCode): string
@@ -1435,18 +1518,35 @@ function tctCollectDescribePhotoSubmissionsByWorkId(
 
       $photoMeta = is_array($photoById[$normalizedPhotoId] ?? null) ? $photoById[$normalizedPhotoId] : [];
       $photoName = trim((string)($photoMeta['name'] ?? ''));
+      if ($normalizedPhotoId === 'letter') {
+        $photoName = 'Letter';
+      }
       if ($photoName === '') {
         $photoName = trim((string)pathinfo($articleFile, PATHINFO_FILENAME));
       }
       if ($photoName === '') {
         $photoName = 'Photo';
       }
+      $place = null;
+      $placePath = $articlePath . '.place.json';
+      if (tcDbIsFile($placePath)) {
+        $placeDecoded = json_decode((string)tcDbFileGetContents($placePath), true);
+        if (is_array($placeDecoded) && trim((string)($placeDecoded['name'] ?? '')) !== '') {
+          $place = [
+            'name' => trim((string)$placeDecoded['name']),
+            'x' => (float)($placeDecoded['x'] ?? 0),
+            'y' => (float)($placeDecoded['y'] ?? 0)
+          ];
+          $photoName = $place['name'];
+        }
+      }
       $submittedItems[] = [
         'photoId' => $normalizedPhotoId,
         'photoName' => $photoName,
         'photoUrl' => trim((string)($photoMeta['url'] ?? '')),
         'articleFile' => $articleFile,
-        'wordCount' => $wordCount
+        'wordCount' => $wordCount,
+        'place' => $place
       ];
     }
 
@@ -1541,11 +1641,27 @@ function tctReadDescribePhotoSubmissionArticle(
   }
 
   $photoName = trim((string)($photoMeta['name'] ?? ''));
+  if ($normalizedPhotoId === 'letter') {
+    $photoName = 'Letter';
+  }
   if ($photoName === '') {
     $photoName = trim((string)pathinfo($articleFile, PATHINFO_FILENAME));
   }
   if ($photoName === '') {
     $photoName = 'Photo';
+  }
+  $place = null;
+  $placePath = $articlePath . '.place.json';
+  if (tcDbIsFile($placePath)) {
+    $placeDecoded = json_decode((string)tcDbFileGetContents($placePath), true);
+    if (is_array($placeDecoded) && trim((string)($placeDecoded['name'] ?? '')) !== '') {
+      $place = [
+        'name' => trim((string)$placeDecoded['name']),
+        'x' => (float)($placeDecoded['x'] ?? 0),
+        'y' => (float)($placeDecoded['y'] ?? 0)
+      ];
+      $photoName = $place['name'];
+    }
   }
 
   return [
@@ -1555,7 +1671,8 @@ function tctReadDescribePhotoSubmissionArticle(
       'photoName' => $photoName,
       'photoUrl' => trim((string)($photoMeta['url'] ?? '')),
       'articleFile' => $articleFile,
-      'wordCount' => $wordCount
+      'wordCount' => $wordCount,
+      'place' => $place
     ],
     'text' => $content
   ];
@@ -1575,7 +1692,7 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
     $task['afterEndtimeScore'] = $scoreSettings['afterEndtimeScore'];
     $task['hasGoldenTime'] = (bool)($scoreSettings['hasGoldenTime'] ?? true);
     $task['anotherChanceIfZero'] = (bool)($scoreSettings['anotherChanceIfZero'] ?? false);
-    if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'shared_answers_quiz' || $taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
+    if ($taskType === 'quiz' || $taskType === 'conditional_quiz' || $taskType === 'shared_answers_quiz' || $taskType === 'info' || $taskType === 'donation' || $taskType === 'team_task' || $taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter') {
       $info = tctLoadTaskInfoSettings($tasksDir, $tagCode);
       $task['infoTitle'] = (string)($info['title'] ?? '');
       $task['infoText'] = (string)($info['text'] ?? '');
@@ -1596,6 +1713,12 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
       $task['responseLevels'] = $taskType === 'shared_answers_quiz'
         ? tctLoadTaskSharedResponseLevels($tasksDir, $tagCode)
         : [];
+      $donationSettings = $taskType === 'donation'
+        ? tctLoadDonationSettings($tasksDir, $tagCode)
+        : ['amountTitle' => '', 'depositTitle' => '', 'depositText' => ''];
+      $task['donationAmountTitle'] = (string)($donationSettings['amountTitle'] ?? '');
+      $task['donationDepositTitle'] = (string)($donationSettings['depositTitle'] ?? '');
+      $task['donationDepositText'] = (string)($donationSettings['depositText'] ?? '');
     } else {
       $task['infoTitle'] = '';
       $task['infoText'] = '';
@@ -1606,6 +1729,9 @@ function tctMergeTaskScores(array $tasks, string $tasksDir): array
       $task['teamAdditionalNote'] = '';
       $task['taskPhotos'] = [];
       $task['taskChallenges'] = [];
+      $task['donationAmountTitle'] = '';
+      $task['donationDepositTitle'] = '';
+      $task['donationDepositText'] = '';
     }
     $merged[] = $task;
   }
@@ -2062,6 +2188,40 @@ function tctSerializeTaskScoreMap(array $map): string
   return implode(',', $pairs);
 }
 
+function tctAssignDonationScore(string $inviteesPath, string $mapPath, string $tasksDir, array $task, string $workId, int $assignedScore): array
+{
+  $workId = trim($workId);
+  $taskId = trim((string)($task['id'] ?? ''));
+  $tagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ''));
+  if ($workId === '' || $taskId === '' || $tagCode === '') return ['ok' => false, 'message' => 'Invalid donation score target.'];
+  $rows = tctReadCsvRows($inviteesPath);
+  $indexes = tctEnsureInviteesColumns($rows, ['Work ID', 'score', 'Info Tasks']);
+  $header = is_array($rows[0] ?? null) ? $rows[0] : [];
+  $workIdIndex = tctResolveWorkIdIndexFromHeaderAndMap($header, $mapPath);
+  if ($workIdIndex < 0) $workIdIndex = (int)($indexes[tctNormalizeHeaderName('Work ID')] ?? -1);
+  $scoreIndex = (int)($indexes[tctNormalizeHeaderName('score')] ?? -1);
+  $infoIndex = (int)($indexes[tctNormalizeHeaderName('Info Tasks')] ?? -1);
+  if ($workIdIndex < 0 || $scoreIndex < 0 || $infoIndex < 0) return ['ok' => false, 'message' => 'Required invitee columns are missing.'];
+  $rowIndex = -1;
+  for ($i = 1; $i < count($rows); $i += 1) {
+    if (trim((string)($rows[$i][$workIdIndex] ?? '')) === $workId) { $rowIndex = $i; break; }
+  }
+  if ($rowIndex < 1) return ['ok' => false, 'message' => 'Invitee not found.'];
+  $infoMap = tctParseInfoTasksMap((string)($rows[$rowIndex][$infoIndex] ?? ''));
+  $previous = tctNormalizeScoreValue($infoMap[$taskId] ?? 0);
+  $assignedScore = max(0, $assignedScore);
+  $infoMap[$taskId] = $assignedScore;
+  $currentTotal = tctNormalizeScoreValue($rows[$rowIndex][$scoreIndex] ?? 0);
+  $newTotal = max(0, $currentTotal - $previous + $assignedScore);
+  $rows[$rowIndex][$scoreIndex] = (string)$newTotal;
+  $rows[$rowIndex][$infoIndex] = tctSerializeInfoTasksMap($infoMap);
+  if (!tctWriteCsvRows($inviteesPath, $rows)) return ['ok' => false, 'message' => 'Failed to save the donation score.'];
+  $scoreMap = tctLoadTaskInfoScores($tasksDir, $tagCode);
+  $scoreMap[$workId] = $assignedScore;
+  if (!tctSaveTaskInfoScores($tasksDir, $tagCode, $scoreMap)) return ['ok' => false, 'message' => 'The score was saved, but its task cache could not be updated.'];
+  return ['ok' => true, 'score' => $assignedScore, 'totalScore' => $newTotal];
+}
+
 function tctParseSurveyAnswersValue(string $raw): array
 {
   $entries = preg_split('/\s*,\s*/', trim($raw));
@@ -2360,7 +2520,7 @@ function tctBuildSurveyMonitoringData(array $task, string $tasksDir, string $inv
 
 function tctResolveTaskScoreColumnByType(string $taskType): string
 {
-  if ($taskType === 'describe_photo') {
+  if ($taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter') {
     return 'Describe Photo Task';
   }
   if ($taskType === 'team_task') {
@@ -2384,11 +2544,20 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
   if ($normalizedType === 'info') {
     return ['control', 'information', 'invitees-rate'];
   }
+  if ($normalizedType === 'donation') {
+    return ['control', 'information', 'donation', 'donation-review'];
+  }
   if ($normalizedType === 'team_task') {
     return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
   }
   if ($normalizedType === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
+  }
+  if ($normalizedType === 'write_letter') {
+    return ['control', 'information', 'invitees-rate'];
+  }
+  if ($normalizedType === 'iran_map_letter') {
+    return ['control', 'information', 'invitees-rate'];
   }
   return ['control', 'information', 'quiz'];
 }
@@ -2841,6 +3010,9 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     'get_survey_monitoring' => 'control',
     'save_team_task_settings' => 'team',
     'save_info_task_content' => 'information',
+    'save_donation_settings' => 'donation',
+    'get_donation_submissions' => 'donation-review',
+    'review_donation_submission' => 'donation-review',
     'add_describe_task_photo' => 'photo',
     'rename_describe_task_photo' => 'photo',
     'remove_describe_task_photo' => 'photo',
@@ -3103,7 +3275,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       $hasGoldenTime = true;
     }
 
-    if ($targetTaskType === 'info' || $targetTaskType === 'team_task' || $targetTaskType === 'describe_photo') {
+    if ($targetTaskType === 'info' || $targetTaskType === 'donation' || $targetTaskType === 'team_task' || $targetTaskType === 'describe_photo' || $targetTaskType === 'write_letter' || $targetTaskType === 'iran_map_letter') {
       $afterEndtimeScore = 0;
     }
     $existingScoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $targetTagCode);
@@ -3237,7 +3409,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'conditional_quiz' && $targetTaskType !== 'shared_answers_quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'quiz' && $targetTaskType !== 'conditional_quiz' && $targetTaskType !== 'shared_answers_quiz' && $targetTaskType !== 'info' && $targetTaskType !== 'donation' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo' && $targetTaskType !== 'write_letter' && $targetTaskType !== 'iran_map_letter') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for tasks with information pane.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3265,6 +3437,90 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       'message' => 'Information content saved.',
       'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'save_donation_settings') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $targetTask = $findTaskById($tasks, $id);
+    if (!is_array($targetTask) || tctNormalizeTaskType((string)($targetTask['taskType'] ?? '')) !== 'donation') {
+      echo json_encode(['status' => 'error', 'message' => 'Donation task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $saved = tctSaveDonationSettings($tctTasksDir, (string)($targetTask['tagCode'] ?? ''), [
+      'amountTitle' => (string)($_POST['amount_title'] ?? ''),
+      'depositTitle' => (string)($_POST['deposit_title'] ?? ''),
+      'depositText' => (string)($_POST['deposit_text'] ?? '')
+    ]);
+    if (!$saved) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save Donation settings.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo json_encode(['status' => 'ok', 'message' => 'Donation settings saved.', 'tasks' => $buildTasksForResponse($tasks)], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'get_donation_submissions') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $targetTask = $findTaskById($tasks, $id);
+    if (!is_array($targetTask) || tctNormalizeTaskType((string)($targetTask['taskType'] ?? '')) !== 'donation') {
+      echo json_encode(['status' => 'error', 'message' => 'Donation task not found.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $submissions = tctLoadDonationSubmissions($tctTasksDir, (string)($targetTask['tagCode'] ?? ''));
+    $invitees = tctResolveInviteesForRateTable($tctEventInviteesPath, $tctEventInviteesMapPath);
+    $inviteesById = [];
+    foreach ($invitees as $invitee) $inviteesById[(string)($invitee['workId'] ?? '')] = $invitee;
+    $rows = [];
+    foreach ($submissions as $workId => $entry) {
+      $person = is_array($inviteesById[$workId] ?? null) ? $inviteesById[$workId] : [];
+      $rows[] = $entry + [
+        'workId' => $workId,
+        'firstName' => (string)($person['firstName'] ?? ''),
+        'lastName' => (string)($person['lastName'] ?? ''),
+        'phone' => (string)($person['phone'] ?? '')
+      ];
+    }
+    usort($rows, static fn(array $a, array $b): int => strcmp((string)($b['submittedAt'] ?? ''), (string)($a['submittedAt'] ?? '')));
+    echo json_encode(['status' => 'ok', 'submissions' => $rows], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if ($action === 'review_donation_submission') {
+    $id = trim((string)($_POST['id'] ?? ''));
+    $workId = trim((string)($_POST['work_id'] ?? ''));
+    $decision = strtolower(trim((string)($_POST['decision'] ?? '')));
+    $targetTask = $findTaskById($tasks, $id);
+    if (!is_array($targetTask) || tctNormalizeTaskType((string)($targetTask['taskType'] ?? '')) !== 'donation' || $workId === '' || !in_array($decision, ['approve', 'reject'], true)) {
+      echo json_encode(['status' => 'error', 'message' => 'Invalid donation review request.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $tagCode = (string)($targetTask['tagCode'] ?? '');
+    $submissions = tctLoadDonationSubmissions($tctTasksDir, $tagCode);
+    $entry = is_array($submissions[$workId] ?? null) ? $submissions[$workId] : null;
+    if (!is_array($entry) || (string)($entry['status'] ?? '') !== 'pending' || (string)($entry['method'] ?? '') !== 'direct') {
+      echo json_encode(['status' => 'error', 'message' => 'This submission is no longer pending.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($decision === 'approve') {
+      $scoreSettings = tctLoadTaskScoreSettings($tctTasksDir, $tagCode);
+      $scoreResult = tctAssignDonationScore($tctEventInviteesPath, $tctEventInviteesMapPath, $tctTasksDir, $targetTask, $workId, max(0, (int)($scoreSettings['score'] ?? 0)));
+      if (!($scoreResult['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => (string)($scoreResult['message'] ?? 'Failed to award score.')], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $entry['status'] = 'approved';
+    } else {
+      $entry['status'] = 'rejected';
+    }
+    $entry['reviewedAt'] = date('Y-m-d H:i:s');
+    $entry['reviewedBy'] = (string)($tctSessionUser['code'] ?? '');
+    $submissions[$workId] = $entry;
+    if (!tctSaveDonationSubmissions($tctTasksDir, $tagCode, $submissions)) {
+      echo json_encode(['status' => 'error', 'message' => 'Failed to save the review result.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo json_encode(['status' => 'ok', 'message' => $decision === 'approve' ? 'Donation approved and score awarded.' : 'Donation rejected.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -3833,7 +4089,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo' && $targetTaskType !== 'write_letter' && $targetTaskType !== 'iran_map_letter') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -3959,7 +4215,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     }
 
     $describeSubmissionsByWorkId = [];
-    if ($targetTaskType === 'describe_photo') {
+    if ($targetTaskType === 'describe_photo' || $targetTaskType === 'write_letter' || $targetTaskType === 'iran_map_letter') {
       $describeSubmissionsByWorkId = tctCollectDescribePhotoSubmissionsByWorkId(
         $tctTasksDir,
         $tagCode,
@@ -3972,7 +4228,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
     foreach ($invitees as $invitee) {
       $workId = trim((string)($invitee['workId'] ?? ''));
       $invitee['customScore'] = max(0, min($maxScore, (int)($infoTaskScoreByWorkId[$workId] ?? 0)));
-      if ($targetTaskType === 'describe_photo') {
+      if ($targetTaskType === 'describe_photo' || $targetTaskType === 'write_letter' || $targetTaskType === 'iran_map_letter') {
         $describeResults = is_array($describeSubmissionsByWorkId[$workId] ?? null)
           ? $describeSubmissionsByWorkId[$workId]
           : [];
@@ -4389,8 +4645,8 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'describe_photo') {
-      echo json_encode(['status' => 'error', 'message' => 'This action is only for Describe Photo Task.'], JSON_UNESCAPED_UNICODE);
+    if ($targetTaskType !== 'describe_photo' && $targetTaskType !== 'write_letter' && $targetTaskType !== 'iran_map_letter') {
+      echo json_encode(['status' => 'error', 'message' => 'This action is only for written-submission tasks.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -4413,11 +4669,19 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       echo json_encode(['status' => 'error', 'message' => (string)($result['message'] ?? 'Failed to load result text.')], JSON_UNESCAPED_UNICODE);
       exit;
     }
+    $resultText = (string)($result['text'] ?? '');
+    if ($targetTaskType === 'iran_map_letter') {
+      $infoSettings = tctLoadTaskInfoSettings($tctTasksDir, $tagCode);
+      $letterPrefix = trim((string)($infoSettings['guidePrefix'] ?? ''));
+      if ($letterPrefix !== '') {
+        $resultText = $letterPrefix . ($resultText !== '' ? "\n\n" . $resultText : '');
+      }
+    }
 
     echo json_encode([
       'status' => 'ok',
       'result' => $result['result'] ?? [],
-      'text' => (string)($result['text'] ?? '')
+      'text' => $resultText
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
@@ -4440,7 +4704,7 @@ if (!TCT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && i
       exit;
     }
     $targetTaskType = tctNormalizeTaskType((string)($targetTask['taskType'] ?? 'quiz'));
-    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo') {
+    if ($targetTaskType !== 'info' && $targetTaskType !== 'team_task' && $targetTaskType !== 'describe_photo' && $targetTaskType !== 'write_letter' && $targetTaskType !== 'iran_map_letter') {
       echo json_encode(['status' => 'error', 'message' => 'This action is only for Info Task.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -4687,8 +4951,11 @@ if (TCT_INCLUDE_ONLY) {
         <option value="conditional_quiz">Conditional Quiz</option>
         <option value="shared_answers_quiz">Survey Score Response</option>
         <option value="info">Info Task</option>
+        <option value="donation">Donation</option>
         <option value="team_task">Team Task</option>
         <option value="describe_photo">Describe Photo Task</option>
+        <option value="write_letter">Write a letter</option>
+        <option value="iran_map_letter">Iran Map Letter</option>
       </select>
     </label>
     <div class="field full">
@@ -4754,11 +5021,20 @@ if (TCT_INCLUDE_ONLY) {
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
+    if (token === 'donation' || token === 'donation-task' || token === 'donation task') {
+      return 'donation';
+    }
     if (token === 'team_task' || token === 'team-task' || token === 'team task') {
       return 'team_task';
     }
     if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
       return 'describe_photo';
+    }
+    if (token === 'write_letter' || token === 'write-letter' || token === 'write letter' || token === 'write-letter-task' || token === 'write letter task') {
+      return 'write_letter';
+    }
+    if (token === 'iran_map_letter' || token === 'iran-map-letter' || token === 'iran map letter') {
+      return 'iran_map_letter';
     }
     return 'quiz';
   };
@@ -4785,8 +5061,17 @@ if (TCT_INCLUDE_ONLY) {
     if (token === 'info') {
       return ['control', 'information', 'invitees-rate'];
     }
+    if (token === 'donation') {
+      return ['control', 'information', 'donation', 'donation-review'];
+    }
     if (token === 'describe_photo') {
       return ['control', 'information', 'photo', 'invitees-rate'];
+    }
+    if (token === 'write_letter') {
+      return ['control', 'information', 'invitees-rate'];
+    }
+    if (token === 'iran_map_letter') {
+      return ['control', 'information', 'invitees-rate'];
     }
     if (token === 'team_task') {
       return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
@@ -4833,6 +5118,11 @@ if (TCT_INCLUDE_ONLY) {
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
       hasGoldenTime: task.hasGoldenTime !== false,
       anotherChanceIfZero: Boolean(task.anotherChanceIfZero),
+      infoTitle: String(task.infoTitle || ''),
+      infoText: String(task.infoText || ''),
+      donationAmountTitle: String(task.donationAmountTitle || 'مبلغ اهدایی خود را مشخص کنید'),
+      donationDepositTitle: String(task.donationDepositTitle || 'راهنمای واریز مستقیم مبلغ'),
+      donationDepositText: String(task.donationDepositText || ''),
       order: Number.parseInt(task.order, 10) || (index + 1),
       createdAt: String(task.createdAt || '')
     }));
@@ -4864,6 +5154,11 @@ if (TCT_INCLUDE_ONLY) {
       afterEndtimeScore: normalizeScore(task.afterEndtimeScore),
       hasGoldenTime: task.hasGoldenTime !== false,
       anotherChanceIfZero: Boolean(task.anotherChanceIfZero),
+      infoTitle: String(task.infoTitle || ''),
+      infoText: String(task.infoText || ''),
+      donationAmountTitle: String(task.donationAmountTitle || 'مبلغ اهدایی خود را مشخص کنید'),
+      donationDepositTitle: String(task.donationDepositTitle || 'راهنمای واریز مستقیم مبلغ'),
+      donationDepositText: String(task.donationDepositText || ''),
       order: Number.parseInt(task.order, 10) || (index + 1),
       createdAt: String(task.createdAt || '')
     }));

@@ -624,11 +624,20 @@ function tcMonitoringNormalizeTaskType(string $value): string
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
+  if (in_array($token, ['donation', 'donation-task', 'donation task'], true)) {
+    return 'donation';
+  }
   if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
     return 'team_task';
   }
   if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
     return 'describe_photo';
+  }
+  if (in_array($token, ['write_letter', 'write-letter', 'write letter', 'write-letter-task', 'write letter task'], true)) {
+    return 'write_letter';
+  }
+  if (in_array($token, ['iran_map_letter', 'iran-map-letter', 'iran map letter'], true)) {
+    return 'iran_map_letter';
   }
   return 'quiz';
 }
@@ -1191,7 +1200,7 @@ function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksD
   $teamTasksMap = is_array($user['teamTasksMap'] ?? null) ? $user['teamTasksMap'] : [];
   $describeTasksMap = is_array($user['describeTasksMap'] ?? null) ? $user['describeTasksMap'] : [];
 
-  if ($taskType === 'info') {
+  if ($taskType === 'info' || $taskType === 'donation') {
     if (array_key_exists($taskId, $infoTasksMap)) {
       return ['completed' => true, 'score' => (float)$infoTasksMap[$taskId], 'phase' => 'no_golden'];
     }
@@ -1215,7 +1224,7 @@ function tcMonitoringUserTaskCompletion(array $user, array $task, string $tasksD
     return ['completed' => false, 'score' => 0.0, 'phase' => 'unknown'];
   }
 
-  if ($taskType === 'describe_photo') {
+  if ($taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter') {
     $hasDescribeSubmission = tcMonitoringHasDescribePhotoSubmissionForTask(
       $user,
       $taskId,
@@ -1442,7 +1451,7 @@ function tcMonitoringFallbackUserCompletedTask(array $user, array $task): bool
   $infoTasksMap = is_array($user['infoTasksMap'] ?? null) ? $user['infoTasksMap'] : [];
   $teamTasksMap = is_array($user['teamTasksMap'] ?? null) ? $user['teamTasksMap'] : [];
   $describeTasksMap = is_array($user['describeTasksMap'] ?? null) ? $user['describeTasksMap'] : [];
-  if ($taskType === 'info') {
+  if ($taskType === 'info' || $taskType === 'donation') {
     return array_key_exists($taskId, $infoTasksMap);
   }
   if ($taskType === 'team_task') {
@@ -1452,7 +1461,7 @@ function tcMonitoringFallbackUserCompletedTask(array $user, array $task): bool
     }
     return array_key_exists($taskId, $infoTasksMap);
   }
-  if ($taskType === 'describe_photo') {
+  if ($taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter') {
     return array_key_exists($taskId, $describeTasksMap);
   }
   return isset($completedLookup[$taskId]) || array_key_exists($taskId, $taskScoreMap);

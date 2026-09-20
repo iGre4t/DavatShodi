@@ -37,18 +37,27 @@
     if (token === 'info' || token === 'info-task' || token === 'info task') {
       return 'info';
     }
+    if (token === 'donation' || token === 'donation-task' || token === 'donation task') {
+      return 'donation';
+    }
     if (token === 'team_task' || token === 'team-task' || token === 'team task') {
       return 'team_task';
     }
     if (token === 'describe_photo' || token === 'describe-photo' || token === 'describe photo' || token === 'describe-photo-task' || token === 'describe photo task') {
       return 'describe_photo';
     }
+    if (token === 'write_letter' || token === 'write-letter' || token === 'write letter' || token === 'write-letter-task' || token === 'write letter task') {
+      return 'write_letter';
+    }
+    if (token === 'iran_map_letter' || token === 'iran-map-letter' || token === 'iran map letter') {
+      return 'iran_map_letter';
+    }
     return 'quiz';
   }
 
   function isInfoLikeTaskType(taskType) {
     const type = normalizeTaskType(taskType);
-    return type === 'info' || type === 'team_task' || type === 'describe_photo';
+    return type === 'info' || type === 'donation' || type === 'team_task' || type === 'describe_photo' || type === 'write_letter' || type === 'iran_map_letter';
   }
 
   function isQuizLikeTaskType(taskType) {
@@ -58,11 +67,16 @@
 
   function hasInformationPaneTaskType(taskType) {
     const type = normalizeTaskType(taskType);
-    return isQuizLikeTaskType(type) || type === 'info' || type === 'team_task' || type === 'describe_photo';
+    return isQuizLikeTaskType(type) || type === 'info' || type === 'donation' || type === 'team_task' || type === 'describe_photo' || type === 'write_letter' || type === 'iran_map_letter';
   }
 
   function isDescribePhotoTaskType(taskType) {
     return normalizeTaskType(taskType) === 'describe_photo';
+  }
+
+  function isWrittenSubmissionTaskType(taskType) {
+    const type = normalizeTaskType(taskType);
+    return type === 'describe_photo' || type === 'write_letter' || type === 'iran_map_letter';
   }
 
   function isTeamTaskType(taskType) {
@@ -83,8 +97,17 @@
     if (normalizedType === 'info') {
       return ['control', 'information', 'invitees-rate'];
     }
+    if (normalizedType === 'donation') {
+      return ['control', 'information', 'donation', 'donation-review'];
+    }
     if (normalizedType === 'describe_photo') {
       return ['control', 'information', 'photo', 'invitees-rate'];
+    }
+    if (normalizedType === 'write_letter') {
+      return ['control', 'information', 'invitees-rate'];
+    }
+    if (normalizedType === 'iran_map_letter') {
+      return ['control', 'information', 'invitees-rate'];
     }
     if (normalizedType === 'team_task') {
       return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
@@ -175,6 +198,9 @@
       infoText: String(raw.infoText ?? raw.info_text ?? '').trim(),
       guidePrefix: String(raw.guidePrefix ?? raw.guide_prefix ?? '').replace(/\r\n?/g, '\n'),
       guideSuffix: String(raw.guideSuffix ?? raw.guide_suffix ?? '').replace(/\r\n?/g, '\n'),
+      donationAmountTitle: String(raw.donationAmountTitle ?? raw.donation_amount_title ?? 'مبلغ اهدایی خود را مشخص کنید').trim(),
+      donationDepositTitle: String(raw.donationDepositTitle ?? raw.donation_deposit_title ?? 'راهنمای واریز مستقیم مبلغ').trim(),
+      donationDepositText: String(raw.donationDepositText ?? raw.donation_deposit_text ?? '').replace(/\r\n?/g, '\n'),
       teamMin: normalizeScoreValue(raw.teamMin ?? raw.team_min ?? (normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz') === 'team_task' ? 1 : 0)),
       teamMax: normalizeScoreValue(raw.teamMax ?? raw.team_max ?? (normalizeTaskType(raw.taskType ?? raw.task_type ?? 'quiz') === 'team_task' ? 1 : 0)),
       teamAdditionalNote: String(raw.teamAdditionalNote ?? raw.team_additional_note ?? '').replace(/\r\n?/g, '\n'),
@@ -1327,7 +1353,7 @@
   function getInfoRateTableColspanForPane(pane) {
     if (!(pane instanceof HTMLElement)) return 7;
     if (isTeamTaskType(pane.dataset.taskType || 'quiz')) return 8;
-    return isDescribePhotoTaskType(pane.dataset.taskType || 'quiz') ? 8 : 7;
+    return isWrittenSubmissionTaskType(pane.dataset.taskType || 'quiz') ? 8 : 7;
   }
 
   function formatTeamJoinTypeLabel(value) {
@@ -1350,7 +1376,12 @@
       photoName: String(item.photoName ?? item.photo_name ?? '').trim() || 'Photo',
       photoUrl: String(item.photoUrl ?? item.photo_url ?? '').trim(),
       articleFile: String(item.articleFile ?? item.article_file ?? '').trim(),
-      wordCount: normalizeScoreValue(item.wordCount ?? item.word_count ?? 0)
+      wordCount: normalizeScoreValue(item.wordCount ?? item.word_count ?? 0),
+      place: item.place && typeof item.place === 'object' ? {
+        name: String(item.place.name || '').trim(),
+        x: Number(item.place.x || 0),
+        y: Number(item.place.y || 0)
+      } : null
     };
   }
 
@@ -1550,7 +1581,7 @@
       renderTeamRateTable(pane, state, controls, getInfoRateTableColspanForPane(pane));
       return;
     }
-    const isDescribeTask = isDescribePhotoTaskType(pane.dataset.taskType || 'quiz');
+    const isDescribeTask = isWrittenSubmissionTaskType(pane.dataset.taskType || 'quiz');
     const colspan = getInfoRateTableColspanForPane(pane);
     const query = String(state.query || '').trim().toLowerCase();
     const visibleRows = state.invitees.filter((row) => {
@@ -1808,7 +1839,9 @@
     const lastName = String(invitee?.lastName || '').trim();
     const fullName = `${firstName} ${lastName}`.trim() || String(invitee?.workId || 'Invitee');
     title.textContent = `Results - ${fullName}`;
-    hint.textContent = 'Click a photo to open the submitted text.';
+    hint.textContent = normalizeTaskType(pane.dataset.taskType || '') === 'write_letter'
+      ? 'Click the letter to open the submitted text.'
+      : 'Click a photo to open the submitted text.';
 
     const results = Array.isArray(invitee?.describeResults) ? invitee.describeResults : [];
     if (!results.length) {
@@ -1821,7 +1854,7 @@
         const photoUrl = String(result?.photoUrl || '').trim();
         return `
           <button type="button" class="tc-describe-result-photo-btn" data-action="open-describe-result-photo" data-photo-id="${photoId}">
-            ${photoUrl ? `<img src="${escapeHtml(photoUrl)}" alt="${photoName}" loading="lazy" />` : '<div class="tc-describe-result-photo-fallback">No Preview</div>'}
+            ${photoUrl ? `<img src="${escapeHtml(photoUrl)}" alt="${photoName}" loading="lazy" />` : `<div class="tc-describe-result-photo-fallback">${normalizeTaskType(pane.dataset.taskType || '') === 'write_letter' ? 'Letter' : 'No Preview'}</div>`}
             <div class="tc-describe-result-photo-name">${photoName}</div>
             <div class="tc-describe-result-photo-words">Words: ${escapeHtml(String(wordCount))}</div>
           </button>
@@ -2285,6 +2318,41 @@
     document.removeEventListener('keydown', previousKeydownHandler);
   }
 
+  function setDonationStatus(pane, selector, message, isError = false) {
+    const el = pane instanceof HTMLElement ? pane.querySelector(selector) : null;
+    if (!(el instanceof HTMLElement)) return;
+    el.textContent = message || '';
+    el.style.color = isError ? '#d1434a' : '';
+  }
+
+  function formatDonationAmount(value) {
+    return String(Math.max(0, Number.parseInt(String(value ?? '0'), 10) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  async function loadDonationSubmissions(pane) {
+    if (!(pane instanceof HTMLElement)) return;
+    const taskId = String(pane.dataset.taskId || '').trim();
+    const body = pane.querySelector('[data-donation-review-body]');
+    if (!taskId || !(body instanceof HTMLElement)) return;
+    body.innerHTML = '<tr><td colspan="7" class="muted">Loading submissions...</td></tr>';
+    try {
+      const data = await postTaskAction('get_donation_submissions', { id: taskId });
+      const rows = Array.isArray(data.submissions) ? data.submissions : [];
+      body.innerHTML = rows.length ? rows.map((row) => {
+        const status = String(row.status || 'pending').toLowerCase();
+        const method = String(row.method || '') === 'payroll' ? 'کسر از حقوق' : 'واریز مستقیم مبلغ';
+        const actions = status === 'pending' && String(row.method || '') === 'direct'
+          ? `<button type="button" class="btn primary standard-primary-button" data-action="donation-approve" data-work-id="${escapeHtml(row.workId)}">Approve</button> <button type="button" class="btn danger" data-action="donation-reject" data-work-id="${escapeHtml(row.workId)}">Reject</button>`
+          : '-';
+        return `<tr><td>${escapeHtml(`${row.firstName || ''} ${row.lastName || ''}`.trim() || '-')}</td><td><code>${escapeHtml(row.workId)}</code></td><td>${escapeHtml(formatDonationAmount(row.amount))} تومان</td><td>${escapeHtml(method)}</td><td>${escapeHtml(status)}</td><td>${escapeHtml(row.submittedAt || '-')}</td><td>${actions}</td></tr>`;
+      }).join('') : '<tr><td colspan="7" class="muted">No Donation submissions yet.</td></tr>';
+      setDonationStatus(pane, '[data-donation-review-status]', '');
+    } catch (error) {
+      body.innerHTML = '<tr><td colspan="7" class="muted">Failed to load submissions.</td></tr>';
+      setDonationStatus(pane, '[data-donation-review-status]', error?.message || 'Failed to load submissions.', true);
+    }
+  }
+
   function getSharedResponseLevelControls(pane) {
     if (!(pane instanceof HTMLElement) || normalizeTaskType(pane.dataset.taskType || 'quiz') !== 'shared_answers_quiz') return null;
     return {
@@ -2474,6 +2542,12 @@
       }
       setTaskInfoContentSaveStatus(pane, '');
     }
+    const donationAmountTitle = pane.querySelector('[data-task-field="donationAmountTitle"]');
+    const donationDepositTitle = pane.querySelector('[data-task-field="donationDepositTitle"]');
+    const donationDepositText = pane.querySelector('[data-task-field="donationDepositText"]');
+    if (donationAmountTitle instanceof HTMLInputElement) donationAmountTitle.value = String(task?.donationAmountTitle || 'مبلغ اهدایی خود را مشخص کنید');
+    if (donationDepositTitle instanceof HTMLInputElement) donationDepositTitle.value = String(task?.donationDepositTitle || 'راهنمای واریز مستقیم مبلغ');
+    if (donationDepositText instanceof HTMLTextAreaElement) donationDepositText.value = String(task?.donationDepositText || '');
     if (normalizeTaskType(task?.taskType || pane.dataset.taskType || 'quiz') === 'describe_photo') {
       applyDescribePhotoTaskStateFromTask(pane, task);
     }
@@ -2492,11 +2566,20 @@
     const hasInformationPane = hasInformationPaneTaskType(task.taskType);
     const taskTypeToken = normalizeTaskType(task.taskType);
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
+    const isWriteLetterTask = taskTypeToken === 'write_letter';
+    const isIranMapLetterTask = taskTypeToken === 'iran_map_letter';
     const isTeamTask = taskTypeToken === 'team_task';
+    const isDonationTask = taskTypeToken === 'donation';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
     const isSharedAnswersTask = taskTypeToken === 'shared_answers_quiz';
-    let typeLabel = taskTypeToken === 'describe_photo'
+    let typeLabel = taskTypeToken === 'donation'
+      ? 'Donation'
+      : taskTypeToken === 'describe_photo'
       ? 'تسک توصیف عکس'
+      : taskTypeToken === 'write_letter'
+      ? 'Write a letter'
+      : taskTypeToken === 'iran_map_letter'
+      ? 'Iran Map Letter'
       : (taskTypeToken === 'team_task' ? 'تسک تیمی' : (isInfoTask ? 'تسک اطلاعاتی' : (isConditionalQuizTask ? 'کوئیز شرطی' : 'تسک کوئیز')));
     if (isSharedAnswersTask) typeLabel = 'Survey Score Response';
     const quizSrc = `mini%20apps/Task%20Club/TCQ.php?task_id=${encodeURIComponent(task.id)}`;
@@ -2513,8 +2596,14 @@
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
     const responseLevels = normalizeSharedResponseLevels(task?.responseLevels);
-    const topTabsMarkup = isDescribePhotoTask
+    const topTabsMarkup = isDonationTask
+      ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="donation">تنظیمات Donation</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="donation-review">بررسی واریزها</button>'
+      : isDescribePhotoTask
       ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="photo">عکس‌ها</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
+      : isWriteLetterTask
+      ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">بررسی و امتیازدهی نامه‌ها</button>'
+      : isIranMapLetterTask
+      ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات و پیشوند نامه</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">بررسی و امتیازدهی نامه‌ها</button>'
       : (isTeamTask
         ? '<button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="challenge-storage">انبار چالش‌ها</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="team">تیم</button><button type="button" class="tc-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی تیم‌ها</button>'
         : (isInfoTask
@@ -2560,6 +2649,20 @@
                 </div>
               </div>
             ` : ''}
+            ${isIranMapLetterTask ? `
+              <div class="card">
+                <div class="section-header"><h3>Letter Prefix</h3></div>
+                <div class="form" style="gap:12px;">
+                  <label class="field full">
+                    <span>Locked text at the beginning of every letter</span>
+                    <textarea data-task-field="guidePrefix" rows="4" placeholder="سلام و روز بخیر">${escapeHtml(guidePrefix)}</textarea>
+                  </label>
+                  <div class="field full">
+                    <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
+                  </div>
+                </div>
+              </div>
+            ` : ''}
           </div>
         `
       : '';
@@ -2596,6 +2699,43 @@
                 </div>
                 <p class="muted small" data-task-crisis-save-status aria-live="polite"></p>
               </div>
+            </div>
+          </div>
+        `
+      : '';
+    const donationSection = isDonationTask
+      ? `
+          <div class="tc-task-top-section" data-task-top-section="donation" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Donation Settings</h3></div>
+              <div class="form" style="gap:12px;">
+                <label class="field full">
+                  <span>Amount Slide Title</span>
+                  <input type="text" data-task-field="donationAmountTitle" value="${escapeHtml(task.donationAmountTitle || 'مبلغ اهدایی خود را مشخص کنید')}" />
+                </label>
+                <label class="field full">
+                  <span>Direct Deposit Guide Title</span>
+                  <input type="text" data-task-field="donationDepositTitle" value="${escapeHtml(task.donationDepositTitle || 'راهنمای واریز مستقیم مبلغ')}" />
+                </label>
+                <label class="field full">
+                  <span>Direct Deposit Guide Text</span>
+                  <textarea rows="10" data-task-field="donationDepositText">${escapeHtml(task.donationDepositText || '')}</textarea>
+                </label>
+                <div class="field full"><button type="button" class="btn primary standard-primary-button" data-action="save-donation-settings">Save</button></div>
+                <p class="muted small" data-donation-settings-status aria-live="polite"></p>
+              </div>
+            </div>
+          </div>
+          <div class="tc-task-top-section" data-task-top-section="donation-review" hidden>
+            <div class="card">
+              <div class="section-header"><h3>Donation Submissions</h3></div>
+              <div class="table-wrapper">
+                <table class="tct-list-table">
+                  <thead><tr><th>Name</th><th>Work ID</th><th>Amount</th><th>Method</th><th>Status</th><th>Submitted</th><th>Action</th></tr></thead>
+                  <tbody data-donation-review-body><tr><td colspan="7" class="muted">Open this tab to load submissions.</td></tr></tbody>
+                </table>
+              </div>
+              <p class="muted small" data-donation-review-status aria-live="polite"></p>
             </div>
           </div>
         `
@@ -2759,8 +2899,8 @@
           </div>
         `
       : '';
-    const inviteesRateColspan = isTeamTask ? 8 : (isDescribePhotoTask ? 8 : 7);
-    const inviteesRateResultHeader = isDescribePhotoTask ? '<th>Results</th>' : '';
+    const inviteesRateColspan = isTeamTask ? 8 : ((isDescribePhotoTask || isWriteLetterTask || isIranMapLetterTask) ? 8 : 7);
+    const inviteesRateResultHeader = (isDescribePhotoTask || isWriteLetterTask || isIranMapLetterTask) ? '<th>Results</th>' : '';
     const inviteesRateCardTitle = isTeamTask ? 'Team List Card' : 'Invitees List Card';
     const inviteesRateSearchLabel = isTeamTask ? 'Search Teams' : 'Search Invitees';
     const inviteesRateSearchPlaceholder = isTeamTask
@@ -2906,12 +3046,13 @@
           </div>
         </div>
         ${informationSection}
+        ${donationSection}
         ${describePhotoSection}
         ${teamChallengeSection}
         ${teamSettingsSection}
         ${crisisControlSection}
         ${responseLevelSection}
-        ${isInfoTask ? `
+        ${isInfoTask && !isDonationTask ? `
           <div class="tc-task-top-section" data-task-top-section="invitees-rate" hidden>
             <div class="card">
               <div class="section-header"><h3>${inviteesRateCardTitle}</h3></div>
@@ -3298,12 +3439,60 @@
         if (sectionKey === 'invitees-rate' && isInfoLikeTaskType(pane.dataset.taskType || 'quiz')) {
           void loadInfoRateDataIntoPane(pane);
         }
+        if (sectionKey === 'donation-review' && normalizeTaskType(pane.dataset.taskType || '') === 'donation') {
+          void loadDonationSubmissions(pane);
+        }
         if (sectionKey === 'photo') {
           renderDescribePhotoUploadCard(pane);
           renderDescribePhotoList(pane);
         }
         if (sectionKey === 'challenge-storage') {
           renderTeamChallengeList(pane);
+        }
+        return;
+      }
+
+      const saveDonationButton = target.closest('[data-action="save-donation-settings"]');
+      if (saveDonationButton instanceof HTMLButtonElement) {
+        const pane = saveDonationButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const amountTitle = pane.querySelector('[data-task-field="donationAmountTitle"]');
+        const depositTitle = pane.querySelector('[data-task-field="donationDepositTitle"]');
+        const depositText = pane.querySelector('[data-task-field="donationDepositText"]');
+        if (!(amountTitle instanceof HTMLInputElement) || !(depositTitle instanceof HTMLInputElement) || !(depositText instanceof HTMLTextAreaElement)) return;
+        saveDonationButton.disabled = true;
+        setDonationStatus(pane, '[data-donation-settings-status]', 'Saving...');
+        try {
+          const data = await postTaskAction('save_donation_settings', {
+            id: String(pane.dataset.taskId || ''),
+            amount_title: amountTitle.value,
+            deposit_title: depositTitle.value,
+            deposit_text: depositText.value
+          });
+          setDonationStatus(pane, '[data-donation-settings-status]', data.message || 'Donation settings saved.');
+        } catch (error) {
+          setDonationStatus(pane, '[data-donation-settings-status]', error?.message || 'Failed to save Donation settings.', true);
+        } finally {
+          saveDonationButton.disabled = false;
+        }
+        return;
+      }
+
+      const donationReviewButton = target.closest('[data-action="donation-approve"], [data-action="donation-reject"]');
+      if (donationReviewButton instanceof HTMLButtonElement) {
+        const pane = donationReviewButton.closest('.sub-pane[data-task-pane="1"]');
+        if (!(pane instanceof HTMLElement)) return;
+        const decision = donationReviewButton.dataset.action === 'donation-approve' ? 'approve' : 'reject';
+        const workId = String(donationReviewButton.dataset.workId || '').trim();
+        if (!workId || !window.confirm(decision === 'approve' ? 'Approve this Donation and award its score?' : 'Reject this Donation submission?')) return;
+        donationReviewButton.disabled = true;
+        try {
+          const data = await postTaskAction('review_donation_submission', { id: String(pane.dataset.taskId || ''), work_id: workId, decision });
+          setDonationStatus(pane, '[data-donation-review-status]', data.message || 'Review saved.');
+          await loadDonationSubmissions(pane);
+        } catch (error) {
+          setDonationStatus(pane, '[data-donation-review-status]', error?.message || 'Failed to save review.', true);
+          donationReviewButton.disabled = false;
         }
         return;
       }

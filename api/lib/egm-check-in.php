@@ -1252,6 +1252,80 @@ function egmCheckInAddTicketQuantity(string $left, string $right): string
     return ltrim($result, '0') ?: '0';
 }
 
+/** @return list<array{id:string,title:string,sum:string}> */
+function egmCheckInManualTicketTotalsFromRows(array $rows, array $tickets): array
+{
+    $titles = [];
+    foreach ($tickets as $ticket) $titles[(string)$ticket['id']] = (string)$ticket['title'];
+    $totals = [];
+    foreach ($rows as $row) {
+        $id = strtolower(trim((string)($row['ticket_id'] ?? '')));
+        $digits = egmCheckInNormalizeDigits($row['quantity'] ?? '');
+        if ($id === '' || $digits === '') continue;
+        $title = $titles[$id] ?? trim((string)($row['ticket_title'] ?? ''));
+        if ($title === '') $title = $id;
+        if (!isset($totals[$id])) $totals[$id] = ['id'=>$id, 'title'=>$title, 'sum'=>'0'];
+        $totals[$id]['sum'] = egmCheckInAddTicketQuantity($totals[$id]['sum'], $digits);
+    }
+    return array_values($totals);
+}
+
+function egmCheckInManualTicketTotals(array $context, string $periodCode): array
+{
+    if ($periodCode === '') return [];
+    $table = (string)($context['tables']['manual_ticket_prints'] ?? '');
+    if ($table === '') return [];
+    $statement = $context['pdo']->prepare(
+        "SELECT ticket_id,ticket_title,quantity FROM `{$table}` WHERE period_code=:period ORDER BY id"
+    );
+    $statement->execute([':period'=>$periodCode]);
+    $settings = egmInstanceReadData($context['pdo'], (string)$context['code'], 'settings', []);
+    $definitions = egmCheckInTicketDefinitions(is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : []);
+    return egmCheckInManualTicketTotalsFromRows($statement->fetchAll(PDO::FETCH_ASSOC) ?: [], $definitions);
+}
+
+function egmCheckInRecordManualTicket(array $context, string $ticketId, string $quantity, string $clientToken, array $actor): array
+{
+    $period = is_array($context['period'] ?? null) ? $context['period'] : null;
+    if (!is_array($period)) throw new InvalidArgumentException('بازه فعال برای ثبت بلیت دستی پیدا نشد.');
+    $periodCode = egmCheckInPeriodCode($period);
+    $quantity = egmCheckInNormalizeDigits($quantity);
+    if ($quantity === '' || strlen($quantity) > 32) throw new InvalidArgumentException('عدد بلیت دستی معتبر نیست.');
+    $ticketId = strtolower(trim($ticketId));
+    $ticketId = preg_replace('/[^a-z0-9_-]+/', '-', $ticketId) ?? '';
+    $clientToken = strtolower(trim($clientToken));
+    if ($ticketId === '' || preg_match('/^[a-f0-9]{32}$/D', $clientToken) !== 1) {
+        throw new InvalidArgumentException('درخواست چاپ دستی معتبر نیست.');
+    }
+    $profile = egmCheckInPrintProfile($context);
+    $ticket = null;
+    foreach ((array)($profile['tickets'] ?? []) as $candidate) {
+        if (is_array($candidate) && (string)($candidate['id'] ?? '') === $ticketId && !empty($candidate['configured'])) {
+            $ticket = $candidate; break;
+        }
+    }
+    if (!is_array($ticket)) throw new InvalidArgumentException('طرح بلیت شماره‌دار انتخاب‌شده آماده نیست.');
+    $table = (string)$context['tables']['manual_ticket_prints'];
+    $statement = $context['pdo']->prepare(
+        "INSERT INTO `{$table}` (client_token,period_code,ticket_id,ticket_title,quantity,guest_name,qr_value,operator_code) "
+        . "VALUES (:token,:period,:ticket_id,:title,:quantity,'مهمان','000000000',:operator) "
+        . "ON DUPLICATE KEY UPDATE client_token=VALUES(client_token)"
+    );
+    $operator = trim((string)($actor['code'] ?? ($actor['username'] ?? '')));
+    $statement->execute([
+        ':token'=>$clientToken, ':period'=>$periodCode, ':ticket_id'=>$ticketId,
+        ':title'=>(string)$ticket['title'], ':quantity'=>$quantity, ':operator'=>$operator !== '' ? $operator : null,
+    ]);
+    $verify = $context['pdo']->prepare("SELECT period_code,ticket_id,quantity FROM `{$table}` WHERE client_token=:token LIMIT 1");
+    $verify->execute([':token'=>$clientToken]);
+    $saved = $verify->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($saved) || (string)$saved['period_code'] !== $periodCode || (string)$saved['ticket_id'] !== $ticketId || (string)$saved['quantity'] !== $quantity) {
+        throw new InvalidArgumentException('شناسه این چاپ قبلاً برای بلیت دیگری استفاده شده است.');
+    }
+    return ['ticket_id'=>$ticketId, 'ticket_title'=>(string)$ticket['title'], 'quantity'=>$quantity,
+        'manual_ticket_totals'=>egmCheckInManualTicketTotals($context, $periodCode)];
+}
+
 function egmCheckInTicketAndGroupStats(array $rows, array $tickets, array $groups): array
 {
     $totals = []; $progress = [];
@@ -1280,6 +1354,7 @@ function egmCheckInDashboardStats(array $context): array
     $stats = [
         'active' => false,
         'ticket_totals' => [],
+        'manual_ticket_totals' => [],
         'groups' => [],
         'period_code' => '',
         'total' => 0,
@@ -1410,6 +1485,7 @@ function egmCheckInDashboardStats(array $context): array
     $settings = egmInstanceReadData($pdo, (string)$context['code'], 'settings', []);
     $definitions = egmCheckInTicketDefinitions(is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : []);
     $stats = array_merge($stats, egmCheckInTicketAndGroupStats($details->fetchAll(PDO::FETCH_ASSOC), $definitions, egmGroupsRead($context)));
+    $stats['manual_ticket_totals'] = egmCheckInManualTicketTotals($context, $periodCode);
     return $stats;
 }
 

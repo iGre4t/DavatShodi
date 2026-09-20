@@ -87,11 +87,17 @@ function tcTaskAccessNormalizeTaskType(string $value): string
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
+  if (in_array($token, ['donation', 'donation-task', 'donation task'], true)) {
+    return 'donation';
+  }
   if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
     return 'team_task';
   }
   if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
     return 'describe_photo';
+  }
+  if (in_array($token, ['write_letter', 'write-letter', 'write letter', 'write-letter-task', 'write letter task'], true)) {
+    return 'write_letter';
   }
   return 'quiz';
 }
@@ -111,11 +117,17 @@ function tcTaskAccessResolvePaneKeys(string $taskType): array
   if ($type === 'info') {
     return ['control', 'information', 'invitees-rate'];
   }
+  if ($type === 'donation') {
+    return ['control', 'information', 'donation', 'donation-review'];
+  }
   if ($type === 'team_task') {
     return ['control', 'information', 'challenge-storage', 'team', 'invitees-rate'];
   }
   if ($type === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
+  }
+  if ($type === 'write_letter') {
+    return ['control', 'information', 'invitees-rate'];
   }
   return ['control', 'information', 'quiz'];
 }

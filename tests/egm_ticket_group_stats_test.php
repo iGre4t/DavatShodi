@@ -20,4 +20,13 @@ statsAssert($stats['groups'][2]['total'] === 0 && $stats['groups'][2]['entered']
 statsAssert(egmCheckInAddTicketQuantity('99999999999999999999999999999999','1') === '100000000000000000000000000000000', 'Large ticket quantity overflowed');
 $rows[5]['ticket_numbers_json'] = '{"default":"3"}';
 statsAssert(egmCheckInTicketAndGroupStats($rows,$tickets,$groups)['ticket_totals'][2]['sum'] === '3', 'Legacy quantity counted twice');
+
+$manual = egmCheckInManualTicketTotalsFromRows([
+    ['ticket_id'=>'food','ticket_title'=>'Old food title','quantity'=>'6'],
+    ['ticket_id'=>'food','ticket_title'=>'Old food title','quantity'=>'۹'],
+    ['ticket_id'=>'gift','ticket_title'=>'Gift','quantity'=>'0005'],
+    ['ticket_id'=>'bad','ticket_title'=>'Bad','quantity'=>'not-a-number'],
+], $tickets);
+statsAssert(array_column($manual, 'sum') === ['15','5'], 'Manual ticket database totals incorrect');
+statsAssert(($manual[0]['title'] ?? '') === ($tickets[0]['title'] ?? ''), 'Configured manual ticket title not preferred');
 echo "Ticket totals and group progress test passed.\n";

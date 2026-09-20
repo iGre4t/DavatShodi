@@ -547,6 +547,20 @@ try {
         );
         winAppJson(['status' => 'ok', 'message' => 'Number of Ticket برای مهمان ثبت شد.'] + $recorded);
     }
+    if ($method === 'POST' && $action === 'record_manual_ticket') {
+        winAppRequireCsrf($payload);
+        if (empty($access['can_use_printer'])) {
+            winAppJson(['status'=>'error', 'message'=>'اجازه چاپ و ثبت بلیت دستی ندارید.'], 403);
+        }
+        $recorded = egmCheckInRecordManualTicket(
+            $context,
+            (string)($payload['ticket_id'] ?? ''),
+            (string)($payload['quantity'] ?? ''),
+            (string)($payload['client_token'] ?? ''),
+            is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : []
+        );
+        winAppJson(['status'=>'ok', 'message'=>'بلیت دستی مهمان در پایگاه داده ثبت شد.'] + $recorded);
+    }
     if ($method === 'POST' && $action === 'register_uninvited') {
         winAppRequireCsrf($payload);
         if (empty($access['can_manage_scan_actions'])) {

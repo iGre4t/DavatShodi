@@ -43,10 +43,13 @@ api/config.php
 /mini apps/Task Club/TC Prize Levels.json.bak.tmp
 /mini apps/Task Club/TC Prize Levels.json.rollback
 /mini apps/Task Club/TC Prize Levels.json.corrupt-*
-/WinApp/**/bin/
-/WinApp/**/obj/
+# WinApp is maintained as an independent nested repository.
+/WinApp/
 
 # Local exports, database backups, and Windows publish artifacts
 /.codex-behavior-export/
 /outputs/
-/WinApp/publish-*/
+
+# Local cPanel deployment credentials and successful-deploy state
+/.deploy.env
+/.deploy/

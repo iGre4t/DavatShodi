@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Bump whenever a request-time compatible table migration is added. Existing
 // instances use this marker to decide whether the migration block must run.
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-09-16.1';
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-09-20.1';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
 const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = [EGM_INSTANCE_SCHEMA_VERSION];
 
@@ -31,6 +31,7 @@ function egmInstanceTableNames(string $code): array
         'data' => 'egm_' . $normalized,
         'users' => 'egm_' . $normalized . '_users',
         'user_periods' => 'egm_' . $normalized . '_user_periods',
+        'manual_ticket_prints' => 'egm_' . $normalized . '_manual_ticket_prints',
         'answers' => 'egm_' . $normalized . '_answers',
         'teams' => 'egm_' . $normalized . '_teams',
         'team_members' => 'egm_' . $normalized . '_team_members',
@@ -350,6 +351,25 @@ SQL);
             . "ELSE 'not_entered' END"
         );
     }
+
+    $manualTicketPrintsTable = $tables['manual_ticket_prints'];
+    $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS `{$manualTicketPrintsTable}` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `client_token` CHAR(32) NOT NULL,
+  `period_code` VARCHAR(128) NOT NULL,
+  `ticket_id` VARCHAR(24) NOT NULL,
+  `ticket_title` VARCHAR(100) NOT NULL,
+  `quantity` VARCHAR(32) NOT NULL,
+  `guest_name` VARCHAR(100) NOT NULL DEFAULT 'مهمان',
+  `qr_value` VARCHAR(32) NOT NULL DEFAULT '000000000',
+  `operator_code` VARCHAR(191) NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_manual_ticket_client_token` (`client_token`),
+  KEY `idx_manual_ticket_period` (`period_code`, `ticket_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL);
 
     $answersTable = $tables['answers'];
     $pdo->exec(<<<SQL

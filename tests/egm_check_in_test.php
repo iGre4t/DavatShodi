@@ -148,6 +148,21 @@ try {
             ['id' => 'food', 'title' => 'Food'], ['id' => 'gift', 'title' => 'Gift'],
         ]],
     ]);
+    egmInstanceWriteData($pdo, $code, 'custom_number_ticket', [
+        'imageData'=>'data:image/png;base64,AA==',
+        'qrRect'=>['x'=>1,'y'=>1,'width'=>20,'height'=>20],
+        'textRect'=>['x'=>1,'y'=>25,'width'=>90,'height'=>10],
+        'ticketCountRect'=>['x'=>1,'y'=>40,'width'=>90,'height'=>30],
+    ]);
+    $manualFirst = egmCheckInRecordManualTicket($context, 'food', '۶', str_repeat('a', 32), ['username'=>'operator-one']);
+    egmCheckInRecordManualTicket($context, 'food', '6', str_repeat('a', 32), ['username'=>'operator-one']);
+    $manualSecond = egmCheckInRecordManualTicket($context, 'food', '9', str_repeat('b', 32), ['username'=>'operator-two']);
+    egmCheckInAssert(($manualFirst['quantity'] ?? '') === '6', 'Manual ticket digits were not normalized');
+    egmCheckInAssert((($manualSecond['manual_ticket_totals'][0]['sum'] ?? '') === '15'), 'Manual ticket sum was not returned');
+    egmCheckInAssert(
+        (int)$pdo->query("SELECT COUNT(*) FROM `{$tables['manual_ticket_prints']}`")->fetchColumn() === 2,
+        'Manual ticket retry was not idempotent'
+    );
     egmGroupsWrite($context, [['id' => 'group-a', 'title' => 'Group A', 'outputs' => ['print_card', 'ticket:food']]]);
     $pdo->exec("UPDATE `{$tables['user_periods']}` SET `group_id`='group-a' WHERE `user_id`={$userId} AND `period_code`='01'");
     $groupProfile = egmCheckInPrintProfile($context, '1234567890');
@@ -218,6 +233,7 @@ try {
     )->execute([':user_id' => $waitingUserId]);
     $dashboardStats = egmCheckInDashboardStats($context);
     egmCheckInAssert(($dashboardStats['active'] ?? false) === true, 'Active-period dashboard statistics were unavailable');
+    egmCheckInAssert((($dashboardStats['manual_ticket_totals'][0]['sum'] ?? '') === '15'), 'Dashboard manual ticket total is incorrect');
     egmCheckInAssert(($dashboardStats['total'] ?? 0) === 3, 'Dashboard total invitation count is incorrect');
     egmCheckInAssert(($dashboardStats['invited_total'] ?? 0) === 3, 'Dashboard invited-guest count is incorrect');
     egmCheckInAssert(($dashboardStats['walk_in_total'] ?? -1) === 0, 'Dashboard walk-in count is incorrect before registration');

@@ -60,7 +60,9 @@
     photo: 'عکس‌ها',
     'invitees-rate': 'امتیازدهی',
     'challenge-storage': 'مخزن چالش',
-    team: 'تیم'
+    team: 'تیم',
+    donation: 'تنظیمات Donation',
+    'donation-review': 'بررسی واریزها'
   };
 
   const state = {

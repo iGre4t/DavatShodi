@@ -214,11 +214,17 @@ function inviteePasswordNormalizeTaskType(string $value): string
   if (in_array($token, ['info', 'info-task', 'info task'], true)) {
     return 'info';
   }
+  if (in_array($token, ['donation', 'donation-task', 'donation task'], true)) {
+    return 'donation';
+  }
   if (in_array($token, ['team_task', 'team-task', 'team task'], true)) {
     return 'team_task';
   }
   if (in_array($token, ['describe_photo', 'describe-photo', 'describe photo', 'describe-photo-task', 'describe photo task'], true)) {
     return 'describe_photo';
+  }
+  if (in_array($token, ['write_letter', 'write-letter', 'write letter', 'write-letter-task', 'write letter task'], true)) {
+    return 'write_letter';
   }
   return 'quiz';
 }
@@ -235,11 +241,17 @@ function inviteePasswordTaskTypeLabel(string $taskType): string
   if ($type === 'info') {
     return 'Info Task';
   }
+  if ($type === 'donation') {
+    return 'Donation';
+  }
   if ($type === 'team_task') {
     return 'Team Task';
   }
   if ($type === 'describe_photo') {
     return 'Describe Photo';
+  }
+  if ($type === 'write_letter') {
+    return 'Write a letter';
   }
   return 'Quiz';
 }
@@ -980,14 +992,14 @@ function inviteePasswordBuildTaskParticipationItem(
       $started = true;
     }
     $completed = $completed || $score > 0;
-  } elseif ($taskType === 'info') {
+  } elseif ($taskType === 'info' || $taskType === 'donation') {
     if (array_key_exists($taskId, $infoMap)) {
       $score = inviteePasswordNormalizeScoreValue($infoMap[$taskId] ?? 0);
       $completed = true;
       $started = true;
       $details[] = 'Admin score assigned';
     }
-  } elseif ($taskType === 'describe_photo') {
+  } elseif ($taskType === 'describe_photo' || $taskType === 'write_letter') {
     if (array_key_exists($taskId, $describeMap)) {
       $score = inviteePasswordNormalizeScoreValue($describeMap[$taskId] ?? 0);
       $completed = true;
@@ -1327,10 +1339,10 @@ function inviteePasswordResetTaskProgressForRow(
 
   if ($tagCode !== '') {
     inviteePasswordRemoveTaskAnswersRow($tasksDir, $tagCode, $workId);
-    if (in_array($taskType, ['info', 'team_task', 'describe_photo'], true)) {
+    if (in_array($taskType, ['info', 'donation', 'team_task', 'describe_photo', 'write_letter'], true)) {
       inviteePasswordUpdateInfoScoreStore($tasksDir, $tagCode, $workId);
     }
-    if ($taskType === 'describe_photo' && $picksForTask) {
+    if (($taskType === 'describe_photo' || $taskType === 'write_letter') && $picksForTask) {
       inviteePasswordDeleteDescribePhotoArticles($tasksDir, $tagCode, $picksForTask);
     }
     if ($taskType === 'team_task') {
@@ -1520,7 +1532,7 @@ function inviteePasswordSaveTaskScoreForRow(
   $existingTeamEntry = is_array($teamMap[$normalizedTaskId] ?? null) ? $teamMap[$normalizedTaskId] : [];
   unset($teamMap[$normalizedTaskId]);
 
-  if ($taskType === 'info') {
+  if ($taskType === 'info' || $taskType === 'donation') {
     if ($infoTasksIndex < 0) {
       return ['ok' => false, 'message' => 'Info task score column is not available.'];
     }
@@ -1536,7 +1548,7 @@ function inviteePasswordSaveTaskScoreForRow(
       'status' => $status !== '' ? $status : 'scored',
       'score' => max(0, $newScore)
     ];
-  } elseif ($taskType === 'describe_photo') {
+  } elseif ($taskType === 'describe_photo' || $taskType === 'write_letter') {
     if ($describeTaskIndex < 0) {
       return ['ok' => false, 'message' => 'Describe photo task score column is not available.'];
     }
@@ -1574,7 +1586,7 @@ function inviteePasswordSaveTaskScoreForRow(
   $rows[$rowIndex][$scoreIndex] = (string)max(0, $currentTotalScore + $delta);
 
   $tagCode = is_array($task) ? trim((string)($task['tagCode'] ?? '')) : '';
-  if ($tagCode !== '' && in_array($taskType, ['info', 'team_task', 'describe_photo'], true)) {
+  if ($tagCode !== '' && in_array($taskType, ['info', 'donation', 'team_task', 'describe_photo', 'write_letter'], true)) {
     if (!inviteePasswordSetInfoScoreStore($tasksDir, $tagCode, $workId, max(0, $newScore))) {
       return ['ok' => false, 'message' => 'Failed to save task score store.'];
     }

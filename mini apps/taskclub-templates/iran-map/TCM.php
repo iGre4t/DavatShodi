@@ -124,6 +124,8 @@ const TASK_TEAM_RUNTIME_FILE = 'team-runtime.json';
 const TASK_DESCRIBE_PHOTO_DIR = 'photos';
 const TASK_DESCRIBE_PHOTO_META_FILE = 'photos.json';
 const TASK_DESCRIBE_PHOTO_ARTICLES_DIR = 'articles';
+const TASK_DONATION_SETTINGS_FILE = 'donation-settings.json';
+const TASK_DONATION_SUBMISSIONS_FILE = 'donation-submissions.json';
 
 $prizeStorePath = __DIR__ . '/TC Prizes.json';
 $prizeLevelsPath = __DIR__ . '/TC Prize Levels.json';
@@ -1231,11 +1233,20 @@ function normalizeTaskTypeValue($value): string
   if ($token === 'info' || $token === 'info-task' || $token === 'info task') {
     return 'info';
   }
+  if ($token === 'donation' || $token === 'donation-task' || $token === 'donation task') {
+    return 'donation';
+  }
   if ($token === 'team_task' || $token === 'team-task' || $token === 'team task') {
     return 'team_task';
   }
   if ($token === 'describe_photo' || $token === 'describe-photo' || $token === 'describe photo' || $token === 'describe-photo-task' || $token === 'describe photo task') {
     return 'describe_photo';
+  }
+  if ($token === 'write_letter' || $token === 'write-letter' || $token === 'write letter' || $token === 'write-letter-task' || $token === 'write letter task') {
+    return 'write_letter';
+  }
+  if ($token === 'iran_map_letter' || $token === 'iran-map-letter' || $token === 'iran map letter') {
+    return 'iran_map_letter';
   }
   return 'quiz';
 }
@@ -1379,6 +1390,49 @@ function readTaskInfoSettings(string $tasksDir, string $tagCode): array
     'guidePrefix' => trim((string)($decoded['guidePrefix'] ?? ($decoded['guide_prefix'] ?? ''))),
     'guideSuffix' => trim((string)($decoded['guideSuffix'] ?? ($decoded['guide_suffix'] ?? '')))
   ];
+}
+
+function buildTaskDonationPath(string $tasksDir, string $tagCode, string $fileName): string
+{
+  $tagCode = normalizeTaskTagCode($tagCode);
+  return $tagCode === '' ? '' : $tasksDir . DIRECTORY_SEPARATOR . $tagCode . DIRECTORY_SEPARATOR . $fileName;
+}
+
+function readTaskDonationSettings(string $tasksDir, string $tagCode): array
+{
+  $defaults = ['amountTitle' => 'مبلغ اهدایی خود را مشخص کنید', 'depositTitle' => 'راهنمای واریز مستقیم مبلغ', 'depositText' => ''];
+  $path = buildTaskDonationPath($tasksDir, $tagCode, TASK_DONATION_SETTINGS_FILE);
+  if ($path === '' || !tcDbIsFile($path)) return $defaults;
+  $decoded = json_decode((string)tcDbFileGetContents($path), true);
+  if (!is_array($decoded)) return $defaults;
+  return [
+    'amountTitle' => trim((string)($decoded['amountTitle'] ?? ($decoded['amount_title'] ?? $defaults['amountTitle']))) ?: $defaults['amountTitle'],
+    'depositTitle' => trim((string)($decoded['depositTitle'] ?? ($decoded['deposit_title'] ?? $defaults['depositTitle']))) ?: $defaults['depositTitle'],
+    'depositText' => str_replace(["\r\n", "\r"], "\n", (string)($decoded['depositText'] ?? ($decoded['deposit_text'] ?? '')))
+  ];
+}
+
+function readTaskDonationSubmissions(string $tasksDir, string $tagCode): array
+{
+  $path = buildTaskDonationPath($tasksDir, $tagCode, TASK_DONATION_SUBMISSIONS_FILE);
+  if ($path === '' || !tcDbIsFile($path)) return [];
+  $decoded = json_decode((string)tcDbFileGetContents($path), true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function writeTaskDonationSubmissions(string $tasksDir, string $tagCode, array $submissions): bool
+{
+  $path = buildTaskDonationPath($tasksDir, $tagCode, TASK_DONATION_SUBMISSIONS_FILE);
+  if ($path === '') return false;
+  $json = json_encode($submissions, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  return is_string($json) && tcDbFilePutContents($path, $json . PHP_EOL, LOCK_EX) !== false;
+}
+
+function normalizeDonationAmount($value): int
+{
+  $token = strtr(trim((string)$value), ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
+  $digits = preg_replace('/\D+/', '', $token);
+  return (!is_string($digits) || $digits === '') ? 0 : max(0, (int)$digits);
 }
 
 function buildTaskSharedResponsePath(string $tasksDir, string $tagCode, string $fileName): string
@@ -2410,6 +2464,12 @@ function loadTaskRecords(string $storePath, string $tasksDir): array
     $task['infoText'] = (string)($infoSettings['text'] ?? '');
     $task['guidePrefix'] = (string)($infoSettings['guidePrefix'] ?? '');
     $task['guideSuffix'] = (string)($infoSettings['guideSuffix'] ?? '');
+    $donationSettings = normalizeTaskTypeValue($task['taskType'] ?? 'quiz') === 'donation'
+      ? readTaskDonationSettings($tasksDir, $tagCode)
+      : ['amountTitle' => '', 'depositTitle' => '', 'depositText' => ''];
+    $task['donationAmountTitle'] = (string)($donationSettings['amountTitle'] ?? '');
+    $task['donationDepositTitle'] = (string)($donationSettings['depositTitle'] ?? '');
+    $task['donationDepositText'] = (string)($donationSettings['depositText'] ?? '');
     $task['responseLevels'] = normalizeTaskTypeValue($task['taskType'] ?? 'quiz') === 'shared_answers_quiz'
       ? readTaskSharedResponseLevels($tasksDir, $tagCode)
       : [];
@@ -3178,6 +3238,41 @@ function parseInfoTasksScoreMap(string $raw): array
   return $map;
 }
 
+function serializeInfoTasksScoreMap(array $map): string
+{
+  $parts = [];
+  foreach ($map as $taskId => $score) {
+    $taskId = trim((string)$taskId);
+    if ($taskId !== '') $parts[] = $taskId . '::' . (string)max(0, (int)$score);
+  }
+  return implode(', ', $parts);
+}
+
+function awardDonationTaskScore(array $task, string $workId, string $inviteesPath, string $inviteesMapPath, string $prizeLevelsPath): array
+{
+  $taskId = trim((string)($task['id'] ?? ''));
+  $workId = trim($workId);
+  if ($taskId === '' || $workId === '') return ['ok' => false, 'message' => 'Invalid Donation task.'];
+  $table = loadInviteesTable($inviteesPath, $inviteesMapPath);
+  $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+  $columns = is_array($table['columns']['index'] ?? null) ? $table['columns']['index'] : [];
+  $rowIndex = findInviteeRowIndex($rows, (int)($table['workIdIndex'] ?? -1), $workId);
+  $scoreIndex = (int)($columns['score'] ?? -1);
+  $infoIndex = (int)($columns['info tasks'] ?? -1);
+  if ($rowIndex < 0 || $scoreIndex < 0 || $infoIndex < 0) return ['ok' => false, 'message' => 'Participant score columns are not ready.'];
+  $infoMap = parseInfoTasksScoreMap((string)($rows[$rowIndex][$infoIndex] ?? ''));
+  $previous = max(0, (int)($infoMap[$taskId] ?? 0));
+  $score = max(0, (int)($task['score'] ?? 0));
+  $currentTotal = max(0, (int)($rows[$rowIndex][$scoreIndex] ?? 0));
+  $newTotal = max(0, $currentTotal - $previous + $score);
+  $infoMap[$taskId] = $score;
+  $rows[$rowIndex][$infoIndex] = serializeInfoTasksScoreMap($infoMap);
+  $rows[$rowIndex][$scoreIndex] = (string)$newTotal;
+  syncOutOfValueRewardsForUser($rows, $rowIndex, $columns, readPrizeLevelRecords($prizeLevelsPath), $newTotal);
+  if (!writeInviteesCsv($inviteesPath, $rows)) return ['ok' => false, 'message' => 'Failed to save the Donation score.'];
+  return ['ok' => true, 'awardedScore' => max(0, $score - $previous), 'userTaskScore' => $score, 'totalScore' => $newTotal];
+}
+
 function buildTaskDescribePhotoDirPath(string $tasksDir, string $tagCode): string
 {
   $normalizedTag = normalizeTaskTagCode($tagCode);
@@ -3362,8 +3457,12 @@ function resolveDescribePhotoPicksForUser(array $task, string $workId, string $i
     return ['ok' => false, 'message' => 'شناسه ماموریت نامعتبر است.'];
   }
 
-  $availablePhotos = readTaskDescribePhotoEntries(TASKS_DIR_PATH, $tagCode);
-  if (count($availablePhotos) < 3) {
+  $writtenTaskType = normalizeTaskTypeValue((string)($task['taskType'] ?? ''));
+  $isWriteLetter = $writtenTaskType === 'write_letter' || $writtenTaskType === 'iran_map_letter';
+  $availablePhotos = $isWriteLetter
+    ? [['id' => 'letter', 'name' => 'نامه', 'fileName' => '', 'url' => '']]
+    : readTaskDescribePhotoEntries(TASKS_DIR_PATH, $tagCode);
+  if (!$isWriteLetter && count($availablePhotos) < 3) {
     return ['ok' => false, 'message' => 'برای این ماموریت حداقل ۳ تصویر لازم است.'];
   }
 
@@ -3406,7 +3505,7 @@ function resolveDescribePhotoPicksForUser(array $task, string $workId, string $i
     $photoById[$photoId] = $photo;
   }
 
-  $desiredCount = min(3, count($photoById));
+  $desiredCount = $isWriteLetter ? 1 : min(3, count($photoById));
   $changed = false;
   $selectedMap = [];
   foreach ($taskPickMap as $photoId => $fileName) {
@@ -3543,18 +3642,44 @@ function readDescribePhotoUserArticle(array $task, string $workId, string $photo
   if (!is_string($content)) {
     $content = '';
   }
+  $place = null;
+  if (normalizeTaskTypeValue((string)($task['taskType'] ?? '')) === 'iran_map_letter') {
+    $placePath = $filePath . '.place.json';
+    if (tcDbIsFile($placePath)) {
+      $placeDecoded = json_decode((string)tcDbFileGetContents($placePath), true);
+      if (is_array($placeDecoded)) {
+        $placeName = trim((string)($placeDecoded['name'] ?? ''));
+        $placeX = (float)($placeDecoded['x'] ?? -1);
+        $placeY = (float)($placeDecoded['y'] ?? -1);
+        if ($placeName !== '' && is_finite($placeX) && is_finite($placeY)) {
+          $place = ['name' => $placeName, 'x' => $placeX, 'y' => $placeY];
+        }
+      }
+    }
+  }
+  $wordCountText = normalizeTaskTypeValue((string)($task['taskType'] ?? '')) === 'iran_map_letter'
+    ? trim((string)($task['guidePrefix'] ?? '')) . ' ' . $content
+    : $content;
   return [
     'ok' => true,
     'photo' => $target,
     'text' => $content,
-    'wordCount' => countWordsInText($content)
+    'wordCount' => countWordsInText($wordCountText),
+    'place' => $place
   ];
 }
 
-function saveDescribePhotoUserArticle(array $task, string $workId, string $photoId, string $text, string $inviteesPath, string $inviteesMapPath): array
+function saveDescribePhotoUserArticle(array $task, string $workId, string $photoId, string $text, string $inviteesPath, string $inviteesMapPath, array $place = []): array
 {
   $normalizedText = str_replace(["\r\n", "\r"], "\n", $text);
-  $wordCount = countWordsInText($normalizedText);
+  $normalizedTaskType = normalizeTaskTypeValue((string)($task['taskType'] ?? ''));
+  $wordCountText = $normalizedTaskType === 'iran_map_letter'
+    ? trim((string)($task['guidePrefix'] ?? '')) . ' ' . $normalizedText
+    : $normalizedText;
+  $wordCount = countWordsInText($wordCountText);
+  if ($normalizedTaskType === 'iran_map_letter' && countWordsInText($normalizedText) < 1) {
+    return ['ok' => false, 'message' => 'متن نامه را بنویسید.'];
+  }
   if ($wordCount > 300) {
     return ['ok' => false, 'message' => 'حداکثر ۳۰۰ کلمه مجاز است.'];
   }
@@ -3596,13 +3721,35 @@ function saveDescribePhotoUserArticle(array $task, string $workId, string $photo
     return ['ok' => false, 'message' => 'فایل متن تصویر نامعتبر است.'];
   }
   $filePath = $articlesDirPath . DIRECTORY_SEPARATOR . $fileName;
+  $normalizedPlace = null;
+  if ($normalizedTaskType === 'iran_map_letter') {
+    $placeName = trim((string)($place['name'] ?? ''));
+    $placeX = (float)($place['x'] ?? -1);
+    $placeY = (float)($place['y'] ?? -1);
+    $placeNameLength = preg_match_all('/./us', $placeName, $placeNameChars);
+    if ($placeName === '' || !is_int($placeNameLength) || $placeNameLength > 120 || !is_finite($placeX) || !is_finite($placeY)) {
+      return ['ok' => false, 'message' => 'نام و موقعیت مکان را کامل کنید.'];
+    }
+    require_once __DIR__ . '/iran-map-store.php';
+    if (!tcIranMapContains(tcIranMapRings(), $placeX, $placeY)) {
+      return ['ok' => false, 'message' => 'نقطه انتخاب‌شده باید داخل نقشه ایران باشد.'];
+    }
+    $normalizedPlace = ['name' => $placeName, 'x' => round($placeX, 2), 'y' => round($placeY, 2)];
+  }
   if (tcDbFilePutContents($filePath, $normalizedText, LOCK_EX) === false) {
     return ['ok' => false, 'message' => 'ذخیره متن تصویر ناموفق بود.'];
+  }
+  if ($normalizedPlace !== null) {
+    $placeJson = json_encode($normalizedPlace, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($placeJson) || tcDbFilePutContents($filePath . '.place.json', $placeJson . PHP_EOL, LOCK_EX) === false) {
+      return ['ok' => false, 'message' => 'ذخیره موقعیت انتخاب‌شده ناموفق بود.'];
+    }
   }
   return [
     'ok' => true,
     'photo' => $target,
-    'wordCount' => $wordCount
+    'wordCount' => $wordCount,
+    'place' => $normalizedPlace
   ];
 }
 
@@ -3796,7 +3943,10 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     'answered' => 0,
     'completed' => false,
     'describeSubmitted' => false,
-    'teamStartedPending' => false
+    'teamStartedPending' => false,
+    'donationStatus' => '',
+    'donationAmount' => 0,
+    'donationMethod' => ''
   ];
   $normalizedWorkId = trim($workId);
   $taskId = trim((string)($task['id'] ?? ''));
@@ -3816,12 +3966,12 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
   $taskCompletedIndex = (int)($columns['task completed ids'] ?? -1);
   $taskScoreMapIndex = (int)($columns['task score map'] ?? -1);
   $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-  $taskScoreColumn = $taskType === 'describe_photo'
+  $taskScoreColumn = ($taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter')
     ? 'describe photo task'
     : ($taskType === 'team_task' ? 'team task' : 'info tasks');
   $infoTasksIndex = (int)($columns[$taskScoreColumn] ?? -1);
   $row = is_array($rows[$rowIndex] ?? null) ? $rows[$rowIndex] : [];
-  $describeSubmitted = $taskType === 'describe_photo'
+  $describeSubmitted = ($taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter')
     ? hasDescribePhotoSubmissionForUserTask($task, $row, $columns)
     : false;
   $teamStartedPending = false;
@@ -3845,7 +3995,7 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     $isCompleted = false;
     $taskScore = 0;
   }
-  if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
+  if ($taskType === 'info' || $taskType === 'donation' || $taskType === 'team_task' || $taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter') {
     if ($taskType === 'team_task') {
       $teamTaskMap = $infoTasksIndex >= 0
         ? parseTeamTaskMap((string)($row[$infoTasksIndex] ?? ''))
@@ -3882,8 +4032,19 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
       }
     }
   }
+  $donationStatus = '';
+  $donationAmount = 0;
+  $donationMethod = '';
+  if ($taskType === 'donation') {
+    $submission = readTaskDonationSubmissions(TASKS_DIR_PATH, (string)($task['tagCode'] ?? ''))[$normalizedWorkId] ?? null;
+    if (is_array($submission)) {
+      $donationStatus = strtolower(trim((string)($submission['status'] ?? '')));
+      $donationAmount = max(0, (int)($submission['amount'] ?? 0));
+      $donationMethod = strtolower(trim((string)($submission['method'] ?? '')));
+    }
+  }
   if ($isCompleted) {
-    if ($taskType === 'info' || $taskType === 'team_task' || $taskType === 'describe_photo') {
+    if ($taskType === 'info' || $taskType === 'donation' || $taskType === 'team_task' || $taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter') {
       $taskScore = max(0, $taskScore);
     } elseif (isset($taskScoreMap[$taskId])) {
       $taskScore = max(0, (int)$taskScoreMap[$taskId]);
@@ -3901,7 +4062,10 @@ function readTaskUserProgress(array $task, string $inviteesPath, string $invitee
     'answered' => $isCompleted ? 1 : 0,
     'completed' => $isCompleted,
     'describeSubmitted' => $describeSubmitted,
-    'teamStartedPending' => $teamStartedPending
+    'teamStartedPending' => $teamStartedPending,
+    'donationStatus' => $donationStatus,
+    'donationAmount' => $donationAmount,
+    'donationMethod' => $donationMethod
   ];
 }
 
@@ -3954,6 +4118,7 @@ function buildTaskPayloadForView(
     $completed = (bool)($progress['completed'] ?? false);
     $describeSubmitted = (bool)($progress['describeSubmitted'] ?? false);
     $teamStartedPending = (bool)($progress['teamStartedPending'] ?? false);
+    $donationStatus = strtolower(trim((string)($progress['donationStatus'] ?? '')));
     $maxScoreQuestionCount = 1;
     if ($taskType === 'conditional_quiz') {
       $quizAssets = loadTaskQuizAssets($task, $questionsStorePath);
@@ -3968,8 +4133,10 @@ function buildTaskPayloadForView(
     }
     $statusLabel = $completed
       ? 'تکمیل شده'
+      : ($taskType === 'donation' && $donationStatus === 'pending'
+        ? 'در انتظار تایید'
       : (((
-          $taskType === 'describe_photo'
+          ($taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter')
           && $status === 'active'
           && $describeSubmitted
         ) || (
@@ -3978,7 +4145,7 @@ function buildTaskPayloadForView(
           && $teamStartedPending
         ))
         ? ($taskType === 'team_task' ? 'شروع شده' : 'تکمیل شده')
-        : resolveTaskStatusLabel($status, $taskType, $hasGoldenTime));
+        : resolveTaskStatusLabel($status, $taskType, $hasGoldenTime)));
     $items[] = [
       'id' => (string)($task['id'] ?? ''),
       'title' => (string)($task['title'] ?? ''),
@@ -3999,6 +4166,9 @@ function buildTaskPayloadForView(
       'completed' => $completed,
       'describeSubmitted' => $describeSubmitted,
       'teamStartedPending' => $teamStartedPending,
+      'donationStatus' => $donationStatus,
+      'donationAmount' => (int)($progress['donationAmount'] ?? 0),
+      'donationMethod' => (string)($progress['donationMethod'] ?? ''),
       'available' => ($isActive || $isEndedQuiz) && !$completed,
       'userScore' => (int)($progress['score'] ?? 0)
     ];
@@ -5182,7 +5352,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       : null;
     $describePhotos = [];
     $teamContext = null;
-    if ($taskType === 'describe_photo' && $available) {
+    if (($taskType === 'describe_photo' || $taskType === 'write_letter' || $taskType === 'iran_map_letter') && $available) {
       $resolvedPicks = resolveDescribePhotoPicksForUser($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath);
       if (!($resolvedPicks['ok'] ?? false)) {
         echo json_encode(['status' => 'error', 'message' => (string)($resolvedPicks['message'] ?? 'دریافت تصاویر ماموریت ناموفق بود.')]);
@@ -5209,6 +5379,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'infoText' => (string)($task['infoText'] ?? ''),
         'guidePrefix' => (string)($task['guidePrefix'] ?? ''),
         'guideSuffix' => (string)($task['guideSuffix'] ?? ''),
+        'donationAmountTitle' => (string)($task['donationAmountTitle'] ?? 'مبلغ اهدایی خود را مشخص کنید'),
+        'donationDepositTitle' => (string)($task['donationDepositTitle'] ?? 'راهنمای واریز مستقیم مبلغ'),
+        'donationDepositText' => (string)($task['donationDepositText'] ?? ''),
         'sharedResponse' => $sharedResponse,
         'responseLevels' => is_array($task['responseLevels'] ?? null) ? $task['responseLevels'] : [],
         'teamMin' => (int)($task['teamMin'] ?? 0),
@@ -5433,8 +5606,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    if ($taskType !== 'describe_photo') {
-      echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع توصیف تصویر نیست.']);
+    if ($taskType !== 'describe_photo' && $taskType !== 'write_letter' && $taskType !== 'iran_map_letter') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع نوشتاری نیست.']);
       exit;
     }
     $taskStatus = deriveTaskAvailabilityStatus($task);
@@ -5454,6 +5627,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         'photo' => $article['photo'] ?? null,
         'text' => (string)($article['text'] ?? ''),
         'wordCount' => (int)($article['wordCount'] ?? 0),
+        'place' => is_array($article['place'] ?? null) ? $article['place'] : null,
         'maxWords' => 300
       ]
     ], JSON_UNESCAPED_UNICODE);
@@ -5475,6 +5649,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $taskId = trim((string)($payload['taskId'] ?? ''));
     $photoId = trim((string)($payload['photoId'] ?? ''));
     $text = (string)($payload['text'] ?? '');
+    $place = is_array($payload['place'] ?? null) ? $payload['place'] : [];
     if ($taskId === '' || $photoId === '') {
       echo json_encode(['status' => 'error', 'message' => 'اطلاعات تصویر کامل نیست.']);
       exit;
@@ -5492,8 +5667,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
-    if ($taskType !== 'describe_photo') {
-      echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع توصیف تصویر نیست.']);
+    if ($taskType !== 'describe_photo' && $taskType !== 'write_letter' && $taskType !== 'iran_map_letter') {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت از نوع نوشتاری نیست.']);
       exit;
     }
     $taskStatus = deriveTaskAvailabilityStatus($task);
@@ -5502,7 +5677,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       exit;
     }
 
-    $saved = saveDescribePhotoUserArticle($task, $sessionWorkId, $photoId, $text, $inviteesFilePath, $inviteesMapPath);
+    $saved = saveDescribePhotoUserArticle($task, $sessionWorkId, $photoId, $text, $inviteesFilePath, $inviteesMapPath, $place);
     if (!($saved['ok'] ?? false)) {
       echo json_encode(['status' => 'error', 'message' => (string)($saved['message'] ?? 'ذخیره متن تصویر ناموفق بود.')]);
       exit;
@@ -5512,6 +5687,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       'data' => [
         'photo' => $saved['photo'] ?? null,
         'wordCount' => (int)($saved['wordCount'] ?? 0),
+        'place' => is_array($saved['place'] ?? null) ? $saved['place'] : null,
         'maxWords' => 300
       ]
     ], JSON_UNESCAPED_UNICODE);
@@ -6227,6 +6403,76 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     exit;
   }
 
+  if ($action === 'donation_submit') {
+    $sessionWorkId = trim((string)($_SESSION['tc_work_id'] ?? ''));
+    if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
+      echo json_encode(['status' => 'error', 'message' => 'ابتدا وارد شوید.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (loadGlobalEventStatus() !== 'active') {
+      echo json_encode(['status' => 'error', 'message' => 'این رویداد در حال حاضر فعال نیست.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $taskId = trim((string)($payload['taskId'] ?? ''));
+    $amount = normalizeDonationAmount($payload['amount'] ?? '');
+    $method = strtolower(trim((string)($payload['method'] ?? '')));
+    $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+    $task = findTaskById($tasks, $taskId);
+    if (!is_array($task) || normalizeTaskTypeValue($task['taskType'] ?? '') !== 'donation') {
+      echo json_encode(['status' => 'error', 'message' => 'ماموریت Donation پیدا نشد.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if (!canOpenTaskByAvailabilityStatus(deriveTaskAvailabilityStatus($task), 'donation', $task)) {
+      echo json_encode(['status' => 'error', 'message' => 'این ماموریت در حال حاضر فعال نیست.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ($amount <= 0 || !in_array($method, ['payroll', 'direct'], true)) {
+      echo json_encode(['status' => 'error', 'message' => 'مبلغ و روش پرداخت را به‌درستی مشخص کنید.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $progress = readTaskUserProgress($task, $inviteesFilePath, $inviteesMapPath, $sessionWorkId);
+    if (!empty($progress['completed'])) {
+      echo json_encode(['status' => 'ok', 'alreadyCompleted' => true, 'taskCompleted' => true, 'userTaskScore' => (int)($progress['score'] ?? 0), 'totalScore' => computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    if ((string)($progress['donationStatus'] ?? '') === 'pending') {
+      echo json_encode(['status' => 'error', 'message' => 'درخواست واریز مستقیم شما در انتظار بررسی است.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $submissions = readTaskDonationSubmissions(TASKS_DIR_PATH, (string)($task['tagCode'] ?? ''));
+    $entry = [
+      'amount' => $amount,
+      'method' => $method,
+      'status' => $method === 'payroll' ? 'completed' : 'pending',
+      'submittedAt' => date('Y-m-d H:i:s'),
+      'reviewedAt' => '',
+      'reviewedBy' => ''
+    ];
+    if ($method === 'payroll') {
+      $awarded = awardDonationTaskScore($task, $sessionWorkId, $inviteesFilePath, $inviteesMapPath, $prizeLevelsPath);
+      if (!($awarded['ok'] ?? false)) {
+        echo json_encode(['status' => 'error', 'message' => (string)($awarded['message'] ?? 'ثبت امتیاز ناموفق بود.')], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $entry['reviewedAt'] = date('Y-m-d H:i:s');
+      $entry['reviewedBy'] = 'automatic';
+      $submissions[$sessionWorkId] = $entry;
+      if (!writeTaskDonationSubmissions(TASKS_DIR_PATH, (string)($task['tagCode'] ?? ''), $submissions)) {
+        echo json_encode(['status' => 'error', 'message' => 'امتیاز ثبت شد اما ذخیره جزئیات Donation ناموفق بود.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      echo json_encode(['status' => 'ok', 'taskCompleted' => true, 'pending' => false] + $awarded, JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $submissions[$sessionWorkId] = $entry;
+    if (!writeTaskDonationSubmissions(TASKS_DIR_PATH, (string)($task['tagCode'] ?? ''), $submissions)) {
+      echo json_encode(['status' => 'error', 'message' => 'ثبت درخواست واریز مستقیم ناموفق بود.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    echo json_encode(['status' => 'ok', 'taskCompleted' => false, 'pending' => true, 'donationStatus' => 'pending', 'amount' => $amount, 'method' => 'direct'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
   if ($action === 'task_complete') {
     $sessionWorkId = (string)($_SESSION['tc_work_id'] ?? '');
     if (!(($_SESSION['tc_authed'] ?? false) && $sessionWorkId !== '')) {
@@ -6259,6 +6505,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     $status = deriveTaskAvailabilityStatus($task);
     $taskType = normalizeTaskTypeValue($task['taskType'] ?? 'quiz');
+    if ($taskType === 'donation') {
+      echo json_encode(['status' => 'error', 'message' => 'برای تکمیل Donation روش پرداخت را انتخاب کنید.'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
     $canComplete = canOpenTaskByAvailabilityStatus($status, $taskType, $task);
     if (!$canComplete) {
       echo json_encode(['status' => 'error', 'message' => 'This task is not available right now.']);
@@ -8943,6 +9193,34 @@ $sessionPayload = [
         overflow-x: hidden;
         -webkit-overflow-scrolling: touch;
       }
+      .donation-task-step {
+        display: grid;
+        gap: 18px;
+        width: min(100%, 560px);
+        margin: 0 auto;
+        direction: rtl;
+      }
+      .donation-task-step.hidden { display: none; }
+      .donation-amount-field {
+        display: grid;
+        gap: 7px;
+        text-align: center;
+      }
+      .donation-amount-field input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 16px;
+        padding: 16px 18px;
+        background: rgba(255,255,255,.08);
+        color: inherit;
+        font: inherit;
+        font-size: clamp(1.25rem, 5vw, 1.8rem);
+        text-align: center;
+        direction: ltr;
+      }
+      .donation-amount-field small { opacity: .72; font-size: .82rem; }
+      .donation-method-list { display: grid; gap: 12px; }
 
       .info-task-head {
         display: grid;
@@ -9146,6 +9424,39 @@ $sessionPayload = [
         background: #f8fbff;
         color: #263b62;
         line-height: 1.8;
+      }
+
+      .iran-map-letter-step {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-height: 0;
+      }
+
+      .iran-map-letter-art {
+        position: relative;
+        min-height: 230px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #d8e2f4;
+        border-radius: 18px;
+        background: #f8fbff;
+        overflow: hidden;
+        cursor: crosshair;
+      }
+
+      .iran-map-letter-art svg { display: block; width: 100%; max-height: 310px; }
+      .iran-map-letter-art path { fill: rgba(47, 143, 255, 0.06); stroke: var(--tc-secondary, #2f8fff); pointer-events: visiblePainted; }
+      .iran-map-letter-pin { fill: #e44955; stroke: #fff; stroke-width: 2; pointer-events: none; }
+      .iran-map-letter-prefix {
+        padding: 12px 14px;
+        border: 1px solid #c8d8f2;
+        border-radius: 14px;
+        background: #eef5ff;
+        color: #263b62;
+        line-height: 1.9;
+        white-space: pre-wrap;
       }
 
       .describe-photo-word-count {
@@ -10807,6 +11118,7 @@ $sessionPayload = [
                   $isCompleted = (bool)($taskItem['completed'] ?? false);
                   $isDescribeSubmitted = (bool)($taskItem['describeSubmitted'] ?? false);
                   $isTeamStartedPending = (bool)($taskItem['teamStartedPending'] ?? false);
+                  $donationStatus = (string)($taskItem['donationStatus'] ?? '');
                   $taskTypeToken = (string)($taskItem['taskType'] ?? 'quiz');
                   $taskStatusToken = (string)($taskItem['status'] ?? 'inactive');
                   $isButtonInteractable = $tcTasksInteractableInitial && $isAvailable;
@@ -10819,7 +11131,7 @@ $sessionPayload = [
                   } elseif ($taskTypeToken === 'conditional_quiz' && $taskStatusToken === 'ended' && $isButtonInteractable) {
                     $buttonClass .= ' is-golden-ended';
                   } elseif (
-                    ($taskTypeToken === 'describe_photo' && $taskStatusToken === 'active' && $isDescribeSubmitted)
+                    (($taskTypeToken === 'describe_photo' || $taskTypeToken === 'write_letter' || $taskTypeToken === 'iran_map_letter') && $taskStatusToken === 'active' && $isDescribeSubmitted)
                     || ($taskTypeToken === 'team_task' && $taskStatusToken === 'active' && $isTeamStartedPending)
                   ) {
                     $buttonClass .= ' is-describe-submitted';
@@ -10846,6 +11158,7 @@ $sessionPayload = [
                   data-task-completed="<?= $isCompleted ? '1' : '0' ?>"
                   data-task-describe-submitted="<?= $isDescribeSubmitted ? '1' : '0' ?>"
                   data-task-team-started-pending="<?= $isTeamStartedPending ? '1' : '0' ?>"
+                  data-task-donation-status="<?= htmlspecialchars($donationStatus, ENT_QUOTES, 'UTF-8') ?>"
                   data-task-user-score="<?= (int)($taskItem['userScore'] ?? 0) ?>"
                   <?= $disabledAttr ?>
                 >
@@ -10924,6 +11237,26 @@ $sessionPayload = [
             <h3 id="tc-task-info-title" class="tc-task-info-title">اطلاعات ماموریت</h3>
           </div>
           <div id="tc-task-info-content" class="info-task-content"></div>
+          <section id="tc-donation-amount-step" class="donation-task-step hidden">
+            <h3 id="tc-donation-amount-title" class="describe-photo-editor-title">مبلغ اهدایی خود را مشخص کنید</h3>
+            <label class="donation-amount-field">
+              <input id="tc-donation-amount-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" />
+              <small>تومان</small>
+            </label>
+            <button id="tc-donation-amount-next" class="login-btn describe-photo-btn" type="button" disabled>ادامه</button>
+          </section>
+          <section id="tc-donation-method-step" class="donation-task-step hidden">
+            <h3 class="describe-photo-editor-title">روش پرداخت را انتخاب کنید</h3>
+            <div class="donation-method-list">
+              <button type="button" class="login-btn describe-photo-btn" data-donation-method="payroll">کسر از حقوق</button>
+              <button type="button" class="login-btn describe-photo-btn secondary" data-donation-method="direct">واریز مستقیم مبلغ</button>
+            </div>
+          </section>
+          <section id="tc-donation-guide-step" class="donation-task-step hidden">
+            <div class="info-task-head"><h3 id="tc-donation-guide-title" class="tc-task-info-title">راهنمای واریز مستقیم مبلغ</h3></div>
+            <div id="tc-donation-guide-content" class="info-task-content"></div>
+            <button id="tc-donation-guide-done" class="login-btn info-task-ack" type="button">بازگشت به ماموریت‌ها</button>
+          </section>
           <section id="tc-team-rules-step" class="team-task-step hidden">
             <div class="info-task-section team-task-rules-card">
               <h3>قوانین تیم</h3>
@@ -11068,12 +11401,24 @@ $sessionPayload = [
               <button id="tc-describe-photo-select" class="login-btn describe-photo-btn" type="button">انتخاب این تصویر</button>
             </div>
           </section>
+          <section id="tc-iran-map-letter-step" class="iran-map-letter-step hidden">
+            <p class="describe-photo-editor-title">یک نقطه روی نقشه انتخاب کنید</p>
+            <div id="tc-iran-map-letter-art" class="iran-map-letter-art" role="button" tabindex="0" aria-label="انتخاب موقعیت روی نقشه ایران">
+              <?php readfile(__DIR__ . '/iran-map.svg'); ?>
+            </div>
+            <label class="login-field">
+              <span>نام شهر، روستا یا مکان</span>
+              <input id="tc-iran-map-letter-place" class="login-input" type="text" maxlength="120" placeholder="نام مکان را بنویسید" />
+            </label>
+            <button id="tc-iran-map-letter-next" class="login-btn describe-photo-btn" type="button" disabled>ادامه و نوشتن نامه</button>
+          </section>
           <section id="tc-describe-photo-editor-step" class="describe-photo-editor hidden">
             <p id="tc-describe-photo-editor-title" class="describe-photo-editor-title">-</p>
             <div class="describe-photo-preview describe-photo-editor-preview">
               <img id="tc-describe-photo-editor-image" class="describe-photo-image" alt="تصویر انتخاب شده" />
             </div>
             <p id="tc-describe-photo-editor-name" class="describe-photo-index">الهی‌نامه شما بر اساس تصویر:</p>
+            <div id="tc-iran-map-letter-prefix" class="iran-map-letter-prefix hidden" aria-label="پیشوند ثابت نامه"></div>
             <textarea
               id="tc-describe-photo-text"
               class="describe-photo-textarea"
@@ -11479,6 +11824,16 @@ $sessionPayload = [
         const taskInfoSkipWrapEl = document.getElementById('tc-task-info-skip-wrap');
         const taskInfoSkipInputEl = document.getElementById('tc-task-info-skip');
         const taskInfoAckBtnEl = document.getElementById('tc-task-info-ack');
+        const donationAmountStepEl = document.getElementById('tc-donation-amount-step');
+        const donationAmountTitleEl = document.getElementById('tc-donation-amount-title');
+        const donationAmountInputEl = document.getElementById('tc-donation-amount-input');
+        const donationAmountNextEl = document.getElementById('tc-donation-amount-next');
+        const donationMethodStepEl = document.getElementById('tc-donation-method-step');
+        const donationMethodButtons = Array.from(document.querySelectorAll('[data-donation-method]'));
+        const donationGuideStepEl = document.getElementById('tc-donation-guide-step');
+        const donationGuideTitleEl = document.getElementById('tc-donation-guide-title');
+        const donationGuideContentEl = document.getElementById('tc-donation-guide-content');
+        const donationGuideDoneEl = document.getElementById('tc-donation-guide-done');
         const describePhotoStepEl = document.getElementById('tc-describe-photo-step');
         const describePhotoImageEl = document.getElementById('tc-describe-photo-image');
         const describePhotoNameEl = document.getElementById('tc-describe-photo-name');
@@ -11492,6 +11847,11 @@ $sessionPayload = [
         const describePhotoTextareaEl = document.getElementById('tc-describe-photo-text');
         const describePhotoWordCountEl = document.getElementById('tc-describe-photo-word-count');
         const describePhotoSaveBtnEl = document.getElementById('tc-describe-photo-save');
+        const iranMapLetterStepEl = document.getElementById('tc-iran-map-letter-step');
+        const iranMapLetterArtEl = document.getElementById('tc-iran-map-letter-art');
+        const iranMapLetterPlaceEl = document.getElementById('tc-iran-map-letter-place');
+        const iranMapLetterNextEl = document.getElementById('tc-iran-map-letter-next');
+        const iranMapLetterPrefixEl = document.getElementById('tc-iran-map-letter-prefix');
         const teamRulesStepEl = document.getElementById('tc-team-rules-step');
         const teamRulesTextEl = document.getElementById('tc-team-rules-text');
         const teamCreateBtnEl = document.getElementById('tc-team-create-btn');
@@ -11589,10 +11949,15 @@ $sessionPayload = [
         let conditionalQuizPendingNext = null;
         let infoTaskViewOpen = false;
         let infoTaskCurrentStep = 'info';
+        let donationAmount = 0;
+        let donationSettings = { amountTitle: 'مبلغ اهدایی خود را مشخص کنید', depositTitle: 'راهنمای واریز مستقیم مبلغ', depositText: '' };
         let describePhotoChoices = [];
         let describePhotoCurrentIndex = 0;
         let describePhotoSelected = null;
         let describePhotoBusy = false;
+        let iranMapLetterPrefix = '';
+        let iranMapLetterDraftText = '';
+        let iranMapLetterPlace = null;
         let teamTaskState = null;
         let teamTaskPreviewTeam = null;
         let teamTaskInviteCandidate = null;
@@ -11921,7 +12286,8 @@ $sessionPayload = [
           const token = String(value ?? '').trim().toLowerCase();
           if (token === 'conditional_quiz' || token === 'conditional-quiz' || token === 'conditional quiz' || token === 'conditional-quiz-task' || token === 'conditional quiz task') return 'conditional_quiz';
           if (['shared_answers_quiz', 'shared-answers-quiz', 'shared answers quiz', 'shared_quiz', 'shared-quiz', 'shared quiz', 'survey_score_response', 'survey-score-response', 'survey score response', 'survey score'].includes(token)) return 'shared_answers_quiz';
-          if (token === 'info' || token === 'team_task' || token === 'describe_photo') return token;
+          if (['donation', 'donation-task', 'donation task'].includes(token)) return 'donation';
+          if (token === 'info' || token === 'team_task' || token === 'describe_photo' || token === 'write_letter' || token === 'iran_map_letter') return token;
           return token === 'quiz' ? 'quiz' : token;
         };
 
@@ -11940,7 +12306,7 @@ $sessionPayload = [
             if (normalizeTaskTypeToken(taskType) === 'conditional_quiz' && !hasGoldenTime) {
               return 'مهلت زمان پاسخگویی';
             }
-            return (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') ? 'مهلت طلایی' : 'فعال';
+            return (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'donation' || taskType === 'team_task' || taskType === 'describe_photo' || taskType === 'write_letter' || taskType === 'iran_map_letter') ? 'مهلت طلایی' : 'فعال';
           }
           if (status === 'upcoming') return 'به‌زودی';
           if (status === 'ended') {
@@ -12129,8 +12495,9 @@ $sessionPayload = [
           const hasGoldenTime = taskHasGoldenTimeButton(button);
           const describeSubmitted = String(button.dataset.taskDescribeSubmitted || '') === '1';
           const teamStartedPending = String(button.dataset.taskTeamStartedPending || '') === '1';
-          const infoEndedNoScore = (taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo') && status === 'ended' && !completed;
-          const describeEditableDone = taskType === 'describe_photo' && status === 'active' && describeSubmitted && !completed;
+          const donationPending = taskType === 'donation' && String(button.dataset.taskDonationStatus || '') === 'pending';
+          const infoEndedNoScore = (taskType === 'info' || taskType === 'donation' || taskType === 'team_task' || taskType === 'describe_photo' || taskType === 'write_letter' || taskType === 'iran_map_letter') && status === 'ended' && !completed;
+          const describeEditableDone = (taskType === 'describe_photo' || taskType === 'write_letter' || taskType === 'iran_map_letter') && status === 'active' && describeSubmitted && !completed;
           const teamEditableDone = taskType === 'team_task' && status === 'active' && teamStartedPending && !completed;
           const editableSubmittedDone = describeEditableDone || teamEditableDone;
 
@@ -12152,12 +12519,20 @@ $sessionPayload = [
             return;
           }
 
+          if (donationPending) {
+            button.disabled = false;
+            button.classList.remove('is-disabled', 'is-completed', 'is-golden', 'is-golden-live', 'is-golden-ended', 'is-info-ended');
+            button.classList.add('is-describe-submitted');
+            if (metaEl) setMetaText(metaEl, 'در انتظار تایید ادمین', false);
+            return;
+          }
+
           const globallyBlocked = globalEventStatus !== 'active';
           const available = !globallyBlocked && canOpenTaskByStatus(status, taskType, button);
           const isUpcoming = status === 'upcoming';
           const scoreNow = taskAvailableScoreNow(button, status, taskType);
           const isGoldenAppearance = status === 'active'
-            && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')
+            && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'donation' || taskType === 'team_task' || taskType === 'describe_photo' || taskType === 'write_letter' || taskType === 'iran_map_letter')
             && (taskType !== 'conditional_quiz' || hasGoldenTime)
             && !editableSubmittedDone;
           const isGoldenEndedAppearance = taskType === 'conditional_quiz' && status === 'ended' && available;
@@ -12201,7 +12576,7 @@ $sessionPayload = [
               } else {
                 setMetaWithScoreBlock(metaEl, `${doneLabel} | ${editLabel}`, button, taskType, scoreNow);
               }
-            } else if (status === 'active' && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'team_task' || taskType === 'describe_photo')) {
+            } else if (status === 'active' && (isQuizLikeTaskType(taskType) || taskType === 'info' || taskType === 'donation' || taskType === 'team_task' || taskType === 'describe_photo' || taskType === 'write_letter' || taskType === 'iran_map_letter')) {
               const endDate = String(button.dataset.taskEndDate || '').trim();
               const endTime = String(button.dataset.taskEndTime || '').trim();
               const activeCountdown = taskType === 'conditional_quiz' && !hasGoldenTime
@@ -12570,6 +12945,17 @@ $sessionPayload = [
           teamTaskPreviewTeam = null;
           teamTaskInviteCandidate = null;
           teamTaskPendingName = '';
+          donationAmount = 0;
+          donationSettings = {
+            amountTitle: String(options?.donationAmountTitle || 'مبلغ اهدایی خود را مشخص کنید').trim() || 'مبلغ اهدایی خود را مشخص کنید',
+            depositTitle: String(options?.donationDepositTitle || 'راهنمای واریز مستقیم مبلغ').trim() || 'راهنمای واریز مستقیم مبلغ',
+            depositText: String(options?.donationDepositText || '')
+          };
+          if (donationAmountTitleEl) donationAmountTitleEl.textContent = donationSettings.amountTitle;
+          if (donationAmountInputEl instanceof HTMLInputElement) donationAmountInputEl.value = '';
+          if (donationAmountNextEl instanceof HTMLButtonElement) donationAmountNextEl.disabled = true;
+          if (donationGuideTitleEl) donationGuideTitleEl.textContent = donationSettings.depositTitle;
+          if (donationGuideContentEl) donationGuideContentEl.innerHTML = buildInfoTaskContentHtml(donationSettings.depositText);
           teamTaskBusy = false;
           infoTaskViewOpen = false;
           infoTaskCurrentStep = 'info';
@@ -12827,6 +13213,7 @@ $sessionPayload = [
           const isInfoStep = next === 'info';
           const isPhotoStep = next === 'photo';
           const isEditorStep = next === 'editor';
+          const isIranMapLetterStep = next === 'iran_map_letter';
           const isTeamRulesStep = next === 'team_rules';
           const isTeamCreateNameStep = next === 'team_create_name';
           const isTeamCreateTypeStep = next === 'team_create_type';
@@ -12836,6 +13223,9 @@ $sessionPayload = [
           const isTeamPreviewStep = next === 'team_preview';
           const isTeamSettingsStep = next === 'team_settings';
           const isTeamChallengeStep = next === 'team_challenge';
+          const isDonationAmountStep = next === 'donation_amount';
+          const isDonationMethodStep = next === 'donation_method';
+          const isDonationGuideStep = next === 'donation_guide';
           infoTaskCurrentStep = next;
           tcTrackSlide(`task:${currentTaskId || 'unknown'}:${currentTaskType}:${next}`, {
             taskId: currentTaskId,
@@ -12857,8 +13247,9 @@ $sessionPayload = [
             describePhotoStepEl.classList.toggle('hidden', !(currentTaskType === 'describe_photo' && isPhotoStep));
           }
           if (describePhotoEditorStepEl) {
-            describePhotoEditorStepEl.classList.toggle('hidden', !(currentTaskType === 'describe_photo' && isEditorStep));
+            describePhotoEditorStepEl.classList.toggle('hidden', !((currentTaskType === 'describe_photo' || currentTaskType === 'write_letter' || currentTaskType === 'iran_map_letter') && isEditorStep));
           }
+          if (iranMapLetterStepEl) iranMapLetterStepEl.classList.toggle('hidden', !(currentTaskType === 'iran_map_letter' && isIranMapLetterStep));
           if (teamRulesStepEl) teamRulesStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamRulesStep));
           if (teamCreateNameStepEl) teamCreateNameStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamCreateNameStep));
           if (teamCreateTypeStepEl) teamCreateTypeStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamCreateTypeStep));
@@ -12868,11 +13259,17 @@ $sessionPayload = [
           if (teamPreviewStepEl) teamPreviewStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamPreviewStep));
           if (teamSettingsStepEl) teamSettingsStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamSettingsStep));
           if (teamChallengeStepEl) teamChallengeStepEl.classList.toggle('hidden', !(currentTaskType === 'team_task' && isTeamChallengeStep));
+          if (donationAmountStepEl) donationAmountStepEl.classList.toggle('hidden', !(currentTaskType === 'donation' && isDonationAmountStep));
+          if (donationMethodStepEl) donationMethodStepEl.classList.toggle('hidden', !(currentTaskType === 'donation' && isDonationMethodStep));
+          if (donationGuideStepEl) donationGuideStepEl.classList.toggle('hidden', !(currentTaskType === 'donation' && isDonationGuideStep));
           if (currentTaskType !== 'team_task' || !isTeamRoomStep) {
             closeTeamInviteDialog();
           }
           if (taskInfoAckBtnEl) {
-            if (currentTaskType === 'describe_photo') {
+            if (currentTaskType === 'donation') {
+              taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
+              taskInfoAckBtnEl.textContent = 'ادامه';
+            } else if (currentTaskType === 'describe_photo' || currentTaskType === 'write_letter' || currentTaskType === 'iran_map_letter') {
               taskInfoAckBtnEl.classList.toggle('hidden', !isInfoStep);
               taskInfoAckBtnEl.textContent = 'ادامه';
             } else if (isQuizLikeTaskType(currentTaskType)) {
@@ -12918,12 +13315,70 @@ $sessionPayload = [
           }
         };
 
+        const renderIranMapLetterPin = () => {
+          const svg = iranMapLetterArtEl?.querySelector('svg');
+          if (!(svg instanceof SVGSVGElement)) return;
+          svg.querySelectorAll('.iran-map-letter-pin').forEach((node) => node.remove());
+          if (!iranMapLetterPlace) return;
+          const pin = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          pin.setAttribute('cx', String(iranMapLetterPlace.x));
+          pin.setAttribute('cy', String(iranMapLetterPlace.y));
+          pin.setAttribute('r', '6');
+          pin.classList.add('iran-map-letter-pin');
+          svg.append(pin);
+        };
+
+        const syncIranMapLetterNextState = () => {
+          if (!(iranMapLetterNextEl instanceof HTMLButtonElement)) return;
+          const placeName = String(iranMapLetterPlaceEl?.value || '').trim();
+          iranMapLetterNextEl.disabled = !iranMapLetterPlace || placeName === '';
+        };
+
+        const selectIranMapLetterPoint = (event) => {
+          const svg = iranMapLetterArtEl?.querySelector('svg');
+          if (!(svg instanceof SVGSVGElement) || !(event.target instanceof Element) || !event.target.closest('path')) return;
+          const matrix = svg.getScreenCTM();
+          if (!matrix) return;
+          const point = svg.createSVGPoint();
+          point.x = event.clientX;
+          point.y = event.clientY;
+          const local = point.matrixTransform(matrix.inverse());
+          iranMapLetterPlace = {
+            name: String(iranMapLetterPlaceEl?.value || '').trim(),
+            x: Math.round(local.x * 100) / 100,
+            y: Math.round(local.y * 100) / 100
+          };
+          renderIranMapLetterPin();
+          syncIranMapLetterNextState();
+        };
+
+        const prepareIranMapLetterStep = async () => {
+          const current = getCurrentDescribePhotoChoice();
+          if (!current || !currentTaskId) return;
+          const payload = await postJson({
+            action: 'describe_photo_load_article',
+            taskId: currentTaskId,
+            photoId: current.id
+          });
+          const data = payload?.data || {};
+          describePhotoSelected = { ...current, articleFile: String(data?.photo?.articleFile || current.articleFile || '').trim() };
+          iranMapLetterDraftText = String(data?.text || '');
+          const savedPlace = data?.place && typeof data.place === 'object' ? data.place : null;
+          iranMapLetterPlace = savedPlace && String(savedPlace.name || '').trim() !== ''
+            ? { name: String(savedPlace.name).trim(), x: Number(savedPlace.x), y: Number(savedPlace.y) }
+            : null;
+          if (iranMapLetterPlaceEl instanceof HTMLInputElement) iranMapLetterPlaceEl.value = String(iranMapLetterPlace?.name || '');
+          renderIranMapLetterPin();
+          syncIranMapLetterNextState();
+          setInfoTaskStep('iran_map_letter');
+        };
+
         const updateDescribePhotoWordCount = () => {
           const text = describePhotoTextareaEl instanceof HTMLTextAreaElement
             ? String(describePhotoTextareaEl.value || '')
             : '';
-          const words = countWords(text);
-          const isValid = words <= 300;
+          const words = countWords(currentTaskType === 'iran_map_letter' ? `${iranMapLetterPrefix} ${text}` : text);
+          const isValid = words <= 300 && (currentTaskType !== 'iran_map_letter' || countWords(text) > 0);
           if (describePhotoWordCountEl) {
             describePhotoWordCountEl.textContent = `${words} / 300 کلمه`;
             describePhotoWordCountEl.classList.toggle('is-error', !isValid);
@@ -12953,21 +13408,37 @@ $sessionPayload = [
               url: String(data?.photo?.url || current.url || '').trim(),
               articleFile: String(data?.photo?.articleFile || current.articleFile || '').trim()
             };
-            const title = describePhotoSelected.name || 'تصویر ماموریت';
+            const isWriteLetter = currentTaskType === 'write_letter' || currentTaskType === 'iran_map_letter';
+            const title = currentTaskType === 'iran_map_letter'
+              ? `نامه‌ای درباره ${String(iranMapLetterPlace?.name || '').trim()}`
+              : (isWriteLetter ? 'نامه خود را بنویسید' : (describePhotoSelected.name || 'تصویر ماموریت'));
             if (describePhotoEditorTitleEl) {
               describePhotoEditorTitleEl.textContent = title;
             }
-            setDescribePhotoImage(describePhotoEditorImageEl, describePhotoSelected.url, title);
+            const editorPreview = describePhotoEditorImageEl?.closest('.describe-photo-preview');
+            if (editorPreview instanceof HTMLElement) editorPreview.classList.toggle('hidden', isWriteLetter);
+            if (isWriteLetter) {
+              setDescribePhotoImage(describePhotoEditorImageEl, '');
+            } else {
+              setDescribePhotoImage(describePhotoEditorImageEl, describePhotoSelected.url, title);
+            }
             if (describePhotoEditorNameEl) {
-              describePhotoEditorNameEl.textContent = 'الهی‌نامه شما بر اساس تصویر:';
+              describePhotoEditorNameEl.textContent = currentTaskType === 'iran_map_letter'
+                ? `نامه شما درباره «${String(iranMapLetterPlace?.name || '').trim()}»: `
+                : (isWriteLetter ? 'متن نامه شما:' : 'الهی‌نامه شما بر اساس تصویر:');
+            }
+            if (iranMapLetterPrefixEl instanceof HTMLElement) {
+              iranMapLetterPrefixEl.classList.toggle('hidden', currentTaskType !== 'iran_map_letter' || iranMapLetterPrefix === '');
+              iranMapLetterPrefixEl.textContent = iranMapLetterPrefix;
             }
             if (describePhotoTextareaEl instanceof HTMLTextAreaElement) {
-              describePhotoTextareaEl.value = String(data?.text || '');
+              describePhotoTextareaEl.value = currentTaskType === 'iran_map_letter' ? iranMapLetterDraftText : String(data?.text || '');
+              describePhotoTextareaEl.placeholder = isWriteLetter ? 'نامه خود را اینجا بنویسید...' : 'توضیح خود را درباره تصویر بنویسید...';
             }
             updateDescribePhotoWordCount();
             setInfoTaskStep('editor');
           } catch (error) {
-            await openInfoDialog(error?.message || 'بارگذاری متن تصویر ناموفق بود.', 'خطا');
+            await openInfoDialog(error?.message || ((currentTaskType === 'write_letter' || currentTaskType === 'iran_map_letter') ? 'بارگذاری متن نامه ناموفق بود.' : 'بارگذاری متن تصویر ناموفق بود.'), 'خطا');
           } finally {
             describePhotoBusy = false;
             if (describePhotoSelectBtnEl instanceof HTMLButtonElement) {
@@ -12993,8 +13464,12 @@ $sessionPayload = [
               action: 'describe_photo_save_article',
               taskId: currentTaskId,
               photoId: describePhotoSelected.id,
-              text: String(describePhotoTextareaEl.value || '')
+              text: String(describePhotoTextareaEl.value || ''),
+              place: currentTaskType === 'iran_map_letter' ? iranMapLetterPlace : null
             });
+            if (currentTaskType === 'iran_map_letter') {
+              iranMapLetterDraftText = String(describePhotoTextareaEl.value || '');
+            }
             const targetButton = taskButtons.find(
               (button) => String(button?.dataset?.taskId || '').trim() === String(currentTaskId || '').trim()
             );
@@ -13004,7 +13479,7 @@ $sessionPayload = [
             }
             closeQuizOverlay();
           } catch (error) {
-            await openInfoDialog(error?.message || 'ذخیره توضیح تصویر ناموفق بود.', 'خطا');
+            await openInfoDialog(error?.message || ((currentTaskType === 'write_letter' || currentTaskType === 'iran_map_letter') ? 'ذخیره نامه ناموفق بود.' : 'ذخیره توضیح تصویر ناموفق بود.'), 'خطا');
           } finally {
             describePhotoBusy = false;
             updateDescribePhotoWordCount();
@@ -13650,6 +14125,9 @@ $sessionPayload = [
           describePhotoCurrentIndex = 0;
           describePhotoSelected = null;
           describePhotoBusy = false;
+          iranMapLetterPrefix = String(options?.letterPrefix || '').replace(/\r\n?/g, '\n').trim();
+          iranMapLetterDraftText = '';
+          iranMapLetterPlace = null;
           teamTaskState = (options?.teamContext && typeof options.teamContext === 'object') ? options.teamContext : null;
           teamTaskPreviewTeam = null;
           teamTaskInviteCandidate = null;
@@ -15214,6 +15692,7 @@ $sessionPayload = [
             openSharedResponseTaskView(completedTaskTitle, payload?.sharedResponse || {});
             return;
           }
+
           openTaskResultDialog(
             awardedScore,
             awardedScore > 0
@@ -15695,6 +16174,7 @@ $sessionPayload = [
             button.dataset.taskDescribeSubmitted = describeSubmitted ? '1' : '0';
             const teamStartedPending = Boolean(progress?.teamStartedPending);
             button.dataset.taskTeamStartedPending = teamStartedPending ? '1' : '0';
+            button.dataset.taskDonationStatus = String(progress?.donationStatus || '');
             if (Object.prototype.hasOwnProperty.call(payload?.task || {}, 'hasGoldenTime')) {
               button.dataset.taskHasGoldenTime = payload.task.hasGoldenTime ? '1' : '0';
             }
@@ -15713,6 +16193,10 @@ $sessionPayload = [
               openTaskResultDialog(progress?.score ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
               return;
             }
+            if (String(progress?.donationStatus || '') === 'pending') {
+              openTaskResultDialog(0, 'درخواست واریز مستقیم شما در انتظار بررسی ادمین است.');
+              return;
+            }
 
             if (!payload?.task?.available) {
               setTaskButtonState(button, String(payload?.task?.status || 'inactive'));
@@ -15721,7 +16205,7 @@ $sessionPayload = [
             }
 
             const fetchedTaskType = String(payload?.task?.taskType || button?.dataset?.taskType || 'quiz').trim().toLowerCase();
-            if (fetchedTaskType === 'info' || fetchedTaskType === 'team_task' || fetchedTaskType === 'describe_photo') {
+            if (fetchedTaskType === 'info' || fetchedTaskType === 'donation' || fetchedTaskType === 'team_task' || fetchedTaskType === 'describe_photo' || fetchedTaskType === 'write_letter' || fetchedTaskType === 'iran_map_letter') {
               currentTaskId = taskId;
               currentTaskTitle = String(payload?.task?.title ?? button?.dataset?.taskTitle ?? 'ماموریت اطلاعاتی').trim();
               tcLogActivity('task_action', {
@@ -15743,7 +16227,11 @@ $sessionPayload = [
                 {
                   taskType: fetchedTaskType,
                   describePhotos,
-                  teamContext
+                  teamContext,
+                  donationAmountTitle: payload?.task?.donationAmountTitle,
+                  donationDepositTitle: payload?.task?.donationDepositTitle,
+                  donationDepositText: payload?.task?.donationDepositText,
+                  letterPrefix: payload?.task?.guidePrefix
                 }
               );
               return;
@@ -15830,6 +16318,11 @@ $sessionPayload = [
               taskType: currentTaskType,
               taskTitle: currentTaskTitle
             });
+            if (currentTaskType === 'donation') {
+              setInfoTaskStep('donation_amount');
+              if (donationAmountInputEl instanceof HTMLInputElement) donationAmountInputEl.focus();
+              return;
+            }
             if (currentTaskType === 'describe_photo') {
               if (!describePhotoChoices.length) {
                 await openInfoDialog('برای این ماموریت تصویری ثبت نشده است.', 'ماموریت تصویر');
@@ -15842,6 +16335,30 @@ $sessionPayload = [
               }, {
                 primaryText: 'در حال آماده‌سازی مرحله بعد',
                 secondaryText: 'در حال بارگذاری تصاویر ماموریت',
+                delayMs: 120
+              });
+              return;
+            }
+            if (currentTaskType === 'write_letter') {
+              if (!describePhotoChoices.length) {
+                describePhotoChoices = [{ id: 'letter', name: 'نامه', url: '', articleFile: '' }];
+              }
+              describePhotoCurrentIndex = 0;
+              await withTransitionLoader(() => openDescribePhotoEditor(), {
+                primaryText: 'در حال آماده‌سازی نامه',
+                secondaryText: 'در حال دریافت متن ذخیره‌شده',
+                delayMs: 120
+              });
+              return;
+            }
+            if (currentTaskType === 'iran_map_letter') {
+              if (!describePhotoChoices.length) {
+                describePhotoChoices = [{ id: 'letter', name: 'نامه', url: '', articleFile: '' }];
+              }
+              describePhotoCurrentIndex = 0;
+              await withTransitionLoader(() => prepareIranMapLetterStep(), {
+                primaryText: 'در حال آماده‌سازی نقشه',
+                secondaryText: 'در حال دریافت نامه و مکان ذخیره‌شده',
                 delayMs: 120
               });
               return;
@@ -15894,6 +16411,91 @@ $sessionPayload = [
               return;
             }
             closeQuizOverlay();
+          });
+        }
+
+        const normalizeDonationDigits = (value) => String(value || '')
+          .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+          .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+          .replace(/\D/g, '')
+          .replace(/^0+(?=\d)/, '');
+        const formatDonationDigits = (digits) => String(digits || '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+        if (donationAmountInputEl instanceof HTMLInputElement) {
+          donationAmountInputEl.addEventListener('input', () => {
+            const digits = normalizeDonationDigits(donationAmountInputEl.value);
+            donationAmount = Number.parseInt(digits || '0', 10) || 0;
+            donationAmountInputEl.value = digits ? formatDonationDigits(digits) : '';
+            if (donationAmountNextEl instanceof HTMLButtonElement) donationAmountNextEl.disabled = donationAmount <= 0;
+          });
+        }
+        if (donationAmountNextEl instanceof HTMLButtonElement) {
+          donationAmountNextEl.addEventListener('click', () => {
+            if (donationAmount <= 0) return;
+            setInfoTaskStep('donation_method');
+          });
+        }
+        donationMethodButtons.forEach((button) => {
+          if (!(button instanceof HTMLButtonElement)) return;
+          button.addEventListener('click', async () => {
+            const method = String(button.dataset.donationMethod || '');
+            if (!currentTaskId || donationAmount <= 0 || !['payroll', 'direct'].includes(method)) return;
+            donationMethodButtons.forEach((item) => { if (item instanceof HTMLButtonElement) item.disabled = true; });
+            try {
+              const payload = await withTransitionLoader(() => postJson({ action: 'donation_submit', taskId: currentTaskId, amount: donationAmount, method }), {
+                primaryText: 'در حال ثبت Donation',
+                secondaryText: 'لطفا چند لحظه صبر کنید',
+                delayMs: 0,
+                minVisibleMs: 350
+              });
+              const targetButton = taskButtons.find((item) => String(item.dataset.taskId || '') === String(currentTaskId));
+              if (method === 'payroll') {
+                if (targetButton instanceof HTMLButtonElement) {
+                  targetButton.dataset.taskCompleted = '1';
+                  targetButton.dataset.taskUserScore = String(Number.parseInt(payload?.userTaskScore ?? 0, 10) || 0);
+                  setTaskButtonState(targetButton, 'completed');
+                }
+                if (userScoreEl) userScoreEl.textContent = String(Number.parseInt(payload?.totalScore ?? userScoreEl.textContent ?? 0, 10) || 0);
+                closeQuizOverlay();
+                if (Number(payload?.userTaskScore ?? 0) > 0) { await window.tcIranMap.complete(); return; }
+                openTaskResultDialog(payload?.userTaskScore ?? 0, 'Donation ثبت شد و امتیاز ماموریت به شما تعلق گرفت.');
+                return;
+              }
+              if (targetButton instanceof HTMLButtonElement) {
+                targetButton.dataset.taskDonationStatus = 'pending';
+                setTaskButtonState(targetButton, deriveTaskStatusFromButton(targetButton));
+              }
+              setInfoTaskStep('donation_guide');
+            } catch (error) {
+              await openInfoDialog(error?.message || 'ثبت Donation ناموفق بود.', 'Donation');
+            } finally {
+              donationMethodButtons.forEach((item) => { if (item instanceof HTMLButtonElement) item.disabled = false; });
+            }
+          });
+        });
+        if (donationGuideDoneEl instanceof HTMLButtonElement) {
+          donationGuideDoneEl.addEventListener('click', () => closeQuizOverlay());
+        }
+
+        if (iranMapLetterArtEl instanceof HTMLElement) {
+          iranMapLetterArtEl.addEventListener('click', selectIranMapLetterPoint);
+        }
+        if (iranMapLetterPlaceEl instanceof HTMLInputElement) {
+          iranMapLetterPlaceEl.addEventListener('input', () => {
+            if (iranMapLetterPlace) iranMapLetterPlace.name = String(iranMapLetterPlaceEl.value || '').trim();
+            syncIranMapLetterNextState();
+          });
+        }
+        if (iranMapLetterNextEl instanceof HTMLButtonElement) {
+          iranMapLetterNextEl.addEventListener('click', () => {
+            const placeName = String(iranMapLetterPlaceEl?.value || '').trim();
+            if (!iranMapLetterPlace || placeName === '') return;
+            iranMapLetterPlace.name = placeName;
+            void withTransitionLoader(() => openDescribePhotoEditor(), {
+              primaryText: 'در حال آماده‌سازی نامه',
+              secondaryText: `نامه درباره ${placeName}`,
+              delayMs: 120
+            });
           });
         }
 
@@ -16202,12 +16804,15 @@ $sessionPayload = [
             return true;
           }
           if (infoTaskViewOpen) {
-            if (currentTaskType === 'describe_photo') {
+            if (currentTaskType === 'describe_photo' || currentTaskType === 'write_letter' || currentTaskType === 'iran_map_letter') {
               if (infoTaskCurrentStep === 'editor') {
-                setInfoTaskStep('photo');
+                if (currentTaskType === 'iran_map_letter' && describePhotoTextareaEl instanceof HTMLTextAreaElement) {
+                  iranMapLetterDraftText = String(describePhotoTextareaEl.value || '');
+                }
+                setInfoTaskStep(currentTaskType === 'iran_map_letter' ? 'iran_map_letter' : (currentTaskType === 'write_letter' ? 'info' : 'photo'));
                 return true;
               }
-              if (infoTaskCurrentStep === 'photo') {
+              if (infoTaskCurrentStep === 'photo' || infoTaskCurrentStep === 'iran_map_letter') {
                 setInfoTaskStep('info');
                 return true;
               }
