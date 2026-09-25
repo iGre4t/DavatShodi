@@ -300,7 +300,18 @@ try {
   $invalidCases[] = ['duplicate_id', $duplicateIds];
   $duplicateScores = $afterCommit['records'];
   $duplicateScores[1]['score'] = $duplicateScores[0]['score'];
-  $invalidCases[] = ['duplicate_score', $duplicateScores];
+  $duplicateScoreReason = null;
+  $duplicateScoreMigration = null;
+  $duplicateScoreNormalized = tcPrizeLevelsNormalizeRecords(
+    $duplicateScores,
+    $duplicateScoreReason,
+    $duplicateScoreMigration
+  );
+  tcPrizeLevelsTestAssert(
+    is_array($duplicateScoreNormalized) && count($duplicateScoreNormalized) === count($duplicateScores),
+    'Independent reward levels with the same score were rejected.'
+  );
+  tcPrizeLevelsTestAssert($duplicateScoreReason === null, 'Same-score reward levels returned a validation error.');
   $invalidId = $afterCommit['records'];
   $invalidId[0]['id'] = '../escape';
   $invalidCases[] = ['invalid_id', $invalidId];
@@ -365,13 +376,6 @@ try {
       [
         tcPrizeLevelsTestValidRow('same_id', 'One', 10),
         tcPrizeLevelsTestValidRow('same_id', 'Two', 20)
-      ]
-    ],
-    [
-      'duplicate_score',
-      [
-        tcPrizeLevelsTestValidRow('score_one', 'One', 10),
-        tcPrizeLevelsTestValidRow('score_two', 'Two', 10)
       ]
     ],
     [

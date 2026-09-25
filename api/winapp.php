@@ -422,6 +422,55 @@ try {
         if (!empty($profile['group_policy_applied']) && empty($profile['auto_print'])) $profile['configured'] = false;
         winAppJson(['status'=>'ok', 'print_profile'=>$profile, 'ticket_numbers'=>(object)(is_array($numbers) ? $numbers : [])]);
     }
+    if ($method === 'POST' && $action === 'pending_invitees') {
+        if (empty($access['can_view_user_info']) || empty($access['can_scan'])) {
+            winAppJson(['status'=>'error', 'message'=>'اجازه مشاهده فهرست دعوت‌شدگان را ندارید.'], 403);
+        }
+        $periodCode = (string)($context['period_code'] ?? '');
+        if ($periodCode === '' || empty($context['can_scan'])) {
+            winAppJson(['status'=>'error', 'message'=>'بازه فعالی برای ثبت ورود وجود ندارد.'], 422);
+        }
+        $query = trim((string)($payload['q'] ?? ''));
+        if (function_exists('mb_substr')) $query = mb_substr($query, 0, 100);
+        else $query = substr($query, 0, 100);
+        $page = max(1, min(10000, (int)($payload['page'] ?? 1)));
+        $pageSize = 30;
+        $offset = ($page - 1) * $pageSize;
+        $usersTable = (string)$context['tables']['users'];
+        $periodsTable = (string)$context['tables']['user_periods'];
+        $where = "p.`period_code`=:period AND p.`entered_date` IS NULL AND p.`entered_time` IS NULL "
+            . "AND COALESCE(p.`is_uninvited_guest`,0)=0 AND LOWER(TRIM(COALESCE(p.`invitation_source`,'')))<>'walk_in' "
+            . "AND COALESCE(u.`is_active`,1)=1 "
+            . "AND (u.`national_id` REGEXP '^[0-9]{10}$' OR u.`work_id` REGEXP '^[0-9]{4,9}$')";
+        $params = [':period'=>$periodCode];
+        if ($query !== '') {
+            $where .= " AND (CONCAT_WS(' ',u.`first_name`,u.`last_name`) LIKE :name "
+                . "OR u.`national_id` LIKE :national OR u.`work_id` LIKE :work "
+                . "OR u.`guest_number` LIKE :guest_number OR u.`department` LIKE :department)";
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $query) . '%';
+            foreach ([':name', ':national', ':work', ':guest_number', ':department'] as $key) $params[$key] = $like;
+        }
+        $count = $pdo->prepare("SELECT COUNT(*) FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` WHERE {$where}");
+        $count->execute($params);
+        $total = (int)$count->fetchColumn();
+        $statement = $pdo->prepare("SELECT u.`first_name`,u.`last_name`,u.`national_id`,u.`work_id`,u.`guest_number`,u.`department` "
+            . "FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` "
+            . "WHERE {$where} ORDER BY u.`last_name`,u.`first_name`,p.`id` LIMIT {$pageSize} OFFSET {$offset}");
+        $statement->execute($params);
+        $invitees = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $national = egmCheckInNormalizeNationalId($row['national_id'] ?? '');
+            $work = egmCheckInNormalizeWorkId($row['work_id'] ?? '');
+            $invitees[] = [
+                'name'=>trim((string)$row['first_name'] . ' ' . (string)$row['last_name']),
+                'guest_code'=>$national !== '' ? $national : $work,
+                'guest_number'=>(string)($row['guest_number'] ?? ''),
+                'department'=>(string)($row['department'] ?? ''),
+            ];
+        }
+        winAppJson(['status'=>'ok', 'invitees'=>$invitees, 'total'=>$total, 'page'=>$page, 'page_size'=>$pageSize,
+            'period_code'=>$periodCode]);
+    }
     if ($method === 'POST' && $action === 'verify_admin_passcode') {
         winAppRequireCsrf($payload);
         if (!winAppVerifyAdminPasscode($context, $payload['passcode'] ?? '')) {

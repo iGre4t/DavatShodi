@@ -16,11 +16,13 @@ api/config.php
 /mini apps/Wheel of Fortune/*.log
 /mini apps/Wheel of Fortune/*.tmp
 /mini apps/**/*.json
-!/mini apps/EGMs/*/Setting.json
+# Generated EGM and Task Club instances; keep the shared generate scaffolds.
+/mini apps/EGMs/*/
+!/mini apps/EGMs/generate/
+/mini apps/missions/*/
+!/mini apps/missions/generate/
 /mini apps/Event Guest Manager/InviteCards/*
 !/mini apps/Event Guest Manager/InviteCards/.htaccess
-/mini apps/EGMs/*/InviteCards/*
-!/mini apps/EGMs/*/InviteCards/.htaccess
 /bots/telegram bot/bot.json
 /bots/telegram bot/state.json
 /bots/telegram bot/*.log
@@ -49,7 +51,3 @@ api/config.php
 # Local exports, database backups, and Windows publish artifacts
 /.codex-behavior-export/
 /outputs/
-
-# Local cPanel deployment credentials and successful-deploy state
-/.deploy.env
-/.deploy/

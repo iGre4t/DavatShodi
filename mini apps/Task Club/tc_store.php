@@ -1241,7 +1241,6 @@ if ($action === 'save_prize_levels') {
 
   $normalized = [];
   $seenIds = [];
-  $seenScores = [];
   foreach (array_values($levels) as $levelIndex => $item) {
     if (!is_array($item)) {
       http_response_code(422);
@@ -1255,12 +1254,6 @@ if ($action === 'save_prize_levels') {
       echo json_encode(['status' => 'error', 'message' => 'Every prize level must have a positive whole-number score; no data was saved.']);
       exit;
     }
-    if (isset($seenScores[$score])) {
-      http_response_code(422);
-      echo json_encode(['status' => 'error', 'message' => 'Prize level scores must be unique.']);
-      exit;
-    }
-    $seenScores[$score] = true;
     $rawName = $item['name'] ?? $item['levelName'] ?? $item['level_name'] ?? $item['label'] ?? null;
     if (!is_scalar($rawName)) {
       http_response_code(422);
@@ -1349,7 +1342,7 @@ if ($action === 'save_prize_levels') {
     $reason = (string)($result['reason'] ?? 'write_failed');
     $isConflict = $reason === 'conflict';
     $isValidationError = in_array($reason, [
-      'malformed_row', 'invalid_score', 'duplicate_score', 'missing_level_name',
+      'malformed_row', 'invalid_score', 'missing_level_name',
       'invalid_id', 'duplicate_id', 'invalid_type', 'invalid_text_field', 'invalid_pot_settings'
     ], true);
     http_response_code($isConflict ? 409 : ($isValidationError ? 422 : 503));

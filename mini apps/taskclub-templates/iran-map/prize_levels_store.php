@@ -182,7 +182,6 @@ function tcPrizeLevelsNormalizeRecords(
 
   $normalized = [];
   $seenIds = [];
-  $seenScores = [];
   $missingIdIndexes = [];
 
   foreach ($records as $index => $record) {
@@ -198,12 +197,6 @@ function tcPrizeLevelsNormalizeRecords(
       $reason = 'invalid_score';
       return null;
     }
-    if (isset($seenScores[$score])) {
-      $reason = 'duplicate_score';
-      return null;
-    }
-    $seenScores[$score] = true;
-
     $nameFound = false;
     $nameRaw = tcPrizeLevelsReadAliasedValue($record, ['name', 'levelName', 'level_name', 'label'], $nameFound);
     $name = $nameFound ? tcPrizeLevelsNormalizeTextValue($nameRaw, true, $reason) : null;

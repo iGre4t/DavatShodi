@@ -11,6 +11,7 @@
     : "";
   let prizeInventoryVersion = "";
   let prizeLevelsVersion = "";
+  let prizeLevelsLastError = "";
 
   function isRewardsPaneActive() {
     const rewardsPane = document.querySelector('.tc-shell .sub-pane[data-pane="tc-rewards-config"]');
@@ -242,6 +243,7 @@
   }
 
   async function savePrizeLevels(levels, { confirmEmpty = false } = {}) {
+    prizeLevelsLastError = "";
     try {
       const response = await fetch(`${API_URL}?action=save_prize_levels`, {
         method: "POST",
@@ -256,15 +258,13 @@
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || payload?.status !== "ok") {
-        window.alert(payload?.message || "Saving prize levels failed. No data was overwritten; reload and try again.");
-        window.location.reload();
+        prizeLevelsLastError = payload?.message || "Saving prize levels failed. No data was overwritten; try again.";
         return null;
       }
       prizeLevelsVersion = String(payload.version || "").trim();
       return payload;
     } catch {
-      window.alert("Saving prize levels failed. No data was overwritten; reload and try again.");
-      window.location.reload();
+      prizeLevelsLastError = "Saving prize levels failed. No data was overwritten; try again.";
       return null;
     }
   }
@@ -788,8 +788,14 @@
       statusEl.style.color = isError ? "#d1434a" : "";
     };
 
+    const blockSubmitWhileLoading = (event) => {
+      event.preventDefault();
+      setStatus("سطح‌های فعلی هنوز در حال بارگذاری هستند؛ دوباره تلاش کنید.", true);
+    };
+    form.addEventListener("submit", blockSubmitWhileLoading, true);
     let levels = await loadPrizeLevels();
     renderPrizeLevels(levels, listEl);
+    form.removeEventListener("submit", blockSubmitWhileLoading, true);
 
     const openPotSettingsDialog = (index) => {
       if (!Number.isFinite(index) || index < 0 || index >= levels.length) return;
@@ -959,7 +965,7 @@
         .sort((a, b) => a.score - b.score);
       const saved = await savePrizeLevels(normalized, { confirmEmpty });
       if (!saved) {
-        setStatus("ذخیره سطح‌ها ناموفق بود.", true);
+        setStatus(prizeLevelsLastError || "ذخیره سطح‌ها ناموفق بود.", true);
         return false;
       }
       const committedRows = Array.isArray(saved.data) ? saved.data : normalized;

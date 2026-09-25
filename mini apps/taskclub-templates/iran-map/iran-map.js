@@ -64,6 +64,13 @@
     try {
       const payload = await post({action: 'iran_map_state'});
       const dots = Array.isArray(payload.dots) ? payload.dots : [];
+      const currentTaskIds = new Set(dots.map(dot => String(dot?.taskId || '')));
+      svg.querySelectorAll('.tc-iran-map-dot[data-task-id]').forEach(circle => {
+        const taskId = String(circle.dataset.taskId || '');
+        if (currentTaskIds.has(taskId)) return;
+        circle.remove();
+        shown.delete(taskId);
+      });
       dots.filter(dot => dot.revealed).forEach(dot => draw(dot, false));
       const pending = dots.filter(dot => !dot.revealed);
       if (pending.length && (force || !canOpen || canOpen() || !slide.hidden)) open();

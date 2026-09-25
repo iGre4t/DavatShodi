@@ -170,6 +170,11 @@ function readPrizeLevels(string $path): array
     if (!is_array($item)) {
       continue;
     }
+    // Only value-sum levels grant card flips. Out-of-value and Pot levels
+    // have independent reward flows, even when they share a score threshold.
+    if (normalizePrizeLevelTypeValue($item['type'] ?? 'value_sum') !== 'value_sum') {
+      continue;
+    }
     $score = normalizePrizeLevelScoreValue($item['score'] ?? 0);
     if ($score <= 0) {
       continue;
@@ -6360,16 +6365,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       echo json_encode(['status' => 'ok', 'alreadyCompleted' => true, 'taskCompleted' => true, 'userTaskScore' => (int)($progress['score'] ?? 0), 'totalScore' => computeUserTotalTaskScore($inviteesFilePath, $inviteesMapPath, $sessionWorkId)], JSON_UNESCAPED_UNICODE);
       exit;
     }
-    if ((string)($progress['donationStatus'] ?? '') === 'pending') {
-      echo json_encode(['status' => 'error', 'message' => 'درخواست واریز مستقیم شما در انتظار بررسی است.'], JSON_UNESCAPED_UNICODE);
+    $isPendingDirectChange = (string)($progress['donationStatus'] ?? '') === 'pending'
+      && (string)($progress['donationMethod'] ?? '') === 'direct';
+    if ($isPendingDirectChange) {
+      $lockedAmount = max(0, (int)($progress['donationAmount'] ?? 0));
+      if ($method !== 'payroll') {
+        echo json_encode(['status' => 'error', 'message' => 'درخواست واریز مستقیم فقط می‌تواند به کسر از حقوق تغییر کند.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      if ($lockedAmount <= 0 || $amount !== $lockedAmount) {
+        echo json_encode(['status' => 'error', 'message' => 'مبلغ ثبت‌شده قابل تغییر نیست.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $amount = $lockedAmount;
+    } elseif ((string)($progress['donationStatus'] ?? '') === 'pending') {
+      echo json_encode(['status' => 'error', 'message' => 'درخواست شما در انتظار بررسی است.'], JSON_UNESCAPED_UNICODE);
       exit;
     }
     $submissions = readTaskDonationSubmissions(TASKS_DIR_PATH, (string)($task['tagCode'] ?? ''));
+    $existingSubmission = is_array($submissions[$sessionWorkId] ?? null) ? $submissions[$sessionWorkId] : [];
     $entry = [
       'amount' => $amount,
       'method' => $method,
       'status' => $method === 'payroll' ? 'completed' : 'pending',
-      'submittedAt' => date('Y-m-d H:i:s'),
+      'submittedAt' => $isPendingDirectChange && trim((string)($existingSubmission['submittedAt'] ?? '')) !== ''
+        ? (string)$existingSubmission['submittedAt']
+        : date('Y-m-d H:i:s'),
       'reviewedAt' => '',
       'reviewedBy' => ''
     ];
@@ -7698,7 +7719,7 @@ $sessionPayload = [
       .app {
         width: min(460px, 100%);
         position: relative;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .phone {
@@ -7709,7 +7730,7 @@ $sessionPayload = [
         border: 1px solid var(--line);
         border-radius: 28px;
         box-shadow:
-          0 26px 50px rgba(29, 55, 96, 0.14),
+          0 8px 24px rgba(29, 55, 96, 0.1),
           inset 0 1px 0 #fff;
         display: flex;
         flex-direction: column;
@@ -9119,7 +9140,10 @@ $sessionPayload = [
         -webkit-overflow-scrolling: touch;
       }
       .donation-task-step {
-        display: grid;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
         gap: 18px;
         width: min(100%, 560px);
         margin: 0 auto;
@@ -9234,6 +9258,16 @@ $sessionPayload = [
 
       .info-task-ack {
         width: 100%;
+      }
+
+      .task-slide-action {
+        position: sticky;
+        bottom: 0;
+        z-index: 4;
+        flex: 0 0 auto;
+        width: 100%;
+        margin-top: auto;
+        box-shadow: 0 -12px 22px rgba(255, 255, 255, 0.94);
       }
 
       .info-task-skip {
@@ -11108,7 +11142,7 @@ $sessionPayload = [
             <h3 id="tc-reward-description-title" class="tc-task-info-title">توضیحات</h3>
           </div>
           <div id="tc-reward-description-content" class="info-task-content"></div>
-          <button id="tc-reward-description-close" class="login-btn info-task-ack" type="button">متوجه شدم</button>
+          <button id="tc-reward-description-close" class="login-btn info-task-ack task-slide-action" type="button">متوجه شدم</button>
         </div>
         <div id="tc-task-quiz-area" class="quiz-area quiz-hidden">
           <div class="tc-task-quiz-head">
@@ -11133,7 +11167,7 @@ $sessionPayload = [
               <input id="tc-donation-amount-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" />
               <small>تومان</small>
             </label>
-            <button id="tc-donation-amount-next" class="login-btn describe-photo-btn" type="button" disabled>ادامه</button>
+            <button id="tc-donation-amount-next" class="login-btn describe-photo-btn task-slide-action" type="button" disabled>ادامه</button>
           </section>
           <section id="tc-donation-method-step" class="donation-task-step hidden">
             <h3 class="describe-photo-editor-title">روش پرداخت را انتخاب کنید</h3>
@@ -11145,7 +11179,7 @@ $sessionPayload = [
           <section id="tc-donation-guide-step" class="donation-task-step hidden">
             <div class="info-task-head"><h3 id="tc-donation-guide-title" class="tc-task-info-title">راهنمای واریز مستقیم مبلغ</h3></div>
             <div id="tc-donation-guide-content" class="info-task-content"></div>
-            <button id="tc-donation-guide-done" class="login-btn info-task-ack" type="button">بازگشت به ماموریت‌ها</button>
+            <button id="tc-donation-guide-done" class="login-btn info-task-ack task-slide-action" type="button">بازگشت به ماموریت‌ها</button>
           </section>
           <section id="tc-team-rules-step" class="team-task-step hidden">
             <div class="info-task-section team-task-rules-card">
@@ -11161,7 +11195,7 @@ $sessionPayload = [
               <span>نام تیم را انتخاب کنید</span>
               <input id="tc-team-create-name-input" class="login-input" type="text" maxlength="80" placeholder="نام تیم" />
             </label>
-            <button id="tc-team-create-name-confirm" class="login-btn describe-photo-btn" type="button">تایید نام</button>
+            <button id="tc-team-create-name-confirm" class="login-btn describe-photo-btn task-slide-action" type="button">تایید نام</button>
           </section>
           <section id="tc-team-create-type-step" class="team-task-step hidden">
             <p class="team-list-title">نوع تیم را انتخاب کنید</p>
@@ -11188,7 +11222,7 @@ $sessionPayload = [
                 </span>
               </label>
             </div>
-            <button id="tc-team-create-type-confirm" class="login-btn describe-photo-btn" type="button">ادامه و ساخت تیم</button>
+            <button id="tc-team-create-type-confirm" class="login-btn describe-photo-btn task-slide-action" type="button">ادامه و ساخت تیم</button>
           </section>
           <section id="tc-team-room-step" class="team-task-step hidden">
             <p id="tc-team-room-name" class="describe-photo-editor-title">-</p>
@@ -11230,7 +11264,7 @@ $sessionPayload = [
               <small class="team-field-hint">شماره پرسنلی سرگروه مدنظر خود را وارد کنید.</small>
               <input id="tc-team-search-leader-input" class="login-input" type="text" placeholder="شماره پرسنلی سرگروه" />
             </label>
-            <button id="tc-team-search-leader-btn" class="login-btn describe-photo-btn" type="button">جستجوی تیم</button>
+            <button id="tc-team-search-leader-btn" class="login-btn describe-photo-btn task-slide-action" type="button">جستجوی تیم</button>
           </section>
           <section id="tc-team-preview-step" class="team-task-step hidden">
             <p id="tc-team-preview-name" class="describe-photo-editor-title">-</p>
@@ -11278,7 +11312,7 @@ $sessionPayload = [
           <section id="tc-team-challenge-step" class="team-task-step hidden">
             <p id="tc-team-challenge-title" class="describe-photo-editor-title">راهنمای چالش تیمی</p>
             <div id="tc-team-challenge-content" class="info-task-content"></div>
-            <button id="tc-team-challenge-back-btn" class="login-btn describe-photo-btn secondary" type="button">برگشت به تیم</button>
+            <button id="tc-team-challenge-back-btn" class="login-btn describe-photo-btn secondary task-slide-action" type="button">برگشت به تیم</button>
           </section>
           <section id="tc-describe-photo-step" class="describe-photo-step hidden">
             <div class="describe-photo-preview">
@@ -11305,13 +11339,13 @@ $sessionPayload = [
               placeholder="الهی‌نامه خود را بر اساس تصویر بنویسید (حداکثر 300 کلمه)"
             ></textarea>
             <p id="tc-describe-photo-word-count" class="describe-photo-word-count">0 / 300 کلمه</p>
-            <button id="tc-describe-photo-save" class="login-btn describe-photo-save-btn" type="button">ذخیره</button>
+            <button id="tc-describe-photo-save" class="login-btn describe-photo-save-btn task-slide-action" type="button">ذخیره</button>
           </section>
           <label id="tc-task-info-skip-wrap" class="info-task-skip hidden">
             <input id="tc-task-info-skip" type="checkbox" />
             <span>دوباره نشان نده</span>
           </label>
-          <button id="tc-task-info-ack" class="login-btn info-task-ack" type="button">متوجه شدم</button>
+          <button id="tc-task-info-ack" class="login-btn info-task-ack task-slide-action" type="button">متوجه شدم</button>
         </div>
       <?php endif; ?>
       </section>
@@ -11823,6 +11857,7 @@ $sessionPayload = [
         let infoTaskViewOpen = false;
         let infoTaskCurrentStep = 'info';
         let donationAmount = 0;
+        let donationAmountLocked = false;
         let donationSettings = { amountTitle: 'مبلغ اهدایی خود را مشخص کنید', depositTitle: 'راهنمای واریز مستقیم مبلغ', depositText: '' };
         let describePhotoChoices = [];
         let describePhotoCurrentIndex = 0;
@@ -12393,7 +12428,15 @@ $sessionPayload = [
             button.disabled = false;
             button.classList.remove('is-disabled', 'is-completed', 'is-golden', 'is-golden-live', 'is-golden-ended', 'is-info-ended');
             button.classList.add('is-describe-submitted');
-            if (metaEl) setMetaText(metaEl, 'در انتظار تایید ادمین', false);
+            if (metaEl) {
+              setMetaWithScoreBlock(
+                metaEl,
+                'در انتظار مدیر سیستم',
+                button,
+                taskType,
+                taskAvailableScoreNow(button, status, taskType)
+              );
+            }
             return;
           }
 
@@ -12816,13 +12859,17 @@ $sessionPayload = [
           teamTaskInviteCandidate = null;
           teamTaskPendingName = '';
           donationAmount = 0;
+          donationAmountLocked = false;
           donationSettings = {
-            amountTitle: String(options?.donationAmountTitle || 'مبلغ اهدایی خود را مشخص کنید').trim() || 'مبلغ اهدایی خود را مشخص کنید',
-            depositTitle: String(options?.donationDepositTitle || 'راهنمای واریز مستقیم مبلغ').trim() || 'راهنمای واریز مستقیم مبلغ',
-            depositText: String(options?.donationDepositText || '')
+            amountTitle: 'مبلغ اهدایی خود را مشخص کنید',
+            depositTitle: 'راهنمای واریز مستقیم مبلغ',
+            depositText: ''
           };
           if (donationAmountTitleEl) donationAmountTitleEl.textContent = donationSettings.amountTitle;
-          if (donationAmountInputEl instanceof HTMLInputElement) donationAmountInputEl.value = '';
+          if (donationAmountInputEl instanceof HTMLInputElement) {
+            donationAmountInputEl.value = '';
+            donationAmountInputEl.readOnly = false;
+          }
           if (donationAmountNextEl instanceof HTMLButtonElement) donationAmountNextEl.disabled = true;
           if (donationGuideTitleEl) donationGuideTitleEl.textContent = donationSettings.depositTitle;
           if (donationGuideContentEl) donationGuideContentEl.innerHTML = buildInfoTaskContentHtml(donationSettings.depositText);
@@ -13926,6 +13973,21 @@ $sessionPayload = [
           teamTaskPreviewTeam = null;
           teamTaskInviteCandidate = null;
           teamTaskPendingName = '';
+          donationAmount = Math.max(0, Number.parseInt(String(options?.donationAmount || '0'), 10) || 0);
+          donationAmountLocked = Boolean(options?.donationAmountLocked) && donationAmount > 0;
+          donationSettings = {
+            amountTitle: String(options?.donationAmountTitle || 'مبلغ اهدایی خود را مشخص کنید').trim() || 'مبلغ اهدایی خود را مشخص کنید',
+            depositTitle: String(options?.donationDepositTitle || 'راهنمای واریز مستقیم مبلغ').trim() || 'راهنمای واریز مستقیم مبلغ',
+            depositText: String(options?.donationDepositText || '')
+          };
+          if (donationAmountTitleEl) donationAmountTitleEl.textContent = donationSettings.amountTitle;
+          if (donationAmountInputEl instanceof HTMLInputElement) {
+            donationAmountInputEl.value = donationAmount > 0 ? donationAmount.toLocaleString('en-US') : '';
+            donationAmountInputEl.readOnly = donationAmountLocked;
+          }
+          if (donationAmountNextEl instanceof HTMLButtonElement) donationAmountNextEl.disabled = donationAmount <= 0;
+          if (donationGuideTitleEl) donationGuideTitleEl.textContent = donationSettings.depositTitle;
+          if (donationGuideContentEl) donationGuideContentEl.innerHTML = buildInfoTaskContentHtml(donationSettings.depositText);
           if (timerAreaEl) timerAreaEl.classList.add('quiz-hidden');
           if (tasksTitleEl) tasksTitleEl.classList.add('hidden');
           if (tasksListEl) tasksListEl.classList.add('hidden');
@@ -15980,11 +16042,6 @@ $sessionPayload = [
               openTaskResultDialog(progress?.score ?? 0, 'این ماموریت قبلا انجام شده و امتیاز گرفته است.');
               return;
             }
-            if (String(progress?.donationStatus || '') === 'pending') {
-              openTaskResultDialog(0, 'درخواست واریز مستقیم شما در انتظار بررسی ادمین است.');
-              return;
-            }
-
             if (!payload?.task?.available) {
               setTaskButtonState(button, String(payload?.task?.status || 'inactive'));
               openTaskResultDialog(0, String(payload?.task?.statusLabel || 'این ماموریت در حال حاضر فعال نیست.'));
@@ -16017,7 +16074,10 @@ $sessionPayload = [
                   teamContext,
                   donationAmountTitle: payload?.task?.donationAmountTitle,
                   donationDepositTitle: payload?.task?.donationDepositTitle,
-                  donationDepositText: payload?.task?.donationDepositText
+                  donationDepositText: payload?.task?.donationDepositText,
+                  donationAmount: progress?.donationAmount,
+                  donationAmountLocked: String(progress?.donationStatus || '') === 'pending'
+                    && String(progress?.donationMethod || '') === 'direct'
                 }
               );
               return;
@@ -16206,6 +16266,11 @@ $sessionPayload = [
         if (donationAmountNextEl instanceof HTMLButtonElement) {
           donationAmountNextEl.addEventListener('click', () => {
             if (donationAmount <= 0) return;
+            donationMethodButtons.forEach((item) => {
+              if (item instanceof HTMLButtonElement) {
+                item.disabled = donationAmountLocked && String(item.dataset.donationMethod || '') === 'direct';
+              }
+            });
             setInfoTaskStep('donation_method');
           });
         }
@@ -16242,7 +16307,11 @@ $sessionPayload = [
             } catch (error) {
               await openInfoDialog(error?.message || 'ثبت Donation ناموفق بود.', 'Donation');
             } finally {
-              donationMethodButtons.forEach((item) => { if (item instanceof HTMLButtonElement) item.disabled = false; });
+              donationMethodButtons.forEach((item) => {
+                if (item instanceof HTMLButtonElement) {
+                  item.disabled = donationAmountLocked && String(item.dataset.donationMethod || '') === 'direct';
+                }
+              });
             }
           });
         });
@@ -16894,7 +16963,6 @@ $sessionPayload = [
         window.addEventListener('resize', () => {
           updateRewardsTotalBarPlacement();
         });
-
         const scheduleHourlyStatusCheck = () => {
           const now = new Date();
           const nextHour = new Date(now);

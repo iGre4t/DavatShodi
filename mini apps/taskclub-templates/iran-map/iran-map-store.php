@@ -42,6 +42,30 @@ function tcIranMapNewPoint(array $rings): array
     throw new RuntimeException('Unable to place map dot.');
 }
 
+function tcIranMapShouldHaveDot(array $task, array $progress): bool
+{
+    $taskType = strtolower(trim((string)($task['taskType'] ?? $task['type'] ?? '')));
+    $completed = !empty($progress['completed']);
+    $score = (int)($progress['score'] ?? 0);
+
+    // Written submissions earn a provisional dot while they await review. A
+    // completed zero-score review is the existing rejection signal.
+    if (in_array($taskType, ['describe_photo', 'write_letter', 'iran_map_letter'], true)) {
+        if (empty($progress['describeSubmitted'])) return false;
+        return !$completed || $score > 0;
+    }
+
+    // Direct Donations have an explicit review status. Payroll Donations are
+    // completed immediately and continue through the normal score rule below.
+    if ($taskType === 'donation') {
+        $status = strtolower(trim((string)($progress['donationStatus'] ?? '')));
+        if ($status === 'rejected') return false;
+        if (in_array($status, ['pending', 'approved'], true)) return true;
+    }
+
+    return $completed && $score > 0;
+}
+
 function tcIranMapState(string $workId, string $inviteesFile, string $mappingFile, array $acknowledged = []): array
 {
     $context = tcDatabaseRuntimeContextForPath(__DIR__ . '/Setting.json');
@@ -57,12 +81,22 @@ function tcIranMapState(string $workId, string $inviteesFile, string $mappingFil
         if (!is_array($dots)) throw new RuntimeException('Invalid map state.');
         $original = $dots;
         $tasks = loadTaskRecords(TASKS_JS_STORE_PATH, TASKS_DIR_PATH);
+        $knownTaskIds = [];
         foreach ($tasks as $task) {
             $id = (string)($task['id'] ?? '');
-            if ($id === '' || isset($dots[$id])) continue;
+            if ($id === '') continue;
+            $knownTaskIds[$id] = true;
             $progress = readTaskUserProgress($task, $inviteesFile, $mappingFile, $workId);
-            if (empty($progress['completed']) || (int)($progress['score'] ?? 0) <= 0) continue;
-            $dots[$id] = ['taskId' => $id, 'revealed' => false] + tcIranMapNewPoint(tcIranMapRings());
+            if (!tcIranMapShouldHaveDot($task, $progress)) {
+                unset($dots[$id]);
+                continue;
+            }
+            if (!isset($dots[$id])) {
+                $dots[$id] = ['taskId' => $id, 'revealed' => false] + tcIranMapNewPoint(tcIranMapRings());
+            }
+        }
+        foreach (array_keys($dots) as $id) {
+            if (!isset($knownTaskIds[(string)$id])) unset($dots[$id]);
         }
         foreach ($acknowledged as $id) {
             if (is_string($id) && isset($dots[$id])) $dots[$id]['revealed'] = true;
