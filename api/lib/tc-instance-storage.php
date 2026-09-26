@@ -804,6 +804,7 @@ function dropTcInstanceTables(PDO $pdo, string $code): void
     foreach ([
         'team_members',
         'answers',
+        'shared_answers_quiz_results',
         'user_periods',
         'photo_submissions',
         'prize_awards',
