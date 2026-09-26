@@ -853,87 +853,93 @@ if ($rows) {
 <script src="mini%20apps/Task%20Club/vendor/xlsx/xlsx.full.min.js" defer></script>
 <script>
 (() => {
+  const inviteesRoot = document.currentScript?.closest('.sub-pane[data-pane="tc-invitees"]')
+    || document.currentScript?.closest('.tc-shell');
+  if (!(inviteesRoot instanceof HTMLElement) || inviteesRoot.dataset.tcInviteesInitialized === '1') return;
+  inviteesRoot.dataset.tcInviteesInitialized = '1';
+  const getInviteeElement = (id) => inviteesRoot.querySelector(`#${CSS.escape(id)}`);
+  const INVITEES_BASE_URL = new URL(<?= json_encode(implode('/', array_map('rawurlencode', explode('/', tcInstanceRegistryDirectoryForMission(__DIR__) ?: 'mini apps/Task Club'))) . '/', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>, document.baseURI).toString();
   const INVITEES_DOCUMENT_CLICK_HANDLER_KEY = '__tcInviteesDocumentClickHandler';
   const csrfToken = <?= json_encode($tcInviteesCsrfToken, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
   const canResetInviteeTasks = <?= $tcInviteesCanReset ? 'true' : 'false' ?>;
-  const pickBtn = document.getElementById('tc-invite-pick');
-  const fileInput = document.getElementById('tc-invite-file');
-  const fileNameEl = document.getElementById('tc-invite-file-name');
-  const mapBtn = document.getElementById('tc-invite-map');
-  const modal = document.getElementById('tc-invite-modal');
+  const pickBtn = getInviteeElement('tc-invite-pick');
+  const fileInput = getInviteeElement('tc-invite-file');
+  const fileNameEl = getInviteeElement('tc-invite-file-name');
+  const mapBtn = getInviteeElement('tc-invite-map');
+  const modal = getInviteeElement('tc-invite-modal');
   const closeBtns = modal ? modal.querySelectorAll('[data-close-invite-modal]') : [];
-  const mapWork = document.getElementById('tc-map-work');
-  const mapFirst = document.getElementById('tc-map-first');
-  const mapLast = document.getElementById('tc-map-last');
-  const mapNational = document.getElementById('tc-map-national');
-  const mapPhone = document.getElementById('tc-map-phone');
-  const uploadBtn = document.getElementById('tc-invite-upload');
-  const msgEl = document.getElementById('tc-invite-msg');
-  const progressEl = document.getElementById('tc-invite-progress');
+  const mapWork = getInviteeElement('tc-map-work');
+  const mapFirst = getInviteeElement('tc-map-first');
+  const mapLast = getInviteeElement('tc-map-last');
+  const mapNational = getInviteeElement('tc-map-national');
+  const mapPhone = getInviteeElement('tc-map-phone');
+  const uploadBtn = getInviteeElement('tc-invite-upload');
+  const msgEl = getInviteeElement('tc-invite-msg');
+  const progressEl = getInviteeElement('tc-invite-progress');
   const progressMsg = progressEl?.querySelector('[data-invite-progress-message]');
-  const addWorkIdEl = document.getElementById('tc-add-work-id');
-  const addFirstNameEl = document.getElementById('tc-add-first-name');
-  const addLastNameEl = document.getElementById('tc-add-last-name');
-  const addNationalIdEl = document.getElementById('tc-add-national-id');
-  const addPhoneNumberEl = document.getElementById('tc-add-phone-number');
-  const addInviteeBtn = document.getElementById('tc-add-invitee-btn');
-  const addInviteeMsgEl = document.getElementById('tc-add-invitee-msg');
-  const anyPasswordEnabledEl = document.getElementById('tc-any-password-enabled');
-  const anyPasswordMinLengthEl = document.getElementById('tc-any-password-min-length');
-  const anyPasswordSaveBtn = document.getElementById('tc-any-password-save');
-  const anyPasswordMsgEl = document.getElementById('tc-any-password-msg');
-  const editModal = document.getElementById('tc-invite-edit-modal');
+  const addWorkIdEl = getInviteeElement('tc-add-work-id');
+  const addFirstNameEl = getInviteeElement('tc-add-first-name');
+  const addLastNameEl = getInviteeElement('tc-add-last-name');
+  const addNationalIdEl = getInviteeElement('tc-add-national-id');
+  const addPhoneNumberEl = getInviteeElement('tc-add-phone-number');
+  const addInviteeBtn = getInviteeElement('tc-add-invitee-btn');
+  const addInviteeMsgEl = getInviteeElement('tc-add-invitee-msg');
+  const anyPasswordEnabledEl = getInviteeElement('tc-any-password-enabled');
+  const anyPasswordMinLengthEl = getInviteeElement('tc-any-password-min-length');
+  const anyPasswordSaveBtn = getInviteeElement('tc-any-password-save');
+  const anyPasswordMsgEl = getInviteeElement('tc-any-password-msg');
+  const editModal = getInviteeElement('tc-invite-edit-modal');
   const editCloseBtns = editModal ? editModal.querySelectorAll('[data-close-invite-edit-modal]') : [];
-  const editWorkIdEl = document.getElementById('tc-edit-work-id');
-  const editFirstNameEl = document.getElementById('tc-edit-first-name');
-  const editLastNameEl = document.getElementById('tc-edit-last-name');
-  const editNationalIdEl = document.getElementById('tc-edit-national-id');
-  const editPhoneNumberEl = document.getElementById('tc-edit-phone-number');
-  const editSaveBtn = document.getElementById('tc-edit-invitee-save');
-  const editMsgEl = document.getElementById('tc-edit-invitee-msg');
-  const authModal = document.getElementById('tc-invite-auth-modal');
+  const editWorkIdEl = getInviteeElement('tc-edit-work-id');
+  const editFirstNameEl = getInviteeElement('tc-edit-first-name');
+  const editLastNameEl = getInviteeElement('tc-edit-last-name');
+  const editNationalIdEl = getInviteeElement('tc-edit-national-id');
+  const editPhoneNumberEl = getInviteeElement('tc-edit-phone-number');
+  const editSaveBtn = getInviteeElement('tc-edit-invitee-save');
+  const editMsgEl = getInviteeElement('tc-edit-invitee-msg');
+  const authModal = getInviteeElement('tc-invite-auth-modal');
   const authCloseBtns = authModal ? authModal.querySelectorAll('[data-close-invite-auth-modal]') : [];
-  const authPasswordEl = document.getElementById('tc-invite-auth-password');
-  const authSubmitBtn = document.getElementById('tc-invite-auth-submit');
-  const authMsgEl = document.getElementById('tc-invite-auth-msg');
-  const passwordModal = document.getElementById('tc-invite-password-modal');
+  const authPasswordEl = getInviteeElement('tc-invite-auth-password');
+  const authSubmitBtn = getInviteeElement('tc-invite-auth-submit');
+  const authMsgEl = getInviteeElement('tc-invite-auth-msg');
+  const passwordModal = getInviteeElement('tc-invite-password-modal');
   const passwordCloseBtns = passwordModal ? passwordModal.querySelectorAll('[data-close-invite-password-modal]') : [];
-  const passwordTitleEl = document.getElementById('tc-invite-password-title');
-  const passwordValueEl = document.getElementById('tc-invite-password-value');
-  const passwordSaveBtn = document.getElementById('tc-invite-password-save');
-  const passwordMsgEl = document.getElementById('tc-invite-password-msg');
-  const resetModal = document.getElementById('tc-invite-reset-modal');
+  const passwordTitleEl = getInviteeElement('tc-invite-password-title');
+  const passwordValueEl = getInviteeElement('tc-invite-password-value');
+  const passwordSaveBtn = getInviteeElement('tc-invite-password-save');
+  const passwordMsgEl = getInviteeElement('tc-invite-password-msg');
+  const resetModal = getInviteeElement('tc-invite-reset-modal');
   const resetCloseBtns = resetModal ? resetModal.querySelectorAll('[data-close-invite-reset-modal]') : [];
-  const resetTextEl = document.getElementById('tc-invite-reset-text');
-  const resetMsgEl = document.getElementById('tc-invite-reset-msg');
-  const resetConfirmBtn = document.getElementById('tc-invite-reset-confirm');
-  const participationModal = document.getElementById('tc-invite-participation-modal');
+  const resetTextEl = getInviteeElement('tc-invite-reset-text');
+  const resetMsgEl = getInviteeElement('tc-invite-reset-msg');
+  const resetConfirmBtn = getInviteeElement('tc-invite-reset-confirm');
+  const participationModal = getInviteeElement('tc-invite-participation-modal');
   const participationCloseBtns = participationModal ? participationModal.querySelectorAll('[data-close-invite-participation-modal]') : [];
-  const participationTitleEl = document.getElementById('tc-invite-participation-title');
-  const participationSummaryEl = document.getElementById('tc-invite-participation-summary');
-  const participationMsgEl = document.getElementById('tc-invite-participation-msg');
-  const participationTasksEl = document.getElementById('tc-invite-participation-tasks');
-  const inviteesTopShell = document.getElementById('tc-invitees-top-shell');
-  const allInviteesSearchInput = document.getElementById('tc-all-invitees-search');
-  const allInviteesSearchMetaEl = document.getElementById('tc-all-invitees-search-meta');
-  const allInviteesTableBody = document.querySelector('[data-invitees-all-table-body]');
-  const inviteesSelectAllEl = document.getElementById('tc-invitees-select-all');
-  const bulkTaskEl = document.getElementById('tc-invitees-bulk-task');
-  const bulkScoreEl = document.getElementById('tc-invitees-bulk-score');
-  const bulkConditionEl = document.getElementById('tc-invitees-bulk-condition');
-  const conditionTaskEl = document.getElementById('tc-invitees-condition-task');
-  const bulkApplyBtn = document.getElementById('tc-invitees-bulk-apply');
-  const bulkSelectedCountEl = document.getElementById('tc-invitees-selected-count');
-  const bulkMsgEl = document.getElementById('tc-invitees-bulk-msg');
-  const activeMinimumEl = document.getElementById('tc-invitees-active-minimum');
-  const selectActiveBtn = document.getElementById('tc-invitees-select-active');
-  const clearSelectionBtn = document.getElementById('tc-invitees-clear-selection');
-  const reachedCountEl = document.getElementById('tc-invitees-reached-count');
-  const notScoredCountEl = document.getElementById('tc-invitees-not-scored-count');
-  const minimumLoginsEl = document.getElementById('tc-invitees-minimum-logins');
-  const minimumLoginsCountEl = document.getElementById('tc-invitees-minimum-logins-count');
-  const loginPercentageEl = document.getElementById('tc-invitees-login-percentage');
-  const loginFilteredCountEl = document.getElementById('tc-invitees-login-filtered-count');
+  const participationTitleEl = getInviteeElement('tc-invite-participation-title');
+  const participationSummaryEl = getInviteeElement('tc-invite-participation-summary');
+  const participationMsgEl = getInviteeElement('tc-invite-participation-msg');
+  const participationTasksEl = getInviteeElement('tc-invite-participation-tasks');
+  const inviteesTopShell = getInviteeElement('tc-invitees-top-shell');
+  const allInviteesSearchInput = getInviteeElement('tc-all-invitees-search');
+  const allInviteesSearchMetaEl = getInviteeElement('tc-all-invitees-search-meta');
+  const allInviteesTableBody = inviteesRoot.querySelector('[data-invitees-all-table-body]');
+  const inviteesSelectAllEl = getInviteeElement('tc-invitees-select-all');
+  const bulkTaskEl = getInviteeElement('tc-invitees-bulk-task');
+  const bulkScoreEl = getInviteeElement('tc-invitees-bulk-score');
+  const bulkConditionEl = getInviteeElement('tc-invitees-bulk-condition');
+  const conditionTaskEl = getInviteeElement('tc-invitees-condition-task');
+  const bulkApplyBtn = getInviteeElement('tc-invitees-bulk-apply');
+  const bulkSelectedCountEl = getInviteeElement('tc-invitees-selected-count');
+  const bulkMsgEl = getInviteeElement('tc-invitees-bulk-msg');
+  const activeMinimumEl = getInviteeElement('tc-invitees-active-minimum');
+  const selectActiveBtn = getInviteeElement('tc-invitees-select-active');
+  const clearSelectionBtn = getInviteeElement('tc-invitees-clear-selection');
+  const reachedCountEl = getInviteeElement('tc-invitees-reached-count');
+  const notScoredCountEl = getInviteeElement('tc-invitees-not-scored-count');
+  const minimumLoginsEl = getInviteeElement('tc-invitees-minimum-logins');
+  const minimumLoginsCountEl = getInviteeElement('tc-invitees-minimum-logins-count');
+  const loginPercentageEl = getInviteeElement('tc-invitees-login-percentage');
+  const loginFilteredCountEl = getInviteeElement('tc-invitees-login-filtered-count');
   if (selectActiveBtn instanceof HTMLButtonElement) {
     selectActiveBtn.disabled = false;
     selectActiveBtn.removeAttribute('aria-disabled');
@@ -941,6 +947,7 @@ if ($rows) {
 
   let parsedRows = [];
   let headerRow = [];
+  let parsingFile = false;
   let editingInviteeRow = 0;
   let revealPasswordContext = null;
   let resetProgressContext = null;
@@ -971,7 +978,7 @@ if ($rows) {
     return text !== '' ? text : '-';
   };
 
-  const selectedInviteeRows = () => Array.from(document.querySelectorAll('[data-invitee-select]:checked'))
+  const selectedInviteeRows = () => Array.from(inviteesRoot.querySelectorAll('[data-invitee-select]:checked'))
     .map((checkbox) => Number(checkbox.value))
     .filter((row) => Number.isFinite(row) && row > 1)
     .map((row) => Math.trunc(row));
@@ -983,7 +990,7 @@ if ($rows) {
   };
 
   const updateBulkSelection = () => {
-    const all = Array.from(document.querySelectorAll('[data-invitee-select]'));
+    const all = Array.from(inviteesRoot.querySelectorAll('[data-invitee-select]'));
     const selected = all.filter((checkbox) => checkbox.checked);
     if (bulkSelectedCountEl) bulkSelectedCountEl.textContent = String(selected.length);
     if (bulkApplyBtn) bulkApplyBtn.disabled = selected.length === 0;
@@ -1344,7 +1351,7 @@ if ($rows) {
   };
 
   const postRevealAction = async (action, payload = {}) => {
-    const response = await fetch('mini%20apps/Task%20Club/invitees_password_guard.php', {
+    const response = await fetch(new URL('invitees_password_guard.php', INVITEES_BASE_URL).toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1893,7 +1900,7 @@ if ($rows) {
     editSaveBtn.disabled = true;
     setEditMsg('Saving invitee...');
     try {
-      const response = await fetch('mini%20apps/Task%20Club/invitees_update.php', {
+      const response = await fetch(new URL('invitees_update.php', INVITEES_BASE_URL).toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2086,17 +2093,28 @@ if ($rows) {
     const file = fileInput.files?.[0];
     if (!file) return;
     fileNameEl.textContent = file.name;
+    parsedRows = [];
+    headerRow = [];
+    parsingFile = true;
+    mapBtn.disabled = true;
+    uploadBtn.disabled = true;
+    setMsg('');
     showProgress('در حال خواندن فایل...');
     try {
       parsedRows = await parseFile(file);
       headerRow = parsedRows[0] || [];
+      if (!parsedRows.length) setMsg('فایل خالی است.', true);
     } catch {
       setMsg('خواندن فایل با خطا مواجه شد.', true);
     }
+    parsingFile = false;
+    mapBtn.disabled = false;
+    uploadBtn.disabled = false;
     hideProgress();
   });
 
   mapBtn?.addEventListener('click', async () => {
+    if (parsingFile) return;
     if (!parsedRows.length) {
       setMsg('ابتدا فایل را انتخاب کنید.', true);
       return;
@@ -2112,12 +2130,14 @@ if ($rows) {
     buildOptions(mapLast);
     buildOptions(mapNational);
     buildOptions(mapPhone);
+    setMsg('');
     openModal();
   });
 
   closeBtns.forEach(btn => btn.addEventListener('click', closeModal));
 
   uploadBtn?.addEventListener('click', async () => {
+    if (parsingFile || uploadBtn.disabled) return;
     if (!parsedRows.length) {
       setMsg('فایلی برای آپلود وجود ندارد.', true);
       return;
@@ -2171,22 +2191,30 @@ if ($rows) {
     };
 
     try {
+      uploadBtn.disabled = true;
       showProgress('در حال آپلود و ساخت فایل...');
-      const response = await fetch('mini%20apps/Task%20Club/invitees_upload.php', {
+      const response = await fetch(new URL('invitees_upload.php', INVITEES_BASE_URL).toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const result = await response.json();
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        throw new Error(`Upload returned non-JSON (HTTP ${response.status}) from ${response.url}. Check Network and the PHP error log.`);
+      }
       if (response.ok && result?.status === 'ok') {
         setMsg('آپلود انجام شد.');
         closeModal();
       } else {
         setMsg(result?.message || 'خطا در آپلود.', true);
       }
-    } catch {
-      setMsg('خطا در آپلود.', true);
+    } catch (error) {
+      setMsg(error?.message || 'خطا در آپلود.', true);
     } finally {
+      uploadBtn.disabled = false;
       hideProgress();
     }
   });
@@ -2201,7 +2229,7 @@ if ($rows) {
     anyPasswordSaveBtn.disabled = true;
     setAnyPasswordMsg('Saving settings...');
     try {
-      const response = await fetch('mini%20apps/Task%20Club/invitees_login_settings.php', {
+      const response = await fetch(new URL('invitees_login_settings.php', INVITEES_BASE_URL).toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2244,7 +2272,7 @@ if ($rows) {
     addInviteeBtn.disabled = true;
     setAddMsg('Saving invitee...');
     try {
-      const response = await fetch('mini%20apps/Task%20Club/invitees_add.php', {
+      const response = await fetch(new URL('invitees_add.php', INVITEES_BASE_URL).toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2279,7 +2307,7 @@ if ($rows) {
 
   inviteesSelectAllEl?.addEventListener('change', () => {
     const checked = Boolean(inviteesSelectAllEl.checked);
-    document.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
+    inviteesRoot.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
       if (!checkbox.closest('tr')?.hidden) {
         checkbox.checked = checked;
       }
@@ -2321,7 +2349,7 @@ if ($rows) {
       return;
     }
     const matchingRows = new Set(preview.filteredRows);
-    document.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
+    inviteesRoot.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
       checkbox.checked = matchingRows.has(Number(checkbox.value));
     });
     const selectedCount = selectedInviteeRows().length;
@@ -2376,7 +2404,7 @@ if ($rows) {
   });
 
   clearSelectionBtn?.addEventListener('click', () => {
-    document.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
+    inviteesRoot.querySelectorAll('[data-invitee-select]').forEach((checkbox) => {
       checkbox.checked = false;
     });
     bulkActionContext = null;

@@ -44,12 +44,21 @@ try {
     file_put_contents($root . '/source/TCM.php', '<?php /* mini apps/Task Club */');
     file_put_contents($root . '/source/tasks/tasks.js', 'window.TC_TASKS = [];');
     file_put_contents($root . '/source/Setting.json', '{"participants":"must not copy"}');
+    $artifacts = ['TC Prize Levels.json.bak', 'TC Prizes.json.rollback', 'TC Prize Levels.json.corrupt-20260926', 'TC Prize Levels.json.lock'];
+    foreach ($artifacts as $artifact) file_put_contents($root . '/source/' . $artifact, '[{"name":"another club"}]');
     tcCreatorCopyTaskClubTemplate($root . '/source', $root . '/build', 'Example', 'mini%20apps/missions/Example');
     if (!str_contains(file_get_contents($root . '/build/TCM.php'), 'mini apps/missions/Example')) {
         throw new RuntimeException('Generated code paths were not patched.');
     }
     if (is_file($root . '/build/Setting.json')) throw new RuntimeException('Runtime data was copied.');
+    foreach ($artifacts as $artifact) {
+        if (is_file($root . '/build/' . $artifact)) throw new RuntimeException('Another club runtime artifact was copied: ' . $artifact);
+    }
+    file_put_contents($root . '/build/TC Prize Levels.json.bak', '[{"name":"this club"}]');
     tcCreatorCopyTaskClubUpdates($root . '/source', $root . '/build', 'Example', 'mini%20apps/missions/Example');
+    if (file_get_contents($root . '/build/TC Prize Levels.json.bak') !== '[{"name":"this club"}]') {
+        throw new RuntimeException('Branch update overwrote the club backup with template data.');
+    }
     tcCreatorRemoveTree($root . '/build', $root);
     if (is_dir($root . '/build')) throw new RuntimeException('Staging cleanup failed.');
     echo "Task Club creator filesystem tests passed.\n";

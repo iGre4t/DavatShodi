@@ -194,6 +194,13 @@ function tcCreatorRelativePath(string $root, string $path): string
   return str_replace('\\', '/', is_string($relative) ? $relative : '');
 }
 
+function tcCreatorIsRuntimeArtifact(string $relativePath): bool
+{
+  // Backups and recovery files contain instance data too. A copied .json.bak
+  // can be restored automatically into a new club by its runtime stores.
+  return preg_match('/\.json(?:$|\.)|\.(?:lock|tmp|rollback|replace-a|replace-b|backup-unsynced)$/i', $relativePath) === 1;
+}
+
 function tcCreatorShouldCopyRelativePath(string $relativePath, bool $isDir): bool
 {
   $relative = trim(str_replace('\\', '/', $relativePath), '/');
@@ -221,7 +228,7 @@ function tcCreatorShouldCopyRelativePath(string $relativePath, bool $isDir): boo
       'useractivitylogs/logs/.htaccess'
     ], true);
   }
-  if (!$isDir && preg_match('/\.json$/i', $relative)) {
+  if (!$isDir && tcCreatorIsRuntimeArtifact($relative)) {
     return false;
   }
   return true;
@@ -244,7 +251,7 @@ function tcCreatorShouldUpdateRelativePath(string $relativePath, bool $isDir): b
   if ($relative === 'vendor' || strpos($relative, 'vendor/') === 0) {
     return true;
   }
-  if (!$isDir && preg_match('/\.json$/i', $relative)) {
+  if (!$isDir && tcCreatorIsRuntimeArtifact($relative)) {
     return false;
   }
   return true;
@@ -353,6 +360,9 @@ function tcCreatorInitializeMission(string $targetDir, string $name, string $fol
 {
   tcCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'tasks');
   tcCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'TC Event');
+
+  tcCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'TC Prize Levels.json', []);
+  tcCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'TC Prizes.json', []);
 
   if (tcDbFilePutContents($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js', "window.TC_TASKS = [];\n", LOCK_EX) === false) {
     throw new RuntimeException('Failed to initialize task store.');

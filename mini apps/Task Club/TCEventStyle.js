@@ -1,5 +1,18 @@
 (() => {
-  const API_URL = 'mini%20apps/Task%20Club/tc_store.php';
+  const currentScriptSrc = document.currentScript instanceof HTMLScriptElement
+    ? document.currentScript.src
+    : '';
+  const API_URL = new URL('tc_store.php', currentScriptSrc || window.location.href).toString();
+
+  async function readStoreResponse(response) {
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      const endpoint = response.url || API_URL;
+      throw new Error(`TaskClub settings received a non-JSON response (HTTP ${response.status}) from ${endpoint}. Check the request in Network and the PHP server error log.`);
+    }
+  }
   const tcShellEl = document.querySelector('.tc-shell');
   const csrfToken = tcShellEl instanceof HTMLElement
     ? String(tcShellEl.dataset.tcCsrf || '').trim()
@@ -183,7 +196,7 @@
 
   async function getSettings() {
     const response = await fetch(`${API_URL}?action=get_settings`, { credentials: 'same-origin' });
-    const payload = await response.json();
+    const payload = await readStoreResponse(response);
     if (!response.ok || payload?.status !== 'ok') {
       throw new Error(payload?.message || 'بارگذاری تنظیمات ناموفق بود.');
     }
@@ -197,7 +210,7 @@
       credentials: 'same-origin',
       body: JSON.stringify({ settings: mergedSettings, csrf: csrfToken })
     });
-    const payload = await response.json();
+    const payload = await readStoreResponse(response);
     if (!response.ok || payload?.status !== 'ok') {
       throw new Error(payload?.message || 'ذخیره تنظیمات ناموفق بود.');
     }
@@ -206,7 +219,7 @@
 
   async function getMissionLink() {
     const response = await fetch(`${API_URL}?action=get_mission_link`, { credentials: 'same-origin' });
-    const payload = await response.json();
+    const payload = await readStoreResponse(response);
     if (!response.ok || payload?.status !== 'ok') {
       throw new Error(payload?.message || 'بارگذاری لینک باشگاه ناموفق بود.');
     }
@@ -220,7 +233,7 @@
       credentials: 'same-origin',
       body: JSON.stringify({ code, csrf: csrfToken })
     });
-    const payload = await response.json();
+    const payload = await readStoreResponse(response);
     if (!response.ok || payload?.status !== 'ok') {
       throw new Error(payload?.message || 'ذخیره لینک باشگاه ناموفق بود.');
     }

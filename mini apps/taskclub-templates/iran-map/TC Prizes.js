@@ -1,11 +1,19 @@
 (() => {
-  const API_URL = "mini%20apps/Task%20Club/tc_store.php";
+  const currentScriptSrc = document.currentScript instanceof HTMLScriptElement
+    ? document.currentScript.src
+    : window.location.href;
+  const API_URL = new URL('tc_store.php', currentScriptSrc).toString();
+  const POT_API_URL = new URL('pot_api.php', currentScriptSrc).toString();
   const TC_PRIZE_STATUS_INTERVAL_KEY = "__tcPrizeStatusInterval";
   const TC_PRIZE_STATUS_START_KEY = "__tcPrizeStatusStart";
   const TC_PRIZE_STATUS_STOP_KEY = "__tcPrizeStatusStop";
   const TC_REWARDS_ACTIVATION_HANDLER_KEY = "__tcRewardsActivationHandler";
   const TC_REWARDS_VISIBILITY_HANDLER_KEY = "__tcRewardsVisibilityHandler";
-  const tcShellEl = document.querySelector(".tc-shell");
+  const scriptEl = document.currentScript;
+  const tcShellEl = scriptEl?.closest('.tc-shell')
+    || scriptEl?.closest('.tab')?.querySelector('.tc-shell');
+  if (!(tcShellEl instanceof HTMLElement)) return;
+  const getClubElement = (id) => tcShellEl.querySelector(`#${CSS.escape(id)}`);
   const csrfToken = tcShellEl instanceof HTMLElement
     ? String(tcShellEl.dataset.tcCsrf || "").trim()
     : "";
@@ -13,16 +21,25 @@
   let prizeLevelsVersion = "";
   let prizeLevelsLastError = "";
 
+  async function readPrizeResponse(response) {
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`Prize request returned non-JSON (HTTP ${response.status}) from ${response.url || API_URL}.`);
+    }
+  }
+
   function isRewardsPaneActive() {
-    const rewardsPane = document.querySelector('.tc-shell .sub-pane[data-pane="tc-rewards-config"]');
-    const taskClubTab = document.getElementById("tab-task-club");
+    const rewardsPane = tcShellEl.querySelector('.sub-pane[data-pane="tc-rewards-config"]');
+    const taskClubTab = tcShellEl.closest('.tab');
     return rewardsPane instanceof HTMLElement
       && rewardsPane.classList.contains("active")
       && (!(taskClubTab instanceof HTMLElement) || taskClubTab.classList.contains("active"));
   }
 
   function getActiveRewardSectionKey() {
-    const rewardsPane = document.querySelector('.tc-shell .sub-pane[data-pane="tc-rewards-config"]');
+    const rewardsPane = tcShellEl.querySelector('.sub-pane[data-pane="tc-rewards-config"]');
     if (!(rewardsPane instanceof HTMLElement)) return "";
     const activeSection = Array.from(rewardsPane.querySelectorAll("[data-tc-reward-config-section]"))
       .find(section => section instanceof HTMLElement && !section.hidden);
@@ -216,8 +233,8 @@
   async function loadPrizeLevels() {
     try {
       const response = await fetch(`${API_URL}?action=get_prize_levels`, { credentials: "same-origin" });
-      const payload = await response.json();
-      if (payload?.status === "ok" && Array.isArray(payload.data)) {
+      const payload = await readPrizeResponse(response);
+      if (response.ok && payload?.status === "ok" && Array.isArray(payload.data)) {
         prizeLevelsVersion = String(payload.version || "").trim();
         return payload.data
           .map((item) => {
@@ -238,8 +255,10 @@
           .filter((item) => item.score > 0 && item.name !== "")
           .sort((a, b) => a.score - b.score);
       }
-    } catch {}
-    return [];
+      throw new Error(payload?.message || `Failed to load prize levels (HTTP ${response.status}).`);
+    } catch (error) {
+      throw new Error(error?.message || 'Failed to load prize levels.');
+    }
   }
 
   async function savePrizeLevels(levels, { confirmEmpty = false } = {}) {
@@ -256,15 +275,15 @@
           csrf: csrfToken
         })
       });
-      const payload = await response.json().catch(() => null);
+      const payload = await readPrizeResponse(response);
       if (!response.ok || payload?.status !== "ok") {
         prizeLevelsLastError = payload?.message || "Saving prize levels failed. No data was overwritten; try again.";
         return null;
       }
       prizeLevelsVersion = String(payload.version || "").trim();
       return payload;
-    } catch {
-      prizeLevelsLastError = "Saving prize levels failed. No data was overwritten; try again.";
+    } catch (error) {
+      prizeLevelsLastError = error?.message || "Saving prize levels failed. No data was overwritten; try again.";
       return null;
     }
   }
@@ -339,14 +358,14 @@
   }
 
   async function initPrizeForm() {
-    const form = document.getElementById("tc-prize-form");
-    const nameInput = document.getElementById("tc-prize-name");
-    const quantityInput = document.getElementById("tc-prize-quantity");
-    const valueInput = document.getElementById("tc-prize-value");
-    const listEl = document.getElementById("tc-prize-list");
-    const fakeForm = document.getElementById("tc-fake-form");
-    const fakeNameInput = document.getElementById("tc-fake-name");
-    const fakeListEl = document.getElementById("tc-fake-list");
+    const form = getClubElement("tc-prize-form");
+    const nameInput = getClubElement("tc-prize-name");
+    const quantityInput = getClubElement("tc-prize-quantity");
+    const valueInput = getClubElement("tc-prize-value");
+    const listEl = getClubElement("tc-prize-list");
+    const fakeForm = getClubElement("tc-fake-form");
+    const fakeNameInput = getClubElement("tc-fake-name");
+    const fakeListEl = getClubElement("tc-fake-list");
 
     if (!form || !nameInput || !quantityInput || !valueInput || !listEl) {
       return;
@@ -773,12 +792,12 @@
   }
 
   async function initPrizeLevels() {
-    const form = document.getElementById("tc-prize-level-form");
-    const nameInput = document.getElementById("tc-prize-level-name");
-    const typeInput = document.getElementById("tc-prize-level-type");
-    const scoreInput = document.getElementById("tc-prize-level-score");
-    const statusEl = document.getElementById("tc-prize-level-status");
-    const listEl = document.getElementById("tc-prize-level-list");
+    const form = getClubElement("tc-prize-level-form");
+    const nameInput = getClubElement("tc-prize-level-name");
+    const typeInput = getClubElement("tc-prize-level-type");
+    const scoreInput = getClubElement("tc-prize-level-score");
+    const statusEl = getClubElement("tc-prize-level-status");
+    const listEl = getClubElement("tc-prize-level-list");
     if (!form || !nameInput || !typeInput || !scoreInput || !statusEl || !listEl) {
       return;
     }
@@ -793,7 +812,15 @@
       setStatus("سطح‌های فعلی هنوز در حال بارگذاری هستند؛ دوباره تلاش کنید.", true);
     };
     form.addEventListener("submit", blockSubmitWhileLoading, true);
-    let levels = await loadPrizeLevels();
+    let levels;
+    try {
+      levels = await loadPrizeLevels();
+    } catch (error) {
+      setStatus(error.message, true);
+      listEl.textContent = 'Prize levels could not be loaded. Reload this panel to retry.';
+      form.querySelectorAll('input, select, button').forEach(control => { control.disabled = true; });
+      return;
+    }
     renderPrizeLevels(levels, listEl);
     form.removeEventListener("submit", blockSubmitWhileLoading, true);
 
@@ -849,7 +876,7 @@
         }
         if (nextSettings.locked) {
           try {
-            const response = await fetch("mini%20apps/Task%20Club/pot_api.php", {
+            const response = await fetch(POT_API_URL, {
               method: "POST",
               credentials: "same-origin",
               headers: {"Content-Type": "application/json"},
@@ -1042,7 +1069,7 @@
         if (!window.confirm("Clear every confirmed winner for this Pot? This cannot be undone.")) return;
         resetPotBtn.disabled = true;
         try {
-          const response = await fetch("mini%20apps/Task%20Club/pot_api.php", {
+          const response = await fetch(POT_API_URL, {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
@@ -1103,10 +1130,10 @@
   }
 
   async function initPrizeAwards() {
-    const listEl = document.getElementById("tc-prize-awards-list");
-    const statusEl = document.getElementById("tc-prize-awards-status");
-    const refreshBtn = document.getElementById("tc-prize-awards-refresh");
-    const resetAllBtn = document.getElementById("tc-prize-awards-reset-all");
+    const listEl = getClubElement("tc-prize-awards-list");
+    const statusEl = getClubElement("tc-prize-awards-status");
+    const refreshBtn = getClubElement("tc-prize-awards-refresh");
+    const resetAllBtn = getClubElement("tc-prize-awards-reset-all");
     if (!listEl) return;
     let currentItems = [];
     let currentTotal = 0;
