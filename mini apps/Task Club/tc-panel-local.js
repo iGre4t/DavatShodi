@@ -414,6 +414,7 @@
       delete window.__tcInviteesDocumentClickHandler;
     }
     delete pane.dataset.tcLazyState;
+    delete pane.dataset.tcInviteesInitialized;
     pane.innerHTML = '<div class="card"><p class="muted" data-tc-lazy-status>Open this tab to load invitees.</p></div>';
   }
 
@@ -434,7 +435,12 @@
     if (pane.dataset.tcLazyState === 'loading') return;
 
     pane.dataset.tcLazyState = 'loading';
-    pane.innerHTML = '<div class="card"><p class="muted" data-tc-lazy-status>Loading...</p></div>';
+    pane.setAttribute('aria-busy', 'true');
+    if (typeof window.GlobalLazyLoader?.createInline === 'function') {
+      pane.replaceChildren(window.GlobalLazyLoader.createInline('در حال بارگذاری...'));
+    } else {
+      pane.innerHTML = '<div class="card"><p class="muted" role="status" aria-live="polite" data-tc-lazy-status>در حال بارگذاری...</p></div>';
+    }
     try {
       const url = new URL(TC_PANEL_ENDPOINT);
       url.searchParams.set('tc_pane', paneKey);
@@ -488,6 +494,8 @@
         delete pane.dataset.tcLazyState;
         void loadLazyPane(layout, pane);
       }, { once: true });
+    } finally {
+      pane.removeAttribute('aria-busy');
     }
   }
 

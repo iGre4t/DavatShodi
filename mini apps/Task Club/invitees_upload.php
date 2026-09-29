@@ -112,6 +112,11 @@ $mapPath = $baseDir . DIRECTORY_SEPARATOR . 'TC Mapped.json';
 $answersPath = $baseDir . DIRECTORY_SEPARATOR . 'Answers.csv';
 $loginAttemptsPath = $baseDir . DIRECTORY_SEPARATOR . 'login_attempts.json';
 
+if (tcDatabaseRuntimeContextForPath($filePath) !== null) {
+  $csv = tcDatabaseRuntimeCsvEncode(tcDatabaseRuntimeMapImportedInvitees(tcDatabaseRuntimeCsvDecode($csv), $mapping));
+  $mapping = tcDatabaseRuntimeDefaultInviteeMapping();
+}
+
 if (!tcInviteesCsvBeginTransaction($filePath) || !tcInviteesCsvReplaceText($filePath, $csv, false)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to save file.']);
   exit;
@@ -137,7 +142,7 @@ if ($emptyAttempts === false || !tcInviteesUploadWriteTextLocked($loginAttemptsP
   exit;
 }
 
-if (!tcInviteesUploadWriteTextLocked($answersPath, '')) {
+if (!tcInviteesUploadWriteTextLocked($answersPath, "Work ID\n")) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to reset answers table.']);
   exit;
 }

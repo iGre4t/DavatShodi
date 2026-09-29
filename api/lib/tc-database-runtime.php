@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/tc-instance-storage.php';
+require_once __DIR__ . '/tc-password-vault.php';
 
 /**
  * Database-only compatibility I/O for TC runtime documents.
@@ -306,6 +307,7 @@ function tcDatabaseRuntimeInviteeRows(array $context): array
             'work id' => $user['work_id'] ?? '', 'first name' => $user['first_name'] ?? '',
             'last name' => $user['last_name'] ?? '', 'national id' => $user['national_id'] ?? '',
             'phone number' => $user['phone_number'] ?? '', 'deputy' => $user['deputy'] ?? '',
+            'password' => tcPasswordVaultDecrypt((string)($state['password_encrypted'] ?? '')),
             'general department' => $user['general_department'] ?? '', 'department' => $user['department'] ?? '',
             'gender' => $user['gender'] ?? '', 'postal level' => $user['postal_level'] ?? '',
             'logins counts' => $user['login_count'] ?? 0, 'count of rolls' => $user['roll_count'] ?? 0,
@@ -370,6 +372,28 @@ function tcDatabaseRuntimeHeaderIndex(array $header): array
     return $indexes;
 }
 
+function tcDatabaseRuntimeMapImportedInvitees(array $rows, array $mapping): array
+{
+    $fields = ['workId', 'firstName', 'lastName', 'nationalId', 'phoneNumber'];
+    $header = array_slice(tcDatabaseRuntimeInviteeHeader(), 0, 5);
+    $sourceHeader = $rows[0] ?? [];
+    $remaining = [];
+    foreach ($sourceHeader as $index => $label) {
+        if (in_array($index, array_map(static fn(string $field): int => (int)($mapping[$field] ?? -1), $fields), true)) continue;
+        if (in_array(tcDatabaseRuntimeNormalizeHeader((string)$label), array_map('tcDatabaseRuntimeNormalizeHeader', $header), true)) continue;
+        $remaining[] = $index;
+        $header[] = (string)$label;
+    }
+    $result = [$header];
+    foreach (array_slice($rows, 1) as $row) {
+        $mapped = [];
+        foreach ($fields as $field) $mapped[] = (string)($row[(int)($mapping[$field] ?? -1)] ?? '');
+        foreach ($remaining as $index) $mapped[] = (string)($row[$index] ?? '');
+        $result[] = $mapped;
+    }
+    return $result;
+}
+
 function tcDatabaseRuntimeWriteInvitees(array $context, array $rows): void
 {
     if (!$rows || !is_array($rows[0] ?? null)) throw new RuntimeException('The TC participant table is empty.');
@@ -408,6 +432,10 @@ function tcDatabaseRuntimeWriteInvitees(array $context, array $rows): void
                 $index = $indexes[$name] ?? -1;
                 return $index >= 0 ? trim((string)($row[$index] ?? '')) : $fallback;
             };
+            $passwordIndex = $indexes['password'] ?? -1;
+            $importedPassword = $passwordIndex >= 0 ? trim((string)($row[$passwordIndex] ?? '')) : '';
+            $previousPassword = tcPasswordVaultDecrypt((string)($state['password_encrypted'] ?? ''));
+            if ($importedPassword !== '' && $importedPassword !== $previousPassword) $state['password_encrypted'] = tcPasswordVaultEncrypt($importedPassword);
             $fields = [
                 'work_id' => $workId,
                 'first_name' => $value('first name', (string)($existing['first_name'] ?? '')),
@@ -426,6 +454,7 @@ function tcDatabaseRuntimeWriteInvitees(array $context, array $rows): void
                 'state_json' => json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}',
             ];
             $password = $value('password');
+            if ($password !== '' && $password === $previousPassword) $password = '';
             if (is_array($existing)) {
                 $sets = [];
                 $params = [':id' => (int)$existing['id']];

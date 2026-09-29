@@ -4904,7 +4904,7 @@ function resetDomNodeById(id) {
   node.parentElement.replaceChild(cleanNode, node);
 }
 
-function createTabLazyLoaderElement(message = "Loading tab content...") {
+function createTabLazyLoaderElement(message = "در حال بارگذاری...") {
   const root = document.createElement("div");
   root.className = "tab-lazy-loader";
   root.setAttribute("role", "status");
@@ -4920,7 +4920,7 @@ function createTabLazyLoaderElement(message = "Loading tab content...") {
   return root;
 }
 
-function scheduleTabLazyLoader(host, message = "Loading tab content...", delayMs = GLOBAL_LAZY_LOADER_SHOW_DELAY_MS) {
+function scheduleTabLazyLoader(host, message = "در حال بارگذاری...", delayMs = GLOBAL_LAZY_LOADER_SHOW_DELAY_MS) {
   if (!(host instanceof Element)) {
     return { cancel: () => {} };
   }
@@ -6422,6 +6422,7 @@ function exposeGlobalLazyLoaderApi() {
     return;
   }
   window.GlobalLazyLoader = {
+    createInline: createTabLazyLoaderElement,
     show: showGlobalLazyLoader,
     hide: hideGlobalLazyLoader,
     setText: setGlobalLazyLoaderText,

@@ -362,6 +362,7 @@ if ($rows) {
               </tr>
             </thead>
             <tbody data-invitees-all-table-body>
+              <template data-invitees-row-template>
               <?php if (!$allInvitees): ?>
                 <tr>
                   <td colspan="<?= $tcInviteesCanReset ? '11' : '10' ?>" class="muted">No invitees found.</td>
@@ -450,8 +451,14 @@ if ($rows) {
                   <td colspan="<?= $tcInviteesCanReset ? '11' : '10' ?>" class="muted">No matching invitee found.</td>
                 </tr>
               <?php endif; ?>
+              </template>
             </tbody>
           </table>
+        </div>
+        <div class="form-row">
+          <button type="button" class="btn ghost" id="tc-invitees-prev">Previous</button>
+          <span id="tc-invitees-page" aria-live="polite"></span>
+          <button type="button" class="btn ghost" id="tc-invitees-next">Next</button>
         </div>
         <?php if ($tcInviteesCanReset && $allInvitees): ?>
         <div class="card tc-invitees-bulk-card" id="tc-invitees-bulk-card">
@@ -561,6 +568,20 @@ if ($rows) {
 <div class="card">
   <div class="section-header">
     <h3>Any Password Login</h3>
+    <?php if ($tcInviteesCanReveal && $tcInviteesCanManage): ?>
+    <label>طول گذرواژه <input type="number" id="tc-password-length" min="5" max="64" value="8" /></label>
+    <label>نوع گذرواژه
+      <select id="tc-password-type">
+        <option value="numeric">فقط عدد</option>
+        <option value="letters">حروف کوچک و بزرگ</option>
+        <option value="mixed">حروف و عدد</option>
+        <option value="strong">حروف، عدد و نماد</option>
+      </select>
+    </label>
+    <button type="button" class="btn ghost" id="tc-regenerate-passwords">بازسازی گذرواژه‌ها</button>
+    <progress id="tc-password-progress" max="100" value="0" style="width:100%" aria-label="پیشرفت بازسازی گذرواژه‌ها"></progress>
+    <p class="hint" id="tc-regenerate-passwords-msg" aria-live="polite">گذرواژه‌های جدید در خروجی اطلاعات ورود در دسترس خواهند بود.</p>
+    <?php endif; ?>
   </div>
   <div class="form grid two-columns">
     <label class="field">
@@ -1159,22 +1180,24 @@ if ($rows) {
     }
   };
 
+  const inviteesTemplate = allInviteesTableBody?.querySelector('template');
+  const cachedInviteeRows = Array.from(inviteesTemplate?.content.querySelectorAll('tr[data-invitee-row="1"]') || []);
+  const cachedSearchText = new Map(cachedInviteeRows.map(row => [row, normalizeSearchValue(row.getAttribute('data-search') || '')]));
+  let inviteesPage = 0;
   const applyAllInviteesSearch = () => {
     if (!(allInviteesTableBody instanceof HTMLElement)) return;
-    const inviteeRows = Array.from(allInviteesTableBody.querySelectorAll('tr[data-invitee-row="1"]'));
-    if (!inviteeRows.length) return;
+    const inviteeRows = cachedInviteeRows;
     const noResultsRow = allInviteesTableBody.querySelector('tr[data-invitees-no-results]');
     const query = normalizeSearchValue(allInviteesSearchInput?.value || '');
 
-    let visibleCount = 0;
-    inviteeRows.forEach((row) => {
-      const haystack = normalizeSearchValue(row.getAttribute('data-search') || row.textContent || '');
-      const isVisible = query === '' || haystack.includes(query);
-      row.hidden = !isVisible;
-      if (isVisible) {
-        visibleCount += 1;
-      }
-    });
+    const matches = inviteeRows.filter(row => query === '' || cachedSearchText.get(row).includes(query));
+    const visibleCount = matches.length;
+    const pageCount = Math.max(1, Math.ceil(visibleCount / 100));
+    inviteesPage = Math.min(inviteesPage, pageCount - 1);
+    allInviteesTableBody.replaceChildren(...matches.slice(inviteesPage * 100, (inviteesPage + 1) * 100));
+    getInviteeElement('tc-invitees-page').textContent = `${inviteesPage + 1} / ${pageCount}`;
+    getInviteeElement('tc-invitees-prev').disabled = inviteesPage === 0;
+    getInviteeElement('tc-invitees-next').disabled = inviteesPage + 1 >= pageCount;
 
     if (noResultsRow instanceof HTMLElement) {
       noResultsRow.hidden = visibleCount > 0 || query === '';
@@ -1736,8 +1759,50 @@ if ($rows) {
   }
 
   allInviteesSearchInput?.addEventListener('input', () => {
+    inviteesPage = 0;
     applyAllInviteesSearch();
   });
+  getInviteeElement('tc-invitees-prev')?.addEventListener('click', () => { inviteesPage--; applyAllInviteesSearch(); });
+  getInviteeElement('tc-invitees-next')?.addEventListener('click', () => { inviteesPage++; applyAllInviteesSearch(); });
+  getInviteeElement('tc-regenerate-passwords')?.addEventListener('click', async (event) => {
+    if (!confirm('گذرواژه همه دعوت‌شدگان تغییر می‌کند. ادامه می‌دهید؟')) return;
+    const button = event.currentTarget;
+    const message = getInviteeElement('tc-regenerate-passwords-msg');
+    button.disabled = true;
+    let action = button.dataset.resume === '1' ? 'process' : 'start';
+    try {
+      while (true) {
+        const response = await fetch(new URL('invitees_regenerate_passwords.php', INVITEES_BASE_URL), {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({csrf: csrfToken, action,
+            length: Number(getInviteeElement('tc-password-length').value),
+            type: getInviteeElement('tc-password-type').value})
+        });
+        const result = await response.json();
+        if (!response.ok || result.status !== 'ok') throw new Error(result.message || 'Password regeneration failed.');
+        action = 'process';
+        button.dataset.resume = result.done ? '0' : '1';
+        getInviteeElement('tc-password-progress').value = result.total ? result.prepared / result.total * 100 : 100;
+        message.textContent = `${result.prepared} / ${result.total} — در حال آماده‌سازی؛ گذرواژه‌های فعلی تا پایان تغییر نمی‌کنند.`;
+        if (result.done) break;
+      }
+      message.textContent = 'بازسازی همه گذرواژه‌ها کامل شد. خروجی اطلاعات ورود را دریافت کنید.';
+    } catch (error) { message.textContent = `${error.message} — برای ادامه از محل توقف، ادامه بازسازی را بزنید.`; }
+    finally { button.disabled = false; button.textContent = button.dataset.resume === '1' ? 'ادامه بازسازی' : 'بازسازی گذرواژه‌ها'; }
+  });
+  if (getInviteeElement('tc-regenerate-passwords')) {
+    fetch(new URL('invitees_regenerate_passwords.php', INVITEES_BASE_URL), {credentials: 'same-origin'})
+      .then(response => response.json()).then(result => {
+        if (result.status !== 'ok' || !result.total) return;
+        const button = getInviteeElement('tc-regenerate-passwords');
+        button.dataset.resume = result.done ? '0' : '1';
+        button.textContent = result.done ? 'بازسازی گذرواژه‌ها' : 'ادامه بازسازی';
+        getInviteeElement('tc-password-progress').value = result.prepared / result.total * 100;
+        getInviteeElement('tc-regenerate-passwords-msg').textContent = result.done
+          ? 'بازسازی کامل شد. خروجی اطلاعات ورود آماده است.'
+          : `${result.prepared} / ${result.total} آماده شده — ادامه بازسازی را بزنید. گذرواژه‌ها هنوز تغییر نکرده‌اند.`;
+      }).catch(() => {});
+  }
   applyAllInviteesSearch();
 
   const previousInviteesDocumentClickHandler = window[INVITEES_DOCUMENT_CLICK_HANDLER_KEY];
