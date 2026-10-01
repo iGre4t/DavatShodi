@@ -3364,7 +3364,9 @@
         ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, period_code: periodCode, csrf: TASK_CLUB_CSRF }) }
         : { credentials: 'same-origin', cache: 'no-store' });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'دریافت یا ذخیره نقشه سالن ناموفق بود.');
+      if (!response.ok || data.status !== 'ok') {
+        throw new Error(data.message || `دریافت یا ذخیره نقشه سالن ناموفق بود (HTTP ${response.status}).`);
+      }
       return data;
     };
     void request().then((data) => {

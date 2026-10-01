@@ -741,7 +741,14 @@
     const background = await loadCanvasImage(String(config?.imageData || ''));
     const width = background.naturalWidth;
     const height = background.naturalHeight;
-    if (width < 1 || height < 1 || width * height > MAX_IMAGE_PIXELS) {
+    const seatLines = config?.imageName === 'mci-cinema-white.png'
+      ? String(invitee?.seat || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+      : [];
+    const hasSeatList = seatLines.length > 1;
+    const seatLineHeight = height * 165 / 2400;
+    const extensionHeight = hasSeatList ? height * 270 / 2400 + seatLines.length * seatLineHeight : 0;
+    const outputHeight = height + extensionHeight;
+    if (width < 1 || height < 1 || width * outputHeight > MAX_IMAGE_PIXELS) {
       throw new Error('ابعاد تصویر برای خروجی امن بسیار بزرگ است؛ حداکثر 40 میلیون پیکسل مجاز است.');
     }
     const qrEndpoint = String(options.qrEndpoint || '').trim();
@@ -753,10 +760,13 @@
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     const canvas = document.createElement('canvas');
     canvas.width = width;
-    canvas.height = height;
+    canvas.height = outputHeight;
     const context = canvas.getContext('2d', { alpha: false });
     if (!context) throw new Error('Canvas مرورگر برای ساخت تصویر در دسترس نیست.');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, outputHeight);
     context.drawImage(background, 0, 0, width, height);
+    const displayInvitee = hasSeatList ? { ...invitee, seat: 'فهرست صندلی‌ها در ادامه بلیت' } : invitee;
     const qrRect = config?.qrRect || {};
     const textRect = config?.textRect || {};
     const qrArea = {
@@ -768,7 +778,7 @@
     const qrSide = Math.min(qrArea.width, qrArea.height);
     context.drawImage(qrImage, qrArea.x + (qrArea.width - qrSide) / 2,
       qrArea.y + (qrArea.height - qrSide) / 2, qrSide, qrSide);
-    drawInviteText(context, String(config?.textHtml || config?.text || ''), invitee, {
+    drawInviteText(context, String(config?.textHtml || config?.text || ''), displayInvitee, {
       x: width * Number(textRect.x || 0) / 100,
       y: height * Number(textRect.y || 0) / 100,
       width: width * Number(textRect.width || 0) / 100,
@@ -776,7 +786,7 @@
     }, config?.conditionalVariables, fontFamily);
     (Array.isArray(config?.textAreas) ? config.textAreas : []).forEach((area) => {
       const rect = area?.rect || {};
-      drawInviteText(context, String(area?.textHtml || area?.text || ''), invitee, {
+      drawInviteText(context, String(area?.textHtml || area?.text || ''), displayInvitee, {
         x: width * Number(rect.x || 0) / 100,
         y: height * Number(rect.y || 0) / 100,
         width: width * Number(rect.width || 0) / 100,
@@ -785,16 +795,28 @@
     });
     if (config?.ticketCountRect) {
       const rect = config.ticketCountRect;
-      drawInviteText(context, '[ticketcount]', invitee, {
+      drawInviteText(context, '[ticketcount]', displayInvitee, {
         x: width * Number(rect.x || 0) / 100,
         y: height * Number(rect.y || 0) / 100,
         width: width * Number(rect.width || 0) / 100,
         height: height * Number(rect.height || 0) / 100
       }, config?.conditionalVariables, fontFamily);
     }
+    if (hasSeatList) {
+      context.fillStyle = '#94a3b8';
+      context.fillRect(width * .08, height + height * 44 / 2400, width * .84, Math.max(2, height * 3 / 2400));
+      drawInviteText(context, 'فهرست صندلی‌ها', displayInvitee, {
+        x: width * .08, y: height + height * 75 / 2400,
+        width: width * .84, height: height * 105 / 2400
+      }, [], fontFamily);
+      seatLines.forEach((line, index) => drawInviteText(context, line, displayInvitee, {
+        x: width * .08, y: height + height * (200 + index * 165) / 2400,
+        width: width * .84, height: seatLineHeight
+      }, [], fontFamily));
+    }
     const mimeType = options.mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png';
     const blob = await canvasToBlob(canvas, mimeType, mimeType === 'image/jpeg' ? Number(options.quality || 0.92) : undefined);
-    return { blob, width, height };
+    return { blob, width, height: outputHeight };
   }
 
   window.EGMInviteCardRenderer = Object.freeze({
