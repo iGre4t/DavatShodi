@@ -4153,21 +4153,21 @@
     modal.dataset.periodSeatPicker = '1';
     modal.hidden = true;
     modal.innerHTML = `
-      <section class="egm-period-invitee-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-period-seat-picker-title" dir="rtl">
+      <section class="egm-period-invitee-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-period-seat-picker-title" dir="rtl" style="display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:min(90vh,900px)">
         <header class="egm-period-invitee-editor-head">
           <div><span>صندلی‌های همین بازه</span><h3 id="egm-period-seat-picker-title" data-period-seat-picker-title>انتخاب صندلی</h3></div>
           <button type="button" class="btn ghost" data-period-seat-picker-close>بستن</button>
         </header>
-        <div class="egm-period-seat-picker-body">
+        <div class="egm-period-seat-picker-body" style="min-height:0;overflow-y:auto">
           <p class="muted">صندلی‌های آبی برای این مهمان انتخاب شده‌اند. صندلی‌های خاکستری به مهمان دیگری تعلق دارند. برای افزودن یا تغییر، روی صندلی‌ها کلیک کنید.</p>
           <div class="egm-period-seat-picker-summary" data-period-seat-picker-summary></div>
           <div class="egm-period-seat-picker-map" data-period-seat-picker-map></div>
           <p class="hint">تعداد بلیت مبنای صندلی با تعداد صندلی‌های انتخاب‌شده یکسان می‌شود. اگر بلیت چاپ شده است، پس از ذخیره آن را دوباره چاپ کنید.</p>
         </div>
-        <footer class="egm-period-invitee-editor-actions">
+        <div class="egm-period-invitee-editor-actions" style="display:flex;min-height:64px;flex-shrink:0">
           <p class="hint" data-period-seat-picker-status aria-live="polite"></p>
           <div><button type="button" class="btn ghost" data-period-seat-picker-close>انصراف</button><button type="button" class="btn primary standard-primary-button" data-period-seat-picker-save>ذخیره صندلی‌ها</button></div>
-        </footer>
+        </div>
       </section>`;
     const close = () => {
       periodSeatPickerRequest++;

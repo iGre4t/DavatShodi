@@ -2667,6 +2667,8 @@ body.egm-period-invitee-editor-open {
 }
 
 .egm-period-seat-picker .egm-period-invitee-editor-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(1100px, 100%);
   height: min(90vh, 900px);
 }
