@@ -766,6 +766,150 @@ SQL);
     return $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
+/** @return array<int,array{row:int,chair:int,block:int}> */
+function egmPeriodInvitesNormalizeSeatSelection(array $map, $requested): array
+{
+    if (!is_array($requested) || count($requested) < 1 || count($requested) > 500) {
+        throw new InvalidArgumentException('بین ۱ تا ۵۰۰ صندلی را انتخاب کنید.');
+    }
+    $result = [];
+    $seen = [];
+    foreach ($requested as $position) {
+        if (!is_array($position) || !filter_var($position['row'] ?? null, FILTER_VALIDATE_INT)
+            || !filter_var($position['chair'] ?? null, FILTER_VALIDATE_INT)) {
+            throw new InvalidArgumentException('شماره ردیف یا صندلی معتبر نیست.');
+        }
+        $row = (int)$position['row'];
+        $chair = (int)$position['chair'];
+        $blocks = $map['segments'][$row - 1] ?? null;
+        if (!is_array($blocks) || $chair < 1 || $chair > array_sum($blocks)) {
+            throw new InvalidArgumentException('صندلی انتخاب‌شده در نقشه این بازه وجود ندارد.');
+        }
+        $key = $row . ':' . $chair;
+        if (isset($seen[$key])) throw new InvalidArgumentException('یک صندلی دوبار انتخاب شده است.');
+        $seen[$key] = true;
+        $offset = 0;
+        foreach ($blocks as $blockIndex => $count) {
+            $offset += $count;
+            if ($chair <= $offset) {
+                $result[] = ['row' => $row, 'chair' => $chair, 'block' => $blockIndex + 1];
+                break;
+            }
+        }
+    }
+    usort($result, static fn(array $a, array $b): int => [$a['row'], $a['chair']] <=> [$b['row'], $b['chair']]);
+    return $result;
+}
+
+/** @return array<string,mixed> */
+function egmPeriodInvitesSeatState(array $context, string $periodCode, string $inviteId): array
+{
+    if ($context['code'] === '' || (int)$inviteId < 1) throw new InvalidArgumentException('دعوت‌شونده معتبر نیست.');
+    $map = egmSeatMapEffective($context, $periodCode);
+    if (!$map['enabled']) throw new InvalidArgumentException('نقشه صندلی برای این بازه فعال نیست.');
+    $table = (string)$context['tables']['user_periods'];
+    $find = $context['pdo']->prepare("SELECT `seat_assignment_json`,`seat_mode`,`ticket_numbers_json` FROM `{$table}` WHERE `id`=:id AND `period_code`=:period_code LIMIT 1");
+    $find->execute([':id' => (int)$inviteId, ':period_code' => $periodCode]);
+    $current = $find->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($current)) throw new InvalidArgumentException('دعوت این مهمان در بازه پیدا نشد.');
+    $all = $context['pdo']->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL");
+    $all->execute([':period_code' => $periodCode]);
+    $occupied = [];
+    foreach ($all->fetchAll(PDO::FETCH_ASSOC) as $record) {
+        if ((int)$record['id'] === (int)$inviteId) continue;
+        $assignment = json_decode((string)$record['seat_assignment_json'], true);
+        foreach ((array)($assignment['seats'] ?? []) as $seat) {
+            $occupied[] = ['row' => (int)($seat['row'] ?? 0), 'chair' => (int)($seat['chair'] ?? 0)];
+        }
+    }
+    $own = json_decode((string)($current['seat_assignment_json'] ?? ''), true);
+    return [
+        'map' => $map,
+        'seats' => array_values((array)($own['seats'] ?? [])),
+        'occupied' => $occupied,
+        'seat_mode' => (string)($current['seat_mode'] ?? 'assigned'),
+        'revision' => hash('sha256', (string)($current['seat_assignment_json'] ?? '') . '|' . (string)$current['seat_mode'] . '|' . (string)($current['ticket_numbers_json'] ?? '')),
+    ];
+}
+
+/** @return array<string,mixed> */
+function egmPeriodInvitesSaveSeats(array $context, string $periodCode, string $inviteId, array $input, string $actor): array
+{
+    if ($context['code'] === '' || (int)$inviteId < 1) throw new InvalidArgumentException('دعوت‌شونده معتبر نیست.');
+    $pdo = $context['pdo'];
+    $table = (string)$context['tables']['user_periods'];
+    $pdo->beginTransaction();
+    try {
+        egmSeatMapLock($context);
+        $map = egmSeatMapEffective($context, $periodCode);
+        if (!$map['enabled']) throw new InvalidArgumentException('نقشه صندلی برای این بازه فعال نیست.');
+        $seats = egmPeriodInvitesNormalizeSeatSelection($map, $input['seats'] ?? null);
+        $find = $pdo->prepare("SELECT `id`,`user_id`,`seat_assignment_json`,`seat_mode`,`ticket_numbers_json`,`entered_date`,`entered_time` FROM `{$table}` WHERE `id`=:id AND `period_code`=:period_code LIMIT 1 FOR UPDATE");
+        $find->execute([':id' => (int)$inviteId, ':period_code' => $periodCode]);
+        $current = $find->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($current)) throw new InvalidArgumentException('دعوت این مهمان در بازه پیدا نشد.');
+        $revision = hash('sha256', (string)($current['seat_assignment_json'] ?? '') . '|' . (string)$current['seat_mode'] . '|' . (string)($current['ticket_numbers_json'] ?? ''));
+        if (!hash_equals($revision, (string)($input['revision'] ?? ''))) {
+            throw new InvalidArgumentException('صندلی‌های این مهمان تغییر کرده‌اند. پنجره را ببندید و دوباره باز کنید.');
+        }
+        $all = $pdo->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL FOR UPDATE");
+        $all->execute([':period_code' => $periodCode]);
+        $occupied = [];
+        foreach ($all->fetchAll(PDO::FETCH_ASSOC) as $record) {
+            if ((int)$record['id'] === (int)$inviteId) continue;
+            $assignment = json_decode((string)$record['seat_assignment_json'], true);
+            foreach ((array)($assignment['seats'] ?? []) as $seat) {
+                $occupied[(int)($seat['row'] ?? 0) . ':' . (int)($seat['chair'] ?? 0)] = true;
+            }
+        }
+        foreach ($seats as $seat) {
+            if (isset($occupied[$seat['row'] . ':' . $seat['chair']])) {
+                throw new InvalidArgumentException('یکی از صندلی‌ها اکنون به مهمان دیگری تعلق دارد. پنجره را دوباره باز کنید.');
+            }
+        }
+        $freeGuests = egmSeatMapFreeGuestCount($context, $periodCode);
+        if ((string)$current['seat_mode'] === 'free' && trim((string)($current['entered_date'] ?? '')) !== '') $freeGuests--;
+        if (count($occupied) + $freeGuests + count($seats) > array_sum($map['rows'])) {
+            throw new EgmSeatCapacityException();
+        }
+        $previous = json_decode((string)($current['seat_assignment_json'] ?? ''), true);
+        $numbers = json_decode((string)($current['ticket_numbers_json'] ?? ''), true);
+        $numbers = is_array($numbers) ? $numbers : [];
+        $numbers[$map['ticketId']] = (string)count($seats);
+        $assignment = [
+            'ticket_id' => $map['ticketId'], 'seats' => $seats,
+            'split' => count(array_unique(array_column($seats, 'row'))) > 1,
+            'assigned_at' => date('Y-m-d H:i:s'), 'assigned_by' => tctPeriodInviteClean($actor, 191) ?: 'admin',
+        ];
+        $save = $pdo->prepare("UPDATE `{$table}` SET `seat_assignment_json`=:assignment,`seat_mode`='assigned',`ticket_numbers_json`=:numbers,`number_of_ticket`=:quantity,`ticket_number_recorded_at`=NOW() WHERE `id`=:id AND `period_code`=:period_code");
+        $save->execute([
+            ':assignment' => json_encode($assignment, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            ':numbers' => json_encode($numbers, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            ':quantity' => (string)count($seats), ':id' => (int)$inviteId, ':period_code' => $periodCode,
+        ]);
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+    try {
+        $logTable = (string)$context['tables']['activity_logs'];
+        $metadata = json_encode(['period_code' => $periodCode, 'invite_id' => (int)$inviteId,
+            'before' => $previous['seats'] ?? [], 'after' => $seats], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $log = $context['logs_pdo']->prepare("INSERT INTO `{$logTable}` (`source_key`,`user_id`,`work_id`,`session_id`,`level`,`action`,`entity_type`,`entity_id`,`ip_address`,`user_agent`,`status`,`message`,`metadata_json`,`occurred_at`) VALUES (:source_key,:user_id,NULL,:session_id,'info','egm.period_invitee_seat_edit','period_invite',:entity_id,:ip_address,:user_agent,'success','Seat assignment edited',:metadata_json,NOW())");
+        $log->execute([':source_key' => hash('sha256', $periodCode . '|' . $inviteId . '|' . bin2hex(random_bytes(8))),
+            ':user_id' => (int)$current['user_id'], ':session_id' => session_id() ?: null,
+            ':entity_id' => $periodCode . ':' . $inviteId,
+            ':ip_address' => tctPeriodInviteClean($_SERVER['REMOTE_ADDR'] ?? '', 45) ?: null,
+            ':user_agent' => tctPeriodInviteClean($_SERVER['HTTP_USER_AGENT'] ?? '', 512) ?: null,
+            ':metadata_json' => $metadata]);
+    } catch (Throwable $error) {
+        error_log('EGM seat-edit audit log failed: ' . $error->getMessage());
+    }
+    return ['updated' => true, 'seats' => $seats, 'quantity' => count($seats),
+        'message' => 'صندلی‌های مهمان ذخیره شد. اگر بلیت قبلاً چاپ شده، بلیت اصلاح‌شده را دوباره چاپ کنید.'];
+}
+
 function egmPeriodInvitesInputBool($value): bool
 {
     if (is_bool($value)) return $value;
@@ -1229,6 +1373,13 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
             $pages = max(1, (int)ceil($total / $pageSize));
             $page = max(1, min($pages, (int)($input['page'] ?? 1)));
             egmPeriodInvitesJson(['status' => 'ok', 'rows' => array_slice($rows, ($page - 1) * $pageSize, $pageSize), 'total' => $total, 'page' => $page, 'pages' => $pages]);
+        }
+        if ($action === 'seat_state') {
+            egmPeriodInvitesJson(['status' => 'ok'] + egmPeriodInvitesSeatState($context, $periodCode, (string)($input['invite_id'] ?? '')));
+        }
+        if ($action === 'save_seats' && $method === 'POST') {
+            $actor = tctPeriodInviteClean($sessionUser['code'] ?? ($sessionUser['username'] ?? ''), 191);
+            egmPeriodInvitesJson(['status' => 'ok'] + egmPeriodInvitesSaveSeats($context, $periodCode, (string)($input['invite_id'] ?? ''), $input, $actor));
         }
         if ($action === 'update_invitee' && $method === 'POST') {
             $actor = tctPeriodInviteClean($sessionUser['code'] ?? ($sessionUser['username'] ?? ''), 191);

@@ -4142,6 +4142,147 @@
     }
   }
 
+  let periodSeatPickerContext = null;
+  let periodSeatPickerRequest = 0;
+
+  function ensurePeriodSeatPicker() {
+    let modal = document.querySelector('[data-period-seat-picker]');
+    if (modal instanceof HTMLElement) return modal;
+    modal = document.createElement('div');
+    modal.className = 'egm-period-invitee-editor egm-period-seat-picker';
+    modal.dataset.periodSeatPicker = '1';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <section class="egm-period-invitee-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-period-seat-picker-title" dir="rtl">
+        <header class="egm-period-invitee-editor-head">
+          <div><span>صندلی‌های همین بازه</span><h3 id="egm-period-seat-picker-title" data-period-seat-picker-title>انتخاب صندلی</h3></div>
+          <button type="button" class="btn ghost" data-period-seat-picker-close>بستن</button>
+        </header>
+        <div class="egm-period-seat-picker-body">
+          <p class="muted">صندلی‌های آبی برای این مهمان انتخاب شده‌اند. صندلی‌های خاکستری به مهمان دیگری تعلق دارند. برای افزودن یا تغییر، روی صندلی‌ها کلیک کنید.</p>
+          <div class="egm-period-seat-picker-summary" data-period-seat-picker-summary></div>
+          <div class="egm-period-seat-picker-map" data-period-seat-picker-map></div>
+          <p class="hint">تعداد بلیت مبنای صندلی با تعداد صندلی‌های انتخاب‌شده یکسان می‌شود. اگر بلیت چاپ شده است، پس از ذخیره آن را دوباره چاپ کنید.</p>
+        </div>
+        <footer class="egm-period-invitee-editor-actions">
+          <p class="hint" data-period-seat-picker-status aria-live="polite"></p>
+          <div><button type="button" class="btn ghost" data-period-seat-picker-close>انصراف</button><button type="button" class="btn primary standard-primary-button" data-period-seat-picker-save>ذخیره صندلی‌ها</button></div>
+        </footer>
+      </section>`;
+    const close = () => {
+      periodSeatPickerRequest++;
+      modal.hidden = true;
+      document.body.classList.remove('egm-period-invitee-editor-open');
+      periodSeatPickerContext = null;
+    };
+    const render = () => {
+      const context = periodSeatPickerContext;
+      if (!context) return;
+      const summary = modal.querySelector('[data-period-seat-picker-summary]');
+      const mapElement = modal.querySelector('[data-period-seat-picker-map]');
+      const selectedByRow = new Map();
+      for (const key of context.selected) {
+        const [row, chair] = key.split(':').map(Number);
+        if (!selectedByRow.has(row)) selectedByRow.set(row, []);
+        selectedByRow.get(row).push(chair);
+      }
+      if (summary) summary.innerHTML = `<strong>${context.selected.size} صندلی انتخاب شده</strong>` +
+        (selectedByRow.size ? Array.from(selectedByRow, ([row, chairs]) => `<span>ردیف ${row}: ${chairs.sort((a, b) => a - b).join('، ')}</span>`).join('') : '<span>هنوز صندلی انتخاب نشده است.</span>');
+      const segments = Array.isArray(context.map?.segments) && context.map.segments.length
+        ? context.map.segments : (context.map?.rows || []).map((count) => [count]);
+      if (mapElement) mapElement.innerHTML = segments.map((blocks, rowIndex) => {
+        let chair = 0;
+        return `<div class="egm-period-seat-picker-row"><strong>ردیف ${rowIndex + 1}</strong><div class="egm-period-seat-picker-blocks">${blocks.map((count) => {
+          const buttons = Array.from({ length: Number(count) }, () => {
+            const number = ++chair;
+            const key = `${rowIndex + 1}:${number}`;
+            const occupied = context.occupied.has(key);
+            const selected = context.selected.has(key);
+            return `<button type="button" class="egm-period-seat-choice${occupied ? ' is-occupied' : selected ? ' is-selected' : ''}" data-period-seat-key="${key}" aria-label="ردیف ${rowIndex + 1} صندلی ${number}${occupied ? '، اشغال' : ''}" aria-pressed="${selected ? 'true' : 'false'}" ${occupied ? 'disabled' : ''}>${number}</button>`;
+          }).join('');
+          return `<div class="egm-period-seat-picker-block">${buttons}</div>`;
+        }).join('')}</div></div>`;
+      }).join('');
+    };
+    modal.querySelector('[data-period-seat-picker-map]')?.addEventListener('egm-seat-picker-render', render);
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal || (event.target instanceof Element && event.target.closest('[data-period-seat-picker-close]'))) { close(); return; }
+      const button = event.target instanceof Element ? event.target.closest('[data-period-seat-key]') : null;
+      if (!(button instanceof HTMLButtonElement) || !periodSeatPickerContext || button.disabled) return;
+      const key = button.dataset.periodSeatKey || '';
+      if (periodSeatPickerContext.selected.has(key)) periodSeatPickerContext.selected.delete(key);
+      else if (periodSeatPickerContext.selected.size < 500) periodSeatPickerContext.selected.add(key);
+      else {
+        const status = modal.querySelector('[data-period-seat-picker-status]');
+        if (status) status.textContent = 'حداکثر ۵۰۰ صندلی را می‌توان برای یک مهمان انتخاب کرد.';
+        return;
+      }
+      render();
+    });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !modal.hidden) close(); });
+    modal.querySelector('[data-period-seat-picker-save]')?.addEventListener('click', async (event) => {
+      const context = periodSeatPickerContext;
+      if (!context) return;
+      const status = modal.querySelector('[data-period-seat-picker-status]');
+      const button = event.currentTarget;
+      if (context.selected.size < 1) { if (status) status.textContent = 'حداقل یک صندلی انتخاب کنید.'; return; }
+      if (context.row?.entered_date && context.original.size > 0 &&
+          !window.confirm('این مهمان قبلاً وارد شده است. پس از تغییر صندلی، بلیت او را دوباره چاپ می‌کنید؟')) return;
+      if (button instanceof HTMLButtonElement) button.disabled = true;
+      if (status) status.textContent = 'در حال ذخیره صندلی‌ها...';
+      try {
+        const seats = Array.from(context.selected, (key) => {
+          const [row, chair] = key.split(':').map(Number);
+          return { row, chair };
+        });
+        const data = await requestPeriodInvites('save_seats', {
+          period_code: periodCodeForPane(context.pane), invite_id: String(context.row?.invite_id || ''),
+          revision: context.revision, seats
+        }, 'POST');
+        await loadPeriodInvitees(context.pane, getPeriodInviteState(context.pane).inviteePage);
+        const listStatus = context.pane.querySelector('[data-period-invitee-status]');
+        if (listStatus) listStatus.textContent = data?.message || 'صندلی‌ها ذخیره شدند.';
+        close();
+      } catch (error) {
+        if (status) status.textContent = error?.message || 'ذخیره صندلی‌ها ناموفق بود.';
+      } finally {
+        if (button instanceof HTMLButtonElement) button.disabled = false;
+      }
+    });
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  async function openPeriodSeatPicker(pane, row) {
+    const request = ++periodSeatPickerRequest;
+    periodSeatPickerContext = null;
+    const modal = ensurePeriodSeatPicker();
+    const title = modal.querySelector('[data-period-seat-picker-title]');
+    const status = modal.querySelector('[data-period-seat-picker-status]');
+    const map = modal.querySelector('[data-period-seat-picker-map]');
+    const save = modal.querySelector('[data-period-seat-picker-save]');
+    if (title) title.textContent = `صندلی‌های ${[row?.first_name, row?.last_name].filter(Boolean).join(' ') || row?.guest_number || 'مهمان'}`;
+    if (status) status.textContent = 'در حال دریافت نقشه و صندلی‌ها...';
+    if (map) map.innerHTML = '';
+    if (save instanceof HTMLButtonElement) save.disabled = true;
+    modal.hidden = false;
+    document.body.classList.add('egm-period-invitee-editor-open');
+    try {
+      const data = await requestPeriodInvites('seat_state', { period_code: periodCodeForPane(pane), invite_id: String(row?.invite_id || '') });
+      if (modal.hidden || request !== periodSeatPickerRequest) return;
+      const selected = new Set((data.seats || []).map((seat) => `${Number(seat.row)}:${Number(seat.chair)}`));
+      periodSeatPickerContext = {
+        pane, row, map: data.map, revision: data.revision, selected, original: new Set(selected),
+        occupied: new Set((data.occupied || []).map((seat) => `${Number(seat.row)}:${Number(seat.chair)}`))
+      };
+      modal.querySelector('[data-period-seat-picker-map]')?.dispatchEvent(new Event('egm-seat-picker-render'));
+      if (status) status.textContent = data.seat_mode === 'free' ? 'این مهمان بلیت نشستن آزاد دارد؛ صندلی‌های انتخابی جایگزین آن می‌شوند.' : '';
+      if (save instanceof HTMLButtonElement) save.disabled = false;
+    } catch (error) {
+      if (request === periodSeatPickerRequest && status) status.textContent = error?.message || 'دریافت صندلی‌ها ناموفق بود.';
+    }
+  }
+
   let periodInviteeEditorContext = null;
 
   function ensurePeriodInviteeEditor() {
@@ -4344,13 +4485,20 @@
       const ticketText = Object.entries(ticketNumbers).map(([id, value]) => `${state.ticketDefinitions.find((ticket) => ticket.id === id)?.title || id}: ${value}`).join('، ');
       let seatAssignment = {};
       try { seatAssignment = JSON.parse(row?.seat_assignment_json || '{}') || {}; } catch { seatAssignment = {}; }
-      const seatText = row?.seat_mode === 'free' ? 'در صورت خالی بودن صندلی' : (seatAssignment.seats || []).map((seat) => `ردیف ${seat.row} صندلی ${seat.chair}`).join('، ');
+      const seatsByRow = new Map();
+      for (const seat of seatAssignment.seats || []) {
+        const rowNumber = Number(seat.row);
+        if (!seatsByRow.has(rowNumber)) seatsByRow.set(rowNumber, []);
+        seatsByRow.get(rowNumber).push(Number(seat.chair));
+      }
+      const seatText = row?.seat_mode === 'free' ? 'در صورت خالی بودن صندلی' :
+        Array.from(seatsByRow, ([rowNumber, chairs]) => `ردیف ${rowNumber}: ${chairs.sort((a, b) => a - b).join('، ')}`).join('\n');
       return `<tr>
       <td><code>${escapeHtml(row?.guest_number || '—')}</code></td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
       <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
       <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
-      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${escapeHtml(ticketText || '—')}</td><td>${escapeHtml(seatText || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td><td>${escapeHtml(state.groups.find((group) => group.id === row?.group_id)?.title || 'بدون گروه')}</td>
-      <td><div class="egm-period-invitee-row-actions"><button type="button" class="btn ghost" data-period-edit-invite="${escapeHtml(row?.invite_id || '')}">ویرایش</button><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></div></td>
+      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${escapeHtml(ticketText || '—')}</td><td class="egm-period-seat-cell">${escapeHtml(seatText || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td><td>${escapeHtml(state.groups.find((group) => group.id === row?.group_id)?.title || 'بدون گروه')}</td>
+      <td><div class="egm-period-invitee-row-actions"><button type="button" class="btn ghost" data-period-edit-seats="${escapeHtml(row?.invite_id || '')}">صندلی‌ها</button><button type="button" class="btn ghost" data-period-edit-invite="${escapeHtml(row?.invite_id || '')}">ویرایش</button><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></div></td>
     </tr>`; }).join('') : '<tr><td colspan="17" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
     const total = pane.querySelector('[data-period-invitee-total]');
     if (total) total.textContent = String(data?.total || 0);
@@ -4597,6 +4745,12 @@
       if (edit instanceof HTMLButtonElement) {
         const row = state.invitees.find((item) => String(item?.invite_id || '') === String(edit.dataset.periodEditInvite || ''));
         if (row) openPeriodInviteeEditor(pane, row);
+        return;
+      }
+      const seats = event.target instanceof Element ? event.target.closest('[data-period-edit-seats]') : null;
+      if (seats instanceof HTMLButtonElement) {
+        const row = state.invitees.find((item) => String(item?.invite_id || '') === String(seats.dataset.periodEditSeats || ''));
+        if (row) void openPeriodSeatPicker(pane, row);
         return;
       }
       const remove = event.target instanceof Element ? event.target.closest('[data-period-remove-invite]') : null;
