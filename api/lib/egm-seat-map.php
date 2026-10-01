@@ -62,8 +62,29 @@ function egmSeatMapEffective(array $context, string $periodCode): array
 function egmSeatMapFindContiguous(array $rows, array $used, int $quantity, ?array $segments = null): array
 {
     $segments ??= array_map(static fn(int $count): array => [$count], $rows);
-    // Prefer a wide rectangle in one chair block. Two adjacent rows of seven
-    // keep a 14-person party together better than one long line or seven pairs.
+    // Fill an available run in the earliest row before opening another row.
+    // This keeps successive small parties together and uses existing rows.
+    foreach ($segments as $rowIndex => $blocks) {
+        $offset = 0;
+        foreach ($blocks as $blockIndex => $chairCount) {
+            $run = 0;
+            for ($localChair = 1; $localChair <= $chairCount; $localChair++) {
+                $chair = $offset + $localChair;
+                $run = isset($used[($rowIndex + 1) . ':' . $chair]) ? 0 : $run + 1;
+                if ($run >= $quantity) {
+                    $seats = [];
+                    for ($number = $chair - $quantity + 1; $number <= $chair; $number++) {
+                        $seat = ['row' => $rowIndex + 1, 'chair' => $number];
+                        if (count($blocks) > 1) $seat['block'] = $blockIndex + 1;
+                        $seats[] = $seat;
+                    }
+                    return $seats;
+                }
+            }
+            $offset += $chairCount;
+        }
+    }
+    // When no row can hold the party, keep the split within one aligned block.
     if ($quantity >= 3) {
         $rowCount = count($segments);
         for ($height = 2; $height <= min($rowCount, $quantity); $height++) {
@@ -104,27 +125,6 @@ function egmSeatMapFindContiguous(array $rows, array $used, int $quantity, ?arra
                     }
                 }
             }
-        }
-    }
-    // A single group must never cross an aisle within a row.
-    foreach ($segments as $rowIndex => $blocks) {
-        $offset = 0;
-        foreach ($blocks as $blockIndex => $chairCount) {
-            $run = 0;
-            for ($localChair = 1; $localChair <= $chairCount; $localChair++) {
-                $chair = $offset + $localChair;
-                $run = isset($used[($rowIndex + 1) . ':' . $chair]) ? 0 : $run + 1;
-                if ($run >= $quantity) {
-                    $seats = [];
-                    for ($number = $chair - $quantity + 1; $number <= $chair; $number++) {
-                        $seat = ['row' => $rowIndex + 1, 'chair' => $number];
-                        if (count($blocks) > 1) $seat['block'] = $blockIndex + 1;
-                        $seats[] = $seat;
-                    }
-                    return $seats;
-                }
-            }
-            $offset += $chairCount;
         }
     }
     // Neighboring rows may align only within the same block layout.

@@ -28,10 +28,17 @@ seatAssert(count(array_unique(array_column($blockOnly, 'row'))) > count(array_un
     'Row-first allocation must take priority over a narrow block spanning more rows.');
 $salonBlocks = array_merge(array_fill(0, 11, [14, 14]), array_fill(0, 6, [6, 15, 6]));
 $salonRows = array_map('array_sum', $salonBlocks);
-$rectangle14 = egmSeatMapFindContiguous($salonRows, [], 14, $salonBlocks);
-seatAssert(count(array_filter($rectangle14, static fn(array $seat): bool => $seat['row'] === 1)) === 7
-    && count(array_filter($rectangle14, static fn(array $seat): bool => $seat['row'] === 2)) === 7,
-    'A 14-person party should form a seven-by-two rectangle.');
+$row14 = egmSeatMapFindContiguous($salonRows, [], 14, $salonBlocks);
+seatAssert(count($row14) === 14 && count(array_unique(array_column($row14, 'row'))) === 1
+    && $row14[0]['row'] === 1 && $row14[13]['chair'] === 14,
+    'A party that fits one block should stay in the earliest row.');
+$usedForParties = [];
+foreach ([4, 5, 6, 7] as $partySize) {
+    $party = egmSeatMapFindContiguous($salonRows, $usedForParties, $partySize, $salonBlocks);
+    seatAssert(count($party) === $partySize && count(array_unique(array_column($party, 'row'))) === 1
+        && $party[0]['row'] === 1, 'Small parties opened new rows before filling the first row.');
+    foreach ($party as $seat) $usedForParties[$seat['row'] . ':' . $seat['chair']] = true;
+}
 $rectangle30 = egmSeatMapFindContiguous($salonRows, [], 30, $salonBlocks);
 seatAssert(count(array_filter($rectangle30, static fn(array $seat): bool => $seat['row'] === 12)) === 15
     && count(array_filter($rectangle30, static fn(array $seat): bool => $seat['row'] === 13)) === 15,
@@ -45,8 +52,8 @@ seatAssert($alignedBlocks === [
 $single = egmSeatMapFindContiguous([10, 8], ['1:1' => true], 5);
 seatAssert($single === [
     ['row' => 1, 'chair' => 2], ['row' => 1, 'chair' => 3],
-    ['row' => 1, 'chair' => 4], ['row' => 2, 'chair' => 2], ['row' => 2, 'chair' => 3],
-], 'A compact two-row rectangle was not preferred.');
+    ['row' => 1, 'chair' => 4], ['row' => 1, 'chair' => 5], ['row' => 1, 'chair' => 6],
+], 'A free run in the earliest row was not preferred.');
 
 $used = [];
 foreach ([1, 2, 3, 4, 5, 6] as $chair) $used['1:' . $chair] = true;
