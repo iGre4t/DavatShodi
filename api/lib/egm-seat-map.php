@@ -62,6 +62,50 @@ function egmSeatMapEffective(array $context, string $periodCode): array
 function egmSeatMapFindContiguous(array $rows, array $used, int $quantity, ?array $segments = null): array
 {
     $segments ??= array_map(static fn(int $count): array => [$count], $rows);
+    // Prefer a wide rectangle in one chair block. Two adjacent rows of seven
+    // keep a 14-person party together better than one long line or seven pairs.
+    if ($quantity >= 3) {
+        $rowCount = count($segments);
+        for ($height = 2; $height <= min($rowCount, $quantity); $height++) {
+            $width = (int)ceil($quantity / $height);
+            if ($width < $height) break;
+            for ($startRow = 0; $startRow + $height <= $rowCount; $startRow++) {
+                foreach ($segments[$startRow] as $blockIndex => $_) {
+                    $maximumStart = PHP_INT_MAX;
+                    for ($offset = 0; $offset < $height; $offset++) {
+                        if (count($segments[$startRow + $offset]) !== count($segments[$startRow])
+                            || !isset($segments[$startRow + $offset][$blockIndex])) {
+                            $maximumStart = 0;
+                            break;
+                        }
+                        $inRow = min($width, $quantity - $offset * $width);
+                        $maximumStart = min($maximumStart, $segments[$startRow + $offset][$blockIndex] - $inRow + 1);
+                    }
+                    for ($localStart = 1; $localStart <= $maximumStart; $localStart++) {
+                        $candidate = [];
+                        $valid = true;
+                        for ($offset = 0; $offset < $height && $valid; $offset++) {
+                            $rowIndex = $startRow + $offset;
+                            $rowBlocks = $segments[$rowIndex];
+                            $chairOffset = array_sum(array_slice($rowBlocks, 0, $blockIndex));
+                            $inRow = min($width, $quantity - count($candidate));
+                            for ($local = $localStart; $local < $localStart + $inRow; $local++) {
+                                $chair = $chairOffset + $local;
+                                if (isset($used[($rowIndex + 1) . ':' . $chair])) {
+                                    $valid = false;
+                                    break;
+                                }
+                                $seat = ['row' => $rowIndex + 1, 'chair' => $chair];
+                                if (count($rowBlocks) > 1) $seat['block'] = $blockIndex + 1;
+                                $candidate[] = $seat;
+                            }
+                        }
+                        if ($valid && count($candidate) === $quantity) return $candidate;
+                    }
+                }
+            }
+        }
+    }
     // A single group must never cross an aisle within a row.
     foreach ($segments as $rowIndex => $blocks) {
         $offset = 0;
@@ -131,33 +175,72 @@ function egmSeatMapFreeSeats(array $segments, array $used): array
     return $free;
 }
 
-/** Find the tightest available cluster, allowing gaps and aisles only with approval. */
+/** Fill as few nearby rows as possible, allowing gaps and aisles only with approval. */
 function egmSeatMapFindClosest(array $segments, array $used, int $quantity): array
 {
     $byRow = [];
     foreach (egmSeatMapFreeSeats($segments, $used) as $seat) $byRow[$seat['row']][] = $seat;
-    $best = [];
-    $bestScore = PHP_INT_MAX;
     $rowCount = count($segments);
-    $evaluations = 0;
+    $bestBand = null;
+    $bestScore = null;
     for ($start = 1; $start <= $rowCount; $start++) {
-        $band = [];
         for ($end = $start; $end <= $rowCount; $end++) {
-            array_push($band, ...($byRow[$end] ?? []));
-            if (count($band) < $quantity) continue;
-            if (40 * ($end - $start) >= $bestScore) break;
-            if (++$evaluations > 2000) break 2;
-            usort($band, static fn(array $a, array $b): int => [$a['x'], $a['row'], $a['chair']] <=> [$b['x'], $b['row'], $b['chair']]);
-            for ($index = 0, $last = count($band) - $quantity; $index <= $last; $index++) {
-                $score = 10 * ($band[$index + $quantity - 1]['x'] - $band[$index]['x']) + 40 * ($end - $start);
-                if ($score < $bestScore) {
-                    $bestScore = $score;
-                    $best = array_slice($band, $index, $quantity);
-                }
+            $available = 0;
+            $occupiedRows = 0;
+            for ($row = $start; $row <= $end; $row++) {
+                $count = count($byRow[$row] ?? []);
+                $available += $count;
+                if ($count > 0) $occupiedRows++;
             }
+            if ($available < $quantity) continue;
+            // Row count wins over column alignment; a large party fills one row
+            // before taking the remaining chairs in the next nearby row.
+            $score = [$occupiedRows, $end - $start, -count($byRow[$start] ?? []), $start];
+            if ($bestScore === null || $score < $bestScore) {
+                $bestScore = $score;
+                $bestBand = [$start, $end];
+            }
+            break;
         }
     }
-    usort($best, static fn(array $a, array $b): int => [$a['row'], $a['x']] <=> [$b['row'], $b['x']]);
+    if ($bestBand === null) return [];
+    $rowAllocations = [];
+    $remaining = $quantity;
+    for ($row = $bestBand[0]; $row <= $bestBand[1]; $row++) {
+        if (($byRow[$row] ?? []) !== []) $rowAllocations[$row] = 0;
+    }
+    // Keep a split group as rectangular as the available chairs allow.
+    while ($remaining > 0) {
+        foreach ($rowAllocations as $row => $count) {
+            if ($remaining === 0) break;
+            if ($count >= count($byRow[$row])) continue;
+            $rowAllocations[$row]++;
+            $remaining--;
+        }
+    }
+    $best = [];
+    foreach ($rowAllocations as $row => $needed) {
+        if ($needed === 0) continue;
+        $free = $byRow[$row];
+        if (count($free) === $needed) {
+            array_push($best, ...$free);
+            continue;
+        }
+        // Keep each row's chairs in the tightest available run.
+        $selected = [];
+        $selectedScore = null;
+        for ($index = 0, $last = count($free) - $needed; $index <= $last; $index++) {
+            $window = array_slice($free, $index, $needed);
+            $first = $window[0];
+            $lastSeat = $window[count($window) - 1];
+            $score = [$lastSeat['x'] - $first['x'], $lastSeat['block'] - $first['block'], $first['x']];
+            if ($selectedScore === null || $score < $selectedScore) {
+                $selectedScore = $score;
+                $selected = $window;
+            }
+        }
+        array_push($best, ...$selected);
+    }
     return array_map(static fn(array $seat): array => [
         'row' => $seat['row'], 'chair' => $seat['chair'], 'block' => $seat['block'],
     ], $best);
@@ -344,9 +427,11 @@ function egmSeatMapAssign(array $context, string $periodCode, int $userId, array
         return null;
     }
     $seats = egmSeatMapFindContiguous($map['rows'], $used, $quantity, $map['segments']);
+    $suggested = egmSeatMapFindClosest($map['segments'], $used, $quantity);
+    $contiguousRows = count(array_unique(array_column($seats, 'row')));
+    $suggestedRows = count(array_unique(array_column($suggested, 'row')));
     $split = false;
-    if ($seats === []) {
-        $suggested = egmSeatMapFindClosest($map['segments'], $used, $quantity);
+    if ($seats === [] || ($suggestedRows > 0 && $suggestedRows < $contiguousRows)) {
         if (count($suggested) !== $quantity) throw new EgmSeatCapacityException();
         if (!$allowSplit) throw new EgmSeatSplitRequiredException($suggested);
         $seats = $suggested;
