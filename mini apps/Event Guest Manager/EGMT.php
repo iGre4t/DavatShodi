@@ -1997,7 +1997,7 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
   if ($normalizedType === 'period') {
-    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
   }
   if ($normalizedType === 'quiz' || $normalizedType === 'conditional_quiz') {
     if ($normalizedType === 'conditional_quiz') {
@@ -2014,7 +2014,7 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
   if ($normalizedType === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
   }
-  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
+  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
 }
 
 function tctReadTaskAccessConfig(string $tasksDir): array
@@ -4431,7 +4431,7 @@ if (EGMT_INCLUDE_ONLY) {
   };
 
   const resolveDefaultTopPanes = (taskType) => {
-    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
   };
 
   const normalizeAllowedTopPanes = (value, taskType) => {

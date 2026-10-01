@@ -406,6 +406,8 @@ try {
             'status'=>'ok', 'access'=>$access, 'event'=>winAppEventSummary($context),
             'stats'=>!empty($access['can_view_event_info']) ? egmCheckInDashboardStats($context) : null,
             'logs'=>!empty($access['can_view_user_info']) ? egmCheckInRecentLogs($context, 30) : [],
+            'seat_map'=>is_array($context['period'] ?? null)
+                ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled'=>false],
             'admin_security'=>winAppAdminSecurity($context),
         ]);
     }
@@ -544,13 +546,20 @@ try {
             'stats' => !empty($access['can_view_event_info']) ? egmCheckInDashboardStats($context) : null,
             'logs' => !empty($access['can_view_user_info']) ? egmCheckInRecentLogs($context, 30) : [],
             'print_profile' => winAppPrintProfile($context),
+            'seat_map' => is_array($context['period'] ?? null)
+                ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled' => false],
             'admin_security' => winAppAdminSecurity($context),
         ]);
+    }
+    if ($method === 'POST' && $action === 'seat_requirement') {
+        if (empty($access['can_scan'])) winAppJson(['status' => 'error', 'message' => 'اجازه بررسی صندلی ندارید.'], 403);
+        winAppRequireCsrf($payload);
+        winAppJson(['status' => 'ok'] + egmCheckInSeatRequirement($context, (string)($payload['guest_code'] ?? '')));
     }
     if ($method === 'POST' && $action === 'scan') {
         winAppRequireCsrf($payload);
         $scanGuestCode = egmCheckInNormalizeGuestCode((string)($payload['guest_code'] ?? ''));
-        $result = egmCheckInProcess($context, $scanGuestCode);
+        $result = egmCheckInProcess($context, $scanGuestCode, null, null, [], isset($payload['seat_ticket_count']) ? (string)$payload['seat_ticket_count'] : null, egmCheckInBool($payload['allow_split_seats'] ?? false), egmCheckInBool($payload['allow_free_seat'] ?? false));
         if (empty($access['can_view_user_info'])) {
             $resultCode = (string)($result['result'] ?? '');
             $result = [
@@ -583,6 +592,8 @@ try {
             'stats' => !empty($access['can_view_event_info']) ? egmCheckInDashboardStats($context) : null,
             'logs' => !empty($access['can_view_user_info']) ? egmCheckInRecentLogs($context, 30) : [],
             'print_profile' => egmCheckInAutomaticPrintProfile($context, $scanGuestCode),
+            'seat_map' => is_array($context['period'] ?? null)
+                ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled' => false],
             'print_guest' => $printGuest,
         ]);
     }
@@ -638,7 +649,10 @@ try {
             (string)($payload['guest_code'] ?? ''),
             null,
             $attendanceAction,
-            $_SESSION['user']
+            $_SESSION['user'],
+            isset($payload['seat_ticket_count']) ? (string)$payload['seat_ticket_count'] : null,
+            egmCheckInBool($payload['allow_split_seats'] ?? false),
+            egmCheckInBool($payload['allow_free_seat'] ?? false)
         );
         winAppJson(['status' => 'ok'] + $result + [
             'access' => $access,
@@ -649,6 +663,10 @@ try {
         ]);
     }
     winAppJson(['status' => 'error', 'message' => 'عملیات درخواستی پشتیبانی نمی‌شود.'], 404);
+} catch (EgmSeatSplitRequiredException $error) {
+    winAppJson(['status' => 'error', 'code' => 'seat_split_confirmation_required', 'message' => $error->getMessage(), 'suggested_seats' => $error->suggestedSeats], 409);
+} catch (EgmSeatCapacityException $error) {
+    winAppJson(['status' => 'error', 'code' => 'seat_capacity_insufficient', 'message' => $error->getMessage()], 409);
 } catch (InvalidArgumentException $error) {
     winAppJson(['status' => 'error', 'message' => $error->getMessage()], 422);
 } catch (Throwable $error) {

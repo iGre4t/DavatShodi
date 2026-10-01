@@ -2476,11 +2476,14 @@ function tcInstanceMirrorMissionStorage(PDO $pdo, string $code, string $missionD
 
     $counts = [];
     foreach ($tables as $key => $table) {
-        if ($key === 'data') {
+        if ($key === 'data' || $key === 'activity_logs') {
             continue;
         }
         $counts[$key] = (int)$pdo->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
     }
+    $logsPdo = activityLogDatabaseForProject(activityLogFindProjectRoot($missionDir));
+    ensureActivityLogTable($logsPdo, 'TC', $code);
+    $counts['activity_logs'] = (int)$logsPdo->query("SELECT COUNT(*) FROM `{$tables['activity_logs']}`")->fetchColumn();
     $counts['runtime_files'] = tcInstanceCommitRuntimeFiles($pdo, $code, $missionDir)['files'];
     tcInstanceWriteData($pdo, $code, 'database_sync', ['syncedAt' => gmdate('c'), 'counts' => $counts]);
     return $counts;

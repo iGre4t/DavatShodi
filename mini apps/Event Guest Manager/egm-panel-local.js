@@ -1,8 +1,108 @@
 (() => {
   const scriptUrl = document.currentScript?.src;
+  const PERIOD_DRAWS_ENDPOINT = new URL('period_draws.php', scriptUrl || new URL('mini%20apps/Event%20Guest%20Manager/', location.href)).href;
+  const PERIOD_DRAW_PAGE = new URL('period_draw.php', PERIOD_DRAWS_ENDPOINT).href;
+
+  function periodDrawSection() {
+    return `<div class="egm-task-top-section" data-task-top-section="draws" hidden>
+      <div class="card"><h3>قرعه‌کشی‌های بازه</h3>
+      <p class="hint">فقط مهمانانی که ورودشان در همین بازه ثبت شده شرکت می‌کنند، حتی اگر بعداً خارج شده باشند. هر قرعه‌کشی برندگان مستقل دارد.</p>
+      <form class="form" data-period-draw-form>
+        <input type="hidden" name="id">
+        <label class="field"><span>نام قرعه‌کشی</span><input name="name" maxlength="160" required></label>
+        <label class="field"><span>عنوان صفحه نمایش</span><input name="title" maxlength="160"></label>
+        <label class="field"><span>نام جایزه</span><input name="prizeName" maxlength="160"></label>
+        <label class="field"><span>تعداد برندگان</span><input name="winnerLimit" type="number" min="1" max="1000" value="1" required></label>
+        <label class="field full"><span>توضیحات</span><textarea name="description" maxlength="4000"></textarea></label>
+        <label><input name="includeEntered" type="checkbox" checked> مهمانان دعوت‌شده با ورود ثبت‌شده</label>
+        <label><input name="includeWalkIns" type="checkbox" checked> مهمانان ناخوانده با ورود ثبت‌شده</label>
+        <div class="egm-period-actions"><button class="btn primary" type="submit">ذخیره قرعه‌کشی</button><button class="btn" type="reset">قرعه‌کشی جدید / لغو ویرایش</button></div>
+      </form><p data-draw-message role="status" aria-live="polite"></p>
+      <button class="btn" type="button" data-draw-refresh>بازخوانی قرعه‌کشی‌ها</button></div>
+      <div data-period-draw-list></div></div>`;
+  }
+
+  async function periodDrawRequest(pane, action, data = {}) {
+    const response = await fetch(PERIOD_DRAWS_ENDPOINT, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...data, action, period_code: periodCodeForPane(pane), csrf: TASK_CLUB_CSRF }) });
+    const result = await response.json().catch(() => { throw new Error(`پاسخ نامعتبر از سرور (${response.status})`); });
+    if (!response.ok || result.status !== 'ok') throw new Error(result.message || 'عملیات قرعه‌کشی ناموفق بود.');
+    return result;
+  }
+
+  async function loadPeriodDraws(pane) {
+    if (pane._drawLoading) return;
+    pane._drawLoading = true;
+    const list = pane.querySelector('[data-period-draw-list]');
+    if (!list) { pane._drawLoading = false; return; }
+    list.textContent = 'در حال بارگذاری...';
+    if (window.GlobalLazyLoader?.createInline) list.replaceChildren(window.GlobalLazyLoader.createInline('در حال بارگذاری...'));
+    try {
+      const result = await periodDrawRequest(pane, 'list');
+      pane._periodDraws = result.draws;
+      list.innerHTML = result.draws.map(draw => {
+        const query = new URLSearchParams({ period_code: periodCodeForPane(pane), levelId: draw.id, action: 'export' });
+        const page = new URL(PERIOD_DRAW_PAGE);
+        page.search = new URLSearchParams({ period_code: periodCodeForPane(pane), level_id: draw.id });
+        const button = (action, label) => `<button type="button" class="btn" data-draw-action="${action}" data-draw-id="${escapeHtml(draw.id)}">${label}</button>`;
+        return `<article class="card"><h4>${escapeHtml(draw.name)}</h4><p>${escapeHtml(draw.description)}</p>
+          <p>${draw.winners.length} / ${draw.winnerLimit} برنده — ${draw.locked ? 'نهایی‌شده' : 'باز'} — ${escapeHtml(draw.prizeName)}</p>
+          <p>${[draw.includeEntered ? 'دعوت‌شدگان واردشده' : '', draw.includeWalkIns ? 'ناخوانده‌های واردشده' : ''].filter(Boolean).join(' + ')}</p>
+          <div class="egm-period-actions"><a class="btn primary" target="_blank" rel="noopener" href="${escapeHtml(page.href)}">نمایش قرعه‌کشی</a>
+          ${draw.locked ? button('unlock', 'باز کردن قفل') : button('edit', 'ویرایش') + button('lock', 'نهایی‌سازی و قفل') + button('reset', 'بازنشانی برندگان') + button('delete', 'حذف قرعه‌کشی')}
+          <a class="btn" href="${escapeHtml(PERIOD_DRAWS_ENDPOINT + '?' + query + '&type=winners')}">خروجی برندگان</a>
+          <a class="btn" href="${escapeHtml(PERIOD_DRAWS_ENDPOINT + '?' + query + '&type=reached_non_winners')}">خروجی واجدان شرایط بدون برنده‌ها</a></div></article>`;
+      }).join('') || '<p class="muted">هنوز قرعه‌کشی ایجاد نشده است.</p>';
+    } catch (error) { list.textContent = error.message; }
+    finally { pane._drawLoading = false; }
+  }
+
+  function setupPeriodDraws(pane) {
+    const form = pane.querySelector('[data-period-draw-form]');
+    if (!form) return;
+    const message = pane.querySelector('[data-draw-message]');
+    const field = name => form.elements.namedItem(name);
+    form.addEventListener('reset', () => { field('id').value = ''; message.textContent = ''; });
+    const run = async (action, data) => {
+      if (pane._drawSaving) return;
+      pane._drawSaving = true;
+      const controls = [...pane.querySelectorAll('[data-task-top-section="draws"] button')];
+      controls.forEach(button => { button.disabled = true; });
+      message.textContent = 'در حال ذخیره...';
+      try { await periodDrawRequest(pane, action, data); form.reset(); await loadPeriodDraws(pane); message.textContent = 'ذخیره شد.'; }
+      catch (error) { message.textContent = error.message; }
+      finally { pane._drawSaving = false; controls.forEach(button => { button.disabled = false; }); }
+    };
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const data = Object.fromEntries(new FormData(form));
+      data.includeEntered = field('includeEntered').checked;
+      data.includeWalkIns = field('includeWalkIns').checked;
+      void run(data.id ? 'save' : 'create', data);
+    });
+    pane.querySelector('[data-draw-refresh]').addEventListener('click', () => loadPeriodDraws(pane));
+    pane.querySelector('[data-period-draw-list]').addEventListener('click', event => {
+      const button = event.target.closest('[data-draw-action]');
+      if (!button || pane._drawSaving) return;
+      const { drawAction: action, drawId: id } = button.dataset;
+      if (action === 'edit') {
+        const draw = pane._periodDraws.find(item => item.id === id);
+        if (!draw) return;
+        for (const name of ['id', 'name', 'title', 'prizeName', 'description', 'winnerLimit']) field(name).value = draw[name];
+        for (const name of ['includeEntered', 'includeWalkIns']) field(name).checked = draw[name];
+        message.textContent = `ویرایش: ${draw.name}`;
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' }); field('name').focus();
+        return;
+      }
+      if (['reset', 'delete'].includes(action) && !window.confirm(action === 'delete' ? 'قرعه‌کشی و تمام برندگان آن حذف شوند؟' : 'تمام برندگان این قرعه‌کشی پاک شوند؟')) return;
+      void run(action, { id });
+    });
+  }
   const eventEndpoint = (file, fallback) => scriptUrl ? new URL(file, scriptUrl).href : fallback;
   const TASKS_ENDPOINT = eventEndpoint('EGMT.php', 'mini%20apps/Event%20Guest%20Manager/EGMT.php');
   const PERIOD_INVITES_ENDPOINT = eventEndpoint('period_invites.php', 'mini%20apps/Event%20Guest%20Manager/period_invites.php');
+  const SEAT_MAP_ENDPOINT = eventEndpoint('seat_map.php', 'mini%20apps/Event%20Guest%20Manager/seat_map.php');
   const PERIOD_INVITE_CARDS_ENDPOINT = eventEndpoint('period_invite_cards.php', 'mini%20apps/Event%20Guest%20Manager/period_invite_cards.php');
   const PERIOD_EXPORTS_ENDPOINT = eventEndpoint('period_exports.php', 'mini%20apps/Event%20Guest%20Manager/period_exports.php');
   const GROUPS_ENDPOINT = eventEndpoint('groups.php', 'mini%20apps/Event%20Guest%20Manager/groups.php');
@@ -54,7 +154,7 @@
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
     if (normalizedType === 'period') {
-      return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export'];
+      return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
     }
     if (normalizedType === 'conditional_quiz') {
       return ['control', 'information', 'quiz', 'crisis-control'];
@@ -2447,7 +2547,7 @@
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
     const topTabsMarkup = isPeriod
-      ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite">دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees">دعوت‌شدگان</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite-card">کارت دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="export">خروجی</button>'
+      ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite">دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees">دعوت‌شدگان</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite-card">کارت دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="export">خروجی</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="draws">قرعه‌کشی</button>'
       : isDescribePhotoTask
       ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="photo">عکس‌ها</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
       : (isTeamTask
@@ -2503,6 +2603,18 @@
           <p class="muted">منبع فعلی: <strong data-period-invite-source>—</strong></p>
           <p class="hint">منبع از تب «دعوت‌شدگان» EGM انتخاب می‌شود.</p>
         </div>
+        <div class="card" data-seat-map-editor>
+          <div class="section-header"><h3>نقشه سالن این بازه</h3></div>
+          <label class="field"><span>منبع نقشه</span><select data-seat-mode><option value="inherit">نقشه پیش‌فرض EGM</option><option value="custom">نقشه اختصاصی این بازه</option></select></label>
+          <label class="field"><span><input type="checkbox" data-seat-enabled /> فعال‌سازی شماره صندلی</span></label>
+          <label class="field"><span>بلیت شماره‌دار مبنا</span><select data-seat-ticket></select></label>
+          <p class="muted">هر خط یک ردیف است؛ برای بخش‌های جدا با راهرو از | استفاده کنید. نمونه: ۱۴ | ۱۴. شماره صندلی در ردیف پیوسته است.</p>
+          <label class="field full"><span>بخش‌های صندلی هر ردیف</span><textarea data-seat-rows rows="5" placeholder="14 | 14&#10;6 | 15 | 6"></textarea></label>
+          <p class="muted" data-seat-summary></p>
+          <div class="muted" data-seat-preview></div>
+          <button type="button" class="btn primary" data-seat-save>ذخیره نقشه این بازه</button>
+          <p class="hint" data-seat-status aria-live="polite"></p>
+        </div>
         <div class="card egm-period-filter-card">
           <div class="section-header"><h3>جستجو و فیلتر کاربران</h3></div>
           <form class="form" data-period-invite-filter-form>
@@ -2537,6 +2649,7 @@
               <label class="field"><span>ستون اداره</span><select data-period-excel-department><option value="">انتخاب نشده</option></select></label>
               <label class="field"><span>ستون جنسیت</span><select data-period-excel-gender><option value="">انتخاب نشده</option></select></label>
               <label class="field"><span>ستون سطح پستی</span><select data-period-excel-postal-level><option value="">انتخاب نشده</option></select></label>
+              <div class="field full"><strong>شماره بلیت‌های همین بازه</strong><div class="egm-period-filter-grid" data-period-excel-tickets></div></div>
             </div>
             <button type="button" class="btn primary" data-period-excel-match disabled>تطبیق و انتخاب کاربران</button>
             <p class="hint" data-period-excel-status aria-live="polite"></p>
@@ -2565,8 +2678,8 @@
           <div class="section-header"><h3>دعوت‌شدگان این بازه</h3><strong><span data-period-invitee-total>0</span> نفر</strong></div>
           <div class="form"><label class="field full"><span>جستجو</span><input type="search" data-period-invitee-search placeholder="نام، کد ملی یا کد پرسنلی" autocomplete="off" /></label></div>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
-            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>گروه</th><th>عملیات</th>
-          </tr></thead><tbody data-period-invitee-body><tr><td colspan="15" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
+            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>بلیت‌های شماره‌دار</th><th>صندلی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>گروه</th><th>عملیات</th>
+          </tr></thead><tbody data-period-invitee-body><tr><td colspan="17" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
           <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-invitee-prev>قبلی</button><span data-period-invitee-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-invitee-next>بعدی</button></div><button type="button" class="btn ghost" data-period-invitee-refresh>بازخوانی</button></div>
           <p class="hint" data-period-invitee-status aria-live="polite"></p>
         </div>
@@ -2973,6 +3086,7 @@
         </div>
         ${informationSection}
         ${periodInvitationSections}
+        ${isPeriod ? periodDrawSection() : ''}
         ${describePhotoSection}
         ${teamChallengeSection}
         ${teamSettingsSection}
@@ -3082,11 +3196,13 @@
       applyTaskSettingsToPane(pane, task);
       applyTaskTopPaneAccess(pane, task);
       setupPeriodInvitationPane(pane, task);
+      setupPeriodDraws(pane);
       const firstTopTrigger = pane.querySelector('[data-task-top-trigger]');
       if (firstTopTrigger instanceof HTMLElement) {
         const firstSection = String(firstTopTrigger.getAttribute('data-task-top-trigger') || '').trim();
         if (firstSection !== '') {
           activateTaskTopPane(pane, firstSection);
+          if (firstSection === 'draws') void loadPeriodDraws(pane);
           if (firstSection === 'invitees-rate' && isInfoLikeTaskType(task?.taskType || pane.dataset.taskType || 'quiz')) {
             void loadInfoRateDataIntoPane(pane);
           }
@@ -3220,10 +3336,68 @@
 
   const periodInviteStates = new WeakMap();
 
+  function setupSeatMapEditor(root, periodCode = '') {
+    if (!(root instanceof HTMLElement) || root.dataset.seatEditorReady === '1') return;
+    root.dataset.seatEditorReady = '1';
+    const mode = root.querySelector('[data-seat-mode]');
+    const enabled = root.querySelector('[data-seat-enabled]');
+    const ticket = root.querySelector('[data-seat-ticket]');
+    const rows = root.querySelector('[data-seat-rows]');
+    const summary = root.querySelector('[data-seat-summary]');
+    const preview = root.querySelector('[data-seat-preview]');
+    const status = root.querySelector('[data-seat-status]');
+    const save = root.querySelector('[data-seat-save]');
+    const parseRows = () => String(rows?.value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+      .map((line) => line.split('|').map((part) => Number(part.trim())));
+    const formatRows = (map) => (Array.isArray(map?.segments) && map.segments.length ? map.segments : (map?.rows || []).map((count) => [count]))
+      .map((blocks) => blocks.join(' | ')).join('\n');
+    const describe = () => {
+      const segments = parseRows();
+      const count = segments.reduce((sum, blocks) => sum + blocks.reduce((partSum, value) => partSum + (Number.isInteger(value) && value > 0 ? value : 0), 0), 0);
+      if (summary) summary.textContent = `${segments.length} ردیف، ${count} صندلی، ${segments.reduce((sum, blocks) => sum + blocks.length, 0)} بخش`;
+      if (preview) preview.innerHTML = segments.map((blocks, index) => `<div>ردیف ${index + 1}: ${blocks.map((value, block) => `<span style="display:inline-block;border:1px solid #7aa8c2;border-radius:4px;padding:2px 6px;margin:3px">بخش ${block + 1}: ${Number.isInteger(value) ? value : '؟'}</span>`).join(' | ')}</div>`).join('');
+      const inherited = mode?.value === 'inherit';
+      for (const field of [enabled, ticket, rows]) if (field) field.disabled = inherited;
+    };
+    const request = async (payload = null) => {
+      const response = await fetch(payload ? SEAT_MAP_ENDPOINT : `${SEAT_MAP_ENDPOINT}?${new URLSearchParams({ period_code: periodCode })}`, payload
+        ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, period_code: periodCode, csrf: TASK_CLUB_CSRF }) }
+        : { credentials: 'same-origin', cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'دریافت یا ذخیره نقشه سالن ناموفق بود.');
+      return data;
+    };
+    void request().then((data) => {
+      if (mode) mode.value = data.mode || 'inherit';
+      ticket.innerHTML = '<option value="">انتخاب بلیت</option>' + (data.tickets || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)}</option>`).join('');
+      enabled.checked = Boolean(data.map?.enabled);
+      ticket.value = String(data.map?.ticketId || '');
+      rows.value = formatRows(data.map);
+      describe();
+    }).catch((error) => { if (status) status.textContent = error.message; });
+    mode?.addEventListener('change', describe);
+    rows?.addEventListener('input', describe);
+    save?.addEventListener('click', async () => {
+      save.disabled = true;
+      if (status) status.textContent = 'در حال ذخیره…';
+      try {
+        const segments = parseRows();
+        if (segments.some((blocks) => blocks.length < 1 || blocks.length > 20 || blocks.some((value) => !Number.isInteger(value) || value < 1 || value > 500) || blocks.reduce((sum, value) => sum + value, 0) > 500)) throw new Error('در هر ردیف، تعداد هر بخش باید بین ۱ تا ۵۰۰ و مجموع ردیف حداکثر ۵۰۰ باشد.');
+        const data = await request({ mode: mode?.value || 'custom', map: { enabled: enabled.checked, ticketId: ticket.value, segments } });
+        if (status) status.textContent = 'نقشه سالن ذخیره شد.';
+        enabled.checked = Boolean(data.map?.enabled);
+        ticket.value = String(data.map?.ticketId || '');
+        rows.value = formatRows(data.map);
+        describe();
+      } catch (error) { if (status) status.textContent = error.message; }
+      finally { save.disabled = false; }
+    });
+  }
+
   function getPeriodInviteState(pane) {
     let state = periodInviteStates.get(pane);
     if (!state) {
-      state = { source: '', groups: [], candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
+      state = { source: '', groups: [], candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], ticketDefinitions: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
       periodInviteStates.set(pane, state);
     }
     return state;
@@ -3236,6 +3410,7 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'دریافت گروه‌ها ناموفق بود.');
       state.groups = Array.isArray(data.groups) ? data.groups : [];
+      state.ticketDefinitions = Array.isArray(data.tickets) ? data.tickets : [];
       pane.querySelectorAll('[data-period-candidate-group],[data-period-unmatched-group]').forEach((select) => {
         const current = select.value;
         select.innerHTML = '<option value="">بدون گروه</option>' + state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
@@ -3281,7 +3456,10 @@
       throw new Error(`پاسخ سرور JSON معتبر نبود (HTTP ${status || 'نامشخص'}).`);
     }
     if (!response.ok || data?.status !== 'ok') {
-      throw new Error(data?.message || `عملیات دعوت ناموفق بود (HTTP ${response.status || 'نامشخص'}).`);
+      const error = new Error(data?.message || `عملیات دعوت ناموفق بود (HTTP ${response.status || 'نامشخص'}).`);
+      error.code = data?.error_code || '';
+      error.suggestedSeats = Array.isArray(data?.suggested_seats) ? data.suggested_seats : [];
+      throw error;
     }
     return data;
   }
@@ -3317,7 +3495,8 @@
       excel_id: String(row.excel_id || ''),
       source_row: Number(row.source_row || 0),
       national_id: String(row.national_id || ''),
-      work_id: String(row.work_id || '')
+      work_id: String(row.work_id || ''),
+      ticket_numbers: row.ticket_numbers || {}
     }));
     const batchSize = 400;
     const batches = [];
@@ -3891,6 +4070,7 @@
     const sourceEl = pane.querySelector('[data-period-invite-source]');
     if (sourceEl) sourceEl.textContent = periodSourceLabel(data?.source);
     getPeriodInviteState(pane).source = String(data?.source || '');
+    getPeriodInviteState(pane).ticketDefinitions = Array.isArray(data?.ticket_definitions) ? data.ticket_definitions : [];
   }
 
   function periodCodeForPane(pane) {
@@ -4049,11 +4229,22 @@
           const control = form.elements.namedItem(name);
           values[name] = control instanceof HTMLInputElement && control.checked;
         }
-        const data = await requestPeriodInvites('update_invitee', {
+        const payload = {
           ...values,
           period_code: periodCodeForPane(context.pane),
           invite_id: String(context.row?.invite_id || '')
-        }, 'POST');
+        };
+        let data;
+        try {
+          data = await requestPeriodInvites('update_invitee', payload, 'POST');
+        } catch (error) {
+          if (error?.code !== 'seat_split_confirmation_required') throw error;
+          const groups = new Map();
+          for (const seat of error.suggestedSeats) { const row = Number(seat.row); if (!groups.has(row)) groups.set(row, []); groups.get(row).push(Number(seat.chair)); }
+          const details = Array.from(groups, ([row, chairs]) => `ردیف ${row}: ${chairs.join('، ')}`).join('\n');
+          if (!window.confirm(`${error.message}\n${details}\nاین صندلی‌های نزدیکِ جدا را تأیید می‌کنید؟`)) throw new Error('ویرایش حضور بدون تخصیص صندلی لغو شد.');
+          data = await requestPeriodInvites('update_invitee', { ...payload, allow_split_seats: true }, 'POST');
+        }
         await loadPeriodInvitees(context.pane, getPeriodInviteState(context.pane).inviteePage);
         const listStatus = context.pane.querySelector('[data-period-invitee-status]');
         if (listStatus) listStatus.textContent = data?.message || 'اطلاعات مهمان و حضور ذخیره شد.';
@@ -4144,13 +4335,20 @@
     const rows = Array.isArray(data?.rows) ? data.rows : [];
     state.invitees = rows;
     const body = pane.querySelector('[data-period-invitee-body]');
-    if (body) body.innerHTML = rows.length ? rows.map((row) => `<tr>
+    if (body) body.innerHTML = rows.length ? rows.map((row) => {
+      let ticketNumbers = {};
+      try { ticketNumbers = JSON.parse(row?.ticket_numbers_json || '{}') || {}; } catch { ticketNumbers = {}; }
+      const ticketText = Object.entries(ticketNumbers).map(([id, value]) => `${state.ticketDefinitions.find((ticket) => ticket.id === id)?.title || id}: ${value}`).join('، ');
+      let seatAssignment = {};
+      try { seatAssignment = JSON.parse(row?.seat_assignment_json || '{}') || {}; } catch { seatAssignment = {}; }
+      const seatText = row?.seat_mode === 'free' ? 'در صورت خالی بودن صندلی' : (seatAssignment.seats || []).map((seat) => `ردیف ${seat.row} صندلی ${seat.chair}`).join('، ');
+      return `<tr>
       <td><code>${escapeHtml(row?.guest_number || '—')}</code></td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
       <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td>
       <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td>
-      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td><td>${escapeHtml(state.groups.find((group) => group.id === row?.group_id)?.title || 'بدون گروه')}</td>
+      <td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td><td>${escapeHtml(ticketText || '—')}</td><td>${escapeHtml(seatText || '—')}</td><td>${Number(row?.correct_presence || 0) === 1 ? 'بله' : '—'}</td><td>${Number(row?.fake_presence || 0) === 1 ? 'بله' : '—'}</td><td>${escapeHtml(periodSourceLabel(row?.invitation_source || row?.source))}</td><td>${escapeHtml(state.groups.find((group) => group.id === row?.group_id)?.title || 'بدون گروه')}</td>
       <td><div class="egm-period-invitee-row-actions"><button type="button" class="btn ghost" data-period-edit-invite="${escapeHtml(row?.invite_id || '')}">ویرایش</button><button type="button" class="btn ghost egm-btn-danger" data-period-remove-invite="${escapeHtml(row?.invite_id || '')}">حذف دعوت</button></div></td>
-    </tr>`).join('') : '<tr><td colspan="15" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
+    </tr>`; }).join('') : '<tr><td colspan="17" class="muted">هنوز کسی به این بازه دعوت نشده است.</td></tr>';
     const total = pane.querySelector('[data-period-invitee-total]');
     if (total) total.textContent = String(data?.total || 0);
     const meta = pane.querySelector('[data-period-invitee-page]');
@@ -4288,6 +4486,14 @@
       select.innerHTML = optionMarkup;
       select.value = suggestPeriodExcelColumn(headers, aliases);
     });
+    const ticketRoot = pane.querySelector('[data-period-excel-tickets]');
+    if (ticketRoot) {
+      ticketRoot.innerHTML = state.ticketDefinitions.map((ticket) => `<label class="field"><span>${escapeHtml(ticket.title)}</span><select data-period-excel-ticket="${escapeHtml(ticket.id)}">${optionMarkup}</select></label>`).join('');
+      state.ticketDefinitions.forEach((ticket) => {
+        const select = Array.from(ticketRoot.querySelectorAll('[data-period-excel-ticket]')).find((item) => item.dataset.periodExcelTicket === ticket.id);
+        if (select instanceof HTMLSelectElement) select.value = suggestPeriodExcelColumn(headers, [ticket.title, `Number of Ticket ${ticket.title}`, `Ticket ${ticket.title}`]);
+      });
+    }
     const mapping = pane.querySelector('[data-period-excel-mapping]');
     if (mapping) mapping.hidden = false;
     const match = pane.querySelector('[data-period-excel-match]');
@@ -4305,6 +4511,7 @@
     pane.dataset.taskQuitOpeningDate = String(task?.quitOpeningDate || task?.quit_opening_date || '');
     pane.dataset.taskEndDate = String(task?.endDate || task?.end_date || '');
     const state = getPeriodInviteState(pane);
+    setupSeatMapEditor(pane.querySelector('[data-seat-map-editor]'), String(task?.tagCode || ''));
     void loadPeriodGroups(pane).then(() => loadPeriodInvitees(pane, state.inviteePage));
     pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
     pane.querySelector('[data-personnel-copy-preview]')?.addEventListener('click', () => void previewPersonnelCopy(pane));
@@ -4369,7 +4576,8 @@
     pane.querySelector('[data-period-invite-selected]')?.addEventListener('click', async () => {
       const status = pane.querySelector('[data-period-candidate-status]');
       try {
-        const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), group_id: pane.querySelector('[data-period-candidate-group]')?.value || '', candidate_ids: Array.from(state.selected) }, 'POST');
+        const ticketNumbers = Object.fromEntries(state.candidates.filter((row) => state.selected.has(String(row?.candidate_id || ''))).map((row) => [String(row.candidate_id), row.ticket_numbers || {}]));
+        const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), group_id: pane.querySelector('[data-period-candidate-group]')?.value || '', candidate_ids: Array.from(state.selected), ticket_numbers: ticketNumbers }, 'POST');
         state.selected.clear();
         if (status) status.textContent = data?.message || 'دعوت‌ها ذخیره شدند.';
         await loadPeriodCandidates(pane, 1);
@@ -4475,13 +4683,16 @@
         const value = pane.querySelector(`[data-period-excel-${key}]`)?.value ?? '';
         return value === '' ? '' : String(row[Number(value)] ?? '');
       };
+      const ticketNumbers = (row) => Object.fromEntries(Array.from(pane.querySelectorAll('[data-period-excel-ticket]')).filter((select) => select.value !== '').map((select) => [select.dataset.periodExcelTicket, String(row[Number(select.value)] ?? '').trim()]));
+      const ticketColumns = new Set(Array.from(pane.querySelectorAll('[data-period-excel-ticket]')).filter((select) => select.value !== '').map((select) => Number(select.value)));
       const rows = state.excelRows.slice(1).map((row, index) => ({
         excel_id: `x:${index + 2}`, source_row: index + 2,
         national_id: nationalIndex === '' ? '' : String(row[Number(nationalIndex)] ?? ''), work_id: workIndex === '' ? '' : String(row[Number(workIndex)] ?? ''),
         first_name: mappedValue(row, 'first'), last_name: mappedValue(row, 'last'), phone_number: mappedValue(row, 'phone'),
         deputy: mappedValue(row, 'deputy'), general_department: mappedValue(row, 'general-department'), department: mappedValue(row, 'department'),
         gender: mappedValue(row, 'gender'), postal_level: mappedValue(row, 'postal-level'),
-        raw_data: Object.fromEntries(state.excelHeaders.map((header, columnIndex) => [String(header || `ستون ${columnIndex + 1}`), String(row[columnIndex] ?? '')]))
+        ticket_numbers: ticketNumbers(row),
+        raw_data: Object.fromEntries(state.excelHeaders.flatMap((header, columnIndex) => ticketColumns.has(columnIndex) ? [] : [[String(header || `ستون ${columnIndex + 1}`), String(row[columnIndex] ?? '')]]))
       }));
       const matchButton = pane.querySelector('[data-period-excel-match]');
       if (matchButton instanceof HTMLButtonElement && matchButton.disabled) return;
@@ -4741,6 +4952,7 @@
         if (sectionKey === 'invitees-rate' && isInfoLikeTaskType(pane.dataset.taskType || 'quiz')) {
           void loadInfoRateDataIntoPane(pane);
         }
+        if (sectionKey === 'draws') void loadPeriodDraws(pane);
         if (sectionKey === 'invite') {
           void loadPeriodFilterOptions(pane).then(() => loadPeriodCandidates(pane, 1));
         }
@@ -5656,6 +5868,7 @@
       });
 
       setupEventGuestManagerLogsPane(layout);
+      setupSeatMapEditor(layout.querySelector('[data-seat-map-editor]'));
       setupTaskPaneInteractions(layout);
 
       // Keep the built-in controls usable while the period request runs.

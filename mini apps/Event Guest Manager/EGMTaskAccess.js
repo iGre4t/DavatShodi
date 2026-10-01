@@ -56,6 +56,7 @@
     invitees: 'دعوت‌شدگان',
     'invite-card': 'کارت دعوت',
     export: 'خروجی',
+    draws: 'قرعه‌کشی',
     photo: 'عکس‌ها',
     'invitees-rate': 'امتیازدهی',
     'challenge-storage': 'مخزن چالش',

@@ -13,13 +13,13 @@
     fullname: 'نام کامل', firstname: 'نام', lastname: 'نام خانوادگی', nationalid: 'کد ملی',
     workid: 'کد پرسنلی', guestnumber: 'شماره مهمان', phonenumber: 'شماره تلفن',
     deputy: 'معاونت', generaldepartment: 'اداره کل', department: 'اداره', gender: 'جنسیت',
-    postallevel: 'سطح پستی', score: 'امتیاز', ticketcount: 'Count of Ticket', tickettitle: 'Ticket Title'
+    postallevel: 'سطح پستی', score: 'امتیاز', ticketcount: 'Count of Ticket', tickettitle: 'Ticket Title', seat: 'ردیف صندلی'
   });
   const CONDITIONAL_OPERATOR_LABELS = Object.freeze({
     equals: 'برابر است با', not_equals: 'برابر نیست با', contains: 'شامل می‌شود',
     not_contains: 'شامل نمی‌شود', empty: 'خالی است', not_empty: 'خالی نیست'
   });
-  const BUILTIN_MERGE_KEYS = new Set(Object.keys(CONDITIONAL_FIELD_LABELS));
+  const BUILTIN_MERGE_KEYS = new Set([...Object.keys(CONDITIONAL_FIELD_LABELS), 'periodtitle', 'printedat']);
 
   function one(root, selector) {
     return root.querySelector(selector);
@@ -176,6 +176,10 @@
     'mci-service-white': {
       name: 'سفید — خدمات', fileName: 'mci-service-white.png', heading: 'رسید خدمات',
       background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'خدمات'
+    },
+    'mci-cinema-white': {
+      name: 'سفید — بلیت سینما', fileName: 'mci-cinema-white.png', heading: 'بلیت سینما',
+      background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'سینما', cinema: true
     }
   });
   let receiptTemplateFontPromise = null;
@@ -253,6 +257,13 @@
       context.lineWidth = 6;
       addRoundedRectPath(context, 70, 345, 860, 325, 32);
       context.stroke();
+      if (definition.cinema) {
+        context.lineWidth = 3;
+        context.beginPath();
+        context.moveTo(95, 535);
+        context.lineTo(905, 535);
+        context.stroke();
+      }
       return canvas.toDataURL('image/png');
     }
 
@@ -345,16 +356,23 @@
     if (!definition) throw new Error('قالب انتخاب‌شده معتبر نیست.');
     const textColor = definition.dark ? '#f5d47d' : definition.ink;
     if (definition.brand === 'mci') {
+      const cinema = definition.cinema === true;
       return {
         imageData,
         imageName: definition.fileName,
         fontData: font.data,
         fontName: font.name,
         qrRect: { x: 42, y: 82, width: 16, height: 16 },
-        textRect: { x: 8, y: 19, width: 84, height: 12 },
-        ticketCountRect: { x: 10, y: 35, width: 80, height: 30 },
+        textRect: cinema ? { x: 8, y: 17, width: 84, height: 10 } : { x: 8, y: 19, width: 84, height: 12 },
+        ticketCountRect: cinema ? { x: 10, y: 35, width: 80, height: 18 } : { x: 10, y: 35, width: 80, height: 30 },
         textHtml: `<p><strong><span style="color:#000000">${definition.heading}</span></strong></p>`,
         textAreas: [
+          ...(cinema ? [
+            { id: 'mci_cinema_period', text: 'بازه: [periodtitle]', textHtml: '<p><strong><span style="color:#000000">بازه: [periodtitle]</span></strong></p>', rect: { x: 8, y: 27, width: 84, height: 7 } },
+            { id: 'mci_cinema_seat_label', text: 'ردیف / صندلی', textHtml: '<p><strong><span style="color:#000000">ردیف / صندلی</span></strong></p>', rect: { x: 10, y: 54, width: 80, height: 4 } },
+            { id: 'mci_cinema_seat', text: '[seat]', textHtml: '<p><strong><span style="color:#000000">[seat]</span></strong></p>', rect: { x: 9, y: 58, width: 82, height: 8 } },
+            { id: 'mci_cinema_printed_at', text: 'چاپ: [printedat]', textHtml: '<p><span style="color:#000000">چاپ: [printedat]</span></p>', rect: { x: 59, y: 94, width: 37, height: 3 } }
+          ] : []),
           { id: 'mci_guest', text: '[fullname]', textHtml: '<p><strong><span style="color:#000000">[fullname]</span></strong></p>', rect: { x: 10, y: 68, width: 80, height: 8 } },
           { id: 'mci_guest_number', text: '[guestnumber]', textHtml: '<p><strong><span style="color:#000000">[guestnumber]</span></strong></p>', rect: { x: 10, y: 76, width: 80, height: 6 } }
         ],
@@ -379,6 +397,27 @@
       conditionalVariables: [],
       conditionalBuilderDraft: {},
       qrData: '[nationalid]'
+    };
+  }
+
+  function upgradeCinemaTicketConfig(config) {
+    if (!config || config.imageName !== 'mci-cinema-white.png') return config;
+    const areas = Array.isArray(config.textAreas) ? [...config.textAreas] : [];
+    const defaults = receiptTemplateConfig('mci-cinema-white', config.imageData, {
+      data: config.fontData, name: config.fontName
+    });
+    const missingPeriod = !areas.some((area) => area?.id === 'mci_cinema_period');
+    for (const id of ['mci_cinema_period', 'mci_cinema_printed_at']) {
+      if (!areas.some((area) => area?.id === id)) {
+        areas.push(defaults.textAreas.find((area) => area.id === id));
+      }
+    }
+    const oldHeading = config.textRect?.x === 8 && config.textRect?.y === 19
+      && config.textRect?.width === 84 && config.textRect?.height === 12;
+    return {
+      ...config,
+      textRect: missingPeriod && oldHeading ? defaults.textRect : config.textRect,
+      textAreas: areas
     };
   }
 
@@ -455,7 +494,12 @@
       postallevel: String(invitee?.postalLevel || ''),
       score: String(invitee?.score || '0'),
       ticketcount: String(invitee?.ticketCount || invitee?.numberOfTicket || '1'),
-      tickettitle: String(invitee?.ticketTitle || '')
+      tickettitle: String(invitee?.ticketTitle || ''),
+      seat: String(invitee?.seat || ''),
+      periodtitle: String(invitee?.periodTitle || ''),
+      printedat: String(invitee?.printedAt || new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+      }).format(new Date()))
     };
   }
 
@@ -522,7 +566,7 @@
       const replacement = matched ? matched.text : definition.fallback;
       output = output.replace(new RegExp(`\\[${definition.token}\\]`, 'gi'), () => replacement);
     });
-    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score|ticketcount|tickettitle)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
+    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score|ticketcount|tickettitle|seat|periodtitle|printedat)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
   }
 
   function richTextBlocks(html, invitee, conditionalVariables = []) {
@@ -692,6 +736,7 @@
   }
 
   async function renderInviteCardImage(config, invitee, _qrData, options = {}) {
+    config = upgradeCinemaTicketConfig(config);
     const fontFamily = await ensureInviteCardFont(config?.fontData);
     const background = await loadCanvasImage(String(config?.imageData || ''));
     const width = background.naturalWidth;
@@ -2121,7 +2166,7 @@
         if (!response.ok || !result || result.status !== 'ok') {
           throw new Error(responseMessage(result, 'بارگذاری تنظیمات کارت دعوت ناموفق بود.'));
         }
-        const config = result.data;
+        const config = upgradeCinemaTicketConfig(result.data);
         if (!config || typeof config !== 'object') {
           state.configLoaded = true;
           state.draftReady = true;

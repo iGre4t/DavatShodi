@@ -4879,15 +4879,26 @@ async function executeExternalTabScripts(host) {
       replacement.setAttribute(attribute.name, attribute.value);
     });
     if (script.src) {
-      replacement.async = false;
-      const loaded = new Promise((resolve, reject) => {
-        replacement.addEventListener("load", resolve, { once: true });
-        replacement.addEventListener("error", () => {
-          reject(new Error(`Failed to load tab script: ${script.src}`));
-        }, { once: true });
-      });
-      script.replaceWith(replacement);
-      await loaded;
+      const originalSource = script.src;
+      let current = script;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const next = attempt === 0 ? replacement : replacement.cloneNode(false);
+        next.async = false;
+        if (attempt > 0) {
+          const retryUrl = new URL(originalSource, window.location.href);
+          retryUrl.searchParams.set("_tab_script_retry", `${Date.now()}-${attempt}`);
+          next.src = retryUrl.href;
+        }
+        const loaded = new Promise((resolve) => {
+          next.addEventListener("load", () => resolve(true), { once: true });
+          next.addEventListener("error", () => resolve(false), { once: true });
+        });
+        current.replaceWith(next);
+        current = next;
+        if (await loaded) break;
+        if (attempt === 2) throw new Error(`Failed to load tab script after retries: ${originalSource}`);
+        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      }
       continue;
     }
     replacement.textContent = script.textContent || "";

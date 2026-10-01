@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/common.php';
 require_once __DIR__ . '/egm-instance-storage.php';
 require_once __DIR__ . '/egm-groups.php';
+require_once __DIR__ . '/egm-check-in.php';
 require_once dirname(__DIR__, 2) . '/modules/minor/Organizational Event Userbase/org_users_store.php';
 
 /** @return array{root:string,mission_dir:string,pdo:PDO,registry:?array,tables:?array,code:string} */
@@ -184,6 +185,7 @@ function egmPeriodInvitesNormalizeExcelRow(array $row, int $fallbackRow): array
     $normalized['excel_id'] = tctPeriodInviteClean($row['excel_id'] ?? ('x:' . $fallbackRow), 128);
     $normalized['source_row'] = max(1, (int)($row['source_row'] ?? $fallbackRow));
     $normalized['can_invite'] = egmPeriodInvitesIdentityKey($normalized) !== '';
+    $normalized['ticket_numbers'] = is_array($row['ticket_numbers'] ?? null) ? $row['ticket_numbers'] : [];
     $rawData = [];
     if (is_array($row['raw_data'] ?? null)) {
         foreach (array_slice($row['raw_data'], 0, 50, true) as $label => $value) {
@@ -194,6 +196,46 @@ function egmPeriodInvitesNormalizeExcelRow(array $row, int $fallbackRow): array
     }
     $normalized['raw_data'] = $rawData;
     return $normalized;
+}
+
+/** @return array<int,array{id:string,title:string}> */
+function egmPeriodInvitesTicketDefinitions(array $context): array
+{
+    if ((string)$context['code'] === '') return [['id' => 'default', 'title' => 'Custom Number Ticket']];
+    $settings = egmInstanceReadData($context['pdo'], (string)$context['code'], 'settings', []);
+    $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];
+    return egmCheckInTicketDefinitions($ticketSettings);
+}
+
+/** @return array<string,string> */
+function egmPeriodInvitesValidateTicketNumbers(array $context, $value, ?array $allowed = null): array
+{
+    if (!is_array($value)) return [];
+    $allowed ??= array_fill_keys(array_column(egmPeriodInvitesTicketDefinitions($context), 'id'), true);
+    $result = [];
+    foreach ($value as $id => $number) {
+        if (!isset($allowed[(string)$id])) throw new InvalidArgumentException('نوع بلیت شماره‌دار معتبر نیست.');
+        if ($number === null || trim((string)$number) === '') continue;
+        $digits = egmCheckInNormalizeDigits($number);
+        if ($digits === '' || strlen($digits) > 32) throw new InvalidArgumentException('شماره بلیت باید حداکثر ۳۲ رقم باشد.');
+        $result[(string)$id] = $digits;
+    }
+    return $result;
+}
+
+function egmPeriodInvitesSaveTicketNumbers(array $context, string $periodCode, int $userId, array $numbers): void
+{
+    if ($numbers === []) return;
+    $table = (string)$context['tables']['user_periods'];
+    $find = $context['pdo']->prepare("SELECT `ticket_numbers_json` FROM `{$table}` WHERE `user_id`=:user_id AND `period_code`=:period_code FOR UPDATE");
+    $find->execute([':user_id' => $userId, ':period_code' => $periodCode]);
+    $existing = json_decode((string)($find->fetchColumn() ?: ''), true);
+    if (!is_array($existing)) $existing = [];
+    $merged = array_merge($existing, $numbers);
+    $json = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    $last = end($numbers);
+    $update = $context['pdo']->prepare("UPDATE `{$table}` SET `ticket_numbers_json`=:numbers,`number_of_ticket`=:last_number,`ticket_number_recorded_at`=NOW() WHERE `user_id`=:user_id AND `period_code`=:period_code");
+    $update->execute([':numbers' => $json, ':last_number' => $last, ':user_id' => $userId, ':period_code' => $periodCode]);
 }
 
 function egmPeriodInvitesValidNationalId($value): string
@@ -451,17 +493,24 @@ function egmPeriodInvitesRowsByCandidateIds(array $rows, array $candidateIds): a
     return array_values(array_filter($rows, static fn(array $row): bool => isset($wanted[(string)($row['candidate_id'] ?? '')])));
 }
 
-function egmPeriodInvitesInsertRegistered(array $context, string $periodCode, string $source, array $candidateIds, string $actor, string $groupId = ''): int
+function egmPeriodInvitesInsertRegistered(array $context, string $periodCode, string $source, array $candidateIds, string $actor, string $groupId = '', array $ticketNumbersByCandidate = []): int
 {
     $pdo = $context['pdo'];
     $usersTable = (string)$context['tables']['users'];
     $periodsTable = (string)$context['tables']['user_periods'];
     $candidateRows = egmPeriodInvitesRowsByCandidateIds(egmPeriodInvitesCandidateRows($context, $source), $candidateIds);
     if (!$candidateRows) return 0;
+    $allowedTickets = array_fill_keys(array_column(egmPeriodInvitesTicketDefinitions($context), 'id'), true);
+    $validatedTickets = [];
+    foreach ($candidateRows as $row) {
+        $id = (string)$row['candidate_id'];
+        $validatedTickets[$id] = egmPeriodInvitesValidateTicketNumbers($context, $ticketNumbersByCandidate[$id] ?? [], $allowedTickets);
+    }
     $groupId = egmGroupsValidateMembership($context, $groupId);
     $pdo->beginTransaction();
     try {
         $userIds = [];
+        $ticketsByUser = [];
         if ($source === 'oeu') {
             $insertUser = $pdo->prepare(<<<SQL
 INSERT INTO `{$usersTable}`
@@ -518,12 +567,18 @@ SQL);
                     $insertUser->execute($params);
                     $userId = (int)$pdo->lastInsertId();
                 }
-                if ($userId > 0) $userIds[] = $userId;
+                if ($userId > 0) {
+                    $userIds[] = $userId;
+                    $ticketsByUser[$userId] = $validatedTickets[(string)$row['candidate_id']];
+                }
             }
         } else {
             foreach ($candidateRows as $row) {
                 $userId = (int)substr((string)$row['candidate_id'], 2);
-                if ($userId > 0) $userIds[] = $userId;
+                if ($userId > 0) {
+                    $userIds[] = $userId;
+                    $ticketsByUser[$userId] = $validatedTickets[(string)$row['candidate_id']];
+                }
             }
         }
         $userIds = array_values(array_unique($userIds));
@@ -536,6 +591,7 @@ SQL);
         $count = 0;
         foreach ($userIds as $userId) {
             $insert->execute([':user_id' => $userId, ':period_code' => $periodCode, ':source' => $source, ':invited_by' => $actor, ':group_id' => $groupId !== '' ? $groupId : null]);
+            egmPeriodInvitesSaveTicketNumbers($context, $periodCode, $userId, $ticketsByUser[$userId] ?? []);
             $count += 1;
         }
         $pdo->commit();
@@ -559,9 +615,11 @@ function egmPeriodInvitesInsertUnmatchedRegistered(array $context, string $perio
     $usersTable = (string)$context['tables']['users'];
     $periodsTable = (string)$context['tables']['user_periods'];
     $rows = [];
+    $allowedTickets = array_fill_keys(array_column(egmPeriodInvitesTicketDefinitions($context), 'id'), true);
     foreach ($inputRows as $offset => $inputRow) {
         if (!is_array($inputRow)) continue;
         $row = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
+        $row['ticket_numbers'] = egmPeriodInvitesValidateTicketNumbers($context, $row['ticket_numbers'], $allowedTickets);
         $identity = egmPeriodInvitesIdentityKey($row);
         if ($identity !== '') $rows[$identity] = $row;
     }
@@ -649,6 +707,7 @@ SQL);
             if ($userId > 0) {
                 $invitedUserIds[] = $userId;
                 $insertPeriod->execute([':user_id' => $userId, ':period_code' => $periodCode, ':invited_by' => $actor, ':group_id' => $groupId !== '' ? $groupId : null]);
+                egmPeriodInvitesSaveTicketNumbers($context, $periodCode, $userId, $row['ticket_numbers']);
                 $invited += $insertPeriod->rowCount() > 0 ? 1 : 0;
             }
         }
@@ -697,7 +756,7 @@ function egmPeriodInvitesListInvitedRows(array $context, string $periodCode): ar
 SELECT p.`id` AS `invite_id`, p.`status`, p.`invitation_source`, p.`invited_by`, p.`invited_at`,
 p.`correct_presence`,p.`fake_presence`,p.`entered_date`,p.`entered_time`,p.`quit_date`,p.`quit_time`,
 p.`attendance_state`,p.`last_control_condition`,p.`last_control_action`,p.`last_control_message`,p.`last_control_at`,
-p.`is_uninvited_guest` AS `period_is_uninvited_guest`,p.`group_id`,
+p.`is_uninvited_guest` AS `period_is_uninvited_guest`,p.`group_id`,p.`ticket_numbers_json`,p.`seat_assignment_json`,p.`seat_mode`,
 u.`id` AS `user_id`,u.`work_id`,u.`first_name`,u.`last_name`,u.`national_id`,u.`phone_number`,u.`deputy`,u.`general_department`,u.`department`,u.`gender`,u.`postal_level`,u.`guest_number`,u.`source_row`,
 u.`source_type`,u.`source_user_id`,u.`is_active`,u.`is_uninvited_guest`,u.`outside_organization`
 FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id`
@@ -813,9 +872,10 @@ function egmPeriodInvitesUpdateInvitedRow(
 
     $pdo->beginTransaction();
     try {
+        egmSeatMapLock($context);
         $find = $pdo->prepare(
             "SELECT p.`id` AS `invite_id`,p.`user_id`,p.`period_code`,p.`entered_date`,p.`entered_time`,p.`quit_date`,p.`quit_time`,"
-            . "p.`attendance_state`,p.`correct_presence`,p.`fake_presence`,p.`is_uninvited_guest` AS `period_is_uninvited_guest`,"
+            . "p.`attendance_state`,p.`correct_presence`,p.`fake_presence`,p.`is_uninvited_guest` AS `period_is_uninvited_guest`,p.`ticket_numbers_json`,p.`seat_mode`,"
             . "u.`work_id`,u.`first_name`,u.`last_name`,u.`national_id`,u.`phone_number`,u.`deputy`,u.`general_department`,u.`department`,"
             . "u.`gender`,u.`postal_level`,u.`guest_number`,u.`source_type`,u.`source_user_id`,u.`is_active`,u.`is_uninvited_guest`,u.`outside_organization` "
             . "FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` "
@@ -902,15 +962,31 @@ function egmPeriodInvitesUpdateInvitedRow(
             "UPDATE `{$periodsTable}` SET `entered_date`=:entered_date,`entered_time`=:entered_time,"
             . "`quit_date`=:quit_date,`quit_time`=:quit_time,`attendance_state`=:attendance_state,"
             . "`correct_presence`=:correct_presence,`fake_presence`=:fake_presence,`is_uninvited_guest`=:is_uninvited_guest,`group_id`=:group_id,"
+            . "`seat_assignment_json`=CASE WHEN :seat_clear_state='not_entered' THEN NULL ELSE `seat_assignment_json` END,"
             . "`last_control_condition`='manual_edit',`last_control_action`='manual',`last_control_message`=:message,`last_control_at`=NOW() "
             . "WHERE `id`=:invite_id AND `period_code`=:period_code"
         );
         $updatePeriod->execute([
             ':entered_date' => $enteredDate, ':entered_time' => $enteredTime, ':quit_date' => $quitDate, ':quit_time' => $quitTime,
             ':attendance_state' => $attendanceState, ':correct_presence' => $correctPresence, ':fake_presence' => $fakePresence,
+            ':seat_clear_state' => $attendanceState,
             ':is_uninvited_guest' => $isUninvited, ':group_id' => $groupId !== '' ? $groupId : null, ':message' => $message,
             ':invite_id' => $inviteIdNumber, ':period_code' => $periodCode,
         ]);
+        if ($attendanceState !== 'not_entered') {
+            $seatMap = egmSeatMapEffective($context, $periodCode);
+            if ($seatMap['enabled'] && (string)($before['seat_mode'] ?? '') === 'free') {
+                egmSeatMapEnsureFreeCapacity($context, $periodCode);
+            }
+            if ($seatMap['enabled'] && (string)($before['seat_mode'] ?? 'assigned') !== 'free') {
+                $ticketNumbers = json_decode((string)($before['ticket_numbers_json'] ?? ''), true);
+                $ticketNumbers = is_array($ticketNumbers) ? $ticketNumbers : [];
+                if (trim((string)($ticketNumbers[$seatMap['ticketId']] ?? '')) === '') {
+                    throw new InvalidArgumentException('برای ثبت دستی ورود، تعداد بلیت مبنای صندلی باید از قبل تعیین شده باشد.');
+                }
+                egmSeatMapAssign($context, $periodCode, $userId, $ticketNumbers, egmPeriodInvitesInputBool($input['allow_split_seats'] ?? false));
+            }
+        }
         $pdo->commit();
 
         try {
@@ -1026,6 +1102,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
                 );
                 if ($national !== '') $byNational[$national] = $candidate;
                 if ($work !== '') $byWork[$work] = $candidate;
+                $candidate['ticket_numbers'] = $excelRow['ticket_numbers'];
                 $matched[(string)$candidate['candidate_id']] = $candidate;
                 $pdo->exec('RELEASE SAVEPOINT egm_excel_match_row');
             } catch (InvalidArgumentException $error) {
@@ -1115,7 +1192,7 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
         $periodCode = egmPeriodInvitesValidatePeriod($context, (string)($input['period_code'] ?? ''));
         if ($action === 'filter_options') {
             $source = egmPeriodInvitesGetSource($context);
-            egmPeriodInvitesJson(['status' => 'ok', 'source' => $source, 'options' => egmPeriodInvitesFilterOptions(egmPeriodInvitesCandidateRows($context, $source))]);
+            egmPeriodInvitesJson(['status' => 'ok', 'source' => $source, 'options' => egmPeriodInvitesFilterOptions(egmPeriodInvitesCandidateRows($context, $source)), 'ticket_definitions' => egmPeriodInvitesTicketDefinitions($context)]);
         }
         if ($action === 'list_candidates') {
             $filters = [];
@@ -1140,7 +1217,7 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
             $candidateIds = is_array($input['candidate_ids'] ?? null) ? $input['candidate_ids'] : [];
             $actor = tctPeriodInviteClean($sessionUser['code'] ?? '', 191);
             $count = $context['code'] !== ''
-                ? egmPeriodInvitesInsertRegistered($context, $periodCode, $source, $candidateIds, $actor, (string)($input['group_id'] ?? ''))
+                ? egmPeriodInvitesInsertRegistered($context, $periodCode, $source, $candidateIds, $actor, (string)($input['group_id'] ?? ''), is_array($input['ticket_numbers'] ?? null) ? $input['ticket_numbers'] : [])
                 : egmPeriodInvitesInsertLocal($context, $periodCode, $source, $candidateIds, $actor);
             egmPeriodInvitesJson(['status' => 'ok', 'invited' => $count, 'message' => "{$count} نفر به بازه دعوت شدند."]);
         }
@@ -1169,6 +1246,11 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
             egmPeriodInvitesJson(['status' => 'ok', 'removed' => $removed, 'message' => $removed ? 'دعوت از این بازه حذف شد.' : 'دعوت پیدا نشد.']);
         }
         egmPeriodInvitesJson(['status' => 'error', 'message' => 'عملیات پشتیبانی نمی‌شود.'], 400);
+    } catch (EgmSeatSplitRequiredException $error) {
+        egmPeriodInvitesJson([
+            'status' => 'error', 'error_code' => 'seat_split_confirmation_required',
+            'http_status' => 409, 'message' => $error->getMessage(), 'suggested_seats' => $error->suggestedSeats,
+        ]);
     } catch (InvalidArgumentException $error) {
         // Some shared cPanel/Apache configurations replace 422 response bodies
         // with an HTML error page. Keep validation errors as readable JSON and

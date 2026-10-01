@@ -216,6 +216,18 @@ $egmGroupsJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-groups.j
   </div>
 </div>
 
+<div class="card" data-seat-map-editor>
+  <div class="section-header"><h3>نقشه پیش‌فرض سالن</h3></div>
+  <p class="muted">هر خط یک ردیف است. بخش‌های جداشده با راهرو را با | جدا کنید؛ شماره صندلی در کل ردیف پیوسته می‌ماند. نمونه: ۱۴ | ۱۴ یعنی یک ردیف ۲۸ صندلی با دو بخش.</p>
+  <label class="field"><span><input type="checkbox" data-seat-enabled /> فعال‌سازی شماره صندلی</span></label>
+  <label class="field"><span>بلیت شماره‌دار مبنا</span><select data-seat-ticket></select></label>
+  <label class="field full"><span>بخش‌های صندلی هر ردیف، یک ردیف در هر خط</span><textarea data-seat-rows rows="6" placeholder="14 | 14&#10;14 | 14&#10;6 | 15 | 6"></textarea></label>
+  <p class="muted" data-seat-summary></p>
+  <div class="muted" data-seat-preview></div>
+  <button type="button" class="btn primary" data-seat-save>ذخیره نقشه سالن</button>
+  <p class="hint" data-seat-status aria-live="polite"></p>
+</div>
+
 <div class="card" id="egm-texts-card">
   <div class="section-header">
     <h3>کنترل پنل</h3>

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Bump whenever a request-time compatible table migration is added. Existing
 // instances use this marker to decide whether the migration block must run.
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-09-20.1';
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-09-30.1';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
 const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = [EGM_INSTANCE_SCHEMA_VERSION];
 
@@ -278,6 +278,8 @@ CREATE TABLE IF NOT EXISTS `{$userPeriodsTable}` (
   `uninvited_registered_by` VARCHAR(191) NULL,
   `number_of_ticket` VARCHAR(64) NULL,
   `ticket_numbers_json` LONGTEXT NULL,
+  `seat_assignment_json` LONGTEXT NULL,
+  `seat_mode` VARCHAR(16) NOT NULL DEFAULT 'assigned',
   `ticket_number_recorded_at` DATETIME NULL,
   `group_id` VARCHAR(64) NULL,
   `invite_card_code` VARCHAR(191) NULL,
@@ -322,6 +324,8 @@ SQL);
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'uninvited_registered_by', 'VARCHAR(191) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'number_of_ticket', 'VARCHAR(64) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'ticket_numbers_json', 'LONGTEXT NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'seat_assignment_json', 'LONGTEXT NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'seat_mode', "VARCHAR(16) NOT NULL DEFAULT 'assigned'");
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'ticket_number_recorded_at', 'DATETIME NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'group_id', 'VARCHAR(64) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'invite_card_code', 'VARCHAR(191) NULL');
@@ -2451,11 +2455,14 @@ function egmInstanceMirrorMissionStorage(PDO $pdo, string $code, string $mission
 
     $counts = [];
     foreach ($tables as $key => $table) {
-        if ($key === 'data') {
+        if ($key === 'data' || $key === 'activity_logs') {
             continue;
         }
         $counts[$key] = (int)$pdo->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
     }
+    $logsPdo = activityLogDatabaseForProject(activityLogFindProjectRoot($missionDir));
+    ensureActivityLogTable($logsPdo, 'EGM', $code);
+    $counts['activity_logs'] = (int)$logsPdo->query("SELECT COUNT(*) FROM `{$tables['activity_logs']}`")->fetchColumn();
     $counts['runtime_files'] = egmInstanceCommitRuntimeFiles($pdo, $code, $missionDir)['files'];
     egmInstanceWriteData($pdo, $code, 'database_sync', ['syncedAt' => gmdate('c'), 'counts' => $counts]);
     return $counts;

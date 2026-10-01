@@ -73,6 +73,10 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
               <span class="egm-receipt-template-art"><span>رسید خدمات</span><strong>۱۲۳</strong></span>
               <span class="egm-receipt-template-name">سفید — خدمات</span><span class="muted small">قالب عمومی قابل ویرایش</span>
             </button>
+            <button type="button" class="egm-receipt-template-card is-mci-white is-mci-cinema-white" data-receipt-template="mci-cinema-white">
+              <span class="egm-receipt-template-art"><span>بلیت سینما</span><strong>ردیف ۱ · صندلی ۵</strong></span>
+              <span class="egm-receipt-template-name">سفید — بلیت سینما</span><span class="muted small">نقشه MCI با جای برجسته برای [seat]</span>
+            </button>
           </div>
           <p class="muted small egm-receipt-template-status" data-receipt-template-status aria-live="polite"></p>
         </section>
@@ -133,6 +137,8 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
                     <option value="[gender]">[gender] — جنسیت</option>
                     <option value="[postallevel]">[postallevel] — سطح پستی</option>
                     <option value="[score]">[score] — امتیاز</option>
+                    <option value="[periodtitle]">[periodtitle] — نام بازه</option>
+                    <option value="[printedat]">[printedat] — زمان چاپ</option>
                   </select>
                   <button type="button" class="btn ghost" data-action="insert-invite-card-merge-tag">درج متغیر</button>
                 </div>
@@ -160,6 +166,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
           </div>
           <?php endif; ?>
           <?php if ($isTicketCard): ?>
+          <p class="muted small">برای نمایش ردیف و شماره صندلی روی بلیت، متغیر <code dir="ltr">[seat]</code> را در متن اصلی یا یکی از متن‌های اضافه قرار دهید. برای نشستن آزاد، «در صورت خالی بودن صندلی» چاپ می‌شود.</p>
           <div class="field full egm-ticket-count-area">
             <strong>Count of Ticket — ناحیه الزامی مستقل</strong>
             <span class="muted small">این مقدار یک عنصر مستقل است و هنگام ورود مهمان از اپراتور دریافت می‌شود. ناحیه آن را جداگانه روی رسید رسم کنید؛ لازم نیست آن را داخل متن اصلی یا متن‌های اضافه بنویسید.</span>
