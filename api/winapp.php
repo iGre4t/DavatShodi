@@ -306,6 +306,14 @@ $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $payload = $method === 'POST' ? winAppPayload() : $_GET;
 $action = strtolower(trim((string)($payload['action'] ?? 'session')));
 
+// Route seat-map saves through this established API path. The `events` action
+// keeps the request compatible with the CDN's existing POST policy; the
+// `seat=1` query selects the seat-map handler before event listing.
+if ($method === 'POST' && $action === 'events' && (string)($_GET['seat'] ?? '') === '1') {
+    require __DIR__ . '/egm-seat-map.php';
+    exit;
+}
+
 try {
     if ($action === 'branding') {
         winAppJson(['status' => 'ok', 'branding' => winAppBranding()]);

@@ -102,7 +102,7 @@
   const eventEndpoint = (file, fallback) => scriptUrl ? new URL(file, scriptUrl).href : fallback;
   const TASKS_ENDPOINT = eventEndpoint('EGMT.php', 'mini%20apps/Event%20Guest%20Manager/EGMT.php');
   const PERIOD_INVITES_ENDPOINT = eventEndpoint('period_invites.php', 'mini%20apps/Event%20Guest%20Manager/period_invites.php');
-  const SEAT_MAP_ENDPOINT = eventEndpoint('seat_map.php', 'mini%20apps/Event%20Guest%20Manager/seat_map.php');
+  const SEAT_MAP_ENDPOINT = new URL('api/egm-seat-map.php', location.origin + '/').href;
   const PERIOD_INVITE_CARDS_ENDPOINT = eventEndpoint('period_invite_cards.php', 'mini%20apps/Event%20Guest%20Manager/period_invite_cards.php');
   const PERIOD_EXPORTS_ENDPOINT = eventEndpoint('period_exports.php', 'mini%20apps/Event%20Guest%20Manager/period_exports.php');
   const GROUPS_ENDPOINT = eventEndpoint('groups.php', 'mini%20apps/Event%20Guest%20Manager/groups.php');
@@ -3359,9 +3359,10 @@
       const inherited = mode?.value === 'inherit';
       for (const field of [enabled, ticket, rows]) if (field) field.disabled = inherited;
     };
+    const instanceCode = document.querySelector('.egm-shell')?.dataset.egmCode || '';
     const request = async (payload = null) => {
-      const response = await fetch(payload ? SEAT_MAP_ENDPOINT : `${SEAT_MAP_ENDPOINT}?${new URLSearchParams({ period_code: periodCode })}`, payload
-        ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, period_code: periodCode, csrf: TASK_CLUB_CSRF }) }
+      const response = await fetch(payload ? new URL('api/winapp.php?seat=1', location.origin + '/').href : `${SEAT_MAP_ENDPOINT}?${new URLSearchParams({ instance_code: instanceCode, period_code: periodCode })}`, payload
+        ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, action: 'events', instance_code: instanceCode, period_code: periodCode, csrf: TASK_CLUB_CSRF }) }
         : { credentials: 'same-origin', cache: 'no-store' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.status !== 'ok') {

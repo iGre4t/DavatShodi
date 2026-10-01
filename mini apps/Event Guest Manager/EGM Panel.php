@@ -144,7 +144,7 @@ $egmGroupsJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-groups.j
 <?php if ($egmCanInviteCardPane || $egmCanPrintCardPane || $egmCanManageTasksPane): ?>
 <link rel="stylesheet" href="assets/egm-invite-card.css?v=<?= htmlspecialchars($egmInviteCardCssVer, ENT_QUOTES, 'UTF-8') ?>" />
 <?php endif; ?>
-<div class="egm-shell" data-egm-csrf="<?= htmlspecialchars($egmPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+<div class="egm-shell" data-egm-csrf="<?= htmlspecialchars($egmPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>" data-egm-code="<?= htmlspecialchars($egmPanelInstanceCode, ENT_QUOTES, 'UTF-8') ?>">
 <div class="sub-layout" data-egm-sub-layout>
   <aside class="sub-sidebar">
     <div class="sub-header"><?= htmlspecialchars($egmPanelInstanceName, ENT_QUOTES, 'UTF-8') ?> <span class="muted" dir="ltr">(<?= htmlspecialchars($egmPanelInstanceCode, ENT_QUOTES, 'UTF-8') ?>)</span></div>
