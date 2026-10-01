@@ -25,6 +25,12 @@ header('X-Content-Type-Options: nosniff');
 
 function winAppJson(array $payload, int $status = 200): never
 {
+    // The hosting CDN replaces non-2xx API responses with an HTML error page.
+    // Keep the application error in JSON so the Windows client can handle it.
+    if ($status >= 400) {
+        $payload['http_status'] = $status;
+        $status = 200;
+    }
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;

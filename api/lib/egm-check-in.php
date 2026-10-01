@@ -1204,7 +1204,7 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'correct_presence' => (int)($row['correct_presence'] ?? 0) === 1,
             'fake_presence' => (int)($row['fake_presence'] ?? 0) === 1,
             'number_of_ticket' => (string)($row['number_of_ticket'] ?? ''),
-            'ticket_numbers' => $ticketNumbers,
+            'ticket_numbers' => (object)$ticketNumbers,
             'seat_assignment' => is_array(json_decode((string)($row['seat_assignment_json'] ?? ''), true)) ? json_decode((string)$row['seat_assignment_json'], true) : null,
             'seat_mode' => (string)($row['seat_mode'] ?? 'assigned'),
             'attendance_action' => $attendanceAction,
