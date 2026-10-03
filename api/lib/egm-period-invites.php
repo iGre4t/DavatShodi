@@ -815,7 +815,7 @@ function egmPeriodInvitesSeatState(array $context, string $periodCode, string $i
     $all = $context['pdo']->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL");
     $all->execute([':period_code' => $periodCode]);
     $occupied = [];
-    foreach ($all->fetchAll(PDO::FETCH_ASSOC) as $record) {
+    foreach (array_merge($all->fetchAll(PDO::FETCH_ASSOC), egmSeatMapManualRows($context, $periodCode)) as $record) {
         if ((int)$record['id'] === (int)$inviteId) continue;
         $assignment = json_decode((string)$record['seat_assignment_json'], true);
         foreach ((array)($assignment['seats'] ?? []) as $seat) {
@@ -855,7 +855,7 @@ function egmPeriodInvitesSaveSeats(array $context, string $periodCode, string $i
         $all = $pdo->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL FOR UPDATE");
         $all->execute([':period_code' => $periodCode]);
         $occupied = [];
-        foreach ($all->fetchAll(PDO::FETCH_ASSOC) as $record) {
+        foreach (array_merge($all->fetchAll(PDO::FETCH_ASSOC), egmSeatMapManualRows($context, $periodCode, true)) as $record) {
             if ((int)$record['id'] === (int)$inviteId) continue;
             $assignment = json_decode((string)$record['seat_assignment_json'], true);
             foreach ((array)($assignment['seats'] ?? []) as $seat) {

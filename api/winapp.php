@@ -431,12 +431,52 @@ try {
         $user = egmCheckInFindUser($pdo, (string)$context['tables']['users'], $guestCode);
         if (!is_array($user)) throw new InvalidArgumentException('مهمان پیدا نشد.');
         $table = (string)$context['tables']['user_periods'];
-        $statement = $pdo->prepare("SELECT ticket_numbers_json FROM `{$table}` WHERE user_id=:id AND period_code=:period LIMIT 1");
-        $statement->execute([':id'=>(int)$user['id'], ':period'=>(string)($payload['period_code'] ?? $context['period_code'])]);
-        $numbers = json_decode((string)($statement->fetchColumn() ?: ''), true);
+        $periodCode = trim((string)($payload['period_code'] ?? $context['period_code']));
+        if ($periodCode === '') throw new InvalidArgumentException('بازه بلیت برای چاپ مجدد مشخص نیست.');
+        $statement = $pdo->prepare("SELECT * FROM `{$table}` WHERE user_id=:id AND period_code=:period LIMIT 1");
+        $statement->execute([':id'=>(int)$user['id'], ':period'=>$periodCode]);
+        $periodRow = $statement->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($periodRow) || empty($periodRow['entered_date']) || empty($periodRow['entered_time'])) {
+            throw new InvalidArgumentException('ورود این مهمان در بازه انتخاب‌شده ثبت نشده است.');
+        }
+        $numbers = json_decode((string)($periodRow['ticket_numbers_json'] ?? ''), true);
+        if (!is_array($numbers)) $numbers = [];
+        $seatAssignment = json_decode((string)($periodRow['seat_assignment_json'] ?? ''), true);
+        $seatMap = egmSeatMapEffective($context, $periodCode);
+        if ($seatMap['enabled'] && is_array($seatAssignment) && !empty($seatAssignment['seats'])) {
+            $others = $pdo->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period AND `seat_assignment_json` IS NOT NULL");
+            $others->execute([':period' => $periodCode]);
+            $used = egmSeatMapOccupiedFromRecords(array_merge($others->fetchAll(PDO::FETCH_ASSOC), egmSeatMapManualRows($context, $periodCode)), (int)$periodRow['id']);
+            egmSeatMapValidateCandidate($seatAssignment['seats'], $used, $seatMap, count($seatAssignment['seats']));
+        }
+        $periodTitle = $periodCode;
+        foreach ((array)($context['periods'] ?? []) as $candidate) {
+            if (!is_array($candidate)) continue;
+            if (egmCheckInPeriodCode($candidate) === $periodCode) {
+                $periodTitle = trim((string)($candidate['title'] ?? '')) ?: $periodCode;
+                break;
+            }
+        }
+        $printGuest = [
+            'first_name' => (string)($user['first_name'] ?? ''), 'last_name' => (string)($user['last_name'] ?? ''),
+            'full_name' => trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? '')),
+            'national_id' => (string)($user['national_id'] ?? ''), 'work_id' => (string)($user['work_id'] ?? ''),
+            'guest_number' => (string)($user['guest_number'] ?? ''),
+            'phone_number' => (string)($user['phone_number'] ?? ''),
+            'deputy' => (string)($user['deputy'] ?? ''),
+            'general_department' => (string)($user['general_department'] ?? ''),
+            'department' => (string)($user['department'] ?? ''),
+            'gender' => (string)($user['gender'] ?? ''),
+            'postal_level' => (string)($user['postal_level'] ?? ''),
+            'period_code' => $periodCode, 'period_title' => $periodTitle,
+            'number_of_ticket' => (string)($periodRow['number_of_ticket'] ?? ''),
+            'ticket_numbers' => (object)$numbers,
+            'seat_assignment' => is_array($seatAssignment) ? $seatAssignment : null,
+            'seat_mode' => (string)($periodRow['seat_mode'] ?? 'assigned'),
+        ];
         $profile = egmCheckInPrintProfile($context, $guestCode);
         if (!empty($profile['group_policy_applied']) && empty($profile['auto_print'])) $profile['configured'] = false;
-        winAppJson(['status'=>'ok', 'print_profile'=>$profile, 'ticket_numbers'=>(object)(is_array($numbers) ? $numbers : [])]);
+        winAppJson(['status'=>'ok', 'print_profile'=>$profile, 'ticket_numbers'=>(object)$numbers, 'print_guest'=>$printGuest]);
     }
     if ($method === 'POST' && $action === 'pending_invitees') {
         if (empty($access['can_view_user_info']) || empty($access['can_scan'])) {
@@ -455,7 +495,8 @@ try {
         $usersTable = (string)$context['tables']['users'];
         $periodsTable = (string)$context['tables']['user_periods'];
         $where = "p.`period_code`=:period AND p.`entered_date` IS NULL AND p.`entered_time` IS NULL "
-            . "AND COALESCE(p.`is_uninvited_guest`,0)=0 AND LOWER(TRIM(COALESCE(p.`invitation_source`,'')))<>'walk_in' "
+            . "AND ((COALESCE(p.`is_uninvited_guest`,0)=0 AND LOWER(TRIM(COALESCE(p.`invitation_source`,'')))<>'walk_in') "
+            . "OR p.`last_control_condition`='entry_reset') "
             . "AND COALESCE(u.`is_active`,1)=1 "
             . "AND (u.`national_id` REGEXP '^[0-9]{10}$' OR u.`work_id` REGEXP '^[0-9]{4,9}$')";
         $params = [':period'=>$periodCode];
@@ -486,6 +527,24 @@ try {
         }
         winAppJson(['status'=>'ok', 'invitees'=>$invitees, 'total'=>$total, 'page'=>$page, 'page_size'=>$pageSize,
             'period_code'=>$periodCode]);
+    }
+    if ($method === 'POST' && $action === 'reset_guest_entry') {
+        winAppRequireCsrf($payload);
+        if (empty($access['can_manage_scan_actions'])) {
+            winAppJson(['status' => 'error', 'message' => 'شما اجازه بازنشانی ورود مهمان را ندارید.'], 403);
+        }
+        $result = egmCheckInResetGuestEntry($context,
+            (string)($payload['guest_code'] ?? ''), (string)($payload['period_code'] ?? ''),
+            is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : []);
+        winAppJson(['status' => 'ok'] + $result + [
+            'access' => $access,
+            'event' => winAppEventSummary($context),
+            'stats' => egmCheckInDashboardStats($context),
+            'logs' => egmCheckInRecentLogs($context, 30),
+            'print_profile' => winAppPrintProfile($context),
+            'seat_map' => is_array($context['period'] ?? null)
+                ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled' => false],
+        ]);
     }
     if ($method === 'POST' && $action === 'verify_admin_passcode') {
         winAppRequireCsrf($payload);
@@ -631,7 +690,9 @@ try {
             (string)($payload['ticket_id'] ?? ''),
             (string)($payload['quantity'] ?? ''),
             (string)($payload['client_token'] ?? ''),
-            is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : []
+            is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : [],
+            (string)($payload['seat_mode'] ?? 'none'),
+            egmCheckInBool($payload['allow_split_seats'] ?? false)
         );
         winAppJson(['status'=>'ok', 'message'=>'بلیت دستی مهمان در پایگاه داده ثبت شد.'] + $recorded);
     }

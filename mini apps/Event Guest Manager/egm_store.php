@@ -815,10 +815,16 @@ function egmStoreNormalizeTicketSettings($value): array
     $title = trim((string)($ticket['title'] ?? ''));
     if ($title === '') $title = 'Ticket ' . ($index + 1);
     $title = function_exists('mb_substr') ? mb_substr($title, 0, 100, 'UTF-8') : substr($title, 0, 100);
-    $tickets[] = ['id' => $id, 'title' => $title];
+    $tickets[] = ['id' => $id, 'title' => $title, 'dependsOn' => trim((string)($ticket['dependsOn'] ?? ''))];
     $seen[$id] = true;
   }
   if ($tickets === []) $tickets[] = ['id' => 'default', 'title' => 'Custom Number Ticket'];
+  $previousIds = [];
+  foreach ($tickets as &$ticket) {
+    if (!in_array($ticket['dependsOn'], $previousIds, true)) $ticket['dependsOn'] = '';
+    $previousIds[] = $ticket['id'];
+  }
+  unset($ticket);
   return [
     'active' => egmStoreNormalizeBool($source['active'] ?? false),
     'ticketOnly' => egmStoreNormalizeBool($source['ticketOnly'] ?? false),

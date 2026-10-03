@@ -535,13 +535,18 @@
     const root = getEl("egm-ticket-types");
     if (!root) return;
     const tickets = Array.isArray(rawTickets) && rawTickets.length ? rawTickets : [{ id: "default", title: "Custom Number Ticket" }];
-    root.innerHTML = tickets.map((ticket, index) => `<div class="field" data-ticket-type-row style="display:grid;grid-template-columns:1fr auto;gap:8px"><input type="text" maxlength="100" value="${String(ticket.title || `Ticket ${index + 1}`).replace(/[&<>\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]))}" data-ticket-title data-ticket-id="${String(ticket.id || `ticket-${index + 1}`).replace(/[^a-z0-9_-]/gi, '')}" aria-label="عنوان بلیت ${index + 1}" /><button type="button" class="btn ghost" data-remove-ticket-type>حذف</button></div>`).join("");
+    const escape = value => String(value).replace(/[&<>\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]));
+    root.innerHTML = tickets.map((ticket, index) => {
+      const id = String(ticket.id || `ticket-${index + 1}`).replace(/[^a-z0-9_-]/gi, '');
+      const options = tickets.slice(0, index).map(other => `<option value="${escape(other.id)}" ${ticket.dependsOn === other.id ? 'selected' : ''}>${escape(other.title)}</option>`).join('');
+      return `<div class="field" data-ticket-type-row style="display:grid;grid-template-columns:1fr auto;gap:8px"><input type="text" maxlength="100" value="${escape(ticket.title || `Ticket ${index + 1}`)}" data-ticket-title data-ticket-id="${id}" aria-label="عنوان بلیت ${index + 1}" /><button type="button" class="btn ghost" data-remove-ticket-type>حذف</button><label style="grid-column:1 / -1">پیشنهاد تعداد از بلیت <select data-ticket-depends-on><option value="">بدون وابستگی</option>${options}</select></label></div>`;
+    }).join("");
   }
 
   function collectTicketTypes() {
     return Array.from(document.querySelectorAll("[data-ticket-type-row]")).map((row, index) => {
       const input = row.querySelector("[data-ticket-title]");
-      return { id: input?.dataset.ticketId || `ticket-${Date.now()}-${index}`, title: String(input?.value || `Ticket ${index + 1}`).trim() };
+      return { id: input?.dataset.ticketId || `ticket-${Date.now()}-${index}`, title: String(input?.value || `Ticket ${index + 1}`).trim(), dependsOn: row.querySelector('[data-ticket-depends-on]')?.value || '' };
     }).filter(ticket => ticket.title);
   }
 

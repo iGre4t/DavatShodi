@@ -273,11 +273,101 @@ function egmSeatMapLock(array $context): void
     if (!$lock->fetchColumn()) throw new RuntimeException('قفل سالن در دسترس نیست.');
 }
 
+/** @return array<string,int> Seat key to invitation id. Reject ambiguous or damaged reservations. */
+function egmSeatMapOccupiedFromRecords(array $records, int $excludeId = 0): array
+{
+    $occupied = [];
+    foreach ($records as $record) {
+        $id = (int)($record['id'] ?? 0);
+        if ($id === $excludeId) continue;
+        $assignment = json_decode((string)($record['seat_assignment_json'] ?? ''), true);
+        if (!is_array($assignment) || !is_array($assignment['seats'] ?? null)) {
+            throw new RuntimeException('اطلاعات صندلی یکی از مهمانان نامعتبر است؛ تخصیص متوقف شد.');
+        }
+        $own = [];
+        foreach ($assignment['seats'] as $seat) {
+            $row = is_array($seat) ? filter_var($seat['row'] ?? null, FILTER_VALIDATE_INT) : false;
+            $chair = is_array($seat) ? filter_var($seat['chair'] ?? null, FILTER_VALIDATE_INT) : false;
+            if ($row === false || $chair === false || $row < 1 || $chair < 1) {
+                throw new RuntimeException('شماره صندلی یکی از مهمانان نامعتبر است؛ تخصیص متوقف شد.');
+            }
+            $key = $row . ':' . $chair;
+            if (isset($own[$key]) || isset($occupied[$key])) {
+                throw new RuntimeException("تداخل صندلی در ردیف {$row}، صندلی {$chair} شناسایی شد؛ تخصیص و چاپ متوقف شد. صندلی مهمانان را در پنل بررسی کنید.");
+            }
+            $own[$key] = true;
+            $occupied[$key] = $id;
+        }
+    }
+    return $occupied;
+}
+
+function egmSeatMapValidateCandidate(array $seats, array $occupied, array $map, int $quantity): void
+{
+    if (count($seats) !== $quantity) {
+        throw new RuntimeException('تعداد صندلی‌های اختصاص‌یافته با تعداد بلیت یکسان نیست؛ چاپ متوقف شد.');
+    }
+    $seen = [];
+    foreach ($seats as $seat) {
+        $row = is_array($seat) ? filter_var($seat['row'] ?? null, FILTER_VALIDATE_INT) : false;
+        $chair = is_array($seat) ? filter_var($seat['chair'] ?? null, FILTER_VALIDATE_INT) : false;
+        if ($row === false || $chair === false || $row < 1 || $chair < 1
+            || $chair > ($map['rows'][$row - 1] ?? 0)) {
+            throw new RuntimeException('یکی از صندلی‌های اختصاص‌یافته در نقشه سالن وجود ندارد؛ چاپ متوقف شد.');
+        }
+        $key = $row . ':' . $chair;
+        if (isset($seen[$key]) || isset($occupied[$key])) {
+            throw new RuntimeException("صندلی ردیف {$row}، شماره {$chair} تکراری است؛ تخصیص و چاپ متوقف شد. صندلی مهمانان را در پنل بررسی کنید.");
+        }
+        $seen[$key] = true;
+    }
+}
+
+/** Manual printed tickets reserve chairs in the same period as guest check-ins. */
+function egmSeatMapManualRows(array $context, string $periodCode, bool $lock = false): array
+{
+    $table = (string)$context['tables']['manual_ticket_prints'];
+    $statement = $context['pdo']->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL" . ($lock ? ' FOR UPDATE' : ''));
+    $statement->execute([':period_code' => $periodCode]);
+    return array_map(static function (array $row): array {
+        $row['id'] = -(int)$row['id'];
+        return $row;
+    }, $statement->fetchAll(PDO::FETCH_ASSOC));
+}
+
+function egmSeatMapReserveManual(array $context, string $periodCode, string $ticketId, int $quantity, bool $allowSplit = false): array
+{
+    $map = egmSeatMapEffective($context, $periodCode);
+    if (!$map['enabled']) throw new InvalidArgumentException('نقشه صندلی برای این بازه فعال نیست.');
+    if ($quantity < 1 || $quantity > 500) throw new InvalidArgumentException('تعداد صندلی باید بین ۱ تا ۵۰۰ باشد.');
+    if (!$context['pdo']->inTransaction()) throw new LogicException('رزرو صندلی باید در تراکنش انجام شود.');
+    $table = (string)$context['tables']['user_periods'];
+    $statement = $context['pdo']->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL FOR UPDATE");
+    $statement->execute([':period_code' => $periodCode]);
+    $records = array_merge($statement->fetchAll(PDO::FETCH_ASSOC), egmSeatMapManualRows($context, $periodCode, true));
+    $used = egmSeatMapOccupiedFromRecords($records);
+    if (count(egmSeatMapFreeSeats($map['segments'], $used)) < $quantity
+        || count($used) + egmSeatMapFreeGuestCount($context, $periodCode) + $quantity > array_sum($map['rows'])) {
+        throw new EgmSeatCapacityException();
+    }
+    $seats = egmSeatMapFindContiguous($map['rows'], $used, $quantity, $map['segments']);
+    $suggested = egmSeatMapFindClosest($map['segments'], $used, $quantity);
+    $split = false;
+    if ($seats === [] || ($suggested !== [] && count(array_unique(array_column($suggested, 'row'))) < count(array_unique(array_column($seats, 'row'))))) {
+        if (count($suggested) !== $quantity) throw new EgmSeatCapacityException();
+        if (!$allowSplit) throw new EgmSeatSplitRequiredException($suggested);
+        $seats = $suggested;
+        $split = true;
+    }
+    egmSeatMapValidateCandidate($seats, $used, $map, $quantity);
+    return ['ticket_id' => $ticketId, 'seats' => $seats, 'split' => $split, 'assigned_at' => date('Y-m-d H:i:s')];
+}
+
 function egmSeatMapValidateOccupied(array $context, string $periodCode, array $map): void
 {
     if (!$map['enabled']) return;
     $table = (string)$context['tables']['user_periods'];
-    $sql = "SELECT `period_code`,`seat_assignment_json` FROM `{$table}` WHERE `seat_assignment_json` IS NOT NULL";
+    $sql = "SELECT `period_code`,`seat_assignment_json`,0 AS `manual` FROM `{$table}` WHERE `seat_assignment_json` IS NOT NULL";
     $params = [];
     if ($periodCode !== '') {
         $sql .= ' AND `period_code`=:period_code';
@@ -286,7 +376,11 @@ function egmSeatMapValidateOccupied(array $context, string $periodCode, array $m
     $find = $context['pdo']->prepare($sql);
     $find->execute($params);
     $overrideCache = [];
-    foreach ($find->fetchAll(PDO::FETCH_ASSOC) as $record) {
+    $records = $find->fetchAll(PDO::FETCH_ASSOC);
+    $manualTable = (string)$context['tables']['manual_ticket_prints'];
+    $manual = $context['pdo']->prepare("SELECT `period_code`,`seat_assignment_json`,1 AS `manual` FROM `{$manualTable}` WHERE `seat_assignment_json` IS NOT NULL" . ($periodCode !== '' ? ' AND `period_code`=:period_code' : ''));
+    $manual->execute($params);
+    foreach (array_merge($records, $manual->fetchAll(PDO::FETCH_ASSOC)) as $record) {
         $code = (string)$record['period_code'];
         if ($periodCode === '') {
             if (!array_key_exists($code, $overrideCache)) {
@@ -297,7 +391,7 @@ function egmSeatMapValidateOccupied(array $context, string $periodCode, array $m
         }
         $assignment = json_decode((string)$record['seat_assignment_json'], true);
         if (!is_array($assignment)) continue;
-        if ((string)($assignment['ticket_id'] ?? '') !== $map['ticketId']) {
+        if (empty($record['manual']) && (string)($assignment['ticket_id'] ?? '') !== $map['ticketId']) {
             throw new InvalidArgumentException('بلیت مبنای سالن پس از تخصیص صندلی قابل تغییر نیست.');
         }
         foreach ((array)($assignment['seats'] ?? []) as $seat) {
@@ -345,6 +439,10 @@ function egmSeatMapEnsureFreeCapacity(array $context, string $periodCode, bool $
         $assignment = json_decode((string)$json, true);
         $assignedCount += count((array)($assignment['seats'] ?? []));
     }
+    foreach (egmSeatMapManualRows($context, $periodCode) as $record) {
+        $assignment = json_decode((string)$record['seat_assignment_json'], true);
+        $assignedCount += count((array)($assignment['seats'] ?? []));
+    }
     if (!$allowOverflow && $assignedCount + egmSeatMapFreeGuestCount($context, $periodCode) > array_sum($map['rows'])) {
         throw new EgmSeatCapacityException();
     }
@@ -362,7 +460,11 @@ function egmSeatMapValidateCapacity(array $context, string $periodCode, array $m
     $find->execute($periodCode !== '' ? [':period_code' => $periodCode] : []);
     $totals = [];
     $skip = [];
-    foreach ($find->fetchAll(PDO::FETCH_ASSOC) as $record) {
+    $records = $find->fetchAll(PDO::FETCH_ASSOC);
+    $manualTable = (string)$context['tables']['manual_ticket_prints'];
+    $manual = $context['pdo']->prepare("SELECT `period_code`,`seat_assignment_json` FROM `{$manualTable}` WHERE `seat_assignment_json` IS NOT NULL" . ($periodCode !== '' ? ' AND `period_code`=:period_code' : ''));
+    $manual->execute($periodCode !== '' ? [':period_code' => $periodCode] : []);
+    foreach (array_merge($records, $manual->fetchAll(PDO::FETCH_ASSOC)) as $record) {
         $code = (string)$record['period_code'];
         if ($periodCode === '') {
             if (!array_key_exists($code, $skip)) {
@@ -401,18 +503,16 @@ function egmSeatMapAssign(array $context, string $periodCode, int $userId, array
     if (!is_array($current)) throw new RuntimeException('دعوت مهمان برای تخصیص صندلی پیدا نشد.');
     if ((string)($current['seat_mode'] ?? '') === 'free') return null;
     $existing = json_decode((string)($current['seat_assignment_json'] ?? ''), true);
-    if (is_array($existing) && !empty($existing['seats'])) {
-        if (count($existing['seats']) !== $quantity) throw new InvalidArgumentException('تعداد بلیت با صندلی‌های تخصیص‌یافته قبلی یکسان نیست.');
-        return $existing;
+    if (trim((string)($current['seat_assignment_json'] ?? '')) !== ''
+        && (!is_array($existing) || !is_array($existing['seats'] ?? null))) {
+        throw new RuntimeException('اطلاعات صندلی این مهمان نامعتبر است؛ تخصیص و چاپ متوقف شد.');
     }
-    $all = $pdo->prepare("SELECT `seat_assignment_json` FROM `{$periodsTable}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL FOR UPDATE");
+    $all = $pdo->prepare("SELECT `id`,`seat_assignment_json` FROM `{$periodsTable}` WHERE `period_code`=:period_code AND `seat_assignment_json` IS NOT NULL FOR UPDATE");
     $all->execute([':period_code' => $periodCode]);
-    $used = [];
-    foreach ($all->fetchAll(PDO::FETCH_COLUMN) as $json) {
-        $assignment = json_decode((string)$json, true);
-        foreach ((array)($assignment['seats'] ?? []) as $seat) {
-            $used[(int)($seat['row'] ?? 0) . ':' . (int)($seat['chair'] ?? 0)] = true;
-        }
+    $used = egmSeatMapOccupiedFromRecords(array_merge($all->fetchAll(PDO::FETCH_ASSOC), egmSeatMapManualRows($context, $periodCode, true)), (int)$current['id']);
+    if (is_array($existing) && !empty($existing['seats'])) {
+        egmSeatMapValidateCandidate($existing['seats'], $used, $map, $quantity);
+        return $existing;
     }
     $freeGuests = egmSeatMapFreeGuestCount($context, $periodCode);
     $insufficient = count($used) + $freeGuests + $quantity > array_sum($map['rows']);
@@ -437,6 +537,7 @@ function egmSeatMapAssign(array $context, string $periodCode, int $userId, array
         $seats = $suggested;
         $split = true;
     }
+    egmSeatMapValidateCandidate($seats, $used, $map, $quantity);
     $assignment = ['ticket_id' => $map['ticketId'], 'seats' => $seats, 'split' => $split, 'assigned_at' => date('Y-m-d H:i:s')];
     $save = $pdo->prepare("UPDATE `{$periodsTable}` SET `seat_assignment_json`=:assignment WHERE `id`=:id");
     $save->execute([':assignment' => json_encode($assignment, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), ':id' => (int)$current['id']]);

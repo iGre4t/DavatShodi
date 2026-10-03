@@ -30,10 +30,18 @@ function egmCheckInTicketDefinitions(array $settings): array
         if ($id === '' || isset($seen[$id])) $id = 'ticket-' . ($index + 1);
         $title = trim((string)($item['title'] ?? ''));
         if ($title === '') $title = 'Ticket ' . ($index + 1);
-        $tickets[] = ['id' => $id, 'title' => function_exists('mb_substr') ? mb_substr($title, 0, 100) : substr($title, 0, 100)];
+        $tickets[] = ['id' => $id, 'title' => function_exists('mb_substr') ? mb_substr($title, 0, 100) : substr($title, 0, 100),
+            'dependsOn' => trim((string)($item['dependsOn'] ?? ''))];
         $seen[$id] = true;
     }
-    return $tickets !== [] ? $tickets : [['id' => 'default', 'title' => 'Custom Number Ticket']];
+    if ($tickets === []) return [['id' => 'default', 'title' => 'Custom Number Ticket', 'dependsOn' => '']];
+    $previousIds = [];
+    foreach ($tickets as &$ticket) {
+        if (!in_array($ticket['dependsOn'], $previousIds, true)) $ticket['dependsOn'] = '';
+        $previousIds[] = $ticket['id'];
+    }
+    unset($ticket);
+    return $tickets;
 }
 
 function egmCheckInPrintProfile(array $context, string $guestCode = ''): array
@@ -785,6 +793,60 @@ function egmCheckInResetAttendanceRecords(array $context, ?string $periodCode = 
     ];
 }
 
+/** Release one guest's numbered seats and restore their invitation to the pending state. */
+function egmCheckInResetGuestEntry(array $context, string $guestCode, string $periodCode, array $actor): array
+{
+    $guestCode = egmCheckInNormalizeGuestCode($guestCode);
+    $periodCode = trim($periodCode);
+    if ($guestCode === '' || $periodCode === '') throw new InvalidArgumentException('مهمان یا بازه معتبر نیست.');
+    $knownPeriod = null;
+    foreach ((array)($context['periods'] ?? []) as $period) {
+        if (is_array($period) && egmCheckInPeriodCode($period) === $periodCode) { $knownPeriod = $period; break; }
+    }
+    if ($knownPeriod === null) throw new InvalidArgumentException('بازه انتخاب‌شده در این EGM وجود ندارد.');
+    $pdo = $context['pdo'];
+    $usersTable = (string)$context['tables']['users'];
+    $periodsTable = (string)$context['tables']['user_periods'];
+    $pdo->beginTransaction();
+    try {
+        egmSeatMapLock($context);
+        $user = egmCheckInFindUser($pdo, $usersTable, $guestCode);
+        if (!is_array($user)) throw new InvalidArgumentException('مهمان پیدا نشد.');
+        $find = $pdo->prepare("SELECT `id`,`entered_date`,`entered_time`,`seat_assignment_json` FROM `{$periodsTable}` WHERE `user_id`=:user_id AND `period_code`=:period_code LIMIT 1 FOR UPDATE");
+        $find->execute([':user_id' => (int)$user['id'], ':period_code' => $periodCode]);
+        $current = $find->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($current) || empty($current['entered_date']) || empty($current['entered_time'])) {
+            throw new InvalidArgumentException('برای این مهمان ورود ثبت‌شده‌ای در بازه انتخاب‌شده وجود ندارد.');
+        }
+        $released = count((array)((json_decode((string)($current['seat_assignment_json'] ?? ''), true))['seats'] ?? []));
+        $update = $pdo->prepare(
+            "UPDATE `{$periodsTable}` SET `entered_date`=NULL,`entered_time`=NULL,`quit_date`=NULL,`quit_time`=NULL,"
+            . "`correct_presence`=0,`fake_presence`=0,`attendance_state`='not_entered',"
+            . "`last_control_condition`='entry_reset',`last_control_action`='manual',"
+            . "`last_control_message`='ورود مهمان برای ثبت مجدد بازنشانی شد.',`last_control_at`=NOW(),"
+            . "`number_of_ticket`=NULL,`ticket_numbers_json`=NULL,`ticket_number_recorded_at`=NULL,`seat_assignment_json`=NULL "
+            . "WHERE `id`=:id AND `period_code`=:period_code AND `entered_date` IS NOT NULL AND `entered_time` IS NOT NULL"
+        );
+        $update->execute([':id' => (int)$current['id'], ':period_code' => $periodCode]);
+        if ($update->rowCount() !== 1) throw new RuntimeException('وضعیت ورود هم‌زمان تغییر کرده است؛ دوباره تلاش کنید.');
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+    try {
+        $operator = egmCheckInCleanText($actor['username'] ?? ($actor['code'] ?? ''), 191);
+        egmCheckInWriteLog($context, $user, $guestCode, 'entry_reset',
+            'ورود مهمان بازنشانی شد و صندلی‌های قبلی آزاد شدند.', $knownPeriod,
+            new DateTimeImmutable('now', new DateTimeZone('Asia/Tehran')),
+            ['attendance_action' => 'reset', 'released_seats' => $released, 'operator' => $operator]);
+    } catch (Throwable $ignored) {
+        // The attendance reset has committed; a separate log failure must not invite a second reset.
+    }
+    return ['message' => 'ورود مهمان بازنشانی شد و ' . $released . ' صندلی آزاد شد.',
+        'released_seats' => $released, 'period_code' => $periodCode];
+}
+
 function egmCheckInCleanText($value, int $maxLength): string
 {
     $text = trim(is_scalar($value) ? (string)$value : '');
@@ -1374,7 +1436,7 @@ function egmCheckInManualTicketTotals(array $context, string $periodCode): array
     return egmCheckInManualTicketTotalsFromRows($statement->fetchAll(PDO::FETCH_ASSOC) ?: [], $definitions);
 }
 
-function egmCheckInRecordManualTicket(array $context, string $ticketId, string $quantity, string $clientToken, array $actor): array
+function egmCheckInRecordManualTicket(array $context, string $ticketId, string $quantity, string $clientToken, array $actor, string $seatMode = 'none', bool $allowSplit = false): array
 {
     $period = is_array($context['period'] ?? null) ? $context['period'] : null;
     if (!is_array($period)) throw new InvalidArgumentException('بازه فعال برای ثبت بلیت دستی پیدا نشد.');
@@ -1387,6 +1449,7 @@ function egmCheckInRecordManualTicket(array $context, string $ticketId, string $
     if ($ticketId === '' || preg_match('/^[a-f0-9]{32}$/D', $clientToken) !== 1) {
         throw new InvalidArgumentException('درخواست چاپ دستی معتبر نیست.');
     }
+    if (!in_array($seatMode, ['none', 'assigned'], true)) throw new InvalidArgumentException('روش صندلی بلیت دستی معتبر نیست.');
     $profile = egmCheckInPrintProfile($context);
     $ticket = null;
     foreach ((array)($profile['tickets'] ?? []) as $candidate) {
@@ -1395,25 +1458,43 @@ function egmCheckInRecordManualTicket(array $context, string $ticketId, string $
         }
     }
     if (!is_array($ticket)) throw new InvalidArgumentException('طرح بلیت شماره‌دار انتخاب‌شده آماده نیست.');
+    $pdo = $context['pdo'];
     $table = (string)$context['tables']['manual_ticket_prints'];
-    $statement = $context['pdo']->prepare(
-        "INSERT INTO `{$table}` (client_token,period_code,ticket_id,ticket_title,quantity,guest_name,qr_value,operator_code) "
-        . "VALUES (:token,:period,:ticket_id,:title,:quantity,'مهمان','000000000',:operator) "
-        . "ON DUPLICATE KEY UPDATE client_token=VALUES(client_token)"
-    );
-    $operator = trim((string)($actor['code'] ?? ($actor['username'] ?? '')));
-    $statement->execute([
-        ':token'=>$clientToken, ':period'=>$periodCode, ':ticket_id'=>$ticketId,
-        ':title'=>(string)$ticket['title'], ':quantity'=>$quantity, ':operator'=>$operator !== '' ? $operator : null,
-    ]);
-    $verify = $context['pdo']->prepare("SELECT period_code,ticket_id,quantity FROM `{$table}` WHERE client_token=:token LIMIT 1");
-    $verify->execute([':token'=>$clientToken]);
-    $saved = $verify->fetch(PDO::FETCH_ASSOC);
-    if (!is_array($saved) || (string)$saved['period_code'] !== $periodCode || (string)$saved['ticket_id'] !== $ticketId || (string)$saved['quantity'] !== $quantity) {
-        throw new InvalidArgumentException('شناسه این چاپ قبلاً برای بلیت دیگری استفاده شده است.');
+    $pdo->beginTransaction();
+    try {
+        egmSeatMapLock($context);
+        $verify = $pdo->prepare("SELECT period_code,ticket_id,quantity,seat_assignment_json FROM `{$table}` WHERE client_token=:token LIMIT 1 FOR UPDATE");
+        $verify->execute([':token' => $clientToken]);
+        $saved = $verify->fetch(PDO::FETCH_ASSOC);
+        if (is_array($saved)) {
+            $previousAssignment = json_decode((string)($saved['seat_assignment_json'] ?? ''), true);
+            if ((string)$saved['period_code'] !== $periodCode || (string)$saved['ticket_id'] !== $ticketId
+                || (string)$saved['quantity'] !== $quantity || ($seatMode === 'assigned') !== is_array($previousAssignment)) {
+                throw new InvalidArgumentException('شناسه این چاپ قبلاً برای بلیت دیگری استفاده شده است.');
+            }
+            $assignment = is_array($previousAssignment) ? $previousAssignment : null;
+        } else {
+            $assignment = $seatMode === 'assigned'
+                ? egmSeatMapReserveManual($context, $periodCode, $ticketId, (int)$quantity, $allowSplit) : null;
+            $operator = trim((string)($actor['code'] ?? ($actor['username'] ?? '')));
+            $statement = $pdo->prepare(
+                "INSERT INTO `{$table}` (client_token,period_code,ticket_id,ticket_title,quantity,guest_name,qr_value,operator_code,seat_assignment_json) "
+                . "VALUES (:token,:period,:ticket_id,:title,:quantity,'مهمان','000000000',:operator,:assignment)"
+            );
+            $statement->execute([
+                ':token' => $clientToken, ':period' => $periodCode, ':ticket_id' => $ticketId,
+                ':title' => (string)$ticket['title'], ':quantity' => $quantity,
+                ':operator' => $operator !== '' ? $operator : null,
+                ':assignment' => $assignment === null ? null : json_encode($assignment, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            ]);
+        }
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
     }
-    return ['ticket_id'=>$ticketId, 'ticket_title'=>(string)$ticket['title'], 'quantity'=>$quantity,
-        'manual_ticket_totals'=>egmCheckInManualTicketTotals($context, $periodCode)];
+    return ['ticket_id' => $ticketId, 'ticket_title' => (string)$ticket['title'], 'quantity' => $quantity,
+        'seat_assignment' => $assignment, 'manual_ticket_totals' => egmCheckInManualTicketTotals($context, $periodCode)];
 }
 
 function egmCheckInTicketAndGroupStats(array $rows, array $tickets, array $groups): array

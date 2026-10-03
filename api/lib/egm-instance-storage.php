@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Bump whenever a request-time compatible table migration is added. Existing
 // instances use this marker to decide whether the migration block must run.
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-09-30.1';
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-10-01.1';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
 const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = [EGM_INSTANCE_SCHEMA_VERSION];
 
@@ -368,12 +368,14 @@ CREATE TABLE IF NOT EXISTS `{$manualTicketPrintsTable}` (
   `guest_name` VARCHAR(100) NOT NULL DEFAULT 'مهمان',
   `qr_value` VARCHAR(32) NOT NULL DEFAULT '000000000',
   `operator_code` VARCHAR(191) NULL,
+  `seat_assignment_json` LONGTEXT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_manual_ticket_client_token` (`client_token`),
   KEY `idx_manual_ticket_period` (`period_code`, `ticket_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
+    egmInstanceAddColumnIfMissing($pdo, $manualTicketPrintsTable, 'seat_assignment_json', 'LONGTEXT NULL');
 
     $answersTable = $tables['answers'];
     $pdo->exec(<<<SQL

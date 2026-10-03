@@ -21,11 +21,12 @@ egmCheckInAssert(egmCheckInNormalizeWorkId('123456789') === '123456789', 'A 9-di
 egmCheckInAssert(egmCheckInNormalizeWorkId('1234567890') === '', 'A 10-digit value was accepted as a Work ID');
 $ticketDefinitions = egmCheckInTicketDefinitions(['tickets' => [
     ['id' => 'food', 'title' => 'Food Ticket'],
-    ['id' => 'gift', 'title' => 'Gift Ticket'],
+    ['id' => 'gift', 'title' => 'Gift Ticket', 'dependsOn' => 'food'],
 ]]);
 egmCheckInAssert(count($ticketDefinitions) === 2, 'Multiple number-ticket definitions were not preserved');
 egmCheckInAssert(($ticketDefinitions[0]['title'] ?? '') === 'Food Ticket', 'First ticket title was not preserved');
 egmCheckInAssert(($ticketDefinitions[1]['id'] ?? '') === 'gift', 'Second ticket ID was not preserved');
+egmCheckInAssert(($ticketDefinitions[1]['dependsOn'] ?? '') === 'food', 'Ticket number dependency was not preserved');
 
 $checkInSource = file_get_contents(dirname(__DIR__) . '/api/lib/egm-check-in.php');
 egmCheckInAssert(is_string($checkInSource), 'Could not inspect the Guest Control frontend');
@@ -163,6 +164,27 @@ try {
         (int)$pdo->query("SELECT COUNT(*) FROM `{$tables['manual_ticket_prints']}`")->fetchColumn() === 2,
         'Manual ticket retry was not idempotent'
     );
+    egmInstanceWriteData($pdo, $code, 'seat_map:default', ['enabled' => true, 'ticketId' => 'food', 'rows' => [5]]);
+    $seatPeriod = ['tagCode' => 'SEAT', 'title' => 'Seat Test', 'duration' => false];
+    $seatContext = $context;
+    $seatContext['period'] = $seatPeriod;
+    $seatContext['period_code'] = 'SEAT';
+    $pdo->prepare("INSERT INTO `{$tables['user_periods']}` (`user_id`,`period_code`) VALUES (:user_id,'SEAT')")
+        ->execute([':user_id' => $userId]);
+    $manualSeat = egmCheckInRecordManualTicket($seatContext, 'food', '2', str_repeat('c', 32), ['username' => 'operator'], 'assigned');
+    egmCheckInAssert(count($manualSeat['seat_assignment']['seats'] ?? []) === 2, 'Manual printing did not reserve two chairs');
+    $manualRetry = egmCheckInRecordManualTicket($seatContext, 'food', '2', str_repeat('c', 32), ['username' => 'operator'], 'assigned');
+    egmCheckInAssert($manualRetry['seat_assignment'] === $manualSeat['seat_assignment'], 'Manual retry changed reserved chairs');
+    $pdo->beginTransaction();
+    egmSeatMapLock($seatContext);
+    $guestSeat = egmSeatMapAssign($seatContext, 'SEAT', $userId, ['food' => '2']);
+    $pdo->commit();
+    egmCheckInAssert(($guestSeat['seats'][0]['chair'] ?? 0) === 3, 'Guest allocation reused a manual ticket chair');
+    $capacityRejected = false;
+    try { egmCheckInRecordManualTicket($seatContext, 'food', '2', str_repeat('d', 32), ['username' => 'operator'], 'assigned'); }
+    catch (EgmSeatCapacityException $error) { $capacityRejected = true; }
+    egmCheckInAssert($capacityRejected, 'Manual ticket exceeded remaining salon capacity');
+    egmInstanceWriteData($pdo, $code, 'seat_map:default', []);
     egmGroupsWrite($context, [['id' => 'group-a', 'title' => 'Group A', 'outputs' => ['print_card', 'ticket:food']]]);
     $pdo->exec("UPDATE `{$tables['user_periods']}` SET `group_id`='group-a' WHERE `user_id`={$userId} AND `period_code`='01'");
     $groupProfile = egmCheckInPrintProfile($context, '1234567890');
@@ -607,6 +629,20 @@ try {
         (int)$pdo->query("SELECT `is_uninvited_guest` FROM `{$tables['users']}` WHERE `id`=" . (int)$walkInUser['id'])->fetchColumn() === 1,
         'Attendance reset removed the walk-in guest identity'
     );
+    egmInstanceWriteData($pdo, $code, 'seat_map:default', ['enabled' => true, 'ticketId' => 'food', 'rows' => [5]]);
+    $seatContext['periods'] = [$seatPeriod];
+    $firstSeatEntry = egmCheckInProcess($seatContext, '1234567890', $firstTime, null, [], '2');
+    egmCheckInAssert(($firstSeatEntry['result'] ?? '') === 'success', 'Seat test guest could not enter');
+    $resetGuest = egmCheckInResetGuestEntry($seatContext, '1234567890', 'SEAT', ['username' => 'operator']);
+    egmCheckInAssert(($resetGuest['released_seats'] ?? 0) === 2, 'Reset did not release the guest seats');
+    $resetGuestState = $pdo->query("SELECT `entered_date`,`entered_time`,`ticket_numbers_json`,`seat_assignment_json`,`last_control_condition` FROM `{$tables['user_periods']}` WHERE `user_id`={$userId} AND `period_code`='SEAT'")->fetch(PDO::FETCH_ASSOC);
+    egmCheckInAssert($resetGuestState['entered_date'] === null && $resetGuestState['entered_time'] === null
+        && $resetGuestState['ticket_numbers_json'] === null && $resetGuestState['seat_assignment_json'] === null
+        && $resetGuestState['last_control_condition'] === 'entry_reset', 'Reset left attendance or seats assigned');
+    $secondSeatEntry = egmCheckInProcess($seatContext, '1234567890', $firstTime, null, [], '2');
+    egmCheckInAssert(($secondSeatEntry['result'] ?? '') === 'success', 'Reset guest could not be scanned again');
+    $reassigned = json_decode((string)$pdo->query("SELECT `seat_assignment_json` FROM `{$tables['user_periods']}` WHERE `user_id`={$userId} AND `period_code`='SEAT'")->fetchColumn(), true);
+    egmCheckInAssert(($reassigned['seats'][0]['chair'] ?? 0) === 3, 'Rescan reused a manually reserved seat');
 } finally {
     dropEgmInstanceTables($pdo, $code);
 }

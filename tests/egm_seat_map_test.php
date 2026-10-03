@@ -11,6 +11,29 @@ function seatAssert(bool $condition, string $message): void
 $map = egmSeatMapNormalize(['enabled' => true, 'ticketId' => 'vip', 'rows' => [10, 8, 12]]);
 seatAssert($map['rows'] === [10, 8, 12], 'Different chair counts per row were not retained.');
 
+$reservations = [
+    ['id' => 1, 'seat_assignment_json' => json_encode(['seats' => [['row' => 1, 'chair' => 1]]])],
+    ['id' => 2, 'seat_assignment_json' => json_encode(['seats' => [['row' => 1, 'chair' => 2]]])],
+];
+seatAssert(egmSeatMapOccupiedFromRecords($reservations, 1) === ['1:2' => 2], 'The current guest was not excluded from occupied seats.');
+$rejected = false;
+try { egmSeatMapValidateCandidate([['row' => 1, 'chair' => 2]], ['1:2' => 2], $map, 1); }
+catch (RuntimeException $error) { $rejected = true; }
+seatAssert($rejected, 'A chair already owned by another guest was accepted.');
+$rejected = false;
+try { egmSeatMapValidateCandidate([['row' => 1, 'chair' => 3]], [], $map, 3); }
+catch (RuntimeException $error) { $rejected = true; }
+seatAssert($rejected, 'One chair was accepted for three tickets.');
+$rejected = false;
+try { egmSeatMapValidateCandidate([['row' => 1, 'chair' => 3], ['row' => 1, 'chair' => 3]], [], $map, 2); }
+catch (RuntimeException $error) { $rejected = true; }
+seatAssert($rejected, 'A duplicate chair within one group was accepted.');
+$reservations[] = ['id' => 3, 'seat_assignment_json' => json_encode(['seats' => [['row' => 1, 'chair' => 2]]])];
+$rejected = false;
+try { egmSeatMapOccupiedFromRecords($reservations); }
+catch (RuntimeException $error) { $rejected = true; }
+seatAssert($rejected, 'Existing duplicate reservations were not detected.');
+
 $grouped = egmSeatMapNormalize(['enabled' => true, 'ticketId' => 'vip', 'segments' => [[14, 14], [6, 15, 6]]]);
 seatAssert($grouped['rows'] === [28, 27] && $grouped['segments'][1] === [6, 15, 6], 'Aisle blocks were not retained.');
 seatAssert(egmSeatMapFindContiguous($grouped['rows'], [], 16, $grouped['segments']) === [], 'A contiguous group incorrectly crossed an aisle.');
