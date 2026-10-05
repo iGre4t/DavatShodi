@@ -21,6 +21,8 @@ if (!$level) {
   http_response_code(404);
   exit('Pot level was not found.');
 }
+header('Location: period_draw.php?level_id=' . rawurlencode($levelId), true, 302);
+exit;
 
 $csrf = egmSecurityGetCsrfToken();
 $title = (string)$level['potSettings']['title'];

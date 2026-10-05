@@ -31,7 +31,7 @@
     const response = await fetch(url.toString(), { credentials: "same-origin" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.status !== "ok") {
-      throw new Error(payload?.message || "Request failed.");
+      throw new Error(payload?.message || "درخواست ناموفق بود.");
     }
     return payload?.data && typeof payload.data === "object" ? payload.data : {};
   }
@@ -45,7 +45,7 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.status !== "ok") {
-      throw new Error(payload?.message || "Request failed.");
+      throw new Error(payload?.message || "درخواست ناموفق بود.");
     }
     return payload;
   }
@@ -119,9 +119,9 @@
         payloadKeys: payloadKeys || "none",
         responsePreview: responsePreview || "empty"
       });
-      throw new Error(payload?.message || `Failed to load settings (${response.status}).`);
+      throw new Error(payload?.message || `بارگذاری تنظیمات ناموفق بود (${response.status}).`);
     } catch (error) {
-      settingsLoadErrorMessage = error?.message || "Failed to load settings.";
+      settingsLoadErrorMessage = error?.message || "بارگذاری تنظیمات ناموفق بود.";
       const statusEl = getEl("egm-status-text");
       if (statusEl) {
         statusEl.textContent = settingsLoadErrorMessage;
@@ -534,19 +534,20 @@
   function renderTicketTypes(rawTickets) {
     const root = getEl("egm-ticket-types");
     if (!root) return;
-    const tickets = Array.isArray(rawTickets) && rawTickets.length ? rawTickets : [{ id: "default", title: "Custom Number Ticket" }];
+    const tickets = Array.isArray(rawTickets) && rawTickets.length ? rawTickets : [{ id: "default", title: "بلیت شماره‌دار" }];
     const escape = value => String(value).replace(/[&<>\"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]));
     root.innerHTML = tickets.map((ticket, index) => {
       const id = String(ticket.id || `ticket-${index + 1}`).replace(/[^a-z0-9_-]/gi, '');
-      const options = tickets.slice(0, index).map(other => `<option value="${escape(other.id)}" ${ticket.dependsOn === other.id ? 'selected' : ''}>${escape(other.title)}</option>`).join('');
-      return `<div class="field" data-ticket-type-row style="display:grid;grid-template-columns:1fr auto;gap:8px"><input type="text" maxlength="100" value="${escape(ticket.title || `Ticket ${index + 1}`)}" data-ticket-title data-ticket-id="${id}" aria-label="عنوان بلیت ${index + 1}" /><button type="button" class="btn ghost" data-remove-ticket-type>حذف</button><label style="grid-column:1 / -1">پیشنهاد تعداد از بلیت <select data-ticket-depends-on><option value="">بدون وابستگی</option>${options}</select></label></div>`;
+      const displayTitle = value => value === 'Custom Number Ticket' ? 'بلیت شماره‌دار' : value;
+      const options = tickets.slice(0, index).map(other => `<option value="${escape(other.id)}" ${ticket.dependsOn === other.id ? 'selected' : ''}>${escape(displayTitle(other.title))}</option>`).join('');
+      return `<div class="field" data-ticket-type-row style="display:grid;grid-template-columns:1fr auto;gap:8px"><input type="text" maxlength="100" value="${escape(displayTitle(ticket.title || `بلیت ${index + 1}`))}" data-ticket-title data-ticket-id="${id}" aria-label="عنوان بلیت ${index + 1}" /><button type="button" class="btn ghost" data-remove-ticket-type>حذف</button><label style="grid-column:1 / -1">پیشنهاد تعداد از بلیت <select data-ticket-depends-on><option value="">بدون وابستگی</option>${options}</select></label></div>`;
     }).join("");
   }
 
   function collectTicketTypes() {
     return Array.from(document.querySelectorAll("[data-ticket-type-row]")).map((row, index) => {
       const input = row.querySelector("[data-ticket-title]");
-      return { id: input?.dataset.ticketId || `ticket-${Date.now()}-${index}`, title: String(input?.value || `Ticket ${index + 1}`).trim(), dependsOn: row.querySelector('[data-ticket-depends-on]')?.value || '' };
+      return { id: input?.dataset.ticketId || `ticket-${Date.now()}-${index}`, title: String(input?.value || `بلیت ${index + 1}`).trim(), dependsOn: row.querySelector('[data-ticket-depends-on]')?.value || '' };
     }).filter(ticket => ticket.title);
   }
 
@@ -596,16 +597,6 @@
     const startTime = getEl("egm-duration-start-time");
     const endDate = getEl("egm-duration-end");
     const endTime = getEl("egm-duration-end-time");
-    const adminPasscode = getEl("egm-admin-passcode");
-    const adminPasscodeConfirm = getEl("egm-admin-passcode-confirm");
-
-    const passcode = String(adminPasscode?.value || "").trim();
-    const confirmation = String(adminPasscodeConfirm?.value || "").trim();
-    if (passcode || confirmation) {
-      if (!/^\d{4,6}$/.test(passcode)) throw new Error("Admin Passcode باید ۴ تا ۶ رقم باشد.");
-      if (passcode !== confirmation) throw new Error("Admin Passcode و تکرار آن یکسان نیستند.");
-    }
-
     const collected = {
       active: Boolean(activeToggle?.checked),
       duration: Boolean(durationToggle?.checked),
@@ -625,7 +616,6 @@
       endDate: endDate?.value ?? "",
       endTime: endTime?.value ?? ""
     };
-    if (passcode) collected.adminPasscode = { code: passcode };
     return collected;
   }
 
@@ -664,22 +654,22 @@
         <div class="egm-landing-section-toolbar">
           <strong>Section ${index + 1}</strong>
           <div class="egm-landing-actions">
-            <button type="button" class="btn ghost" data-landing-action="move-up" ${index <= 0 ? "disabled" : ""}>Up</button>
-            <button type="button" class="btn ghost" data-landing-action="move-down" ${index >= total - 1 ? "disabled" : ""}>Down</button>
-            <button type="button" class="btn ghost" data-landing-action="remove">Remove</button>
+            <button type="button" class="btn ghost" data-landing-action="move-up" ${index <= 0 ? "disabled" : ""}>بالا</button>
+            <button type="button" class="btn ghost" data-landing-action="move-down" ${index >= total - 1 ? "disabled" : ""}>پایین</button>
+            <button type="button" class="btn ghost" data-landing-action="remove">حذف</button>
           </div>
         </div>
         <label class="field full">
-          <span>Section title</span>
+          <span>عنوان بخش</span>
           <input type="text" data-landing-field="title" value="${escapeHtml(safe.title)}" autocomplete="off" />
         </label>
         <label class="field full">
-          <span>Section text</span>
-          <div class="egm-rich-text-tools" aria-label="Section text tools">
+          <span>متن بخش</span>
+          <div class="egm-rich-text-tools" aria-label="ابزار متن بخش">
             <button type="button" class="btn ghost" data-landing-format="bold">B</button>
-            <button type="button" class="btn ghost" data-landing-format="list">List</button>
+            <button type="button" class="btn ghost" data-landing-format="list">فهرست</button>
             <button type="button" class="btn ghost" data-landing-format="header">H</button>
-            <button type="button" class="btn ghost" data-landing-format="link">Link</button>
+            <button type="button" class="btn ghost" data-landing-format="link">پیوند</button>
           </div>
           <textarea data-landing-field="text" rows="7">${escapeHtml(safe.text)}</textarea>
         </label>
@@ -859,13 +849,13 @@
       const landing = collectLandingFromDom();
       if (!landing) return;
       elements.saveButton.disabled = true;
-      setLandingStatus("Saving...");
+      setLandingStatus("در حال ذخیره...");
       try {
         await requestStorePost("save_settings", { settings: { landing } });
         Object.assign(settingsCache, { landing });
-        setLandingStatus("Saved.");
+        setLandingStatus("ذخیره شد.");
       } catch (error) {
-        setLandingStatus(error?.message || "Failed to save landing.", true);
+        setLandingStatus(error?.message || "ذخیره صفحه آغازین ناموفق بود.", true);
       } finally {
         elements.saveButton.disabled = false;
       }
@@ -1014,6 +1004,28 @@
     }
   }
 
+  function organizeControlPanel() {
+    const seating = document.querySelector('[data-egm-seating-content]');
+    const printing = document.querySelector('[data-egm-print-switches]');
+    const tickets = document.querySelector('[data-egm-ticket-settings-content]');
+    const printSave = document.querySelector('[data-egm-print-save]');
+    const admin = document.querySelector('[data-egm-admin-passcode-content]');
+    const seatCard = document.querySelector('[data-pane="egm-main"] [data-seat-map-editor]');
+    const ticketCard = getEl('egm-ticket-types')?.closest('.card');
+    const passcodeCard = getEl('egm-admin-passcode-save')?.closest('.card');
+    if (seating && seatCard) seating.append(seatCard);
+    if (printing) ['egm-auto-print-toggle', 'egm-double-print-toggle', 'egm-custom-number-ticket-toggle', 'egm-ticket-only-toggle'].forEach(id => {
+      const row = getEl(id)?.closest('.egm-switch');
+      if (row) printing.append(row);
+    });
+    if (tickets && ticketCard) tickets.append(ticketCard);
+    const ticketSaveButton = getEl('egm-save-ticket-types');
+    const ticketStatus = getEl('egm-ticket-types-status');
+    if (printSave && ticketSaveButton) printSave.append(ticketSaveButton);
+    if (printSave && ticketStatus) printSave.append(ticketStatus);
+    if (admin && passcodeCard) admin.append(passcodeCard);
+  }
+
   function initControlPanelTabs() {
     const pane = document.querySelector('.sub-pane[data-pane="egm-main"]');
     if (!(pane instanceof HTMLElement)) return;
@@ -1027,6 +1039,7 @@
     const activate = (key) => {
       const fallbackKey = String(triggers[0]?.getAttribute("data-egm-control-panel-trigger") || "general").trim() || "general";
       const activeKey = String(key || fallbackKey).trim() || fallbackKey;
+      try { sessionStorage.setItem('egmControlPanelTab', activeKey); } catch {}
       triggers.forEach((trigger) => {
         if (!(trigger instanceof HTMLElement)) return;
         const isActive = String(trigger.getAttribute("data-egm-control-panel-trigger") || "") === activeKey;
@@ -1046,7 +1059,10 @@
     });
 
     const activeTrigger = triggers.find((trigger) => trigger instanceof HTMLElement && trigger.classList.contains("active"));
-    activate(activeTrigger?.getAttribute("data-egm-control-panel-trigger") || "");
+    let savedKey = '';
+    try { savedKey = sessionStorage.getItem('egmControlPanelTab') || ''; } catch {}
+    const savedTrigger = triggers.find((trigger) => trigger.getAttribute('data-egm-control-panel-trigger') === savedKey);
+    activate(savedTrigger?.getAttribute('data-egm-control-panel-trigger') || activeTrigger?.getAttribute("data-egm-control-panel-trigger") || "");
   }
 
   function initCampaignLinker() {
@@ -1055,6 +1071,7 @@
     card.dataset.egmLinkerInitialized = "1";
 
     const pathInput = getEl("egm-linker-path");
+    const destinationInput = getEl("egm-linker-destination");
     const checkBtn = getEl("egm-linker-check");
     const createBtn = getEl("egm-linker-create");
     const previewEl = getEl("egm-linker-preview");
@@ -1062,6 +1079,7 @@
     const bodyEl = getEl("egm-linker-current-body");
     if (
       !(pathInput instanceof HTMLInputElement) ||
+      !(destinationInput instanceof HTMLSelectElement) ||
       !(checkBtn instanceof HTMLButtonElement) ||
       !(createBtn instanceof HTMLButtonElement) ||
       !(previewEl instanceof HTMLElement) ||
@@ -1089,6 +1107,7 @@
 
     const setBusy = (busy) => {
       pathInput.disabled = busy;
+      destinationInput.disabled = busy;
       checkBtn.disabled = busy;
       createBtn.disabled = busy || !lastCanCreate;
     };
@@ -1100,7 +1119,7 @@
         const cell = document.createElement("td");
         cell.colSpan = 4;
         cell.className = "muted";
-        cell.textContent = "Check a campaign path to see whether it is available.";
+        cell.textContent = "برای بررسی، مسیر کمپین را وارد کنید.";
         row.appendChild(cell);
         bodyEl.appendChild(row);
         return;
@@ -1120,16 +1139,16 @@
         link.rel = "noopener";
         link.textContent = campaignUrl;
         campaignCell.appendChild(link);
-        typeCell.textContent = String(existing.redirect_type_label || "Normal Redirect");
+        typeCell.textContent = String(existing.redirect_type_label || "تغییر مسیر عادی");
         targetCell.textContent = String(existing.target || "");
-        statusCell.textContent = data.owned_by_task_club
-          ? "Already points to Event Guest Manager"
-          : "Occupied";
+        statusCell.textContent = data.owned_by_egm
+          ? "پیش‌تر به همین مقصد وصل شده است"
+          : "اشغال‌شده";
       } else {
         campaignCell.textContent = campaignUrl;
-        typeCell.textContent = String(data.redirect_type_label || "Logger Redirect");
-        targetCell.textContent = String(data.target || "/mini%20apps/Event%20Guest%20Manager/index.php");
-        statusCell.textContent = "Available";
+        typeCell.textContent = String(data.redirect_type_label || "تغییر مسیر ثبت‌شده");
+        targetCell.textContent = String(data.target || "");
+        statusCell.textContent = "در دسترس";
       }
       row.append(campaignCell, typeCell, targetCell, statusCell);
       bodyEl.appendChild(row);
@@ -1151,13 +1170,13 @@
       createBtn.disabled = true;
       renderLinkState(null);
       if (!path) {
-        setStatus("Enter a campaign path.", true);
+        setStatus("مسیر کمپین را وارد کنید.", true);
         return;
       }
       setBusy(true);
-      setStatus("Checking campaign path...");
+      setStatus("مسیر کمپین در حال بررسی است...");
       try {
-        const payload = await requestStorePost("check_campaign_link", { path });
+        const payload = await requestStorePost("check_campaign_link", { path, destination: destinationInput.value });
         const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
         renderLinkState(data);
         lastCheckedPath = String(data.path || path);
@@ -1165,14 +1184,14 @@
         createBtn.disabled = !lastCanCreate;
         if (data.available) {
           setStatus(`${data.campaign_url || `/campaigns/${path}`} is available.`);
-        } else if (data.owned_by_task_club) {
-          setStatus(`${data.campaign_url || `/campaigns/${path}`} already points to Event Guest Manager.`);
+        } else if (data.owned_by_egm) {
+          setStatus(`${data.campaign_url || `/campaigns/${path}`} already points to this destination.`);
         } else {
           setStatus(`${data.campaign_url || `/campaigns/${path}`} is already used by another redirect.`, true);
         }
       } catch (error) {
         renderLinkState(null);
-        setStatus(error?.message || "Failed to check campaign path.", true);
+        setStatus(error?.message || "بررسی مسیر کمپین ناموفق بود.", true);
       } finally {
         setBusy(false);
       }
@@ -1181,7 +1200,7 @@
     const createLink = async () => {
       const path = normalizeCampaignPath(pathInput.value);
       if (!path) {
-        setStatus("Enter a campaign path.", true);
+        setStatus("مسیر کمپین را وارد کنید.", true);
         return;
       }
       if (path !== lastCheckedPath || !lastCanCreate) {
@@ -1189,26 +1208,27 @@
         if (!lastCanCreate) return;
       }
       setBusy(true);
-      setStatus("Creating redirect...");
+      setStatus("لینک کوتاه در حال ساخت است...");
       try {
-        const payload = await requestStorePost("create_campaign_link", { path });
+        const payload = await requestStorePost("create_campaign_link", { path, destination: destinationInput.value });
         const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
         renderLinkState(data);
         lastCheckedPath = String(data.path || path);
         lastCanCreate = Boolean(data.can_create);
         createBtn.disabled = true;
-        setStatus(payload?.message || "Event Guest Manager campaign redirect created.");
+        setStatus(payload?.message || "لینک کوتاه ساخته شد.");
         if (typeof window.showDefaultToast === "function") {
-          window.showDefaultToast("Event Guest Manager campaign redirect created.");
+          window.showDefaultToast("لینک کوتاه ساخته شد.");
         }
       } catch (error) {
-        setStatus(error?.message || "Failed to create campaign redirect.", true);
+        setStatus(error?.message || "ساخت لینک کوتاه ناموفق بود.", true);
       } finally {
         setBusy(false);
       }
     };
 
     pathInput.addEventListener("input", updatePreview);
+    destinationInput.addEventListener("change", updatePreview);
     pathInput.addEventListener("blur", () => {
       pathInput.value = normalizeCampaignPath(pathInput.value);
       updatePreview();
@@ -1334,7 +1354,7 @@
       }
     } catch (error) {
       if (!dirty) {
-        setRewardAdvancedStatus(error?.message || "Failed to load advanced prize setting.", true);
+        setRewardAdvancedStatus(error?.message || "بارگذاری تنظیمات پیشرفته جوایز ناموفق بود.", true);
       }
     }
   }
@@ -1344,7 +1364,7 @@
     const showPrizeToggle = getEl("egm-reward-show-prize-toggle");
     const hiddenTextInput = getEl("egm-reward-hidden-prize-text");
     if (!(showPrizeToggle instanceof HTMLInputElement) || !(hiddenTextInput instanceof HTMLInputElement)) {
-      setRewardAdvancedStatus("Advanced prize fields were not found.", true);
+      setRewardAdvancedStatus("فیلدهای تنظیمات پیشرفته جوایز یافت نشدند.", true);
       return;
     }
     const rewardPrizeDisplay = {
@@ -1355,20 +1375,20 @@
       hiddenText: hiddenTextInput.value
     };
     if (!rewardPrizeDisplay.nonValuePrizeDescribe && !rewardPrizeDisplay.showPrize && String(rewardPrizeDisplay.hiddenText || "").trim() === "") {
-      setRewardAdvancedStatus("Enter replacement text before hiding prize values.", true);
+      setRewardAdvancedStatus("پیش از پنهان کردن ارزش جایزه، متن جایگزین را وارد کنید.", true);
       hiddenTextInput.focus();
       return;
     }
     if (saveBtn instanceof HTMLButtonElement) {
       saveBtn.disabled = true;
     }
-    setRewardAdvancedStatus("Saving...");
+    setRewardAdvancedStatus("در حال ذخیره...");
     try {
       await requestStorePost("save_reward_prize_display", { rewardPrizeDisplay });
       Object.assign(settingsCache, { rewardPrizeDisplay: normalizeRewardPrizeDisplay(rewardPrizeDisplay) });
-      setRewardAdvancedStatus("Saved.");
+      setRewardAdvancedStatus("ذخیره شد.");
     } catch (error) {
-      setRewardAdvancedStatus(error?.message || "Failed to save advanced prize setting.", true);
+      setRewardAdvancedStatus(error?.message || "ذخیره تنظیمات پیشرفته جوایز ناموفق بود.", true);
     } finally {
       if (saveBtn instanceof HTMLButtonElement) {
         saveBtn.disabled = false;
@@ -1440,9 +1460,9 @@
     const endDate = getEl("egm-duration-end");
     const endTime = getEl("egm-duration-end-time");
 
+    organizeControlPanel();
     initControlPanelTabs();
     initCampaignLinker();
-    initRewardGuide();
     const settings = await loadSettings();
     applySettings(settings);
     getEl("egm-admin-passcode-save")?.addEventListener("click", async event => {
@@ -1476,7 +1496,7 @@
     });
     getEl("egm-add-ticket-type")?.addEventListener("click", () => {
       const tickets = collectTicketTypes();
-      tickets.push({ id: `ticket-${Date.now()}`, title: `Ticket ${tickets.length + 1}` });
+      tickets.push({ id: `ticket-${Date.now()}`, title: `بلیت ${tickets.length + 1}` });
       renderTicketTypes(tickets);
       const input = getEl("egm-ticket-types")?.querySelector("[data-ticket-type-row]:last-child [data-ticket-title]");
       if (input instanceof HTMLInputElement) input.focus();
@@ -1491,15 +1511,16 @@
       }
       if (status) status.textContent = "";
       try {
-        await saveSettings(collectSettings());
+        const settings = collectSettings();
+        await saveSettings({ printSettings: settings.printSettings, customNumberTicketSettings: settings.customNumberTicketSettings });
         try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
-        if (status) status.textContent = "بلیت‌ها ذخیره شدند؛ صفحه در حال تازه‌سازی است...";
+        if (status) status.textContent = "تنظیمات چاپ و بلیت ذخیره شد؛ صفحه در حال تازه‌سازی است...";
         window.location.reload();
       } catch (error) {
-        if (status) status.textContent = error?.message || "ذخیره بلیت‌ها ناموفق بود.";
+        if (status) status.textContent = error?.message || "ذخیره تنظیمات چاپ و بلیت ناموفق بود.";
         if (button instanceof HTMLButtonElement) {
           button.disabled = false;
-          button.textContent = original || "ذخیره بلیت‌ها";
+          button.textContent = original || "ذخیره چاپ و بلیت";
         }
       }
     });
@@ -1510,8 +1531,6 @@
       if (rows.length <= 1) return;
       button.closest("[data-ticket-type-row]")?.remove();
     });
-    initRewardPrizeDisplay(settings);
-    initLandingEditor(settings);
     initAssignAdmin();
     activeToggle?.addEventListener("change", () => {
       syncToggles({ activeToggle, durationToggle });
@@ -1528,7 +1547,8 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "در حال ذخیره...";
       try {
-        await saveSettings(collectSettings());
+        const settings = collectSettings();
+        await saveSettings({ active: settings.active, duration: settings.duration, maintenanceMode: settings.maintenanceMode, eventAccessLocked: settings.eventAccessLocked, startDate: settings.startDate, startTime: settings.startTime, endDate: settings.endDate, endTime: settings.endTime });
         saveBtn.textContent = "ذخیره شد";
         try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
         window.setTimeout(() => { saveBtn.textContent = original; }, 1200);

@@ -1,5 +1,6 @@
 (() => {
   const API_URL = "mini%20apps/Event%20Guest%20Manager/egm_store.php";
+  const PERIOD_DRAW_URL = new URL("period_draw.php", document.currentScript?.src || location.href).href;
   const EGM_PRIZE_STATUS_INTERVAL_KEY = "__egmPrizeStatusInterval";
   const egmShellEl = document.querySelector(".egm-shell");
   const csrfToken = egmShellEl instanceof HTMLElement
@@ -153,6 +154,7 @@
               quantity,
               last: Number.isFinite(last) ? last : quantity,
               value,
+              rank: Number.parseInt(item?.rank ?? 0, 10) || 0,
               isFake: Boolean(item?.isFake)
             };
           })
@@ -270,11 +272,6 @@
               </label>
             </td>
             <td>
-              <label class="field standard-width" style="margin:0;">
-                <input type="text" data-field="onWheelName" value="${escapeHtml(prize.onWheelName ?? prize.name)}" />
-              </label>
-            </td>
-            <td>
               <span class="egm-status-pill">
                 <span class="egm-status-last">${escapeHtml(last)}</span>
                 <span class="egm-status-divider">/</span>
@@ -291,6 +288,10 @@
                 <input type="text" data-field="value" inputmode="decimal" value="${escapeHtml(formatPrizeValue(value))}" />
               </label>
             </td>
+            <td><label class="field" style="margin:0"><select data-field="rank" aria-label="رتبه جایزه">
+              <option value="0" ${!prize.rank ? "selected" : ""}>بدون رتبه</option>
+              ${[1,2,3,4].map(rank => `<option value="${rank}" ${Number(prize.rank) === rank ? "selected" : ""}>${["اول", "دوم", "سوم", "چهارم"][rank - 1]}</option>`).join("")}
+            </select></label></td>
             <td>
               <div class="egm-count-control">
                 <button type="button" class="btn egm-btn-count-add" data-action="add-count" title="افزودن به موجودی" aria-label="افزودن به موجودی">
@@ -348,14 +349,14 @@
 
     function getRowDraft(row) {
       const rowNameInput = row?.querySelector('[data-field="name"]');
-      const rowOnWheelNameInput = row?.querySelector('[data-field="onWheelName"]');
       const rowQuantityInput = row?.querySelector('[data-field="quantity"]');
       const rowValueInput = row?.querySelector('[data-field="value"]');
+      const rowRankInput = row?.querySelector('[data-field="rank"]');
       return {
         name: String(rowNameInput?.value ?? "").trim(),
-        onWheelName: String(rowOnWheelNameInput?.value ?? "").trim(),
         quantity: parseQuantity(rowQuantityInput?.value, 0),
-        value: parseValue(rowValueInput?.value, 0)
+        value: parseValue(rowValueInput?.value, 0),
+        rank: Number.parseInt(rowRankInput?.value ?? "0", 10) || 0
       };
     }
 
@@ -366,13 +367,12 @@
       const original = prizes[index];
       const draft = getRowDraft(row);
       const originalName = String(original?.name ?? "").trim();
-      const originalOnWheelName = String(original?.onWheelName ?? originalName).trim();
       const originalQuantity = parseQuantity(original?.quantity, 0);
       const originalValue = parseValue(original?.value, 0);
       return (
         draft.name !== originalName ||
-        draft.onWheelName !== originalOnWheelName ||
         draft.quantity !== originalQuantity ||
+        draft.rank !== (Number(original?.rank) || 0) ||
         Math.abs(draft.value - originalValue) > 0.000001
       );
     }
@@ -387,9 +387,9 @@
         const dirty = isDirtyRow(index, row);
 
         const rowNameInput = row.querySelector('[data-field="name"]');
-        const rowOnWheelNameInput = row.querySelector('[data-field="onWheelName"]');
         const rowQuantityInput = row.querySelector('[data-field="quantity"]');
         const rowValueInput = row.querySelector('[data-field="value"]');
+        const rowRankInput = row.querySelector('[data-field="rank"]');
         const saveBtn = row.querySelector('button[data-action="save"]');
         const deleteBtn = row.querySelector('button[data-action="delete"]');
         const countButtons = row.querySelectorAll('button[data-action="add-count"], button[data-action="sub-count"]');
@@ -397,9 +397,9 @@
         row.classList.toggle("egm-prize-row-locked", isLockedRow);
 
         if (rowNameInput) rowNameInput.disabled = isLockedRow;
-        if (rowOnWheelNameInput) rowOnWheelNameInput.disabled = isLockedRow;
         if (rowQuantityInput) rowQuantityInput.disabled = isLockedRow;
         if (rowValueInput) rowValueInput.disabled = isLockedRow;
+        if (rowRankInput) rowRankInput.disabled = isLockedRow;
 
         if (deleteBtn) {
           deleteBtn.disabled = isLockedRow || (isActiveRow && dirty);
@@ -478,7 +478,7 @@
     delete window[EGM_PRIZE_STATUS_INTERVAL_KEY];
 
     listEl.addEventListener("input", event => {
-      const field = event.target.closest('[data-field="name"], [data-field="onWheelName"], [data-field="quantity"], [data-field="value"]');
+      const field = event.target.closest('[data-field="name"], [data-field="quantity"], [data-field="value"], [data-field="rank"]');
       if (!field) {
         return;
       }
@@ -496,6 +496,9 @@
       }
 
       syncEditStateUI();
+    });
+    listEl.addEventListener("change", event => {
+      if (event.target?.matches?.('[data-field="rank"]')) event.target.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     listEl.addEventListener("click", async event => {
@@ -560,11 +563,10 @@
           return;
         }
         const nameInput = row.querySelector('[data-field="name"]');
-        const onWheelNameInput = row.querySelector('[data-field="onWheelName"]');
         const quantityInput = row.querySelector('[data-field="quantity"]');
+        const rankInput = row.querySelector('[data-field="rank"]');
         const valueInput = row.querySelector('[data-field="value"]');
         const name = String(nameInput?.value ?? "").trim();
-        const onWheelName = String(onWheelNameInput?.value ?? "").trim();
         if (!name) {
           nameInput?.focus();
           return;
@@ -573,8 +575,6 @@
         const value = parseValue(valueInput?.value, 0);
         const previousQuantity = parseQuantity(prizes[index]?.quantity, 0);
         const previousLast = parseQuantity(prizes[index]?.last, previousQuantity);
-        const previousOnWheelName = String(prizes[index]?.onWheelName ?? "").trim();
-        const nextOnWheelName = onWheelName || previousOnWheelName || name;
         const nextLast = quantity === previousQuantity
           ? Math.min(previousLast, quantity)
           : quantity;
@@ -582,10 +582,11 @@
         nextPrizes[index] = {
           ...prizes[index],
           name,
-          onWheelName: nextOnWheelName,
+          onWheelName: String(prizes[index]?.onWheelName ?? name).trim() || name,
           quantity,
           last: nextLast,
           value,
+          rank: Number.parseInt(rankInput?.value ?? "0", 10) || 0,
           isFake: false
         };
         if (!await savePrizes([...nextPrizes, ...fakeItems])) return;
@@ -608,15 +609,18 @@
       }
       const quantity = parseQuantity(quantityInput.value, 1);
       const value = parseValue(valueInput.value, 0);
-      const nextPrizes = [...prizes, { id: makePrizeId(), name, onWheelName: name, quantity, last: quantity, value, isFake: false }];
+      const rank = Number.parseInt(document.getElementById("egm-prize-rank")?.value ?? "0", 10) || 0;
+      const nextPrizes = [...prizes, { id: makePrizeId(), name, onWheelName: name, quantity, last: quantity, value, rank, isFake: false }];
       if (!await savePrizes([...nextPrizes, ...fakeItems])) return;
       prizes = nextPrizes;
       renderPrizes(prizes, listEl);
       nameInput.value = "";
       quantityInput.value = "1";
+      const rankInput = document.getElementById("egm-prize-rank");
+      if (rankInput) rankInput.value = "0";
       valueInput.value = "";
-      nameInput.focus();
       syncEditStateUI();
+      form.closest('[data-egm-flow]')?.dispatchEvent(new CustomEvent('egm-flow-open', {detail:{index:0}}));
     });
 
     fakeForm?.addEventListener("submit", async event => {
@@ -703,7 +707,7 @@
             <select class="egm-prize-level-control" data-field="level-type">
               <option value="value_sum" ${normalizeLevelType(level.type) === "value_sum" ? "selected" : ""}>مجموع ارزش جوایز</option>
               <option value="out_of_value" ${normalizeLevelType(level.type) === "out_of_value" ? "selected" : ""}>خارج از ارزش جایزه</option>
-              <option value="pot" ${isPot ? "selected" : ""}>Pot</option>
+              <option value="pot" ${isPot ? "selected" : ""}>قرعه‌کشی</option>
             </select>
           </td>
           <td>
@@ -719,10 +723,8 @@
           <td>
             <div class="tct-action-wrap">
               ${isOutOfValue || isPot ? '<button type="button" class="btn ghost" data-action="edit-level-description">توضیحات</button>' : ''}
-              ${isPot ? '<button type="button" class="btn ghost" data-action="edit-pot-settings">Pot Settings</button>' : ''}
-              ${isPot ? `<a class="btn ghost" href="mini%20apps/Event%20Guest%20Manager/pot_draw.php?level_id=${encodeURIComponent(level.id)}" target="_blank" rel="noopener">Open Draw</a>` : ''}
-              ${isPot ? `<a class="btn ghost" href="mini%20apps/Event%20Guest%20Manager/pot_export.php?level_id=${encodeURIComponent(level.id)}">Export</a>` : ''}
-              ${isPot ? '<button type="button" class="btn ghost" data-action="reset-pot-winners">Reset Winners</button>' : ''}
+              ${isPot ? '<button type="button" class="btn ghost" data-action="edit-pot-settings">تنظیمات قرعه‌کشی</button>' : ''}
+              ${isPot ? `<a class="btn ghost" href="${escapeHtml(PERIOD_DRAW_URL)}?level_id=${encodeURIComponent(level.id)}" target="_blank" rel="noopener">نمایش قرعه‌کشی بازهٔ فعال</a>` : ''}
               <button type="button" class="btn ghost" data-action="remove-level">حذف</button>
             </div>
           </td>
@@ -758,13 +760,13 @@
       const overlay = document.createElement("div");
       overlay.className = "egm-prize-level-modal";
       overlay.innerHTML = `
-        <div class="egm-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="Pot settings">
-          <div class="section-header"><h3>Pot Settings</h3></div>
-          <label class="field full"><span>Draw title</span><input type="text" data-pot-field="title" maxlength="160" value="${escapeHtml(settings.title)}" /></label>
-          <label class="field full"><span>Maximum winners</span><input type="number" data-pot-field="winnerLimit" min="1" max="1000" step="1" value="${settings.winnerLimit}" /></label>
-          <label class="field full"><span>Prize name</span><input type="text" data-pot-field="prizeName" maxlength="160" value="${escapeHtml(settings.prizeName)}" /></label>
+        <div class="egm-prize-level-modal-card" role="dialog" aria-modal="true" aria-label="تنظیمات قرعه‌کشی">
+          <div class="section-header"><h3>تنظیمات قرعه‌کشی</h3></div>
+          <label class="field full"><span>عنوان قرعه‌کشی</span><input type="text" data-pot-field="title" maxlength="160" value="${escapeHtml(settings.title)}" /></label>
+          <label class="field full"><span>تعداد برندگان</span><input type="number" data-pot-field="winnerLimit" min="1" max="1000" step="1" value="${settings.winnerLimit}" /></label>
+          <label class="field full"><span>نام جایزه</span><input type="text" data-pot-field="prizeName" maxlength="160" value="${escapeHtml(settings.prizeName)}" /></label>
           <label class="switch egm-switch">
-            <span class="switch-label">Lock draw and publish the final result</span>
+            <span class="switch-label">نهایی‌کردن قرعه‌کشی</span>
             <span class="switch-toggle">
               <input type="checkbox" data-pot-field="locked" ${settings.locked ? "checked" : ""} />
               <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -772,8 +774,8 @@
           </label>
           <p class="muted small" data-pot-status aria-live="polite"></p>
           <div class="egm-action-bar">
-            <button type="button" class="btn primary standard-primary-button" data-action="save-pot-settings">Save</button>
-            <button type="button" class="btn ghost" data-action="close-pot-settings">Close</button>
+            <button type="button" class="btn primary standard-primary-button" data-action="save-pot-settings">ذخیره</button>
+            <button type="button" class="btn ghost" data-action="close-pot-settings">بستن</button>
           </div>
         </div>`;
       document.body.appendChild(overlay);
@@ -797,7 +799,7 @@
         }, level.name);
         const dialogStatus = overlay.querySelector("[data-pot-status]");
         if (nextSettings.locked && !nextSettings.prizeName) {
-          if (dialogStatus) dialogStatus.textContent = "Prize name is required before locking the draw.";
+          if (dialogStatus) dialogStatus.textContent = "نام جایزه is required before locking the draw.";
           prizeNameField?.focus();
           return;
         }
@@ -811,21 +813,21 @@
             });
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || payload?.status !== "ok") {
-              throw new Error(payload?.message || "Unable to check Pot winners.");
+              throw new Error(payload?.message || "بررسی برندگان ناموفق بود.");
             }
             if (!Array.isArray(payload.winners) || payload.winners.length < 1) {
-              if (dialogStatus) dialogStatus.textContent = "Confirm at least one winner before locking the draw.";
+              if (dialogStatus) dialogStatus.textContent = "پیش از نهایی‌کردن، یک برنده را تأیید کنید.";
               return;
             }
           } catch (error) {
-            if (dialogStatus) dialogStatus.textContent = error?.message || "Unable to check Pot winners.";
+            if (dialogStatus) dialogStatus.textContent = error?.message || "بررسی برندگان ناموفق بود.";
             return;
           }
         }
         const nextLevels = levels.map((item, itemIndex) => itemIndex === index
           ? { ...item, potSettings: nextSettings }
           : item);
-        if (await persistLevels(nextLevels, "Pot settings saved.")) {
+        if (await persistLevels(nextLevels, "تنظیمات قرعه‌کشی saved.")) {
           overlay.remove();
         }
       });
@@ -843,14 +845,14 @@
             <h3>توضیحات</h3>
           </div>
           <label class="field full">
-            <span>Button Text</span>
+            <span>متن دکمه</span>
             <input type="text" data-level-description-field="buttonText" autocomplete="off" maxlength="80" value="${escapeHtml(level.buttonText || "")}" />
           </label>
           <label class="field full">
             <span>توضیحات</span>
             <div class="egm-rich-text-tools" aria-label="ابزارهای ویرایش توضیحات">
               <button type="button" class="btn ghost" data-level-description-format="bold" title="ضخیم" aria-label="ضخیم"><strong>B</strong></button>
-              <button type="button" class="btn ghost" data-level-description-format="list" title="فهرست" aria-label="فهرست">List</button>
+              <button type="button" class="btn ghost" data-level-description-format="list" title="فهرست" aria-label="فهرست">فهرست</button>
             </div>
             <textarea data-level-description-field="description" rows="9">${escapeHtml(level.description || "")}</textarea>
           </label>
@@ -1004,11 +1006,11 @@
           });
           const payload = await response.json();
           if (!response.ok || payload?.status !== "ok") {
-            throw new Error(payload?.message || "Failed to reset Pot winners.");
+            throw new Error(payload?.message || "بازنشانی برندگان ناموفق بود.");
           }
           setStatus("Pot winners cleared.");
         } catch (error) {
-          setStatus(error?.message || "Failed to reset Pot winners.", true);
+          setStatus(error?.message || "بازنشانی برندگان ناموفق بود.", true);
         } finally {
           resetPotBtn.disabled = false;
         }
@@ -1083,14 +1085,97 @@
       .join("");
   }
 
+  function initCompetitionQueue() {
+    const list = document.getElementById("egm-competition-queue-list");
+    const rankSelect = document.getElementById("egm-competition-queue-rank");
+    const add = document.getElementById("egm-competition-queue-add");
+    const save = document.getElementById("egm-competition-queue-save");
+    const status = document.getElementById("egm-competition-queue-status");
+    const count = document.getElementById("egm-competition-queue-count");
+    if (!list || !rankSelect || !add || !save || !status) return;
+    const names = {1: "اول", 2: "دوم", 3: "سوم", 4: "چهارم"};
+    let queue = [];
+    let version = "";
+    const request = async (action, extra = {}) => {
+      const response = await fetch("mini%20apps/Event%20Guest%20Manager/competition_prizes.php", {
+        method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({action, csrf: csrfToken, ...extra})
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.status !== "ok") throw new Error(result.message || "درخواست ناموفق بود.");
+      return result;
+    };
+    const render = () => {
+      if (count) count.textContent = `${queue.length.toLocaleString("fa-IR")} جایزه`;
+      list.replaceChildren();
+      if (!queue.length) {
+        const empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = "صف خالی است.";
+        list.append(empty);
+      }
+      queue.forEach((rank, index) => {
+        const item = document.createElement("div");
+        item.className = "egm-queue-item";
+        const label = document.createElement("span");
+        label.textContent = `${index + 1}. ${names[rank]}`;
+        item.append(label);
+        [["up", "↑", "بالاتر"], ["down", "↓", "پایین‌تر"], ["remove", "×", "حذف"]].forEach(([action, text, title]) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = text;
+          button.title = title;
+          button.setAttribute("aria-label", `${title} رتبه ${index + 1}`);
+          button.dataset.action = action;
+          button.dataset.index = String(index);
+          button.disabled = (action === "up" && index === 0) || (action === "down" && index === queue.length - 1);
+          item.append(button);
+        });
+        list.append(item);
+      });
+    };
+    list.addEventListener("click", event => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      if (button.dataset.action === "remove") queue.splice(index, 1);
+      else {
+        const other = index + (button.dataset.action === "up" ? -1 : 1);
+        if (other >= 0 && other < queue.length) [queue[index], queue[other]] = [queue[other], queue[index]];
+      }
+      render();
+    });
+    add.addEventListener("click", () => {
+      if (queue.length >= 100) { status.textContent = "حداکثر ۱۰۰ جایزه در صف مجاز است."; return; }
+      queue.push(Number(rankSelect.value));
+      status.textContent = "";
+      render();
+    });
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      status.textContent = "در حال ذخیره...";
+      try {
+        const result = await request("save_queue", {queue, version});
+        version = result.queueVersion;
+        status.textContent = "صف ذخیره شد.";
+      } catch (error) { status.textContent = error.message; }
+      finally { save.disabled = false; }
+    });
+    request("settings_state").then(result => {
+      queue = result.queueTemplate || [];
+      version = result.queueVersion;
+      render();
+    }).catch(error => { status.textContent = error.message; });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       initPrizeForm();
-      initPrizeLevels();
+      initCompetitionQueue();
     });
   } else {
     initPrizeForm();
-    initPrizeLevels();
+    initCompetitionQueue();
   }
 })();
 

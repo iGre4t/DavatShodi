@@ -15,7 +15,13 @@ try {
     if (!in_array($action, ['list', 'state', 'export'], true) && $method !== 'POST') { http_response_code(405); exit; }
     if ($method === 'POST' && !egmSecurityIsValidCsrfToken(egmSecurityReadCsrfFromRequest($input))) { http_response_code(403); exit; }
     $context = egmPeriodInvitesContext(__DIR__);
-    $period = egmPeriodInvitesValidatePeriod($context, (string)($input['period_code'] ?? ''));
+    $activeOnly = in_array($action, ['state', 'roll', 'confirm', 'ensure_pot'], true);
+    $activePeriod = $activeOnly ? egmPeriodDrawActiveCode($context) : '';
+    $requestedPeriod = trim((string)($input['period_code'] ?? ''));
+    if ($activeOnly && $requestedPeriod !== '' && $requestedPeriod !== $activePeriod) {
+        throw new InvalidArgumentException('این قرعه‌کشی فقط در بازهٔ فعال قابل اجراست.');
+    }
+    $period = egmPeriodInvitesValidatePeriod($context, $activeOnly ? $activePeriod : $requestedPeriod);
     if (!egmPeriodDrawCanAccess($context, $user, $period)) denyPanelAccess(403, 'دسترسی قرعه‌کشی این بازه مجاز نیست.', true);
     $actor = (string)($user['code'] ?? '');
     if ($actor === '') denyPanelAccess(403, 'Invalid panel user.', true);

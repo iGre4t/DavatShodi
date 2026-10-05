@@ -1,9 +1,117 @@
-/* Shared base UI styles come from ../style/styles.css. Keep only Wheel-specific rules here. */
+/* EGM uses the shared panel's colors, typography and form controls. */
 
 .egm-shell .egm-switch-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.egm-shell [data-egm-control-panel-section="general"] > .card,
+.egm-shell [data-egm-control-panel-section="seating"] .card,
+.egm-shell [data-egm-control-panel-section="printing"] .card {
+  max-width: 900px;
+}
+
+.egm-shell #egm-texts-card .egm-switch-grid,
+.egm-shell [data-egm-print-switches] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.egm-shell #egm-texts-card .egm-datetime-grid {
+  max-width: 720px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas: "start-title start-title" "start start-time" "end-title end-title" "end end-time";
+  justify-items: stretch;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.egm-shell #egm-texts-card .egm-datetime-grid .field {
+  width: 100%;
+  margin: 0;
+}
+
+.egm-shell #egm-texts-card .egm-datetime-title--end {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 14px;
+  margin-top: 4px;
+}
+
+.egm-shell #egm-texts-card .egm-datetime-empty { display: none; }
+
+.egm-shell .egm-control-save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.egm-shell .egm-period-winner-group {
+  padding: 16px;
+  margin-top: 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.egm-shell .egm-period-winner-group h4 { margin: 0; }
+.egm-shell .egm-period-winner-list { display: grid; gap: 8px; margin: 12px 0; }
+.egm-shell .egm-period-winner-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: #f7faff;
+  color: var(--muted, #64748b);
+}
+.egm-shell .egm-period-winner-row strong { color: var(--text, #111827); }
+
+.egm-shell .egm-task-top-nav.egm-control-nav {
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow: visible;
+  border-bottom: 0;
+}
+
+.egm-shell .egm-control-nav .egm-task-top-item,
+.egm-shell .egm-control-nav .egm-task-top-item + .egm-task-top-item {
+  flex: 1 1 130px;
+  min-width: 115px;
+  margin: 0;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+
+.egm-shell .egm-control-nav .egm-task-top-item.active {
+  background: #e8f1ff;
+  border-color: #c4ddff;
+}
+
+.egm-shell [data-egm-control-panel-section="seating"] [data-seat-rows] {
+  width: 100%;
+  min-height: 150px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  outline: none;
+  resize: vertical;
+  background: #fff;
+  color: var(--text, #111827);
+}
+
+.egm-shell [data-egm-control-panel-section="seating"] [data-seat-rows]:focus {
+  border-color: var(--primary, #2878db);
+  box-shadow: 0 0 0 3px var(--primary-focus, rgba(40, 120, 219, .15));
+}
+
+@media (max-width: 640px) {
+  .egm-shell #egm-texts-card .egm-switch-grid,
+  .egm-shell [data-egm-print-switches],
+  .egm-shell #egm-texts-card .egm-datetime-grid { grid-template-columns: 1fr; }
+  .egm-shell #egm-texts-card .egm-datetime-grid { grid-template-areas: "start-title" "start" "start-time" "end-title" "end" "end-time"; }
 }
 
 .egm-shell .egm-reward-advanced-switch-grid {
@@ -2990,3 +3098,158 @@ body.egm-period-invitee-editor-open {
   }
 }
 
+.egm-shell .egm-game-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid #e2e8f0}
+.egm-shell .egm-game-row input[type="text"],.egm-shell .egm-game-row input:not([type]){min-width:200px;max-width:360px;flex:1}
+.egm-shell [data-period-games-list] .egm-game-row{cursor:pointer}
+.egm-shell .egm-game-block,.egm-shell .egm-period-game-block{padding:8px 0;border-bottom:1px solid #e2e8f0}
+.egm-shell .egm-game-block>.egm-game-row,.egm-shell .egm-period-game-block>.egm-game-row{border-bottom:0}
+.egm-shell .egm-game-levels,.egm-shell .egm-game-teams{margin:4px 28px 10px 0;padding:10px 14px;border-radius:12px;background:#f7faff}
+.egm-shell .egm-game-levels h4{margin:0 0 8px;font-size:.95rem}
+.egm-shell .egm-game-levels .egm-game-row:last-child,.egm-shell .egm-game-teams .egm-game-row:last-child{border-bottom:0}
+.egm-shell .egm-game-level{padding:8px 0;border-bottom:1px solid #dce6f2}
+.egm-shell .egm-game-level:last-child{border-bottom:0}
+.egm-shell .egm-game-rooms{margin:4px 20px 10px 0;padding:10px 14px;border-radius:10px;background:#fff;border:1px solid #e2e8f0}
+.egm-shell .egm-game-rooms h5{margin:0 0 4px;font-size:.9rem}
+.egm-shell .egm-game-rooms .egm-game-row:last-child{border-bottom:0}
+.egm-shell .egm-games-catalog{max-width:960px}
+.egm-shell .egm-refmonitor-link{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:0 0 20px;padding:14px;border:1px solid #dce6f2;border-radius:12px;background:#f7faff}
+.egm-shell .egm-refmonitor-link .field{flex:1;min-width:240px}
+.egm-shell .egm-refmonitor-link input{width:100%;box-sizing:border-box;background:#fff;text-align:left}
+.egm-shell .egm-games-create{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.egm-shell .egm-games-create .field{flex:1;min-width:220px}
+.egm-shell .egm-games-create .field input{width:100%;box-sizing:border-box}
+.egm-shell .egm-games-list,.egm-shell .egm-games-section{border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;background:#fff}
+.egm-shell .egm-games-section{margin-top:22px;padding:18px}
+.egm-shell .egm-games-nav{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border:0;border-bottom:1px solid #e2e8f0;background:#fff;color:inherit;text-align:right;cursor:pointer;font:inherit}
+.egm-shell .egm-games-nav:last-child{border-bottom:0}
+.egm-shell .egm-games-nav:hover,.egm-shell .egm-games-nav:focus-visible{background:#f7faff}
+.egm-shell .egm-games-nav span:first-child,.egm-shell .egm-games-item>div{display:grid;gap:4px}
+.egm-shell .egm-games-nav small,.egm-shell .egm-games-item small{color:#64748b;font-size:.85rem}
+.egm-shell .egm-games-back{border:0;background:none;color:#2563a5;cursor:pointer;font:inherit;padding:4px 0 16px}
+.egm-shell .egm-games-title,.egm-shell .egm-games-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.egm-shell .egm-games-title h3,.egm-shell .egm-games-section h4,.egm-shell .egm-games-settings h4{margin:0}
+.egm-shell .egm-games-title p{margin:0;color:#64748b}
+.egm-shell .egm-games-settings{margin-top:20px;padding:20px;border:1px solid #e2e8f0;border-radius:14px;background:#f7faff}
+.egm-shell .egm-games-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
+.egm-shell .egm-games-fields .field,.egm-shell .egm-games-inline-form .field{min-width:0}
+.egm-shell .egm-games-fields input,.egm-shell .egm-games-fields select,.egm-shell .egm-games-inline-form input,.egm-shell .egm-games-inline-form select{width:100%;box-sizing:border-box}
+.egm-shell .egm-games-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}
+.egm-shell .egm-games-inline-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end;padding:16px;margin-top:14px;border-radius:12px;background:#f7faff}
+.egm-shell .egm-games-inline-form .egm-games-form-actions{grid-column:1/-1;margin-top:0}
+.egm-shell .egm-games-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #e2e8f0}
+.egm-shell .egm-games-item:last-of-type{border-bottom:0}
+.egm-shell .egm-period-excel-edit-row td{background:#f7faff;padding:16px}
+.egm-shell .egm-period-excel-edit-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end}
+.egm-shell .egm-period-excel-edit-form .field{min-width:0}
+.egm-shell .egm-period-excel-edit-form input{width:100%;box-sizing:border-box}
+.egm-shell .egm-period-excel-edit-form .egm-period-actions{align-self:end}
+@media(max-width:640px){.egm-shell .egm-games-fields,.egm-shell .egm-games-inline-form{grid-template-columns:1fr}.egm-shell .egm-games-section,.egm-shell .egm-games-settings{padding:14px}}
+.egm-shell .egm-prize-entry-window {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border, #dce5f0);
+  border-radius: 16px;
+  background: var(--surface, #fff);
+}
+.egm-shell .egm-prize-entry-window-fields { margin-top: 14px; }
+.egm-shell .egm-prize-entry-window-fields[hidden] { display: none; }
+.egm-competition-queue-list{display:flex;flex-wrap:wrap;gap:10px;min-height:46px;align-items:center}
+.egm-queue-item{display:inline-flex;align-items:center;gap:6px;border:1px solid #dbe4f1;border-radius:14px;padding:5px 8px;background:#f7faff;color:#25446d}
+.egm-queue-item span{padding:0 6px;font-weight:700}
+.egm-queue-item button{border:0;border-radius:8px;background:#e9f0fa;color:#305887;min-width:27px;min-height:27px;cursor:pointer}
+.egm-queue-item button:hover:not(:disabled){background:#d5e7ff}
+.egm-queue-item button:disabled{opacity:.35;cursor:default}
+
+/* One form language for event, period, game, card and modal settings. */
+.egm-shell { --egm-surface: #f8fafc; direction: rtl; }
+.egm-shell [hidden] { display: none !important; }
+:is(.egm-shell, .egm-creator-shell) .egm-standard-control {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background-color: #fff;
+  color: var(--text, #111111);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.egm-shell select.egm-standard-control { padding-inline-end: 40px; }
+.egm-shell textarea.egm-standard-control { min-height: 112px; resize: vertical; }
+:is(.egm-shell, .egm-creator-shell) .egm-standard-control:focus {
+  border-color: var(--primary, #1d75e1);
+  box-shadow: 0 0 0 3px var(--primary-focus, rgba(29,117,225,.12));
+}
+.egm-shell .egm-standard-control:disabled { background-color: var(--egm-surface); color: var(--muted); }
+.egm-shell .egm-standard-control[readonly] { background-color: var(--egm-surface); }
+.egm-shell .field { min-width: 0; gap: 8px; }
+.egm-shell .field > span:first-child { color: var(--text); font-weight: 500; }
+.egm-shell .card { border-radius: 14px; padding: 22px; }
+.egm-shell .section-header { gap: 14px; margin-bottom: 20px; }
+.egm-shell .section-header h3 { font-size: 17px; }
+.egm-shell .btn { min-height: 42px; border-radius: 10px; font: inherit; }
+.egm-shell .btn:focus-visible, .egm-shell .egm-flow-step:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 3px;
+}
+.egm-shell .egm-switch { min-height: 56px; padding: 12px 14px; border-radius: 12px; }
+.egm-shell .egm-switch-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.egm-shell .egm-helper-copy { display: none; }
+.egm-shell .egm-flow-managed-save { display: none; }
+.egm-shell [aria-live]:empty { display: none; }
+.egm-shell .egm-navigation-search { margin: 0 0 14px; min-height: 42px; font-size: 13px; }
+.egm-shell .egm-flow-nav {
+  display: flex; gap: 8px; padding: 6px;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--egm-surface); margin-bottom: 22px;
+  overflow-x: auto;
+}
+.egm-shell .egm-flow-step {
+  flex: 1 0 auto; display: flex; justify-content: center; align-items: center;
+  gap: 9px; border: 1px solid transparent; border-radius: 10px;
+  padding: 11px 14px; background: transparent; color: var(--muted);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.egm-shell .egm-flow-step.active { background: #fff; color: var(--primary); border-color: var(--primary-border-soft, #b7d4f8); }
+.egm-shell .egm-flow-number {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 50%; background: #e8edf3; color: var(--muted); font-size: 12px;
+}
+.egm-shell .egm-flow-step.active .egm-flow-number { background: var(--primary); color: #fff; }
+.egm-shell .egm-flow-panel { display: grid; gap: 20px; min-width: 0; }
+.egm-shell .egm-flow-panel > .card { margin: 0; }
+.egm-shell .egm-flow-footer {
+  display: flex; align-items: center; gap: 12px; position: sticky;
+  bottom: 0; z-index: 4; padding: 14px 0; margin-top: 22px;
+  background: #fff; border-top: 1px solid var(--border);
+}
+.egm-shell .egm-flow-progress { margin-inline-start: auto; font-size: 13px; color: var(--muted); }
+.egm-shell .egm-flow-footer .btn.primary { min-width: 160px; }
+.egm-shell .egm-settings-block, .egm-shell .egm-settings-final { display: grid; gap: 18px; }
+.egm-shell .egm-settings-block h4 { margin: 0; font-size: 15px; }
+.egm-shell .egm-period-operations {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 22px; border-top: 1px solid var(--border);
+}
+.egm-shell .egm-period-operations h4 { width: 100%; margin: 0 0 4px; font-size: 14px; color: var(--muted); }
+.egm-shell .egm-card-test-controls { display: grid; gap: 16px; margin-bottom: 20px; }
+.egm-shell [data-egm-invite-card-pane][data-egm-flow] { grid-template-columns: minmax(0, 1fr); }
+.egm-shell [data-egm-flow] > .egm-flow-nav,
+.egm-shell [data-egm-flow] > .egm-flow-panel,
+.egm-shell [data-egm-flow] > .egm-flow-footer { grid-column: 1 / -1; }
+.egm-shell .egm-games-title { margin-bottom: 18px; }
+.egm-shell .egm-games-settings, .egm-shell .egm-games-section { margin-top: 0; background: #fff; }
+.egm-shell .egm-flow-panel .egm-datetime-grid { max-width: 760px; width: 100%; }
+@media (max-width: 680px) {
+  .egm-shell .card { padding: 16px; }
+  .egm-shell .egm-flow-step { padding: 10px; font-size: 13px; }
+  .egm-shell .egm-flow-number { width: 22px; height: 22px; }
+  .egm-shell .egm-flow-footer { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  .egm-shell .egm-flow-footer .btn.primary { min-width: 0; flex: 1; }
+  .egm-shell .egm-switch-grid { grid-template-columns: 1fr; }
+}

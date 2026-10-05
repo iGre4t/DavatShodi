@@ -24,7 +24,7 @@ function renderEgmGroupsPane(string $endpoint, bool $active = false): void
             <input type="hidden" name="id" />
             <label class="field"><span>عنوان گروه</span><input name="title" type="text" maxlength="100" required /></label>
             <fieldset class="egm-groups-output-fieldset"><legend>موارد قابل چاپ پس از ورود موفق</legend><div data-egm-group-outputs></div></fieldset>
-            <p class="hint">این انتخاب‌ها برای اعضای گروه جایگزین همه کلیدهای پیش‌فرض چاپ می‌شوند و خروجی‌های انتخاب‌شده خودکار وارد صف چاپ خواهند شد. اگر هیچ موردی فعال نباشد، برای اعضای این گروه چیزی چاپ نمی‌شود.</p>
+            <p class="hint" data-ui-critical>انتخاب‌های این گروه جایگزین تنظیمات پیش‌فرض چاپ می‌شود.</p>
             <div class="egm-groups-dialog-actions"><button type="submit" class="btn primary">ذخیره تنظیمات</button><button type="button" class="btn danger" data-egm-group-delete>حذف گروه</button></div>
           </form>
         </div>

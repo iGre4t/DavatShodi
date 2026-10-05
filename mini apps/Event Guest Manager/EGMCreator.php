@@ -351,7 +351,7 @@ function egmCreatorCopyEventGuestManagerTemplate(string $sourceDir, string $targ
     }
     egmCreatorEnsureDirectory(dirname($destination));
     if (!egmDbCopy($sourcePath, $destination)) {
-      throw new RuntimeException('Failed to copy file: ' . $relative);
+      throw new RuntimeException('کپی فایل ناموفق بود: ' . $relative);
     }
     egmCreatorPatchGeneratedFile($destination, $relative, $folderName, $webPath);
   }
@@ -360,7 +360,7 @@ function egmCreatorCopyEventGuestManagerTemplate(string $sourceDir, string $targ
 function egmCreatorCopyEventGuestManagerUpdates(string $sourceDir, string $targetDir, string $folderName, string $webPath): void
 {
   if (!is_dir($targetDir) || !egmCreatorIsWithinPath($targetDir, egmCreatorMissionsRoot())) {
-    throw new RuntimeException('Invalid Event Guest Manager target directory.');
+    throw new RuntimeException('مسیر رویداد معتبر نیست.');
   }
   $sourceDir = rtrim($sourceDir, DIRECTORY_SEPARATOR);
   $iterator = new RecursiveIteratorIterator(
@@ -381,7 +381,7 @@ function egmCreatorCopyEventGuestManagerUpdates(string $sourceDir, string $targe
     }
     egmCreatorEnsureDirectory(dirname($destination));
     if (!egmDbCopy($sourcePath, $destination)) {
-      throw new RuntimeException('Failed to update file: ' . $relative);
+      throw new RuntimeException('به‌روزرسانی فایل ناموفق بود: ' . $relative);
     }
     egmCreatorPatchGeneratedFile($destination, $relative, $folderName, $webPath);
   }
@@ -393,14 +393,14 @@ function egmCreatorInitializeMission(string $targetDir, string $name): void
   egmCreatorEnsureDirectory($targetDir . DIRECTORY_SEPARATOR . 'EGM Event');
 
   if (egmDbFilePutContents($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'tasks.js', "window.EGM_TASKS = [];\n", LOCK_EX) === false) {
-    throw new RuntimeException('Failed to initialize task store.');
+    throw new RuntimeException('آماده‌سازی بازه‌ها ناموفق بود.');
   }
   egmCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'period-invites.json', [
     'source' => 'oeu',
     'periods' => []
   ]);
   if (egmDbFilePutContents($targetDir . DIRECTORY_SEPARATOR . 'EGM Event' . DIRECTORY_SEPARATOR . 'Answers.csv', "Work ID\n", LOCK_EX) === false) {
-    throw new RuntimeException('Failed to initialize answers store.');
+    throw new RuntimeException('آماده‌سازی اطلاعات رویداد ناموفق بود.');
   }
   egmCreatorWriteJsonFile($targetDir . DIRECTORY_SEPARATOR . 'Setting.json', [
     'active' => false,
@@ -452,7 +452,6 @@ function egmCreatorListMissions(): array
       'tabId' => egmCreatorMissionTabId($folder, $code),
       'directory' => $directory,
       'webPath' => $webPath,
-      'appUrl' => $webPath . '/EGMM.php',
       'panelUrl' => 'panel.php?tab=' . rawurlencode(egmCreatorMissionTabId($folder, $code)),
       'createdAt' => $createdAt,
       'createdAtLabel' => $createdAt !== '' ? $createdAt : '-'
@@ -481,7 +480,7 @@ function egmCreatorResolveMissionFolder(string $rawFolder): string
 {
   $folderName = egmCreatorNormalizeMissionName($rawFolder);
   if ($folderName === '') {
-    throw new InvalidArgumentException('Select a valid Event Guest Manager.');
+    throw new InvalidArgumentException('یک رویداد معتبر انتخاب کنید.');
   }
   return $folderName;
 }
@@ -491,13 +490,13 @@ function egmCreatorCreateMission(string $rawName): array
   egmCreatorEnsureGeneratorStorage();
   $folderName = egmCreatorNormalizeMissionName($rawName);
   if ($folderName === '') {
-    throw new InvalidArgumentException('Enter a valid Event Guest Manager name.');
+    throw new InvalidArgumentException('نام رویداد را وارد کنید.');
   }
 
   $missionsRoot = egmCreatorMissionsRoot();
   $targetDir = $missionsRoot . DIRECTORY_SEPARATOR . $folderName;
   if (egmDbFileExists($targetDir)) {
-    throw new InvalidArgumentException('A Event Guest Manager with this folder name already exists.');
+    throw new InvalidArgumentException('رویدادی با این نام پوشه وجود دارد.');
   }
 
   $buildDir = egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.build-' . date('YmdHis') . '-' . bin2hex(random_bytes(4));
@@ -507,7 +506,7 @@ function egmCreatorCreateMission(string $rawName): array
   try {
     egmCreatorCopyEventGuestManagerTemplate(__DIR__, $buildDir, $folderName, $webPath);
     if (!egmDbRename($buildDir, $targetDir)) {
-      throw new RuntimeException('Failed to publish generated Event Guest Manager.');
+      throw new RuntimeException('ساخت فایل‌های رویداد ناموفق بود.');
     }
     insertEgmRegistry(
       egmCreatorDatabase(),
@@ -527,7 +526,7 @@ function egmCreatorCreateMission(string $rawName): array
     $settingsRaw = egmDbFileGetContents($targetDir . DIRECTORY_SEPARATOR . 'Setting.json');
     $settings = is_string($settingsRaw) ? json_decode($settingsRaw, true) : null;
     if (!is_array($settings)) {
-      throw new RuntimeException('Failed to load initial EGM settings for database provisioning.');
+      throw new RuntimeException('بارگذاری تنظیمات اولیه رویداد ناموفق بود.');
     }
     egmInstanceWriteData($pdo, $code, 'settings', $settings);
     egmInstanceWritePeriods($pdo, $code, []);
@@ -561,7 +560,6 @@ function egmCreatorCreateMission(string $rawName): array
     'tabId' => egmCreatorMissionTabId($folderName, $code),
     'directory' => egmCreatorMissionDirectoryLabel($folderName),
     'webPath' => $webPath,
-    'appUrl' => $webPath . '/EGMM.php',
     'panelUrl' => 'panel.php?tab=' . rawurlencode(egmCreatorMissionTabId($folderName, $code)),
     'createdAt' => gmdate('c'),
     'createdAtLabel' => gmdate('c')
@@ -574,19 +572,19 @@ function egmCreatorUpdateMissionBranchSetting(string $rawFolder): array
   $folderName = egmCreatorResolveMissionFolder($rawFolder);
   $targetDir = egmCreatorMissionsRoot() . DIRECTORY_SEPARATOR . $folderName;
   if (!is_dir($targetDir) || !egmCreatorIsWithinPath($targetDir, egmCreatorMissionsRoot())) {
-    throw new InvalidArgumentException('Event Guest Manager was not found.');
+    throw new InvalidArgumentException('رویداد یافت نشد.');
   }
   $registryDirectory = egmCreatorMissionDirectoryLabel($folderName);
   $registryRecord = findEgmRegistryByDirectory(egmCreatorDatabase(), $registryDirectory);
   if (!is_array($registryRecord)) {
-    throw new InvalidArgumentException('Event Guest Manager is not registered in the database.');
+    throw new InvalidArgumentException('رویداد در پایگاه داده ثبت نشده است.');
   }
 
   $webPath = egmCreatorMissionWebPath($folderName);
   egmCreatorCopyEventGuestManagerUpdates(__DIR__, $targetDir, $folderName, $webPath);
 
   if (!updateEgmRegistry(egmCreatorDatabase(), (string)$registryRecord['code'], (string)$registryRecord['name'], $registryDirectory)) {
-    throw new RuntimeException('Failed to update the EGM database registry.');
+    throw new RuntimeException('ذخیره مشخصات رویداد ناموفق بود.');
   }
   ensureEgmInstanceTables(egmCreatorDatabase(), (string)$registryRecord['code']);
   egmInstanceWriteData(egmCreatorDatabase(), (string)$registryRecord['code'], 'metadata', [
@@ -607,7 +605,7 @@ function egmCreatorUpdateMissionBranchSetting(string $rawFolder): array
       return $mission;
     }
   }
-  throw new RuntimeException('Updated Event Guest Manager could not be reloaded.');
+  throw new RuntimeException('بازخوانی رویداد ناموفق بود.');
 }
 
 function egmCreatorDeleteMission(string $rawFolder): array
@@ -616,20 +614,20 @@ function egmCreatorDeleteMission(string $rawFolder): array
   $folderName = egmCreatorResolveMissionFolder($rawFolder);
   $targetDir = egmCreatorMissionsRoot() . DIRECTORY_SEPARATOR . $folderName;
   if (!is_dir($targetDir) || !egmCreatorIsWithinPath($targetDir, egmCreatorMissionsRoot())) {
-    throw new InvalidArgumentException('Event Guest Manager was not found.');
+    throw new InvalidArgumentException('رویداد یافت نشد.');
   }
   $registryRecord = findEgmRegistryByDirectory(egmCreatorDatabase(), egmCreatorMissionDirectoryLabel($folderName));
   if (!is_array($registryRecord)) {
-    throw new InvalidArgumentException('Event Guest Manager is not registered in the database.');
+    throw new InvalidArgumentException('رویداد در پایگاه داده ثبت نشده است.');
   }
   $stagingDir = egmCreatorGenerateRoot() . DIRECTORY_SEPARATOR . '.delete-' . (string)$registryRecord['code'] . '-' . bin2hex(random_bytes(4));
   if (!egmDbRename($targetDir, $stagingDir)) {
-    throw new RuntimeException('Failed to stage Event Guest Manager for deletion.');
+    throw new RuntimeException('آماده‌سازی حذف رویداد ناموفق بود.');
   }
   $registryDeleted = false;
   try {
     if (!deleteEgmRegistry(egmCreatorDatabase(), (string)$registryRecord['code'])) {
-      throw new RuntimeException('Failed to delete the EGM database registry record.');
+      throw new RuntimeException('حذف رویداد از پایگاه داده ناموفق بود.');
     }
     $registryDeleted = true;
     dropEgmInstanceTables(egmCreatorDatabase(), (string)$registryRecord['code']);
@@ -670,7 +668,7 @@ if ($egmCreatorIsJsonRequest) {
       $missions = egmCreatorListMissions();
       egmCreatorJsonResponse([
         'status' => 'ok',
-        'message' => 'Event Guest Manager created.',
+        'message' => 'رویداد ساخته شد.',
         'club' => $mission,
         'clubs' => $missions
       ]);
@@ -680,7 +678,7 @@ if ($egmCreatorIsJsonRequest) {
       $missions = egmCreatorListMissions();
       egmCreatorJsonResponse([
         'status' => 'ok',
-        'message' => 'Event Guest Manager branch setting updated.',
+        'message' => 'تنظیمات شعبه ذخیره شد.',
         'club' => $mission,
         'clubs' => $missions
       ]);
@@ -689,7 +687,7 @@ if ($egmCreatorIsJsonRequest) {
       $missions = egmCreatorDeleteMission((string)($payload['folder'] ?? ''));
       egmCreatorJsonResponse([
         'status' => 'ok',
-        'message' => 'Event Guest Manager deleted.',
+        'message' => 'رویداد حذف شد.',
         'clubs' => $missions
       ]);
     }
@@ -697,7 +695,7 @@ if ($egmCreatorIsJsonRequest) {
   } catch (InvalidArgumentException $error) {
     egmCreatorJsonResponse(['status' => 'error', 'message' => $error->getMessage()], 400);
   } catch (Throwable $error) {
-    egmCreatorJsonResponse(['status' => 'error', 'message' => 'Event Guest Manager creator action failed.'], 500);
+    egmCreatorJsonResponse(['status' => 'error', 'message' => 'انجام عملیات رویداد ناموفق بود.'], 500);
   }
 }
 
@@ -711,7 +709,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
 <link rel="stylesheet" href="mini%20apps/Event%20Guest%20Manager/egm-panel.css?v=<?= htmlspecialchars($egmCreatorPanelCssVer, ENT_QUOTES, 'UTF-8') ?>" />
 <style>
   .egm-creator-shell { display: grid; gap: 16px; }
-  .egm-creator-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr); gap: 16px; align-items: start; }
+  .egm-creator-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
   .egm-creator-muted { color: var(--muted, #6b7280); font-size: 13px; line-height: 1.7; }
   .egm-creator-status { min-height: 22px; margin: 0; }
   .egm-creator-status[data-tone="error"] { color: #b91c1c; }
@@ -738,41 +736,29 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
   <div class="egm-creator-grid">
     <div class="card settings-section">
       <div class="section-header">
-        <h3>Create Event Guest Manager</h3>
+        <h3>رویداد جدید</h3>
       </div>
       <form class="form" data-egm-creator-form>
         <label class="field standard-width">
-          <span>Event Guest Manager name</span>
-          <input type="text" data-egm-club-name maxlength="80" autocomplete="off" required />
+          <span>نام رویداد</span>
+          <input type="text" class="egm-standard-control" data-egm-club-name maxlength="80" autocomplete="off" required />
         </label>
         <div class="section-footer">
-          <button type="submit" class="btn primary" data-egm-create-submit>Create Event Guest Manager</button>
+          <button type="submit" class="btn primary" data-egm-create-submit>ساخت رویداد</button>
         </div>
         <p class="egm-creator-status egm-creator-muted" data-egm-creator-status aria-live="polite"></p>
       </form>
     </div>
 
-    <div class="card settings-section">
-      <div class="section-header">
-        <h3>Generation storage</h3>
-      </div>
-      <p class="egm-creator-muted">
-        New Event Guest Managers are created under <code>mini apps/EGMs/&lt;name&gt;</code> and appear as new tabs in this panel sidebar.
-        EGM code, settings, participants, progress, answers, logs, and runtime assets are stored in MySQL. The instance directory contains application code only.
-      </p>
-      <p class="egm-creator-muted">
-        The development EGM uses code <code>00000</code> and stays in <code>mini apps/Event Guest Manager</code>.
-      </p>
-    </div>
   </div>
 
   <div class="card settings-section">
     <div class="section-header">
-      <h3>Event Guest Managers</h3>
+      <h3>رویدادهای ساخته‌شده</h3>
     </div>
     <div class="egm-creator-list" data-egm-creator-list>
       <?php if (empty($egmCreatorMissions)): ?>
-        <div class="egm-creator-empty">No generated Event Guest Managers yet.</div>
+        <div class="egm-creator-empty">هنوز رویدادی ساخته نشده است.</div>
       <?php else: ?>
         <?php foreach ($egmCreatorMissions as $mission): ?>
           <div class="egm-creator-mission">
@@ -780,13 +766,11 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
               <strong><?= htmlspecialchars((string)$mission['name'], ENT_QUOTES, 'UTF-8') ?></strong>
               <span class="egm-creator-muted"><?= htmlspecialchars((string)$mission['createdAtLabel'], ENT_QUOTES, 'UTF-8') ?></span>
             </div>
-            <div class="egm-creator-muted">Unique code: <code><?= htmlspecialchars((string)$mission['code'], ENT_QUOTES, 'UTF-8') ?></code></div>
-            <div class="egm-creator-muted">Directory: <code><?= htmlspecialchars((string)$mission['directory'], ENT_QUOTES, 'UTF-8') ?></code></div>
+            <div class="egm-creator-muted">کد یکتا: <code><?= htmlspecialchars((string)$mission['code'], ENT_QUOTES, 'UTF-8') ?></code></div>
             <div class="egm-creator-actions">
-              <a class="btn primary" href="<?= htmlspecialchars((string)$mission['panelUrl'], ENT_QUOTES, 'UTF-8') ?>">Panel tab</a>
-              <a class="btn ghost" href="<?= htmlspecialchars((string)$mission['appUrl'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">Open app</a>
-              <button type="button" class="btn ghost" data-egm-update-branch-setting data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>">Update branch setting</button>
-              <button type="button" class="btn ghost egm-btn-danger" data-egm-delete-club data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>">Delete Event Guest Manager</button>
+              <a class="btn primary" href="<?= htmlspecialchars((string)$mission['panelUrl'], ENT_QUOTES, 'UTF-8') ?>">بخش پنل</a>
+              <button type="button" class="btn ghost" data-egm-update-branch-setting data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>">به‌روزرسانی تنظیمات شعبه</button>
+              <button type="button" class="btn ghost egm-btn-danger" data-egm-delete-club data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>">حذف رویداد</button>
             </div>
           </div>
         <?php endforeach; ?>
@@ -834,7 +818,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
   const renderClubs = () => {
     if (!(listEl instanceof HTMLElement)) return;
     if (!clubs.length) {
-      listEl.innerHTML = '<div class="egm-creator-empty">No generated Event Guest Managers yet.</div>';
+      listEl.innerHTML = '<div class="egm-creator-empty">هنوز رویدادی ساخته نشده است.</div>';
       return;
     }
     listEl.innerHTML = clubs.map((club) => {
@@ -843,7 +827,6 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
       const createdAt = escapeHtml(club?.createdAtLabel || club?.createdAt || '-');
       const directory = escapeHtml(club?.directory || '');
       const panelUrl = escapeHtml(club?.panelUrl || '#');
-      const appUrl = escapeHtml(club?.appUrl || '#');
       const folder = escapeHtml(club?.folder || '');
       return `
         <div class="egm-creator-mission">
@@ -851,13 +834,11 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
             <strong>${name}</strong>
             <span class="egm-creator-muted">${createdAt}</span>
           </div>
-          <div class="egm-creator-muted">Unique code: <code>${code}</code></div>
-          <div class="egm-creator-muted">Directory: <code>${directory}</code></div>
+          <div class="egm-creator-muted">کد یکتا: <code>${code}</code></div>
           <div class="egm-creator-actions">
-            <a class="btn primary" href="${panelUrl}">Panel tab</a>
-            <a class="btn ghost" href="${appUrl}" target="_blank" rel="noopener">Open app</a>
-            <button type="button" class="btn ghost" data-egm-update-branch-setting data-folder="${folder}">Update branch setting</button>
-            <button type="button" class="btn ghost egm-btn-danger" data-egm-delete-club data-folder="${folder}">Delete Event Guest Manager</button>
+            <a class="btn primary" href="${panelUrl}">بخش پنل</a>
+            <button type="button" class="btn ghost" data-egm-update-branch-setting data-folder="${folder}">به‌روزرسانی تنظیمات شعبه</button>
+            <button type="button" class="btn ghost egm-btn-danger" data-egm-delete-club data-folder="${folder}">حذف رویداد</button>
           </div>
         </div>
       `;
@@ -877,7 +858,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.status !== 'ok') {
-      throw new Error(payload?.message || 'Event Guest Manager creator action failed.');
+      throw new Error(payload?.message || 'انجام عملیات رویداد ناموفق بود.');
     }
     return payload;
   };
@@ -894,13 +875,13 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
       event.preventDefault();
       const name = String(input instanceof HTMLInputElement ? input.value : '').trim();
       if (!name) {
-        setStatus('Enter a Event Guest Manager name.', 'error');
+        setStatus('نام رویداد را وارد کنید.', 'error');
         return;
       }
       if (submitBtn instanceof HTMLButtonElement) {
         submitBtn.disabled = true;
       }
-      setStatus('Creating Event Guest Manager...');
+      setStatus('در حال ساخت رویداد…');
       try {
         const payload = await postCreatorAction({ action: 'create', name });
         clubs = Array.isArray(payload?.clubs) ? payload.clubs : clubs;
@@ -909,12 +890,12 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
           input.value = '';
           input.focus();
         }
-        setStatus('Event Guest Manager created. Refreshing panel...', 'ok');
+        setStatus('رویداد ساخته شد؛ در حال تازه‌سازی پنل…', 'ok');
         window.setTimeout(() => {
           window.location.href = payload?.club?.panelUrl || 'panel.php';
         }, 500);
       } catch (error) {
-        setStatus(error?.message || 'Failed to create Event Guest Manager.', 'error');
+        setStatus(error?.message || 'ساخت رویداد ناموفق بود.', 'error');
       } finally {
         if (submitBtn instanceof HTMLButtonElement) {
           submitBtn.disabled = false;
@@ -933,17 +914,17 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
       }
       const folder = String(target.dataset.folder || '').trim();
       if (!folder) {
-        setStatus('Event Guest Manager folder is missing.', 'error');
+        setStatus('پوشه رویداد یافت نشد.', 'error');
         return;
       }
       const isDelete = target.hasAttribute('data-egm-delete-club');
       const action = isDelete ? 'delete' : 'update_branch_setting';
       if (isDelete) {
         const clubName = target.closest('.egm-creator-mission')?.querySelector('strong')?.textContent?.trim() || folder;
-        if (!window.confirm(`Delete "${clubName}" and all of its mission data? This cannot be undone.`)) {
+        if (!window.confirm(`رویداد «${clubName}» و همه اطلاعات آن حذف شوند؟ این کار قابل بازگشت نیست.`)) {
           return;
         }
-      } else if (!window.confirm('Update this Event Guest Manager from the source Event Guest Manager files? Mission data will be kept.')) {
+      } else if (!window.confirm('فایل‌های این رویداد به‌روز شوند؟ اطلاعات رویداد حفظ می‌شود.')) {
         return;
       }
 
@@ -951,14 +932,14 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
       buttons.forEach((button) => {
         button.disabled = true;
       });
-      setStatus(isDelete ? 'Deleting Event Guest Manager...' : 'Updating branch setting...');
+      setStatus(isDelete ? 'در حال حذف رویداد…' : 'در حال ذخیره تنظیمات شعبه…');
       try {
         const payload = await postCreatorAction({ action, folder });
         clubs = Array.isArray(payload?.clubs) ? payload.clubs : clubs;
         renderClubs();
-        setStatus(payload?.message || (isDelete ? 'Event Guest Manager deleted.' : 'Event Guest Manager updated.'), 'ok');
+        setStatus(payload?.message || (isDelete ? 'رویداد حذف شد.' : 'رویداد به‌روز شد.'), 'ok');
       } catch (error) {
-        setStatus(error?.message || 'Event Guest Manager creator action failed.', 'error');
+        setStatus(error?.message || 'انجام عملیات رویداد ناموفق بود.', 'error');
       } finally {
         Array.from(listEl.querySelectorAll('button')).forEach((button) => {
           button.disabled = false;

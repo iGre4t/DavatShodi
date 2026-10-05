@@ -147,7 +147,7 @@ function tctPeriodInviteClean($value, int $maxLength = 191): string
 
 function egmPeriodInvitesIdentityKey(array $row): string
 {
-    $nationalId = orgUsersNormalizeNationalId($row['national_id'] ?? '');
+    $nationalId = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
     if ($nationalId !== '') {
         return 'n:' . $nationalId;
     }
@@ -164,7 +164,7 @@ function egmPeriodInvitesNormalizeCandidate(array $row, string $candidateId, str
         'work_id' => tctPeriodInviteClean($row['work_id'] ?? '', 128),
         'first_name' => tctPeriodInviteClean($row['first_name'] ?? '', 191),
         'last_name' => tctPeriodInviteClean($row['last_name'] ?? '', 191),
-        'national_id' => orgUsersNormalizeNationalId($row['national_id'] ?? ''),
+        'national_id' => egmPeriodInvitesValidNationalId($row['national_id'] ?? ''),
         'phone_number' => tctPeriodInviteClean($row['phone_number'] ?? '', 32),
         'deputy' => tctPeriodInviteClean($row['deputy'] ?? '', 191),
         'general_department' => tctPeriodInviteClean($row['general_department'] ?? '', 191),
@@ -241,6 +241,7 @@ function egmPeriodInvitesSaveTicketNumbers(array $context, string $periodCode, i
 function egmPeriodInvitesValidNationalId($value): string
 {
     $nationalId = orgUsersNormalizeNationalId($value);
+    if (preg_match('/^[0-9]{8,9}$/D', $nationalId) === 1) $nationalId = str_pad($nationalId, 10, '0', STR_PAD_LEFT);
     return preg_match('/^[0-9]{10}$/D', $nationalId) === 1 ? $nationalId : '';
 }
 
@@ -401,19 +402,31 @@ function egmPeriodInvitesInvitedIdentitySet(array $context, string $periodCode):
         );
         $statement->execute([':period_code' => $periodCode]);
         foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
-            $key = egmPeriodInvitesIdentityKey($row);
-            if ($key !== '') $set[$key] = true;
+            $national = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
+            $work = strtolower(trim((string)($row['work_id'] ?? '')));
+            if ($national !== '') $set['n:' . $national] = true;
+            if ($work !== '') $set['w:' . $work] = true;
         }
         return $set;
     }
     $state = egmPeriodInvitesReadLocalState($context);
     foreach ($state['periods'][$periodCode] ?? [] as $row) {
         if (is_array($row)) {
-            $key = egmPeriodInvitesIdentityKey($row);
-            if ($key !== '') $set[$key] = true;
+            $national = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
+            $work = strtolower(trim((string)($row['work_id'] ?? '')));
+            if ($national !== '') $set['n:' . $national] = true;
+            if ($work !== '') $set['w:' . $work] = true;
         }
     }
     return $set;
+}
+
+function egmPeriodInvitesIsAlreadyInvited(array $row, array $invited): bool
+{
+    $national = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
+    $work = strtolower(trim((string)($row['work_id'] ?? '')));
+    return ($national !== '' && isset($invited['n:' . $national]))
+        || ($work !== '' && isset($invited['w:' . $work]));
 }
 
 /** @return array<string,array<int,string>> */
@@ -465,7 +478,7 @@ function egmPeriodInvitesListCandidates(array $context, string $periodCode, arra
     $rows = egmPeriodInvitesApplyFilters(egmPeriodInvitesCandidateRows($context, $source), $filters);
     $invited = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
     foreach ($rows as &$row) {
-        $row['invited'] = isset($invited[egmPeriodInvitesIdentityKey($row)]);
+        $row['invited'] = egmPeriodInvitesIsAlreadyInvited($row, $invited);
     }
     unset($row);
     $total = count($rows);
@@ -499,6 +512,8 @@ function egmPeriodInvitesInsertRegistered(array $context, string $periodCode, st
     $usersTable = (string)$context['tables']['users'];
     $periodsTable = (string)$context['tables']['user_periods'];
     $candidateRows = egmPeriodInvitesRowsByCandidateIds(egmPeriodInvitesCandidateRows($context, $source), $candidateIds);
+    $invited = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
+    $candidateRows = array_values(array_filter($candidateRows, static fn(array $row): bool => !egmPeriodInvitesIsAlreadyInvited($row, $invited)));
     if (!$candidateRows) return 0;
     $allowedTickets = array_fill_keys(array_column(egmPeriodInvitesTicketDefinitions($context), 'id'), true);
     $validatedTickets = [];
@@ -615,10 +630,12 @@ function egmPeriodInvitesInsertUnmatchedRegistered(array $context, string $perio
     $usersTable = (string)$context['tables']['users'];
     $periodsTable = (string)$context['tables']['user_periods'];
     $rows = [];
+    $alreadyInvited = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
     $allowedTickets = array_fill_keys(array_column(egmPeriodInvitesTicketDefinitions($context), 'id'), true);
     foreach ($inputRows as $offset => $inputRow) {
         if (!is_array($inputRow)) continue;
         $row = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
+        if (egmPeriodInvitesIsAlreadyInvited($row, $alreadyInvited)) continue;
         $row['ticket_numbers'] = egmPeriodInvitesValidateTicketNumbers($context, $row['ticket_numbers'], $allowedTickets);
         $identity = egmPeriodInvitesIdentityKey($row);
         if ($identity !== '') $rows[$identity] = $row;
@@ -724,6 +741,7 @@ function egmPeriodInvitesInsertLocal(array $context, string $periodCode, string 
 {
     $rows = egmPeriodInvitesRowsByCandidateIds(egmPeriodInvitesCandidateRows($context, $source), $candidateIds);
     $state = egmPeriodInvitesReadLocalState($context);
+    $invitedIdentities = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
     $existing = [];
     foreach ($state['periods'][$periodCode] ?? [] as $row) {
         if (is_array($row)) $existing[egmPeriodInvitesIdentityKey($row)] = $row;
@@ -732,6 +750,7 @@ function egmPeriodInvitesInsertLocal(array $context, string $periodCode, string 
     foreach ($rows as $row) {
         $key = egmPeriodInvitesIdentityKey($row);
         if ($key === '') continue;
+        if (egmPeriodInvitesIsAlreadyInvited($row, $invitedIdentities)) continue;
         if (!isset($existing[$key])) $count++;
         $row['invitation_source'] = $source;
         $row['invited_by'] = $actor;
@@ -1203,6 +1222,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
         throw new InvalidArgumentException('The Excel match request is too large. Refresh the panel so it can process the file in smaller batches.');
     }
     $source = egmPeriodInvitesGetSource($context);
+    $invited = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
     $candidates = egmPeriodInvitesCandidateRows($context, $source);
     $byNational = [];
     $byWork = [];
@@ -1222,6 +1242,12 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
         foreach ($inputRows as $offset => $inputRow) {
             if (!is_array($inputRow)) continue;
             $excelRow = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
+            if (egmPeriodInvitesIsAlreadyInvited($excelRow, $invited)) {
+                $excelRow['invited'] = true;
+                $excelRow['can_invite'] = false;
+                $unmatchedRows[] = $excelRow;
+                continue;
+            }
             $pdo->exec('SAVEPOINT egm_excel_match_row');
             try {
                 $national = egmPeriodInvitesValidNationalId($excelRow['national_id'] ?? '');
@@ -1263,9 +1289,15 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
         if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     }
-    $invited = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
     $rows = array_values($matched);
-    foreach ($rows as &$row) $row['invited'] = isset($invited[egmPeriodInvitesIdentityKey($row)]);
+    foreach ($rows as &$row) $row['invited'] = egmPeriodInvitesIsAlreadyInvited($row, $invited);
+    foreach ($unmatchedRows as &$row) {
+        if (egmPeriodInvitesIsAlreadyInvited($row, $invited)) {
+            $row['invited'] = true;
+            $row['can_invite'] = false;
+        }
+    }
+    unset($row);
     unset($row);
     return [
         'source' => $source,

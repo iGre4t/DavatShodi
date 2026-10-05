@@ -11,6 +11,9 @@ require_once __DIR__ . '/../../api/lib/tab-permissions.php';
 require_once __DIR__ . '/../../api/lib/common.php';
 require_once __DIR__ . '/../../api/lib/egm-instance-storage.php';
 require_once __DIR__ . '/../../api/lib/egm-period-end.php';
+require_once __DIR__ . '/../../api/lib/egm-period-duplicate.php';
+require_once __DIR__ . '/../../api/lib/egm-games.php';
+require_once __DIR__ . '/../../api/lib/egm-period-invite-cards.php';
 require_once __DIR__ . '/egm-security.php';
 require_once __DIR__ . '/invitees_csv_safety.php';
 $tctIsJsonRequest = $tctEarlyJsonRequest;
@@ -1504,6 +1507,7 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
   $title = trim((string)($task['title'] ?? ''));
   $tagCode = tctNormalizeTagCode((string)($task['tagCode'] ?? ($task['tag_code'] ?? '')));
   $active = tctNormalizeBoolValue($task['active'] ?? false);
+  $activationPending = tctNormalizeBoolValue($task['activationPending'] ?? false);
   $duration = tctNormalizeBoolValue($task['duration'] ?? false);
   $quitRequired = tctNormalizeBoolValue($task['quitRequired'] ?? ($task['quit_required'] ?? false));
   $quitTimelineRequired = tctNormalizeBoolValue($task['quitTimelineRequired'] ?? ($task['quit_timeline_required'] ?? true));
@@ -1517,6 +1521,11 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
   $enterDeadlineTime = tctNormalizeTimeValue((string)($task['enterDeadlineTime'] ?? ($task['enter_deadline_time'] ?? '')));
   $quitOpeningDate = tctNormalizeDateValue((string)($task['quitOpeningDate'] ?? ($task['quit_opening_date'] ?? '')));
   $quitOpeningTime = tctNormalizeTimeValue((string)($task['quitOpeningTime'] ?? ($task['quit_opening_time'] ?? '')));
+  $prizeEntryWindowEnabled = tctNormalizeBoolValue($task['prizeEntryWindowEnabled'] ?? ($task['prize_entry_window_enabled'] ?? false));
+  $prizeEntryStartDate = tctNormalizeDateValue((string)($task['prizeEntryStartDate'] ?? ($task['prize_entry_start_date'] ?? '')));
+  $prizeEntryStartTime = tctNormalizeTimeValue((string)($task['prizeEntryStartTime'] ?? ($task['prize_entry_start_time'] ?? '')));
+  $prizeEntryEndDate = tctNormalizeDateValue((string)($task['prizeEntryEndDate'] ?? ($task['prize_entry_end_date'] ?? '')));
+  $prizeEntryEndTime = tctNormalizeTimeValue((string)($task['prizeEntryEndTime'] ?? ($task['prize_entry_end_time'] ?? '')));
   $order = (int)($task['order'] ?? $fallbackOrder);
   if ($order < 1) {
     $order = $fallbackOrder;
@@ -1537,6 +1546,7 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
     'title' => $title,
     'tagCode' => $tagCode,
     'active' => $active,
+    'activationPending' => $activationPending,
     'duration' => $duration,
     'quitRequired' => $quitRequired,
     'quitTimelineRequired' => $quitTimelineRequired,
@@ -1550,6 +1560,11 @@ function tctNormalizeTask(array $task, int $fallbackOrder): array
     'enterDeadlineTime' => $enterDeadlineTime,
     'quitOpeningDate' => $quitOpeningDate,
     'quitOpeningTime' => $quitOpeningTime,
+    'prizeEntryWindowEnabled' => $prizeEntryWindowEnabled,
+    'prizeEntryStartDate' => $prizeEntryStartDate,
+    'prizeEntryStartTime' => $prizeEntryStartTime,
+    'prizeEntryEndDate' => $prizeEntryEndDate,
+    'prizeEntryEndTime' => $prizeEntryEndTime,
     'order' => $order,
     'createdAt' => $createdAt,
     'endedAt' => $endedAt,
@@ -1997,7 +2012,7 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
 {
   $normalizedType = tctNormalizeTaskType($taskType);
   if ($normalizedType === 'period') {
-    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'games', 'export', 'draws', 'winners'];
   }
   if ($normalizedType === 'quiz' || $normalizedType === 'conditional_quiz') {
     if ($normalizedType === 'conditional_quiz') {
@@ -2014,7 +2029,7 @@ function tctResolveTaskPaneKeysByType(string $taskType): array
   if ($normalizedType === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
   }
-  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
+  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'games', 'export', 'draws', 'winners'];
 }
 
 function tctReadTaskAccessConfig(string $tasksDir): array
@@ -2357,7 +2372,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
   $csrfToken = egmSecurityReadCsrfFromRequest($_POST, 'csrf');
   if (!egmSecurityIsValidCsrfToken($csrfToken)) {
     http_response_code(403);
-    echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'error', 'message' => 'نشست معتبر نیست؛ صفحه را تازه‌سازی کنید.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -2369,7 +2384,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
   $action = trim((string)($_POST['tct_action'] ?? ''));
   $tasks = tctReindexTasks(tctReadStoreTasks($tctStorePath));
   $tctTaskAccessConfig = tctReadTaskAccessConfig($tctTasksDir);
-  $buildTasksForResponse = static function (array $taskRows) use ($tctTasksDir, $tctSessionUserCode, $tctTaskAccessConfig): array {
+  $buildTasksForResponse = static function (array $taskRows) use ($tctTasksDir, $tctSessionUserCode, &$tctTaskAccessConfig): array {
     return tctAttachTaskAccessMeta(
       tctMergeTaskScores($taskRows, $tctTasksDir),
       $tctSessionUserCode,
@@ -2392,6 +2407,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     return null;
   };
   $actionPaneMap = [
+    'duplicate' => 'control',
     'remove' => 'control',
     'save_task_title' => 'control',
     'save_task_settings' => 'control',
@@ -2495,6 +2511,106 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       'tasks' => $buildTasksForResponse($tasks)
     ], JSON_UNESCAPED_UNICODE);
     exit;
+  }
+
+  if ($action === 'duplicate') {
+    if (!$tctCanAccessManageTasks) {
+      $emitTaskJson(['status' => 'error', 'message' => 'شما به مدیریت بازه‌ها دسترسی ندارید.'], 403);
+    }
+    $source = $findTaskById($tasks, (string)($_POST['id'] ?? ''));
+    if (!is_array($source)) {
+      $emitTaskJson(['status' => 'error', 'message' => 'بازه پیدا نشد.'], 404);
+    }
+    $sourceCode = (string)$source['tagCode'];
+    $newCode = tctGenerateNextTagCode($tasks);
+    $newId = tctMakeTaskId();
+    $context = egmDatabaseRuntimeContextForPath($tctStorePath);
+    if (!is_array($context)) {
+      $emitTaskJson(['status' => 'error', 'message' => 'اتصال پایگاه داده بازه در دسترس نیست.'], 500);
+    }
+    try {
+      if (!tctEnsureTaskFolder($tctTasksDir, $newCode)) {
+        throw new RuntimeException('ساخت پوشه بازه جدید ناموفق بود.');
+      }
+
+      // Copy only configuration. Guest files, attendance, teams, scores and draw results are excluded.
+      $periodFiles = [
+        'score_settings' => EGMT_SCORE_SETTINGS_FILE,
+        'information_settings' => EGMT_INFO_SETTINGS_FILE,
+        'team_settings' => EGMT_TEAM_SETTINGS_FILE,
+        'team_challenges' => EGMT_TEAM_CHALLENGES_FILE,
+        'questions' => 'EGMQ list.json',
+        'quiz_settings' => 'EGMQ settings.json',
+      ];
+      foreach ($periodFiles as $kind => $fileName) {
+        $sourcePath = $tctTasksDir . DIRECTORY_SEPARATOR . $sourceCode . DIRECTORY_SEPARATOR . $fileName;
+        $targetPath = $tctTasksDir . DIRECTORY_SEPARATOR . $newCode . DIRECTORY_SEPARATOR . $fileName;
+        if (egmDbIsFile($sourcePath)) {
+          $contents = egmDbFileGetContents($sourcePath);
+          if (!is_string($contents) || egmDbFilePutContents($targetPath, $contents, LOCK_EX) === false) {
+            throw new RuntimeException('کپی تنظیمات بازه ناموفق بود.');
+          }
+        }
+        $sourceKey = 'period.' . $sourceCode . '.' . $kind;
+        $settings = egmInstanceReadData($context['pdo'], (string)$context['code'], $sourceKey, null);
+        if ($settings !== null) {
+          egmInstanceWriteData($context['pdo'], (string)$context['code'], 'period.' . $newCode . '.' . $kind, $settings);
+        }
+      }
+
+      $seatMap = egmInstanceReadData($context['pdo'], (string)$context['code'], 'seat_map:' . $sourceCode, null);
+      if ($seatMap !== null) {
+        egmInstanceWriteData($context['pdo'], (string)$context['code'], 'seat_map:' . $newCode, $seatMap);
+      }
+      $background = egmPeriodInviteCardsBackground($context, $sourceCode, true);
+      if (!empty($background['has_override']) && is_string($background['imageData'] ?? null)) {
+        egmPeriodInviteCardsSaveBackground(
+          $context, $newCode, $background['imageData'], (string)($background['imageName'] ?? '')
+        );
+      }
+      $draws = egmInstanceReadData($context['pdo'], (string)$context['code'], 'period_draws:' . hash('sha256', $sourceCode), []);
+      if (is_array($draws) && $draws !== []) {
+        egmInstanceWriteData(
+          $context['pdo'], (string)$context['code'], 'period_draws:' . hash('sha256', $newCode),
+          egmPeriodDuplicateDraws($draws)
+        );
+      }
+
+      $games = egmGamesState($context);
+      $gameIds = array_values(array_intersect((array)($games['enabled'][$sourceCode] ?? []), array_column($games['games'], 'id')));
+      foreach ($gameIds as $gameId) {
+        egmGamesEnsureTable($context, $newCode, (string)$gameId);
+      }
+      $games['enabled'][$newCode] = $gameIds;
+      egmGamesWrite($context, $games);
+
+      $hasAccessRules = false;
+      foreach ($tctTaskAccessConfig['users'] as &$userRules) {
+        if (!is_array($userRules) || !is_array($userRules['tasks'] ?? null)) continue;
+        if (isset($userRules['tasks'][$source['id']])) {
+          $userRules['tasks'][$newId] = $userRules['tasks'][$source['id']];
+          $hasAccessRules = true;
+        }
+      }
+      unset($userRules);
+      if ($hasAccessRules && !tctWriteTaskAccessConfig($tctTasksDir, $tctTaskAccessConfig)) {
+        throw new RuntimeException('کپی دسترسی‌های بازه ناموفق بود.');
+      }
+      $tasks[] = egmPeriodDuplicateRow($source, $newId, $newCode, count($tasks) + 1);
+      $tasks = tctReindexTasks($tasks);
+      if (!tctSaveStoreTasks($tctStorePath, $tasks)) {
+        throw new RuntimeException('ذخیره بازه جدید ناموفق بود.');
+      }
+      $emitTaskJson([
+        'status' => 'ok',
+        'message' => "بازه با کد {$newCode} تکثیر شد؛ مهمانان آن خالی هستند.",
+        'generatedTagCode' => $newCode,
+        'tasks' => $buildTasksForResponse($tasks),
+      ]);
+    } catch (Throwable $error) {
+      error_log('EGM period duplication failed: ' . $error->getMessage());
+      $emitTaskJson(['status' => 'error', 'message' => $error->getMessage()], 500);
+    }
   }
 
   if ($action === 'remove') {
@@ -2738,6 +2854,18 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
     $enterDeadlineTime = tctNormalizeTimeValue((string)($_POST['enter_deadline_time'] ?? ''));
     $quitOpeningDate = tctNormalizeDateValue((string)($_POST['quit_opening_date'] ?? ''));
     $quitOpeningTime = tctNormalizeTimeValue((string)($_POST['quit_opening_time'] ?? ''));
+    $prizeEntryWindowEnabled = tctNormalizeBoolValue($_POST['prize_entry_window_enabled'] ?? '0');
+    $prizeEntryStartDate = tctNormalizeDateValue((string)($_POST['prize_entry_start_date'] ?? ''));
+    $prizeEntryStartTime = tctNormalizeTimeValue((string)($_POST['prize_entry_start_time'] ?? ''));
+    $prizeEntryEndDate = tctNormalizeDateValue((string)($_POST['prize_entry_end_date'] ?? ''));
+    $prizeEntryEndTime = tctNormalizeTimeValue((string)($_POST['prize_entry_end_time'] ?? ''));
+    if ($prizeEntryWindowEnabled) {
+      if (in_array('', [$prizeEntryStartDate, $prizeEntryStartTime, $prizeEntryEndDate, $prizeEntryEndTime], true)
+          || !(($prizeEntryStartDate . ' ' . $prizeEntryStartTime) < ($prizeEntryEndDate . ' ' . $prizeEntryEndTime))) {
+        echo json_encode(['status' => 'error', 'message' => 'زمان شروع و پایان واجدان شرایط قرعه‌کشی را به ترتیب وارد کنید.'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+    }
     $optionalTimelineValues = [$enterDeadlineDate, $enterDeadlineTime, $quitOpeningDate, $quitOpeningTime];
     if ($quitTimelineRequired && count(array_filter($optionalTimelineValues, static fn(string $value): bool => $value !== '')) === 0) {
       // A cached panel can incorrectly submit the switch as enabled while all
@@ -2790,6 +2918,7 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       $tasks[$index]['active'] = $active;
       $tasks[$index]['duration'] = $duration;
       $tasks[$index]['quitRequired'] = $quitRequired;
+      $tasks[$index]['activationPending'] = false;
       $tasks[$index]['quitTimelineRequired'] = $quitTimelineRequired;
       $tasks[$index]['minimumStayMinutes'] = $minimumStayMinutes;
       $tasks[$index]['devPhase'] = $devPhase;
@@ -2801,6 +2930,11 @@ if (!EGMT_INCLUDE_ONLY && (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') && 
       $tasks[$index]['enterDeadlineTime'] = $enterDeadlineTime;
       $tasks[$index]['quitOpeningDate'] = $quitOpeningDate;
       $tasks[$index]['quitOpeningTime'] = $quitOpeningTime;
+      $tasks[$index]['prizeEntryWindowEnabled'] = $prizeEntryWindowEnabled;
+      $tasks[$index]['prizeEntryStartDate'] = $prizeEntryStartDate;
+      $tasks[$index]['prizeEntryStartTime'] = $prizeEntryStartTime;
+      $tasks[$index]['prizeEntryEndDate'] = $prizeEntryEndDate;
+      $tasks[$index]['prizeEntryEndTime'] = $prizeEntryEndTime;
       $found = true;
       break;
     }
@@ -4431,7 +4565,7 @@ if (EGMT_INCLUDE_ONLY) {
   };
 
   const resolveDefaultTopPanes = (taskType) => {
-    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'games', 'export', 'draws', 'winners'];
   };
 
   const normalizeAllowedTopPanes = (value, taskType) => {
@@ -4463,6 +4597,7 @@ if (EGMT_INCLUDE_ONLY) {
       taskAccessEnabled: task.taskAccessEnabled !== false,
       allowedTopPanes: normalizeAllowedTopPanes(task.allowedTopPanes, task.taskType || 'quiz'),
       active: Boolean(task.active),
+      activationPending: Boolean(task.activationPending),
       duration: Boolean(task.duration),
       quitRequired: Boolean(task.quitRequired),
       quitTimelineRequired: task.quitTimelineRequired !== false,
@@ -4505,6 +4640,7 @@ if (EGMT_INCLUDE_ONLY) {
       taskAccessEnabled: task.taskAccessEnabled !== false,
       allowedTopPanes: normalizeAllowedTopPanes(task.allowedTopPanes, task.taskType || 'quiz'),
       active: Boolean(task.active),
+      activationPending: Boolean(task.activationPending),
       duration: Boolean(task.duration),
       quitRequired: Boolean(task.quitRequired),
       quitTimelineRequired: task.quitTimelineRequired !== false,
@@ -4587,6 +4723,7 @@ if (EGMT_INCLUDE_ONLY) {
         <td><code>${esc(task.tagCode)}</code></td>
         <td>
           <div class="tct-action-wrap">
+            <button type="button" class="btn ghost" data-duplicate-id="${esc(task.id)}">تکثیر</button>
             <button type="button" class="btn ghost" data-remove-id="${esc(task.id)}">حذف</button>
           </div>
         </td>
@@ -4681,6 +4818,23 @@ if (EGMT_INCLUDE_ONLY) {
   listBody.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+    const duplicateBtn = target.closest('[data-duplicate-id]');
+    if (duplicateBtn instanceof HTMLButtonElement) {
+      const id = duplicateBtn.getAttribute('data-duplicate-id') || '';
+      if (!id) return;
+      duplicateBtn.disabled = true;
+      try {
+        const data = await postAction('duplicate', { id });
+        setTasks(Array.isArray(data.tasks) ? data.tasks : []);
+        renderTasks();
+        emitTasksChanged();
+        setStatus(data.message || 'بازه تکثیر شد.');
+      } catch (error) {
+        setStatus(error?.message || 'تکثیر بازه ناموفق بود.', true);
+        duplicateBtn.disabled = false;
+      }
+      return;
+    }
     const titleSaveBtn = target.closest('[data-save-title-id]');
     if (titleSaveBtn instanceof HTMLButtonElement) {
       const id = titleSaveBtn.getAttribute('data-save-title-id') || '';

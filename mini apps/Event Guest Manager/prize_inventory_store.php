@@ -123,6 +123,8 @@ function egmPrizeInventoryNormalizeRecords(array $records): array
     $last = max(0, (int)($record['last'] ?? $quantity));
     $last = min($last, $quantity);
     $value = is_numeric($record['value'] ?? null) ? max(0, (float)$record['value']) : 0.0;
+    $rank = (int)($record['rank'] ?? 0);
+    if ($rank < 1 || $rank > 4) $rank = 0;
     $normalized[] = [
       'id' => $id,
       'name' => $name,
@@ -130,6 +132,7 @@ function egmPrizeInventoryNormalizeRecords(array $records): array
       'quantity' => $quantity,
       'last' => $last,
       'value' => $value,
+      'rank' => $rank,
       'isFake' => egmPrizeInventoryNormalizeBool($record['isFake'] ?? false),
       'pendingAwardIds' => egmPrizeInventoryNormalizePendingAwardIds($record['pendingAwardIds'] ?? [])
     ];
@@ -176,6 +179,9 @@ function egmPrizeInventoryValidateRecords(array $records, bool $allowMissingIds,
       && (!is_scalar($record['value']) || !is_numeric($record['value']) || !is_finite((float)$record['value']) || (float)$record['value'] < 0)) {
       return false;
     }
+    if (array_key_exists('rank', $record)
+      && (!is_scalar($record['rank']) || filter_var($record['rank'], FILTER_VALIDATE_INT) === false
+        || (int)$record['rank'] < 0 || (int)$record['rank'] > 4)) return false;
     if (isset($record['quantity'], $record['last']) && (float)$record['last'] > (float)$record['quantity']) {
       return false;
     }

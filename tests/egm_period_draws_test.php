@@ -26,17 +26,27 @@ try {
 }
 checkDraw($warnings === [], 'Missing task-access file must not emit warnings into JSON');
 $rows = [
-    ['user_id'=>1, 'work_id'=>'۱۲۳۴۵۶', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:00', 'user_is_uninvited_guest'=>1],
-    ['user_id'=>2, 'guest_number'=>'98', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:00', 'period_is_uninvited_guest'=>1],
+    ['user_id'=>1, 'work_id'=>'۱۲۳۴۵۶', 'guest_number'=>'0001', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:00', 'user_is_uninvited_guest'=>1],
+    ['user_id'=>2, 'guest_number'=>'0098', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:00', 'period_is_uninvited_guest'=>1],
     ['user_id'=>3, 'entered_date'=>'', 'entered_time'=>''],
-    ['user_id'=>4, 'entered_date'=>'2026-09-29', 'entered_time'=>'10:00', 'quit_time'=>'11:00', 'invitation_source'=>'walk_in'],
+    ['user_id'=>4, 'guest_number'=>'0004', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:00', 'quit_time'=>'11:00', 'invitation_source'=>'walk_in'],
 ];
 $settings = ['name'=>'Test', 'winnerLimit'=>3, 'prizeName'=>'Gift', 'includeEntered'=>true, 'includeWalkIns'=>false];
 $draws=[];
 $id=egmPeriodDrawAction($draws,'create',$settings,[],'admin')['draw']['id'];
 $state=egmPeriodDrawAction($draws,'state',['id'=>$id],$rows,'admin');
 checkDraw(count($state['eligibleParticipants'])===1, 'Only invited entered guests; ignore global walk-in history');
-checkDraw($state['eligibleParticipants'][0]['code']==='3456', 'Persian work ID last four digits');
+checkDraw($state['eligibleParticipants'][0]['code']==='0001', 'Draw displays the EGM guest number');
+$windowRows = [
+    ['user_id'=>10, 'guest_number'=>'0010', 'entered_date'=>'2026-09-29', 'entered_time'=>'09:59:59'],
+    ['user_id'=>11, 'guest_number'=>'0011', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:00:00'],
+    ['user_id'=>12, 'guest_number'=>'0012', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:10:59'],
+    ['user_id'=>13, 'guest_number'=>'0013', 'entered_date'=>'2026-09-29', 'entered_time'=>'10:11:00'],
+];
+$window = ['prizeEntryWindowEnabled'=>true, 'prizeEntryStartDate'=>'2026-09-29', 'prizeEntryStartTime'=>'10:00', 'prizeEntryEndDate'=>'2026-09-29', 'prizeEntryEndTime'=>'10:10'];
+checkDraw(count(egmPeriodDrawEligible($windowRows, $draws[$id]))===4, 'Disabled prize window includes all entered guests');
+checkDraw(array_column(egmPeriodDrawEligible($windowRows, $draws[$id], $window), 'key')===['11','12'], 'Prize window includes only entries from start through end minute');
+rejectsDraw(fn()=>egmPeriodDrawEligible($windowRows, $draws[$id], ['prizeEntryWindowEnabled'=>true]));
 $draw=$draws[$id]; $draw['includeEntered']=false; $draw['includeWalkIns']=true;
 checkDraw(count(egmPeriodDrawEligible($rows,$draw))===2,'Walk-ins include guests who have subsequently exited');
 $draw['includeEntered']=true;
@@ -54,10 +64,12 @@ rejectsDraw(function() use (&$draws,$id,$settings) { egmPeriodDrawAction($draws,
 $other=egmPeriodDrawAction($draws,'create',$settings,[],'admin')['draw']['id'];
 checkDraw(egmPeriodDrawAction($draws,'state',['id'=>$other],$rows,'admin')['eligibleCount']===1, 'Draws have independent winners');
 egmPeriodDrawAction($draws,'lock',['id'=>$id],[],'admin');
-rejectsDraw(function() use (&$draws,$id) { egmPeriodDrawAction($draws,'reset',['id'=>$id],[],'admin'); });
-egmPeriodDrawAction($draws,'unlock',['id'=>$id],[],'admin');
 egmPeriodDrawAction($draws,'reset',['id'=>$id],[],'admin');
-checkDraw(!$draws[$id]['winners'], 'Reset clears winners');
+checkDraw(!$draws[$id]['winners'] && !$draws[$id]['locked'], 'Reset clears winners and reopens a locked draw');
+egmPeriodDrawAction($draws,'ensure_pot',['levelId'=>'pot-level','potLevel'=>['name'=>'Pot','title'=>'Pot','prizeName'=>'Gift','description'=>'','winnerLimit'=>2,'includeEntered'=>true,'includeWalkIns'=>true]],[],'admin');
+checkDraw(isset($draws['pot-level']), 'Prize-level draw is created in the period');
+egmPeriodDrawAction($draws,'ensure_pot',['levelId'=>'pot-level','potLevel'=>['name'=>'Pot','title'=>'Pot','prizeName'=>'Gift','description'=>'','winnerLimit'=>2,'includeEntered'=>true,'includeWalkIns'=>true]],[],'admin');
+checkDraw(count($draws) === 3, 'Opening the same prize-level draw does not duplicate it');
 egmPeriodDrawAction($draws,'roll',['id'=>$id],$rows,'admin');
 rejectsDraw(function() use (&$draws,$id) { egmPeriodDrawAction($draws,'confirm',['id'=>$id,'candidateKey'=>'1'],[],'admin'); });
 $draws[$id]['pending']['admin']['expires']=time()-1;

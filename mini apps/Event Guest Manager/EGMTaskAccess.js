@@ -48,7 +48,7 @@
   }
 
   const paneLabelMap = {
-    'crisis-control': 'Crisis Control',
+    'crisis-control': 'کنترل بحران',
     control: 'کنترل پنل',
     quiz: 'کوئیز',
     information: 'اطلاعات',
@@ -57,6 +57,7 @@
     'invite-card': 'کارت دعوت',
     export: 'خروجی',
     draws: 'قرعه‌کشی',
+    winners: 'برندگان',
     photo: 'عکس‌ها',
     'invitees-rate': 'امتیازدهی',
     'challenge-storage': 'مخزن چالش',
@@ -133,7 +134,7 @@
     const response = await fetch(url.toString(), { credentials: 'same-origin' });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.status !== 'ok') {
-      throw new Error(payload?.message || 'Request failed.');
+      throw new Error(payload?.message || 'درخواست ناموفق بود.');
     }
     return payload?.data && typeof payload.data === 'object' ? payload.data : {};
   }
@@ -147,7 +148,7 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data?.status !== 'ok') {
-      throw new Error(data?.message || 'Request failed.');
+      throw new Error(data?.message || 'درخواست ناموفق بود.');
     }
     return data;
   }

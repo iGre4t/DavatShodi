@@ -25,7 +25,7 @@
     };
     const labels = group => {
       const ticketMap = new Map(tickets.map(ticket => [`ticket:${ticket.id}`, ticket.title]));
-      return (group.outputs || []).map(output => output === 'print_card' ? 'Invite / Print Card' : ticketMap.get(output)).filter(Boolean);
+      return (group.outputs || []).map(output => output === 'print_card' ? 'کارت اصلی' : ticketMap.get(output)).filter(Boolean);
     };
     const render = () => {
       if (!list) return;
@@ -45,7 +45,7 @@
       settingsForm.elements.title.value = group.title;
       const outputs = new Set(group.outputs || []);
       const outputBox = pane.querySelector('[data-egm-group-outputs]');
-      outputBox.innerHTML = `<label class="egm-groups-output-option"><input type="checkbox" value="print_card" ${outputs.has('print_card') ? 'checked' : ''}><span>Invite Card / Print Card اصلی</span></label>` + tickets.map(ticket => `<label class="egm-groups-output-option"><input type="checkbox" value="ticket:${esc(ticket.id)}" ${outputs.has(`ticket:${ticket.id}`) ? 'checked' : ''}><span>${esc(ticket.title)}</span></label>`).join('');
+      outputBox.innerHTML = `<label class="egm-groups-output-option"><input type="checkbox" value="print_card" ${outputs.has('print_card') ? 'checked' : ''}><span>کارت اصلی</span></label>` + tickets.map(ticket => `<label class="egm-groups-output-option"><input type="checkbox" value="ticket:${esc(ticket.id)}" ${outputs.has(`ticket:${ticket.id}`) ? 'checked' : ''}><span>${esc(ticket.title)}</span></label>`).join('');
       modal.hidden = false;
       settingsForm.elements.title.focus();
     };

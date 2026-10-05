@@ -51,7 +51,6 @@ function getPanelChildTabDefinitionsByParent(): array
             ['id' => 'event-guest-manager:monitoring', 'label' => 'مانیتورینگ'],
             ['id' => 'event-guest-manager:export', 'label' => 'خروجی'],
             ['id' => 'event-guest-manager:linker', 'label' => 'پیوندساز'],
-            ['id' => 'event-guest-manager:event-style', 'label' => 'استایل رویداد'],
             ['id' => 'event-guest-manager:logs', 'label' => 'گزارش‌ها']
         ],
         'rate-me' => [

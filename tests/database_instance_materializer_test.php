@@ -45,14 +45,16 @@ try {
     file_put_contents($egmSource . '/invitees_csv_safety.php', "<?php // mini apps/Event Guest Manager\n");
     file_put_contents($egmSource . '/period_exports.php', "<?php // mini apps/Event Guest Manager export endpoint\n");
     file_put_contents($egmSource . '/seat_map.php', "<?php // mini apps/Event Guest Manager seat endpoint\n");
+    file_put_contents($egmSource . '/RefMonitor.php', "<?php // mini apps/Event Guest Manager RefMonitor\n");
     file_put_contents($egmSource . '/worker.php', "<?php return __DIR__ . '/../../api/config.php';\n");
     file_put_contents($egmSource . '/Setting.json', '{"must":"stay-in-db"}');
     file_put_contents($egmSource . '/EGM Event/Answers.csv', "Work ID\n");
     $egmTarget = $root . '/egm-target';
     $egmFiles = databaseInstanceMaterializeCodeShell('egm', $egmSource, $egmTarget, 'RestoredEgm');
-    materializerTestAssert($egmFiles === 7, 'EGM materializer copied an unexpected number of code files.');
+    materializerTestAssert($egmFiles === 8, 'EGM materializer copied an unexpected number of code files.');
     materializerTestAssert(is_file($egmTarget . '/EGM Panel.php'), 'EGM panel code was not restored.');
     materializerTestAssert(is_file($egmTarget . '/period_exports.php'), 'EGM period export endpoint was not restored.');
+    materializerTestAssert(is_file($egmTarget . '/RefMonitor.php'), 'EGM RefMonitor was not restored.');
     materializerTestAssert(!is_file($egmTarget . '/Setting.json'), 'EGM settings escaped the database during restore.');
     materializerTestAssert(!is_file($egmTarget . '/EGM Event/Answers.csv'), 'EGM answers escaped the database during restore.');
     $egmPanel = file_get_contents($egmTarget . '/EGM Panel.php');
@@ -65,9 +67,11 @@ try {
         if (!is_file($egmSource . '/' . $relative)) file_put_contents($egmSource . '/' . $relative, "// shared EGM code\n");
     }
     unlink($egmTarget . '/seat_map.php');
+    unlink($egmTarget . '/RefMonitor.php');
     $refreshed = databaseInstanceMaterializerRefreshEgmPanelCode($egmSource, $egmTarget, 'RestoredEgm');
     materializerTestAssert($refreshed >= 3, 'Existing EGM shared panel/task code and missing seat endpoint were not refreshed selectively.');
     materializerTestAssert(is_file($egmTarget . '/seat_map.php'), 'Missing seat endpoint was not restored to the EGM instance.');
+    materializerTestAssert(is_file($egmTarget . '/RefMonitor.php'), 'Missing RefMonitor was not restored to the EGM instance.');
     $egmPanel = file_get_contents($egmTarget . '/EGM Panel.php');
     materializerTestAssert(is_string($egmPanel) && str_contains($egmPanel, 'mini apps/EGMs/RestoredEgm'), 'Refreshed EGM panel has the wrong generated path.');
     $egmTasks = file_get_contents($egmTarget . '/EGMT.php');

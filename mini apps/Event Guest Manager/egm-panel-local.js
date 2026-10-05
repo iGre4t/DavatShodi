@@ -6,7 +6,7 @@
   function periodDrawSection() {
     return `<div class="egm-task-top-section" data-task-top-section="draws" hidden>
       <div class="card"><h3>قرعه‌کشی‌های بازه</h3>
-      <p class="hint">فقط مهمانانی که ورودشان در همین بازه ثبت شده شرکت می‌کنند، حتی اگر بعداً خارج شده باشند. هر قرعه‌کشی برندگان مستقل دارد.</p>
+      <p class="hint">اجرای قرعه‌کشی فقط برای بازهٔ فعال و مهمانان واردشدهٔ همان بازه است.</p>
       <form class="form" data-period-draw-form>
         <input type="hidden" name="id">
         <label class="field"><span>نام قرعه‌کشی</span><input name="name" maxlength="160" required></label>
@@ -20,6 +20,12 @@
       </form><p data-draw-message role="status" aria-live="polite"></p>
       <button class="btn" type="button" data-draw-refresh>بازخوانی قرعه‌کشی‌ها</button></div>
       <div data-period-draw-list></div></div>`;
+  }
+
+  function periodWinnersSection() {
+    return `<div class="egm-task-top-section" data-task-top-section="winners" hidden>
+      <div class="card"><div class="section-header"><h3>برندگان بازه</h3><button type="button" class="btn ghost" data-period-winners-refresh>تازه‌سازی</button></div>
+      <p data-period-winners-status role="status" aria-live="polite"></p><div data-period-winners-list></div></div></div>`;
   }
 
   async function periodDrawRequest(pane, action, data = {}) {
@@ -58,6 +64,36 @@
     finally { pane._drawLoading = false; }
   }
 
+  async function loadPeriodWinners(pane) {
+    const list = pane.querySelector('[data-period-winners-list]');
+    if (!list || pane._winnersLoading) return;
+    pane._winnersLoading = true;
+    const status = pane.querySelector('[data-period-winners-status]');
+    if (status) status.textContent = 'در حال بارگذاری...';
+    try {
+      const result = await periodDrawRequest(pane, 'list');
+      const draws = (result.draws || []).filter(draw => Array.isArray(draw.winners) && draw.winners.length);
+      list.innerHTML = draws.map(draw => {
+        const query = new URLSearchParams({ period_code: periodCodeForPane(pane), levelId: draw.id, action: 'export', type: 'winners' });
+        const rows = draw.winners.map(winner => `<div class="egm-period-winner-row">
+          <strong>${escapeHtml(winner.fullName || '—')}</strong>
+          <span>شماره مهمان: ${escapeHtml(winner.guestNumber || winner.code || '—')}</span>
+          <span>شناسه کاری: ${escapeHtml(winner.workId || '—')}</span>
+          <span>${escapeHtml(winner.selectedAt ? new Date(winner.selectedAt).toLocaleString('fa-IR') : '')}</span>
+        </div>`).join('');
+        return `<article class="egm-period-winner-group"><div class="section-header"><h4>${escapeHtml(draw.name)}</h4><strong>${draw.winners.length} برنده</strong></div>
+          <div class="egm-period-winner-list">${rows}</div>
+          <div class="egm-period-actions"><a class="btn ghost" href="${escapeHtml(PERIOD_DRAWS_ENDPOINT + '?' + query)}">خروجی برندگان</a>
+          <button type="button" class="btn ghost egm-btn-danger" data-period-winners-reset="${escapeHtml(draw.id)}">بازنشانی برندگان</button></div></article>`;
+      }).join('') || '<p class="muted">هنوز برنده‌ای در این بازه ثبت نشده است.</p>';
+      if (status) status.textContent = '';
+    } catch (error) {
+      if (status) status.textContent = error.message;
+    } finally {
+      pane._winnersLoading = false;
+    }
+  }
+
   function setupPeriodDraws(pane) {
     const form = pane.querySelector('[data-period-draw-form]');
     if (!form) return;
@@ -70,7 +106,13 @@
       const controls = [...pane.querySelectorAll('[data-task-top-section="draws"] button')];
       controls.forEach(button => { button.disabled = true; });
       message.textContent = 'در حال ذخیره...';
-      try { await periodDrawRequest(pane, action, data); form.reset(); await loadPeriodDraws(pane); message.textContent = 'ذخیره شد.'; }
+      try {
+        await periodDrawRequest(pane, action, data);
+        form.reset();
+        await loadPeriodDraws(pane);
+        message.textContent = 'ذخیره شد.';
+        form.closest('[data-task-top-section="draws"]')?.dispatchEvent(new CustomEvent('egm-flow-open', {detail:{index:0}}));
+      }
       catch (error) { message.textContent = error.message; }
       finally { pane._drawSaving = false; controls.forEach(button => { button.disabled = false; }); }
     };
@@ -92,11 +134,28 @@
         for (const name of ['id', 'name', 'title', 'prizeName', 'description', 'winnerLimit']) field(name).value = draw[name];
         for (const name of ['includeEntered', 'includeWalkIns']) field(name).checked = draw[name];
         message.textContent = `ویرایش: ${draw.name}`;
+        form.closest('[data-task-top-section="draws"]')?.dispatchEvent(new CustomEvent('egm-flow-open', {detail:{index:1}}));
         form.scrollIntoView({ behavior: 'smooth', block: 'center' }); field('name').focus();
         return;
       }
       if (['reset', 'delete'].includes(action) && !window.confirm(action === 'delete' ? 'قرعه‌کشی و تمام برندگان آن حذف شوند؟' : 'تمام برندگان این قرعه‌کشی پاک شوند؟')) return;
       void run(action, { id });
+    });
+    pane.querySelector('[data-period-winners-refresh]')?.addEventListener('click', () => void loadPeriodWinners(pane));
+    pane.querySelector('[data-period-winners-list]')?.addEventListener('click', async event => {
+      const button = event.target.closest('[data-period-winners-reset]');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+      if (!window.confirm('همه برندگان این قرعه‌کشی از بازه پاک شوند؟')) return;
+      button.disabled = true;
+      const status = pane.querySelector('[data-period-winners-status]');
+      try {
+        await periodDrawRequest(pane, 'reset', { id: button.dataset.periodWinnersReset });
+        await Promise.all([loadPeriodWinners(pane), loadPeriodDraws(pane)]);
+        if (status) status.textContent = 'برندگان بازنشانی شدند.';
+      } catch (error) {
+        if (status) status.textContent = error.message;
+        button.disabled = false;
+      }
     });
   }
   const eventEndpoint = (file, fallback) => scriptUrl ? new URL(file, scriptUrl).href : fallback;
@@ -154,7 +213,7 @@
   function resolveDefaultTopPanesForTaskType(taskType) {
     const normalizedType = normalizeTaskType(taskType);
     if (normalizedType === 'period') {
-      return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
+      return ['control', 'information', 'invite', 'invitees', 'invite-card', 'games', 'export', 'draws', 'winners'];
     }
     if (normalizedType === 'conditional_quiz') {
       return ['control', 'information', 'quiz', 'crisis-control'];
@@ -252,6 +311,7 @@
       taskAccessEnabled: normalizeBool(raw.taskAccessEnabled ?? raw.task_access_enabled ?? true),
       allowedTopPanes: normalizeAllowedTopPanes(raw.allowedTopPanes ?? raw.allowed_top_panes ?? [], taskType),
       active: normalizeBool(raw.active),
+      activationPending: normalizeBool(raw.activationPending),
       duration: normalizeBool(raw.duration),
       quitRequired: normalizeBool(raw.quitRequired ?? raw.quit_required ?? false),
       quitTimelineRequired: normalizeBool(raw.quitTimelineRequired ?? raw.quit_timeline_required ?? true),
@@ -265,6 +325,11 @@
       enterDeadlineTime: normalizeTime(raw.enterDeadlineTime ?? raw.enter_deadline_time ?? ''),
       quitOpeningDate: normalizeDate(raw.quitOpeningDate ?? raw.quit_opening_date ?? ''),
       quitOpeningTime: normalizeTime(raw.quitOpeningTime ?? raw.quit_opening_time ?? ''),
+      prizeEntryWindowEnabled: normalizeBool(raw.prizeEntryWindowEnabled ?? raw.prize_entry_window_enabled ?? false),
+      prizeEntryStartDate: normalizeDate(raw.prizeEntryStartDate ?? raw.prize_entry_start_date ?? ''),
+      prizeEntryStartTime: normalizeTime(raw.prizeEntryStartTime ?? raw.prize_entry_start_time ?? ''),
+      prizeEntryEndDate: normalizeDate(raw.prizeEntryEndDate ?? raw.prize_entry_end_date ?? ''),
+      prizeEntryEndTime: normalizeTime(raw.prizeEntryEndTime ?? raw.prize_entry_end_time ?? ''),
       endedAt: String(raw.endedAt ?? raw.ended_at ?? '').trim(),
       endedBy: String(raw.endedBy ?? raw.ended_by ?? '').trim(),
       endedNoQuitResolution: String(raw.endedNoQuitResolution ?? raw.ended_no_quit_resolution ?? '').trim(),
@@ -307,7 +372,7 @@
 
   function buildTimeOptions(selected = '') {
     const selectedValue = normalizeTime(selected);
-    const options = ['<option value="">Select time</option>'];
+    const options = ['<option value="">انتخاب ساعت</option>'];
     for (let hour = 0; hour <= 23; hour += 1) {
       const value = `${String(hour).padStart(2, '0')}:00`;
       const isSelected = value === selectedValue ? ' selected' : '';
@@ -573,7 +638,7 @@
     }
     shell.innerHTML = `
       <div class="card">
-        <div class="section-header"><h3>No Access</h3></div>
+        <div class="section-header"><h3>دسترسی ندارید</h3></div>
         <p class="muted">شما به هیچ‌یک از بخش‌های این بازه دسترسی ندارید.</p>
       </div>
     `;
@@ -597,6 +662,12 @@
     const enterDeadlineTime = pane.querySelector('[data-task-field="enterDeadlineTime"]');
     const quitOpeningDate = pane.querySelector('[data-task-field="quitOpeningDate"]');
     const quitOpeningTime = pane.querySelector('[data-task-field="quitOpeningTime"]');
+    const prizeEntryWindowEnabled = pane.querySelector('[data-task-field="prizeEntryWindowEnabled"]');
+    const prizeEntryStartDate = pane.querySelector('[data-task-field="prizeEntryStartDate"]');
+    const prizeEntryStartTime = pane.querySelector('[data-task-field="prizeEntryStartTime"]');
+    const prizeEntryEndDate = pane.querySelector('[data-task-field="prizeEntryEndDate"]');
+    const prizeEntryEndTime = pane.querySelector('[data-task-field="prizeEntryEndTime"]');
+    const prizeEntryWindowFields = pane.querySelector('[data-prize-entry-window-fields]');
     const quitTimeline = pane.querySelector('[data-quit-timeline]');
     const statusEl = pane.querySelector('[data-task-status]');
     const saveStatusEl = pane.querySelector('[data-task-save-status]');
@@ -616,7 +687,12 @@
       !(enterDeadlineDate instanceof HTMLInputElement) ||
       !(enterDeadlineTime instanceof HTMLSelectElement) ||
       !(quitOpeningDate instanceof HTMLInputElement) ||
-      !(quitOpeningTime instanceof HTMLSelectElement)
+      !(quitOpeningTime instanceof HTMLSelectElement) ||
+      !(prizeEntryWindowEnabled instanceof HTMLInputElement) ||
+      !(prizeEntryStartDate instanceof HTMLInputElement) ||
+      !(prizeEntryStartTime instanceof HTMLSelectElement) ||
+      !(prizeEntryEndDate instanceof HTMLInputElement) ||
+      !(prizeEntryEndTime instanceof HTMLSelectElement)
     ) {
       return null;
     }
@@ -637,6 +713,12 @@
       enterDeadlineTime,
       quitOpeningDate,
       quitOpeningTime,
+      prizeEntryWindowEnabled,
+      prizeEntryStartDate,
+      prizeEntryStartTime,
+      prizeEntryEndDate,
+      prizeEntryEndTime,
+      prizeEntryWindowFields: prizeEntryWindowFields instanceof HTMLElement ? prizeEntryWindowFields : null,
       quitTimeline: quitTimeline instanceof HTMLElement ? quitTimeline : null,
       statusEl: statusEl instanceof HTMLElement ? statusEl : null,
       saveStatusEl: saveStatusEl instanceof HTMLElement ? saveStatusEl : null,
@@ -906,7 +988,7 @@
     const hasSelected = Boolean(selected && previewUrl);
     if (hasSelected) {
       controls.previewImage.src = previewUrl;
-      controls.previewImage.alt = String(selected?.title || selected?.filename || 'Selected photo');
+      controls.previewImage.alt = String(selected?.title || selected?.filename || 'عکس انتخاب‌شده');
       controls.previewImage.classList.remove('hidden');
       controls.previewPlaceholder.classList.add('hidden');
     } else {
@@ -944,7 +1026,7 @@
       return `
         <tr data-task-photo-row="${escapedPhotoId}">
           <td>
-            ${thumbUrl ? `<img class="egm-task-photo-thumb" src="${escapeHtml(thumbUrl)}" alt="${escapedName || 'Task photo'}" loading="lazy" />` : '<span class="muted">No Preview</span>'}
+            ${thumbUrl ? `<img class="egm-task-photo-thumb" src="${escapeHtml(thumbUrl)}" alt="${escapedName || 'عکس مأموریت'}" loading="lazy" />` : '<span class="muted">پیش‌نمایش ندارد</span>'}
           </td>
           <td>
             <input
@@ -956,8 +1038,8 @@
           </td>
           <td>
             <div class="egm-task-photo-row-actions">
-              <button type="button" class="btn ghost" data-action="save-task-photo-name" data-photo-id="${escapedPhotoId}">Save</button>
-              <button type="button" class="btn ghost egm-btn-danger" data-action="remove-task-photo" data-photo-id="${escapedPhotoId}">Remove</button>
+              <button type="button" class="btn ghost" data-action="save-task-photo-name" data-photo-id="${escapedPhotoId}">ذخیره</button>
+              <button type="button" class="btn ghost egm-btn-danger" data-action="remove-task-photo" data-photo-id="${escapedPhotoId}">حذف</button>
             </div>
           </td>
         </tr>
@@ -989,7 +1071,7 @@
     if (!Array.isArray(items)) return [];
     return items.map((item) => {
       const id = String(item?.id ?? '').trim();
-      const name = String(item?.name ?? '').trim() || 'Challenge';
+      const name = String(item?.name ?? '').trim() || 'چالش';
       const guide = String(item?.guide ?? item?.challengeGuide ?? item?.challenge_guide ?? '').replace(/\r\n?/g, '\n');
       const quantity = Math.max(0, normalizeScoreValue(item?.quantity ?? 0));
       const rawLast = Math.max(0, normalizeScoreValue(item?.last ?? quantity));
@@ -1061,13 +1143,13 @@
     if (!state || !controls) return;
 
     if (!Array.isArray(state.challenges) || !state.challenges.length) {
-      controls.listBody.innerHTML = '<tr><td colspan="4" class="muted">No challenges added yet.</td></tr>';
+      controls.listBody.innerHTML = '<tr><td colspan="4" class="muted">هنوز چالشی افزوده نشده است.</td></tr>';
       return;
     }
 
     controls.listBody.innerHTML = state.challenges.map((challenge) => {
       const challengeId = escapeHtml(challenge.id);
-      const name = escapeHtml(challenge.name || 'Challenge');
+      const name = escapeHtml(challenge.name || 'چالش');
       const quantity = Math.max(0, normalizeScoreValue(challenge.quantity));
       const last = quantity === 0
         ? 0
@@ -1085,9 +1167,9 @@
           </td>
           <td>
             <div class="egm-team-challenge-row-actions">
-              <button type="button" class="btn ghost" data-action="open-team-challenge-guide" data-challenge-id="${challengeId}">Guide</button>
-              <button type="button" class="btn ghost" data-action="save-team-challenge" data-challenge-id="${challengeId}">Save</button>
-              <button type="button" class="btn ghost egm-btn-danger" data-action="remove-team-challenge" data-challenge-id="${challengeId}">Remove</button>
+              <button type="button" class="btn ghost" data-action="open-team-challenge-guide" data-challenge-id="${challengeId}">راهنما</button>
+              <button type="button" class="btn ghost" data-action="save-team-challenge" data-challenge-id="${challengeId}">ذخیره</button>
+              <button type="button" class="btn ghost egm-btn-danger" data-action="remove-team-challenge" data-challenge-id="${challengeId}">حذف</button>
             </div>
           </td>
         </tr>
@@ -1145,17 +1227,17 @@
     wrapper.className = 'egm-team-challenge-guide-modal';
     wrapper.hidden = true;
     wrapper.innerHTML = `
-      <div class="egm-team-challenge-guide-dialog" role="dialog" aria-modal="true" aria-label="Challenge Guide">
+      <div class="egm-team-challenge-guide-dialog" role="dialog" aria-modal="true" aria-label="راهنمای چالش">
         <div class="egm-team-challenge-guide-head">
-          <h3 data-team-challenge-guide-title>Challenge Guide</h3>
-          <button type="button" class="btn ghost" data-action="close-team-challenge-guide-modal">Close</button>
+          <h3 data-team-challenge-guide-title>راهنمای چالش</h3>
+          <button type="button" class="btn ghost" data-action="close-team-challenge-guide-modal">بستن</button>
         </div>
         <label class="field full">
-          <span>Guide Text</span>
+          <span>متن راهنما</span>
           <textarea data-team-challenge-guide-text rows="10"></textarea>
         </label>
         <div class="field full egm-team-challenge-guide-actions">
-          <button type="button" class="btn primary standard-primary-button" data-action="save-team-challenge-guide">Save Guide</button>
+          <button type="button" class="btn primary standard-primary-button" data-action="save-team-challenge-guide">ذخیره راهنما</button>
         </div>
         <p class="muted small" data-team-challenge-guide-status aria-live="polite"></p>
       </div>
@@ -1204,7 +1286,7 @@
       const context = teamChallengeGuideContext;
       context.saving = true;
       saveButton.disabled = true;
-      setTeamChallengeGuideModalStatus('Saving...');
+      setTeamChallengeGuideModalStatus('در حال ذخیره...');
       try {
         const data = await postTaskAction('save_team_task_challenge_guide', {
           id: context.taskId,
@@ -1222,11 +1304,11 @@
         const activePane = findPaneByKey(context.layout, keepPane);
         if (activePane instanceof HTMLElement) {
           activateTaskTopPane(activePane, 'challenge-storage');
-          setTeamChallengeListStatus(activePane, data.message || 'Challenge guide saved.');
+          setTeamChallengeListStatus(activePane, data.message || 'راهنمای چالش ذخیره شد.');
         }
         closeTeamChallengeGuideModal();
       } catch (error) {
-        setTeamChallengeGuideModalStatus(error?.message || 'Failed to save challenge guide.', true);
+        setTeamChallengeGuideModalStatus(error?.message || 'ذخیره راهنمای چالش ناموفق بود.', true);
       } finally {
         if (teamChallengeGuideContext) {
           teamChallengeGuideContext.saving = false;
@@ -1249,7 +1331,7 @@
     const titleEl = modal.querySelector('[data-team-challenge-guide-title]');
     const textarea = modal.querySelector('[data-team-challenge-guide-text]');
     if (!(titleEl instanceof HTMLElement) || !(textarea instanceof HTMLTextAreaElement)) return;
-    titleEl.textContent = `Guide - ${String(challenge.name || 'Challenge').trim() || 'Challenge'}`;
+    titleEl.textContent = `راهنمای ${String(challenge.name || 'چالش').trim() || 'چالش'}`;
     textarea.value = String(challenge.guide || '').replace(/\r\n?/g, '\n');
     setTeamChallengeGuideModalStatus('', false);
     teamChallengeGuideContext = {
@@ -1359,12 +1441,12 @@
   function formatTeamJoinTypeLabel(value) {
     const token = String(value ?? '').trim().toLowerCase();
     if (token === 'public_open' || token === 'public-open' || token === 'open') {
-      return 'Public (Open)';
+      return 'عمومی آزاد';
     }
     if (token === 'public_request' || token === 'public-request' || token === 'request') {
-      return 'Public (Request)';
+      return 'عمومی با درخواست';
     }
-    return 'Private';
+    return 'خصوصی';
   }
 
   function normalizeDescribeResultItem(item) {
@@ -1373,7 +1455,7 @@
     if (!photoId) return null;
     return {
       photoId,
-      photoName: String(item.photoName ?? item.photo_name ?? '').trim() || 'Photo',
+      photoName: String(item.photoName ?? item.photo_name ?? '').trim() || 'عکس',
       photoUrl: String(item.photoUrl ?? item.photo_url ?? '').trim(),
       articleFile: String(item.articleFile ?? item.article_file ?? '').trim(),
       wordCount: normalizeScoreValue(item.wordCount ?? item.word_count ?? 0)
@@ -1430,7 +1512,7 @@
     if (!controls) return;
     const colspan = getInfoRateTableColspanForPane(pane);
     if (!silent) {
-      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">Loading invitees...</td></tr>`;
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">دعوت‌شدگان در حال بارگذاری هستند...</td></tr>`;
     }
     try {
       const data = await postTaskAction('get_info_task_rate_data', { id: taskId });
@@ -1484,7 +1566,7 @@
       renderInfoRateTable(pane);
       setInfoRateStatus(pane, '');
     } catch (error) {
-      const failedText = isTeamTaskType(pane.dataset.taskType || 'quiz') ? 'Failed to load teams.' : 'Failed to load invitees.';
+      const failedText = isTeamTaskType(pane.dataset.taskType || 'quiz') ? 'بارگذاری تیم‌ها ناموفق بود.' : 'بارگذاری دعوت‌شدگان ناموفق بود.';
       controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">${failedText}</td></tr>`;
       setInfoRateStatus(pane, error?.message || failedText, true);
     }
@@ -1498,7 +1580,7 @@
       return haystack.includes(query);
     });
     if (!visibleRows.length) {
-      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">No team found.</td></tr>`;
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">تیمی یافت نشد.</td></tr>`;
       return;
     }
 
@@ -1510,21 +1592,21 @@
       const isSubmitted = sectionToken === 'submitted' || Boolean(team.scoreSubmitted);
       const isStarted = !isSubmitted && sectionToken === 'started';
       const statusMarkup = isSubmitted
-        ? '<span class="egm-team-submitted-flag"><i class="ri-checkbox-circle-line" aria-hidden="true"></i><span>Submitted Score</span></span>'
+        ? '<span class="egm-team-submitted-flag"><i class="ri-checkbox-circle-line" aria-hidden="true"></i><span>امتیاز ثبت‌شده</span></span>'
         : (isStarted
-          ? '<span class="egm-team-started-flag"><i class="ri-flag-2-line" aria-hidden="true"></i><span>Started</span></span>'
-          : '<span class="egm-team-status-muted">Draft</span>');
+          ? '<span class="egm-team-started-flag"><i class="ri-flag-2-line" aria-hidden="true"></i><span>آغازشده</span></span>'
+          : '<span class="egm-team-status-muted">پیش‌نویس</span>');
       const minMembers = Math.max(1, normalizeScoreValue(team.minMembers || 1));
       const maxMembers = Math.max(minMembers, normalizeScoreValue(team.maxMembers || minMembers));
       const memberCount = normalizeScoreValue(team.memberCount || 0);
       const statusTag = isSubmitted
-        ? '<span class="egm-team-submitted-chip">Scored</span>'
-        : (isStarted ? '<span class="egm-team-started-chip">Live</span>' : '');
+        ? '<span class="egm-team-submitted-chip">امتیازدهی‌شده</span>'
+        : (isStarted ? '<span class="egm-team-started-chip">در حال اجرا</span>' : '');
       return `
         <tr class="egm-team-rate-row ${isStarted ? 'egm-team-rate-row--started' : ''} ${isSubmitted ? 'egm-team-rate-row--submitted' : ''}" data-team-id="${escapeHtml(team.id)}">
           <td>
             <div class="egm-team-name-cell">
-              <span>${escapeHtml(team.name || 'Team')}</span>
+              <span>${escapeHtml(team.name || 'تیم')}</span>
               ${statusTag}
             </div>
           </td>
@@ -1536,10 +1618,10 @@
           <td>
             <label class="egm-team-accepted-check-wrap">
               <input type="checkbox" data-team-challenge-accepted-check ${team.challengeAccepted ? 'checked' : ''} />
-              <span>Challenge Accepted</span>
+              <span>چالش پذیرفته‌شده</span>
             </label>
           </td>
-          <td><button type="button" class="btn primary standard-primary-button" data-action="team-row-preview">Team Preview</button></td>
+          <td><button type="button" class="btn primary standard-primary-button" data-action="team-row-preview">نمایش تیم</button></td>
         </tr>
       `;
     };
@@ -1560,9 +1642,9 @@
     };
 
     controls.body.innerHTML = [
-      renderSection('Started Teams', startedRows, 'started'),
-      renderSection('Other Teams', otherRows, 'other'),
-      renderSection('Submitted Score', submittedRows, 'submitted')
+      renderSection('تیم‌های آغازشده', startedRows, 'started'),
+      renderSection('سایر تیم‌ها', otherRows, 'other'),
+      renderSection('امتیاز ثبت‌شده', submittedRows, 'submitted')
     ].filter(Boolean).join('');
   }
 
@@ -1585,7 +1667,7 @@
       return haystack.includes(query);
     });
     if (!visibleRows.length) {
-      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">No invitee found.</td></tr>`;
+      controls.body.innerHTML = `<tr><td colspan="${colspan}" class="muted">دعوت‌شده‌ای یافت نشد.</td></tr>`;
       if (controls.selectAll instanceof HTMLInputElement) {
         controls.selectAll.checked = false;
         controls.selectAll.indeterminate = false;
@@ -1606,11 +1688,11 @@
           <td>
             <div class="egm-info-rate-row-actions">
               <input type="number" min="0" step="1" data-info-row-score value="${escapeHtml(String(normalizeScoreValue(row.customScore)))}" ${disableRowActions ? 'disabled' : ''} />
-              <button type="button" class="btn ghost" data-action="info-row-apply" ${disableRowActions ? 'disabled' : ''}>Save</button>
+              <button type="button" class="btn ghost" data-action="info-row-apply" ${disableRowActions ? 'disabled' : ''}>ذخیره</button>
             </div>
           </td>
-          <td><button type="button" class="btn primary standard-primary-button" data-action="info-row-max" ${disableRowActions ? 'disabled' : ''}>Max Score</button></td>
-          ${isDescribeTask ? `<td><button type="button" class="btn ghost" data-action="info-row-results" ${Array.isArray(row.describeResults) && row.describeResults.length ? '' : 'disabled'}>Results</button></td>` : ''}
+          <td><button type="button" class="btn primary standard-primary-button" data-action="info-row-max" ${disableRowActions ? 'disabled' : ''}>حداکثر امتیاز</button></td>
+          ${isDescribeTask ? `<td><button type="button" class="btn ghost" data-action="info-row-results" ${Array.isArray(row.describeResults) && row.describeResults.length ? '' : 'disabled'}>نتایج</button></td>` : ''}
         </tr>
       `;
     }).join('');
@@ -1645,10 +1727,10 @@
         return { ...row, customScore: assigned };
       });
       renderInfoRateTable(pane);
-      setInfoRateStatus(pane, data.message || 'Scores updated.');
+      setInfoRateStatus(pane, data.message || 'امتیازها به‌روزرسانی شدند.');
       return true;
     } catch (error) {
-      setInfoRateStatus(pane, error?.message || 'Failed to save invitees score.', true);
+      setInfoRateStatus(pane, error?.message || 'ذخیره امتیاز دعوت‌شدگان ناموفق بود.', true);
       return false;
     }
   }
@@ -1688,10 +1770,10 @@
     wrapper.className = 'egm-describe-results-modal';
     wrapper.hidden = true;
     wrapper.innerHTML = `
-      <div class="egm-describe-results-dialog" role="dialog" aria-modal="true" aria-label="Describe Photo Results">
+      <div class="egm-describe-results-dialog" role="dialog" aria-modal="true" aria-label="نتایج">
         <div class="egm-describe-results-head">
-          <h3 data-describe-results-title>Results</h3>
-          <button type="button" class="btn ghost" data-action="close-describe-results-modal">Close</button>
+          <h3 data-describe-results-title>نتایج</h3>
+          <button type="button" class="btn ghost" data-action="close-describe-results-modal">بستن</button>
         </div>
         <p class="muted small" data-describe-results-hint></p>
         <div class="egm-describe-results-grid" data-describe-results-grid></div>
@@ -1731,21 +1813,21 @@
     wrapper.className = 'egm-describe-article-modal';
     wrapper.hidden = true;
     wrapper.innerHTML = `
-      <div class="egm-describe-article-dialog" role="dialog" aria-modal="true" aria-label="Describe Photo Text Result">
+      <div class="egm-describe-article-dialog" role="dialog" aria-modal="true" aria-label="متن نتیجه">
         <div class="egm-describe-article-head">
-          <h3 data-describe-article-title>Result Text</h3>
-          <button type="button" class="btn ghost" data-action="close-describe-article-modal">Close</button>
+          <h3 data-describe-article-title>متن نتیجه</h3>
+          <button type="button" class="btn ghost" data-action="close-describe-article-modal">بستن</button>
         </div>
         <p class="muted small" data-describe-article-meta></p>
         <div class="egm-describe-article-content" data-describe-article-text></div>
         <div class="egm-describe-article-score-box">
           <label class="field standard-width">
-            <span>Custom Score</span>
+            <span>امتیاز دلخواه</span>
             <input type="number" min="0" step="1" data-describe-article-score />
           </label>
           <div class="egm-describe-article-score-actions">
-            <button type="button" class="btn secondary" data-action="describe-article-save-score">Save</button>
-            <button type="button" class="btn primary standard-primary-button" data-action="describe-article-max-score">Max Score</button>
+            <button type="button" class="btn secondary" data-action="describe-article-save-score">ذخیره</button>
+            <button type="button" class="btn primary standard-primary-button" data-action="describe-article-max-score">حداکثر امتیاز</button>
           </div>
         </div>
         <p class="muted small" data-describe-article-status></p>
@@ -1771,7 +1853,7 @@
         if (!(scoreInput instanceof HTMLInputElement)) return;
         const scoreValue = normalizeScoreValue(scoreInput.value);
         context.saving = true;
-        setDescribeArticleStatus('Saving...', false);
+        setDescribeArticleStatus('در حال ذخیره...', false);
         const ok = await assignInfoScores(context.pane, [context.workId], 'custom', scoreValue);
         context.saving = false;
         if (ok) {
@@ -1780,9 +1862,9 @@
             context.invitee = refreshed;
             scoreInput.value = String(normalizeScoreValue(refreshed.customScore));
           }
-          setDescribeArticleStatus('Score saved.', false);
+          setDescribeArticleStatus('امتیاز ذخیره شد.', false);
         } else {
-          setDescribeArticleStatus('Failed to save score.', true);
+          setDescribeArticleStatus('ذخیره امتیاز ناموفق بود.', true);
         }
         return;
       }
@@ -1791,7 +1873,7 @@
       if (maxButton instanceof HTMLButtonElement) {
         if (context.saving) return;
         context.saving = true;
-        setDescribeArticleStatus('Saving...', false);
+        setDescribeArticleStatus('در حال ذخیره...', false);
         const ok = await assignInfoScores(context.pane, [context.workId], 'max');
         context.saving = false;
         const scoreInput = wrapper.querySelector('[data-describe-article-score]');
@@ -1803,9 +1885,9 @@
               scoreInput.value = String(normalizeScoreValue(refreshed.customScore));
             }
           }
-          setDescribeArticleStatus('Max score applied.', false);
+          setDescribeArticleStatus('حداکثر امتیاز اعمال شد.', false);
         } else {
-          setDescribeArticleStatus('Failed to save score.', true);
+          setDescribeArticleStatus('ذخیره امتیاز ناموفق بود.', true);
         }
       }
     });
@@ -1832,24 +1914,24 @@
 
     const firstName = String(invitee?.firstName || '').trim();
     const lastName = String(invitee?.lastName || '').trim();
-    const fullName = `${firstName} ${lastName}`.trim() || String(invitee?.workId || 'Invitee');
+    const fullName = `${firstName} ${lastName}`.trim() || String(invitee?.workId || 'دعوت‌شده');
     title.textContent = `Results - ${fullName}`;
-    hint.textContent = 'Click a photo to open the submitted text.';
+    hint.textContent = 'برای دیدن متن ثبت‌شده، عکس را انتخاب کنید.';
 
     const results = Array.isArray(invitee?.describeResults) ? invitee.describeResults : [];
     if (!results.length) {
-      grid.innerHTML = '<div class="muted">No saved results found for this user.</div>';
+      grid.innerHTML = '<div class="muted">نتیجه‌ای برای این کاربر ثبت نشده است.</div>';
     } else {
       grid.innerHTML = results.map((result) => {
-        const photoName = escapeHtml(String(result?.photoName || 'Photo'));
+        const photoName = escapeHtml(String(result?.photoName || 'عکس'));
         const photoId = escapeHtml(String(result?.photoId || ''));
         const wordCount = normalizeScoreValue(result?.wordCount ?? 0);
         const photoUrl = String(result?.photoUrl || '').trim();
         return `
           <button type="button" class="egm-describe-result-photo-btn" data-action="open-describe-result-photo" data-photo-id="${photoId}">
-            ${photoUrl ? `<img src="${escapeHtml(photoUrl)}" alt="${photoName}" loading="lazy" />` : '<div class="egm-describe-result-photo-fallback">No Preview</div>'}
+            ${photoUrl ? `<img src="${escapeHtml(photoUrl)}" alt="${photoName}" loading="lazy" />` : '<div class="egm-describe-result-photo-fallback">پیش‌نمایش ندارد</div>'}
             <div class="egm-describe-result-photo-name">${photoName}</div>
-            <div class="egm-describe-result-photo-words">Words: ${escapeHtml(String(wordCount))}</div>
+            <div class="egm-describe-result-photo-words">واژه‌ها: ${escapeHtml(String(wordCount))}</div>
           </button>
         `;
       }).join('');
@@ -1890,8 +1972,8 @@
     const lastName = String(invitee?.lastName || '').trim();
     const fullName = `${firstName} ${lastName}`.trim() || workId;
 
-    title.textContent = `${resultItem?.photoName || 'Photo'} - ${fullName}`;
-    meta.textContent = 'Loading result text...';
+    title.textContent = `${resultItem?.photoName || 'عکس'} - ${fullName}`;
+    meta.textContent = 'متن نتیجه در حال بارگذاری است...';
     textArea.textContent = '';
     scoreInput.max = String(maxScore);
     scoreInput.value = String(currentScore);
@@ -1920,9 +2002,9 @@
       meta.textContent = `Photo ID: ${String(result?.photoId || photoId)} - Words: ${wordCount}`;
       textArea.textContent = text;
     } catch (error) {
-      meta.textContent = 'Failed to load result text.';
-      textArea.textContent = String(error?.message || 'Result text is not available.');
-      setDescribeArticleStatus(String(error?.message || 'Failed to load result text.'), true);
+      meta.textContent = 'بارگذاری متن نتیجه ناموفق بود.';
+      textArea.textContent = String(error?.message || 'متن نتیجه در دسترس نیست.');
+      setDescribeArticleStatus(String(error?.message || 'بارگذاری متن نتیجه ناموفق بود.'), true);
     }
   }
 
@@ -1976,7 +2058,7 @@
     const minMembers = Math.max(1, normalizeScoreValue(team.minMembers || 1));
     const challengeAccepted = Boolean(team.challengeAccepted ?? false);
 
-    titleEl.textContent = `Team Preview - ${team.name || 'Team'}`;
+    titleEl.textContent = `نمایش تیم - ${team.name || 'تیم'}`;
     hintEl.textContent = `Members: ${memberCount} / ${maxMembers} (min ${minMembers}) - Challenge Accepted: ${challengeAccepted ? 'Yes' : 'No'}`;
     nameInput.value = String(team.name || '');
     joinSelect.value = String(team.joinType || 'private');
@@ -1993,14 +2075,14 @@
         const selected = String(member.workId || '') === String(team.leaderWorkId || '') ? ' selected' : '';
         return `<option value="${escapeHtml(String(member.workId || ''))}"${selected}>${escapeHtml(fullName)} (${escapeHtml(String(member.workId || ''))})</option>`;
       }).join('')
-      : '<option value="">No members</option>';
+      : '<option value="">بدون عضو</option>';
 
     if (!members.length) {
-      membersBody.innerHTML = '<tr><td colspan="6" class="muted">No members found in this team.</td></tr>';
+      membersBody.innerHTML = '<tr><td colspan="6" class="muted">عضوی در این تیم یافت نشد.</td></tr>';
     } else {
       membersBody.innerHTML = members.map((member) => {
         const fullName = `${String(member.firstName || '').trim()} ${String(member.lastName || '').trim()}`.trim();
-        const role = String(member.status || '').trim() === 'leader' ? 'Team Admin' : 'Member';
+        const role = String(member.status || '').trim() === 'leader' ? 'مدیر تیم' : 'عضو';
         const isLeader = String(member.workId || '') === String(team.leaderWorkId || '');
         const disableRemove = members.length <= 1;
         return `
@@ -2017,7 +2099,7 @@
                 data-action="team-preview-remove-member"
                 data-work-id="${escapeHtml(String(member.workId || ''))}"
                 ${disableRemove ? 'disabled' : ''}
-              >${isLeader ? 'Remove Admin' : 'Remove'}</button>
+              >${isLeader ? 'حذف مدیر' : 'حذف'}</button>
             </td>
           </tr>
         `;
@@ -2033,60 +2115,60 @@
     wrapper.className = 'egm-team-preview-modal';
     wrapper.hidden = true;
     wrapper.innerHTML = `
-      <div class="egm-team-preview-dialog" role="dialog" aria-modal="true" aria-label="Team Preview">
+      <div class="egm-team-preview-dialog" role="dialog" aria-modal="true" aria-label="نمایش تیم">
         <div class="egm-team-preview-head">
-          <h3 data-team-preview-title>Team Preview</h3>
-          <button type="button" class="btn ghost" data-action="close-team-preview-modal">Close</button>
+          <h3 data-team-preview-title>نمایش تیم</h3>
+          <button type="button" class="btn ghost" data-action="close-team-preview-modal">بستن</button>
         </div>
         <p class="muted small" data-team-preview-hint></p>
         <div class="egm-team-preview-grid">
           <label class="field standard-width">
-            <span>Team Name</span>
+            <span>نام تیم</span>
             <input type="text" data-team-preview-name autocomplete="off" />
           </label>
           <label class="field standard-width">
-            <span>Join Type</span>
+            <span>نوع عضویت</span>
             <select data-team-preview-join-type>
-              <option value="private">Private</option>
-              <option value="public_request">Public (Request)</option>
-              <option value="public_open">Public (Open)</option>
+              <option value="private">خصوصی</option>
+              <option value="public_request">عمومی با درخواست</option>
+              <option value="public_open">عمومی آزاد</option>
             </select>
           </label>
           <label class="field standard-width">
-            <span>Team Status</span>
+            <span>وضعیت تیم</span>
             <select data-team-preview-status-select>
-              <option value="draft">Draft</option>
-              <option value="started">Started</option>
+              <option value="draft">پیش‌نویس</option>
+              <option value="started">آغازشده</option>
             </select>
           </label>
           <label class="field standard-width">
-            <span>Team Admin</span>
+            <span>مدیر تیم</span>
             <select data-team-preview-leader></select>
           </label>
-          <button type="button" class="btn primary standard-primary-button" data-action="team-preview-save-settings">Save Team Settings</button>
+          <button type="button" class="btn primary standard-primary-button" data-action="team-preview-save-settings">ذخیره تنظیمات تیم</button>
         </div>
         <div class="egm-team-preview-score-actions">
           <label class="field standard-width">
-            <span>Custom Score (All Team Members)</span>
+            <span>امتیاز دلخواه برای همه اعضای تیم</span>
             <input type="number" min="0" step="1" data-team-preview-score />
           </label>
-          <button type="button" class="btn secondary" data-action="team-preview-apply-score">Apply Custom Score</button>
-          <button type="button" class="btn primary standard-primary-button" data-action="team-preview-max-score">Max Score</button>
+          <button type="button" class="btn secondary" data-action="team-preview-apply-score">اعمال امتیاز دلخواه</button>
+          <button type="button" class="btn primary standard-primary-button" data-action="team-preview-max-score">حداکثر امتیاز</button>
         </div>
         <div class="table-wrapper egm-team-preview-members-wrap">
           <table class="tct-list-table egm-team-preview-members-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Work ID</th>
-                <th>Role</th>
-                <th>Score</th>
-                <th>Action</th>
+                <th>نام</th>
+                <th>تلفن</th>
+                <th>شناسه کاری</th>
+                <th>نقش</th>
+                <th>امتیاز</th>
+                <th>عملیات</th>
               </tr>
             </thead>
             <tbody data-team-preview-members-body>
-              <tr><td colspan="6" class="muted">Loading team...</td></tr>
+              <tr><td colspan="6" class="muted">تیم در حال بارگذاری است...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2127,11 +2209,11 @@
         }
         const teamName = String(teamNameInput.value || '').trim();
         if (!teamName) {
-          setTeamPreviewStatus('Team name is required.', true);
+          setTeamPreviewStatus('نام تیم را وارد کنید.', true);
           return;
         }
         context.saving = true;
-        setTeamPreviewStatus('Saving...', false);
+        setTeamPreviewStatus('در حال ذخیره...', false);
         try {
           await postTaskAction('team_task_admin_update_team', {
             id: context.taskId,
@@ -2149,9 +2231,9 @@
           context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
           context.team = teamData.team || null;
           renderTeamPreviewModalContent();
-          setTeamPreviewStatus('Team settings saved.');
+          setTeamPreviewStatus('تنظیمات تیم ذخیره شد.');
         } catch (error) {
-          setTeamPreviewStatus(error?.message || 'Failed to save team settings.', true);
+          setTeamPreviewStatus(error?.message || 'ذخیره تنظیمات تیم ناموفق بود.', true);
         } finally {
           context.saving = false;
         }
@@ -2163,9 +2245,9 @@
         if (context.saving) return;
         const workId = String(removeMemberButton.getAttribute('data-work-id') || '').trim();
         if (!workId) return;
-        if (!window.confirm('Remove this user from team?')) return;
+        if (!window.confirm('این کاربر از تیم حذف شود؟')) return;
         context.saving = true;
-        setTeamPreviewStatus('Updating team...', false);
+        setTeamPreviewStatus('تیم در حال به‌روزرسانی است...', false);
         try {
           await postTaskAction('team_task_admin_remove_member', {
             id: context.taskId,
@@ -2180,12 +2262,12 @@
           context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
           context.team = teamData.team || null;
           renderTeamPreviewModalContent();
-          setTeamPreviewStatus('Team member removed.');
+          setTeamPreviewStatus('عضو تیم حذف شد.');
         } catch (error) {
-          const message = String(error?.message || 'Failed to update team.');
+          const message = String(error?.message || 'به‌روزرسانی تیم ناموفق بود.');
           if (message.toLowerCase().includes('team not found')) {
             closeTeamPreviewModal();
-            setInfoRateStatus(context.pane, 'Team was removed.');
+            setInfoRateStatus(context.pane, 'تیم حذف شد.');
           } else {
             setTeamPreviewStatus(message, true);
           }
@@ -2205,11 +2287,11 @@
           .map((member) => String(member?.workId || '').trim())
           .filter((token) => token !== '');
         if (!workIds.length) {
-          setTeamPreviewStatus('Team has no members to score.', true);
+          setTeamPreviewStatus('این تیم عضوی برای امتیازدهی ندارد.', true);
           return;
         }
         context.saving = true;
-        setTeamPreviewStatus('Saving scores...', false);
+        setTeamPreviewStatus('امتیازها در حال ذخیره هستند...', false);
         const scoreValue = normalizeScoreValue(scoreInput.value);
         const ok = await assignInfoScores(context.pane, workIds, 'custom', scoreValue);
         if (ok) {
@@ -2222,12 +2304,12 @@
             context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
             context.team = teamData.team || null;
             renderTeamPreviewModalContent();
-            setTeamPreviewStatus('Team score updated.');
+            setTeamPreviewStatus('امتیاز تیم به‌روزرسانی شد.');
           } catch (error) {
-            setTeamPreviewStatus(error?.message || 'Score was saved but refresh failed.', true);
+            setTeamPreviewStatus(error?.message || 'امتیاز ذخیره شد، اما تازه‌سازی ناموفق بود.', true);
           }
         } else {
-          setTeamPreviewStatus('Failed to save team score.', true);
+          setTeamPreviewStatus('ذخیره امتیاز تیم ناموفق بود.', true);
         }
         context.saving = false;
         return;
@@ -2241,11 +2323,11 @@
           .map((member) => String(member?.workId || '').trim())
           .filter((token) => token !== '');
         if (!workIds.length) {
-          setTeamPreviewStatus('Team has no members to score.', true);
+          setTeamPreviewStatus('این تیم عضوی برای امتیازدهی ندارد.', true);
           return;
         }
         context.saving = true;
-        setTeamPreviewStatus('Saving scores...', false);
+        setTeamPreviewStatus('امتیازها در حال ذخیره هستند...', false);
         const ok = await assignInfoScores(context.pane, workIds, 'max');
         if (ok) {
           try {
@@ -2257,12 +2339,12 @@
             context.maxScore = normalizeScoreValue(teamData.maxScore ?? context.maxScore);
             context.team = teamData.team || null;
             renderTeamPreviewModalContent();
-            setTeamPreviewStatus('Max score applied to team members.');
+            setTeamPreviewStatus('حداکثر امتیاز برای اعضای تیم اعمال شد.');
           } catch (error) {
-            setTeamPreviewStatus(error?.message || 'Score was saved but refresh failed.', true);
+            setTeamPreviewStatus(error?.message || 'امتیاز ذخیره شد، اما تازه‌سازی ناموفق بود.', true);
           }
         } else {
-          setTeamPreviewStatus('Failed to save team score.', true);
+          setTeamPreviewStatus('ذخیره امتیاز تیم ناموفق بود.', true);
         }
         context.saving = false;
       }
@@ -2281,7 +2363,7 @@
     const modal = ensureTeamPreviewModal();
     const membersBody = modal.querySelector('[data-team-preview-members-body]');
     if (membersBody instanceof HTMLElement) {
-      membersBody.innerHTML = '<tr><td colspan="6" class="muted">Loading team...</td></tr>';
+      membersBody.innerHTML = '<tr><td colspan="6" class="muted">تیم در حال بارگذاری است...</td></tr>';
     }
     setTeamPreviewStatus('', false);
     modal.hidden = false;
@@ -2302,7 +2384,7 @@
       setTeamPreviewStatus('');
     } catch (error) {
       closeTeamPreviewModal();
-      setInfoRateStatus(pane, error?.message || 'Failed to load team preview.', true);
+      setInfoRateStatus(pane, error?.message || 'بارگذاری اطلاعات تیم ناموفق بود.', true);
     }
   }
 
@@ -2359,6 +2441,11 @@
     if (controls.quitTimeline) controls.quitTimeline.hidden = !quitTimelineEnabled;
     controls.minimumStayMinutes.disabled = !quitRequiredEnabled || controls.quitTimelineRequiredToggle.checked;
     if (controls.minimumStayContainer) controls.minimumStayContainer.hidden = !quitRequiredEnabled || controls.quitTimelineRequiredToggle.checked;
+    const prizeWindowEnabled = controls.prizeEntryWindowEnabled.checked;
+    if (controls.prizeEntryWindowFields) controls.prizeEntryWindowFields.hidden = !prizeWindowEnabled;
+    for (const field of [controls.prizeEntryStartDate, controls.prizeEntryStartTime, controls.prizeEntryEndDate, controls.prizeEntryEndTime]) {
+      field.disabled = !prizeWindowEnabled;
+    }
   }
 
   function collectTaskSettingsFromPane(pane) {
@@ -2381,7 +2468,12 @@
       enter_deadline_date: quitTimelineRequired ? normalizeDate(controls.enterDeadlineDate.value) : '',
       enter_deadline_time: quitTimelineRequired ? normalizeTime(controls.enterDeadlineTime.value) : '',
       quit_opening_date: quitTimelineRequired ? normalizeDate(controls.quitOpeningDate.value) : '',
-      quit_opening_time: quitTimelineRequired ? normalizeTime(controls.quitOpeningTime.value) : ''
+      quit_opening_time: quitTimelineRequired ? normalizeTime(controls.quitOpeningTime.value) : '',
+      prize_entry_window_enabled: controls.prizeEntryWindowEnabled.checked ? '1' : '0',
+      prize_entry_start_date: normalizeDate(controls.prizeEntryStartDate.value),
+      prize_entry_start_time: normalizeTime(controls.prizeEntryStartTime.value),
+      prize_entry_end_date: normalizeDate(controls.prizeEntryEndDate.value),
+      prize_entry_end_time: normalizeTime(controls.prizeEntryEndTime.value)
     };
   }
 
@@ -2410,6 +2502,10 @@
   }
 
   function updateTaskPaneStatus(pane) {
+    if (pane.dataset.activationPending === '1') {
+      setTaskPaneStatus(pane, 'غیرفعال', 'inactive');
+      return;
+    }
     const settings = collectTaskSettingsFromPane(pane);
     if (!settings) return;
     const derived = deriveStatusFromSettings({
@@ -2432,6 +2528,12 @@
   function syncTaskPaneToggleState(pane) {
     const controls = getTaskPaneControls(pane);
     if (!controls) return;
+    if (controls.prizeEntryWindowEnabled.checked) {
+      if (!controls.prizeEntryStartDate.value) controls.prizeEntryStartDate.value = controls.startDate.value;
+      if (!controls.prizeEntryStartTime.value) controls.prizeEntryStartTime.value = controls.startTime.value;
+      if (!controls.prizeEntryEndDate.value) controls.prizeEntryEndDate.value = controls.endDate.value;
+      if (!controls.prizeEntryEndTime.value) controls.prizeEntryEndTime.value = controls.endTime.value;
+    }
     if (controls.quitRequiredToggle.checked) {
       controls.durationToggle.checked = true;
       controls.activeToggle.checked = false;
@@ -2449,6 +2551,7 @@
   function applyTaskSettingsToPane(pane, task) {
     const controls = getTaskPaneControls(pane);
     if (!controls) return;
+    pane.dataset.activationPending = normalizeBool(task?.activationPending) ? '1' : '0';
     controls.titleInput.value = String(task?.title || task?.tagCode || '');
     controls.activeToggle.checked = normalizeBool(task?.active);
     controls.durationToggle.checked = normalizeBool(task?.duration);
@@ -2465,6 +2568,11 @@
     controls.enterDeadlineTime.value = normalizeTime(task?.enterDeadlineTime);
     controls.quitOpeningDate.value = normalizeDate(task?.quitOpeningDate);
     controls.quitOpeningTime.value = normalizeTime(task?.quitOpeningTime);
+    controls.prizeEntryWindowEnabled.checked = normalizeBool(task?.prizeEntryWindowEnabled);
+    controls.prizeEntryStartDate.value = normalizeDate(task?.prizeEntryStartDate);
+    controls.prizeEntryStartTime.value = normalizeTime(task?.prizeEntryStartTime);
+    controls.prizeEntryEndDate.value = normalizeDate(task?.prizeEntryEndDate);
+    controls.prizeEntryEndTime.value = normalizeTime(task?.prizeEntryEndTime);
     const scoreControls = getTaskScoreControls(pane);
     if (scoreControls) {
       scoreControls.scoreInput.value = String(normalizeScoreValue(task?.score));
@@ -2532,7 +2640,6 @@
     const isDescribePhotoTask = taskTypeToken === 'describe_photo';
     const isTeamTask = taskTypeToken === 'team_task';
     const isConditionalQuizTask = taskTypeToken === 'conditional_quiz';
-    const quizSrc = `mini%20apps/Event%20Guest%20Manager/EGMQ.php?task_id=${encodeURIComponent(task.id)}`;
     const guestControlSrc = GUEST_CONTROL_ENDPOINT;
     const infoTitle = task.infoTitle || '';
     const infoText = task.infoText || '';
@@ -2547,7 +2654,7 @@
     const taskPhotos = normalizeDescribePhotoList(task?.taskPhotos);
     const taskChallenges = normalizeTeamChallengeList(task?.taskChallenges);
     const topTabsMarkup = isPeriod
-      ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite">دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees">دعوت‌شدگان</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite-card">کارت دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="export">خروجی</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="draws">قرعه‌کشی</button>'
+      ? `<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite">دعوت</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees">دعوت‌شدگان</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invite-card">کارت دعوت</button>${document.querySelector('.egm-shell')?.dataset.egmCanManageGames === '1' ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="games">بازی‌ها</button>' : ''}<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="export">خروجی</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="draws">قرعه‌کشی</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="winners">برندگان</button>`
       : isDescribePhotoTask
       ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="information">اطلاعات</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="photo">عکس‌ها</button><button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="invitees-rate">امتیازدهی دعوت‌شدگان</button>'
       : (isTeamTask
@@ -2577,18 +2684,18 @@
             </div>
             ${isTeamTask ? `
               <div class="card">
-                <div class="section-header"><h3>Guide Wrapper</h3></div>
+                <div class="section-header"><h3>متن راهنما</h3></div>
                 <div class="form" style="gap:12px;">
                   <label class="field full">
-                    <span>Guide Prefix</span>
+                    <span>پیشوند راهنما</span>
                     <textarea data-task-field="guidePrefix" rows="6">${escapeHtml(guidePrefix)}</textarea>
                   </label>
                   <label class="field full">
-                    <span>Guide Suffix</span>
+                    <span>پسوند راهنما</span>
                     <textarea data-task-field="guideSuffix" rows="6">${escapeHtml(guideSuffix)}</textarea>
                   </label>
                   <div class="field full">
-                    <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">Save</button>
+                    <button type="button" class="btn primary standard-primary-button" data-action="save-task-information">ذخیره</button>
                   </div>
                 </div>
               </div>
@@ -2605,10 +2712,10 @@
         </div>
         <div class="card" data-seat-map-editor>
           <div class="section-header"><h3>نقشه سالن این بازه</h3></div>
-          <label class="field"><span>منبع نقشه</span><select data-seat-mode><option value="inherit">نقشه پیش‌فرض EGM</option><option value="custom">نقشه اختصاصی این بازه</option></select></label>
+          <label class="field"><span>منبع نقشه</span><select data-seat-mode><option value="inherit">نقشه پیش‌فرض رویداد</option><option value="custom">نقشه اختصاصی این بازه</option></select></label>
           <label class="field"><span><input type="checkbox" data-seat-enabled /> فعال‌سازی شماره صندلی</span></label>
           <label class="field"><span>بلیت شماره‌دار مبنا</span><select data-seat-ticket></select></label>
-          <p class="muted">هر خط یک ردیف است؛ برای بخش‌های جدا با راهرو از | استفاده کنید. نمونه: ۱۴ | ۱۴. شماره صندلی در ردیف پیوسته است.</p>
+          <p class="muted">هر خط یک ردیف؛ «|» یک راهرو است.</p>
           <label class="field full"><span>بخش‌های صندلی هر ردیف</span><textarea data-seat-rows rows="5" placeholder="14 | 14&#10;6 | 15 | 6"></textarea></label>
           <p class="muted" data-seat-summary></p>
           <div class="muted" data-seat-preview></div>
@@ -2630,13 +2737,13 @@
           </form>
         </div>
         <div class="card egm-period-excel-card">
-          <div class="section-header"><h3>انتخاب کاربران با فایل Excel</h3></div>
+          <div class="section-header"><h3>انتخاب کاربران با فایل اکسل</h3></div>
           <p class="muted">حداقل یکی از ستون‌های کد ملی یا کد پرسنلی را انتخاب کنید. انتخاب هر دو اختیاری است.</p>
           <div class="form">
             <input type="file" accept=".csv,.xls,.xlsx" data-period-excel-file hidden />
             <div class="egm-period-actions"><button type="button" class="btn" data-period-excel-pick>انتخاب فایل</button><span class="muted" data-period-excel-name>فایلی انتخاب نشده است.</span></div>
             <div class="egm-period-filter-grid" data-period-excel-sheet-row hidden>
-              <label class="field full"><span>شیت Excel</span><select data-period-excel-sheet disabled><option value="">ابتدا شیت را انتخاب کنید</option></select></label>
+              <label class="field full"><span>برگه اکسل</span><select data-period-excel-sheet disabled><option value="">ابتدا شیت را انتخاب کنید</option></select></label>
             </div>
             <div class="egm-period-filter-grid" data-period-excel-mapping hidden>
               <label class="field"><span>ستون کد ملی</span><select data-period-excel-national><option value="">انتخاب نشده</option></select></label>
@@ -2656,10 +2763,10 @@
           </div>
         </div>
         <div class="card egm-period-unmatched-card" data-period-unmatched-card hidden>
-          <div class="section-header"><h3>کاربران بدون تطبیق فایل</h3><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-export-uninviteable disabled>Export Uniniviteable</button><strong><span data-period-unmatched-total>0</span> ردیف</strong></div></div>
-          <p class="muted">هر کاربری را که تأیید کنید فقط به کاربران همین EGM افزوده و به این بازه دعوت می‌شود؛ این کاربران وارد OEU نمی‌شوند.</p>
+          <div class="section-header"><h3>کاربران بدون تطبیق فایل</h3><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-export-uninviteable disabled>خروجی کاربران دعوت‌ناپذیر</button><strong><span data-period-unmatched-total>0</span> ردیف</strong></div></div>
+          <p class="muted">مهمانان جدید فقط به همین رویداد و بازه افزوده می‌شوند.</p>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
-            <th><input type="checkbox" data-period-unmatched-select-all aria-label="انتخاب همه کاربران بدون تطبیق" /></th><th>ردیف Excel</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>شماره همراه</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>جزئیات فایل</th><th>عملیات</th>
+            <th><input type="checkbox" data-period-unmatched-select-all aria-label="انتخاب همه کاربران بدون تطبیق" /></th><th>ردیف اکسل</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>شماره همراه</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>جزئیات فایل</th><th>عملیات</th>
           </tr></thead><tbody data-period-unmatched-body></tbody></table></div>
           <div class="egm-period-list-footer"><span class="muted"><span data-period-unmatched-selected-count>0</span> ردیف انتخاب شده</span><div class="egm-period-actions"><select data-period-unmatched-group aria-label="گروه مهمان"><option value="">بدون گروه</option></select><button type="button" class="btn primary" data-period-invite-unmatched-selected disabled>افزودن و دعوت انتخاب‌شده‌ها</button></div></div>
           <p class="hint" data-period-unmatched-status aria-live="polite"></p>
@@ -2678,7 +2785,7 @@
           <div class="section-header"><h3>دعوت‌شدگان این بازه</h3><strong><span data-period-invitee-total>0</span> نفر</strong></div>
           <div class="form"><label class="field full"><span>جستجو</span><input type="search" data-period-invitee-search placeholder="نام، کد ملی یا کد پرسنلی" autocomplete="off" /></label></div>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
-            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>بلیت‌های شماره‌دار</th><th>صندلی</th><th>Correct Presence</th><th>Fake Presence</th><th>منبع</th><th>گروه</th><th>عملیات</th>
+            <th>شماره مهمان</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>بلیت‌های شماره‌دار</th><th>صندلی</th><th>حضور واقعی</th><th>حضور نامعقول</th><th>منبع</th><th>گروه</th><th>عملیات</th>
           </tr></thead><tbody data-period-invitee-body><tr><td colspan="17" class="muted">در حال بارگذاری...</td></tr></tbody></table></div>
           <div class="egm-period-list-footer"><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-invitee-prev>قبلی</button><span data-period-invitee-page>صفحه ۱ از ۱</span><button type="button" class="btn ghost" data-period-invitee-next>بعدی</button></div><button type="button" class="btn ghost" data-period-invitee-refresh>بازخوانی</button></div>
           <p class="hint" data-period-invitee-status aria-live="polite"></p>
@@ -2707,7 +2814,7 @@
         <div class="card egm-period-invite-card-generator">
           <div class="section-header"><div><h3>کارت دعوت بازه</h3><p class="muted small">برای تمام دعوت‌شدگان این بازه، کارت JPG اختصاصی و لینک امن ساخته می‌شود.</p></div></div>
           <p class="hint">طرح، متن و جای QR از تنظیمات «کارت دعوت» همین EGM خوانده می‌شود. هر کد یکتا به کد EGM و کد بازه ختم می‌شود.</p>
-          <div class="egm-period-actions"><button type="button" class="btn primary standard-primary-button" data-period-invite-card-generate>Generate Invite Cards</button><button type="button" class="btn" data-period-invite-card-export disabled>خروجی Excel لینک کارت‌ها</button><button type="button" class="btn ghost" data-period-invite-card-refresh>بازخوانی وضعیت</button><button type="button" class="btn ghost" data-personnel-copy-preview>کپی کد پرسنلی در کد ملی خالی</button></div>
+          <div class="egm-period-actions"><button type="button" class="btn primary standard-primary-button" data-period-invite-card-generate>ساخت کارت‌های باقی‌مانده</button><button type="button" class="btn" data-period-invite-card-regenerate>ساخت دوباره همه کارت‌ها</button><button type="button" class="btn" data-period-invite-card-export disabled>خروجی اکسل لینک کارت‌ها</button><button type="button" class="btn ghost" data-period-invite-card-refresh>بازخوانی وضعیت</button><button type="button" class="btn ghost" data-personnel-copy-preview>کپی کد پرسنلی در کد ملی خالی</button></div>
           <div class="egm-period-invite-card-progress" data-period-invite-card-progress-wrap>
             <progress max="100" value="0" data-period-invite-card-progress></progress>
             <div class="egm-period-list-footer"><strong><span data-period-invite-card-generated>0</span> از <span data-period-invite-card-total>0</span> کارت</strong><span class="muted"><span data-period-invite-card-percent>0</span>٪</span></div>
@@ -2719,12 +2826,12 @@
         <div class="card egm-period-export-card">
           <div class="section-header"><div><h3>خروجی اکسل بازه</h3><p class="muted small">تمام فایل‌ها مستقیماً از اطلاعات ذخیره‌شده همین بازه در پایگاه داده ساخته می‌شوند.</p></div></div>
           <div class="egm-period-export-grid">
-            <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
-            <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد هر نوع بلیت برای هر مهمان، جمع هر مهمان، جمع هر نوع بلیت و جمع کل.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
-            <article class="egm-period-export-option"><div><h4>ورود ثبت‌شده، بدون خروج</h4><p>فهرست لحظه‌ای مهمانانی که وارد شده‌اند اما هنوز خروج ندارند. این گزارش به معنی تأیید حضور واقعی نیست.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
-            <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>فقط مهمانانی که هنگام مراجعه به‌عنوان مهمان ناخوانده ثبت شده‌اند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
-            <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>تمام تلاش‌های ورود، خروج، تکرار، رد شدن و دیگر رویدادهای کنترل مهمان.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
-            <article class="egm-period-export-option"><div><h4>وضعیت همه کاربران</h4><p>یک ردیف برای هر کاربر با آخرین وضعیت دقیق ثبت‌شده در این بازه.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=user_conditions&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل Excel</a></article>
+            <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
+            <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد هر نوع بلیت برای هر مهمان، جمع هر مهمان، جمع هر نوع بلیت و جمع کل.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
+            <article class="egm-period-export-option"><div><h4>ورود ثبت‌شده، بدون خروج</h4><p>فهرست لحظه‌ای مهمانانی که وارد شده‌اند اما هنوز خروج ندارند. این گزارش به معنی تأیید حضور واقعی نیست.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
+            <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>فقط مهمانانی که هنگام مراجعه به‌عنوان مهمان ناخوانده ثبت شده‌اند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
+            <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>تمام تلاش‌های ورود، خروج، تکرار، رد شدن و دیگر رویدادهای کنترل مهمان.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
+            <article class="egm-period-export-option"><div><h4>وضعیت همه کاربران</h4><p>یک ردیف برای هر کاربر با آخرین وضعیت دقیق ثبت‌شده در این بازه.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=user_conditions&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
             <article class="egm-period-export-option"><div><h4>حضور واقعی</h4><p>مهمانانی که ورود و خروج عادی و معتبر برای این بازه دارند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=correct_presence&amp;period_code=${encodeURIComponent(task.tagCode)}">حضور واقعی</a></article>
             <article class="egm-period-export-option"><div><h4>حضوری نامعقول</h4><p>مهمانانی که ورود یا خروج آنها با عملیات اجباری ثبت شده است.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=fake_presence&amp;period_code=${encodeURIComponent(task.tagCode)}">حضوری نامعقول</a></article>
           </div>
@@ -2732,36 +2839,21 @@
         </div>
       </div>
     ` : '';
-    const quizSection = isQuizLikeTaskType(task.taskType)
-      ? `
-          <div class="egm-task-top-section" data-task-top-section="quiz" hidden>
-            <div class="card egm-task-quiz-card">
-              <iframe
-                class="egm-task-quiz-frame"
-                src="${escapeHtml(quizSrc)}"
-                loading="lazy"
-                referrerpolicy="same-origin"
-                title="آزمون بازه"
-              ></iframe>
-            </div>
-          </div>
-        `
-      : '';
     const crisisControlSection = isConditionalQuizTask
       ? `
           <div class="egm-task-top-section" data-task-top-section="crisis-control" hidden>
             <div class="card">
-              <div class="section-header"><h3>Return Chance</h3></div>
+              <div class="section-header"><h3>فرصت دوباره</h3></div>
               <div class="form" style="gap:12px;">
                 <label class="switch egm-switch">
-                  <span class="switch-label">Another Chance if 0</span>
+                  <span class="switch-label">فرصت دوباره در امتیاز صفر</span>
                   <span class="switch-toggle">
                     <input type="checkbox" data-task-field="anotherChanceIfZero" aria-label="Another Chance if 0" ${anotherChanceIfZero ? 'checked' : ''} />
                     <span class="switch-track"><span class="switch-thumb"></span></span>
                   </span>
                 </label>
                 <div class="field full">
-                  <button type="button" class="btn primary standard-primary-button" data-action="save-conditional-quiz-crisis-control">Save</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-conditional-quiz-crisis-control">ذخیره</button>
                 </div>
                 <p class="muted small" data-task-crisis-save-status aria-live="polite"></p>
               </div>
@@ -2818,36 +2910,36 @@
       ? `
           <div class="egm-task-top-section" data-task-top-section="challenge-storage" hidden>
             <div class="card">
-              <div class="section-header"><h3>Add Challenge</h3></div>
+              <div class="section-header"><h3>افزودن چالش</h3></div>
               <div class="form" style="gap:12px;">
                 <label class="field standard-width">
-                  <span>Name</span>
-                  <input type="text" data-team-challenge-name autocomplete="off" placeholder="Challenge name" />
+                  <span>نام</span>
+                  <input type="text" data-team-challenge-name autocomplete="off" placeholder="نام چالش" />
                 </label>
                 <label class="field standard-width">
-                  <span>Quantity</span>
+                  <span>تعداد</span>
                   <input type="number" min="1" step="1" value="1" data-team-challenge-quantity />
                 </label>
                 <div class="field full">
-                  <button type="button" class="btn primary standard-primary-button" data-action="add-team-challenge">Add</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="add-team-challenge">افزودن</button>
                 </div>
                 <p class="muted small" data-team-challenge-add-status aria-live="polite"></p>
               </div>
             </div>
             <div class="card">
-              <div class="section-header"><h3>Challenge List</h3></div>
+              <div class="section-header"><h3>فهرست چالش‌ها</h3></div>
               <div class="table-wrapper egm-team-challenge-table-wrap">
                 <table class="tct-list-table egm-team-challenge-table">
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Quantity</th>
-                      <th>Last</th>
-                      <th>Action</th>
+                      <th>نام</th>
+                      <th>تعداد</th>
+                      <th>باقی‌مانده</th>
+                      <th>عملیات</th>
                     </tr>
                   </thead>
                   <tbody data-team-challenge-list-body>
-                    ${taskChallenges.length ? '' : '<tr><td colspan="4" class="muted">No challenges added yet.</td></tr>'}
+                    ${taskChallenges.length ? '' : '<tr><td colspan="4" class="muted">هنوز چالشی افزوده نشده است.</td></tr>'}
                   </tbody>
                 </table>
               </div>
@@ -2860,31 +2952,31 @@
       ? `
           <div class="egm-task-top-section" data-task-top-section="team" hidden>
             <div class="card">
-              <div class="section-header"><h3>Team Setting</h3></div>
+              <div class="section-header"><h3>تنظیمات تیم</h3></div>
               <div class="form" style="gap:12px;">
                 <label class="field standard-width">
-                  <span>Team Min</span>
+                  <span>حداقل اعضای تیم</span>
                   <input type="number" min="1" step="1" data-task-field="teamMin" value="${escapeHtml(String(teamMin))}" />
                 </label>
                 <label class="field standard-width">
-                  <span>Team Max</span>
+                  <span>حداکثر اعضای تیم</span>
                   <input type="number" min="1" step="1" data-task-field="teamMax" value="${escapeHtml(String(teamMax))}" />
                 </label>
                 <div class="field full">
-                  <button type="button" class="btn primary standard-primary-button" data-action="save-team-settings">Save</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-team-settings">ذخیره</button>
                 </div>
                 <p class="muted small" data-task-team-save-status aria-live="polite"></p>
               </div>
             </div>
             <div class="card">
-              <div class="section-header"><h3>Team Additional Note</h3></div>
+              <div class="section-header"><h3>توضیح تکمیلی تیم</h3></div>
               <div class="form" style="gap:12px;">
                 <label class="field full">
-                  <span>Team Additional Note</span>
+                  <span>توضیح تکمیلی تیم</span>
                   <textarea data-task-field="teamAdditionalNote" rows="8">${escapeHtml(teamAdditionalNote)}</textarea>
                 </label>
                 <div class="field full">
-                  <button type="button" class="btn primary standard-primary-button" data-action="save-team-settings">Save</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="save-team-settings">ذخیره</button>
                 </div>
               </div>
             </div>
@@ -2892,52 +2984,52 @@
         `
       : '';
     const inviteesRateColspan = isTeamTask ? 8 : (isDescribePhotoTask ? 8 : 7);
-    const inviteesRateResultHeader = isDescribePhotoTask ? '<th>Results</th>' : '';
-    const inviteesRateCardTitle = isTeamTask ? 'Team List Card' : 'Invitees List Card';
-    const inviteesRateSearchLabel = isTeamTask ? 'Search Teams' : 'Search Invitees';
+    const inviteesRateResultHeader = isDescribePhotoTask ? '<th>نتایج</th>' : '';
+    const inviteesRateCardTitle = isTeamTask ? 'فهرست تیم‌ها' : 'فهرست دعوت‌شدگان';
+    const inviteesRateSearchLabel = isTeamTask ? 'جستجوی تیم‌ها' : 'جستجوی دعوت‌شدگان';
     const inviteesRateSearchPlaceholder = isTeamTask
-      ? 'Search by team name or team admin'
-      : 'Search by name, phone, Work ID';
+      ? 'جستجو با نام تیم یا مدیر تیم'
+      : 'جستجو با نام، تلفن یا شناسه کاری';
     const inviteesRateBulkControls = isTeamTask ? '' : `
                 <div class="egm-info-rate-bulk">
                   <label class="field standard-width">
-                    <span>Custom Score (Selected)</span>
+                    <span>امتیاز دلخواه برای انتخاب‌شده‌ها</span>
                     <input type="number" min="0" step="1" data-task-info-bulk-score />
                   </label>
-                  <button type="button" class="btn secondary" data-action="info-bulk-apply">Apply Custom Score</button>
-                  <button type="button" class="btn primary standard-primary-button" data-action="info-bulk-max">Max Score</button>
+                  <button type="button" class="btn secondary" data-action="info-bulk-apply">اعمال امتیاز دلخواه</button>
+                  <button type="button" class="btn primary standard-primary-button" data-action="info-bulk-max">حداکثر امتیاز</button>
                 </div>
               `;
     const inviteesRateTableWrapClass = isTeamTask ? 'egm-team-rate-table-wrap' : 'egm-info-rate-table-wrap';
     const inviteesRateTableClass = isTeamTask ? 'egm-team-rate-table' : 'egm-info-rate-table';
     const inviteesRateTableHeader = isTeamTask
       ? `
-                        <th>Team Name</th>
-                        <th>Status</th>
-                        <th>Join Type</th>
-                        <th>Team Admin</th>
-                        <th>Members</th>
-                        <th>Score</th>
-                        <th>Challenge Accepted</th>
-                        <th>Action</th>
+                        <th>نام تیم</th>
+                        <th>وضعیت</th>
+                        <th>نوع عضویت</th>
+                        <th>مدیر تیم</th>
+                        <th>اعضا</th>
+                        <th>امتیاز</th>
+                        <th>چالش پذیرفته‌شده</th>
+                        <th>عملیات</th>
                       `
       : `
                         <th><input type="checkbox" data-task-info-select-all /></th>
-                        <th>First Name</th>
-                        <th>Last Name</th>
-                        <th>Phone</th>
-                        <th>Work ID</th>
-                        <th>Custom Score</th>
-                        <th>Fast Score</th>
+                        <th>نام</th>
+                        <th>نام خانوادگی</th>
+                        <th>تلفن</th>
+                        <th>شناسه کاری</th>
+                        <th>امتیاز دلخواه</th>
+                        <th>امتیاز سریع</th>
                         ${inviteesRateResultHeader}
                       `;
-    const inviteesRateLoadingText = isTeamTask ? 'Loading teams...' : 'Loading invitees...';
+    const inviteesRateLoadingText = isTeamTask ? 'تیم‌ها در حال بارگذاری هستند...' : 'دعوت‌شدگان در حال بارگذاری هستند...';
     return `
       <div class="egm-task-top-shell" data-task-top-shell>
         <div class="egm-task-top-nav" role="tablist" aria-label="بخش‌های بازه">
           <button type="button" class="egm-task-top-item active" aria-selected="true" data-task-top-trigger="control">کنترل</button>
           ${topTabsMarkup}
-          ${isConditionalQuizTask ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="crisis-control">Crisis Control</button>' : ''}
+          ${isConditionalQuizTask ? '<button type="button" class="egm-task-top-item" aria-selected="false" data-task-top-trigger="crisis-control">کنترل بحران</button>' : ''}
         </div>
 
         <div class="egm-task-top-section active" data-task-top-section="control">
@@ -2968,7 +3060,7 @@
                   </span>
                 </label>
                 <label class="switch egm-switch">
-                  <span class="switch-label">Quit Required</span>
+                  <span class="switch-label">خروج الزامی</span>
                   <span class="switch-toggle">
                     <input type="checkbox" data-task-field="quitRequired" aria-label="الزام ثبت خروج" />
                     <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -2992,7 +3084,7 @@
               <div class="field standard-width" data-quit-minimum-stay hidden>
                 <span>حداقل مدت حضور پیش از خروج</span>
                 <select data-task-field="minimumStayMinutes">${buildMinimumStayOptions(task.minimumStayMinutes)}</select>
-                <p class="hint">پس از عبور خروج‌های ثبت‌شده از ۲۰٪ دعوت‌شدگان، ورود بسته و این حداقل زمان نادیده گرفته می‌شود.</p>
+                <p class="hint" data-ui-critical>پس از خروج ۲۰٪ مهمانان، ورود بسته و حداقل حضور لغو می‌شود.</p>
               </div>
               <div class="form grid two-column-fields egm-datetime-grid">
                 <div class="egm-datetime-title egm-datetime-title--start">شروع</div>
@@ -3007,7 +3099,7 @@
                   </select>
                 </label>
                 <div class="egm-quit-timeline" data-quit-timeline hidden>
-                  <div class="egm-datetime-title">مهلت ورود (Enter Deadline)</div>
+                  <div class="egm-datetime-title">مهلت ورود </div>
                   <label class="field standard-width">
                     <span>تاریخ</span>
                     <input type="date" data-task-field="enterDeadlineDate" placeholder="YYYY-MM-DD" />
@@ -3018,7 +3110,7 @@
                       ${buildTimeOptions(task.enterDeadlineTime)}
                     </select>
                   </label>
-                  <div class="egm-datetime-title">آغاز خروج (Quit Opening)</div>
+                  <div class="egm-datetime-title">آغاز خروج </div>
                   <label class="field standard-width">
                     <span>تاریخ</span>
                     <input type="date" data-task-field="quitOpeningDate" placeholder="YYYY-MM-DD" />
@@ -3043,10 +3135,25 @@
                 </label>
                 <div class="egm-datetime-empty" aria-hidden="true"></div>
               </div>
+              <div class="egm-prize-entry-window">
+                <label class="switch egm-switch">
+                  <span class="switch-label">محدودیت زمان ورود برای قرعه‌کشی</span>
+                  <span class="switch-toggle">
+                    <input type="checkbox" data-task-field="prizeEntryWindowEnabled" aria-label="محدودیت زمان ورود برای قرعه‌کشی" />
+                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                  </span>
+                </label>
+                <div class="form grid two-column-fields egm-prize-entry-window-fields" data-prize-entry-window-fields hidden>
+                  <label class="field standard-width"><span>شروع پذیرش در قرعه‌کشی</span><input type="date" data-task-field="prizeEntryStartDate" /></label>
+                  <label class="field standard-width"><span>ساعت شروع</span><select data-task-field="prizeEntryStartTime">${buildTimeOptions(task.prizeEntryStartTime)}</select></label>
+                  <label class="field standard-width"><span>پایان پذیرش در قرعه‌کشی</span><input type="date" data-task-field="prizeEntryEndDate" /></label>
+                  <label class="field standard-width"><span>ساعت پایان</span><select data-task-field="prizeEntryEndTime">${buildTimeOptions(task.prizeEntryEndTime)}</select></label>
+                </div>
+              </div>
               <div class="field full">
                 <button type="button" class="btn primary standard-primary-button" data-action="save-task-settings">ذخیره</button>
                 ${isPeriod ? `<button type="button" class="btn ghost egm-btn-end-period" data-action="end-period"${isPeriodEnded ? ' disabled' : ''}>${isPeriodEnded ? 'بازه پایان یافته است' : 'پایان بازه'}</button>` : ''}
-                ${isPeriod ? '<button type="button" class="btn ghost egm-btn-danger" data-action="reset-period-attendance">Reset Period Records</button>' : ''}
+                ${isPeriod ? '<button type="button" class="btn ghost egm-btn-danger" data-action="reset-period-attendance">بازنشانی سوابق بازه</button>' : ''}
                 <a class="btn ghost" href="${guestControlSrc}" target="_blank" rel="noopener">پنل کنترل مهمان رویداد</a>
               </div>
               ${isPeriodEnded ? `<p class="egm-period-ended-note">این بازه در <span dir="ltr">${escapeHtml(task.endedAt)}</span> پایان یافته است.${endedClassificationNote} سوابق و دعوت‌ها همچنان محفوظ هستند.</p>` : ''}
@@ -3064,9 +3171,9 @@
               </label>
               ${isConditionalQuizTask ? `
                 <label class="switch egm-switch">
-                  <span class="switch-label">Has Golden Time</span>
+                  <span class="switch-label">زمان طلایی فعال است</span>
                   <span class="switch-toggle">
-                    <input type="checkbox" data-task-field="hasGoldenTime" aria-label="Has Golden Time" ${hasGoldenTime ? 'checked' : ''} />
+                    <input type="checkbox" data-task-field="hasGoldenTime" aria-label="زمان طلایی فعال است" ${hasGoldenTime ? 'checked' : ''} />
                     <span class="switch-track"><span class="switch-thumb"></span></span>
                   </span>
                 </label>
@@ -3086,7 +3193,8 @@
         </div>
         ${informationSection}
         ${periodInvitationSections}
-        ${isPeriod ? periodDrawSection() : ''}
+        ${isPeriod && document.querySelector('.egm-shell')?.dataset.egmCanManageGames === '1' ? '<div class="egm-task-top-section" data-task-top-section="games" hidden><div class="card" data-egm-period-games><div class="section-header"><h3>بازی‌های این بازه</h3></div><p class="muted">بازی‌های ساخته‌شده را برای این بازه فعال کنید.</p><div data-period-games-list></div><p class="hint" data-period-games-status aria-live="polite"></p></div></div>' : ''}
+        ${isPeriod ? periodDrawSection() + periodWinnersSection() : ''}
         ${describePhotoSection}
         ${teamChallengeSection}
         ${teamSettingsSection}
@@ -3118,7 +3226,6 @@
             </div>
           </div>
         ` : ''}
-        ${quizSection}
       </div>
     `;
   }
@@ -3203,6 +3310,7 @@
         if (firstSection !== '') {
           activateTaskTopPane(pane, firstSection);
           if (firstSection === 'draws') void loadPeriodDraws(pane);
+          if (firstSection === 'winners') void loadPeriodWinners(pane);
           if (firstSection === 'invitees-rate' && isInfoLikeTaskType(task?.taskType || pane.dataset.taskType || 'quiz')) {
             void loadInfoRateDataIntoPane(pane);
           }
@@ -3242,7 +3350,7 @@
         : `پاسخ سرور JSON معتبر نبود (HTTP ${status || 'نامشخص'}). صفحه را تازه‌سازی کنید.`);
     }
     if (!response.ok || data?.status !== 'ok') {
-      throw new Error(data?.message || 'Request failed.');
+      throw new Error(data?.message || 'درخواست ناموفق بود.');
     }
     return data;
   }
@@ -3400,7 +3508,7 @@
   function getPeriodInviteState(pane) {
     let state = periodInviteStates.get(pane);
     if (!state) {
-      state = { source: '', groups: [], candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], ticketDefinitions: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
+      state = { source: '', groups: [], candidates: [], invitees: [], selected: new Set(), page: 1, pages: 1, inviteePage: 1, inviteePages: 1, excelWorkbook: null, excelSheetName: '', excelRows: [], excelHeaders: [], ticketDefinitions: [], matchedMode: false, unmatchedRows: [], unmatchedSelected: new Set(), editingExcelId: '', periodBackground: null, periodBackgroundDraft: null, periodBackgroundBusy: false };
       periodInviteStates.set(pane, state);
     }
     return state;
@@ -3524,8 +3632,11 @@
         if (excelId !== '') {
           const original = originalsById.get(excelId);
           const merged = original ? { ...row, ...original } : row;
+          merged.national_id = String(row?.national_id || original?.national_id || '');
           if (String(row?.match_error || '').trim() !== '') merged.match_error = String(row.match_error);
+          else delete merged.match_error;
           if (typeof row?.can_invite === 'boolean') merged.can_invite = row.can_invite;
+          if (typeof row?.invited === 'boolean') merged.invited = row.invited;
           unmatchedByExcelId.set(excelId, merged);
         }
       });
@@ -3779,7 +3890,7 @@
     finally { if (button) button.disabled = false; }
   }
 
-  function renderPeriodCardProblems(pane, prepared) {
+  function renderPeriodCardProblems(pane, prepared, regenerate = false) {
     pane.querySelector('[data-card-validation-report]')?.remove();
     const box = document.createElement('div');
     box.dataset.cardValidationReport = '1';
@@ -3800,35 +3911,33 @@
       skip.type = 'button'; skip.className = 'btn primary';
       skip.textContent = 'نادیده گرفتن این مهمان‌ها و ساخت کارت بقیه';
       skip.addEventListener('click', () => {
-        if (window.confirm('برای مهمان‌های دارای مشکل کارت یا QR ساخته نمی‌شود. دعوت آن‌ها حذف نمی‌شود و بعد از اصلاح اطلاعات می‌توانید دوباره ساخت کارت را اجرا کنید. ادامه می‌دهید؟')) void generatePeriodInviteCards(pane, true);
+        if (window.confirm('برای مهمان‌های دارای مشکل کارت یا QR ساخته نمی‌شود. دعوت آن‌ها حذف نمی‌شود و بعد از اصلاح اطلاعات می‌توانید دوباره ساخت کارت را اجرا کنید. ادامه می‌دهید؟')) void generatePeriodInviteCards(pane, true, regenerate);
       });
       box.append(skip);
     }
     pane.querySelector('[data-period-invite-card-status]')?.after(box);
   }
 
-  async function generatePeriodInviteCards(pane, skipInvalid = false) {
+  async function generatePeriodInviteCards(pane, skipInvalid = false, regenerate = false) {
     const state = getPeriodInviteState(pane);
     if (state.inviteCardRunning) return;
-    const button = pane.querySelector('[data-period-invite-card-generate]');
+    if (regenerate && !skipInvalid && !window.confirm('همه کارت‌های این بازه از ابتدا دوباره ساخته شوند؟ کدها و لینک‌های کارت‌ها ثابت می‌مانند.')) return;
+    const buttons = pane.querySelectorAll('[data-period-invite-card-generate], [data-period-invite-card-regenerate]');
     const status = pane.querySelector('[data-period-invite-card-status]');
     const periodCode = periodCodeForPane(pane);
     state.inviteCardRunning = true;
-    if (button instanceof HTMLButtonElement) button.disabled = true;
+    buttons.forEach((button) => { button.disabled = true; });
     try {
       const current = await requestPeriodInviteCards('status', { period_code: periodCode });
-      let regenerate = false;
-      if (Number(current.total || 0) > 0 && Number(current.pending || 0) === 0) {
-        regenerate = window.confirm('همه کارت‌ها قبلاً ساخته شده‌اند. همه فایل‌ها با همان کدهای یکتا دوباره ساخته شوند؟');
-        if (!regenerate) {
-          renderPeriodInviteCardProgress(pane, current, 'ساخت مجدد لغو شد؛ کارت‌های فعلی بدون تغییر باقی ماندند.');
-          return;
-        }
+      if (Number(current.total || 0) === 0 || (!regenerate && Number(current.pending || 0) === 0)) {
+        renderPeriodInviteCardProgress(pane, current, Number(current.total || 0) === 0
+          ? 'دعوت‌شونده‌ای وجود ندارد.' : 'همه کارت‌های دعوت ساخته شده‌اند.');
+        return;
       }
       if (status) status.textContent = 'در حال آماده‌سازی کدهای امن...';
       const prepared = await requestPeriodInviteCards('prepare', { period_code: periodCode, regenerate, skip_invalid: skipInvalid }, 'POST');
       if (prepared.validation_error) {
-        renderPeriodCardProblems(pane, prepared);
+        renderPeriodCardProblems(pane, prepared, regenerate);
         if (status) status.textContent = prepared.message;
         return;
       }
@@ -3860,10 +3969,10 @@
         }
       }
     } catch (error) {
-      if (status) status.textContent = `${error?.message || 'ساخت کارت‌ها ناموفق بود.'} با زدن دوباره دکمه، ادامه از کارت‌های باقی‌مانده انجام می‌شود.`;
+      if (status) status.textContent = `${error?.message || 'ساخت کارت‌ها ناموفق بود.'} برای ادامه، «ساخت کارت‌های باقی‌مانده» را بزنید.`;
     } finally {
       state.inviteCardRunning = false;
-      if (button instanceof HTMLButtonElement) button.disabled = false;
+      buttons.forEach((button) => { button.disabled = false; });
       const exportButton = pane.querySelector('[data-period-invite-card-export]');
       const generatedCount = Number(pane.querySelector('[data-period-invite-card-generated]')?.textContent || 0);
       if (exportButton instanceof HTMLButtonElement) exportButton.disabled = generatedCount < 1;
@@ -3876,9 +3985,9 @@
     if (button instanceof HTMLButtonElement) button.disabled = true;
     try {
       if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') {
-        throw new Error('موتور ساخت فایل Excel بارگذاری نشده است. صفحه را بازخوانی کنید.');
+        throw new Error('موتور ساخت فایل اکسل بارگذاری نشده است. صفحه را بازخوانی کنید.');
       }
-      if (status) status.textContent = 'در حال ساخت فایل Excel...';
+      if (status) status.textContent = 'در حال ساخت فایل اکسل...';
       const data = await requestPeriodInviteCards('export_data', {
         period_code: periodCodeForPane(pane),
         period_date: periodDateForPane(pane)
@@ -3904,7 +4013,7 @@
       window.XLSX.writeFile(workbook, filename, { bookType: 'xlsx', compression: true });
       if (status) status.textContent = 'فایل واقعی Excel (.xlsx) لینک کارت‌ها دانلود شد.';
     } catch (error) {
-      if (status) status.textContent = error?.message || 'ساخت فایل Excel ناموفق بود.';
+      if (status) status.textContent = error?.message || 'ساخت فایل اکسل ناموفق بود.';
     } finally {
       if (button instanceof HTMLButtonElement) button.disabled = false;
     }
@@ -3975,14 +4084,14 @@
     const rows = periodUninviteableRows(state);
     const status = pane.querySelector('[data-period-unmatched-status]');
     if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') {
-      if (status) status.textContent = 'موتور ساخت فایل Excel بارگذاری نشده است. صفحه را بازخوانی کنید.';
+      if (status) status.textContent = 'موتور ساخت فایل اکسل بارگذاری نشده است. صفحه را بازخوانی کنید.';
       return;
     }
     if (!rows.length) {
       if (status) status.textContent = 'کاربر غیرقابل دعوتی بدون کد ملی و کد پرسنلی وجود ندارد.';
       return;
     }
-    const table = [['Full Name', 'Phone Number']];
+    const table = [['نام کامل', 'شماره تلفن']];
     rows.forEach((row) => table.push([
       [String(row?.first_name || '').trim(), String(row?.last_name || '').trim()].filter(Boolean).join(' '),
       String(row?.phone_number || '').trim()
@@ -3994,10 +4103,10 @@
       if (worksheet[`B${rowNumber}`]) worksheet[`B${rowNumber}`].z = '@';
     }
     const workbook = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Uninviteable');
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, 'دعوت‌ناپذیر');
     const filename = periodExportDatedFilename('کاربران غیرقابل دعوت', pane);
     window.XLSX.writeFile(workbook, filename, { bookType: 'xlsx', compression: true });
-    if (status) status.textContent = `${rows.length} کاربر غیرقابل دعوت در فایل Excel دانلود شد.`;
+    if (status) status.textContent = `${rows.length} کاربر غیرقابل دعوت در فایل اکسل دانلود شد.`;
   }
 
   function renderPeriodUnmatchedRows(pane) {
@@ -4011,16 +4120,16 @@
       const canInvite = row?.can_invite !== false && Boolean(String(row?.national_id || row?.work_id || '').trim());
       const checked = canInvite && state.unmatchedSelected.has(id);
       const matchError = String(row?.match_error || '').trim();
-      const action = matchError
-        ? `<span class="muted">${escapeHtml(matchError)}</span>`
-        : (canInvite ? `<button type="button" class="btn ghost" data-period-invite-unmatched-one="${escapeHtml(id)}">افزودن و دعوت</button>` : '<span class="muted">بدون شناسه قابل استفاده</span>');
+      const action = row?.invited
+        ? '<span class="egm-period-invited-badge">دعوت شده</span>'
+        : `<div class="egm-period-actions">${canInvite && !matchError ? `<button type="button" class="btn ghost" data-period-invite-unmatched-one="${escapeHtml(id)}">افزودن و دعوت</button>` : ''}<button type="button" class="btn ghost" data-period-unmatched-edit="${escapeHtml(id)}">${matchError ? 'اصلاح تعارض' : 'ویرایش'}</button></div>`;
       return `<tr data-period-unmatched-id="${escapeHtml(id)}">
         <td><input type="checkbox" data-period-unmatched-check value="${escapeHtml(id)}" ${checked ? 'checked' : ''} ${canInvite ? '' : 'disabled'} /></td>
         <td>${escapeHtml(row?.source_row || '—')}</td><td>${escapeHtml(row?.first_name || '—')}</td><td>${escapeHtml(row?.last_name || '—')}</td>
         <td><span dir="ltr">${escapeHtml(row?.national_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.work_id || '—')}</span></td><td><span dir="ltr">${escapeHtml(row?.phone_number || '—')}</span></td>
         <td>${escapeHtml(row?.deputy || '—')}</td><td>${escapeHtml(row?.general_department || '—')}</td><td>${escapeHtml(row?.department || '—')}</td><td>${escapeHtml(row?.gender || '—')}</td><td>${escapeHtml(row?.postal_level || '—')}</td>
         <td>${periodUnmatchedDetailsMarkup(row)}</td><td>${action}</td>
-      </tr>`;
+      </tr>${state.editingExcelId === id ? `<tr class="egm-period-excel-edit-row"><td colspan="14"><form data-period-unmatched-edit-form="${escapeHtml(id)}" class="egm-period-excel-edit-form"><label class="field"><span>نام</span><input type="text" name="first_name" value="${escapeHtml(row?.first_name || '')}"></label><label class="field"><span>نام خانوادگی</span><input type="text" name="last_name" value="${escapeHtml(row?.last_name || '')}"></label><label class="field"><span>کد ملی</span><input type="text" name="national_id" inputmode="numeric" maxlength="10" dir="ltr" value="${escapeHtml(row?.national_id || '')}"></label><label class="field"><span>کد پرسنلی</span><input type="text" name="work_id" maxlength="9" dir="ltr" value="${escapeHtml(row?.work_id || '')}"></label><label class="field"><span>شماره همراه</span><input type="text" name="phone_number" value="${escapeHtml(row?.phone_number || '')}"></label><div class="egm-period-actions"><button class="btn primary" type="submit">تطبیق مجدد</button><button class="btn ghost" type="button" data-period-unmatched-edit-cancel>انصراف</button></div></form></td></tr>` : ''}`;
     }).join('');
     const total = pane.querySelector('[data-period-unmatched-total]');
     if (total) total.textContent = String(rows.length);
@@ -4052,7 +4161,7 @@
       renderPeriodUnmatchedRows(pane);
       if (status) status.textContent = data?.message || 'کاربران انتخاب‌شده افزوده و دعوت شدند.';
       await loadPeriodInvitees(pane, 1);
-      await loadPeriodCandidates(pane, 1);
+      if (!state.matchedMode) await loadPeriodCandidates(pane, 1);
     } catch (error) {
       if (status) status.textContent = error?.message || 'افزودن کاربران بدون تطبیق ناموفق بود.';
     }
@@ -4334,7 +4443,7 @@
                 <label class="field"><span>تاریخ خروج</span><input name="quit_date" type="date" /></label>
                 <label class="field"><span>ساعت خروج</span><input name="quit_time" type="time" step="1" /></label>
                 <label class="field full"><span>طبقه‌بندی حضور</span><select name="presence_classification">
-                  <option value="none">بدون پرچم حضور</option><option value="correct_presence">Correct Presence — حضور واقعی</option><option value="fake_presence">Fake Presence — حضور نامعقول</option>
+                  <option value="none">بدون پرچم حضور</option><option value="correct_presence">حضور واقعی</option><option value="fake_presence">حضور نامعقول</option>
                 </select></label>
               </div>
               <p class="hint">انتخاب «ورود ثبت نشده» تاریخ‌ها، ساعت‌ها و پرچم حضور همین بازه را پاک می‌کند.</p>
@@ -4604,7 +4713,7 @@
   function applyPeriodExcelSheet(pane, sheetName) {
     const state = getPeriodInviteState(pane);
     if (!state.excelWorkbook || !sheetName || !state.excelWorkbook.Sheets?.[sheetName]) {
-      throw new Error('یک شیت معتبر از فایل Excel انتخاب کنید.');
+      throw new Error('یک شیت معتبر از فایل اکسل انتخاب کنید.');
     }
     const rows = window.XLSX.utils.sheet_to_json(state.excelWorkbook.Sheets[sheetName], {
       header: 1,
@@ -4665,6 +4774,7 @@
     setupSeatMapEditor(pane.querySelector('[data-seat-map-editor]'), String(task?.tagCode || ''));
     void loadPeriodGroups(pane).then(() => loadPeriodInvitees(pane, state.inviteePage));
     pane.querySelector('[data-period-invite-card-generate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane));
+    pane.querySelector('[data-period-invite-card-regenerate]')?.addEventListener('click', () => void generatePeriodInviteCards(pane, false, true));
     pane.querySelector('[data-personnel-copy-preview]')?.addEventListener('click', () => void previewPersonnelCopy(pane));
     pane.querySelector('[data-period-invite-card-export]')?.addEventListener('click', () => exportPeriodInviteCardLinks(pane));
     pane.querySelector('[data-period-invite-card-refresh]')?.addEventListener('click', () => void Promise.all([loadPeriodInviteCardStatus(pane), loadPeriodInviteCardBackground(pane)]));
@@ -4693,7 +4803,12 @@
       }
     });
     const filterForm = pane.querySelector('[data-period-invite-filter-form]');
-    filterForm?.addEventListener('submit', (event) => { event.preventDefault(); state.selected.clear(); void loadPeriodCandidates(pane, 1); });
+    filterForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      state.selected.clear();
+      void loadPeriodCandidates(pane, 1);
+      filterForm.closest('[data-task-top-section="invite"]')?.dispatchEvent(new CustomEvent('egm-flow-open', {detail:{index:1}}));
+    });
     pane.querySelector('[data-period-invite-clear]')?.addEventListener('click', () => { filterForm?.reset(); state.selected.clear(); void loadPeriodCandidates(pane, 1); });
     pane.querySelector('[data-period-candidate-prev]')?.addEventListener('click', () => void loadPeriodCandidates(pane, Math.max(1, state.page - 1)));
     pane.querySelector('[data-period-candidate-next]')?.addEventListener('click', () => void loadPeriodCandidates(pane, Math.min(state.pages, state.page + 1)));
@@ -4729,13 +4844,31 @@
       try {
         const ticketNumbers = Object.fromEntries(state.candidates.filter((row) => state.selected.has(String(row?.candidate_id || ''))).map((row) => [String(row.candidate_id), row.ticket_numbers || {}]));
         const data = await requestPeriodInvites('invite', { period_code: periodCodeForPane(pane), group_id: pane.querySelector('[data-period-candidate-group]')?.value || '', candidate_ids: Array.from(state.selected), ticket_numbers: ticketNumbers }, 'POST');
-        state.selected.clear();
+        if (state.matchedMode) {
+          state.candidates = state.candidates.map((row) => state.selected.has(String(row.candidate_id || '')) ? { ...row, invited:true } : row);
+          state.selected.clear();
+          renderPeriodCandidates(pane, { rows:state.candidates, total:state.candidates.length, page:1, pages:1 });
+        } else {
+          state.selected.clear();
+          await loadPeriodCandidates(pane, 1);
+        }
         if (status) status.textContent = data?.message || 'دعوت‌ها ذخیره شدند.';
-        await loadPeriodCandidates(pane, 1);
         await loadPeriodInvitees(pane, 1);
       } catch (error) { if (status) status.textContent = error?.message || 'دعوت کاربران ناموفق بود.'; }
     });
     pane.addEventListener('click', async (event) => {
+      const editExcel = event.target instanceof Element ? event.target.closest('[data-period-unmatched-edit]') : null;
+      if (editExcel instanceof HTMLButtonElement) {
+        state.editingExcelId = editExcel.dataset.periodUnmatchedEdit || '';
+        renderPeriodUnmatchedRows(pane);
+        pane.querySelector('[data-period-unmatched-edit-form] input')?.focus();
+        return;
+      }
+      if (event.target instanceof Element && event.target.closest('[data-period-unmatched-edit-cancel]')) {
+        state.editingExcelId = '';
+        renderPeriodUnmatchedRows(pane);
+        return;
+      }
       const unmatchedInvite = event.target instanceof Element ? event.target.closest('[data-period-invite-unmatched-one]') : null;
       if (unmatchedInvite instanceof HTMLButtonElement) {
         await invitePeriodUnmatchedRows(pane, [unmatchedInvite.dataset.periodInviteUnmatchedOne || '']);
@@ -4761,6 +4894,43 @@
         await loadPeriodInvitees(pane, state.inviteePage);
         await loadPeriodCandidates(pane, state.page);
       } catch (error) { const status = pane.querySelector('[data-period-invitee-status]'); if (status) status.textContent = error?.message || 'حذف دعوت ناموفق بود.'; }
+    });
+    pane.addEventListener('submit', async (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || !form.matches('[data-period-unmatched-edit-form]')) return;
+      event.preventDefault();
+      const id = form.dataset.periodUnmatchedEditForm || '';
+      const index = state.unmatchedRows.findIndex((row) => String(row?.excel_id || '') === id);
+      if (index < 0) return;
+      const original = state.unmatchedRows[index];
+      const updated = { ...original };
+      delete updated.match_error;
+      delete updated.can_invite;
+      delete updated.invited;
+      for (const field of ['first_name', 'last_name', 'national_id', 'work_id', 'phone_number']) updated[field] = String(form.elements[field]?.value || '').trim();
+      const status = pane.querySelector('[data-period-unmatched-status]');
+      const button = form.querySelector('[type="submit"]');
+      if (button instanceof HTMLButtonElement) button.disabled = true;
+      try {
+        const result = await matchPeriodExcelRows(periodCodeForPane(pane), [updated]);
+        const matched = result.rows?.[0];
+        if (matched) {
+          state.unmatchedRows.splice(index, 1);
+          state.unmatchedSelected.delete(id);
+          const candidateId = String(matched.candidate_id || '');
+          state.candidates = state.candidates.filter((row) => String(row.candidate_id || '') !== candidateId).concat(matched);
+          if (!matched.invited) state.selected.add(candidateId);
+          renderPeriodCandidates(pane, { rows:state.candidates, total:state.candidates.length, page:1, pages:1 });
+          if (status) status.textContent = matched.invited ? 'این کاربر قبلاً دعوت شده است.' : 'کاربر تطبیق و برای دعوت انتخاب شد.';
+        } else {
+          state.unmatchedRows[index] = result.unmatched_rows?.[0] || updated;
+          if (state.unmatchedRows[index].can_invite === false) state.unmatchedSelected.delete(id);
+          if (status) status.textContent = state.unmatchedRows[index].invited ? 'این کاربر قبلاً دعوت شده است.' : (state.unmatchedRows[index].match_error || 'اطلاعات اصلاح شد؛ اکنون می‌توانید این کاربر را دعوت کنید.');
+        }
+        state.editingExcelId = '';
+        renderPeriodUnmatchedRows(pane);
+      } catch (error) { if (status) status.textContent = error?.message || 'تطبیق مجدد ناموفق بود.'; }
+      finally { if (button instanceof HTMLButtonElement && button.isConnected) button.disabled = false; }
     });
     pane.querySelector('[data-period-invite-unmatched-selected]')?.addEventListener('click', () => void invitePeriodUnmatchedRows(pane, Array.from(state.unmatchedSelected)));
     pane.querySelector('[data-period-export-uninviteable]')?.addEventListener('click', () => exportPeriodUninviteable(pane));
@@ -4861,11 +5031,13 @@
         state.matchedMode = true;
         state.selected = new Set((data.rows || []).filter((row) => !row?.invited).map((row) => String(row.candidate_id || '')));
         state.unmatchedRows = Array.isArray(data.unmatched_rows) ? data.unmatched_rows : [];
-        state.unmatchedSelected.clear();
+        state.unmatchedSelected = new Set(state.unmatchedRows.filter((row) => row?.can_invite !== false && !row?.invited && !row?.match_error).map((row) => String(row.excel_id || '')));
         renderPeriodCandidates(pane, { rows: data.rows || [], total: data.matched || 0, page: 1, pages: 1 });
         renderPeriodUnmatchedRows(pane);
-        const conflictText = Number(data.conflicts || 0) > 0 ? ` از این تعداد، ${data.conflicts} ردیف تعارض شناسه داشت.` : '';
-        if (status) status.textContent = `${data.matched || 0} کاربر تطبیق و انتخاب شد؛ ${data.unmatched || 0} ردیف بدون تطبیق بود.${conflictText}`;
+        pane.querySelector('[data-task-top-section="invite"]')?.dispatchEvent(new CustomEvent('egm-flow-open', {detail:{index:1}}));
+        const conflictText = Number(data.conflicts || 0) > 0 ? ` ${data.conflicts} ردیف تعارض داشت و قابل اصلاح است.` : '';
+        const invitedCount = (data.rows || []).filter((row) => row?.invited).length + (data.unmatched_rows || []).filter((row) => row?.invited).length;
+        if (status) status.textContent = `${state.selected.size} کاربر تطبیق و برای دعوت انتخاب شد؛ ${state.unmatchedSelected.size} کاربر جدید بدون تطبیق آمادهٔ دعوت است؛ ${invitedCount} نفر قبلاً دعوت شده‌اند.${conflictText}`;
       } catch (error) {
         if (status) status.textContent = error?.message || 'تطبیق فایل ناموفق بود.';
       } finally {
@@ -4912,7 +5084,7 @@
       const pane = field.closest('.sub-pane[data-task-pane="1"]');
       if (!(pane instanceof HTMLElement)) return;
       const fieldName = field.getAttribute('data-task-field') || '';
-      if (fieldName === 'active' || fieldName === 'duration' || fieldName === 'quitRequired' || fieldName === 'quitTimelineRequired') {
+      if (fieldName === 'active' || fieldName === 'duration' || fieldName === 'quitRequired' || fieldName === 'quitTimelineRequired' || fieldName === 'prizeEntryWindowEnabled') {
         syncTaskPaneToggleState(pane);
         setTaskSaveStatus(pane, '');
         return;
@@ -4931,7 +5103,11 @@
         fieldName === 'enterDeadlineTime' ||
         fieldName === 'quitOpeningDate' ||
         fieldName === 'quitOpeningTime' ||
-        fieldName === 'minimumStayMinutes'
+        fieldName === 'minimumStayMinutes' ||
+        fieldName === 'prizeEntryStartDate' ||
+        fieldName === 'prizeEntryStartTime' ||
+        fieldName === 'prizeEntryEndDate' ||
+        fieldName === 'prizeEntryEndTime'
       ) {
         updateTaskPaneStatus(pane);
         setTaskSaveStatus(pane, '');
@@ -5024,7 +5200,7 @@
         if (!teamId) return;
         const nextValue = checkbox.checked;
         checkbox.disabled = true;
-        setInfoRateStatus(pane, 'Saving...');
+        setInfoRateStatus(pane, 'در حال ذخیره...');
         void (async () => {
           try {
             await postTaskAction('team_task_admin_set_challenge_accepted', {
@@ -5037,7 +5213,7 @@
               return { ...team, challengeAccepted: nextValue };
             });
             renderInfoRateTable(pane);
-            setInfoRateStatus(pane, 'Challenge accepted state updated.');
+            setInfoRateStatus(pane, 'وضعیت پذیرش چالش به‌روزرسانی شد.');
             if (
               teamPreviewContext
               && String(teamPreviewContext.taskId || '').trim() === taskId
@@ -5052,7 +5228,7 @@
             }
           } catch (error) {
             checkbox.checked = !nextValue;
-            setInfoRateStatus(pane, error?.message || 'Failed to save challenge accepted state.', true);
+            setInfoRateStatus(pane, error?.message || 'ذخیره وضعیت پذیرش چالش ناموفق بود.', true);
           } finally {
             checkbox.disabled = false;
           }
@@ -5110,6 +5286,7 @@
           void loadInfoRateDataIntoPane(pane);
         }
         if (sectionKey === 'draws') void loadPeriodDraws(pane);
+        if (sectionKey === 'winners') void loadPeriodWinners(pane);
         if (sectionKey === 'invite') {
           void loadPeriodFilterOptions(pane).then(() => loadPeriodCandidates(pane, 1));
         }
@@ -5193,7 +5370,7 @@
         const controls = getDescribePhotoPaneControls(pane);
         if (!state || !controls) return;
         if (typeof window.openPhotoChooserModal !== 'function') {
-          setDescribePhotoUploadStatus(pane, 'Photo chooser is not available.', true);
+          setDescribePhotoUploadStatus(pane, 'انتخاب عکس در دسترس نیست.', true);
           return;
         }
         window.openPhotoChooserModal({
@@ -5201,7 +5378,7 @@
           onChoose: (selectedPhotos = []) => {
             const selected = toPhotoChooserPayload(selectedPhotos[0]);
             if (!selected) {
-              setDescribePhotoUploadStatus(pane, 'No photo selected.', true);
+              setDescribePhotoUploadStatus(pane, 'عکسی انتخاب نشده است.', true);
               return;
             }
             state.selectedPhoto = selected;
@@ -5241,7 +5418,7 @@
         if (!state || !controls || !state.selectedPhoto) return;
 
         addTaskPhotoButton.disabled = true;
-        setDescribePhotoUploadStatus(pane, 'Saving...');
+        setDescribePhotoUploadStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('add_describe_task_photo', {
             id: taskId,
@@ -5259,11 +5436,11 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'photo');
-            setDescribePhotoUploadStatus(activePane, data.message || 'Photo added.');
+            setDescribePhotoUploadStatus(activePane, data.message || 'عکس افزوده شد.');
             setDescribePhotoListStatus(activePane, '');
           }
         } catch (error) {
-          setDescribePhotoUploadStatus(pane, error?.message || 'Failed to add photo.', true);
+          setDescribePhotoUploadStatus(pane, error?.message || 'افزودن عکس ناموفق بود.', true);
         } finally {
           addTaskPhotoButton.disabled = false;
         }
@@ -5282,13 +5459,13 @@
         if (!(nameInput instanceof HTMLInputElement)) return;
         const nextName = String(nameInput.value || '').trim();
         if (!nextName) {
-          setDescribePhotoListStatus(pane, 'Photo name is required.', true);
+          setDescribePhotoListStatus(pane, 'نام عکس را وارد کنید.', true);
           nameInput.focus();
           return;
         }
 
         saveTaskPhotoNameButton.disabled = true;
-        setDescribePhotoListStatus(pane, 'Saving...');
+        setDescribePhotoListStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('rename_describe_task_photo', {
             id: taskId,
@@ -5306,10 +5483,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'photo');
-            setDescribePhotoListStatus(activePane, data.message || 'Photo name updated.');
+            setDescribePhotoListStatus(activePane, data.message || 'نام عکس به‌روزرسانی شد.');
           }
         } catch (error) {
-          setDescribePhotoListStatus(pane, error?.message || 'Failed to update photo name.', true);
+          setDescribePhotoListStatus(pane, error?.message || 'به‌روزرسانی نام عکس ناموفق بود.', true);
         } finally {
           saveTaskPhotoNameButton.disabled = false;
         }
@@ -5325,7 +5502,7 @@
         if (!taskId || !photoId) return;
 
         removeTaskPhotoButton.disabled = true;
-        setDescribePhotoListStatus(pane, 'Removing...');
+        setDescribePhotoListStatus(pane, 'در حال حذف...');
         try {
           const data = await postTaskAction('remove_describe_task_photo', {
             id: taskId,
@@ -5342,10 +5519,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'photo');
-            setDescribePhotoListStatus(activePane, data.message || 'Photo removed.');
+            setDescribePhotoListStatus(activePane, data.message || 'عکس حذف شد.');
           }
         } catch (error) {
-          setDescribePhotoListStatus(pane, error?.message || 'Failed to remove photo.', true);
+          setDescribePhotoListStatus(pane, error?.message || 'حذف عکس ناموفق بود.', true);
         } finally {
           removeTaskPhotoButton.disabled = false;
         }
@@ -5362,7 +5539,7 @@
         const challengeName = String(controls.nameInput.value || '').trim();
         const quantity = Math.max(0, normalizeScoreValue(controls.quantityInput.value));
         if (!challengeName) {
-          setTeamChallengeAddStatus(pane, 'Challenge name is required.', true);
+          setTeamChallengeAddStatus(pane, 'نام چالش را وارد کنید.', true);
           controls.nameInput.focus();
           return;
         }
@@ -5373,7 +5550,7 @@
         }
 
         addTeamChallengeButton.disabled = true;
-        setTeamChallengeAddStatus(pane, 'Saving...');
+        setTeamChallengeAddStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('add_team_task_challenge', {
             id: taskId,
@@ -5391,10 +5568,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'challenge-storage');
-            setTeamChallengeAddStatus(activePane, data.message || 'Challenge added.');
+            setTeamChallengeAddStatus(activePane, data.message || 'چالش افزوده شد.');
           }
         } catch (error) {
-          setTeamChallengeAddStatus(pane, error?.message || 'Failed to add challenge.', true);
+          setTeamChallengeAddStatus(pane, error?.message || 'افزودن چالش ناموفق بود.', true);
         } finally {
           addTeamChallengeButton.disabled = false;
         }
@@ -5410,7 +5587,7 @@
         if (!taskId || !challengeId) return;
         const challenge = getTeamChallengeById(taskId, challengeId);
         if (!challenge) {
-          setTeamChallengeListStatus(pane, 'Challenge not found.', true);
+          setTeamChallengeListStatus(pane, 'چالش یافت نشد.', true);
           return;
         }
         openTeamChallengeGuideModal(layout, pane, challenge);
@@ -5440,7 +5617,7 @@
         const quantity = Math.max(0, normalizeScoreValue(quantityInput.value));
         let last = Math.max(0, normalizeScoreValue(lastInput.value));
         if (!challengeName) {
-          setTeamChallengeListStatus(pane, 'Challenge name is required.', true);
+          setTeamChallengeListStatus(pane, 'نام چالش را وارد کنید.', true);
           nameInput.focus();
           return;
         }
@@ -5452,7 +5629,7 @@
         }
 
         saveTeamChallengeButton.disabled = true;
-        setTeamChallengeListStatus(pane, 'Saving...');
+        setTeamChallengeListStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('save_team_task_challenge', {
             id: taskId,
@@ -5472,10 +5649,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'challenge-storage');
-            setTeamChallengeListStatus(activePane, data.message || 'Challenge updated.');
+            setTeamChallengeListStatus(activePane, data.message || 'چالش به‌روزرسانی شد.');
           }
         } catch (error) {
-          setTeamChallengeListStatus(pane, error?.message || 'Failed to update challenge.', true);
+          setTeamChallengeListStatus(pane, error?.message || 'به‌روزرسانی چالش ناموفق بود.', true);
         } finally {
           saveTeamChallengeButton.disabled = false;
         }
@@ -5489,10 +5666,10 @@
         const taskId = String(pane.dataset.taskId || '').trim();
         const challengeId = String(removeTeamChallengeButton.getAttribute('data-challenge-id') || '').trim();
         if (!taskId || !challengeId) return;
-        if (!window.confirm('Remove this challenge?')) return;
+        if (!window.confirm('این چالش حذف شود؟')) return;
 
         removeTeamChallengeButton.disabled = true;
-        setTeamChallengeListStatus(pane, 'Removing...');
+        setTeamChallengeListStatus(pane, 'در حال حذف...');
         try {
           const data = await postTaskAction('remove_team_task_challenge', {
             id: taskId,
@@ -5509,10 +5686,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'challenge-storage');
-            setTeamChallengeListStatus(activePane, data.message || 'Challenge removed.');
+            setTeamChallengeListStatus(activePane, data.message || 'چالش حذف شد.');
           }
         } catch (error) {
-          setTeamChallengeListStatus(pane, error?.message || 'Failed to remove challenge.', true);
+          setTeamChallengeListStatus(pane, error?.message || 'حذف چالش ناموفق بود.', true);
         } finally {
           removeTeamChallengeButton.disabled = false;
         }
@@ -5602,7 +5779,7 @@
         if (!taskId || !workId) return;
         const invitee = getInfoRateInviteeByWorkId(taskId, workId);
         if (!invitee || !Array.isArray(invitee.describeResults) || !invitee.describeResults.length) {
-          setInfoRateStatus(pane, 'No saved describe result for this invitee.', true);
+          setInfoRateStatus(pane, 'نتیجه‌ای برای این دعوت‌شده ثبت نشده است.', true);
           return;
         }
         openDescribeResultsModal(pane, invitee);
@@ -5697,12 +5874,12 @@
           return;
         }
         if (teamMaxValue < teamMinValue) {
-          setTaskTeamSettingsSaveStatus(pane, 'Team Max must be equal to or greater than Team Min.', true);
+          setTaskTeamSettingsSaveStatus(pane, 'حداکثر اعضای تیم باید از حداقل آن کمتر نباشد.', true);
           return;
         }
 
         teamSaveButton.disabled = true;
-        setTaskTeamSettingsSaveStatus(pane, 'Saving...');
+        setTaskTeamSettingsSaveStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('save_team_task_settings', {
             id: taskId,
@@ -5719,10 +5896,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'team');
-            setTaskTeamSettingsSaveStatus(activePane, data.message || 'Team settings saved.');
+            setTaskTeamSettingsSaveStatus(activePane, data.message || 'تنظیمات تیم ذخیره شد.');
           }
         } catch (error) {
-          setTaskTeamSettingsSaveStatus(pane, error?.message || 'Failed to save team settings.', true);
+          setTaskTeamSettingsSaveStatus(pane, error?.message || 'ذخیره تنظیمات تیم ناموفق بود.', true);
         } finally {
           const refreshedPane = pane.dataset.pane
             ? findPaneByKey(layout, pane.dataset.pane)
@@ -5750,7 +5927,7 @@
         if (!crisisSettings) return;
 
         crisisSaveButton.disabled = true;
-        setTaskCrisisSaveStatus(pane, 'Saving...');
+        setTaskCrisisSaveStatus(pane, 'در حال ذخیره...');
         try {
           const data = await postTaskAction('save_conditional_quiz_crisis_control', {
             id: taskId,
@@ -5767,10 +5944,10 @@
           const activePane = findPaneByKey(layout, keepPane);
           if (activePane instanceof HTMLElement) {
             activateTaskTopPane(activePane, 'crisis-control');
-            setTaskCrisisSaveStatus(activePane, data.message || 'Crisis Control settings saved.');
+            setTaskCrisisSaveStatus(activePane, data.message || 'تنظیمات کنترل بحران ذخیره شد.');
           }
         } catch (error) {
-          setTaskCrisisSaveStatus(pane, error?.message || 'Failed to save Crisis Control settings.', true);
+          setTaskCrisisSaveStatus(pane, error?.message || 'ذخیره تنظیمات کنترل بحران ناموفق بود.', true);
         } finally {
           const refreshedPane = pane.dataset.pane
             ? findPaneByKey(layout, pane.dataset.pane)
@@ -5867,7 +6044,7 @@
     if (!(body instanceof HTMLElement)) return;
     const logs = Array.isArray(items) ? items : [];
     if (!logs.length) {
-      body.innerHTML = '<tr><td colspan="8" class="muted">No logs found.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="muted">گزارشی یافت نشد.</td></tr>';
       return;
     }
     body.innerHTML = logs.map((item) => {
@@ -5920,7 +6097,7 @@
     const options = Array.isArray(days) ? days : [];
     select.innerHTML = options.length
       ? options.map((day) => `<option value="${escapeHtml(day)}"${day === current ? ' selected' : ''}>${escapeHtml(day)}</option>`).join('')
-      : `<option value="${escapeHtml(current || '')}">${escapeHtml(current || 'No log files')}</option>`;
+      : `<option value="${escapeHtml(current || '')}">${escapeHtml(current || 'فایل گزارشی وجود ندارد')}</option>`;
   }
 
   async function fetchEventGuestManagerLogs(pane) {
@@ -5940,7 +6117,7 @@
     const controller = new AbortController();
     egmLogsState.abortController = controller;
     egmLogsState.loading = true;
-    setEventGuestManagerLogsStatus(pane, query ? 'Searching logs...' : 'Loading logs...');
+    setEventGuestManagerLogsStatus(pane, query ? 'گزارش‌ها در حال جستجو هستند...' : 'گزارش‌ها در حال بارگذاری هستند...');
 
     try {
       const response = await fetch(`${LOGS_ENDPOINT}?${params.toString()}`, {
@@ -5949,18 +6126,18 @@
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || payload?.status !== 'ok') {
-        throw new Error(payload?.message || 'Failed to load logs.');
+        throw new Error(payload?.message || 'بارگذاری گزارش‌ها ناموفق بود.');
       }
       syncEventGuestManagerLogDays(pane, payload.days, payload.day);
       renderEventGuestManagerLogRows(pane, payload.items);
       const count = Array.isArray(payload.items) ? payload.items.length : 0;
-      const suffix = query ? ` for "${query}"` : '';
-      setEventGuestManagerLogsStatus(pane, `Showing ${count} log entr${count === 1 ? 'y' : 'ies'}${suffix}.`);
+      const suffix = query ? ` برای «${query}»` : '';
+      setEventGuestManagerLogsStatus(pane, `${Number(count).toLocaleString('fa-IR')} گزارش${suffix}`);
       pane.dataset.egmLogsLoaded = '1';
     } catch (error) {
       if (error?.name === 'AbortError') return;
       renderEventGuestManagerLogRows(pane, []);
-      setEventGuestManagerLogsStatus(pane, error?.message || 'Failed to load logs.', true);
+      setEventGuestManagerLogsStatus(pane, error?.message || 'بارگذاری گزارش‌ها ناموفق بود.', true);
     } finally {
       if (egmLogsState.abortController === controller) {
         egmLogsState.abortController = null;

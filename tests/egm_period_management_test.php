@@ -181,6 +181,6 @@ $renderer = file_get_contents($root . '/assets/egm-invite-card.js');
 egmPeriodAssert(is_string($renderer), 'Could not inspect the Invite Card renderer');
 egmPeriodAssert(str_contains($renderer, 'data: inviteeQrIdentifier(invitee)'), 'The renderer does not enforce the National-ID/Work-ID QR content');
 egmPeriodAssert(str_contains($renderer, '/^\\d{10}$/'), 'The renderer does not require an exact 10-digit National ID');
-egmPeriodAssert(str_contains($renderer, '/^\\d{4,9}$/'), 'The renderer does not accept a 4-to-9-digit Work ID fallback');
+egmPeriodAssert(str_contains($renderer, '/^\\d{2,9}$/'), 'The renderer does not accept a 2-to-9-digit Work ID fallback');
 
 fwrite(STDOUT, "EGM period management test passed.\n");

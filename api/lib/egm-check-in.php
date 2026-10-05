@@ -316,6 +316,13 @@ function egmCheckInPeriodAvailability(array $period, DateTimeImmutable $now): ar
     $scheduled = egmCheckInBool($period['duration'] ?? false);
     $quitRequired = egmCheckInBool($period['quitRequired'] ?? ($period['quit_required'] ?? false));
     $quitTimelineRequired = egmCheckInQuitTimelineRequired($period);
+    if (egmCheckInBool($period['activationPending'] ?? false)) {
+        return [
+            'eligible' => false, 'scheduled' => $scheduled, 'reason' => 'inactive',
+            'action' => null, 'quit_required' => $quitRequired,
+            'quit_timeline_required' => $quitTimelineRequired,
+        ];
+    }
     $endedAt = trim((string)($period['endedAt'] ?? ($period['ended_at'] ?? '')));
     if ($endedAt !== '' || egmCheckInBool($period['ended'] ?? false)) {
         return [

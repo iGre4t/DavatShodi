@@ -498,7 +498,7 @@ try {
             . "AND ((COALESCE(p.`is_uninvited_guest`,0)=0 AND LOWER(TRIM(COALESCE(p.`invitation_source`,'')))<>'walk_in') "
             . "OR p.`last_control_condition`='entry_reset') "
             . "AND COALESCE(u.`is_active`,1)=1 "
-            . "AND (u.`national_id` REGEXP '^[0-9]{10}$' OR u.`work_id` REGEXP '^[0-9]{4,9}$')";
+            . "AND (u.`national_id` REGEXP '^[0-9]{10}$' OR u.`work_id` REGEXP '^[0-9]{2,9}$')";
         $params = [':period'=>$periodCode];
         if ($query !== '') {
             $where .= " AND (CONCAT_WS(' ',u.`first_name`,u.`last_name`) LIKE :name "

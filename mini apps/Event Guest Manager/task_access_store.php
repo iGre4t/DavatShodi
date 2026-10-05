@@ -73,7 +73,7 @@ function egmTaskAccessResolvePaneKeys(string $taskType): array
 {
   $type = egmTaskAccessNormalizeTaskType($taskType);
   if ($type === 'period') {
-    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
+    return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws', 'winners'];
   }
   if ($type === 'conditional_quiz') {
     return ['control', 'information', 'quiz', 'crisis-control'];
@@ -90,7 +90,7 @@ function egmTaskAccessResolvePaneKeys(string $taskType): array
   if ($type === 'describe_photo') {
     return ['control', 'information', 'photo', 'invitees-rate'];
   }
-  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws'];
+  return ['control', 'information', 'invite', 'invitees', 'invite-card', 'export', 'draws', 'winners'];
 }
 
 function egmTaskAccessLoadTasks(string $tasksStorePath): array

@@ -352,31 +352,31 @@ if ($rows) {
   <div class="section-header"><h3>منبع دعوت‌شدگان EGM</h3></div>
   <p class="muted">این انتخاب تعیین می‌کند در بخش «دعوت» هر بازه، کاربران OEU یا کاربران فایل اختصاصی همین EGM نمایش داده شوند.</p>
   <div class="egm-invite-source-switch" role="group" aria-label="منبع دعوت‌شدگان">
-    <button type="button" class="btn ghost" data-egm-invite-source="oeu">OEU</button>
-    <button type="button" class="btn ghost" data-egm-invite-source="custom">Custom</button>
+    <button type="button" class="btn ghost" data-egm-invite-source="oeu">کاربران سازمان</button>
+    <button type="button" class="btn ghost" data-egm-invite-source="custom">اختصاصی</button>
   </div>
   <p class="hint" data-egm-invite-source-status aria-live="polite"></p>
 </div>
 
 <div class="egm-task-top-shell" id="egm-invitees-top-shell">
-  <div class="egm-task-top-nav" role="tablist" aria-label="Invitees Tabs">
-    <button type="button" class="egm-task-top-item active" data-invitees-top-trigger="all-invitees" aria-selected="true">All Invitees</button>
+  <div class="egm-task-top-nav" role="tablist" aria-label="بخش‌های مهمانان">
+    <button type="button" class="egm-task-top-item active" data-invitees-top-trigger="all-invitees" aria-selected="true">همه دعوت‌شدگان</button>
     <?php if ($egmInviteesCanManage): ?>
-    <button type="button" class="egm-task-top-item" data-invitees-top-trigger="manage-invitees" aria-selected="false">Manage Invitees</button>
+    <button type="button" class="egm-task-top-item" data-invitees-top-trigger="manage-invitees" aria-selected="false">مدیریت دعوت‌شدگان</button>
     <?php endif; ?>
   </div>
   <div class="egm-task-top-section active" data-invitees-top-section="all-invitees">
     <div class="card">
       <div class="section-header">
-        <h3>All Invitees</h3>
+        <h3>همه دعوت‌شدگان</h3>
       </div>
       <div class="form" style="gap:12px;">
         <div class="field">
-          <span>Total Invitees</span>
+          <span>تعداد دعوت‌شدگان</span>
           <strong><?= htmlspecialchars((string)count($allInvitees), ENT_QUOTES, 'UTF-8') ?></strong>
         </div>
         <label class="field standard-width">
-          <span>Search Invitee</span>
+          <span>جستجوی دعوت‌شده</span>
           <input
             id="egm-all-invitees-search"
             type="text"
@@ -391,26 +391,26 @@ if ($rows) {
               <tr>
                 <?php if ($egmInviteesCanReset): ?>
                 <th>
-                  <input type="checkbox" id="egm-invitees-select-all" aria-label="Select all visible invitees" />
+                  <input type="checkbox" id="egm-invitees-select-all" aria-label="انتخاب همه مهمانان نمایش‌داده‌شده" />
                 </th>
                 <?php endif; ?>
-                <th>Row</th>
-                <th>Guest Number</th>
-                <th>First Name</th>
-                <th>Last Name</th>
-                <th>Work ID</th>
-                <th>National ID</th>
-                <th>Phone Number</th>
-                <th>Password</th>
-                <th>Missions Done</th>
-                <th>Total Score</th>
-                <th>Action</th>
+                <th>ردیف</th>
+                <th>شماره مهمان</th>
+                <th>نام</th>
+                <th>نام خانوادگی</th>
+                <th>شناسه کاری</th>
+                <th>کد ملی</th>
+                <th>شماره تلفن</th>
+                <th>رمز عبور</th>
+                <th>مأموریت‌های انجام‌شده</th>
+                <th>امتیاز کل</th>
+                <th>عملیات</th>
               </tr>
             </thead>
             <tbody data-invitees-all-table-body>
               <?php if (!$allInvitees): ?>
                 <tr>
-                  <td colspan="<?= $egmInviteesCanReset ? '12' : '11' ?>" class="muted">No invitees found.</td>
+                  <td colspan="<?= $egmInviteesCanReset ? '12' : '11' ?>" class="muted">دعوت‌شده‌ای یافت نشد.</td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($allInvitees as $invitee): ?>
@@ -433,7 +433,7 @@ if ($rows) {
                         data-invitee-select
                         data-reached-mission-order="<?= htmlspecialchars((string)($invitee['reachedMissionOrder'] ?? 0), ENT_QUOTES, 'UTF-8') ?>"
                         value="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                        aria-label="Select <?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
+                        aria-label="انتخاب <?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
                       />
                     </td>
                     <?php endif; ?>
@@ -460,7 +460,7 @@ if ($rows) {
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-national-id="<?= htmlspecialchars((string)($invitee['nationalId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-phone-number="<?= htmlspecialchars((string)($invitee['phoneNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                        >Edit</button>
+                        >ویرایش</button>
                         <?php endif; ?>
                         <?php if ($egmInviteesCanReveal): ?>
                         <button
@@ -470,7 +470,7 @@ if ($rows) {
                           data-row="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                        >Reveal Password</button>
+                        >نمایش رمز عبور</button>
                         <?php endif; ?>
                         <?php if ($egmInviteesCanReset): ?>
                         <button
@@ -480,7 +480,7 @@ if ($rows) {
                           data-row="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                        >Rest</button>
+                        >بازنشانی</button>
                         <?php endif; ?>
                         <button
                           type="button"
@@ -489,13 +489,13 @@ if ($rows) {
                           data-row="<?= htmlspecialchars((string)($invitee['row'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                           data-display-name="<?= htmlspecialchars(trim(((string)($invitee['firstName'] ?? '')) . ' ' . ((string)($invitee['lastName'] ?? ''))), ENT_QUOTES, 'UTF-8') ?>"
                           data-work-id="<?= htmlspecialchars((string)($invitee['workId'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                        >Participate</button>
+                        >مشارکت</button>
                       </div>
                     </td>
                   </tr>
                 <?php endforeach; ?>
                 <tr data-invitees-no-results hidden>
-                  <td colspan="<?= $egmInviteesCanReset ? '12' : '11' ?>" class="muted">No matching invitee found.</td>
+                  <td colspan="<?= $egmInviteesCanReset ? '12' : '11' ?>" class="muted">دعوت‌شده‌ای مطابق جستجو یافت نشد.</td>
                 </tr>
               <?php endif; ?>
             </tbody>
@@ -505,77 +505,77 @@ if ($rows) {
         <div class="card egm-invitees-bulk-card" id="egm-invitees-bulk-card">
           <div class="card-header">
             <div>
-              <h4>Selected Invitees Action</h4>
-              <p class="muted"><span id="egm-invitees-selected-count">0</span> invitees selected</p>
+              <h4>عملیات گروهی دعوت‌شدگان</h4>
+              <p class="muted"><span id="egm-invitees-selected-count">0</span> دعوت‌شده انتخاب شده‌اند</p>
             </div>
           </div>
           <div class="egm-invitees-active-selector">
             <div class="egm-invitees-active-fields">
               <label class="field">
-                <span>Active users — level reached</span>
+                <span>کاربران فعال — سطح رسیده</span>
                 <select id="egm-invitees-active-minimum">
-                  <option value="">Select a level / mission</option>
-                  <option value="0">Non mission done</option>
+                  <option value="">یک سطح یا مأموریت انتخاب کنید</option>
+                  <option value="0">بدون مأموریت انجام‌شده</option>
                 </select>
               </label>
               <label class="field">
-                <span>But (optional)</span>
+                <span>شرط تکمیلی (اختیاری)</span>
                 <select id="egm-invitees-bulk-condition">
-                  <option value="none">None — ignore score condition</option>
-                  <option value="not_already_scored">But not already scored</option>
+                  <option value="none">بدون شرط امتیاز</option>
+                  <option value="not_already_scored">بدون امتیاز قبلی</option>
                 </select>
               </label>
               <label class="field">
-                <span>In level / mission</span>
+                <span>در سطح یا مأموریت</span>
                 <select id="egm-invitees-condition-task" disabled>
-                  <option value="">Select a level / mission</option>
+                  <option value="">یک سطح یا مأموریت انتخاب کنید</option>
                 </select>
               </label>
               <label class="field">
-                <span>At least logged in X times — optional</span>
+                <span>حداقل تعداد ورود (اختیاری)</span>
                 <input id="egm-invitees-minimum-logins" type="number" min="0" step="1" inputmode="numeric" placeholder="Example: 3" />
               </label>
               <label class="field">
-                <span>Top by login count (%) — optional</span>
+                <span>برترین‌ها بر پایه تعداد ورود (درصد)</span>
                 <input id="egm-invitees-login-percentage" type="number" min="1" max="100" step="1" inputmode="numeric" placeholder="Example: 80" />
               </label>
             </div>
             <div class="egm-invitees-filter-counts" aria-live="polite">
               <div>
-                <span>Reached selected level</span>
+                <span>رسیده به سطح انتخاب‌شده</span>
                 <strong id="egm-invitees-reached-count">—</strong>
               </div>
               <div>
-                <span>Reached level and not scored in selected mission</span>
+                <span>رسیده به سطح، بدون امتیاز در مأموریت انتخاب‌شده</span>
                 <strong id="egm-invitees-not-scored-count">—</strong>
               </div>
               <div>
-                <span>After minimum-login filter</span>
+                <span>پس از فیلتر حداقل ورود</span>
                 <strong id="egm-invitees-minimum-logins-count">—</strong>
               </div>
               <div>
-                <span>After top-login percentage filter</span>
+                <span>پس از فیلتر درصد برترین ورودها</span>
                 <strong id="egm-invitees-login-filtered-count">—</strong>
               </div>
             </div>
             <div class="egm-invitees-active-actions">
-              <button type="button" class="btn ghost" id="egm-invitees-select-active">Select Active Users</button>
-              <button type="button" class="btn ghost" id="egm-invitees-clear-selection">Clear Selection</button>
+              <button type="button" class="btn ghost" id="egm-invitees-select-active">انتخاب کاربران فعال</button>
+              <button type="button" class="btn ghost" id="egm-invitees-clear-selection">پاک کردن انتخاب</button>
             </div>
           </div>
-          <p class="muted small">Minimum level selects users by the furthest mission reached. The optional score condition narrows that group, then the login percentage keeps the users with the highest login counts.</p>
+          <p class="muted small">کاربران را با سطح و امتیاز دلخواه انتخاب کنید؛ شرط ورود، نتیجه را محدودتر می‌کند.</p>
           <div class="form grid egm-invitees-bulk-form">
             <label class="field">
-              <span>Mission</span>
+              <span>مأموریت</span>
               <select id="egm-invitees-bulk-task">
-                <option value="">Select a mission</option>
+                <option value="">یک مأموریت انتخاب کنید</option>
               </select>
             </label>
             <label class="field">
-              <span>Score</span>
+              <span>امتیاز</span>
               <input id="egm-invitees-bulk-score" type="number" min="0" step="1" inputmode="numeric" />
             </label>
-            <button type="button" class="btn primary" id="egm-invitees-bulk-apply" disabled>Apply to Selected</button>
+            <button type="button" class="btn primary" id="egm-invitees-bulk-apply" disabled>اعمال برای انتخاب‌شده‌ها</button>
           </div>
           <p id="egm-invitees-bulk-msg" class="hint" aria-live="polite"></p>
         </div>
@@ -587,40 +587,40 @@ if ($rows) {
   <div class="egm-task-top-section" data-invitees-top-section="manage-invitees" hidden>
 <div class="card" data-egm-custom-upload-card>
   <div class="section-header">
-    <h3>Insert Invite List</h3>
+    <h3>ورود فهرست دعوت‌شدگان</h3>
   </div>
   <div class="form">
     <div class="field standard-width">
-      <span>Insert Excel File</span>
+      <span>انتخاب فایل اکسل</span>
       <div class="field-block" style="padding:10px;">
         <input id="egm-invite-file" type="file" accept=".csv,.xls,.xlsx" hidden />
         <div class="field-controls" style="gap:8px;">
-          <button type="button" class="btn" id="egm-invite-pick">Insert Excel File</button>
-          <div id="egm-invite-file-name" class="muted">No file selected.</div>
+          <button type="button" class="btn" id="egm-invite-pick">انتخاب فایل اکسل</button>
+          <div id="egm-invite-file-name" class="muted">فایلی انتخاب نشده است.</div>
         </div>
       </div>
     </div>
     <div class="field full">
-      <button type="button" class="btn primary standard-primary-button" id="egm-invite-map">Map and Upload</button>
+      <button type="button" class="btn primary standard-primary-button" id="egm-invite-map">تطبیق ستون‌ها و بارگذاری</button>
     </div>
   </div>
 </div>
 
 <div class="card">
   <div class="section-header">
-    <h3>Any Password Login</h3>
+    <h3>ورود با هر رمز عبور</h3>
   </div>
   <div class="form grid two-columns">
     <label class="field">
-      <span>Min Length</span>
+      <span>حداقل طول</span>
       <input id="egm-any-password-min-length" type="number" min="1" max="128" step="1" value="<?= htmlspecialchars((string)$anyPasswordLoginSettings['minLength'], ENT_QUOTES, 'UTF-8') ?>" />
     </label>
     <label class="field checkbox-field">
-      <span>Any Password</span>
+      <span>هر رمز عبوری</span>
       <input id="egm-any-password-enabled" type="checkbox" <?= !empty($anyPasswordLoginSettings['anyPassword']) ? 'checked' : '' ?> />
     </label>
     <div class="field full">
-      <button type="button" class="btn primary standard-primary-button" id="egm-any-password-save">Save</button>
+      <button type="button" class="btn primary standard-primary-button" id="egm-any-password-save">ذخیره</button>
       <p id="egm-any-password-msg" class="hint" aria-live="polite"></p>
     </div>
   </div>
@@ -628,31 +628,31 @@ if ($rows) {
 
 <div class="card">
   <div class="section-header">
-    <h3>Add Invitee</h3>
+    <h3>افزودن دعوت‌شده</h3>
   </div>
   <div class="form grid two-columns">
     <label class="field">
-      <span>Work ID</span>
-      <input id="egm-add-work-id" type="text" placeholder="Work ID" />
+      <span>شناسه کاری</span>
+      <input id="egm-add-work-id" type="text" placeholder="شناسه کاری" />
     </label>
     <label class="field">
-      <span>First Name</span>
-      <input id="egm-add-first-name" type="text" placeholder="First Name" />
+      <span>نام</span>
+      <input id="egm-add-first-name" type="text" placeholder="نام" />
     </label>
     <label class="field">
-      <span>Last Name</span>
-      <input id="egm-add-last-name" type="text" placeholder="Last Name" />
+      <span>نام خانوادگی</span>
+      <input id="egm-add-last-name" type="text" placeholder="نام خانوادگی" />
     </label>
     <label class="field">
-      <span>National ID</span>
-      <input id="egm-add-national-id" type="text" placeholder="National ID" />
+      <span>کد ملی</span>
+      <input id="egm-add-national-id" type="text" placeholder="کد ملی" />
     </label>
     <label class="field">
-      <span>Phone Number</span>
-      <input id="egm-add-phone-number" type="text" placeholder="Phone Number" />
+      <span>شماره تلفن</span>
+      <input id="egm-add-phone-number" type="text" placeholder="شماره تلفن" />
     </label>
     <div class="field full">
-      <button type="button" class="btn primary standard-primary-button" id="egm-add-invitee-btn">Add Invitee</button>
+      <button type="button" class="btn primary standard-primary-button" id="egm-add-invitee-btn">افزودن دعوت‌شده</button>
       <p id="egm-add-invitee-msg" class="hint" aria-live="polite"></p>
     </div>
   </div>
@@ -660,39 +660,39 @@ if ($rows) {
 
 <div class="card">
   <div class="section-header">
-    <h3>Stats</h3>
+    <h3>آمار</h3>
   </div>
   <div class="form" style="gap:12px;">
     <div class="field">
-      <span>Total Invitees</span>
+      <span>تعداد دعوت‌شدگان</span>
       <strong><?= htmlspecialchars((string)$stats['total'], ENT_QUOTES, 'UTF-8') ?></strong>
     </div>
     <div class="field">
-      <span>Mapped Columns</span>
+      <span>ستون‌های تطبیق‌داده‌شده</span>
       <div class="field-block">
-        <div class="muted">Work ID: <?= htmlspecialchars($stats['columns']['workId'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
-        <div class="muted">First Name: <?= htmlspecialchars($stats['columns']['firstName'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
-        <div class="muted">Last Name: <?= htmlspecialchars($stats['columns']['lastName'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
-        <div class="muted">National ID: <?= htmlspecialchars($stats['columns']['nationalId'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
-        <div class="muted">Phone Number: <?= htmlspecialchars($stats['columns']['phoneNumber'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">شناسه کاری: <?= htmlspecialchars($stats['columns']['workId'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">نام: <?= htmlspecialchars($stats['columns']['firstName'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">نام خانوادگی: <?= htmlspecialchars($stats['columns']['lastName'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">کد ملی: <?= htmlspecialchars($stats['columns']['nationalId'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="muted">شماره تلفن: <?= htmlspecialchars($stats['columns']['phoneNumber'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
       </div>
     </div>
     <div class="field">
-      <span>Conflicts</span>
+      <span>تداخل‌ها</span>
       <div class="table-wrapper">
         <table>
           <thead>
             <tr>
-              <th>Type</th>
-              <th>Row</th>
-              <th>Full Name</th>
-              <th>Value</th>
+              <th>نوع</th>
+              <th>ردیف</th>
+              <th>نام کامل</th>
+              <th>مقدار</th>
             </tr>
           </thead>
           <tbody>
             <?php
             $conflictRows = [];
-            foreach (['workId' => 'Work ID', 'nationalId' => 'National ID', 'phoneNumber' => 'Phone Number'] as $key => $label) {
+            foreach (['workId' => 'شناسه کاری', 'nationalId' => 'کد ملی', 'phoneNumber' => 'شماره تلفن'] as $key => $label) {
               foreach ($stats['conflicts'][$key] as $item) {
                 $conflictRows[] = [
                   'type' => $label,
@@ -704,7 +704,7 @@ if ($rows) {
             }
             if (!$conflictRows): ?>
               <tr>
-                <td colspan="4" class="muted">No conflicts found.</td>
+                <td colspan="4" class="muted">تداخلی یافت نشد.</td>
               </tr>
             <?php else:
               foreach ($conflictRows as $row): ?>
@@ -729,9 +729,9 @@ if ($rows) {
   <div class="modal-card">
     <div class="modal-card-header">
       <div class="modal-card-header-start">
-        <h3>Map Columns</h3>
+        <h3>تطبیق ستون‌ها</h3>
       </div>
-      <button type="button" class="icon-btn" data-close-invite-modal aria-label="Close">×</button>
+      <button type="button" class="icon-btn" data-close-invite-modal aria-label="بستن">×</button>
     </div>
     <div id="egm-invite-progress" class="modal-progress hidden" role="status" aria-live="polite">
       <div class="loader-ring" aria-hidden="true">
@@ -743,31 +743,31 @@ if ($rows) {
     <div class="modal-card-body">
       <div class="form grid one-column">
         <label class="field">
-          <span>Work ID</span>
+          <span>شناسه کاری</span>
           <select id="egm-map-work"></select>
         </label>
         <label class="field">
-          <span>First Name</span>
+          <span>نام</span>
           <select id="egm-map-first"></select>
         </label>
         <label class="field">
-          <span>Last Name</span>
+          <span>نام خانوادگی</span>
           <select id="egm-map-last"></select>
         </label>
         <label class="field">
-          <span>National ID</span>
+          <span>کد ملی</span>
           <select id="egm-map-national"></select>
         </label>
         <label class="field">
-          <span>Phone Number</span>
+          <span>شماره تلفن</span>
           <select id="egm-map-phone"></select>
         </label>
       </div>
       <p id="egm-invite-msg" class="hint" aria-live="polite"></p>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" data-close-invite-modal>Cancel</button>
-      <button type="button" class="btn primary" id="egm-invite-upload">Upload</button>
+      <button type="button" class="btn ghost" data-close-invite-modal>انصراف</button>
+      <button type="button" class="btn primary" id="egm-invite-upload">بارگذاری</button>
     </div>
 </div>
 </div>
@@ -776,38 +776,38 @@ if ($rows) {
   <div class="modal-card">
     <div class="modal-card-header">
       <div class="modal-card-header-start">
-        <h3>Edit Invitee</h3>
+        <h3>ویرایش دعوت‌شده</h3>
       </div>
-      <button type="button" class="icon-btn" data-close-invite-edit-modal aria-label="Close">×</button>
+      <button type="button" class="icon-btn" data-close-invite-edit-modal aria-label="بستن">×</button>
     </div>
     <div class="modal-card-body">
       <div class="form grid two-columns">
         <label class="field">
-          <span>Work ID</span>
+          <span>شناسه کاری</span>
           <input id="egm-edit-work-id" type="text" />
         </label>
         <label class="field">
-          <span>First Name</span>
+          <span>نام</span>
           <input id="egm-edit-first-name" type="text" />
         </label>
         <label class="field">
-          <span>Last Name</span>
+          <span>نام خانوادگی</span>
           <input id="egm-edit-last-name" type="text" />
         </label>
         <label class="field">
-          <span>National ID</span>
+          <span>کد ملی</span>
           <input id="egm-edit-national-id" type="text" />
         </label>
         <label class="field">
-          <span>Phone Number</span>
+          <span>شماره تلفن</span>
           <input id="egm-edit-phone-number" type="text" />
         </label>
       </div>
       <p id="egm-edit-invitee-msg" class="hint" aria-live="polite"></p>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" data-close-invite-edit-modal>Cancel</button>
-      <button type="button" class="btn primary" id="egm-edit-invitee-save">Save</button>
+      <button type="button" class="btn ghost" data-close-invite-edit-modal>انصراف</button>
+      <button type="button" class="btn primary" id="egm-edit-invitee-save">ذخیره</button>
     </div>
   </div>
 </div>
@@ -816,22 +816,22 @@ if ($rows) {
   <div class="modal-card">
     <div class="modal-card-header">
       <div class="modal-card-header-start">
-        <h3>Password Confirmation</h3>
+        <h3>تأیید رمز عبور</h3>
       </div>
-      <button type="button" class="icon-btn" data-close-invite-auth-modal aria-label="Close">×</button>
+      <button type="button" class="icon-btn" data-close-invite-auth-modal aria-label="بستن">×</button>
     </div>
     <div class="modal-card-body">
       <div class="form">
         <label class="field">
-          <span>Enter your panel account password</span>
+          <span>رمز عبور حساب پنل خود را وارد کنید</span>
           <input id="egm-invite-auth-password" type="password" autocomplete="current-password" />
         </label>
       </div>
       <p id="egm-invite-auth-msg" class="hint" aria-live="polite"></p>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" data-close-invite-auth-modal>Cancel</button>
-      <button type="button" class="btn primary" id="egm-invite-auth-submit">Verify</button>
+      <button type="button" class="btn ghost" data-close-invite-auth-modal>انصراف</button>
+      <button type="button" class="btn primary" id="egm-invite-auth-submit">تأیید</button>
     </div>
   </div>
 </div>
@@ -840,22 +840,22 @@ if ($rows) {
   <div class="modal-card">
     <div class="modal-card-header">
       <div class="modal-card-header-start">
-        <h3 id="egm-invite-password-title">Invitee Password</h3>
+        <h3 id="egm-invite-password-title">رمز عبور دعوت‌شده</h3>
       </div>
-      <button type="button" class="icon-btn" data-close-invite-password-modal aria-label="Close">×</button>
+      <button type="button" class="icon-btn" data-close-invite-password-modal aria-label="بستن">×</button>
     </div>
     <div class="modal-card-body">
       <div class="form">
         <label class="field">
-          <span>Password</span>
+          <span>رمز عبور</span>
           <input id="egm-invite-password-value" type="text" autocomplete="off" />
         </label>
       </div>
       <p id="egm-invite-password-msg" class="hint" aria-live="polite"></p>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" data-close-invite-password-modal>Close</button>
-      <button type="button" class="btn primary" id="egm-invite-password-save">Save New Password</button>
+      <button type="button" class="btn ghost" data-close-invite-password-modal>بستن</button>
+      <button type="button" class="btn primary" id="egm-invite-password-save">ذخیره رمز عبور جدید</button>
     </div>
   </div>
 </div>
@@ -864,17 +864,17 @@ if ($rows) {
   <div class="modal-card">
     <div class="modal-card-header">
       <div class="modal-card-header-start">
-        <h3>Reset Invitee Progress</h3>
+        <h3>بازنشانی پیشرفت دعوت‌شده</h3>
       </div>
-      <button type="button" class="icon-btn" data-close-invite-reset-modal aria-label="Close">×</button>
+      <button type="button" class="icon-btn" data-close-invite-reset-modal aria-label="بستن">×</button>
     </div>
     <div class="modal-card-body">
-      <p id="egm-invite-reset-text" class="muted">Are you sure you want to reset this invitee progress?</p>
+      <p id="egm-invite-reset-text" class="muted">پیشرفت این دعوت‌شده بازنشانی شود؟</p>
       <p id="egm-invite-reset-msg" class="hint" aria-live="polite"></p>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" data-close-invite-reset-modal>Cancel</button>
-      <button type="button" class="btn primary" id="egm-invite-reset-confirm">Confirm</button>
+      <button type="button" class="btn ghost" data-close-invite-reset-modal>انصراف</button>
+      <button type="button" class="btn primary" id="egm-invite-reset-confirm">تأیید</button>
     </div>
   </div>
 </div>
@@ -883,9 +883,9 @@ if ($rows) {
   <div class="modal-card egm-participation-modal-card">
     <div class="modal-card-header">
       <div class="modal-card-header-start">
-        <h3 id="egm-invite-participation-title">Invitee Participation</h3>
+        <h3 id="egm-invite-participation-title">مشارکت دعوت‌شده</h3>
       </div>
-      <button type="button" class="icon-btn" data-close-invite-participation-modal aria-label="Close">&times;</button>
+      <button type="button" class="icon-btn" data-close-invite-participation-modal aria-label="بستن">&times;</button>
     </div>
     <div class="modal-card-body">
       <div id="egm-invite-participation-summary" class="egm-participation-summary"></div>
@@ -893,7 +893,7 @@ if ($rows) {
       <div id="egm-invite-participation-tasks" class="egm-participation-tasks"></div>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn ghost" data-close-invite-participation-modal>Close</button>
+      <button type="button" class="btn ghost" data-close-invite-participation-modal>بستن</button>
     </div>
   </div>
 </div>
@@ -1113,7 +1113,7 @@ if ($rows) {
         minimum_logins: minimumLogins,
         login_percentage: loginPercentage
       });
-      if (!response.ok) throw new Error(response.message || 'Failed to load filter counts.');
+      if (!response.ok) throw new Error(response.message || 'بارگذاری تعداد نتایج ناموفق بود.');
       activeFilterPreview = {
         reachedRows: Array.isArray(response.data?.reachedRows) ? response.data.reachedRows.map(Number) : [],
         notScoredRows: Array.isArray(response.data?.notScoredRows) ? response.data.notScoredRows.map(Number) : [],
@@ -1174,7 +1174,7 @@ if ($rows) {
       });
       await refreshActiveFilterPreview();
     } catch {
-      setBulkMsg('Failed to load missions.', true);
+      setBulkMsg('بارگذاری مأموریت‌ها ناموفق بود.', true);
     }
   };
 
@@ -1185,15 +1185,15 @@ if ($rows) {
     const condition = String(bulkActionContext?.condition || bulkConditionEl?.value || 'none').trim();
     const conditionTaskId = String(bulkActionContext?.conditionTaskId || conditionTaskEl?.value || '').trim();
     if (!rows.length) {
-      setBulkMsg('Select at least one invitee.', true);
+      setBulkMsg('دست‌کم یک دعوت‌شده انتخاب کنید.', true);
       return;
     }
     if (!taskId) {
-      setBulkMsg('Select a mission.', true);
+      setBulkMsg('یک مأموریت انتخاب کنید.', true);
       return;
     }
     if (!/^\d+$/.test(scoreRaw)) {
-      setBulkMsg('Score must be a non-negative whole number.', true);
+      setBulkMsg('امتیاز باید عدد صحیح و نامنفی باشد.', true);
       return;
     }
     if (condition === 'not_already_scored' && !conditionTaskId) {
@@ -1212,20 +1212,20 @@ if ($rows) {
         condition_task_id: conditionTaskId
       });
       if (response.ok) {
-        setBulkMsg(response.message || 'Mission scores updated.');
+        setBulkMsg(response.message || 'امتیاز مأموریت‌ها به‌روزرسانی شد.');
         bulkActionContext = null;
         activeFilterPreview = null;
         await refreshActiveFilterPreview();
       } else if (response.status === 'auth_required') {
         pendingSensitiveAction = 'bulk_save_task_score';
-        setBulkMsg('Authorization required. Please verify your panel password.', true);
+        setBulkMsg('ابتدا رمز عبور پنل خود را تأیید کنید.', true);
         openAuthModal();
       } else {
-        setBulkMsg(response.message || 'Failed to update mission scores.', true);
+        setBulkMsg(response.message || 'به‌روزرسانی امتیاز مأموریت‌ها ناموفق بود.', true);
         bulkActionContext = null;
       }
     } catch {
-      setBulkMsg('Failed to update mission scores.', true);
+      setBulkMsg('به‌روزرسانی امتیاز مأموریت‌ها ناموفق بود.', true);
       bulkActionContext = null;
     } finally {
       if (bulkApplyBtn) bulkApplyBtn.disabled = selectedInviteeRows().length === 0;
@@ -1256,7 +1256,7 @@ if ($rows) {
       if (query === '') {
         allInviteesSearchMetaEl.textContent = `Showing ${visibleCount} invitees`;
       } else if (visibleCount === 0) {
-        allInviteesSearchMetaEl.textContent = 'No match found';
+        allInviteesSearchMetaEl.textContent = 'موردی یافت نشد';
       } else {
         allInviteesSearchMetaEl.textContent = `${visibleCount} result${visibleCount === 1 ? '' : 's'} found`;
       }
@@ -1444,7 +1444,7 @@ if ($rows) {
 
   const renderParticipationLoading = () => {
     if (participationSummaryEl) {
-      participationSummaryEl.innerHTML = '<div class="muted">Loading participation...</div>';
+      participationSummaryEl.innerHTML = '<div class="muted">مشارکت در حال بارگذاری است...</div>';
     }
     if (participationTasksEl) {
       participationTasksEl.innerHTML = '';
@@ -1460,30 +1460,30 @@ if ($rows) {
     const displayName = String(invitee.displayName || invitee.workId || '').trim();
 
     if (participationTitleEl) {
-      participationTitleEl.textContent = displayName !== '' ? `Invitee Participation - ${displayName}` : 'Invitee Participation';
+      participationTitleEl.textContent = displayName !== '' ? `مشارکت دعوت‌شده - ${displayName}` : 'Invitee Participation';
     }
 
     if (participationSummaryEl) {
       const summaryCards = [
-        ['Total Score', summary.totalScore ?? 0],
-        ['Completed Tasks', `${summary.completedTasks ?? 0} / ${summary.taskCount ?? tasks.length}`],
-        ['Started Tasks', summary.startedTasks ?? 0],
-        ['Login Count', summary.loginCount ?? 0],
-        ['Roll Count', summary.rollCount ?? 0],
-        ['Card Flips', summary.cardFlipsCount ?? 0],
-        ['Prize Won', summary.prizeWon || '-'],
-        ['Total Prize Won', summary.totalPrizeWon || '-']
+        ['امتیاز کل', summary.totalScore ?? 0],
+        ['مأموریت‌های کامل‌شده', `${summary.completedTasks ?? 0} / ${summary.taskCount ?? tasks.length}`],
+        ['مأموریت‌های آغازشده', summary.startedTasks ?? 0],
+        ['تعداد ورود', summary.loginCount ?? 0],
+        ['تعداد چرخش', summary.rollCount ?? 0],
+        ['کارت‌های برگردانده‌شده', summary.cardFlipsCount ?? 0],
+        ['جایزه دریافت‌شده', summary.prizeWon || '-'],
+        ['مجموع جوایز دریافت‌شده', summary.totalPrizeWon || '-']
       ];
       const extraRows = [
-        ['Work ID', invitee.workId || '-'],
-        ['Phone Number', invitee.phoneNumber || '-'],
-        ['National ID', invitee.nationalId || '-'],
-        ['Logins', summary.logins || '-'],
-        ['Prize Won At', summary.prizeWonAt || '-'],
-        ['Out of Value Rewards', summary.outOfValueRewards || '-'],
-        ['Level Prizes', summary.eachLevelWonPrize || '-'],
-        ['Legacy Answered', summary.legacyAnswered || '-'],
-        ['Legacy Answers', summary.legacyAnswers || '-']
+        ['شناسه کاری', invitee.workId || '-'],
+        ['شماره تلفن', invitee.phoneNumber || '-'],
+        ['کد ملی', invitee.nationalId || '-'],
+        ['ورودها', summary.logins || '-'],
+        ['زمان دریافت جایزه', summary.prizeWonAt || '-'],
+        ['جوایز بدون ارزش', summary.outOfValueRewards || '-'],
+        ['جوایز سطوح', summary.eachLevelWonPrize || '-'],
+        ['پاسخ‌های قدیمی', summary.legacyAnswered || '-'],
+        ['پاسخ‌های قدیمی', summary.legacyAnswers || '-']
       ];
       participationSummaryEl.innerHTML = `
         <div class="egm-participation-stat-grid">
@@ -1507,7 +1507,7 @@ if ($rows) {
 
     if (!participationTasksEl) return;
     if (!tasks.length) {
-      participationTasksEl.innerHTML = '<div class="muted">No task activity is available.</div>';
+      participationTasksEl.innerHTML = '<div class="muted">فعالیتی برای مأموریت‌ها ثبت نشده است.</div>';
       return;
     }
 
@@ -1516,13 +1516,13 @@ if ($rows) {
       if (!answers.length) return '';
       return `
         <details class="egm-participation-answer-details">
-          <summary>${escapeHtml(String(answers.length))} saved answer${answers.length === 1 ? '' : 's'}</summary>
+          <summary>${escapeHtml(String(answers.length))} پاسخ ذخیره‌شده</summary>
           <div class="egm-participation-answer-list">
             ${answers.map((answer) => {
-              const correct = answer.correct === true ? 'Correct' : (answer.correct === false ? 'Incorrect' : '');
+              const correct = answer.correct === true ? 'درست' : (answer.correct === false ? 'نادرست' : '');
               return `
                 <div class="egm-participation-answer-row">
-                  <span>${escapeHtml(answer.question || answer.code || 'Question')}</span>
+                  <span>${escapeHtml(answer.question || answer.code || 'سؤال')}</span>
                   <strong>${escapeHtml(answer.answer || '-')}</strong>
                   ${correct ? `<em>${escapeHtml(correct)}</em>` : ''}
                 </div>
@@ -1540,12 +1540,12 @@ if ($rows) {
       if (!stats || !Array.isArray(stats.photos) || !stats.photos.length) return '';
       return `
         <details class="egm-participation-answer-details">
-          <summary>${escapeHtml(String(stats.photos.length))} photo item${stats.photos.length === 1 ? '' : 's'}</summary>
+          <summary>${escapeHtml(String(stats.photos.length))} عکس</summary>
           <div class="egm-participation-answer-list">
             ${stats.photos.map((photo) => `
               <div class="egm-participation-answer-row">
-                <span>${escapeHtml(photo.photoName || photo.photoId || 'Photo')}</span>
-                <strong>${escapeHtml(`${photo.wordCount ?? 0} words`)}</strong>
+                <span>${escapeHtml(photo.photoName || photo.photoId || 'عکس')}</span>
+                <strong>${escapeHtml(`${photo.wordCount ?? 0} واژه`)}</strong>
               </div>
             `).join('')}
           </div>
@@ -1558,12 +1558,12 @@ if ($rows) {
         <table class="tct-list-table egm-participation-task-table">
           <thead>
             <tr>
-              <th>Task</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th>Score</th>
-              <th>Activity</th>
-              <th>Action</th>
+              <th>مأموریت</th>
+              <th>نوع</th>
+              <th>وضعیت</th>
+              <th>امتیاز</th>
+              <th>فعالیت</th>
+              <th>عملیات</th>
             </tr>
           </thead>
           <tbody>
@@ -1573,7 +1573,7 @@ if ($rows) {
               const possibleScore = task.possibleScore ?? task.configuredScore ?? 0;
               const score = task.scoreLabel || `${task.score ?? 0} / ${possibleScore}`;
               const canManageTask = canResetInviteeTasks && taskId !== '';
-              const taskTitle = task.title || taskId || 'Untitled Task';
+              const taskTitle = task.title || taskId || 'مأموریت بدون عنوان';
               const currentScore = Math.max(0, Number.parseInt(String(task.score ?? 0), 10) || 0);
               return `
                 <tr>
@@ -1585,7 +1585,7 @@ if ($rows) {
                   <td><span class="egm-participation-status egm-participation-status--${escapeHtml(task.status || 'not_started')}">${escapeHtml(task.statusLabel || '-')}</span></td>
                   <td>${escapeHtml(score)}</td>
                   <td>
-                    ${details.length ? `<div class="egm-participation-detail-list">${details.map((detail) => `<span>${escapeHtml(detail)}</span>`).join('')}</div>` : '<span class="muted">No saved activity.</span>'}
+                    ${details.length ? `<div class="egm-participation-detail-list">${details.map((detail) => `<span>${escapeHtml(detail)}</span>`).join('')}</div>` : '<span class="muted">فعالیتی ذخیره نشده است.</span>'}
                     ${renderAnswers(task)}
                     ${renderDescribeStats(task)}
                   </td>
@@ -1593,10 +1593,10 @@ if ($rows) {
                     ${canManageTask ? `
                       <div class="egm-participation-action-stack">
                         <div class="egm-participation-score-edit">
-                          <input type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml(String(currentScore))}" data-task-score-input data-task-id="${escapeHtml(taskId)}" aria-label="Task score" />
-                          <button type="button" class="btn ghost" data-action="save-invitee-task-score" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(taskTitle)}">Save</button>
+                          <input type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml(String(currentScore))}" data-task-score-input data-task-id="${escapeHtml(taskId)}" aria-label="امتیاز" />
+                          <button type="button" class="btn ghost" data-action="save-invitee-task-score" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(taskTitle)}">ذخیره</button>
                         </div>
-                        <button type="button" class="btn ghost egm-btn-danger" data-action="reset-invitee-task-progress" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(taskTitle)}">Reset</button>
+                        <button type="button" class="btn ghost egm-btn-danger" data-action="reset-invitee-task-progress" data-task-id="${escapeHtml(taskId)}" data-task-title="${escapeHtml(taskTitle)}">بازنشانی</button>
                       </div>
                     ` : '<span class="muted">-</span>'}
                   </td>
@@ -1611,7 +1611,7 @@ if ($rows) {
 
   const loadParticipationStats = async () => {
     if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
-      setParticipationMsg('Invalid invitee row.', true);
+      setParticipationMsg('ردیف دعوت‌شده نامعتبر است.', true);
       return;
     }
     renderParticipationLoading();
@@ -1620,31 +1620,31 @@ if ($rows) {
       if (response.ok) {
         renderParticipationStats(response.data?.participation || {});
       } else {
-        setParticipationMsg(response.message || 'Failed to load participation.', true);
+        setParticipationMsg(response.message || 'بارگذاری مشارکت ناموفق بود.', true);
         if (participationSummaryEl) participationSummaryEl.innerHTML = '';
         if (participationTasksEl) participationTasksEl.innerHTML = '';
       }
     } catch {
-      setParticipationMsg('Failed to load participation.', true);
+      setParticipationMsg('بارگذاری مشارکت ناموفق بود.', true);
     }
   };
 
   const saveTaskScore = async () => {
     if (!scoreEditContext || !Number.isFinite(scoreEditContext.row) || scoreEditContext.row <= 1) {
-      setParticipationMsg('Invalid invitee row.', true);
+      setParticipationMsg('ردیف دعوت‌شده نامعتبر است.', true);
       return;
     }
     const taskId = String(scoreEditContext.taskId || '').trim();
     const score = Math.max(0, Number.parseInt(String(scoreEditContext.score ?? 0), 10) || 0);
     if (!taskId) {
-      setParticipationMsg('Invalid task id.', true);
+      setParticipationMsg('شناسه مأموریت نامعتبر است.', true);
       return;
     }
     const button = scoreEditContext.button;
     if (button instanceof HTMLButtonElement) {
       button.disabled = true;
     }
-    setParticipationMsg('Saving task score...');
+    setParticipationMsg('امتیاز مأموریت در حال ذخیره است...');
     try {
       const response = await postRevealAction('save_task_score', {
         row: scoreEditContext.row,
@@ -1658,16 +1658,16 @@ if ($rows) {
         } else {
           await loadParticipationStats();
         }
-        setParticipationMsg(response.message || 'Task score updated.');
+        setParticipationMsg(response.message || 'امتیاز مأموریت به‌روزرسانی شد.');
       } else if (response.status === 'auth_required') {
-        setParticipationMsg('Authorization required. Please verify your panel password.', true);
+        setParticipationMsg('ابتدا رمز عبور پنل خود را تأیید کنید.', true);
         pendingSensitiveAction = 'save_task_score';
         openAuthModal();
       } else {
-        setParticipationMsg(response.message || 'Failed to save task score.', true);
+        setParticipationMsg(response.message || 'ذخیره امتیاز مأموریت ناموفق بود.', true);
       }
     } catch {
-      setParticipationMsg('Failed to save task score.', true);
+      setParticipationMsg('ذخیره امتیاز مأموریت ناموفق بود.', true);
     } finally {
       if (button instanceof HTMLButtonElement && button.isConnected) {
         button.disabled = false;
@@ -1677,7 +1677,7 @@ if ($rows) {
 
   const requestRevealPassword = async () => {
     if (!revealPasswordContext || !Number.isFinite(revealPasswordContext.row) || revealPasswordContext.row <= 1) {
-      setPasswordMsg('Invalid invitee row.', true);
+      setPasswordMsg('ردیف دعوت‌شده نامعتبر است.', true);
       return;
     }
     const response = await postRevealAction('get_password', { row: revealPasswordContext.row });
@@ -1688,7 +1688,7 @@ if ($rows) {
       }
       const label = String(revealPasswordContext.displayName || revealPasswordContext.workId || '').trim();
       if (passwordTitleEl) {
-        passwordTitleEl.textContent = label !== '' ? `Invitee Password - ${label}` : 'Invitee Password';
+        passwordTitleEl.textContent = label !== '' ? `رمز عبور دعوت‌شده - ${label}` : 'Invitee Password';
       }
       setPasswordMsg('');
       openPasswordModal();
@@ -1699,12 +1699,12 @@ if ($rows) {
       openAuthModal();
       return;
     }
-    setPasswordMsg(response.message || 'Failed to reveal password.', true);
+    setPasswordMsg(response.message || 'نمایش رمز عبور ناموفق بود.', true);
   };
 
   const requestResetAccess = async () => {
     if (!resetProgressContext || !Number.isFinite(resetProgressContext.row) || resetProgressContext.row <= 1) {
-      setResetMsg('Invalid invitee row.', true);
+      setResetMsg('ردیف دعوت‌شده نامعتبر است.', true);
       return;
     }
     const check = await postRevealAction('check_unlock');
@@ -1726,7 +1726,7 @@ if ($rows) {
       openAuthModal();
       return;
     }
-    setResetMsg(check.message || 'Failed to authorize reset action.', true);
+    setResetMsg(check.message || 'تأیید بازنشانی ناموفق بود.', true);
   };
 
   const activateInviteesPane = (paneKey) => {
@@ -1789,12 +1789,12 @@ if ($rows) {
     const saveScoreTrigger = target.closest('[data-action="save-invitee-task-score"]');
     if (saveScoreTrigger instanceof HTMLButtonElement) {
       if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
-        setParticipationMsg('Invalid invitee row.', true);
+        setParticipationMsg('ردیف دعوت‌شده نامعتبر است.', true);
         return;
       }
       const taskId = String(saveScoreTrigger.getAttribute('data-task-id') || '').trim();
       if (!taskId) {
-        setParticipationMsg('Invalid task id.', true);
+        setParticipationMsg('شناسه مأموریت نامعتبر است.', true);
         return;
       }
       const row = saveScoreTrigger.closest('tr');
@@ -1804,7 +1804,7 @@ if ($rows) {
         : null;
       const rawScore = input instanceof HTMLInputElement ? String(input.value || '').trim() : '';
       if (rawScore === '' || !/^\d+$/.test(rawScore)) {
-        setParticipationMsg('Score must be a non-negative whole number.', true);
+        setParticipationMsg('امتیاز باید عدد صحیح و نامنفی باشد.', true);
         return;
       }
       scoreEditContext = {
@@ -1824,12 +1824,12 @@ if ($rows) {
     const resetTaskTrigger = target.closest('[data-action="reset-invitee-task-progress"]');
     if (resetTaskTrigger instanceof HTMLElement) {
       if (!participationContext || !Number.isFinite(participationContext.row) || participationContext.row <= 1) {
-        setParticipationMsg('Invalid invitee row.', true);
+        setParticipationMsg('ردیف دعوت‌شده نامعتبر است.', true);
         return;
       }
       const taskId = String(resetTaskTrigger.getAttribute('data-task-id') || '').trim();
       if (!taskId) {
-        setParticipationMsg('Invalid task id.', true);
+        setParticipationMsg('شناسه مأموریت نامعتبر است.', true);
         return;
       }
       pendingSensitiveAction = 'reset_task';
@@ -1896,7 +1896,7 @@ if ($rows) {
 
   editSaveBtn?.addEventListener('click', async () => {
     if (!editingInviteeRow) {
-      setEditMsg('Invalid invitee row.', true);
+      setEditMsg('ردیف دعوت‌شده نامعتبر است.', true);
       return;
     }
     const workId = String(editWorkIdEl?.value || '').trim();
@@ -1906,12 +1906,12 @@ if ($rows) {
     const phoneNumber = String(editPhoneNumberEl?.value || '').trim();
 
     if (!workId || !firstName || !lastName || !nationalId || !phoneNumber) {
-      setEditMsg('Please fill all fields.', true);
+      setEditMsg('همه فیلدها را تکمیل کنید.', true);
       return;
     }
 
     editSaveBtn.disabled = true;
-    setEditMsg('Saving invitee...');
+    setEditMsg('دعوت‌شده در حال ذخیره است...');
     try {
       const response = await fetch('mini%20apps/Event%20Guest%20Manager/invitees_update.php', {
         method: 'POST',
@@ -1930,13 +1930,13 @@ if ($rows) {
       });
       const result = await response.json();
       if (response.ok && result?.status === 'ok') {
-        setEditMsg('Invitee updated successfully.');
+        setEditMsg('دعوت‌شده به‌روزرسانی شد.');
         setTimeout(() => window.location.reload(), 350);
       } else {
-        setEditMsg(result?.message || 'Failed to update invitee.', true);
+        setEditMsg(result?.message || 'به‌روزرسانی دعوت‌شده ناموفق بود.', true);
       }
     } catch {
-      setEditMsg('Failed to update invitee.', true);
+      setEditMsg('به‌روزرسانی دعوت‌شده ناموفق بود.', true);
     } finally {
       editSaveBtn.disabled = false;
     }
@@ -1950,11 +1950,11 @@ if ($rows) {
   authSubmitBtn?.addEventListener('click', async () => {
     const password = String(authPasswordEl?.value || '');
     if (password.trim() === '') {
-      setAuthMsg('Enter your panel password.', true);
+      setAuthMsg('رمز عبور پنل خود را وارد کنید.', true);
       return;
     }
     authSubmitBtn.disabled = true;
-    setAuthMsg('Verifying password...');
+    setAuthMsg('رمز عبور در حال بررسی است...');
     try {
       const response = await postRevealAction('verify_unlock', { password });
       if (response.ok) {
@@ -1974,10 +1974,10 @@ if ($rows) {
           await applyBulkMissionScore();
         }
       } else {
-        setAuthMsg(response.message || 'Password verification failed.', true);
+        setAuthMsg(response.message || 'تأیید رمز عبور ناموفق بود.', true);
       }
     } catch {
-      setAuthMsg('Password verification failed.', true);
+      setAuthMsg('تأیید رمز عبور ناموفق بود.', true);
     } finally {
       authSubmitBtn.disabled = false;
     }
@@ -1991,32 +1991,32 @@ if ($rows) {
 
   passwordSaveBtn?.addEventListener('click', async () => {
     if (!revealPasswordContext || !Number.isFinite(revealPasswordContext.row) || revealPasswordContext.row <= 1) {
-      setPasswordMsg('Invalid invitee row.', true);
+      setPasswordMsg('ردیف دعوت‌شده نامعتبر است.', true);
       return;
     }
     const newPassword = String(passwordValueEl?.value || '').trim();
     if (newPassword === '') {
-      setPasswordMsg('Password cannot be empty.', true);
+      setPasswordMsg('رمز عبور نمی‌تواند خالی باشد.', true);
       return;
     }
     passwordSaveBtn.disabled = true;
-    setPasswordMsg('Saving password...');
+    setPasswordMsg('رمز عبور در حال ذخیره است...');
     try {
       const response = await postRevealAction('save_password', {
         row: revealPasswordContext.row,
         new_password: newPassword
       });
       if (response.ok) {
-        setPasswordMsg(response.message || 'Password updated.');
+        setPasswordMsg(response.message || 'رمز عبور به‌روزرسانی شد.');
       } else if (response.status === 'auth_required') {
-        setPasswordMsg('Authorization expired. Please verify again.', true);
+        setPasswordMsg('اعتبار تأیید به پایان رسیده است؛ دوباره تأیید کنید.', true);
         pendingSensitiveAction = 'reveal';
         openAuthModal();
       } else {
-        setPasswordMsg(response.message || 'Failed to save password.', true);
+        setPasswordMsg(response.message || 'ذخیره رمز عبور ناموفق بود.', true);
       }
     } catch {
-      setPasswordMsg('Failed to save password.', true);
+      setPasswordMsg('ذخیره رمز عبور ناموفق بود.', true);
     } finally {
       passwordSaveBtn.disabled = false;
     }
@@ -2024,19 +2024,19 @@ if ($rows) {
 
   resetConfirmBtn?.addEventListener('click', async () => {
     if (!resetProgressContext || !Number.isFinite(resetProgressContext.row) || resetProgressContext.row <= 1) {
-      setResetMsg('Invalid invitee row.', true);
+      setResetMsg('ردیف دعوت‌شده نامعتبر است.', true);
       return;
     }
     resetConfirmBtn.disabled = true;
     const isTaskReset = Boolean(resetProgressContext.taskId);
-    setResetMsg(isTaskReset ? 'Resetting task progress...' : 'Resetting invitee progress...');
+    setResetMsg(isTaskReset ? 'پیشرفت مأموریت در حال بازنشانی است...' : 'پیشرفت دعوت‌شده در حال بازنشانی است...');
     try {
       const response = await postRevealAction(isTaskReset ? 'reset_task_progress' : 'reset_progress', {
         row: resetProgressContext.row,
         ...(isTaskReset ? { task_id: resetProgressContext.taskId } : {})
       });
       if (response.ok) {
-        setResetMsg(response.message || (isTaskReset ? 'Task progress reset.' : 'Invitee progress reset.'));
+        setResetMsg(response.message || (isTaskReset ? 'پیشرفت مأموریت بازنشانی شد.' : 'پیشرفت دعوت‌شده بازنشانی شد.'));
         if (isTaskReset) {
           if (response.data?.participation) {
             renderParticipationStats(response.data.participation);
@@ -2048,15 +2048,15 @@ if ($rows) {
           setTimeout(() => window.location.reload(), 500);
         }
       } else if (response.status === 'auth_required') {
-        setResetMsg('Authorization expired. Please verify again.', true);
+        setResetMsg('اعتبار تأیید به پایان رسیده است؛ دوباره تأیید کنید.', true);
         pendingSensitiveAction = isTaskReset ? 'reset_task' : 'reset';
         closeResetModal();
         openAuthModal();
       } else {
-        setResetMsg(response.message || (isTaskReset ? 'Failed to reset task progress.' : 'Failed to reset invitee progress.'), true);
+        setResetMsg(response.message || (isTaskReset ? 'بازنشانی پیشرفت مأموریت ناموفق بود.' : 'بازنشانی پیشرفت دعوت‌شده ناموفق بود.'), true);
       }
     } catch {
-      setResetMsg(isTaskReset ? 'Failed to reset task progress.' : 'Failed to reset invitee progress.', true);
+      setResetMsg(isTaskReset ? 'بازنشانی پیشرفت مأموریت ناموفق بود.' : 'بازنشانی پیشرفت دعوت‌شده ناموفق بود.', true);
     } finally {
       resetConfirmBtn.disabled = false;
     }
@@ -2217,7 +2217,7 @@ if ($rows) {
     }
 
     anyPasswordSaveBtn.disabled = true;
-    setAnyPasswordMsg('Saving settings...');
+    setAnyPasswordMsg('تنظیمات در حال ذخیره است...');
     try {
       const response = await fetch('mini%20apps/Event%20Guest%20Manager/invitees_login_settings.php', {
         method: 'POST',
@@ -2230,7 +2230,7 @@ if ($rows) {
       });
       const result = await response.json();
       if (response.ok && result?.status === 'ok') {
-        setAnyPasswordMsg(result?.message || 'Settings saved.');
+        setAnyPasswordMsg(result?.message || 'تنظیمات ذخیره شد.');
         if (anyPasswordMinLengthEl) {
           anyPasswordMinLengthEl.value = String(result?.settings?.minLength ?? minLength);
         }
@@ -2238,10 +2238,10 @@ if ($rows) {
           anyPasswordEnabledEl.checked = Boolean(result?.settings?.anyPassword);
         }
       } else {
-        setAnyPasswordMsg(result?.message || 'Failed to save settings.', true);
+        setAnyPasswordMsg(result?.message || 'ذخیره تنظیمات ناموفق بود.', true);
       }
     } catch {
-      setAnyPasswordMsg('Failed to save settings.', true);
+      setAnyPasswordMsg('ذخیره تنظیمات ناموفق بود.', true);
     } finally {
       anyPasswordSaveBtn.disabled = false;
     }
@@ -2255,12 +2255,12 @@ if ($rows) {
     const phoneNumber = String(addPhoneNumberEl?.value || '').trim();
 
     if (!workId || !firstName || !lastName || !nationalId || !phoneNumber) {
-      setAddMsg('Please fill all fields.', true);
+      setAddMsg('همه فیلدها را تکمیل کنید.', true);
       return;
     }
 
     addInviteeBtn.disabled = true;
-    setAddMsg('Saving invitee...');
+    setAddMsg('دعوت‌شده در حال ذخیره است...');
     try {
       const response = await fetch('mini%20apps/Event%20Guest%20Manager/invitees_add.php', {
         method: 'POST',
@@ -2278,7 +2278,7 @@ if ($rows) {
       });
       const result = await response.json();
       if (response.ok && result?.status === 'ok') {
-        setAddMsg('Invitee added successfully.');
+        setAddMsg('دعوت‌شده افزوده شد.');
         if (addWorkIdEl) addWorkIdEl.value = '';
         if (addFirstNameEl) addFirstNameEl.value = '';
         if (addLastNameEl) addLastNameEl.value = '';
@@ -2286,10 +2286,10 @@ if ($rows) {
         if (addPhoneNumberEl) addPhoneNumberEl.value = '';
         setTimeout(() => window.location.reload(), 350);
       } else {
-        setAddMsg(result?.message || 'Failed to add invitee.', true);
+        setAddMsg(result?.message || 'افزودن دعوت‌شده ناموفق بود.', true);
       }
     } catch {
-      setAddMsg('Failed to add invitee.', true);
+      setAddMsg('افزودن دعوت‌شده ناموفق بود.', true);
     } finally {
       addInviteeBtn.disabled = false;
     }
@@ -2308,7 +2308,7 @@ if ($rows) {
   selectActiveBtn?.addEventListener('click', async () => {
     const minimumRaw = String(activeMinimumEl?.value || '').trim();
     if (!/^\d+$/.test(minimumRaw)) {
-      setBulkMsg('Select the minimum level reached.', true);
+      setBulkMsg('حداقل سطح رسیده را انتخاب کنید.', true);
       return;
     }
     const minimum = Number(minimumRaw);
@@ -2321,7 +2321,7 @@ if ($rows) {
     if (minimumLoginsRaw !== '') {
       const minimumLogins = Number(minimumLoginsRaw);
       if (!Number.isInteger(minimumLogins) || minimumLogins < 0) {
-        setBulkMsg('Minimum login count must be a non-negative whole number.', true);
+        setBulkMsg('حداقل تعداد ورود باید عدد صحیح و نامنفی باشد.', true);
         return;
       }
     }
@@ -2335,7 +2335,7 @@ if ($rows) {
     }
     const preview = await refreshActiveFilterPreview();
     if (!preview) {
-      setBulkMsg('Failed to evaluate active users.', true);
+      setBulkMsg('بررسی کاربران فعال ناموفق بود.', true);
       return;
     }
     const matchingRows = new Set(preview.filteredRows);

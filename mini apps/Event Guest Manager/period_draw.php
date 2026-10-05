@@ -13,13 +13,29 @@ egmSecuritySendPageHeaders($cspNonce);
 egmSecurityHardenSessionSettings();
 $user = requireTabPermissionFromSession('event-guest-manager', false);
 $context = egmPeriodInvitesContext(__DIR__);
-$periodCode = egmPeriodInvitesValidatePeriod($context, (string)($_GET['period_code'] ?? ''));
-if (!egmPeriodDrawCanAccess($context, $user, $periodCode)) denyPanelAccess(403, 'You cannot manage this period draw.', false);
+try {
+  $periodCode = egmPeriodDrawActiveCode($context);
+} catch (InvalidArgumentException $error) {
+  http_response_code(409);
+  exit(htmlspecialchars($error->getMessage(), ENT_QUOTES, 'UTF-8'));
+}
+$requestedPeriod = trim((string)($_GET['period_code'] ?? ''));
+if ($requestedPeriod !== '' && $requestedPeriod !== $periodCode) {
+  http_response_code(409);
+  exit('این قرعه‌کشی فقط در بازهٔ فعال قابل اجراست.');
+}
+if (!egmPeriodDrawCanAccess($context, $user, $periodCode)) denyPanelAccess(403, 'دسترسی مدیریت قرعه‌کشی مجاز نیست.', false);
 $levelId = trim((string)($_GET['level_id'] ?? ''));
 try {
-  $state = egmPeriodDrawRun($context, $periodCode, 'state', ['levelId' => $levelId], (string)$user['code']);
+  try {
+    $state = egmPeriodDrawRun($context, $periodCode, 'state', ['levelId' => $levelId], (string)$user['code']);
+  } catch (InvalidArgumentException $error) {
+    if (egmPeriodDrawPotLevel($context, $levelId) === null) throw $error;
+    egmPeriodDrawRun($context, $periodCode, 'ensure_pot', ['levelId' => $levelId], (string)$user['code']);
+    $state = egmPeriodDrawRun($context, $periodCode, 'state', ['levelId' => $levelId], (string)$user['code']);
+  }
   $level = $state['level'];
-} catch (InvalidArgumentException $error) { http_response_code(404); exit('Draw not found.'); }
+} catch (InvalidArgumentException $error) { http_response_code(404); exit('قرعه‌کشی پیدا نشد.'); }
 $csrf = egmSecurityGetCsrfToken();
 $title = (string)$level['potSettings']['title'];
 $limit = (int)$level['potSettings']['winnerLimit'];
@@ -51,6 +67,7 @@ $limit = (int)$level['potSettings']['winnerLimit'];
     .code-display{display:flex;justify-content:center;gap:clamp(.35rem,1vw,.8rem);margin:0 auto;direction:ltr;unicode-bidi:isolate}
     .code-digit{width:clamp(60px,14vw,90px);height:clamp(80px,20vw,120px);background:rgba(255,255,255,.95);position:relative;border-radius:18px;display:flex;align-items:center;justify-content:center;font-family:'Peyda','Segoe UI',sans-serif;font-size:clamp(3.5rem,8vw,7rem);letter-spacing:0;color:#0042a4;font-weight:700;line-height:1;padding-top:clamp(6px,1.2vw,12px);padding-bottom:clamp(4px,1vw,10px);box-shadow:inset 0 0 0 1px rgba(4,12,38,.15);transition:background .3s ease,color .3s ease;direction:ltr;text-align:center}
     .code-digit::after{content:'';position:absolute;inset:0;border-radius:inherit;border:2px solid rgba(0,66,164,.3);pointer-events:none}
+    .code-display{max-width:100%}.code-display .code-digit{width:min(90px,calc((100vw - 80px)/var(--digit-count,4)));flex:none}
     .code-digit--animating{background:linear-gradient(180deg,#d7ecff,#b4d8ff);color:#07245d}
     .code-digit--locked{background:#173972;color:#e9f5ff}
     .caption{font-size:1.1rem;letter-spacing:.18em;color:rgba(255,255,255,.72);margin:0}
@@ -74,6 +91,33 @@ $limit = (int)$level['potSettings']['winnerLimit'];
     .winner-info{text-align:right;font-size:1rem;direction:rtl;color:#fff;font-weight:600}
     .winner-meta{display:block;color:rgba(255,255,255,.58);font-size:.82rem;font-weight:400;margin-top:4px}
     .eligible-panel{overflow:visible}
+    .competition-shell{width:min(900px,100%);padding:26px;border-radius:30px;background:linear-gradient(155deg,rgba(12,28,67,.88),rgba(9,15,46,.94));border:1px solid rgba(220,241,255,.2);box-shadow:0 24px 60px rgba(1,8,38,.35);position:relative;z-index:1}
+    .competition-top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+    .competition-top h2{margin:0;font-size:1.4rem}
+    .competition-progress{color:#cde8ff;font-weight:700}
+    .competition-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(9px,2vw,20px);max-width:720px;margin:auto;direction:ltr}
+    .competition-card{appearance:none;border:0;padding:0;background:transparent;aspect-ratio:3/4;min-height:0;perspective:900px;cursor:pointer;box-shadow:none;border-radius:20px;position:relative}
+    .competition-card:hover:not(:disabled){transform:translateY(-4px)}
+    .competition-card:disabled{opacity:1;cursor:default}
+    .competition-card-inner{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .55s cubic-bezier(.2,.75,.2,1)}
+    .competition-card.flipped .competition-card-inner{transform:rotateY(180deg)}
+    .competition-card-face{position:absolute;inset:0;border-radius:20px;display:flex;align-items:center;justify-content:center;backface-visibility:hidden;overflow:hidden;border:1px solid rgba(255,255,255,.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 12px 26px rgba(2,8,39,.35)}
+    .competition-card-front{font-size:clamp(2.5rem,7vw,5rem);font-weight:700;color:#f8fcff;background:linear-gradient(150deg,rgba(245,252,255,.35),rgba(105,169,244,.12) 42%,rgba(255,255,255,.04));backdrop-filter:blur(16px)}
+    .competition-card-front::after{content:'';position:absolute;inset:-90%;background:linear-gradient(110deg,transparent 43%,rgba(255,255,255,.6) 50%,transparent 57%);transform:translateX(-60%) rotate(18deg);opacity:0}
+    .competition-card.shine .competition-card-front::after,.competition-card.winner .competition-card-back::after{animation:competition-shine 1.1s ease forwards;opacity:1}
+    .competition-card-back{transform:rotateY(180deg);padding:12px;font-size:clamp(.85rem,2.4vw,1.35rem);font-weight:700;line-height:1.35;color:#083052;background:linear-gradient(145deg,#fff,#c6ecff 70%,#8ccaff);overflow-wrap:anywhere}
+    .competition-card-back::after{content:'';position:absolute;inset:-90%;background:linear-gradient(110deg,transparent 43%,rgba(255,255,255,.9) 50%,transparent 57%);transform:translateX(-60%) rotate(18deg);opacity:0;pointer-events:none}
+    .competition-card.selected .competition-card-front{outline:3px solid #9deaff;outline-offset:-5px;box-shadow:inset 0 0 30px rgba(184,239,255,.5),0 0 28px rgba(100,220,255,.55)}
+    .competition-card.winner{filter:drop-shadow(0 0 24px rgba(167,235,255,.8));animation:competition-win .9s ease-in-out 2}
+    .competition-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:12px;margin-top:24px}
+    .competition-status{min-height:26px;margin:16px 0 0;color:#d9f2ff}
+    .competition-history{margin:18px auto 0;max-width:720px;text-align:right;color:#d4e9ff}
+    .competition-history:empty{display:none}
+    .competition-history-item{padding:9px 12px;border-top:1px solid rgba(255,255,255,.15)}
+    @keyframes competition-shine{from{transform:translateX(-60%) rotate(18deg)}to{transform:translateX(60%) rotate(18deg)}}
+    @keyframes competition-win{50%{transform:scale(1.06)}}
+    @media(max-width:560px){.competition-shell{padding:16px}.competition-card-face{border-radius:14px}.competition-cards{gap:9px}}
+    @media(prefers-reduced-motion:reduce){.competition-card-inner,.competition-card{transition:none!important;animation:none!important}}
     @media(max-width:480px){.draw-shell,.winners-panel{padding:20px}.page-menu{gap:8px}.menu-item{font-size:.9rem;padding:4px 10px}.code-display{letter-spacing:.6rem;font-size:clamp(3.2rem,20vw,7rem)}}
   </style>
 </head>
@@ -87,7 +131,8 @@ $limit = (int)$level['potSettings']['winnerLimit'];
     <div class="page-menu">
       <a id="draw-tab" class="menu-item active" href="#draw">قرعه کشی</a>
       <a id="eligible-tab" class="menu-item" href="#eligible">واجدین شرایط</a>
-      <a class="menu-item" href="../../panel.php">بازگشت به پنل</a>
+      <a id="competition-tab" class="menu-item" href="#competition">جوایز رقابت‌ها</a>
+      <a class="menu-item" href="/panel.php">بازگشت به پنل</a>
     </div>
   </nav>
   <div id="draw-view" class="page-view">
@@ -119,6 +164,17 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       <div id="eligible-items" class="winner-items"></div>
     </div>
   </div>
+  <div id="competition-view" class="page-view" hidden data-csrf="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
+    <div class="competition-shell">
+      <div class="competition-top"><h2>جوایز رقابت‌ها</h2><span class="competition-progress" id="competition-progress"></span></div>
+      <div class="competition-cards" id="competition-cards" aria-label="کارت‌های جوایز">
+        <?php for ($card = 1; $card <= 9; $card++): ?><button type="button" class="competition-card" data-card="<?= $card ?>" aria-label="انتخاب کارت <?= $card ?>"><span class="competition-card-inner"><span class="competition-card-face competition-card-front"><?= $card ?></span><span class="competition-card-face competition-card-back"></span></span></button><?php endfor; ?>
+      </div>
+      <div class="competition-actions"><button type="button" class="start-btn" id="competition-roll" disabled>چرخش</button><button type="button" class="confirm-btn" id="competition-confirm" hidden>تأیید جایزه</button><button type="button" class="confirm-btn" id="competition-cancel" hidden>لغو انتخاب</button></div>
+      <p class="competition-status" id="competition-status" role="status" aria-live="polite"></p>
+      <div class="competition-history" id="competition-history"></div>
+    </div>
+  </div>
 
   <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
     (() => {
@@ -126,7 +182,8 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       const levelId = <?= json_encode($levelId, JSON_UNESCAPED_UNICODE) ?>;
       const csrf = <?= json_encode($csrf, JSON_UNESCAPED_UNICODE) ?>;
       const winnerLimit = <?= $limit ?>;
-      const digitElements = [...document.querySelectorAll(".code-digit")];
+      const codeDisplay = document.getElementById("code-display");
+      let digitElements = [...document.querySelectorAll(".code-digit")];
       const rollBtn = document.getElementById("roll");
       const confirmBtn = document.getElementById("confirm");
       const nameEl = document.getElementById("winner-name");
@@ -137,8 +194,10 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       const eligibleEl = document.getElementById("eligible-count");
       const drawTab = document.getElementById("draw-tab");
       const eligibleTab = document.getElementById("eligible-tab");
+      const competitionTab = document.getElementById("competition-tab");
       const drawView = document.getElementById("draw-view");
       const eligibleView = document.getElementById("eligible-view");
+      const competitionView = document.getElementById("competition-view");
       const eligibleItemsEl = document.getElementById("eligible-items");
       const eligibleListCountEl = document.getElementById("eligible-list-count");
       let animationInterval = null;
@@ -158,17 +217,27 @@ $limit = (int)$level['potSettings']['winnerLimit'];
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.status !== "ok") {
-          throw new Error(payload.message || "Request failed.");
+          throw new Error(payload.message || "درخواست ناموفق بود.");
         }
         return payload;
       };
       const normalizeCode = (value) => {
         const digits = String(value || "").replace(/\D+/g, "");
-        return (digits.length ? digits.slice(-4) : "0000").padStart(4, "0");
+        return (digits || "0000").padStart(4, "0");
       };
       const randomDigit = () => Math.floor(Math.random() * 10).toString();
-      const setCode = (code, locks = [false, false, false, false]) => {
+      const setCode = (code, locks = []) => {
         const normalized = normalizeCode(code);
+        if (digitElements.length !== normalized.length) {
+          codeDisplay.replaceChildren(...[...normalized].map((_, index) => {
+            const digit = document.createElement("span");
+            digit.className = "code-digit code-digit--animating";
+            digit.dataset.index = String(index);
+            return digit;
+          }));
+          digitElements = [...codeDisplay.querySelectorAll(".code-digit")];
+        }
+        codeDisplay.style.setProperty("--digit-count", String(digitElements.length));
         digitElements.forEach((element, index) => {
           element.textContent = normalized[index] || "0";
           element.classList.toggle("code-digit--locked", Boolean(locks[index]));
@@ -266,10 +335,14 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       };
       const showView = async (view) => {
         const showEligible = view === "eligible";
-        drawView.hidden = showEligible;
+        const showCompetition = view === "competition";
+        drawView.hidden = showEligible || showCompetition;
         eligibleView.hidden = !showEligible;
-        drawTab.classList.toggle("active", !showEligible);
+        competitionView.hidden = !showCompetition;
+        drawTab.classList.toggle("active", !showEligible && !showCompetition);
         eligibleTab.classList.toggle("active", showEligible);
+        competitionTab.classList.toggle("active", showCompetition);
+        if (showCompetition) { window.dispatchEvent(new Event("egmcompetitionopen")); return; }
         if (!showEligible) return;
         try {
           applyState(await api("state"));
@@ -283,21 +356,22 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       };
       const animateTo = (candidate) => new Promise((resolve) => {
         const targetDigits = normalizeCode(candidate.code).split("");
-        const currentDigits = ["0", "0", "0", "0"];
-        const locks = [false, false, false, false];
+        const currentDigits = Array(targetDigits.length).fill("0");
+        const locks = Array(targetDigits.length).fill(false);
         cancelAnimation();
         animationInterval = setInterval(() => {
-          for (let index = 0; index < 4; index += 1) {
+          for (let index = 0; index < targetDigits.length; index += 1) {
             if (!locks[index]) currentDigits[index] = randomDigit();
           }
           setCode(currentDigits.join(""), locks);
         }, 90);
-        [1200, 3200, 5200, 7200].forEach((delay, index) => {
+        targetDigits.forEach((_, index) => {
+          const delay = 1200 + 2000 * index;
           const timeout = setTimeout(() => {
             locks[index] = true;
             currentDigits[index] = targetDigits[index] || "0";
             setCode(currentDigits.join(""), locks);
-            if (index === 3) {
+            if (index === targetDigits.length - 1) {
               cancelAnimation();
               setWinnerText(candidate.fullName || "-");
               metaEl.textContent = candidate.workId ? `شناسه: ${candidate.workId}` : "";
@@ -342,6 +416,7 @@ $limit = (int)$level['potSettings']['winnerLimit'];
         }
       });
       document.addEventListener("keydown", (event) => {
+        if (drawView.hidden) return;
         const targetTag = event.target?.tagName ?? "";
         if (["INPUT", "TEXTAREA"].includes(targetTag)) return;
         if (event.code === "Enter" && !rollBtn.disabled) {
@@ -361,17 +436,23 @@ $limit = (int)$level['potSettings']['winnerLimit'];
         history.replaceState(null, "", "#eligible");
         showView("eligible");
       });
+      competitionTab.addEventListener("click", (event) => {
+        event.preventDefault();
+        history.replaceState(null, "", "#competition");
+        showView("competition");
+      });
 
       setCode("0000");
       setIdleWinnerText();
       api("state").then((payload) => {
         applyState(payload);
-        showView(location.hash === "#eligible" ? "eligible" : "draw");
+        showView(location.hash === "#competition" ? "competition" : (location.hash === "#eligible" ? "eligible" : "draw"));
       }).catch((error) => {
         statusEl.textContent = error.message;
         render();
       });
     })();
   </script>
+  <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>" src="competition-prizes.js?v=<?= (int)@filemtime(__DIR__ . '/competition-prizes.js') ?>"></script>
 </body>
 </html>

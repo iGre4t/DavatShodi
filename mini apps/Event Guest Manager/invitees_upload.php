@@ -111,8 +111,6 @@ foreach (['firstName', 'lastName', 'nationalId', 'phoneNumber'] as $mappingKey) 
 
 $filePath = $baseDir . DIRECTORY_SEPARATOR . 'Invitees mapped.csv';
 $mapPath = $baseDir . DIRECTORY_SEPARATOR . 'EGM Mapped.json';
-$answersPath = $baseDir . DIRECTORY_SEPARATOR . 'Answers.csv';
-$loginAttemptsPath = $baseDir . DIRECTORY_SEPARATOR . 'login_attempts.json';
 
 if (!egmInviteesCsvBeginTransaction($filePath) || !egmInviteesCsvReplaceText($filePath, $csv, false)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to save file.']);
@@ -130,32 +128,6 @@ $mapPayload = [
 $mapJson = json_encode($mapPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 if (!is_string($mapJson) || !egmInviteesUploadWriteTextLocked($mapPath, $mapJson)) {
   echo json_encode(['status' => 'error', 'message' => 'Failed to save mapping.']);
-  exit;
-}
-
-$emptyAttempts = json_encode(new stdClass(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-if ($emptyAttempts === false || !egmInviteesUploadWriteTextLocked($loginAttemptsPath, $emptyAttempts . PHP_EOL)) {
-  echo json_encode(['status' => 'error', 'message' => 'Failed to reset login attempts.']);
-  exit;
-}
-
-if (!egmInviteesUploadWriteTextLocked($answersPath, '')) {
-  echo json_encode(['status' => 'error', 'message' => 'Failed to reset answers table.']);
-  exit;
-}
-
-if (!defined('EGMQ_INCLUDE_ONLY')) {
-  define('EGMQ_INCLUDE_ONLY', true);
-}
-require_once __DIR__ . DIRECTORY_SEPARATOR . 'EGMQ.php';
-
-if (!tcqEnsureInviteesColumns($filePath)) {
-  echo json_encode(['status' => 'error', 'message' => 'Failed to prepare invitees columns.']);
-  exit;
-}
-$questions = tcqLoadStore(__DIR__ . DIRECTORY_SEPARATOR . 'EGMQ list.json');
-if (!tcqSyncAnswersSheet($answersPath, $questions, $questions)) {
-  echo json_encode(['status' => 'error', 'message' => 'Failed to rebuild answers table.']);
   exit;
 }
 

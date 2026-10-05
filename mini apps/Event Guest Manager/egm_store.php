@@ -51,9 +51,9 @@ function egmStoreDatabase(): ?PDO
   return $pdo instanceof PDO ? $pdo : null;
 }
 
-function egmStoreCampaignLinkTarget(): string
+function egmStoreCampaignLinkTarget(string $destination = 'refmonitor'): string
 {
-  return '/mini%20apps/Event%20Guest%20Manager/index.php';
+  return '/mini%20apps/Event%20Guest%20Manager/RefMonitor.php';
 }
 
 function egmStoreCampaignRedirectsReady(): bool
@@ -84,11 +84,11 @@ function egmStoreRequireCampaignRedirects(): void
   exit;
 }
 
-function egmStoreCampaignLinkResponse(string $path, ?array $redirect = null): array
+function egmStoreCampaignLinkResponse(string $path, ?array $redirect = null, string $destination = 'refmonitor'): array
 {
   egmStoreRequireCampaignRedirects();
   $normalizedPath = campaignRedirectsNormalizePath($path);
-  $target = egmStoreCampaignLinkTarget();
+  $target = egmStoreCampaignLinkTarget($destination);
   $targetType = campaignRedirectsTypeForTarget($target);
   $existing = is_array($redirect) ? $redirect : campaignRedirectsFind($normalizedPath);
   $existingTarget = is_array($existing) ? (string)($existing['target'] ?? '') : '';
@@ -101,10 +101,11 @@ function egmStoreCampaignLinkResponse(string $path, ?array $redirect = null): ar
     'path' => $normalizedPath,
     'campaign_url' => '/campaigns/' . $normalizedPath,
     'target' => $target,
+    'destination' => $destination,
     'redirect_type' => $targetType,
     'redirect_type_label' => campaignRedirectsTypeLabel($targetType),
     'available' => $existing === null,
-    'owned_by_task_club' => $ownedByEventGuestManager,
+    'owned_by_egm' => $ownedByEventGuestManager,
     'can_create' => $existing === null,
     'existing' => $existing === null ? null : [
       'path' => (string)($existing['path'] ?? $normalizedPath),
@@ -818,7 +819,7 @@ function egmStoreNormalizeTicketSettings($value): array
     $tickets[] = ['id' => $id, 'title' => $title, 'dependsOn' => trim((string)($ticket['dependsOn'] ?? ''))];
     $seen[$id] = true;
   }
-  if ($tickets === []) $tickets[] = ['id' => 'default', 'title' => 'Custom Number Ticket'];
+  if ($tickets === []) $tickets[] = ['id' => 'default', 'title' => 'بلیت شماره‌دار', 'dependsOn' => ''];
   $previousIds = [];
   foreach ($tickets as &$ticket) {
     if (!in_array($ticket['dependsOn'], $previousIds, true)) $ticket['dependsOn'] = '';
@@ -892,9 +893,7 @@ if (in_array($action, $egmStoreMainActions, true) && !userHasPermissionId($egmSt
 }
 
 if (in_array($action, ['get_settings', 'save_settings', 'get_mission_link', 'save_mission_link'], true)) {
-  $canMain = userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main');
-  $canEventStyle = userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:event-style');
-  if (!$canMain && !$canEventStyle) {
+  if (!userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main')) {
     denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
   }
 }
@@ -915,6 +914,12 @@ if ($action === 'check_campaign_link') {
     exit;
   }
   requireTcStoreCsrf($payload);
+  $destination = (string)($payload['destination'] ?? 'refmonitor');
+  if ($destination !== 'refmonitor') {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid campaign destination.']);
+    exit;
+  }
   egmStoreRequireCampaignRedirects();
   $path = campaignRedirectsNormalizePath($payload['path'] ?? '');
   $pathError = campaignRedirectsPathError($path);
@@ -926,7 +931,7 @@ if ($action === 'check_campaign_link') {
   $redirect = campaignRedirectsFind($path);
   echo json_encode([
     'status' => 'ok',
-    'data' => egmStoreCampaignLinkResponse($path, $redirect)
+    'data' => egmStoreCampaignLinkResponse($path, $redirect, $destination)
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
@@ -943,6 +948,12 @@ if ($action === 'create_campaign_link') {
     exit;
   }
   requireTcStoreCsrf($payload);
+  $destination = (string)($payload['destination'] ?? 'refmonitor');
+  if ($destination !== 'refmonitor') {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid campaign destination.']);
+    exit;
+  }
   egmStoreRequireCampaignRedirects();
   $path = campaignRedirectsNormalizePath($payload['path'] ?? '');
   $pathError = campaignRedirectsPathError($path);
@@ -952,7 +963,7 @@ if ($action === 'create_campaign_link') {
     exit;
   }
 
-  $target = egmStoreCampaignLinkTarget();
+  $target = egmStoreCampaignLinkTarget($destination);
   $redirects = campaignRedirectsList();
   $map = [];
   foreach ($redirects as $redirect) {
@@ -966,8 +977,8 @@ if ($action === 'create_campaign_link') {
     if ((string)($existing['target'] ?? '') === $target) {
       echo json_encode([
         'status' => 'ok',
-        'message' => 'This campaign already points to Event Guest Manager.',
-        'data' => egmStoreCampaignLinkResponse($path, $existing)
+        'message' => 'This campaign already points to the selected EGM destination.',
+        'data' => egmStoreCampaignLinkResponse($path, $existing, $destination)
       ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
       exit;
     }
@@ -975,7 +986,7 @@ if ($action === 'create_campaign_link') {
     echo json_encode([
       'status' => 'error',
       'message' => 'This /campaigns link is already occupied in Linker Service.',
-      'data' => egmStoreCampaignLinkResponse($path, $existing)
+      'data' => egmStoreCampaignLinkResponse($path, $existing, $destination)
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
   }
@@ -996,8 +1007,8 @@ if ($action === 'create_campaign_link') {
   $saved = campaignRedirectsFind($path);
   echo json_encode([
     'status' => 'ok',
-    'message' => 'Event Guest Manager campaign redirect created.',
-    'data' => egmStoreCampaignLinkResponse($path, $saved)
+    'message' => 'EGM campaign redirect created.',
+    'data' => egmStoreCampaignLinkResponse($path, $saved, $destination)
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
@@ -1044,7 +1055,7 @@ if ($action === 'save_prizes') {
       echo json_encode(['status' => 'error', 'message' => 'Every prize row must be a valid object; no data was saved.']);
       exit;
     }
-    foreach (['id', 'name', 'onWheelName', 'quantity', 'last', 'value', 'isFake'] as $field) {
+    foreach (['id', 'name', 'onWheelName', 'quantity', 'last', 'value', 'rank', 'isFake'] as $field) {
       if (array_key_exists($field, $prize) && $prize[$field] !== null && !is_scalar($prize[$field])) {
         http_response_code(422);
         echo json_encode(['status' => 'error', 'message' => 'Prize fields must contain simple values; no data was saved.']);
@@ -1078,6 +1089,12 @@ if ($action === 'save_prizes') {
     $quantity = egmStoreParseNonnegativeInt($prize['quantity'] ?? 0);
     $last = egmStoreParseNonnegativeInt($prize['last'] ?? $quantity);
     $value = egmStoreParseNonnegativeNumber($prize['value'] ?? 0);
+    $rank = filter_var($prize['rank'] ?? 0, FILTER_VALIDATE_INT);
+    if ($rank === false || $rank < 0 || $rank > 4) {
+      http_response_code(422);
+      echo json_encode(['status' => 'error', 'message' => 'رتبه جایزه باید بین ۱ تا ۴ باشد.']);
+      exit;
+    }
     if ($quantity === null || $last === null || $value === null) {
       http_response_code(422);
       echo json_encode(['status' => 'error', 'message' => 'Prize quantity, remaining stock, and value must be valid non-negative numbers; no data was saved.']);
@@ -1096,6 +1113,7 @@ if ($action === 'save_prizes') {
       'quantity' => $quantity,
       'last' => $last,
       'value' => $value,
+      'rank' => $rank,
       'isFake' => $isFake
     ];
   }
@@ -1392,8 +1410,7 @@ if ($action === 'get_mission_link') {
     'data' => [
       'isMission' => !empty($context['isMission']),
       'code' => (string)($context['folder'] ?? ''),
-      'path' => (string)($context['webPath'] ?? ''),
-      'appUrl' => !empty($context['webPath']) ? ((string)$context['webPath'] . '/EGMM.php') : ''
+      'path' => (string)($context['webPath'] ?? '')
     ]
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
@@ -1428,8 +1445,7 @@ if ($action === 'save_mission_link') {
       'message' => 'Club link is unchanged.',
       'data' => [
         'code' => $currentCode,
-        'path' => (string)$context['webPath'],
-        'appUrl' => (string)$context['webPath'] . '/EGMM.php'
+        'path' => (string)$context['webPath']
       ]
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
@@ -1472,8 +1488,7 @@ if ($action === 'save_mission_link') {
     'message' => 'Club link updated.',
     'data' => [
       'code' => $nextCode,
-      'path' => $nextWebPath,
-      'appUrl' => $nextWebPath . '/EGMM.php'
+      'path' => $nextWebPath
     ]
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;

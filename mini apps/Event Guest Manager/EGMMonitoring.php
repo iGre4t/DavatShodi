@@ -2588,7 +2588,7 @@ if ($egmMonitoringIsJsonRequest) {
 
 <div class="card">
   <div class="section-header">
-    <h3>مانیتورینگ</h3>
+    <h3>گزارش رویداد</h3>
     <div class="egm-monitoring-header-actions">
       <button type="button" class="btn ghost" id="egm-monitoring-export">خروجی اکسل</button>
       <button type="button" class="btn ghost" id="egm-monitoring-refresh">بروزرسانی</button>
@@ -2612,7 +2612,7 @@ if ($egmMonitoringIsJsonRequest) {
 <div id="egm-monitoring-export-modal" class="egm-monitoring-export-modal" hidden>
   <section class="egm-monitoring-export-dialog" role="dialog" aria-modal="true" aria-labelledby="egm-monitoring-export-title">
     <div class="section-header">
-      <h3 id="egm-monitoring-export-title">خروجی اکسل مانیتورینگ</h3>
+      <h3 id="egm-monitoring-export-title">خروجی اکسل رویداد</h3>
       <button type="button" class="icon-btn" id="egm-monitoring-export-close" aria-label="بستن">×</button>
     </div>
     <p class="muted small">گروه‌های شماره پرسنلی موردنظر برای گزارش را انتخاب کنید.</p>
@@ -2682,7 +2682,7 @@ if ($egmMonitoringIsJsonRequest) {
 
 <div class="card">
   <div class="section-header">
-    <h3>تکمیل ماموریت‌ها</h3>
+    <h3>پیشرفت فعالیت‌ها</h3>
   </div>
   <div id="egm-monitoring-task-chart" class="egm-monitoring-bars"></div>
 </div>

@@ -13,7 +13,7 @@
     fullname: 'نام کامل', firstname: 'نام', lastname: 'نام خانوادگی', nationalid: 'کد ملی',
     workid: 'کد پرسنلی', guestnumber: 'شماره مهمان', phonenumber: 'شماره تلفن',
     deputy: 'معاونت', generaldepartment: 'اداره کل', department: 'اداره', gender: 'جنسیت',
-    postallevel: 'سطح پستی', score: 'امتیاز', ticketcount: 'Count of Ticket', tickettitle: 'Ticket Title', seat: 'ردیف صندلی'
+    postallevel: 'سطح پستی', score: 'امتیاز', ticketcount: 'شماره بلیت', tickettitle: 'Ticket Title', seat: 'ردیف صندلی'
   });
   const CONDITIONAL_OPERATOR_LABELS = Object.freeze({
     equals: 'برابر است با', not_equals: 'برابر نیست با', contains: 'شامل می‌شود',
@@ -511,7 +511,7 @@
     if (/^\d{10}$/.test(nationalId)) return nationalId;
 
     const workId = normalizeDigits(invitee?.workId);
-    if (/^\d{4,9}$/.test(workId)) return workId;
+    if (/^\d{2,9}$/.test(workId)) return workId;
 
     const name = inviteeMergeValues(invitee).fullname || invitee?.workId || 'دعوت‌شونده انتخاب‌شده';
     throw new Error(`برای ${name} کد ملی ۱۰ رقمی یا کد پرسنلی عددی ۴ تا ۹ رقمی ثبت نشده است؛ ساخت QR ممکن نیست.`);
@@ -752,7 +752,7 @@
       throw new Error('ابعاد تصویر برای خروجی امن بسیار بزرگ است؛ حداکثر 40 میلیون پیکسل مجاز است.');
     }
     const qrEndpoint = String(options.qrEndpoint || '').trim();
-    if (!qrEndpoint) throw new Error('ماژول ساخت QR Code در دسترس نیست.');
+    if (!qrEndpoint) throw new Error('ماژول ساخت رمز دوبعدی در دسترس نیست.');
     const params = new URLSearchParams({
       data: inviteeQrIdentifier(invitee), size: '1024', margin: '2', ecc: 'M', response: 'svg'
     });
@@ -1444,7 +1444,7 @@
       if (downloadLink instanceof HTMLAnchorElement) downloadLink.removeAttribute('href');
       if (previewEmpty instanceof HTMLElement) {
         previewEmpty.hidden = false;
-        previewEmpty.textContent = 'برای مشاهده خروجی به‌روز روی Test Generate کلیک کنید.';
+        previewEmpty.textContent = 'برای مشاهده خروجی به‌روز روی ساخت پیش‌نمایش کلیک کنید.';
       }
     }
 
@@ -1466,7 +1466,7 @@
       const entries = [
         ['qr', state.qrRect, 'QR'],
         ['text', state.textRect, 'متن'],
-        ...(isTicketCard ? [['ticket', state.ticketCountRect, 'Count of Ticket']] : [])
+        ...(isTicketCard ? [['ticket', state.ticketCountRect, 'شماره بلیت']] : [])
       ];
       entries.forEach(([key, rect, label]) => {
         const element = one(pane, `[data-area-state="${key}"]`);
@@ -1539,10 +1539,10 @@
       });
       if (selectionHelp instanceof HTMLElement) {
         selectionHelp.textContent = state.activeTool === 'qr'
-          ? 'ابزار QR Code فعال است؛ روی تصویر بکشید.'
+          ? 'ابزار رمز دوبعدی فعال است؛ روی تصویر بکشید.'
           : state.activeTool === 'ticket'
-            ? 'ابزار Count of Ticket فعال است؛ ناحیه مستقل شماره را روی تصویر بکشید.'
-            : 'ابزار Invite Text Area فعال است؛ روی تصویر بکشید.';
+            ? 'ابزار شماره بلیت فعال است؛ ناحیه مستقل شماره را روی تصویر بکشید.'
+            : 'ابزار متن دعوت فعال است؛ روی تصویر بکشید.';
       }
     }
 
@@ -1645,8 +1645,8 @@
       updateSelectionBoxes();
       if (selectionHelp instanceof HTMLElement) {
         selectionHelp.textContent = state.activeTool === 'qr'
-          ? 'ناحیه QR Code ثبت شد. اکنون می‌توانید ناحیه متن را تعیین کنید.'
-          : state.activeTool === 'ticket' ? 'ناحیه مستقل Count of Ticket ثبت شد.' : 'ناحیه Invite Text Area ثبت شد.';
+          ? 'ناحیه رمز دوبعدی ثبت شد. اکنون می‌توانید ناحیه متن را تعیین کنید.'
+          : state.activeTool === 'ticket' ? 'ناحیه مستقل شماره بلیت ثبت شد.' : 'ناحیه متن دعوت ثبت شد.';
       }
     }
 
@@ -1756,7 +1756,7 @@
         const dataUrl = await readFileAsDataUrl(file);
         const dimensions = await readImageDimensions(dataUrl);
         if (isReceiptCard && dimensions.width !== dimensions.height) {
-          throw new Error('تصویر زمینه Print Card باید دقیقاً مربع (نسبت ۱:۱) باشد.');
+          throw new Error('تصویر زمینه کارت چاپی باید دقیقاً مربع (نسبت ۱:۱) باشد.');
         }
         if (dimensions.width * dimensions.height > MAX_IMAGE_PIXELS) {
           throw new Error('ابعاد تصویر نباید بیشتر از 40 میلیون پیکسل باشد.');
@@ -1774,7 +1774,7 @@
         markPreviewStale();
         setStatus('در حال ذخیره تصویر در پایگاه داده...', false);
         const saved = await saveUploadedImage();
-        setStatus(responseMessage(saved, 'تصویر ذخیره شد؛ با Selection Tool ناحیه QR و متن را مشخص کنید.'), false);
+        setStatus(responseMessage(saved, 'تصویر ذخیره شد؛ با تعیین ناحیه ناحیه QR و متن را مشخص کنید.'), false);
         setAutosaveStatus('تصویر کارت در پایگاه داده ذخیره شده است.', false);
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'بارگذاری تصویر ناموفق بود.', true);
@@ -1931,9 +1931,9 @@
 
     function collectConfig() {
       if (!state.imageData) throw new Error('ابتدا تصویر کارت دعوت را انتخاب کنید.');
-      if (!state.qrRect) throw new Error('ناحیه QR Code را با Selection Tool تعیین کنید.');
-      if (!state.textRect) throw new Error('ناحیه Invite Text Area را با Selection Tool تعیین کنید.');
-      if (isTicketCard && !state.ticketCountRect) throw new Error('ناحیه مستقل Count of Ticket را روی رسید تعیین کنید.');
+      if (!state.qrRect) throw new Error('ناحیه رمز دوبعدی را با تعیین ناحیه تعیین کنید.');
+      if (!state.textRect) throw new Error('ناحیه متن دعوت را با تعیین ناحیه تعیین کنید.');
+      if (isTicketCard && !state.ticketCountRect) throw new Error('ناحیه مستقل شماره بلیت را روی رسید تعیین کنید.');
       const textHtml = sanitizeEditorHtml(editor.innerHTML);
       const text = editor.innerText.trim();
       const qrData = '[nationalid]';
@@ -2099,7 +2099,7 @@
         setAutosaveStatus('همه تنظیمات در پایگاه داده ذخیره شده‌اند.', false);
         setStatus('تنظیمات ذخیره شد؛ در حال ساخت تصویر PNG با ابعاد کامل...', false);
         const invitee = selectedInvitee();
-        if (!invitee) throw new Error('برای Test Generate یک دعوت‌شونده را از فهرست انتخاب کنید.');
+        if (!invitee) throw new Error('برای ساخت پیش‌نمایش یک دعوت‌شونده را از فهرست انتخاب کنید.');
         if (!(preview instanceof HTMLElement) || !(outputImage instanceof HTMLImageElement)
           || !(downloadLink instanceof HTMLAnchorElement)) return;
         const background = await loadCanvasImage(config.imageData);
