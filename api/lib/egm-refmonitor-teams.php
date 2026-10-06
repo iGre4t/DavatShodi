@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/egm-games.php';
+require_once __DIR__ . '/egm-game-participants.php';
+require_once __DIR__ . '/egm-refmonitor-push.php';
 
 /** @return array{code:string,title:string} */
 function egmRefMonitorActivePeriod(PDO $pdo, string $eventCode): array
@@ -68,26 +70,29 @@ function egmRefMonitorName(string $name): string
 }
 
 /** @return array<int, array<string, mixed>> */
-function egmRefMonitorSearchInvitees(PDO $pdo, string $eventCode, string $periodCode, string $query): array
+function egmRefMonitorSearchInvitees(PDO $pdo, string $eventCode, string $periodCode, string $query, string $gameId = ''): array
 {
     $query = trim(strtr($query, ['۰'=>'0', '۱'=>'1', '۲'=>'2', '۳'=>'3', '۴'=>'4', '۵'=>'5', '۶'=>'6', '۷'=>'7', '۸'=>'8', '۹'=>'9', '٠'=>'0', '١'=>'1', '٢'=>'2', '٣'=>'3', '٤'=>'4', '٥'=>'5', '٦'=>'6', '٧'=>'7', '٨'=>'8', '٩'=>'9']));
     if ((function_exists('mb_strlen') ? mb_strlen($query, 'UTF-8') : strlen($query)) < 2 || strlen($query) > 128) {
-        throw new InvalidArgumentException('حداقل دو رقم از کد ملی یا کد پرسنلی را وارد کنید.');
+        throw new InvalidArgumentException('برای جستجو حداقل دو نویسه وارد کنید.');
     }
     $tables = egmInstanceTableNames($eventCode);
     $usersTable = $tables['users'];
     $periodsTable = $tables['user_periods'];
     $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $query) . '%';
+    $occupied = $gameId !== '' ? egmRefMonitorOccupiedMemberIds($pdo, egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId)) : [];
+    $availableSql = $occupied ? 'AND u.`id` NOT IN (' . implode(',', array_keys($occupied)) . ') ' : '';
     $statement = $pdo->prepare(
         "SELECT u.`id`, u.`first_name`, u.`last_name`, u.`work_id`, u.`national_id`, u.`gender` FROM `{$usersTable}` u "
         . "INNER JOIN `{$periodsTable}` p ON p.`user_id` = u.`id` AND p.`period_code` = :period_code "
         . "WHERE u.`is_active` = 1 "
+        . $availableSql
         . "AND (u.`work_id` LIKE :work_id ESCAPE '!' OR u.`national_id` LIKE :national_id ESCAPE '!' "
         . "OR CONCAT_WS(' ', u.`first_name`, u.`last_name`) LIKE :full_name ESCAPE '!') "
         . 'ORDER BY u.`work_id`, u.`id` LIMIT 20'
     );
     $statement->execute([':period_code' => $periodCode, ':work_id' => $like, ':national_id' => $like, ':full_name' => $like]);
-    return array_map(static fn(array $row): array => egmRefMonitorPerson($row), $statement->fetchAll(PDO::FETCH_ASSOC));
+    return egmGameEnrichMembers($pdo, $eventCode, $periodCode, $gameId, array_map(static fn(array $row): array => egmRefMonitorPerson($row), $statement->fetchAll(PDO::FETCH_ASSOC)));
 }
 
 /** @return array{id:int,name:string,work_id:string,national_id:string,gender:string} */
@@ -183,6 +188,9 @@ function egmRefMonitorTeamView(array $row, array $payload): array
     return [
         'id' => (int)$row['id'],
         'name' => trim((string)($payload['name'] ?? '')) ?: ('تیم ' . $row['id']),
+        'cover_color' => trim((string)($payload['cover_color'] ?? '')),
+        'created_by' => (string)($payload['created_by'] ?? ''),
+        'creator' => (array)($payload['creator'] ?? []),
         'members' => array_values((array)($payload['members'] ?? [])),
         'scores' => $scores,
         'room_assignment' => is_array($payload['room_assignment'] ?? null) ? $payload['room_assignment'] : null,
@@ -305,36 +313,87 @@ function egmRefMonitorDispatchRooms(PDO $pdo, string $eventCode, string $table, 
         $payload['room_assignment'] = $chosen;
         $busy[$chosen['room_id']] = true;
         egmRefMonitorWriteTeam($pdo, $table, $entry['id'], $payload);
+        try { egmRefPushRoomAssigned($pdo, $eventCode, $table, $entry['id'], $payload, $chosen); }
+        catch (Throwable $error) { error_log('RefMonitor room push could not be queued.'); }
     }
 }
 
-function egmRefMonitorAssertMembersAvailable(PDO $pdo, string $table, array $members, int $exceptTeamId = 0): void
+/** Membership reserves a person immediately, including unstarted and ended teams. */
+function egmRefMonitorOccupiedMemberIds(PDO $pdo, string $table, int $exceptTeamId = 0): array
 {
-    $ids = array_column($members, 'id');
+    $ids = [];
     $rows = $pdo->query("SELECT `id`, `payload` FROM `{$table}` WHERE `user_id` IS NULL")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as $row) {
         if ((int)$row['id'] === $exceptTeamId) continue;
         $payload = json_decode((string)$row['payload'], true);
         if (!is_array($payload) || ($payload['type'] ?? '') !== 'team') continue;
         foreach ((array)($payload['members'] ?? []) as $member) {
-            if (is_array($member) && in_array((int)($member['id'] ?? 0), $ids, true)) {
-                throw new InvalidArgumentException('یکی از دعوت‌شدگان قبلاً عضو تیم دیگری در این بازی و بازه شده است.');
-            }
+            if (is_array($member) && (int)($member['id'] ?? 0) > 0) $ids[(int)$member['id']] = true;
         }
+    }
+    return $ids;
+}
+
+function egmRefMonitorAssertMembersAvailable(PDO $pdo, string $table, array $members, int $exceptTeamId = 0): void
+{
+    $occupied = egmRefMonitorOccupiedMemberIds($pdo, $table, $exceptTeamId);
+    foreach ($members as $member) if (isset($occupied[(int)$member['id']])) {
+        throw new InvalidArgumentException('یکی از افراد عضو تیم دیگری در این بازی و بازه است. ابتدا باید از آن تیم حذف شود؛ سپس دوباره اعضا را انتخاب کنید.');
     }
 }
 
 /** @return array<string,mixed> */
-function egmRefMonitorCreateTeam(PDO $pdo, string $eventCode, string $periodCode, string $gameId, string $name, array $memberIds, string $creatorCode): array
+const EGM_REF_COVER_COLORS = ['سفید', 'مشکی', 'خاکستری', 'نقره‌ای', 'سرمه‌ای', 'آبی', 'آبی آسمانی', 'فیروزه‌ای', 'سبز', 'سبز فسفری', 'زرد', 'نارنجی', 'قرمز', 'زرشکی', 'صورتی', 'سرخابی', 'بنفش', 'قهوه‌ای'];
+
+function egmRefMonitorCoverColor(string $color, bool $required, ?string $legacyColor = null): string
+{
+    $color = trim($color);
+    if ($required && $color === '') throw new InvalidArgumentException('رنگ پوشش تیم را مشخص کنید.');
+    $length = preg_match_all('/./us', $color);
+    if ($length === false || $length > 80 || preg_match('/[\x00-\x1F\x7F]/', $color)) throw new InvalidArgumentException('رنگ پوشش باید متن کوتاهی با حداکثر ۸۰ نویسه باشد.');
+    if ($color !== '' && $color !== $legacyColor && !in_array($color, EGM_REF_COVER_COLORS, true)) throw new InvalidArgumentException('رنگ پوشش را از فهرست رنگ‌ها انتخاب کنید.');
+    return $color;
+}
+
+function egmRefMonitorUpdateCoverColor(PDO $pdo, string $eventCode, string $periodCode, string $gameId, int $teamId, string $color): array
+{
+    $table = egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId);
+    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $gameId, $table, $teamId, $color): array {
+        $team = egmRefMonitorReadTeam($pdo, $table, $teamId);
+        if (!empty($team['payload']['ended_at'])) throw new InvalidArgumentException('بازی این تیم پایان یافته و رنگ پوشش قابل تغییر نیست.');
+        $game = egmRefMonitorGameConfig($pdo, $eventCode, $gameId);
+        $team['payload']['cover_color'] = egmRefMonitorCoverColor($color, $game['require_cover_color'], (string)($team['payload']['cover_color'] ?? ''));
+        egmRefMonitorWriteTeam($pdo, $table, $teamId, $team['payload']);
+        return egmRefMonitorTeamView($team['row'], $team['payload']);
+    });
+}
+
+function egmRefMonitorUpdateDetails(PDO $pdo, string $eventCode, string $periodCode, string $gameId, int $teamId, string $name, string $color): array
+{
+    $table = egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId);
+    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $gameId, $table, $teamId, $name, $color): array {
+        $team = egmRefMonitorReadTeam($pdo, $table, $teamId);
+        if (!empty($team['payload']['ended_at'])) throw new InvalidArgumentException('بازی این تیم پایان یافته است.');
+        $game = egmRefMonitorGameConfig($pdo, $eventCode, $gameId);
+        $team['payload']['name'] = egmRefMonitorName($name);
+        $team['payload']['cover_color'] = egmRefMonitorCoverColor($color, $game['require_cover_color'], (string)($team['payload']['cover_color'] ?? ''));
+        egmRefMonitorWriteTeam($pdo, $table, $teamId, $team['payload']);
+        return egmRefMonitorTeamView($team['row'], $team['payload']);
+    });
+}
+
+function egmRefMonitorCreateTeam(PDO $pdo, string $eventCode, string $periodCode, string $gameId, string $name, array $memberIds, string $creatorCode, string $coverColor = ''): array
 {
     $table = egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId);
     $name = egmRefMonitorName($name);
-    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $periodCode, $gameId, $table, $name, $memberIds, $creatorCode): array {
+    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $periodCode, $gameId, $table, $name, $memberIds, $creatorCode, $coverColor): array {
+        $game = egmRefMonitorGameConfig($pdo, $eventCode, $gameId);
+        $color = egmRefMonitorCoverColor($coverColor, $game['require_cover_color']);
         $limits = egmRefMonitorGameLimits($pdo, $eventCode, $gameId);
         $members = egmRefMonitorResolveMembers($pdo, $eventCode, $periodCode, $memberIds, $limits['max_players']);
         egmRefMonitorAssertGenderMode($members, $limits['gender_mode']);
         egmRefMonitorAssertMembersAvailable($pdo, $table, $members);
-        $payload = ['type' => 'team', 'name' => $name, 'members' => $members, 'scores' => [], 'created_by' => $creatorCode];
+        $payload = ['type' => 'team', 'name' => $name, 'cover_color' => $color, 'members' => $members, 'scores' => [], 'created_by' => $creatorCode, 'creator' => egmGameCreator($pdo, $eventCode, $creatorCode)];
         $insert = $pdo->prepare("INSERT INTO `{$table}` (`user_id`, `payload`) VALUES (NULL, :payload)");
         $insert->execute([':payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)]);
         $team = egmRefMonitorReadTeam($pdo, $table, (int)$pdo->lastInsertId());
@@ -346,9 +405,11 @@ function egmRefMonitorCreateTeam(PDO $pdo, string $eventCode, string $periodCode
 function egmRefMonitorStartTeam(PDO $pdo, string $eventCode, string $periodCode, string $gameId, int $teamId, string $adminCode): array
 {
     $table = egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId);
-    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $gameId, $table, $teamId, $adminCode): array {
+    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $periodCode, $gameId, $table, $teamId, $adminCode): array {
         $team = egmRefMonitorReadTeam($pdo, $table, $teamId);
         if (!empty($team['payload']['ended_at'])) throw new InvalidArgumentException('بازی این تیم پایان یافته است.');
+        $game = egmRefMonitorGameConfig($pdo, $eventCode, $gameId);
+        egmRefMonitorCoverColor((string)($team['payload']['cover_color'] ?? ''), $game['require_cover_color'], (string)($team['payload']['cover_color'] ?? ''));
         if (!empty($team['payload']['started_at'])) throw new InvalidArgumentException('بازی این تیم قبلاً شروع شده است.');
         if (!empty($team['payload']['scores'])) throw new InvalidArgumentException('این تیم پیش‌تر امتیاز ثبت کرده است.');
         if (egmRefMonitorGameLevels($pdo, $eventCode, $gameId) === []) throw new InvalidArgumentException('ابتدا مراحل این بازی را در پنل EGM تعریف کنید.');
@@ -434,13 +495,19 @@ function egmRefMonitorUpdateMembers(PDO $pdo, string $eventCode, string $periodC
 }
 
 /** @return array<string,mixed> */
-function egmRefMonitorSubmitScore(PDO $pdo, string $eventCode, string $periodCode, string $gameId, int $teamId, string $levelId, string $scoreText, string $adminCode): array
+function egmRefMonitorCompleteLevel(PDO $pdo, string $eventCode, string $periodCode, string $gameId, int $teamId, string $levelId, string $adminCode): array
+{
+    return egmRefMonitorSubmitScore($pdo, $eventCode, $periodCode, $gameId, $teamId, $levelId, '', $adminCode, true);
+}
+
+function egmRefMonitorSubmitScore(PDO $pdo, string $eventCode, string $periodCode, string $gameId, int $teamId, string $levelId, string $scoreText, string $adminCode, bool $completionOnly = false): array
 {
     $table = egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId);
     $scoreText = trim(strtr($scoreText, ['۰'=>'0', '۱'=>'1', '۲'=>'2', '۳'=>'3', '۴'=>'4', '۵'=>'5', '۶'=>'6', '۷'=>'7', '۸'=>'8', '۹'=>'9']));
-    if (preg_match('/^\d{1,6}(?:\.\d{1,2})?$/D', $scoreText) !== 1) throw new InvalidArgumentException('امتیاز باید عددی نامنفی با حداکثر دو رقم اعشار باشد.');
-    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $gameId, $table, $teamId, $levelId, $scoreText, $adminCode): array {
+    if (!$completionOnly && preg_match('/^\d{1,6}(?:\.\d{1,2})?$/D', $scoreText) !== 1) throw new InvalidArgumentException('امتیاز باید عددی نامنفی با حداکثر دو رقم اعشار باشد.');
+    return egmRefMonitorWithLock($pdo, $eventCode, $gameId, static function () use ($pdo, $eventCode, $gameId, $table, $teamId, $levelId, $scoreText, $adminCode, $completionOnly): array {
         $game = egmRefMonitorGameConfig($pdo, $eventCode, $gameId);
+        if ((bool)$game['no_score_needed'] !== $completionOnly) throw new InvalidArgumentException('روش ثبت نتیجهٔ بازی تغییر کرده است. صفحه را تازه‌سازی کنید.');
         $levels = egmGamesPlayableLevels($game);
         $levelNames = array_column($levels, 'name', 'id');
         if (!isset($levelNames[$levelId])) throw new InvalidArgumentException('مرحله پیدا نشد.');
@@ -448,12 +515,12 @@ function egmRefMonitorSubmitScore(PDO $pdo, string $eventCode, string $periodCod
         if (!empty($team['payload']['ended_at'])) throw new InvalidArgumentException('بازی این تیم پایان یافته است.');
         if (empty($team['payload']['started_at'])) throw new InvalidArgumentException('ابتدا بازی این تیم را شروع کنید.');
         $scores = is_array($team['payload']['scores'] ?? null) ? $team['payload']['scores'] : [];
-        if (array_key_exists($levelId, $scores)) throw new InvalidArgumentException('امتیاز این مرحله قبلاً ثبت شده و قابل تغییر نیست.');
+        if (array_key_exists($levelId, $scores)) throw new InvalidArgumentException($completionOnly ? 'این مرحله قبلاً پایان یافته است.' : 'امتیاز این مرحله قبلاً ثبت شده و قابل تغییر نیست.');
         $assignment = $team['payload']['room_assignment'] ?? null;
         if ($game['auto_room_manager'] && (!is_array($assignment) || ($assignment['level_id'] ?? '') !== $levelId)) {
-            throw new InvalidArgumentException('امتیاز فقط برای مرحله و اتاق فعلی تیم قابل ثبت است.');
+            throw new InvalidArgumentException('نتیجه فقط برای مرحله و اتاق فعلی تیم قابل ثبت است.');
         }
-        $scores[$levelId] = ['score' => (float)$scoreText, 'level_name' => $levelNames[$levelId], 'room_id' => $game['auto_room_manager'] ? $assignment['room_id'] : null, 'room_name' => $game['auto_room_manager'] ? $assignment['room_name'] : null, 'submitted_at' => date('c'), 'submitted_by' => $adminCode];
+        $scores[$levelId] = ['score' => $completionOnly ? null : (float)$scoreText, 'completion_only' => $completionOnly, 'level_name' => $levelNames[$levelId], 'room_id' => $game['auto_room_manager'] ? $assignment['room_id'] : null, 'room_name' => $game['auto_room_manager'] ? $assignment['room_name'] : null, 'submitted_at' => date('c'), 'submitted_by' => $adminCode];
         $team['payload']['scores'] = $scores;
         if ($game['auto_room_manager']) {
             unset($team['payload']['room_assignment']);
@@ -503,5 +570,17 @@ function egmRefMonitorListTeams(PDO $pdo, string $eventCode, string $periodCode,
         if (!is_array($payload) || ($payload['type'] ?? '') !== 'team' || !is_array($payload['members'] ?? null)) continue;
         $teams[] = egmRefMonitorTeamView($row, $payload);
     }
+    $members = [];
+    foreach ($teams as $team) foreach ($team['members'] as $member) $members[(int)$member['id']] = $member;
+    $enriched = [];
+    foreach (egmGameEnrichMembers($pdo, $eventCode, $periodCode, $gameId, array_values($members)) as $member) $enriched[(int)$member['id']] = $member;
+    $creators = [];
+    foreach ($teams as &$team) {
+        $creatorCode = $team['created_by'];
+        if (!isset($creators[$creatorCode])) $creators[$creatorCode] = egmGameCreator($pdo, $eventCode, $creatorCode, $team['creator']);
+        $team['creator'] = $creators[$creatorCode];
+        $team['members'] = array_map(static fn(array $member): array => $enriched[(int)$member['id']] ?? $member, $team['members']);
+    }
+    unset($team);
     return $teams;
 }

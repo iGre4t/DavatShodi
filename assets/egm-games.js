@@ -22,7 +22,9 @@
     ${addingRoom ? renderRoomEditor(game, level, null) : editingRoomId ? renderRoomEditor(game, level, roomsFor(game, level).find(room => room.id === editingRoomId)) : ''}</section>`;
   async function request(action = 'list', data = {}) {
     const url = new URL(endpoint, location.href);
-    const options = action === 'list' ? undefined : {method:'POST', body:new URLSearchParams({payload:JSON.stringify({action, csrf, ...data})})};
+    const fields = new URLSearchParams({action, csrf});
+    for (const [key, value] of Object.entries(data)) fields.set(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value));
+    const options = action === 'list' ? undefined : {method:'POST', body:fields};
     if (action === 'list') {
       url.searchParams.set('action', 'list');
       if (data.period_code) url.searchParams.set('period_code', data.period_code);
@@ -41,6 +43,7 @@
       }
       if (response.status === 403) throw new Error('سرور درخواست بازی‌ها را مسدود کرد (۴۰۳). دسترسی حساب و گزارش امنیتی هاست را بررسی کنید.');
       if (response.status === 404) throw new Error('فایل مدیریت بازی‌های این رویداد روی هاست پیدا نشد (۴۰۴). فایل‌های به‌روزرسانی را کامل بارگذاری کنید.');
+      if (response.status === 422) throw new Error('سرور درخواست تنظیمات را رد کرد و دلیل را نمایش نداد. فایل games.php و فایل‌های مشترک را به‌روز کنید؛ اگر ادامه داشت، گزارش امنیتی هاست را بررسی کنید.');
       throw new Error(`سرور به‌جای پاسخ بازی‌ها، صفحهٔ غیرمعتبر برگرداند (HTTP ${response.status}). گزارش خطای PHP هاست را بررسی کنید.`);
     }
     if (!result || typeof result !== 'object') throw new Error('پاسخ سرور بازی‌ها نامعتبر است.');
@@ -70,7 +73,7 @@
     const level = game?.has_levels ? (game.levels || []).find(item => item.id === selectedLevelId) : null;
     catalog.querySelector('[data-games-create]').hidden = !!game;
     if (!game) {
-      list.innerHTML = games.length ? `<div class="egm-games-list">${games.map(item => `<button type="button" class="egm-games-nav" data-open-game="${escapeHtml(item.id)}"><span><strong>${escapeHtml(item.name)}</strong><small>${item.has_levels ? `${(item.levels || []).length} مرحله` : 'یک امتیاز'} · ${item.auto_room_manager ? 'تخصیص خودکار اتاق' : 'تخصیص دستی اتاق'}</small></span><span aria-hidden="true">‹</span></button>`).join('')}</div>` : '<p class="muted">هنوز بازی‌ای ساخته نشده است.</p>';
+      list.innerHTML = games.length ? `<div class="egm-games-list">${games.map(item => `<button type="button" class="egm-games-nav" data-open-game="${escapeHtml(item.id)}"><span><strong>${escapeHtml(item.name)}</strong><small>${item.has_levels ? `${(item.levels || []).length} مرحله` : item.no_score_needed ? 'بدون امتیاز' : 'یک امتیاز'} · ${item.auto_room_manager ? 'تخصیص خودکار اتاق' : 'تخصیص دستی اتاق'}</small></span><span aria-hidden="true">‹</span></button>`).join('')}</div>` : '<p class="muted">هنوز بازی‌ای ساخته نشده است.</p>';
       return;
     }
     const gameId = escapeHtml(game.id);
@@ -87,12 +90,13 @@
         <h4>تنظیمات بازی</h4>
         <div class="egm-games-fields">
           <label class="field"><span>نام بازی</span><input type="text" name="name" maxlength="100" required value="${escapeHtml(game.name)}"></label>
-          <label class="field"><span>امتیازدهی</span><select name="mode"><option value="single" ${game.has_levels ? '' : 'selected'}>یک امتیاز برای کل بازی</option><option value="levels" ${game.has_levels ? 'selected' : ''}>امتیاز جداگانه برای هر مرحله</option></select></label>
+          <label class="field"><span>ساختار بازی</span><select name="mode"><option value="single" ${game.has_levels ? '' : 'selected'}>بازی بدون مرحله</option><option value="levels" ${game.has_levels ? 'selected' : ''}>بازی چندمرحله‌ای</option></select></label>
+          <label class="field"><span>روش ثبت نتیجه</span><select name="result_mode"><option value="score" ${game.no_score_needed ? '' : 'selected'}>ثبت امتیاز</option><option value="completion" ${game.no_score_needed ? 'selected' : ''}>بدون امتیاز · تأیید پایان بازی یا مرحله</option></select></label>
           <label class="field"><span>ترکیب تیم</span><select name="gender_mode"><option value="normal" ${game.gender_mode === 'normal' ? 'selected' : ''}>عادی</option><option value="separated" ${game.gender_mode === 'separated' ? 'selected' : ''}>تفکیک جنسیتی</option></select></label>
           <label class="field"><span>تخصیص اتاق</span><select name="auto_mode"><option value="off" ${game.auto_room_manager ? '' : 'selected'}>دستی</option><option value="on" ${game.auto_room_manager ? 'selected' : ''}>خودکار</option></select></label>
           <label class="field"><span>حداقل اعضای تیم</span><input name="min_players" type="number" min="1" max="100" required value="${escapeHtml(game.min_players)}"></label>
           <label class="field"><span>حداکثر اعضای تیم</span><input name="max_players" type="number" min="1" max="100" required value="${escapeHtml(game.max_players)}"></label>
-        </div><div class="egm-games-form-actions"><button class="btn primary" type="submit">ذخیره تنظیمات</button></div></form>
+        </div><div class="egm-cover-color-setting"><label class="field"><span>شناسایی تیم با رنگ پوشش</span><select name="require_cover_color"><option value="off" ${game.require_cover_color ? '' : 'selected'}>ثبت رنگ پوشش الزامی نیست</option><option value="on" ${game.require_cover_color ? 'selected' : ''}>داور باید رنگ پوشش تیم را ثبت کند</option></select></label><p>با فعال کردن این گزینه، داور هنگام تشکیل تیم رنگ لباس یا کاور اعضا را مشخص می‌کند. این رنگ در فهرست تیم‌ها و صفحهٔ داور نمایش داده می‌شود.</p></div><div class="egm-games-form-actions"><button class="btn primary" type="submit">ذخیره تنظیمات</button></div></form>
       ${game.has_levels ? `<section class="egm-games-section"><div class="egm-games-section-head"><h4>مراحل</h4>${game.auto_room_manager ? '' : '<button type="button" class="btn ghost" data-level-add>+ افزودن مرحله</button>'}</div>
         ${(game.levels || []).length ? game.levels.map((item, index) => `<button type="button" class="egm-games-nav" data-open-level="${escapeHtml(item.id)}"><span><strong>${index + 1}. ${escapeHtml(item.name)}</strong><small>${(item.rooms || []).length} اتاق</small></span><span aria-hidden="true">‹</span></button>`).join('') : '<p class="muted">هنوز مرحله‌ای ثبت نشده است.</p>'}
         ${addingLevel ? '<form data-level-create class="egm-games-inline-form"><label class="field"><span>نام مرحله جدید</span><input type="text" name="name" maxlength="100" required></label><div class="egm-games-form-actions"><button class="btn primary" type="submit">افزودن مرحله</button><button class="btn ghost" type="button" data-level-cancel>انصراف</button></div></form>' : ''}</section>` : renderRooms(game, null)}</div>`;
@@ -141,10 +145,14 @@
           form.dispatchEvent(new CustomEvent('egm-game-settings-result', {bubbles:true, detail:{ok:false}}));
           return;
         }
+        const noScoreNeeded = form.elements.result_mode.value === 'completion';
+        if (noScoreNeeded !== !!game.no_score_needed) await request('save_no_score_mode', {game_id:game.id, enabled:noScoreNeeded});
         if (game.auto_room_manager && !newAuto) await request('save_auto_mode', {game_id:game.id, enabled:false});
         if (newMode !== game.has_levels) await request('save_mode', {game_id:game.id, has_levels:newMode});
         if (newGender !== game.gender_mode) await request('save_gender_mode', {game_id:game.id, gender_mode:newGender});
         if (min !== Number(game.min_players) || max !== Number(game.max_players)) await request('save_limits', {game_id:game.id, min_players:min, max_players:max});
+        const requireCoverColor = form.elements.require_cover_color.value === 'on';
+        if (requireCoverColor !== !!game.require_cover_color) await request('save_cover_color_requirement', {game_id:game.id, required:requireCoverColor});
         if (form.elements.name.value.trim() !== game.name) await request('save', {id:game.id, name:form.elements.name.value.trim()});
         if (!game.auto_room_manager && newAuto) await request('save_auto_mode', {game_id:game.id, enabled:true});
         status.textContent = 'تنظیمات ذخیره شد.';
@@ -220,11 +228,13 @@
       list.innerHTML = data.games.length ? data.games.map(game => `<div class="egm-period-game-block"><label class="egm-game-row"><input type="checkbox" data-period-game-id="${escapeHtml(game.id)}" ${enabled.has(game.id) ? 'checked' : ''}><span>${escapeHtml(game.name)}</span></label>${enabled.has(game.id) ? `<div class="egm-game-teams" data-period-game-teams="${escapeHtml(game.id)}">در حال بارگذاری تیم‌ها…</div>` : ''}</div>`).join('') : '<p class="muted">ابتدا از تب بازی‌ها یک بازی بسازید.</p>';
       status.textContent = '';
       await Promise.all([...enabled].map(async gameId => {
+        const game = data.games.find(item => item.id === gameId);
+        if (!game) return;
         const target = [...list.querySelectorAll('[data-period-game-teams]')].find(node => node.dataset.periodGameTeams === gameId);
         if (!target) return;
         try {
           const teams = (await request('list_teams', {period_code:periodCode, game_id:gameId})).teams;
-          target.innerHTML = teams.length ? teams.map(team => `<div class="egm-game-row"><strong>${escapeHtml(team.name)}</strong><span>${team.members.length} عضو · امتیاز ${escapeHtml(team.total_score)} · ${team.ended_at ? 'پایان‌یافته' : team.room_assignment ? `${escapeHtml(team.room_assignment.level_name)} / ${escapeHtml(team.room_assignment.room_name)}` : team.waiting_for_room ? 'در انتظار اتاق' : team.started_at ? 'در جریان' : 'در انتظار شروع'}</span>${!team.ended_at && shell.dataset.egmCanEndGames === '1' ? `<button type="button" class="btn ghost" data-end-team="${team.id}" data-end-game="${escapeHtml(gameId)}">پایان بازی</button>` : ''}</div>`).join('') : '<p class="muted">هنوز تیمی برای این بازی ثبت نشده است.</p>';
+          target.innerHTML = teams.length ? teams.map(team => `<div class="egm-game-row"><div class="egm-game-team-identity"><strong>${escapeHtml(team.name)}</strong><span class="egm-game-team-creator">سازنده: <b>${escapeHtml(team.creator?.name || 'نامشخص')}</b>${team.creator?.username ? ` · <bdi>${escapeHtml(team.creator.username)}</bdi>` : ''}</span></div><span>${team.members.length} عضو${game.no_score_needed ? '' : ` · امتیاز ${escapeHtml(team.total_score)}`} · ${team.ended_at ? 'پایان‌یافته' : team.room_assignment ? `${escapeHtml(team.room_assignment.level_name)} / ${escapeHtml(team.room_assignment.room_name)}` : team.waiting_for_room ? 'در انتظار اتاق' : team.started_at ? 'در جریان' : 'در انتظار شروع'}</span>${!team.ended_at && shell.dataset.egmCanEndGames === '1' ? `<button type="button" class="btn ghost" data-end-team="${team.id}" data-end-game="${escapeHtml(gameId)}">پایان بازی</button>` : ''}</div>`).join('') : '<p class="muted">هنوز تیمی برای این بازی ثبت نشده است.</p>';
         } catch (error) { target.textContent = error.message; }
       }));
     } catch (error) { status.textContent = error.message; }

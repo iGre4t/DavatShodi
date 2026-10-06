@@ -898,8 +898,21 @@ if (in_array($action, ['get_settings', 'save_settings', 'get_mission_link', 'sav
   }
 }
 
-if (in_array($action, ['check_campaign_link', 'create_campaign_link'], true) && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:linker')) {
+if (in_array($action, ['list_campaign_links', 'check_campaign_link', 'create_campaign_link'], true) && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:linker')) {
   denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
+}
+
+if ($action === 'list_campaign_links') {
+  egmStoreRequireCampaignRedirects();
+  $target = egmStoreCampaignLinkTarget();
+  $links = [];
+  foreach (campaignRedirectsList() as $redirect) {
+    if ((string)($redirect['target'] ?? '') === $target) {
+      $links[] = egmStoreCampaignLinkResponse((string)$redirect['path'], $redirect);
+    }
+  }
+  echo json_encode(['status' => 'ok', 'data' => $links], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
 }
 
 if ($action === 'check_campaign_link') {

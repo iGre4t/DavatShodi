@@ -216,11 +216,63 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
         <?php endif; ?>
         <?php if ($egmCanMainPane || $egmCanTaskAccessPane): ?>
           <button type="button" class="egm-task-top-item<?= $egmControlInitialSection === 'admin-access' ? ' active' : '' ?>" aria-selected="<?= $egmControlInitialSection === 'admin-access' ? 'true' : 'false' ?>" data-egm-control-panel-trigger="admin-access">دسترسی ادمین</button>
+          <button type="button" class="egm-task-top-item" aria-selected="false" data-egm-control-panel-trigger="facilitators">تسهیلگرها</button>
         <?php endif; ?>
         <?php if ($egmCanLinkerPane): ?>
           <button type="button" class="egm-task-top-item<?= $egmControlInitialSection === 'linker' ? ' active' : '' ?>" aria-selected="<?= $egmControlInitialSection === 'linker' ? 'true' : 'false' ?>" data-egm-control-panel-trigger="linker">لینک کوتاه</button>
         <?php endif; ?>
       </div>
+
+      <?php if ($egmCanMainPane || $egmCanTaskAccessPane): ?>
+      <section data-egm-control-panel-section="facilitators" hidden>
+        <div class="card" id="egm-facilitators" data-endpoint="mini%20apps/Event%20Guest%20Manager/facilitators.php">
+          <div class="section-header"><h3>تسهیلگرها</h3><div class="egm-action-bar"><button type="button" class="btn primary" data-fac-add>افزودن تسهیلگر</button><button type="button" class="btn ghost" data-fac-upload>ورود از اکسل</button></div></div>
+          <p class="hint">حساب‌های ورود به پنل داور این رویداد</p>
+          <input type="file" data-fac-file accept=".xlsx,.xls,.csv" hidden>
+          <p class="hint" data-fac-status role="status" aria-live="polite"></p>
+          <div class="table-wrapper"><table class="tct-list-table egm-fac-table"><thead><tr><th>نام</th><th>نام کاربری</th><th>عملیات</th></tr></thead><tbody data-fac-list><tr><td colspan="3" class="muted">در حال دریافت تسهیلگرها…</td></tr></tbody></table></div>
+          <dialog class="egm-fac-dialog" data-fac-editor aria-labelledby="egm-fac-editor-title">
+            <form data-fac-form class="egm-fac-form">
+              <div class="section-header"><h3 id="egm-fac-editor-title">افزودن تسهیلگر</h3><button type="button" class="icon-btn" data-fac-close aria-label="بستن">×</button></div>
+              <label class="field"><span>نام</span><input name="name" type="text" maxlength="100" required autocomplete="off"></label>
+              <label class="field"><span>نام کاربری</span><input name="username" type="text" maxlength="80" required autocomplete="off" dir="auto"></label>
+              <label class="field"><span>رمز عبور</span><span class="egm-fac-password-field"><input name="password" type="password" autocomplete="new-password"><button type="button" class="btn ghost" data-fac-toggle>نمایش</button></span><small class="muted" data-fac-password-hint></small></label>
+              <p class="hint" data-fac-editor-status role="alert"></p>
+              <div class="modal-actions"><button type="button" class="btn ghost" data-fac-close>انصراف</button><button class="btn primary" type="submit">ذخیره</button></div>
+            </form>
+          </dialog>
+          <dialog class="egm-fac-dialog" data-fac-password-dialog aria-labelledby="egm-fac-password-title">
+            <form data-fac-password-form class="egm-fac-form">
+              <div class="section-header"><h3 id="egm-fac-password-title">رمز عبور تسهیلگر</h3><button type="button" class="icon-btn" data-fac-close aria-label="بستن">×</button></div>
+              <p data-fac-password-name></p>
+              <label class="field"><span>رمز عبور</span><span class="egm-fac-password-field"><input name="password" type="text" autocomplete="new-password" required><button type="button" class="btn ghost" data-fac-toggle>پنهان</button></span></label>
+              <p class="hint" data-fac-password-status role="alert"></p>
+              <div class="modal-actions"><button type="button" class="btn ghost" data-fac-close>بستن</button><button class="btn primary" type="submit">ذخیره رمز عبور</button></div>
+            </form>
+          </dialog>
+          <dialog class="egm-fac-dialog" data-fac-delete-dialog aria-labelledby="egm-fac-delete-title">
+            <form data-fac-delete-form class="egm-fac-form">
+              <h3 id="egm-fac-delete-title">حذف تسهیلگر</h3><p data-fac-delete-name></p><p class="hint">دسترسی این حساب به پنل داور قطع می‌شود. تیم‌ها و نتایج ثبت‌شده باقی می‌مانند.</p>
+              <p class="hint" data-fac-delete-status role="alert"></p>
+              <div class="modal-actions"><button type="button" class="btn ghost" data-fac-close>انصراف</button><button class="btn danger" type="submit">حذف تسهیلگر</button></div>
+            </form>
+          </dialog>
+          <dialog class="egm-fac-dialog egm-fac-import-dialog" data-fac-import-dialog aria-labelledby="egm-fac-import-title">
+            <form data-fac-import-form class="egm-fac-form">
+              <div class="section-header"><h3 id="egm-fac-import-title">ورود تسهیلگرها از اکسل</h3><button type="button" class="icon-btn" data-fac-close aria-label="بستن">×</button></div>
+              <p class="hint">ردیف اول عنوان ستون‌هاست. ستون‌های نام، نام کاربری و رمز عبور را انتخاب کنید.</p>
+              <label class="field"><span>برگه</span><select data-fac-sheet></select></label>
+              <div class="egm-fac-mapping"><label class="field"><span>نام</span><select data-fac-column="name" required></select></label><label class="field"><span>نام کاربری</span><select data-fac-column="username" required></select></label><label class="field"><span>رمز عبور</span><select data-fac-column="password" required></select></label></div>
+              <label class="egm-fac-update"><input type="checkbox" data-fac-update><span>به‌روزرسانی نام‌های کاربری موجود</span></label>
+              <p class="hint" data-fac-import-count></p>
+              <div class="table-wrapper"><table class="tct-list-table"><thead><tr><th>نام</th><th>نام کاربری</th><th>رمز عبور</th></tr></thead><tbody data-fac-preview></tbody></table></div>
+              <p class="hint" data-fac-import-status role="alert"></p>
+              <div class="modal-actions"><button type="button" class="btn ghost" data-fac-close>انصراف</button><button class="btn primary" type="submit" data-fac-import-save disabled>ورود تسهیلگرها</button></div>
+            </form>
+          </dialog>
+        </div>
+      </section>
+      <?php endif; ?>
 
       <?php if ($egmCanMainPane): ?>
       <section data-egm-control-panel-section="general"<?= $egmControlInitialSection === 'general' ? '' : ' hidden' ?>>
@@ -587,7 +639,7 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
               </thead>
               <tbody id="egm-linker-current-body">
                 <tr>
-                  <td colspan="4" class="muted">برای بررسی، مسیر کمپین را وارد کنید.</td>
+                  <td colspan="4" class="muted">در حال دریافت لینک‌های ذخیره‌شده…</td>
                 </tr>
               </tbody>
             </table>
@@ -688,7 +740,7 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
     <?php if ($egmCanMainPane): ?>
       <?php renderEgmGroupsPane('mini%20apps/Event%20Guest%20Manager/groups.php', $egmInitialPane === 'egm-groups'); ?>
       <div class="sub-pane<?= $egmInitialPane === 'egm-games' ? ' active' : '' ?>" data-pane="egm-games" data-egm-games-catalog>
-        <div class="card egm-games-catalog"><div class="section-header"><h3>بازی‌ها</h3></div>
+        <div class="card egm-games-catalog"><div class="section-header"><h3>بازی‌ها</h3><a href="mini%20apps/Event%20Guest%20Manager/telegram-diagnostics.php" target="_blank" rel="noopener">بررسی اتصال ربات تلگرام</a><a href="mini%20apps/Event%20Guest%20Manager/telegram-diagnostics.php?platform=bale" target="_blank" rel="noopener">راه‌اندازی و بررسی ربات بله</a></div>
           <div class="egm-refmonitor-link"><label class="field"><span>لینک پنل داور</span><input type="text" readonly dir="ltr" data-refmonitor-url aria-label="لینک پنل داور"></label><a class="btn ghost" href="<?= htmlspecialchars($egmRefMonitorHref, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener" data-refmonitor-open>باز کردن</a><button type="button" class="btn ghost" data-refmonitor-copy>کپی لینک</button></div>
           <?php if ($egmCanLinkerPane): ?><p class="hint">برای ساخت لینک کوتاه، در کنترل پنل ← لینک کوتاه، مقصد «پنل داور» را انتخاب کنید.</p><?php endif; ?>
           <form data-games-create class="form egm-games-create"><label class="field"><span>نام بازی جدید</span><input type="text" name="name" maxlength="100" required placeholder="نام بازی"></label><button class="btn primary" type="submit">افزودن بازی</button></form>
@@ -772,10 +824,11 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
 </div>
 </div>
 
-<?php if ($egmCanInviteesPane || $egmCanManageTasksPane): ?>
+<?php if ($egmCanInviteesPane || $egmCanManageTasksPane || $egmCanMainPane || $egmCanTaskAccessPane): ?>
 <script src="mini%20apps/Event%20Guest%20Manager/vendor/xlsx/xlsx.full.min.js" defer></script>
 <?php endif; ?>
 <script src="mini%20apps/Event%20Guest%20Manager/egm-panel-local.js?v=<?= htmlspecialchars($egmPanelLocalJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script>
+<?php if ($egmCanMainPane || $egmCanTaskAccessPane): ?><script src="assets/egm-facilitators.js?v=<?= (int)(@filemtime(__DIR__ . '/../../assets/egm-facilitators.js') ?: time()) ?>" defer></script><?php endif; ?>
 <?php if ($egmCanMainPane || $egmCanTaskSubtabs): ?><script src="assets/egm-games.js?v=<?= htmlspecialchars($egmGamesJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script><?php endif; ?>
 <?php if ($egmCanMainPane): ?><script src="assets/egm-groups.js?v=<?= htmlspecialchars($egmGroupsJsVer, ENT_QUOTES, 'UTF-8') ?>" defer></script><?php endif; ?>
 <?php if ($egmCanInviteCardPane): ?>

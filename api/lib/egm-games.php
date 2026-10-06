@@ -29,7 +29,7 @@ function egmGamesState(array $context): array
             $maxPlayers = 20;
         }
         $genderMode = (string)($game['gender_mode'] ?? 'normal');
-        $games[] = ['id' => $game['id'], 'name' => $name, 'has_levels' => (bool)($game['has_levels'] ?? ($levels !== [])), 'gender_mode' => in_array($genderMode, ['normal', 'separated'], true) ? $genderMode : 'normal', 'auto_room_manager' => (bool)($game['auto_room_manager'] ?? false), 'rooms' => egmGamesNormalizeRooms((array)($game['rooms'] ?? [])), 'levels' => $levels, 'min_players' => $minPlayers, 'max_players' => $maxPlayers];
+        $games[] = ['id' => $game['id'], 'name' => $name, 'has_levels' => (bool)($game['has_levels'] ?? ($levels !== [])), 'gender_mode' => in_array($genderMode, ['normal', 'separated'], true) ? $genderMode : 'normal', 'auto_room_manager' => (bool)($game['auto_room_manager'] ?? false), 'require_cover_color' => (bool)($game['require_cover_color'] ?? false), 'no_score_needed' => (bool)($game['no_score_needed'] ?? false), 'rooms' => egmGamesNormalizeRooms((array)($game['rooms'] ?? [])), 'levels' => $levels, 'min_players' => $minPlayers, 'max_players' => $maxPlayers];
     }
     $enabled = [];
     foreach ((array)($stored['enabled'] ?? []) as $period => $ids) {
@@ -54,7 +54,7 @@ function egmGamesNormalizeRooms(array $stored): array
 
 function egmGamesPlayableLevels(array $game): array
 {
-    return $game['has_levels'] ? $game['levels'] : [['id' => EGM_GAME_SINGLE_SCORE_ID, 'name' => 'امتیاز بازی', 'rooms' => $game['rooms']]];
+    return $game['has_levels'] ? $game['levels'] : [['id' => EGM_GAME_SINGLE_SCORE_ID, 'name' => !empty($game['no_score_needed']) ? 'بازی' : 'امتیاز بازی', 'rooms' => $game['rooms']]];
 }
 
 function egmGamesWrite(array $context, array $state): void
@@ -124,6 +124,49 @@ function egmGamesWithLock(array $context, string $gameId, callable $callback)
         $release = $context['pdo']->prepare('SELECT RELEASE_LOCK(:lock_name)');
         $release->execute([':lock_name' => $lockName]);
     }
+}
+
+/** Lock every game before a confirmed period reset, including disabled games with old teams. */
+function egmGamesWithPeriodResetLocks(array $context,string $periodCode,callable $callback):array
+{
+    $eventCode=(string)($context['code']??'');
+    if($eventCode==='')return $callback([]);
+    $state=egmGamesState($context);$ids=array_column($state['games'],'id');
+    $ids=array_values(array_unique(array_merge($ids,$state['enabled'][$periodCode]??[])));sort($ids,SORT_STRING);
+    $pdo=$context['pdo'];$acquired=[];$tables=[];
+    try{
+        foreach($ids as $id){
+            $lockName=egmGamesLockName($eventCode,$id);$lock=$pdo->prepare('SELECT GET_LOCK(:lock_name, 5)');$lock->execute([':lock_name'=>$lockName]);
+            if((int)$lock->fetchColumn()!==1)throw new RuntimeException('بازی در حال تغییر است. چند لحظه دیگر بازنشانی را دوباره انجام دهید.');
+            $acquired[]=$lockName;$table=egmGamesTableName($eventCode,$periodCode,$id);
+            if(egmInstanceTableExists($pdo,$table))$tables[]=$table;
+        }
+        return $callback($tables);
+    }finally{
+        foreach(array_reverse($acquired)as $name){$release=$pdo->prepare('SELECT RELEASE_LOCK(:lock_name)');$release->execute([':lock_name'=>$name]);}
+    }
+}
+
+/** Called inside the attendance transaction with the game's shared locks held. */
+function egmGamesResetPeriodTeams(array $context,string $periodCode,array $tables):int
+{
+    $pdo=$context['pdo'];$deleted=0;
+    foreach($tables as $table){
+        $query=$pdo->query("SELECT id,payload FROM `{$table}` WHERE user_id IS NULL");
+        $remove=$pdo->prepare("DELETE FROM `{$table}` WHERE id=? AND user_id IS NULL");
+        foreach($query->fetchAll(PDO::FETCH_ASSOC)as $row){
+            $payload=json_decode((string)$row['payload'],true);
+            if(!is_array($payload)||($payload['type']??'')!=='team')continue;
+            $remove->execute([(int)$row['id']]);$deleted+=$remove->rowCount();
+        }
+    }
+    if(egmInstanceTableExists($pdo,'egm_ref_push_devices')){
+        if(egmInstanceTableExists($pdo,'egm_ref_push_outbox')){
+            $pdo->prepare('DELETE o FROM egm_ref_push_outbox o JOIN egm_ref_push_devices d ON d.id=o.device_id WHERE d.event_code=? AND d.period_code=?')->execute([(string)$context['code'],$periodCode]);
+        }
+        $pdo->prepare("UPDATE egm_ref_push_devices SET period_code='',game_id='',team_id=0 WHERE event_code=? AND period_code=?")->execute([(string)$context['code'],$periodCode]);
+    }
+    return $deleted;
 }
 
 function egmGamesHasAnyScores(array $context, array $state, string $gameId): bool
@@ -445,6 +488,39 @@ function egmGamesDeleteRoom(array $context, string $gameId, string $levelId, str
     });
 }
 
+function egmGamesSaveNoScoreMode(array $context, string $gameId, bool $enabled): void
+{
+    egmGamesWithLock($context, $gameId, static function () use ($context, $gameId, $enabled): void {
+        $state = egmGamesState($context);
+        foreach ($state['games'] as &$game) {
+            if ($game['id'] !== $gameId) continue;
+            if ($game['no_score_needed'] !== $enabled && egmGamesHasAnyScores($context, $state, $gameId)) throw new InvalidArgumentException('پس از ثبت امتیاز یا پایان یک مرحله، روش ثبت نتیجه قابل تغییر نیست.');
+            $game['no_score_needed'] = $enabled;
+            unset($game);
+            egmGamesWrite($context, $state);
+            return;
+        }
+        unset($game);
+        throw new InvalidArgumentException('بازی پیدا نشد.');
+    });
+}
+
+function egmGamesSaveCoverColorRequirement(array $context, string $gameId, bool $required): void
+{
+    egmGamesWithLock($context, $gameId, static function () use ($context, $gameId, $required): void {
+        $state = egmGamesState($context);
+        foreach ($state['games'] as &$game) {
+            if ($game['id'] !== $gameId) continue;
+            $game['require_cover_color'] = $required;
+            unset($game);
+            egmGamesWrite($context, $state);
+            return;
+        }
+        unset($game);
+        throw new InvalidArgumentException('بازی پیدا نشد.');
+    });
+}
+
 function egmGamesSaveLimits(array $context, string $gameId, $minValue, $maxValue): void
 {
     if (!is_scalar($minValue) || !is_scalar($maxValue)
@@ -507,6 +583,15 @@ function egmGamesJson(array $data, int $status = 200): never
 function egmGamesRequestInput(string $method): array
 {
     if ($method !== 'POST') return $_GET;
+    if (isset($_POST['action'])) {
+        $input = $_POST;
+        foreach (['enabled', 'required', 'has_levels'] as $field) {
+            if (!array_key_exists($field, $input)) continue;
+            if (!in_array($input[$field], ['1', '0'], true)) throw new InvalidArgumentException('تنظیم بازی نامعتبر است.');
+            $input[$field] = $input[$field] === '1';
+        }
+        return $input;
+    }
     // Keep JSON clients working; browser forms avoid host filters on JSON bodies.
     $body = $_POST['payload'] ?? file_get_contents('php://input');
     if (!is_string($body)) throw new InvalidArgumentException('درخواست بازی نامعتبر است.');
@@ -535,7 +620,7 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
         }
         if ($method !== 'POST') egmGamesJson(['status' => 'error', 'message' => 'Unsupported request.'], 405);
         if (!egmSecurityIsValidCsrfToken(trim((string)($input['csrf'] ?? '')))) egmGamesJson(['status' => 'error', 'message' => 'Invalid security token.'], 403);
-        if (in_array($action, ['save', 'delete', 'save_level', 'delete_level', 'save_room', 'delete_room', 'save_limits', 'save_mode', 'save_gender_mode', 'save_auto_mode', 'end_team'], true) && !$canManage) egmGamesJson(['status' => 'error', 'message' => 'Access denied.'], 403);
+        if (in_array($action, ['save', 'delete', 'save_level', 'delete_level', 'save_room', 'delete_room', 'save_limits', 'save_mode', 'save_gender_mode', 'save_auto_mode', 'save_no_score_mode', 'save_cover_color_requirement', 'end_team'], true) && !$canManage) egmGamesJson(['status' => 'error', 'message' => 'Access denied.'], 403);
         if ($action === 'set_enabled' && !$canPeriods) egmGamesJson(['status' => 'error', 'message' => 'Access denied.'], 403);
         if ($action === 'save') {
             $name = trim((string)($input['name'] ?? ''));
@@ -563,6 +648,14 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
         } elseif ($action === 'save_auto_mode') {
             if (!is_bool($input['enabled'] ?? null)) throw new InvalidArgumentException('تنظیم مدیریت خودکار نامعتبر است.');
             egmGamesSaveAutoMode($context, trim((string)($input['game_id'] ?? '')), $input['enabled']);
+            $state = egmGamesState($context);
+        } elseif ($action === 'save_no_score_mode') {
+            if (!is_bool($input['enabled'] ?? null)) throw new InvalidArgumentException('تنظیم ثبت نتیجه نامعتبر است.');
+            egmGamesSaveNoScoreMode($context, trim((string)($input['game_id'] ?? '')), $input['enabled']);
+            $state = egmGamesState($context);
+        } elseif ($action === 'save_cover_color_requirement') {
+            if (!is_bool($input['required'] ?? null)) throw new InvalidArgumentException('تنظیم رنگ پوشش نامعتبر است.');
+            egmGamesSaveCoverColorRequirement($context, trim((string)($input['game_id'] ?? '')), $input['required']);
             $state = egmGamesState($context);
         } elseif ($action === 'save_limits') {
             egmGamesSaveLimits($context, trim((string)($input['game_id'] ?? '')), $input['min_players'] ?? null, $input['max_players'] ?? null);
@@ -631,7 +724,8 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
         }
         egmGamesJson(['status' => 'ok', 'games' => $state['games'], 'enabled' => $action === 'set_enabled' ? ($state['enabled'][$period] ?? []) : []]);
     } catch (InvalidArgumentException $error) {
-        egmGamesJson(['status' => 'error', 'message' => $error->getMessage()], 422);
+        // Application validation stays JSON even behind hosts replacing HTTP 422 bodies.
+        egmGamesJson(['status' => 'error', 'code' => 'validation_error', 'http_status' => 422, 'message' => $error->getMessage()]);
     } catch (Throwable $error) {
         $reference = bin2hex(random_bytes(4));
         error_log('EGM games failed [' . $reference . ']: ' . (string)$error);

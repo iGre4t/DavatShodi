@@ -2827,6 +2827,7 @@
           <div class="section-header"><div><h3>خروجی اکسل بازه</h3></div></div>
           <div class="egm-period-export-grid">
             <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
+            <article class="egm-period-export-option"><div><h4>بازی‌ها، تیم‌ها و امتیازها</h4><p>هر بازی در یک برگه؛ مشخصات اعضا، سازنده تیم و وضعیت ورود و جایزه.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=games&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل بازی‌ها</span></a></article>
             <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد بلیت‌های مهمانان و مجموع هر نوع بلیت.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
             <article class="egm-period-export-option"><div><h4>مهمانان داخل رویداد</h4><p>ورود ثبت شده و هنوز خروج ندارند؛ حضور واقعی تأیید نشده است.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
             <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>مهمانانی که بدون دعوت قبلی وارد شده‌اند.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
@@ -5312,7 +5313,7 @@
         if (!(pane instanceof HTMLElement)) return;
         const periodCode = periodCodeForPane(pane);
         const periodTitle = String(pane.querySelector('[data-task-field="taskTitle"]')?.value || periodCode).trim();
-        if (!periodCode || !window.confirm(`تمام تاریخ‌ها و ساعت‌های ورود و خروج، وضعیت حضور و گزارش‌های کنترل مهمان بازه «${periodTitle}» حذف می‌شود. کاربران و دعوت‌ها حذف نمی‌شوند. ادامه می‌دهید؟`)) return;
+        if (!periodCode || !window.confirm(`سوابق ورود و خروج، وضعیت حضور و گزارش‌های کنترل مهمان، همراه با تمام تیم‌ها، امتیازهای آن‌ها و تخصیص اتاق‌های بازی‌های بازه «${periodTitle}» حذف می‌شوند. این کار قابل بازگشت نیست. کاربران، دعوت‌ها و تنظیمات بازی‌ها حفظ می‌شوند. ادامه می‌دهید؟`)) return;
         resetPeriodAttendanceButton.disabled = true;
         setTaskSaveStatus(pane, 'در حال بازنشانی سوابق حضور بازه...');
         try {

@@ -1,4 +1,10 @@
 /* EGM uses the shared panel's colors, typography and form controls. */
+ .egm-game-team-identity{display:grid;gap:5px;min-width:0}.egm-game-team-creator{font-size:.82rem;color:#47667a;overflow-wrap:anywhere}.egm-game-team-creator b{color:#00699f}
+
+.egm-fac-dialog{width:min(480px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;padding:24px;border:1px solid #cfe5f1;border-radius:18px;background:#fff;color:var(--text,#17364a);font:inherit;direction:rtl;text-align:right;box-shadow:0 24px 70px rgba(0,105,159,.18)}
+.egm-fac-dialog::backdrop{background:rgba(15,55,78,.35);backdrop-filter:blur(4px)}
+.egm-fac-dialog h3,.egm-fac-dialog p{margin:0}.egm-fac-form{display:grid;gap:16px}.egm-fac-form .field{margin:0;width:100%;min-width:0}.egm-fac-form input:not([type="checkbox"]),.egm-fac-form select{width:100%;min-width:0;box-sizing:border-box}.egm-fac-password-field{display:flex;align-items:center;gap:8px}.egm-fac-password-field input{flex:1}.egm-fac-password-field button{flex:none}.egm-fac-actions{white-space:nowrap}.egm-fac-actions .btn{margin:2px;font-size:.8rem;padding:6px 10px}.egm-fac-table td{overflow-wrap:anywhere}.egm-fac-error{color:#b53442}.egm-fac-import-dialog{width:min(680px,calc(100vw - 24px))}.egm-fac-mapping{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.egm-fac-update{display:flex;align-items:center;gap:8px}.egm-fac-dialog .modal-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.egm-fac-dialog .table-wrapper{overflow:auto}.egm-fac-dialog [data-fac-preview] td{overflow-wrap:anywhere;max-width:200px}
+@media(max-width:540px){.egm-fac-dialog{padding:18px}.egm-fac-mapping{grid-template-columns:1fr}}
 
 .egm-shell .egm-switch-grid {
   display: grid;
@@ -3281,3 +3287,5 @@ body.egm-period-invitee-editor-open {
   .egm-shell .egm-period-operation-actions .egm-period-guest-control{grid-column:1/-1;text-align:center}
   .egm-shell .egm-period-operation-actions .egm-period-reset{border-inline-start:0;padding-inline-start:12px}
 }
+
+.egm-shell .egm-cover-color-setting{margin-top:16px;padding:16px;border:1px solid #e4e6ea;border-radius:12px;background:#fff;box-shadow:0 4px 16px rgba(20,24,33,.04)}.egm-shell .egm-cover-color-setting .field{max-width:460px}.egm-shell .egm-cover-color-setting select{width:100%}.egm-shell .egm-cover-color-setting p{margin:10px 0 0;color:#626974;font-size:.88rem;line-height:1.8}

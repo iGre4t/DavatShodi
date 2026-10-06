@@ -1131,6 +1131,7 @@
 
     let lastCheckedPath = "";
     let lastCanCreate = false;
+    let savedLinks = [];
 
     const normalizeCampaignPath = (value) => String(value ?? "")
       .trim()
@@ -1154,44 +1155,61 @@
 
     const renderLinkState = (data = null) => {
       bodyEl.replaceChildren();
-      if (!data || typeof data !== "object") {
+      const rows = savedLinks.filter(link => !data || link.path !== data.path);
+      if (data && typeof data === "object") rows.push(data);
+      if (!rows.length) {
         const row = document.createElement("tr");
         const cell = document.createElement("td");
         cell.colSpan = 4;
         cell.className = "muted";
-        cell.textContent = "برای بررسی، مسیر کمپین را وارد کنید.";
+        cell.textContent = "هنوز لینکی برای این رویداد ساخته نشده است.";
         row.appendChild(cell);
         bodyEl.appendChild(row);
         return;
       }
 
-      const existing = data.existing && typeof data.existing === "object" ? data.existing : null;
-      const row = document.createElement("tr");
-      const campaignCell = document.createElement("td");
-      const typeCell = document.createElement("td");
-      const targetCell = document.createElement("td");
-      const statusCell = document.createElement("td");
-      const campaignUrl = String(data.campaign_url || `/campaigns/${data.path || ""}`);
-      if (existing) {
-        const link = document.createElement("a");
-        link.href = campaignUrl.replace(/^\/+/, "");
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = campaignUrl;
-        campaignCell.appendChild(link);
-        typeCell.textContent = String(existing.redirect_type_label || "تغییر مسیر عادی");
-        targetCell.textContent = String(existing.target || "");
-        statusCell.textContent = data.owned_by_egm
-          ? "پیش‌تر به همین مقصد وصل شده است"
-          : "اشغال‌شده";
-      } else {
-        campaignCell.textContent = campaignUrl;
-        typeCell.textContent = String(data.redirect_type_label || "تغییر مسیر ثبت‌شده");
-        targetCell.textContent = String(data.target || "");
-        statusCell.textContent = "در دسترس";
+      for (const data of rows) {
+        const existing = data.existing && typeof data.existing === "object" ? data.existing : null;
+        const row = document.createElement("tr");
+        const campaignCell = document.createElement("td");
+        const typeCell = document.createElement("td");
+        const targetCell = document.createElement("td");
+        const statusCell = document.createElement("td");
+        const campaignUrl = String(data.campaign_url || `/campaigns/${data.path || ""}`);
+        if (existing) {
+          const link = document.createElement("a");
+          link.href = campaignUrl;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = campaignUrl;
+          campaignCell.appendChild(link);
+          typeCell.textContent = String(existing.redirect_type_label || "تغییر مسیر عادی");
+          targetCell.textContent = String(existing.target || "");
+          statusCell.textContent = data.owned_by_egm
+            ? "ذخیره‌شده"
+            : "اشغال‌شده";
+        } else {
+          campaignCell.textContent = campaignUrl;
+          typeCell.textContent = String(data.redirect_type_label || "تغییر مسیر ثبت‌شده");
+          targetCell.textContent = String(data.target || "");
+          statusCell.textContent = "در دسترس";
+        }
+        row.append(campaignCell, typeCell, targetCell, statusCell);
+        bodyEl.appendChild(row);
       }
-      row.append(campaignCell, typeCell, targetCell, statusCell);
-      bodyEl.appendChild(row);
+    };
+
+    const loadSavedLinks = async () => {
+      setBusy(true);
+      try {
+        const payload = await requestStoreGet("list_campaign_links");
+        savedLinks = Array.isArray(payload) ? payload : [];
+        renderLinkState();
+      } catch (error) {
+        setStatus(error?.message || "دریافت لینک‌های ذخیره‌شده ناموفق بود.", true);
+      } finally {
+        setBusy(false);
+      }
     };
 
     const updatePreview = () => {
@@ -1252,6 +1270,10 @@
       try {
         const payload = await requestStorePost("create_campaign_link", { path, destination: destinationInput.value });
         const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
+        if (data.owned_by_egm && data.existing) {
+          savedLinks = savedLinks.filter(link => link.path !== data.path);
+          savedLinks.push(data);
+        }
         renderLinkState(data);
         lastCheckedPath = String(data.path || path);
         lastCanCreate = Boolean(data.can_create);
@@ -1285,6 +1307,7 @@
       void createLink();
     });
     updatePreview();
+    void loadSavedLinks();
   }
 
   async function initRewardGuide(initialSettings = {}) {

@@ -8,7 +8,10 @@ function egmAttendanceResetAssert(bool $condition, string $message): void
     if (!$condition) throw new RuntimeException($message);
 }
 
-$pdo = new PDO('sqlite::memory:');
+class AttendanceResetSqlitePdo extends PDO {
+    public function prepare(string $query,array $options=[]):PDOStatement|false{return parent::prepare(str_replace(' FOR UPDATE','',$query),$options);}
+}
+$pdo = new AttendanceResetSqlitePdo('sqlite::memory:');
 $logsPdo = new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $logsPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -46,6 +49,9 @@ CREATE TABLE user_periods (
 )
 SQL);
 $pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL)');
+foreach(['should_get_gift INTEGER DEFAULT 0','number_of_ticket TEXT NULL','ticket_number_recorded_at TEXT NULL','seat_assignment_json TEXT NULL']as $column)$pdo->exec('ALTER TABLE user_periods ADD COLUMN '.$column);
+$pdo->exec('CREATE TABLE seat_lock (data_key TEXT PRIMARY KEY)');
+$pdo->prepare('INSERT INTO seat_lock VALUES(?)')->execute([EGM_INSTANCE_SCHEMA_VERSION_KEY]);
 $pdo->exec('CREATE TABLE egm_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL)');
 $logsPdo->exec(<<<SQL
 CREATE TABLE activity_logs (
@@ -82,7 +88,7 @@ $logsPdo->exec(
 $context = [
     'pdo' => $pdo,
     'logs_pdo' => $logsPdo,
-    'tables' => ['user_periods' => 'user_periods', 'activity_logs' => 'activity_logs'],
+    'tables' => ['user_periods' => 'user_periods', 'activity_logs' => 'activity_logs','data'=>'seat_lock'],
     'periods' => [['tagCode' => 'P1'], ['tagCode' => 'P2']],
 ];
 $protectedColumns = 'id,user_id,period_code,status,score,attempt_count,started_at,completed_at,state_json,'

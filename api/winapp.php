@@ -439,7 +439,7 @@ try {
         winAppRequireCsrf($payload);
         if (empty($access['can_manage_scan_actions'])) winAppJson(['status'=>'error','message'=>'اجازه ارسال گزارش ندارید.'],403);
         require_once __DIR__ . '/lib/system-telegram.php';
-        winAppJson(['status'=>'ok'] + systemTelegramCreateReport($context, (int)($payload['log_id'] ?? 0), is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : []));
+        winAppJson(['status'=>'ok'] + systemBotsCreateReport($context, (int)($payload['log_id'] ?? 0), is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : []));
     }
     if ($method === 'POST' && $action === 'reset_guest_entry') {
         winAppRequireCsrf($payload);

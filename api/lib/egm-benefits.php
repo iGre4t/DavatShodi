@@ -21,12 +21,14 @@ function egmBenefitsApplyEntry(array $context, int $userId, string $periodCode):
         ->execute([$userId, $periodCode]);
     if (!egmInstanceTableExists($pdo, 'egm_telegram_decisions')) return;
     $users = $context['tables']['users'];
-    $find = $pdo->prepare("SELECT d.* FROM egm_telegram_decisions d JOIN `{$users}` u ON u.id=? WHERE d.egm_code=? AND d.period_code=? AND (d.user_id=u.id OR BINARY d.guest_code=BINARY u.national_id OR BINARY d.guest_code=BINARY u.work_id) ORDER BY d.decided_at DESC,d.id DESC LIMIT 1");
+    $find = $pdo->prepare("SELECT d.*,r.snapshot AS report_snapshot FROM egm_telegram_decisions d JOIN egm_telegram_reports r ON r.id=d.report_id JOIN `{$users}` u ON u.id=? WHERE d.egm_code=? AND d.period_code=? AND (d.user_id=u.id OR BINARY d.guest_code=BINARY u.national_id OR BINARY d.guest_code=BINARY u.work_id) ORDER BY d.decided_at DESC,d.id DESC LIMIT 1");
     $find->execute([$userId, $context['code'], $periodCode]);
     $decision = $find->fetch(PDO::FETCH_ASSOC);
     if (!$decision) return;
+    $snapshot = json_decode((string)($decision['report_snapshot'] ?? ''), true) ?: [];
+    $provider = ($snapshot['decision_provider'] ?? '') === 'bale' ? 'bale' : 'telegram';
     $pdo->prepare("UPDATE `{$table}` SET should_get_gift=?,draw_eligible=?,benefits_reviewed_at=?,benefits_reviewed_by=? WHERE user_id=? AND period_code=?")
-        ->execute([$decision['gift'], $decision['draw'], $decision['decided_at'], 'telegram:' . $decision['admin_id'], $userId, $periodCode]);
+        ->execute([$decision['gift'], $decision['draw'], $decision['decided_at'], $provider . ':' . $decision['admin_id'], $userId, $periodCode]);
 }
 
 function egmBenefitsDrawAllowed(array $row): bool

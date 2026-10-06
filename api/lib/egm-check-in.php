@@ -771,7 +771,7 @@ function egmCheckInSavePeriodCondition(
 }
 
 /**
- * Clears Guest Control attendance state without removing users, invitations,
+ * Clears Guest Control attendance and, for a selected period, its game teams without removing users, invitations,
  * periods, Invite Cards, or walk-in registration identity.
  *
  * @return array{scope:string,period_code:string,attendance_records:int,log_records:int,message:string}
@@ -812,11 +812,13 @@ function egmCheckInResetAttendanceRecords(array $context, ?string $periodCode = 
         . '`last_control_message`=NULL, `last_control_at`=NULL, `number_of_ticket`=NULL, `ticket_number_recorded_at`=NULL, `seat_assignment_json`=NULL'
         . $where
     );
+    $performReset=static function(array $gameTables)use($context,$pdo,$logsPdo,$periodCode,$resetAll,$update,$logsTable):array{
     $pdo->beginTransaction();
     try {
         egmSeatMapLock($context);
         $update->execute($resetAll ? [] : [':period_code' => $periodCode]);
         $attendanceRecords = $update->rowCount();
+        $teamRecords=$resetAll||empty($context['code'])?0:egmGamesResetPeriodTeams($context,$periodCode,$gameTables);
         $pdo->commit();
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -836,10 +838,15 @@ function egmCheckInResetAttendanceRecords(array $context, ?string $periodCode = 
         'period_code' => $resetAll ? '' : $periodCode,
         'attendance_records' => $attendanceRecords,
         'log_records' => $logRecords,
+        'team_records' => $teamRecords,
         'message' => $resetAll
             ? "سوابق حضور همه بازه‌ها بازنشانی شد ({$attendanceRecords} رکورد حضور و {$logRecords} گزارش)."
-            : "سوابق حضور بازه {$periodCode} بازنشانی شد ({$attendanceRecords} رکورد حضور و {$logRecords} گزارش).",
+            : "سوابق و تیم‌های بازه {$periodCode} بازنشانی شد ({$attendanceRecords} رکورد حضور، {$logRecords} گزارش و {$teamRecords} تیم).",
     ];
+    };
+    if($resetAll)return $performReset([]);
+    require_once __DIR__.'/egm-games.php';
+    return egmGamesWithPeriodResetLocks($context,$periodCode,$performReset);
 }
 
 /** Release one guest's numbered seats and restore their invitation to the pending state. */
@@ -2677,7 +2684,7 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
             }
             if ($action === 'report_to_management') {
                 require_once __DIR__ . '/system-telegram.php';
-                $result = systemTelegramCreateReport($context, (int)($payload['log_id'] ?? 0), $sessionUser);
+                $result = systemBotsCreateReport($context, (int)($payload['log_id'] ?? 0), $sessionUser);
             } elseif ($action === 'reset_guest_entry') {
                 $result = egmCheckInResetGuestEntry($context, (string)($payload['guest_code'] ?? ''), (string)($payload['period_code'] ?? ''), $sessionUser);
             } elseif ($action === 'record_manual_ticket') {

@@ -3,13 +3,15 @@ declare(strict_types=1);
 
 function systemTelegramManagerKeyboard(): array
 {
-    return ['keyboard'=>[[['text'=>'خروجی']]],'resize_keyboard'=>true,'is_persistent'=>true];
+    $keyboard=['keyboard'=>[[['text'=>'خروجی']]],'resize_keyboard'=>true];
+    if(systemBotProvider()==='telegram')$keyboard['is_persistent']=true;
+    return $keyboard;
 }
 
 /** Revalidate the PIN fingerprint for every menu and download. */
 function systemTelegramExportGrants(PDO $pdo, string $admin, string $chat): array
 {
-    $query = $pdo->prepare('SELECT g.*,e.name FROM egm_telegram_grants g JOIN egm e ON e.code=g.egm_code WHERE g.admin_id=? AND g.chat_id=? ORDER BY e.name');
+    $query = systemBotPrepare($pdo, 'SELECT g.*,e.name FROM egm_telegram_grants g JOIN egm e ON e.code=g.egm_code WHERE g.admin_id=? AND g.chat_id=? ORDER BY e.name');
     $query->execute([$admin,$chat]);
     return array_values(array_filter($query->fetchAll(PDO::FETCH_ASSOC), static function(array $grant) use ($pdo): bool {
         $hash = systemTelegramPinHash($pdo,$grant['egm_code']);
@@ -20,7 +22,7 @@ function systemTelegramExportGrants(PDO $pdo, string $admin, string $chat): arra
 function systemTelegramExportButton(PDO $pdo, string $admin, string $chat, string $label, array $payload): array
 {
     $id = bin2hex(random_bytes(16));
-    $pdo->prepare('INSERT INTO egm_telegram_export_menus(id,admin_id,chat_id,payload,expires_at) VALUES(?,?,?,?,DATE_ADD(NOW(),INTERVAL 1 DAY))')
+    systemBotPrepare($pdo, 'INSERT INTO egm_telegram_export_menus(id,admin_id,chat_id,payload,expires_at) VALUES(?,?,?,?,DATE_ADD(NOW(),INTERVAL 1 DAY))')
         ->execute([$id,$admin,$chat,json_encode($payload,JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)]);
     return ['text'=>$label,'callback_data'=>'egmx:'.$id];
 }
@@ -39,7 +41,7 @@ function systemTelegramExportHome(PDO $pdo, string $admin, string $chat, int $of
         systemTelegramCall('sendMessage',['chat_id'=>$chat,'text'=>'ابتدا با ارسال pin به رویداد متصل شوید.','reply_markup'=>['remove_keyboard'=>true]]);
         return;
     }
-    $pdo->exec('DELETE FROM egm_telegram_export_menus WHERE expires_at<NOW()');
+    systemBotExec($pdo, 'DELETE FROM egm_telegram_export_menus WHERE expires_at<NOW()');
     if (count($grants) === 1) {
         systemTelegramExportChoose($pdo,$admin,$chat,['kind'=>'periods','code'=>$grants[0]['egm_code']]);
         return;
@@ -117,7 +119,7 @@ function systemTelegramExportCallback(PDO $pdo, array $callback, ?array $context
     $chat=(string)($message['chat']['id'] ?? '');
     try {
         if (($message['chat']['type'] ?? '') !== 'private' || !preg_match('/^egmx:([a-f0-9]{32})$/D',(string)($callback['data'] ?? ''),$match)) throw new InvalidArgumentException('درخواست معتبر نیست.');
-        $query=$pdo->prepare('SELECT payload FROM egm_telegram_export_menus WHERE id=? AND admin_id=? AND chat_id=? AND expires_at>NOW()');
+        $query=systemBotPrepare($pdo, 'SELECT payload FROM egm_telegram_export_menus WHERE id=? AND admin_id=? AND chat_id=? AND expires_at>NOW()');
         $query->execute([$match[1],$admin,$chat]);
         $raw=$query->fetchColumn();
         if (!$raw) throw new InvalidArgumentException('این گزینه منقضی شده است؛ دوباره «خروجی» را بزنید.');

@@ -20,6 +20,7 @@ function egmPeriodExportTypes(): array
         'correct_presence' => 'حضور واقعی',
         'fake_presence' => 'حضوری نامعقول',
         'ticket_numbers' => 'گزارش تعداد بلیت‌ها',
+        'games' => 'بازی‌ها، تیم‌ها و امتیازها',
     ];
 }
 
@@ -92,7 +93,7 @@ SELECT
   p.`quit_date`, p.`quit_time`, p.`correct_presence`, p.`fake_presence`, p.`attendance_state`, p.`last_control_condition`, p.`last_control_action`,
   p.`last_control_message`, p.`last_control_at`, p.`is_uninvited_guest` AS `period_is_uninvited_guest`,
   p.`uninvited_registered_at`, p.`uninvited_registered_by`, p.`number_of_ticket`,
-  p.`ticket_numbers_json`, p.`ticket_number_recorded_at`, p.`should_get_gift`, p.`draw_eligible`
+  p.`ticket_numbers_json`, p.`ticket_number_recorded_at`, p.`should_get_gift`, p.`draw_eligible`, p.`benefits_reviewed_at`, p.`benefits_reviewed_by`
 FROM `{$periodsTable}` p
 JOIN `{$usersTable}` u ON u.`id` = p.`user_id`
 WHERE p.`period_code` = :period_code
@@ -451,6 +452,10 @@ function egmPeriodExportBuild(array $context, string $periodCode, string $type):
             $periodDate = egmExportPeriodDate($period);
             break;
         }
+    }
+    if ($type === 'games') {
+        require_once __DIR__ . '/egm-game-exports.php';
+        return egmGameExportBuild($context, $periodCode, $periodTitle, egmExportPeriodDatedFilename($types[$type], $periodDate));
     }
     $guestRows = egmPeriodExportGuestRows($context, $periodCode);
     $logRows = $type === 'full_log' ? egmPeriodExportLogRows($context, $periodCode) : [];
