@@ -47,11 +47,23 @@ $window = ['prizeEntryWindowEnabled'=>true, 'prizeEntryStartDate'=>'2026-09-29',
 checkDraw(count(egmPeriodDrawEligible($windowRows, $draws[$id]))===4, 'Disabled prize window includes all entered guests');
 checkDraw(array_column(egmPeriodDrawEligible($windowRows, $draws[$id], $window), 'key')===['11','12'], 'Prize window includes only entries from start through end minute');
 rejectsDraw(fn()=>egmPeriodDrawEligible($windowRows, $draws[$id], ['prizeEntryWindowEnabled'=>true]));
+$approvedRows = $windowRows;
+$approvedRows[0]['draw_eligible'] = 1;
+$approvedRows[3]['draw_eligible'] = 0;
+checkDraw(array_column(egmPeriodDrawEligible($approvedRows, $draws[$id], $window), 'key') === ['10','11','12'], 'Manager approval overrides time window; denial stays excluded');
+checkDraw(egmBenefitsDrawState($windowRows[3], $window)['time_excluded'], 'Late entry offers management review');
+checkDraw(!egmBenefitsDrawState($approvedRows[0], $window)['time_excluded'], 'Approved early entry no longer has time exclusion');
+$approvedRows[0]['entered_time'] = '';
+checkDraw(!egmBenefitsDrawState($approvedRows[0], $window)['allowed'], 'Manager approval does not admit someone without entry');
+
 $draw=$draws[$id]; $draw['includeEntered']=false; $draw['includeWalkIns']=true;
-checkDraw(count(egmPeriodDrawEligible($rows,$draw))===2,'Walk-ins include guests who have subsequently exited');
+checkDraw(count(egmPeriodDrawEligible($rows,$draw))===0,'Walk-ins cannot bypass manager approval');
+$rows[1]['draw_eligible']=1; $rows[3]['draw_eligible']=1;
+checkDraw(count(egmPeriodDrawEligible($rows,$draw))===2,'Approved walk-ins include guests who have subsequently exited');
 $draw['includeEntered']=true;
 checkDraw(count(egmPeriodDrawEligible(array_merge($rows,[$rows[0]]),$draw))===3,'Both groups deduplicate guest identity');
 rejectsDraw(fn()=>egmPeriodDrawSettings(array_replace($settings,['includeEntered'=>false])));
+$rows[1]['draw_eligible']=0; $rows[3]['draw_eligible']=0;
 $candidate=egmPeriodDrawAction($draws,'roll',['id'=>$id],$rows,'admin')['participant'];
 checkDraw($candidate['key']==='1','Roll chooses only eligible guest');
 rejectsDraw(function() use (&$draws,$id,$rows) { egmPeriodDrawAction($draws,'confirm',['id'=>$id,'candidateKey'=>'2'],$rows,'admin'); });

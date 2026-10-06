@@ -120,10 +120,32 @@
     const save = form.querySelector('[data-action="save-task-settings"]')?.closest('.field');
     const final = el('div', 'egm-settings-final');
     if (save) {
-      const operations = el('div', 'egm-period-operations');
-      operations.append(el('h4', '', 'مدیریت بازه'));
-      save.querySelectorAll('button:not([data-action="save-task-settings"]), a').forEach(node => operations.append(node));
-      final.append(save, operations);
+      const operations = el('section', 'card egm-period-operations');
+      operations.setAttribute('aria-label', 'مدیریت بازه');
+      const heading = el('div', 'egm-period-operations-heading');
+      heading.append(el('h3', '', 'مدیریت بازه'));
+      const actions = el('div', 'egm-period-operation-actions');
+      const guestControl = save.querySelector('a');
+      if (guestControl) {
+        guestControl.textContent = 'کنترل مهمانان';
+        guestControl.classList.remove('ghost');
+        guestControl.classList.add('primary', 'egm-period-guest-control');
+        actions.append(guestControl);
+      }
+      const end = save.querySelector('[data-action="end-period"]');
+      if (end) actions.append(end);
+      const reset = save.querySelector('[data-action="reset-period-attendance"]');
+      if (reset) {
+        reset.classList.remove('egm-btn-danger');
+        reset.classList.add('egm-period-reset');
+        reset.textContent = 'بازنشانی سوابق';
+        actions.append(reset);
+      }
+      operations.append(heading, actions);
+      const ended = form.querySelector('.egm-period-ended-note');
+      if (ended) operations.append(ended);
+      section.prepend(operations);
+      final.append(save);
     }
     const status = form.querySelector('[data-task-save-status]');
     if (status) final.append(status);
@@ -173,13 +195,17 @@
       if (picker) tester.append(picker);
       if (commands) tester.append(commands);
       preview.querySelector('.section-header')?.after(tester);
+      const qrSettings = content.querySelector('[data-invite-card-qr-data]')?.closest('.field');
+      if (qrSettings) artwork.append(qrSettings);
+      const textPicker = content.querySelector('.egm-print-card-extra-areas');
+      if (textPicker) content.querySelector('.section-header')?.after(textPicker);
       const variables = content.querySelector('[data-invite-card-conditional-builder]');
       const advanced = el('div', 'card');
       if (variables) advanced.append(variables);
       flow(pane, [
-        {title: 'قالب و ناحیه‌ها', nodes: [artwork]},
-        {title: 'متن کارت', nodes: [content]},
         ...(variables ? [{title: 'متغیرهای شرطی', nodes: [advanced]}] : []),
+        {title: 'متن‌ها', nodes: [content]},
+        {title: 'چیدمان کارت', nodes: [artwork]},
         {title: 'پیش‌نمایش و ذخیره', nodes: [preview]},
       ], 'card:' + pane.dataset.pane);
     });
@@ -267,12 +293,31 @@
     if (sidebar) {
       const search = el('input', 'egm-standard-control egm-navigation-search');
       search.type = 'search';
+      search.name = 'egm-section-filter';
+      search.autocomplete = 'off';
+      search.setAttribute('data-lpignore', 'true');
+      search.setAttribute('data-1p-ignore', 'true');
+      search.setAttribute('data-form-type', 'other');
       search.placeholder = 'جستجوی بخش…';
       search.setAttribute('aria-label', 'جستجوی بخش‌های مدیریت رویداد');
       const normalize = value => value.replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, '').toLowerCase();
-      search.addEventListener('input', () => sidebar.querySelectorAll('.sub-item').forEach(button => {
-        button.hidden = !normalize(button.textContent).includes(normalize(search.value));
-      }));
+      // Login autofill can emit input on an unrelated search field after load.
+      // Filter only after an actual edit gesture in this field.
+      let editing = false;
+      search.addEventListener('keydown', event => {
+        if (event.key.length === 1 || ['Backspace', 'Delete'].includes(event.key)) editing = true;
+      });
+      ['paste', 'cut', 'compositionstart'].forEach(type => search.addEventListener(type, () => { editing = true; }));
+      search.addEventListener('pointerdown', () => { editing = true; });
+      search.addEventListener('input', () => {
+        if (!editing) { search.value = ''; return; }
+        sidebar.querySelectorAll('.sub-item').forEach(button => {
+          button.hidden = !normalize(button.textContent).includes(normalize(search.value));
+        });
+        sidebar.querySelectorAll('.egm-nav-group').forEach(group => {
+          group.hidden = ![...group.querySelectorAll('.sub-item')].some(button => !button.hidden);
+        });
+      });
       sidebar.before(search);
     }
     enhance();

@@ -20,6 +20,11 @@ try {
     checkDraw($state['eligibleCount']===1 && $state['eligibleParticipants'][0]['key']==='1','SQL scopes entered guests to period');
     egmInstanceWritePeriods($pdo,$code,[['tagCode'=>'01','prizeEntryWindowEnabled'=>true,'prizeEntryStartDate'=>'2026-09-29','prizeEntryStartTime'=>'10:01','prizeEntryEndDate'=>'2026-09-29','prizeEntryEndTime'=>'10:02']]);
     checkDraw(egmPeriodDrawRun($context,'01','state',['id'=>$id],'admin')['eligibleCount']===0,'Database draw applies the period prize entry window');
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=1 WHERE user_id=1");
+    checkDraw(egmPeriodDrawRun($context,'01','state',['id'=>$id],'admin')['eligibleCount']===1,'Saved manager approval overrides time exclusion in database draw');
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=0 WHERE user_id=1");
+    checkDraw(egmPeriodDrawRun($context,'01','state',['id'=>$id],'admin')['eligibleCount']===0,'Saved manager denial excludes late guest');
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=NULL WHERE user_id=1");
     egmInstanceWritePeriods($pdo,$code,[['tagCode'=>'01','prizeEntryWindowEnabled'=>false]]);
     egmPeriodDrawRun($context,'01','roll',['id'=>$id],'admin');
     $state=egmPeriodDrawRun($context,'01','confirm',['id'=>$id,'candidateKey'=>'1'],'admin');
@@ -28,6 +33,7 @@ try {
     checkDraw(count(egmPeriodDrawRun($context,'01','export',['id'=>$id],'admin')['winners'])===1,'Export reads stored winners');
     egmPeriodDrawRun($context,'01','reset',['id'=>$id],'admin');
     egmPeriodDrawRun($context,'01','save',array_replace($settings,['id'=>$id,'includeEntered'=>false,'includeWalkIns'=>true]),'admin');
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=1 WHERE user_id=2");
     checkDraw(egmPeriodDrawRun($context,'01','roll',['id'=>$id],'admin')['participant']['key']==='2','Walk-in only filter reads DB');
     $pdo->exec("UPDATE `{$tables['user_periods']}` SET entered_date=NULL,entered_time=NULL WHERE user_id=2");
     rejectsDraw(fn()=>egmPeriodDrawRun($context,'01','confirm',['id'=>$id,'candidateKey'=>'2'],'admin'));

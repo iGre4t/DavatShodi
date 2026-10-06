@@ -321,10 +321,28 @@ function egmPotParticipants(): array
 
 function egmPotEligibleParticipants(array $level, array $winners): array
 {
+  $root = dirname(__DIR__, is_file(__DIR__ . '/../../api/lib/egm-period-draws.php') ? 2 : 3);
+  require_once $root . '/api/lib/egm-period-draws.php';
+  $context = egmPeriodInvitesContext(__DIR__);
+  try { $periodCode = egmPeriodDrawActiveCode($context); }
+  catch (InvalidArgumentException $error) { return []; }
+  $period = [];
+  foreach (egmInstanceReadPeriods($context['pdo'], $context['code']) as $candidate) {
+    if (egmCheckInPeriodCode($candidate) === $periodCode) { $period = $candidate; break; }
+  }
+  $eligible = egmPeriodDrawEligible(egmPeriodExportGuestRows($context, $periodCode), ['includeEntered'=>true], $period);
+  $identities = [];
+  foreach ($eligible as $guest) {
+    foreach (['nationalId', 'workId'] as $field) {
+      if (($guest[$field] ?? '') !== '') $identities[$field . ':' . $guest[$field]] = true;
+    }
+  }
   $won = [];
   foreach ($winners as $winner) $won[(string)($winner['participantKey'] ?? '')] = true;
-  return array_values(array_filter(egmPotParticipants(), static function (array $participant) use ($level, $won): bool {
-    return $participant['score'] >= $level['score'] && !isset($won[$participant['key']]);
+  return array_values(array_filter(egmPotParticipants(), static function (array $participant) use ($level, $won, $identities): bool {
+    $allowed = isset($identities['nationalId:' . ($participant['nationalId'] ?? '')])
+      || isset($identities['workId:' . ($participant['workId'] ?? '')]);
+    return $allowed && $participant['score'] >= $level['score'] && !isset($won[$participant['key']]);
   }));
 }
 

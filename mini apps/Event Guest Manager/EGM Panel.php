@@ -145,11 +145,14 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
 <?php if ($egmCanInviteCardPane || $egmCanPrintCardPane || $egmCanManageTasksPane): ?>
 <link rel="stylesheet" href="assets/egm-invite-card.css?v=<?= htmlspecialchars($egmInviteCardCssVer, ENT_QUOTES, 'UTF-8') ?>" />
 <?php endif; ?>
-<div class="egm-shell" data-egm-csrf="<?= htmlspecialchars($egmPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>" data-egm-code="<?= htmlspecialchars($egmPanelInstanceCode, ENT_QUOTES, 'UTF-8') ?>" data-egm-can-manage-games="<?= ($egmCanManageTasksPane || $egmCanMainPane) ? '1' : '0' ?>" data-egm-can-end-games="<?= $egmCanMainPane ? '1' : '0' ?>">
+<div class="egm-shell" data-egm-games-endpoint="mini%20apps/Event%20Guest%20Manager/games.php" data-egm-csrf="<?= htmlspecialchars($egmPanelCsrfToken, ENT_QUOTES, 'UTF-8') ?>" data-egm-code="<?= htmlspecialchars($egmPanelInstanceCode, ENT_QUOTES, 'UTF-8') ?>" data-egm-can-manage-games="<?= ($egmCanManageTasksPane || $egmCanMainPane) ? '1' : '0' ?>" data-egm-can-end-games="<?= $egmCanMainPane ? '1' : '0' ?>">
 <div class="sub-layout" data-egm-sub-layout>
   <aside class="sub-sidebar">
     <div class="sub-header"><?= htmlspecialchars($egmPanelInstanceName, ENT_QUOTES, 'UTF-8') ?> <span class="muted" dir="ltr">(<?= htmlspecialchars($egmPanelInstanceCode, ENT_QUOTES, 'UTF-8') ?>)</span></div>
     <div class="sub-nav">
+      <?php if ($egmCanControlPanel || $egmCanMainPane || $egmCanInviteesPane): ?>
+      <div class="egm-nav-group" role="group" aria-label="مدیریت رویداد">
+        <div class="egm-nav-divider">مدیریت رویداد</div>
       <?php if ($egmCanControlPanel): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-main' ? ' active' : '' ?>" data-pane="egm-main">کنترل پنل</button>
       <?php endif; ?>
@@ -161,6 +164,11 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
       <?php if ($egmCanInviteesPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-invitees' ? ' active' : '' ?>" data-pane="egm-invitees">دعوت‌شدگان</button>
       <?php endif; ?>
+      </div>
+      <?php endif; ?>
+      <?php if ($egmCanInviteCardPane || $egmCanPrintCardPane): ?>
+      <div class="egm-nav-group" role="group" aria-label="کارت و چاپ">
+        <div class="egm-nav-divider">کارت و چاپ</div>
       <?php if ($egmCanInviteCardPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-invite-card' ? ' active' : '' ?>" data-pane="egm-invite-card">کارت دعوت</button>
       <?php endif; ?>
@@ -170,17 +178,29 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
           <button type="button" class="sub-item" data-pane="<?= htmlspecialchars($egmTicketPane, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)(($egmTicket['title'] ?? '') === 'Custom Number Ticket' ? 'بلیت شماره‌دار' : ($egmTicket['title'] ?? ('بلیت ' . ($egmTicketIndex + 1)))), ENT_QUOTES, 'UTF-8') ?></button>
         <?php endforeach; ?>
       <?php endif; ?>
+      </div>
+      <?php endif; ?>
+      <?php if ($egmCanManageTasksPane || $egmCanTaskSubtabs): ?>
+      <div class="egm-nav-group" role="group" aria-label="بازه‌ها">
+        <div class="egm-nav-divider">بازه‌ها</div>
       <?php if ($egmCanManageTasksPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-manage-tasks' ? ' active' : '' ?>" data-pane="egm-manage-tasks">بازه‌ها</button>
       <?php endif; ?>
+      <?php if ($egmCanTaskSubtabs): ?>
+        <div data-egm-task-subtab-nav></div>
+      <?php endif; ?>
+      </div>
+      <?php endif; ?>
+      <?php if ($egmCanMonitoringPane || $egmCanLogsPane): ?>
+      <div class="egm-nav-group" role="group" aria-label="گزارش‌ها">
+        <div class="egm-nav-divider">گزارش‌ها</div>
       <?php if ($egmCanMonitoringPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-monitoring' ? ' active' : '' ?>" data-pane="egm-monitoring">گزارش رویداد</button>
       <?php endif; ?>
       <?php if ($egmCanLogsPane): ?>
         <button type="button" class="sub-item<?= $egmInitialPane === 'egm-logs' ? ' active' : '' ?>" data-pane="egm-logs">گزارش‌ها</button>
       <?php endif; ?>
-      <?php if ($egmCanTaskSubtabs): ?>
-        <div data-egm-task-subtab-nav></div>
+      </div>
       <?php endif; ?>
     </div>
   </aside>

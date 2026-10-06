@@ -427,106 +427,19 @@ try {
     }
     if ($method === 'POST' && $action === 'reprint_options') {
         if (empty($access['can_use_printer'])) winAppJson(['status'=>'error', 'message'=>'اجازه چاپ ندارید.'], 403);
-        $guestCode = egmCheckInNormalizeGuestCode($payload['guest_code'] ?? '');
-        $user = egmCheckInFindUser($pdo, (string)$context['tables']['users'], $guestCode);
-        if (!is_array($user)) throw new InvalidArgumentException('مهمان پیدا نشد.');
-        $table = (string)$context['tables']['user_periods'];
-        $periodCode = trim((string)($payload['period_code'] ?? $context['period_code']));
-        if ($periodCode === '') throw new InvalidArgumentException('بازه بلیت برای چاپ مجدد مشخص نیست.');
-        $statement = $pdo->prepare("SELECT * FROM `{$table}` WHERE user_id=:id AND period_code=:period LIMIT 1");
-        $statement->execute([':id'=>(int)$user['id'], ':period'=>$periodCode]);
-        $periodRow = $statement->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($periodRow) || empty($periodRow['entered_date']) || empty($periodRow['entered_time'])) {
-            throw new InvalidArgumentException('ورود این مهمان در بازه انتخاب‌شده ثبت نشده است.');
-        }
-        $numbers = json_decode((string)($periodRow['ticket_numbers_json'] ?? ''), true);
-        if (!is_array($numbers)) $numbers = [];
-        $seatAssignment = json_decode((string)($periodRow['seat_assignment_json'] ?? ''), true);
-        $seatMap = egmSeatMapEffective($context, $periodCode);
-        if ($seatMap['enabled'] && is_array($seatAssignment) && !empty($seatAssignment['seats'])) {
-            $others = $pdo->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period AND `seat_assignment_json` IS NOT NULL");
-            $others->execute([':period' => $periodCode]);
-            $used = egmSeatMapOccupiedFromRecords(array_merge($others->fetchAll(PDO::FETCH_ASSOC), egmSeatMapManualRows($context, $periodCode)), (int)$periodRow['id']);
-            egmSeatMapValidateCandidate($seatAssignment['seats'], $used, $seatMap, count($seatAssignment['seats']));
-        }
-        $periodTitle = $periodCode;
-        foreach ((array)($context['periods'] ?? []) as $candidate) {
-            if (!is_array($candidate)) continue;
-            if (egmCheckInPeriodCode($candidate) === $periodCode) {
-                $periodTitle = trim((string)($candidate['title'] ?? '')) ?: $periodCode;
-                break;
-            }
-        }
-        $printGuest = [
-            'first_name' => (string)($user['first_name'] ?? ''), 'last_name' => (string)($user['last_name'] ?? ''),
-            'full_name' => trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? '')),
-            'national_id' => (string)($user['national_id'] ?? ''), 'work_id' => (string)($user['work_id'] ?? ''),
-            'guest_number' => (string)($user['guest_number'] ?? ''),
-            'phone_number' => (string)($user['phone_number'] ?? ''),
-            'deputy' => (string)($user['deputy'] ?? ''),
-            'general_department' => (string)($user['general_department'] ?? ''),
-            'department' => (string)($user['department'] ?? ''),
-            'gender' => (string)($user['gender'] ?? ''),
-            'postal_level' => (string)($user['postal_level'] ?? ''),
-            'period_code' => $periodCode, 'period_title' => $periodTitle,
-            'number_of_ticket' => (string)($periodRow['number_of_ticket'] ?? ''),
-            'ticket_numbers' => (object)$numbers,
-            'seat_assignment' => is_array($seatAssignment) ? $seatAssignment : null,
-            'seat_mode' => (string)($periodRow['seat_mode'] ?? 'assigned'),
-        ];
-        $profile = egmCheckInPrintProfile($context, $guestCode);
-        if (!empty($profile['group_policy_applied']) && empty($profile['auto_print'])) $profile['configured'] = false;
-        winAppJson(['status'=>'ok', 'print_profile'=>$profile, 'ticket_numbers'=>(object)$numbers, 'print_guest'=>$printGuest]);
+        winAppJson(['status'=>'ok'] + egmCheckInGuestPrintData($context, (string)($payload['guest_code'] ?? ''), (string)($payload['period_code'] ?? '')));
     }
     if ($method === 'POST' && $action === 'pending_invitees') {
         if (empty($access['can_view_user_info']) || empty($access['can_scan'])) {
             winAppJson(['status'=>'error', 'message'=>'اجازه مشاهده فهرست دعوت‌شدگان را ندارید.'], 403);
         }
-        $periodCode = (string)($context['period_code'] ?? '');
-        if ($periodCode === '' || empty($context['can_scan'])) {
-            winAppJson(['status'=>'error', 'message'=>'بازه فعالی برای ثبت ورود وجود ندارد.'], 422);
-        }
-        $query = trim((string)($payload['q'] ?? ''));
-        if (function_exists('mb_substr')) $query = mb_substr($query, 0, 100);
-        else $query = substr($query, 0, 100);
-        $page = max(1, min(10000, (int)($payload['page'] ?? 1)));
-        $pageSize = 30;
-        $offset = ($page - 1) * $pageSize;
-        $usersTable = (string)$context['tables']['users'];
-        $periodsTable = (string)$context['tables']['user_periods'];
-        $where = "p.`period_code`=:period AND p.`entered_date` IS NULL AND p.`entered_time` IS NULL "
-            . "AND ((COALESCE(p.`is_uninvited_guest`,0)=0 AND LOWER(TRIM(COALESCE(p.`invitation_source`,'')))<>'walk_in') "
-            . "OR p.`last_control_condition`='entry_reset') "
-            . "AND COALESCE(u.`is_active`,1)=1 "
-            . "AND (u.`national_id` REGEXP '^[0-9]{10}$' OR u.`work_id` REGEXP '^[0-9]{2,9}$')";
-        $params = [':period'=>$periodCode];
-        if ($query !== '') {
-            $where .= " AND (CONCAT_WS(' ',u.`first_name`,u.`last_name`) LIKE :name "
-                . "OR u.`national_id` LIKE :national OR u.`work_id` LIKE :work "
-                . "OR u.`guest_number` LIKE :guest_number OR u.`department` LIKE :department)";
-            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $query) . '%';
-            foreach ([':name', ':national', ':work', ':guest_number', ':department'] as $key) $params[$key] = $like;
-        }
-        $count = $pdo->prepare("SELECT COUNT(*) FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` WHERE {$where}");
-        $count->execute($params);
-        $total = (int)$count->fetchColumn();
-        $statement = $pdo->prepare("SELECT u.`first_name`,u.`last_name`,u.`national_id`,u.`work_id`,u.`guest_number`,u.`department` "
-            . "FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` "
-            . "WHERE {$where} ORDER BY u.`last_name`,u.`first_name`,p.`id` LIMIT {$pageSize} OFFSET {$offset}");
-        $statement->execute($params);
-        $invitees = [];
-        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $national = egmCheckInNormalizeNationalId($row['national_id'] ?? '');
-            $work = egmCheckInNormalizeWorkId($row['work_id'] ?? '');
-            $invitees[] = [
-                'name'=>trim((string)$row['first_name'] . ' ' . (string)$row['last_name']),
-                'guest_code'=>$national !== '' ? $national : $work,
-                'guest_number'=>(string)($row['guest_number'] ?? ''),
-                'department'=>(string)($row['department'] ?? ''),
-            ];
-        }
-        winAppJson(['status'=>'ok', 'invitees'=>$invitees, 'total'=>$total, 'page'=>$page, 'page_size'=>$pageSize,
-            'period_code'=>$periodCode]);
+        winAppJson(['status'=>'ok'] + egmCheckInPendingInvitees($context, (string)($payload['q'] ?? ''), (int)($payload['page'] ?? 1)));
+    }
+    if ($method === 'POST' && $action === 'report_to_management') {
+        winAppRequireCsrf($payload);
+        if (empty($access['can_manage_scan_actions'])) winAppJson(['status'=>'error','message'=>'اجازه ارسال گزارش ندارید.'],403);
+        require_once __DIR__ . '/lib/system-telegram.php';
+        winAppJson(['status'=>'ok'] + systemTelegramCreateReport($context, (int)($payload['log_id'] ?? 0), is_array($_SESSION['user'] ?? null) ? $_SESSION['user'] : []));
     }
     if ($method === 'POST' && $action === 'reset_guest_entry') {
         winAppRequireCsrf($payload);

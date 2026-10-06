@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/egm-period-invites.php';
 require_once __DIR__ . '/xlsx-export.php';
 require_once __DIR__ . '/egm-export-filename.php';
+require_once __DIR__ . '/egm-benefits.php';
 
 const EGM_PERIOD_EXPORT_LOG_ACTION = 'egm_period_check_in';
 
@@ -35,6 +36,10 @@ function egmPeriodExportConditionLabels(): array
         'quit_duplicate' => 'خروج تکراری؛ قبلاً خارج شده',
         'quit_without_entry' => 'درخواست خروج بدون ورود ثبت‌شده',
         'invited_other_period' => 'دعوت‌شده در بازه دیگر',
+        'attended_previous_period' => 'حضور در بازه قبلی',
+        'minimum_stay' => 'حداقل زمان حضور کامل نشده',
+        'entry_closed_quit_wave' => 'ورود در زمان خروج بسته است',
+        'invalid_attendance_record' => 'سابقه حضور ناسازگار',
         'user_inactive' => 'حساب مهمان غیرفعال',
         'no_active_period' => 'بدون بازه فعال',
         'multiple_active_periods' => 'هم‌پوشانی چند بازه فعال',
@@ -87,7 +92,7 @@ SELECT
   p.`quit_date`, p.`quit_time`, p.`correct_presence`, p.`fake_presence`, p.`attendance_state`, p.`last_control_condition`, p.`last_control_action`,
   p.`last_control_message`, p.`last_control_at`, p.`is_uninvited_guest` AS `period_is_uninvited_guest`,
   p.`uninvited_registered_at`, p.`uninvited_registered_by`, p.`number_of_ticket`,
-  p.`ticket_numbers_json`, p.`ticket_number_recorded_at`
+  p.`ticket_numbers_json`, p.`ticket_number_recorded_at`, p.`should_get_gift`, p.`draw_eligible`
 FROM `{$periodsTable}` p
 JOIN `{$usersTable}` u ON u.`id` = p.`user_id`
 WHERE p.`period_code` = :period_code
@@ -143,6 +148,7 @@ SQL);
             'entered_date' => $period['entered_date'] ?? '', 'entered_time' => $period['entered_time'] ?? '',
             'quit_date' => $period['quit_date'] ?? '', 'quit_time' => $period['quit_time'] ?? '',
             'attendance_state' => $period['attendance_state'] ?? 'not_entered',
+            'should_get_gift' => $period['should_get_gift'] ?? 0,
             'correct_presence' => $period['correct_presence'] ?? 0,
             'fake_presence' => $period['fake_presence'] ?? 0,
         ];
@@ -169,6 +175,7 @@ function egmPeriodExportMainRecord(array $row, ?string $condition = null): array
         'کد ملی' => trim((string)($row['national_id'] ?? '')),
         'کد پرسنلی' => trim((string)($row['work_id'] ?? '')),
         'شماره همراه' => trim((string)($row['phone_number'] ?? '')),
+        'دریافت هدیه' => (int)($row['should_get_gift'] ?? 0) === 1 ? 'بله' : 'خیر',
         'وضعیت دقیق' => egmPeriodExportConditionLabel($condition),
         'تاریخ ورود' => trim((string)($row['entered_date'] ?? '')),
         'زمان ورود' => trim((string)($row['entered_time'] ?? '')),
@@ -248,6 +255,7 @@ function egmPeriodExportTicketRecords(array $guestRows, array $ticketDefinitions
             'کد ملی' => trim((string)($row['national_id'] ?? '')),
             'کد پرسنلی' => trim((string)($row['work_id'] ?? '')),
             'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),
+            'دریافت هدیه' => (int)($row['should_get_gift'] ?? 0) === 1 ? 'بله' : 'خیر',
         ];
         $userTotal = 0;
         foreach ($ticketDefinitions as $definition) {

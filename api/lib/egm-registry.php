@@ -11,6 +11,7 @@ function ensureEgmRegistryTable(PDO $pdo): void
 CREATE TABLE IF NOT EXISTS `egm` (
   `code` VARCHAR(64) NOT NULL,
   `name` VARCHAR(128) NOT NULL,
+  `sidebar_visible` TINYINT(1) NOT NULL DEFAULT 1,
   `directory` VARCHAR(512) NOT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -27,6 +28,9 @@ CREATE TABLE IF NOT EXISTS `egm_sequence` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
     $pdo->exec("INSERT IGNORE INTO `egm_sequence` (`id`, `next_code`) VALUES (1, '0001')");
+    if (!$pdo->query("SHOW COLUMNS FROM `egm` LIKE 'sidebar_visible'")->fetch()) {
+        $pdo->exec("ALTER TABLE `egm` ADD COLUMN `sidebar_visible` TINYINT(1) NOT NULL DEFAULT 1");
+    }
     migrateLegacyEgmRegistryDirectories($pdo);
 }
 
@@ -134,14 +138,14 @@ function normalizeEgmRegistryDirectory($value): string
 function listEgmRegistry(PDO $pdo): array
 {
     ensureEgmRegistryTable($pdo);
-    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `egm` ORDER BY LENGTH(`code`), `code`');
+    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at`, `sidebar_visible` FROM `egm` ORDER BY LENGTH(`code`), `code`');
     return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
 }
 
 function findEgmRegistryByCode(PDO $pdo, string $code): ?array
 {
     ensureEgmRegistryTable($pdo);
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `egm` WHERE `code` = :code LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at`, `sidebar_visible` FROM `egm` WHERE `code` = :code LIMIT 1');
     $stmt->execute([':code' => $code]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;
@@ -154,7 +158,7 @@ function findEgmRegistryByDirectory(PDO $pdo, string $directory): ?array
     if ($directory === '') {
         return null;
     }
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `egm` WHERE `directory` = :directory LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at`, `sidebar_visible` FROM `egm` WHERE `directory` = :directory LIMIT 1');
     $stmt->execute([':directory' => $directory]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;

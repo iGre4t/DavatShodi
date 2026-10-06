@@ -118,6 +118,7 @@ function panelMissionTabs(?PDO $pdo): array {
       'name' => $name,
       'folder' => $folder,
       'source' => $webPath . '/TC%20Panel.php',
+      'sidebarVisible' => (int)($record['sidebar_visible'] ?? 1) === 1,
       'createdAt' => trim((string)($record['created_at'] ?? ''))
     ];
   }
@@ -179,6 +180,7 @@ function panelEgmTabs(?PDO $pdo): array {
       'code' => $code,
       'folder' => $folder,
       'source' => panelEgmWebPath($folder) . '/EGM%20Panel.php',
+      'sidebarVisible' => (int)($record['sidebar_visible'] ?? 1) === 1,
       'createdAt' => trim((string)($record['created_at'] ?? ''))
     ];
   }
@@ -344,6 +346,7 @@ $accountEmail = $currentUser['email'] ?? '';
     <link rel="icon" id="site-icon-link" href="<?= htmlspecialchars($panelSiteIconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <link rel="preload" href="style/fonts/remixicon.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
     <link rel="stylesheet" href="style/styles.css" />
+    <link rel="stylesheet" href="assets/panel-sidebar.css?v=<?= (int)@filemtime(__DIR__ . '/assets/panel-sidebar.css') ?>" />
     <link rel="stylesheet" href="style/remixicon.css" />
   </head>
   <body>
@@ -445,7 +448,7 @@ $accountEmail = $currentUser['email'] ?? '';
                 continue;
               }
             ?>
-            <button class="nav-item<?= $initialTab === $egmTabId ? ' active' : '' ?>" data-tab="<?= htmlspecialchars($egmTabId, ENT_QUOTES, 'UTF-8') ?>"<?= $initialTab === $egmTabId ? ' aria-current="page"' : '' ?>>
+            <button class="nav-item<?= $initialTab === $egmTabId ? ' active' : '' ?>" data-tab="<?= htmlspecialchars($egmTabId, ENT_QUOTES, 'UTF-8') ?>" data-sidebar-visible="<?= $egmTab['sidebarVisible'] ? '1' : '0' ?>"<?= $egmTab['sidebarVisible'] ? '' : ' hidden' ?><?= $initialTab === $egmTabId ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-user-star-line" aria-hidden="true"></span>
               <span><?= htmlspecialchars($egmTabName, ENT_QUOTES, 'UTF-8') ?></span>
             </button>
@@ -464,7 +467,7 @@ $accountEmail = $currentUser['email'] ?? '';
                 continue;
               }
             ?>
-            <button class="nav-item<?= $initialTab === $missionTabId ? ' active' : '' ?>" data-tab="<?= htmlspecialchars($missionTabId, ENT_QUOTES, 'UTF-8') ?>"<?= $initialTab === $missionTabId ? ' aria-current="page"' : '' ?>>
+            <button class="nav-item<?= $initialTab === $missionTabId ? ' active' : '' ?>" data-tab="<?= htmlspecialchars($missionTabId, ENT_QUOTES, 'UTF-8') ?>" data-sidebar-visible="<?= $missionTab['sidebarVisible'] ? '1' : '0' ?>"<?= $missionTab['sidebarVisible'] ? '' : ' hidden' ?><?= $initialTab === $missionTabId ? ' aria-current="page"' : '' ?>>
               <span class="nav-icon ri ri-group-line" aria-hidden="true"></span>
               <span><?= htmlspecialchars($missionTabName, ENT_QUOTES, 'UTF-8') ?></span>
             </button>
@@ -1321,6 +1324,7 @@ $accountEmail = $currentUser['email'] ?? '';
       window.PANEL_INITIAL_TAB = <?= json_encode($initialTab, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
     </script>
     <script src="mini%20apps/Asset%20Manager/assets-manager.js"></script>
+    <script src="assets/panel-sidebar.js?v=<?= (int)@filemtime(__DIR__ . '/assets/panel-sidebar.js') ?>"></script>
     <script src="app.js?v=<?= (int)@filemtime(__DIR__ . '/app.js') ?>"></script>
   </body>
 </html>

@@ -145,6 +145,46 @@
     return payload;
   }
 
+  async function refreshTicketDesignTabs() {
+    const response = await fetch(window.location.href, {credentials: 'same-origin', cache: 'no-store'});
+    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const freshShell = doc.querySelector('.egm-shell');
+    if (!response.ok || !freshShell) throw new Error('تنظیمات ذخیره شد؛ دریافت بلیت‌های جدید ناموفق بود.');
+    const selector = '.sub-nav [data-pane^="egm-custom-number-ticket-"]';
+    const freshButtons = Array.from(freshShell.querySelectorAll(selector));
+    const printButton = egmShellEl?.querySelector('.sub-nav [data-pane="egm-print-card"]');
+    const printPane = egmShellEl?.querySelector('.sub-pane[data-pane="egm-print-card"]');
+    if (!printButton || !printPane) return;
+    const valid = new Set(freshButtons.map(button => button.dataset.pane));
+    egmShellEl.querySelectorAll(selector).forEach(button => {
+      if (!valid.has(button.dataset.pane)) button.remove();
+    });
+    egmShellEl.querySelectorAll('.sub-pane[data-pane^="egm-custom-number-ticket-"]').forEach(pane => {
+      if (!valid.has(pane.dataset.pane)) pane.remove();
+    });
+    let anchor = printButton;
+    freshButtons.forEach(freshButton => {
+      const key = freshButton.dataset.pane;
+      let button = Array.from(egmShellEl.querySelectorAll(selector)).find(item => item.dataset.pane === key);
+      if (!button) button = document.importNode(freshButton, true);
+      button.textContent = freshButton.textContent;
+      anchor.after(button);
+      anchor = button;
+      let pane = Array.from(egmShellEl.querySelectorAll('.sub-pane')).find(item => item.dataset.pane === key);
+      if (!pane) {
+        const freshPane = Array.from(freshShell.querySelectorAll('.sub-pane')).find(item => item.dataset.pane === key);
+        if (freshPane) {
+          pane = document.importNode(freshPane, true);
+          pane.classList.remove('active');
+          pane.querySelectorAll('script').forEach(script => script.remove());
+          printPane.parentElement.append(pane);
+        }
+      }
+      const heading = pane?.querySelector('h3');
+      if (heading) heading.textContent = `${freshButton.textContent} — صفحه بلیت ۱:۱`;
+    });
+  }
+
   function initAssignAdmin() {
     const workIdInput = getEl("egm-admin-workid");
     const searchBtn = getEl("egm-admin-search-btn");
@@ -1512,12 +1552,16 @@
       if (status) status.textContent = "";
       try {
         const settings = collectSettings();
+        const ticketsChanged = JSON.stringify(settingsCache.customNumberTicketSettings?.tickets || []) !== JSON.stringify(settings.customNumberTicketSettings.tickets);
         await saveSettings({ printSettings: settings.printSettings, customNumberTicketSettings: settings.customNumberTicketSettings });
+        settingsCache.printSettings = settings.printSettings;
         try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
-        if (status) status.textContent = "تنظیمات چاپ و بلیت ذخیره شد؛ صفحه در حال تازه‌سازی است...";
-        window.location.reload();
+        if (ticketsChanged) await refreshTicketDesignTabs();
+        settingsCache.customNumberTicketSettings = settings.customNumberTicketSettings;
+        if (status) status.textContent = "تنظیمات چاپ و بلیت ذخیره شد.";
       } catch (error) {
         if (status) status.textContent = error?.message || "ذخیره تنظیمات چاپ و بلیت ناموفق بود.";
+      } finally {
         if (button instanceof HTMLButtonElement) {
           button.disabled = false;
           button.textContent = original || "ذخیره چاپ و بلیت";

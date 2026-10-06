@@ -1,7 +1,8 @@
 Options -Indexes
 
-# Prevent direct access to configuration and helper scripts.
-<FilesMatch "^(config|schema|users)\.php$">
+# Keep credentials, their backup copies, and the CLI bot runner private.
+# PHP includes and CLI execution still work; telegram-webhook.php remains public.
+<FilesMatch "(?i)^(config(?:\.[a-z0-9_-]+)*|telegram\.config(?:\.[a-z0-9_-]+)*|schema|users|telegram-bot)\.php(?:[.~].*)?$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

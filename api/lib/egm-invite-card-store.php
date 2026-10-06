@@ -43,8 +43,16 @@ function egmInviteCardSanitizeEditorHtml($value): string
             }
             $attributes = (string)($matches[3] ?? '');
             $color = '';
-            if (preg_match('/color\s*:\s*(#[0-9a-f]{3}|#[0-9a-f]{6})\b/iu', $attributes, $colorMatch) === 1) {
-                $color = strtolower((string)$colorMatch[1]);
+            if (preg_match('/\bstyle\s*=\s*([\'"])(.*?)\1/isu', $attributes, $styleMatch) === 1
+                && preg_match('/(?:^|;)\s*color\s*:\s*(#[0-9a-f]{6}|#[0-9a-f]{3}|rgba?\([^)]*\))\s*(?:;|$)/iu', html_entity_decode($styleMatch[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'), $colorMatch) === 1) {
+                $candidate = strtolower((string)$colorMatch[1]);
+                if ($candidate[0] === '#') {
+                    $color = $candidate;
+                } elseif (preg_match('/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*1(?:\.0+)?)?\s*\)$/', $candidate, $channels) === 1
+                    && (int)$channels[1] <= 255 && (int)$channels[2] <= 255 && (int)$channels[3] <= 255) {
+                    // CSSOM serializes editor hex colors as rgb() before saving.
+                    $color = sprintf('#%02x%02x%02x', (int)$channels[1], (int)$channels[2], (int)$channels[3]);
+                }
             }
             if (strlen($color) === 4) {
                 $color = '#' . $color[1] . $color[1] . $color[2] . $color[2] . $color[3] . $color[3];
@@ -101,11 +109,24 @@ function egmInviteCardTextAreas($value, bool $requireRects = false): array
         if ($id === '') $id = 'text_' . ($index + 1);
         $html = egmInviteCardSanitizeEditorHtml($item['textHtml'] ?? ($item['text'] ?? ''));
         $text = egmInviteCardString(egmInviteCardPlainTextFromHtml($html), 10000);
-        if ($text === '') continue;
+        if ($text === '' && $requireRects) throw new InvalidArgumentException('متن ناحیه ' . ($index + 2) . ' را وارد کنید.');
         $rect = $requireRects
             ? egmInviteCardRect($item['rect'] ?? null, 'متن ' . ($index + 2))
             : egmInviteCardOptionalRect($item['rect'] ?? null, 'متن ' . ($index + 2));
-        $result[] = ['id' => $id, 'text' => $text, 'textHtml' => $html, 'rect' => $rect];
+        $family = (string)($item['fontFamily'] ?? 'default');
+        $align = (string)($item['align'] ?? 'center');
+        $color = strtolower(trim((string)($item['color'] ?? '')));
+        $size = (int)($item['fontSize'] ?? 0);
+        $font = egmInviteCardFont($item['fontData'] ?? '', $item['fontName'] ?? '');
+        $result[] = [
+            'id' => $id, 'text' => $text, 'textHtml' => $html, 'rect' => $rect,
+            'fontData' => $font['data'], 'fontName' => $font['name'], 'fontBytes' => $font['bytes'],
+            'fontFamily' => in_array($family, ['default', 'PeydaWebFaNum', 'Tahoma', 'Arial'], true) ? $family : 'default',
+            'color' => preg_match('/^#[0-9a-f]{6}$/D', $color) === 1 ? $color : '',
+            'fontSize' => $size === 0 ? 0 : max(4, min(1000, $size)),
+            'bold' => filter_var($item['bold'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'align' => in_array($align, ['center', 'right', 'left'], true) ? $align : 'center',
+        ];
     }
     return $result;
 }
@@ -420,7 +441,7 @@ function egmInviteCardNormalizeConditionalVariables($value): array
         'postallevel', 'score',
     ];
     $operators = ['equals', 'not_equals', 'contains', 'not_contains', 'empty', 'not_empty'];
-    $reserved = array_fill_keys($fields, true);
+    $reserved = array_fill_keys([...$fields, 'periodtitle', 'perioddate', 'perioddate_dmy', 'perioddate_ymd', 'printedat'], true);
     $normalized = [];
     $seen = [];
     foreach ($value as $definition) {
@@ -717,7 +738,12 @@ function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array
                     'score' => (string)($row['total_score'] ?? '0'),
                 ];
             }, $rows);
-            egmInviteCardJson(['status' => 'ok', 'rows' => $invitees, 'hasMore' => $hasMore, 'egmCode' => $code]);
+            $periods = array_values(array_map(static fn(array $period): array => [
+                'code' => (string)($period['tagCode'] ?? ($period['code'] ?? '')),
+                'title' => (string)($period['title'] ?? ''),
+                'startDate' => (string)($period['startDate'] ?? ($period['start_date'] ?? '')),
+            ], array_filter(egmInstanceReadPeriods($pdo, $code), 'is_array')));
+            egmInviteCardJson(['status' => 'ok', 'rows' => $invitees, 'periods' => $periods, 'hasMore' => $hasMore, 'egmCode' => $code]);
         }
         if ($method === 'GET') {
             $stored = egmInstanceReadData($pdo, $code, $storageKey, null);

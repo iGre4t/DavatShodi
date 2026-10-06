@@ -1,7 +1,7 @@
 (() => {
   const shell = document.querySelector('.egm-shell');
   if (!shell) return;
-  const endpoint = 'mini%20apps/Event%20Guest%20Manager/games.php';
+  const endpoint = shell.dataset.egmGamesEndpoint || 'mini%20apps/Event%20Guest%20Manager/games.php';
   const csrf = shell.dataset.egmCsrf || '';
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const genderOptions = (selected, separated = false) => (separated ? [['male','مرد'], ['female','زن']] : [['both','هر دو'], ['male','مرد'], ['female','زن']]).map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
@@ -22,13 +22,28 @@
     ${addingRoom ? renderRoomEditor(game, level, null) : editingRoomId ? renderRoomEditor(game, level, roomsFor(game, level).find(room => room.id === editingRoomId)) : ''}</section>`;
   async function request(action = 'list', data = {}) {
     const url = new URL(endpoint, location.href);
-    const options = action === 'list' ? undefined : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, csrf, ...data})};
+    const options = action === 'list' ? undefined : {method:'POST', body:new URLSearchParams({payload:JSON.stringify({action, csrf, ...data})})};
     if (action === 'list') {
       url.searchParams.set('action', 'list');
       if (data.period_code) url.searchParams.set('period_code', data.period_code);
     }
-    const response = await fetch(url, options);
-    const result = await response.json();
+    let response;
+    try {
+      response = await fetch(url, {...options, credentials:'same-origin', headers:{...options?.headers, Accept:'application/json'}});
+    } catch {
+      throw new Error('ارتباط با سرور بازی‌ها برقرار نشد. اتصال اینترنت را بررسی و دوباره تلاش کنید.');
+    }
+    const text = await response.text();
+    let result;
+    try { result = JSON.parse(text); } catch {
+      if (response.redirected && /(?:login|signin)\.php(?:[?#]|$)/i.test(response.url)) {
+        throw new Error('نشست شما پایان یافته است. دوباره وارد پنل شوید.');
+      }
+      if (response.status === 403) throw new Error('سرور درخواست بازی‌ها را مسدود کرد (۴۰۳). دسترسی حساب و گزارش امنیتی هاست را بررسی کنید.');
+      if (response.status === 404) throw new Error('فایل مدیریت بازی‌های این رویداد روی هاست پیدا نشد (۴۰۴). فایل‌های به‌روزرسانی را کامل بارگذاری کنید.');
+      throw new Error(`سرور به‌جای پاسخ بازی‌ها، صفحهٔ غیرمعتبر برگرداند (HTTP ${response.status}). گزارش خطای PHP هاست را بررسی کنید.`);
+    }
+    if (!result || typeof result !== 'object') throw new Error('پاسخ سرور بازی‌ها نامعتبر است.');
     if (!response.ok || result.status !== 'ok') throw new Error(result.message || 'مدیریت بازی‌ها ناموفق بود.');
     return result;
   }
@@ -117,6 +132,11 @@
         const newMode = form.elements.mode.value === 'levels';
         const newGender = form.elements.gender_mode.value;
         const newAuto = form.elements.auto_mode.value === 'on';
+        if (newAuto && !game.auto_room_manager) {
+          const levels = newMode ? (game.has_levels ? game.levels || [] : []) : [{rooms:game.rooms || []}];
+          if (!levels.length) throw new Error('ابتدا مراحل و اتاق‌های بازی را اضافه کنید، سپس تخصیص خودکار را فعال کنید.');
+          if (levels.some(level => !level.rooms?.length)) throw new Error('ابتدا برای هر مرحله اتاق اضافه کنید، سپس تخصیص خودکار را فعال کنید.');
+        }
         if (!newMode && game.has_levels && game.levels?.length && !confirm('با حذف مراحل، نام و ترتیب آن‌ها پاک می‌شود. ادامه می‌دهید؟')) {
           form.dispatchEvent(new CustomEvent('egm-game-settings-result', {bubbles:true, detail:{ok:false}}));
           return;

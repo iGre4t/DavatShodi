@@ -441,8 +441,17 @@ function egmPeriodInviteCardsNextBatch(array $context, string $periodCode, int $
         . "AND p.`invite_card_generated_at` IS NULL {$skipSql} ORDER BY p.`id` LIMIT {$limit}"
     );
     $statement->execute([':period_code' => $periodCode]);
-    $rows = array_map(static function (array $row): array {
+    $periodMeta = [];
+    foreach (egmPeriodInvitesPeriods($context) as $period) {
+        if (is_array($period) && trim((string)($period['tagCode'] ?? ($period['code'] ?? ''))) === $periodCode) {
+            $periodMeta = $period;
+            break;
+        }
+    }
+    $rows = array_map(static function (array $row) use ($periodMeta): array {
         return [
+            'periodTitle' => (string)($periodMeta['title'] ?? ''),
+            'periodStartDate' => egmExportNormalizeGregorianDate((string)($periodMeta['startDate'] ?? ($periodMeta['start_date'] ?? ''))) ?? '',
             'id' => (string)($row['user_id'] ?? ''),
             'inviteCode' => (string)($row['invite_card_code'] ?? ''),
             'workId' => (string)($row['work_id'] ?? ''),

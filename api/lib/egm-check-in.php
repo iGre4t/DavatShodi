@@ -8,6 +8,7 @@ require_once __DIR__ . '/egm-export-filename.php';
 require_once __DIR__ . '/egm-invite-card-store.php';
 require_once __DIR__ . '/egm-groups.php';
 require_once __DIR__ . '/egm-seat-map.php';
+require_once __DIR__ . '/egm-benefits.php';
 
 const EGM_CHECK_IN_ACTION = 'egm_period_check_in';
 
@@ -193,14 +194,14 @@ function egmCheckInNormalizeGuestCode($value): string
 {
     $value = egmCheckInNormalizeDigits($value);
     $length = strlen($value);
-    return $length >= 4 && $length <= 10 ? $value : '';
+    return $length >= 2 && $length <= 10 ? $value : '';
 }
 
 function egmCheckInNormalizeWorkId($value): string
 {
     $value = egmCheckInNormalizeDigits($value);
     $length = strlen($value);
-    return $length >= 4 && $length <= 9 ? $value : '';
+    return $length >= 2 && $length <= 9 ? $value : '';
 }
 
 function egmCheckInBool($value): bool
@@ -642,6 +643,47 @@ function egmCheckInPreviousAttendance(
 }
 
 /** @return array<string,mixed> */
+function egmCheckInCanReportToManagement(string $status, bool $walkIn = false): bool
+{
+    return $walkIn || ($status !== '' && !in_array($status, [
+        'success', 'quit_success', 'force_entry_success', 'force_quit_success', 'entry_reset',
+    ], true));
+}
+
+/** Describe invitations without treating a missing attendance record as attendance. */
+function egmCheckInInvitationDetails(array $invitations, array $periods, DateTimeImmutable $now): array
+{
+    $catalog = [];
+    foreach ($periods as $period) {
+        if (is_array($period)) $catalog[egmCheckInPeriodCode($period)] = $period;
+    }
+    $details = [];
+    foreach ($invitations as $invitation) {
+        $code = trim((string)($invitation['period_code'] ?? ''));
+        if ($code === '') continue;
+        $period = $catalog[$code] ?? [];
+        $title = trim((string)($period['title'] ?? '')) ?: $code;
+        $date = egmExportPeriodDate($period);
+        $dateLabel = '';
+        if ($date !== null) {
+            $jalali = egmExportGregorianToJalali((int)substr($date, 0, 4), (int)substr($date, 5, 2), (int)substr($date, 8, 2));
+            $dateLabel = egmExportShamsiDayMonth($date) . ' ' . $jalali['year'];
+        }
+        $label = '«' . $title . '»' . ($dateLabel !== '' && !str_contains($title, $dateLabel) ? ' (' . $dateLabel . ')' : '');
+        $entered = trim((string)($invitation['entered_date'] ?? '')) !== '' && trim((string)($invitation['entered_time'] ?? '')) !== '';
+        $window = egmCheckInPeriodWindow($period, $now->getTimezone());
+        $past = ($window['end'] instanceof DateTimeImmutable && $window['end'] < $now)
+            || ($date !== null && $date < $now->format('Y-m-d'));
+        $message = 'این مهمان در بازه ' . $label . ' دعوت شده';
+        if ($entered) $message .= ' و حضور داشته است.';
+        elseif ($past) $message .= ' اما حضور نداشته است.';
+        else $message .= ' است.';
+        $details[] = ['period_code'=>$code, 'period_title'=>$title, 'period_date'=>$date,
+            'attended'=>$entered, 'past'=>$past, 'message'=>$message];
+    }
+    return $details;
+}
+
 function egmCheckInAttachPreviousAttendance(array $response, ?array $previousAttendance): array
 {
     if (!is_array($previousAttendance)) return $response;
@@ -765,7 +807,7 @@ function egmCheckInResetAttendanceRecords(array $context, ?string $periodCode = 
     $update = $pdo->prepare(
         "UPDATE `{$userPeriodsTable}` SET "
         . '`entered_date`=NULL, `entered_time`=NULL, `quit_date`=NULL, `quit_time`=NULL, '
-        . '`correct_presence`=0, `fake_presence`=0, '
+        . '`correct_presence`=0, `fake_presence`=0, `should_get_gift`=0, '
         . "`attendance_state`='not_entered', `last_control_condition`=NULL, `last_control_action`=NULL, "
         . '`last_control_message`=NULL, `last_control_at`=NULL, `number_of_ticket`=NULL, `ticket_number_recorded_at`=NULL, `seat_assignment_json`=NULL'
         . $where
@@ -828,7 +870,7 @@ function egmCheckInResetGuestEntry(array $context, string $guestCode, string $pe
         $released = count((array)((json_decode((string)($current['seat_assignment_json'] ?? ''), true))['seats'] ?? []));
         $update = $pdo->prepare(
             "UPDATE `{$periodsTable}` SET `entered_date`=NULL,`entered_time`=NULL,`quit_date`=NULL,`quit_time`=NULL,"
-            . "`correct_presence`=0,`fake_presence`=0,`attendance_state`='not_entered',"
+            . "`correct_presence`=0,`fake_presence`=0,`should_get_gift`=0,`attendance_state`='not_entered',"
             . "`last_control_condition`='entry_reset',`last_control_action`='manual',"
             . "`last_control_message`='ورود مهمان برای ثبت مجدد بازنشانی شد.',`last_control_at`=NOW(),"
             . "`number_of_ticket`=NULL,`ticket_numbers_json`=NULL,`ticket_number_recorded_at`=NULL,`seat_assignment_json`=NULL "
@@ -1061,12 +1103,15 @@ function egmCheckInRegisterUninvited(
                 if ($seatMap['enabled'] && $seatMode === 'free') egmSeatMapEnsureFreeCapacity($context, $periodCode, egmCheckInBool($input['allow_free_seat'] ?? false));
             }
         }
+        egmBenefitsApplyEntry($context, $userId, $periodCode);
         $attendanceState = $hasQuitDate && $hasQuitTime
             ? 'quit_completed'
             : ($hasEntryDate && $hasEntryTime ? 'entered' : 'not_entered');
         $message = $entryRecorded
-            ? "مهمان ناخوانده {$firstName} {$lastName} به بازه فعال اضافه شد و ورود او ثبت شد."
+            ? 'این مهمان دعوت نشده اما به عنوان مهمان ناخوانده اضافه شد و ورود او ثبت شد.'
             : "مهمان ناخوانده {$firstName} {$lastName} در بازه فعال ثبت شده بود و سابقه حضور او تغییر نکرد.";
+        $drawState = egmBenefitsEntryDrawState($context, $userId, $period);
+        if ($drawState['reason'] !== '') $message .= "\n" . $drawState['reason'];
         $attendanceAction = $entryRecorded ? 'entry' : 'register';
         egmCheckInSavePeriodCondition(
             $context,
@@ -1081,6 +1126,7 @@ function egmCheckInRegisterUninvited(
         egmCheckInWriteLog($context, $loggedUser, $nationalId, 'walk_in_registered', $message, $period, $now, [
             'attendance_action' => $attendanceAction,
             'entry_recorded' => $entryRecorded,
+            'draw_exclusion_reason' => $drawState['reason'],
             'outside_organization' => $outsideOrganization,
             'registered_by' => $actor,
         ]);
@@ -1142,7 +1188,7 @@ function egmCheckInSearchStatusCodes(string $query): array
     return array_values(array_unique($matches));
 }
 
-function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = ''): array
+function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '', ?int $logId = null): array
 {
     $limit = max(1, min(200, $limit));
     $logsTable = (string)$context['tables']['activity_logs'];
@@ -1157,10 +1203,11 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
         $where[] = 'l.`entity_id` = :period_code';
         $params[':period_code'] = $periodCode;
     }
+    if ($logId !== null) { $where[] = 'l.`id`=:log_id'; $params[':log_id']=$logId; }
     $query = egmCheckInCleanText($query, 100);
     $fetchLimit = $query === '' ? $limit : 10000;
     $statement = $logsPdo->prepare(
-        "SELECT l.`user_id`, l.`work_id` AS `log_work_id`, l.`status`, l.`message`, l.`entity_id`, l.`occurred_at`, l.`metadata_json` "
+        "SELECT l.`id` AS `log_id`, l.`user_id`, l.`work_id` AS `log_work_id`, l.`status`, l.`message`, l.`entity_id`, l.`occurred_at`, l.`metadata_json` "
         . "FROM `{$logsTable}` l "
         . 'WHERE ' . implode(' AND ', $where)
         . " ORDER BY l.`occurred_at` DESC, l.`id` DESC LIMIT {$fetchLimit}"
@@ -1200,6 +1247,9 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'attendance_state' => $period['attendance_state'] ?? 'not_entered',
             'correct_presence' => $period['correct_presence'] ?? 0,
             'fake_presence' => $period['fake_presence'] ?? 0,
+            'should_get_gift' => $period['should_get_gift'] ?? 0,
+            'draw_eligible' => $period['draw_eligible'] ?? null,
+            'invitation_source' => $period['invitation_source'] ?? '',
             'number_of_ticket' => $period['number_of_ticket'] ?? '',
             'ticket_numbers_json' => $period['ticket_numbers_json'] ?? '',
             'seat_assignment_json' => $period['seat_assignment_json'] ?? '',
@@ -1218,10 +1268,19 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
         }));
     }
     $rows = array_slice($rows, 0, $limit);
-    return array_map(static function (array $row): array {
+    $periodCatalog = [];
+    foreach ((array)($context['periods'] ?? []) as $item) $periodCatalog[egmCheckInPeriodCode($item)] = $item;
+    return array_map(static function (array $row) use ($periodCatalog): array {
         $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
         if (!is_array($metadata)) $metadata = [];
         $status = (string)($row['status'] ?? '');
+        $periodCode = (string)($row['entity_id'] ?? ($metadata['period_code'] ?? ''));
+        $drawState = egmBenefitsDrawState($row, $periodCatalog[$periodCode] ?? []);
+        $message = (string)($row['message'] ?? '');
+        // Keep the entry log, but show the current manager decision after a review.
+        $savedReason = (string)($metadata['draw_exclusion_reason'] ?? '');
+        if ($savedReason !== '') $message = trim(str_replace($savedReason, '', $message));
+        if ($drawState['reason'] !== '' && !str_contains($message, $drawState['reason'])) $message .= "\n" . $drawState['reason'];
         $attendanceAction = (string)($metadata['attendance_action'] ?? '');
         if ($attendanceAction === '') {
             if (str_starts_with($status, 'quit_')) {
@@ -1247,8 +1306,13 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             ? $metadataForceAction
             : '';
         return [
+            'log_id' => (int)($row['log_id'] ?? 0),
+            'user_id' => (int)($row['user_id'] ?? 0),
             'status' => $status,
-            'message' => (string)($row['message'] ?? ''),
+            'message' => $message,
+            'draw_eligible' => $drawState['allowed'],
+            'draw_time_excluded' => $drawState['time_excluded'],
+            'draw_exclusion_reason' => $drawState['reason'],
             'first_name' => (string)($row['first_name'] ?? ''),
             'last_name' => (string)($row['last_name'] ?? ''),
             'full_name' => trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? '')),
@@ -1263,6 +1327,7 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'postal_level' => (string)($row['postal_level'] ?? ''),
             'outside_organization' => (int)($row['outside_organization'] ?? 0) === 1,
             'is_uninvited_guest' => (int)($row['period_is_uninvited_guest'] ?? $row['user_is_uninvited_guest'] ?? 0) === 1,
+            'management_report_eligible' => $drawState['time_excluded'] || egmCheckInCanReportToManagement($status, (int)($row['period_is_uninvited_guest'] ?? 0) === 1),
             'period_code' => (string)($row['entity_id'] ?? ($metadata['period_code'] ?? '')),
             'period_title' => (string)($metadata['period_title'] ?? ''),
             'entered_date' => $enteredDate,
@@ -1272,6 +1337,7 @@ function egmCheckInRecentLogs(array $context, int $limit = 50, string $query = '
             'attendance_state' => (string)($row['attendance_state'] ?? 'not_entered'),
             'correct_presence' => (int)($row['correct_presence'] ?? 0) === 1,
             'fake_presence' => (int)($row['fake_presence'] ?? 0) === 1,
+            'should_get_gift' => (int)($row['should_get_gift'] ?? 0) === 1,
             'number_of_ticket' => (string)($row['number_of_ticket'] ?? ''),
             'ticket_numbers' => (object)$ticketNumbers,
             'seat_assignment' => is_array(json_decode((string)($row['seat_assignment_json'] ?? ''), true)) ? json_decode((string)$row['seat_assignment_json'], true) : null,
@@ -1323,7 +1389,7 @@ function egmCheckInStatsVersion(array $context): string
         $statement = $pdo->prepare(
             "SELECT COUNT(*) AS `row_count`, COALESCE(MAX(p.`id`),0) AS `max_id`, "
             . "COALESCE(SUM(p.`user_id`),0) AS `user_sum`, COALESCE(MAX(p.`updated_at`),'') AS `period_updated`, "
-            . "COALESCE(MAX(u.`egm_updated_at`),'') AS `user_updated` "
+            . "COALESCE(MAX(u.`egm_updated_at`),'') AS `user_updated`, COALESCE(SUM(CRC32(CONCAT(p.`id`,':',p.`should_get_gift`,':',COALESCE(p.`draw_eligible`,-1)))),0) AS `benefits_sum` "
             . "FROM `{$userPeriodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` "
             . "WHERE p.`period_code`=:period_code"
         );
@@ -1336,6 +1402,7 @@ function egmCheckInStatsVersion(array $context): string
             (string)($row['user_sum'] ?? '0'),
             (string)($row['period_updated'] ?? ''),
             (string)($row['user_updated'] ?? ''),
+            (string)($row['benefits_sum'] ?? '0'),
         ]));
     } catch (Throwable $error) {
         error_log('EGM Guest Control statistics version unavailable: ' . $error->getMessage());
@@ -1441,6 +1508,110 @@ function egmCheckInManualTicketTotals(array $context, string $periodCode): array
     $settings = egmInstanceReadData($context['pdo'], (string)$context['code'], 'settings', []);
     $definitions = egmCheckInTicketDefinitions(is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : []);
     return egmCheckInManualTicketTotalsFromRows($statement->fetchAll(PDO::FETCH_ASSOC) ?: [], $definitions);
+}
+
+function egmCheckInGuestPrintData(array $context, string $guestCode, string $periodCode = ''): array
+{
+    $pdo = $context['pdo'];
+        $guestCode = egmCheckInNormalizeGuestCode($guestCode);
+        $user = egmCheckInFindUser($pdo, (string)$context['tables']['users'], $guestCode);
+        if (!is_array($user)) throw new InvalidArgumentException('مهمان پیدا نشد.');
+        $table = (string)$context['tables']['user_periods'];
+        $periodCode = trim($periodCode !== '' ? $periodCode : (string)$context['period_code']);
+        if ($periodCode === '') throw new InvalidArgumentException('بازه بلیت برای چاپ مجدد مشخص نیست.');
+        $statement = $pdo->prepare("SELECT * FROM `{$table}` WHERE user_id=:id AND period_code=:period LIMIT 1");
+        $statement->execute([':id'=>(int)$user['id'], ':period'=>$periodCode]);
+        $periodRow = $statement->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($periodRow) || empty($periodRow['entered_date']) || empty($periodRow['entered_time'])) {
+            throw new InvalidArgumentException('ورود این مهمان در بازه انتخاب‌شده ثبت نشده است.');
+        }
+        $numbers = json_decode((string)($periodRow['ticket_numbers_json'] ?? ''), true);
+        if (!is_array($numbers)) $numbers = [];
+        $seatAssignment = json_decode((string)($periodRow['seat_assignment_json'] ?? ''), true);
+        $seatMap = egmSeatMapEffective($context, $periodCode);
+        if ($seatMap['enabled'] && is_array($seatAssignment) && !empty($seatAssignment['seats'])) {
+            $others = $pdo->prepare("SELECT `id`,`seat_assignment_json` FROM `{$table}` WHERE `period_code`=:period AND `seat_assignment_json` IS NOT NULL");
+            $others->execute([':period' => $periodCode]);
+            $used = egmSeatMapOccupiedFromRecords(array_merge($others->fetchAll(PDO::FETCH_ASSOC), egmSeatMapManualRows($context, $periodCode)), (int)$periodRow['id']);
+            egmSeatMapValidateCandidate($seatAssignment['seats'], $used, $seatMap, count($seatAssignment['seats']));
+        }
+        $periodTitle = $periodCode;
+        foreach ((array)($context['periods'] ?? []) as $candidate) {
+            if (!is_array($candidate)) continue;
+            if (egmCheckInPeriodCode($candidate) === $periodCode) {
+                $periodTitle = trim((string)($candidate['title'] ?? '')) ?: $periodCode;
+                break;
+            }
+        }
+        $printGuest = [
+            'first_name' => (string)($user['first_name'] ?? ''), 'last_name' => (string)($user['last_name'] ?? ''),
+            'full_name' => trim((string)($user['first_name'] ?? '') . ' ' . (string)($user['last_name'] ?? '')),
+            'national_id' => (string)($user['national_id'] ?? ''), 'work_id' => (string)($user['work_id'] ?? ''),
+            'guest_number' => (string)($user['guest_number'] ?? ''),
+            'phone_number' => (string)($user['phone_number'] ?? ''),
+            'deputy' => (string)($user['deputy'] ?? ''),
+            'general_department' => (string)($user['general_department'] ?? ''),
+            'department' => (string)($user['department'] ?? ''),
+            'gender' => (string)($user['gender'] ?? ''),
+            'postal_level' => (string)($user['postal_level'] ?? ''),
+            'period_code' => $periodCode, 'period_title' => $periodTitle,
+            'number_of_ticket' => (string)($periodRow['number_of_ticket'] ?? ''),
+            'ticket_numbers' => (object)$numbers,
+            'seat_assignment' => is_array($seatAssignment) ? $seatAssignment : null,
+            'seat_mode' => (string)($periodRow['seat_mode'] ?? 'assigned'),
+        ];
+        $profile = egmCheckInPrintProfile($context, $guestCode);
+        if (!empty($profile['group_policy_applied']) && empty($profile['auto_print'])) $profile['configured'] = false;
+        return ['print_profile'=>$profile, 'ticket_numbers'=>(object)$numbers, 'print_guest'=>$printGuest];
+}
+
+function egmCheckInPendingInvitees(array $context, string $query = '', int $page = 1): array
+{
+    $pdo = $context['pdo'];
+        $periodCode = (string)($context['period_code'] ?? '');
+        if ($periodCode === '' || empty($context['can_scan'])) {
+            throw new InvalidArgumentException('بازه فعالی برای ثبت ورود وجود ندارد.');
+        }
+        $query = trim($query);
+        if (function_exists('mb_substr')) $query = mb_substr($query, 0, 100);
+        else $query = substr($query, 0, 100);
+        $page = max(1, min(10000, $page));
+        $pageSize = 30;
+        $offset = ($page - 1) * $pageSize;
+        $usersTable = (string)$context['tables']['users'];
+        $periodsTable = (string)$context['tables']['user_periods'];
+        $where = "p.`period_code`=:period AND p.`entered_date` IS NULL AND p.`entered_time` IS NULL "
+            . "AND ((COALESCE(p.`is_uninvited_guest`,0)=0 AND LOWER(TRIM(COALESCE(p.`invitation_source`,'')))<>'walk_in') "
+            . "OR p.`last_control_condition`='entry_reset') "
+            . "AND COALESCE(u.`is_active`,1)=1 "
+            . "AND (u.`national_id` REGEXP '^[0-9]{10}$' OR u.`work_id` REGEXP '^[0-9]{2,9}$')";
+        $params = [':period'=>$periodCode];
+        if ($query !== '') {
+            $where .= " AND (CONCAT_WS(' ',u.`first_name`,u.`last_name`) LIKE :name "
+                . "OR u.`national_id` LIKE :national OR u.`work_id` LIKE :work "
+                . "OR u.`guest_number` LIKE :guest_number OR u.`department` LIKE :department)";
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $query) . '%';
+            foreach ([':name', ':national', ':work', ':guest_number', ':department'] as $key) $params[$key] = $like;
+        }
+        $count = $pdo->prepare("SELECT COUNT(*) FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` WHERE {$where}");
+        $count->execute($params);
+        $total = (int)$count->fetchColumn();
+        $statement = $pdo->prepare("SELECT u.`first_name`,u.`last_name`,u.`national_id`,u.`work_id`,u.`guest_number`,u.`department` "
+            . "FROM `{$periodsTable}` p JOIN `{$usersTable}` u ON u.`id`=p.`user_id` "
+            . "WHERE {$where} ORDER BY u.`last_name`,u.`first_name`,p.`id` LIMIT {$pageSize} OFFSET {$offset}");
+        $statement->execute($params);
+        $invitees = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $national = egmCheckInNormalizeNationalId($row['national_id'] ?? '');
+            $work = egmCheckInNormalizeWorkId($row['work_id'] ?? '');
+            $invitees[] = [
+                'name'=>trim((string)$row['first_name'] . ' ' . (string)$row['last_name']),
+                'guest_code'=>$national !== '' ? $national : $work,
+                'guest_number'=>(string)($row['guest_number'] ?? ''),
+                'department'=>(string)($row['department'] ?? ''),
+            ];
+        }
+        return ['invitees'=>$invitees, 'total'=>$total, 'page'=>$page, 'page_size'=>$pageSize, 'period_code'=>$periodCode];
 }
 
 function egmCheckInRecordManualTicket(array $context, string $ticketId, string $quantity, string $clientToken, array $actor, string $seatMode = 'none', bool $allowSplit = false): array
@@ -1737,7 +1908,7 @@ function egmCheckInProcess(
         }
         $user = egmCheckInFindUser($pdo, $usersTable, $submittedCode);
         if (!is_array($user)) {
-            $message = 'کاربری با این شناسه مهمان در این رویداد پیدا نشد.';
+            $message = 'این مهمان در لیست یافت نشد.';
             egmCheckInWriteLog($context, null, $submittedCode, 'not_found', $message, $selectedPeriod, $now);
             $pdo->commit();
             return ['result' => 'not_found', 'message' => $message];
@@ -1765,31 +1936,24 @@ function egmCheckInProcess(
         $invitation = $statement->fetch(PDO::FETCH_ASSOC);
         if (!is_array($invitation)) {
             $otherStatement = $pdo->prepare(
-                "SELECT `period_code` FROM `{$userPeriodsTable}` WHERE `user_id` = :user_id ORDER BY `id` FOR UPDATE"
+                "SELECT `period_code`,`entered_date`,`entered_time` FROM `{$userPeriodsTable}` WHERE `user_id` = :user_id ORDER BY `id` FOR UPDATE"
             );
             $otherStatement->execute([':user_id' => (int)$user['id']]);
+            $otherInvitations = $otherStatement->fetchAll(PDO::FETCH_ASSOC);
             $otherCodes = array_values(array_unique(array_filter(array_map(
                 static fn($value): string => trim((string)$value),
-                $otherStatement->fetchAll(PDO::FETCH_COLUMN)
+                array_column($otherInvitations, 'period_code')
             ))));
-            $periodTitles = [];
-            foreach ((array)($context['periods'] ?? []) as $candidatePeriod) {
-                if (!is_array($candidatePeriod)) continue;
-                $candidateCode = egmCheckInPeriodCode($candidatePeriod);
-                if (!in_array($candidateCode, $otherCodes, true)) continue;
-                $periodTitles[] = trim((string)($candidatePeriod['title'] ?? '')) ?: $candidateCode;
-            }
             $result = is_array($previousAttendance)
                 ? 'attended_previous_period'
                 : ($otherCodes ? 'invited_other_period' : 'not_invited');
-            $message = is_array($previousAttendance)
-                ? (string)$previousAttendance['message'] . ' این مهمان به بازه فعال فعلی دعوت نشده و ورود جدیدی ثبت نشد.'
-                : ($otherCodes
-                    ? 'این مهمان به بازه فعال دعوت نشده و دعوت او مربوط به بازه دیگری است'
-                        . ($periodTitles ? ': ' . implode('، ', $periodTitles) : '.')
-                    : 'این مهمان به هیچ بازه‌ای در این رویداد دعوت نشده است.');
+            $invitationDetails = egmCheckInInvitationDetails($otherInvitations, (array)($context['periods'] ?? []), $now);
+            $message = $invitationDetails
+                ? implode("\n", array_column($invitationDetails, 'message')) . "\nاین مهمان به بازه فعال دعوت نشده و ورود جدیدی ثبت نشد."
+                : 'این مهمان به هیچ بازه‌ای در این رویداد دعوت نشده است.';
             egmCheckInWriteLog($context, $user, $submittedCode, $result, $message, $selectedPeriod, $now, [
                 'invited_period_codes' => $otherCodes,
+                'invitation_details' => $invitationDetails,
                 'previous_attendance' => $previousAttendance,
             ]);
             $pdo->commit();
@@ -1952,6 +2116,7 @@ function egmCheckInProcess(
         $update->execute([':event_date' => $storedDate, ':event_time' => $storedTime, ':id' => (int)$invitation['id']]);
         if ($update->rowCount() !== 1) throw new RuntimeException('ثبت هم‌زمان انجام نشد؛ دوباره تلاش کنید.');
         if (!$isQuit) {
+            egmBenefitsApplyEntry($context, (int)$user['id'], $selectedCode);
             egmSeatMapAssign($context, $selectedCode, (int)$user['id'], $entryTicketNumbers, $allowSplitSeats, $allowFreeSeat);
             if ((string)($invitation['seat_mode'] ?? '') === 'free') egmSeatMapEnsureFreeCapacity($context, $selectedCode, $allowFreeSeat);
         }
@@ -1964,6 +2129,8 @@ function egmCheckInProcess(
         $message = $isForced
             ? "{$noun} اجباری {$fullName} در بازه {$periodTitle} ثبت شد و حضور نامعقول علامت خورد."
             : "{$noun} {$fullName} در بازه {$periodTitle} با موفقیت ثبت شد.";
+        $drawState = egmBenefitsEntryDrawState($context, (int)$user['id'], $period);
+        if (!$isQuit && $drawState['reason'] !== '') $message .= "\n" . $drawState['reason'];
         egmCheckInSavePeriodCondition(
             $context,
             (int)$invitation['id'],
@@ -1977,6 +2144,7 @@ function egmCheckInProcess(
             $dateColumn => $storedDate,
             $timeColumn => $storedTime,
             'attendance_action' => $attendanceAction,
+            'draw_exclusion_reason' => !$isQuit ? $drawState['reason'] : '',
             'forced_presence' => $isForced,
             'forced_by' => trim((string)($sessionUser['code'] ?? ($sessionUser['username'] ?? ''))),
         ]);
@@ -2067,6 +2235,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   <script src="<?= $generalSettingsUrl ?>"></script>
   <script src="<?= $appearanceUrl ?>"></script>
   <link rel="stylesheet" href="<?= $panelStylesUrl ?>" />
+  <link rel="stylesheet" href="<?= htmlspecialchars($projectWebBase . '/assets/egm-web-scan.css?v=' . filemtime(dirname(__DIR__, 2) . '/assets/egm-web-scan.css'), ENT_QUOTES, 'UTF-8') ?>" />
   <style nonce="<?= $nonce ?>">
     body.guest-control-page{min-height:100vh;background:#f7f8fa;color:var(--text,#111);overflow-x:hidden}
     .guest-control-page .guest-shell{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:28px 0 48px}
@@ -2132,7 +2301,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     .guest-control-page .log-card-cell{min-width:0;padding:13px 10px}
     .guest-control-page .log-status{display:flex;align-items:center;gap:7px;min-width:0}.guest-control-page .status-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:#df4052;box-shadow:0 0 0 3px rgba(223,64,82,.12)}.guest-control-page .status-success .status-dot{background:#18a566;box-shadow:0 0 0 3px rgba(24,165,102,.13)}.guest-control-page .status-duplicate .status-dot{background:#d59a12;box-shadow:0 0 0 3px rgba(213,154,18,.15)}
     .guest-control-page .log-detail-line{display:flex;align-items:center;gap:8px 18px;min-width:0;padding:9px 12px;border-top:1px dashed #d9dee6;background:#f8fafc;color:#667085;font-size:11px;line-height:1.65}
-    .guest-control-page .log-detail-line span{min-width:0}.guest-control-page .log-main-message{flex:1 1 auto;color:#344054;font-weight:600}.guest-control-page .log-context{flex:0 1 auto;white-space:nowrap}.guest-control-page .log-context strong{color:#475467;font-weight:700}
+    .guest-control-page .log-detail-line span{min-width:0}.guest-control-page .log-main-message{white-space:pre-line;flex:1 1 auto;color:#344054;font-weight:600}.guest-control-page .log-context{flex:0 1 auto;white-space:nowrap}.guest-control-page .log-context strong{color:#475467;font-weight:700}
     .guest-control-page .cell-stack{display:grid;gap:3px;min-width:0}.guest-control-page .cell-stack small{color:#667085;font-size:10px;line-height:1.4}
     .guest-control-page .latest-operation strong{color:#1f2937;font-size:12px}.guest-control-page .attendance-state{color:#344054;font-weight:700}
     .guest-control-page .record-actions{display:flex;flex-wrap:wrap;gap:5px;align-items:flex-start}
@@ -2162,7 +2331,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   </style>
 </head>
 <body class="guest-control-page">
-<main class="guest-shell" data-check-in-app data-csrf="<?= $csrfValue ?>" data-qr-endpoint="<?= $qrGeneratorUrl ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-logs-version="<?= $logsVersion ?>" data-stats-version="<?= $statsVersion ?>" data-initial-logs="<?= $logs ?>" data-initial-stats="<?= $dashboardStats ?>">
+<main class="guest-shell" data-check-in-app data-seat-map-enabled="<?= !empty($walkInSeatMap['enabled']) ? '1' : '0' ?>" data-can-reset="<?= !empty($context['can_reset']) ? '1' : '0' ?>" data-csrf="<?= $csrfValue ?>" data-qr-endpoint="<?= $qrGeneratorUrl ?>" data-can-register-uninvited="<?= $canScan ? '1' : '0' ?>" data-logs-version="<?= $logsVersion ?>" data-stats-version="<?= $statsVersion ?>" data-initial-logs="<?= $logs ?>" data-initial-stats="<?= $dashboardStats ?>">
   <section class="hero guest-card">
     <div class="hero-head">
       <div>
@@ -2201,7 +2370,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
       <div class="scanner">
         <label class="scanner-label" for="guest-national-id">شناسه مهمان (کد ملی یا کد پرسنلی)</label>
         <input id="guest-national-id" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="off" autofocus aria-label="شناسه مهمان ۴ تا ۱۰ رقمی" data-national-id<?= $canScan ? '' : ' disabled aria-disabled="true"' ?> />
-        <p class="hint">کد ملی ۱۰ رقمی خودکار بررسی می‌شود؛ کد پرسنلی ۴ تا ۹ رقمی را اسکن کنید یا پس از ورود دستی Enter بزنید.</p>
+        <p class="hint">کد ملی ۱۰ رقمی خودکار بررسی می‌شود؛ کد پرسنلی ۲ تا ۹ رقمی را اسکن کنید یا پس از ورود دستی Enter بزنید.</p>
       </div>
       <div class="result-area">
         <span class="result-label">نتیجه بررسی</span>
@@ -2266,7 +2435,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const loadPrintProfile=(guestCode='')=>{if(printProfilePromise)return printProfilePromise;const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','print_profile');if(guestCode)url.searchParams.set('guest_code',guestCode);url.searchParams.set('_print_sync',String(Date.now()));printProfilePromise=fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(async response=>{const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'دریافت تنظیمات چاپ ناموفق بود.');return data.print_profile||{}}).finally(()=>{printProfilePromise=null});return printProfilePromise};
   const seatText=(row)=>{if(row?.seat_mode==='free')return 'در صورت خالی بودن صندلی';const seats=Array.isArray(row?.seat_assignment?.seats)?row.seat_assignment.seats:[];if(!seats.length)return '';const groups=new Map();for(const seat of seats){const key=Number(seat.row);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(Number(seat.chair))}return Array.from(groups,([number,chairs])=>`ردیف ${number.toLocaleString('fa-IR')} صندلی ${chairs.map(chair=>chair.toLocaleString('fa-IR')).join('، ')}`).join('\n')};
   const printGuest=(row)=>({firstName:row.first_name,lastName:row.last_name,nationalId:row.national_id,workId:row.work_id,guestNumber:row.guest_number,phoneNumber:row.phone_number,deputy:row.deputy,generalDepartment:row.general_department,department:row.department,gender:row.gender,postalLevel:row.postal_level,score:row.total_score||'0',ticketCount:row.number_of_ticket||'',ticketTitle:row.ticket_title||'',seat:seatText(row),periodTitle:row.period_title||''});
-  const printCardForRow=async(row,profile,copies=1)=>{if(!profile?.configured||!profile.card)throw new Error('طرح Print Card کامل نشده است. ابتدا آن را در تب Print Card ذخیره کنید.');if(!window.EGMInviteCardRenderer)throw new Error('ماژول ساخت کارت چاپی در مرورگر بارگذاری نشده است. صفحه را با Ctrl+F5 تازه‌سازی کنید.');const guest=printGuest(row);const output=await window.EGMInviteCardRenderer.render(profile.card,guest,guest.nationalId||guest.workId,{qrEndpoint:app.dataset.qrEndpoint||''});const imageUrl=URL.createObjectURL(output.blob),frame=document.createElement('iframe');frame.title='چاپ کارت مهمان';frame.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';const pageCount=Math.max(1,Number(copies)||1),pages=Array.from({length:pageCount},()=>`<img src="${imageUrl}" alt="" />`).join('');await new Promise((resolve,reject)=>{const cleanup=()=>window.setTimeout(()=>{URL.revokeObjectURL(imageUrl);frame.remove()},10000);frame.addEventListener('load',()=>window.setTimeout(()=>{try{const printWindow=frame.contentWindow;if(!printWindow)throw new Error('پنجره چاپ در دسترس نیست.');printWindow.focus();printWindow.print();cleanup();resolve()}catch(error){cleanup();reject(error)}},180),{once:true});frame.srcdoc=`<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${output.height>output.width?"75mm "+Math.ceil(75*output.height/output.width)+"mm":"auto"};margin:0}html,body{margin:0;padding:0}img{display:block;width:100vw;height:auto;object-fit:contain;break-after:page;page-break-after:always}img:last-child{break-after:auto;page-break-after:auto}</style></head><body>${pages}</body></html>`;document.body.append(frame)});};
+  const printCardForRow=async(row,profile,copies=1)=>{if(!profile?.configured||!profile.card)throw new Error('طرح کارت چاپی آماده نیست. آن را در تنظیمات کارت چاپی ذخیره کنید.');if(!window.EGMInviteCardRenderer)throw new Error('ماژول ساخت کارت چاپی در مرورگر بارگذاری نشده است. صفحه را با Ctrl+F5 تازه‌سازی کنید.');const guest=printGuest(row);const output=await window.EGMInviteCardRenderer.render(profile.card,guest,guest.nationalId||guest.workId,{qrEndpoint:app.dataset.qrEndpoint||''});const imageUrl=URL.createObjectURL(output.blob),frame=document.createElement('iframe');frame.title='چاپ کارت مهمان';frame.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';const pageCount=Math.max(1,Number(copies)||1),pages=Array.from({length:pageCount},()=>`<img src="${imageUrl}" alt="" />`).join('');await new Promise((resolve,reject)=>{const cleanup=()=>window.setTimeout(()=>{URL.revokeObjectURL(imageUrl);frame.remove()},10000);frame.addEventListener('load',()=>window.setTimeout(()=>{try{const printWindow=frame.contentWindow;if(!printWindow)throw new Error('پنجره چاپ در دسترس نیست.');printWindow.focus();printWindow.print();cleanup();resolve()}catch(error){cleanup();reject(error)}},180),{once:true});frame.srcdoc=`<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${output.height>output.width?"75mm "+Math.ceil(75*output.height/output.width)+"mm":"auto"};margin:0}html,body{margin:0;padding:0}img{display:block;width:100vw;height:auto;object-fit:contain;break-after:page;page-break-after:always}img:last-child{break-after:auto;page-break-after:auto}</style></head><body>${pages}</body></html>`;document.body.append(frame)});};
   const requestTicketNumber=(row,title)=>new Promise(resolve=>{const dialog=document.createElement('dialog');dialog.className='ticket-number-dialog';dialog.innerHTML=`<form class="ticket-number-form"><h3>${esc(title||'Custom Number Ticket')}</h3><p>شماره «${esc(title||'بلیت')}» برای ${esc(row.full_name||'مهمان')} را وارد کنید.</p><input name="ticket" inputmode="numeric" pattern="[0-9۰-۹٠-٩]+" maxlength="32" required autocomplete="off" aria-label="Number of Ticket - ${esc(title||'Ticket')}" /><div class="ticket-number-actions"><button type="submit" class="ticket-number-submit">ثبت و چاپ</button><button type="button" class="ticket-number-cancel">انصراف</button></div></form>`;document.body.append(dialog);const finish=value=>{if(dialog.open)dialog.close();dialog.remove();resolve(value)};dialog.querySelector('.ticket-number-cancel')?.addEventListener('click',()=>finish(null));dialog.addEventListener('cancel',event=>{event.preventDefault();finish(null)},{once:true});dialog.querySelector('form')?.addEventListener('submit',event=>{event.preventDefault();const field=dialog.querySelector('input');const value=normalizeTicket(field?.value||'');if(!value){field?.focus();return}finish(value)});dialog.showModal();window.setTimeout(()=>dialog.querySelector('input')?.focus(),30)});
   const recordTicketNumber=async(row,ticket,ticketNumber)=>{const response=await fetch(window.location.href,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'record_ticket_number',guest_code:row.national_id||row.work_id,ticket_id:ticket.id,number_of_ticket:ticketNumber,csrf:app.dataset.csrf||''})});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'ثبت Number of Ticket ناموفق بود.');row.number_of_ticket=String(data.number_of_ticket||ticketNumber);row.ticket_title=String(ticket.title||'');if(data.seat_assignment)row.seat_assignment=data.seat_assignment;return row};
   const seatCountForEntry=async(guestCode)=>{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','seat_requirement');url.searchParams.set('guest_code',guestCode);const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'بررسی صندلی ناموفق بود.');if(!data.required)return '';const count=await requestTicketNumber({full_name:data.guest_name||'مهمان'},data.ticket_title||'بلیت مبنای صندلی');if(count!==null&&(!Number.isSafeInteger(Number(count))||Number(count)<1||Number(count)>500))throw new Error('تعداد بلیت مبنای صندلی باید بین ۱ تا ۵۰۰ باشد.');return count};
@@ -2282,6 +2451,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
         payload={...payload,allow_split_seats:true};
         continue;
       }
+      if(data.code==='seat_capacity_insufficient'&&payload.action==='record_manual_ticket')throw new Error(data.message||'ظرفیت صندلی کافی نیست.');
       if(data.code==='seat_capacity_insufficient'&&!payload.allow_free_seat){
         if(!window.confirm(`${data.message||'ظرفیت سالن کافی نیست.'}\nبرای این مهمان صندلی رزرو نمی‌شود. بلیت «در صورت خالی بودن صندلی» صادر و ورود ثبت شود؟`))throw new Error('ورود به‌دلیل کمبود ظرفیت لغو شد.');
         payload={...payload,allow_free_seat:true};
@@ -2301,7 +2471,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const keyDigit=(key)=>/^[0-9۰-۹٠-٩]$/.test(String(key??''))?normalize(key):'';
   const statCount=(value)=>Math.max(0,Number.parseInt(String(value??0),10)||0);
   const faCount=(value)=>statCount(value).toLocaleString('fa-IR');
-  const renderStats=(value)=>{if(!statsRoot)return;const stats=value&&typeof value==='object'?value:{};const active=stats.active===true;statsRoot.classList.toggle('is-inactive',!active);if(!active)return;for(const key of ['total','invited_total','invited_entered','other_period_entered','walk_in_entered','entered','waiting','inside','quit']){statsRoot.querySelectorAll(`[data-stat="${key}"]`).forEach(target=>{target.textContent=faCount(stats[key])})}const percent=Math.max(0,Math.min(100,Number(stats.entry_percent)||0)),progress=statsRoot.querySelector('[data-stat-progress]'),progressBox=progress?.parentElement,percentLabel=statsRoot.querySelector('[data-stat="entry_percent"]');if(progress)progress.style.width=`${percent}%`;if(progressBox)progressBox.setAttribute('aria-valuenow',String(percent));if(percentLabel)percentLabel.textContent=`${percent.toLocaleString('fa-IR',{maximumFractionDigits:1})}٪ وارد شده‌اند`;for(const group of ['male','female','unspecified']){const row=statsRoot.querySelector(`[data-gender="${group}"]`),groupStats=stats.gender?.[group]||{},total=statCount(groupStats.total),entered=statCount(groupStats.entered),fill=row?.querySelector('.gender-row-track span'),labelValue=row?.querySelector('.gender-row-value');if(!row)continue;row.hidden=group==='unspecified'&&total===0&&entered===0;if(fill)fill.style.width=`${total>0?Math.min(100,(entered/total)*100):0}%`;if(labelValue)labelValue.textContent=`${faCount(entered)} از ${faCount(total)}`}};
+  const renderStats=(value)=>{if(!statsRoot)return;const stats=value&&typeof value==='object'?value:{};app.egmStats=stats;app.dispatchEvent(new CustomEvent('egm-scan-stats',{detail:stats}));const active=stats.active===true;statsRoot.classList.toggle('is-inactive',!active);if(!active)return;for(const key of ['total','invited_total','invited_entered','other_period_entered','walk_in_entered','entered','waiting','inside','quit']){statsRoot.querySelectorAll(`[data-stat="${key}"]`).forEach(target=>{target.textContent=faCount(stats[key])})}const percent=Math.max(0,Math.min(100,Number(stats.entry_percent)||0)),progress=statsRoot.querySelector('[data-stat-progress]'),progressBox=progress?.parentElement,percentLabel=statsRoot.querySelector('[data-stat="entry_percent"]');if(progress)progress.style.width=`${percent}%`;if(progressBox)progressBox.setAttribute('aria-valuenow',String(percent));if(percentLabel)percentLabel.textContent=`${percent.toLocaleString('fa-IR',{maximumFractionDigits:1})}٪ وارد شده‌اند`;for(const group of ['male','female','unspecified']){const row=statsRoot.querySelector(`[data-gender="${group}"]`),groupStats=stats.gender?.[group]||{},total=statCount(groupStats.total),entered=statCount(groupStats.entered),fill=row?.querySelector('.gender-row-track span'),labelValue=row?.querySelector('.gender-row-value');if(!row)continue;row.hidden=group==='unspecified'&&total===0&&entered===0;if(fill)fill.style.width=`${total>0?Math.min(100,(entered/total)*100):0}%`;if(labelValue)labelValue.textContent=`${faCount(entered)} از ${faCount(total)}`}};
   const label=(s)=>s==='success'?'ورود موفق':s==='quit_success'?'خروج موفق':s==='force_entry_success'?'ورود اجباری':s==='force_quit_success'?'خروج اجباری':s==='walk_in_registered'?'مهمان ناخوانده ثبت شد':s==='duplicate'?'قبلاً وارد شده':s==='quit_duplicate'?'قبلاً خارج شده':s==='attended_previous_period'?'حضور در بازه قبلی':s==='quit_without_entry'?'ورود ثبت نشده':s==='minimum_stay'?'حداقل مدت حضور کامل نشده':s==='entry_closed_quit_wave'?'ورود به‌دلیل موج خروج بسته است':s==='invalid_attendance_record'?'سابقه حضور ناسازگار':s==='invited_other_period'?'دعوت در بازه دیگر':s==='user_inactive'?'مهمان غیرفعال':s==='no_active_period'?'بدون بازه فعال':s==='multiple_active_periods'?'هم‌پوشانی بازه‌ها':s==='not_found'?'یافت نشد':s==='not_invited'?'دعوت نشده':s==='upcoming'?'در انتظار شروع':s==='immune_time'?'زمان ایمن':s==='ended'?'پایان‌یافته':s==='inactive'?'غیرفعال':s==='invalid_schedule'?'زمان‌بندی نامعتبر':'ناموفق';
   const cls=(s)=>(s==='success'||s==='quit_success'||s==='force_entry_success'||s==='force_quit_success'||s==='walk_in_registered')?'success':(s==='duplicate'||s==='quit_duplicate'||s==='attended_previous_period')?'duplicate':'error';
   const SCAN_TOAST_DURATION_MS=4000;
@@ -2328,9 +2498,11 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
       const guestCode=normalize(row.national_id||row.work_id||'');
       const registrationKey=`${row.national_id||''}|${row.period_code||''}`;
       const actions=[];
-      if(['success','force_entry_success'].includes(String(row.status||'')))actions.push(`<button type="button" class="print-card-action" data-print-log="${index}" aria-label="چاپ مجدد کارت مهمان">چاپ مجدد</button>`);
+      if(row.management_report_eligible===true)actions.push(`<button type="button" class="print-card-action management-report-action" data-report-log="${index}">گزارش به مدیریت</button>`);
+      if(row.entered_date&&row.entered_time)actions.push(`<button type="button" class="print-card-action" data-print-log="${index}" aria-label="چاپ مجدد کارت مهمان">چاپ مجدد</button>`);
+      if(app.dataset.canReset==='1'&&row.entered_date&&row.entered_time)actions.push(`<button type="button" class="print-card-action" data-reset-log="${index}">بازنشانی ورود</button>`);
       if(canRegisterUninvited&&walkInStatuses.has(String(row.status||''))&&!registeredWalkIns.has(registrationKey))actions.push(`<button type="button" class="walk-in-action" data-register-uninvited="${index}">ثبت مهمان ناخوانده</button>`);
-      if(!actionRows.has(actionKey)&&guestCode.length>=4&&['entry','quit'].includes(String(row.force_action||''))){
+      if(!actionRows.has(actionKey)&&guestCode.length>=2&&['entry','quit'].includes(String(row.force_action||''))){
         actionRows.add(actionKey);
         actions.push(`<button type="button" class="force-attendance-action" data-force-log="${index}" data-force-action="${esc(row.force_action)}">${esc(row.force_label||(`Force ${row.force_action==='entry'?'Enter':'Quit'}`))}</button>`);
       }
@@ -2341,7 +2513,7 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
     }).join(''):`<tr><td colspan="5" class="empty">${logSearch?.value.trim()?'موردی مطابق جستجو پیدا نشد.':'هنوز موردی بررسی نشده است.'}</td></tr>`;
   };
   const detailItem=(title,value,options='')=>`<div class="detail-item${options.includes('full')?' full':''}"><span class="detail-label">${esc(title)}</span><span class="detail-value${options.includes('code')?' code':''}">${esc(value||'—')}</span></div>`;
-  const openDetail=(row)=>{if(!row||!dialog||!dialogTitle||!dialogContent)return;dialogTitle.textContent=row.full_name||'جزئیات مهمان';dialogContent.innerHTML=`<section class="detail-section"><h4 class="detail-section-title">مشخصات مهمان</h4><div class="detail-grid">${detailItem('نوع مهمان',row.is_uninvited_guest?'مهمان ناخوانده':'دعوت‌شده')}${detailItem('کد ملی',row.national_id,'code')}${detailItem('کد پرسنلی',row.work_id,'code')}${detailItem('شماره همراه',row.phone_number,'code')}${detailItem('شماره مهمان',row.guest_number,'code')}${detailItem('معاونت',row.deputy)}${detailItem('اداره کل',row.general_department)}${detailItem('اداره',row.department)}${detailItem('جنسیت / سطح پستی',[row.gender,row.postal_level].filter(Boolean).join(' / '))}</div></section><section class="detail-section"><h4 class="detail-section-title">اطلاعات حضور در بازه</h4><div class="detail-grid">${detailItem('بازه',row.period_title)}${detailItem('Number of Ticket',row.number_of_ticket,'code')}${detailItem('صندلی',seatText(row))}${detailItem('وضعیت فعلی حضور',attendanceStateLabel(row.attendance_state))}${detailItem('Correct Presence',presenceMark(row.correct_presence))}${detailItem('Fake Presence',presenceMark(row.fake_presence))}${detailItem('وضعیت آخرین بررسی',label(row.status))}${detailItem('زمان ورود',dateTime(row.entered_date,row.entered_time),'code')}${detailItem('زمان خروج',dateTime(row.quit_date,row.quit_time),'code')}${detailItem(`زمان عملیات ${operationLabel(row)}`,dateTime(row.operation_date,row.operation_time,row.attempted_at),'code')}${detailItem('زمان بررسی',row.attempted_at,'code')}</div></section><section class="detail-section"><h4 class="detail-section-title">نتیجه ثبت‌شده</h4><div class="detail-message">${esc(row.message||'—')}</div></section>`;if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','')};
+  const openDetail=(row)=>{if(!row||!dialog||!dialogTitle||!dialogContent)return;dialogTitle.textContent=row.full_name||'جزئیات مهمان';dialogContent.innerHTML=`<section class="detail-section"><h4 class="detail-section-title">مشخصات مهمان</h4><div class="detail-grid">${detailItem('نوع مهمان',row.is_uninvited_guest?'مهمان ناخوانده':'دعوت‌شده')}${detailItem('دریافت هدیه',row.should_get_gift?'بله':'خیر')}${detailItem('کد ملی',row.national_id,'code')}${detailItem('کد پرسنلی',row.work_id,'code')}${detailItem('شماره همراه',row.phone_number,'code')}${detailItem('شماره مهمان',row.guest_number,'code')}${detailItem('معاونت',row.deputy)}${detailItem('اداره کل',row.general_department)}${detailItem('اداره',row.department)}${detailItem('جنسیت / سطح پستی',[row.gender,row.postal_level].filter(Boolean).join(' / '))}</div></section><section class="detail-section"><h4 class="detail-section-title">اطلاعات حضور در بازه</h4><div class="detail-grid">${detailItem('بازه',row.period_title)}${detailItem('Number of Ticket',row.number_of_ticket,'code')}${detailItem('صندلی',seatText(row))}${detailItem('وضعیت فعلی حضور',attendanceStateLabel(row.attendance_state))}${detailItem('Correct Presence',presenceMark(row.correct_presence))}${detailItem('Fake Presence',presenceMark(row.fake_presence))}${detailItem('وضعیت آخرین بررسی',label(row.status))}${detailItem('زمان ورود',dateTime(row.entered_date,row.entered_time),'code')}${detailItem('زمان خروج',dateTime(row.quit_date,row.quit_time),'code')}${detailItem(`زمان عملیات ${operationLabel(row)}`,dateTime(row.operation_date,row.operation_time,row.attempted_at),'code')}${detailItem('زمان بررسی',row.attempted_at,'code')}</div></section><section class="detail-section"><h4 class="detail-section-title">نتیجه ثبت‌شده</h4><div class="detail-message">${esc(row.message||'—')}</div></section>`;if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','')};
   const walkInControl=(name)=>walkInForm?.elements.namedItem(name)||null;
   const fillWalkInSelect=(name,values,current='')=>{const select=walkInControl(name);if(!(select instanceof HTMLSelectElement))return;select.replaceChildren();const blank=document.createElement('option');blank.value='';blank.textContent='انتخاب کنید';select.append(blank);const unique=new Set(Array.isArray(values)?values.map(value=>String(value||'').trim()).filter(Boolean):[]);if(current)unique.add(String(current));for(const value of unique){const option=document.createElement('option');option.value=value;option.textContent=value;select.append(option)}select.value=String(current||'')};
   let walkInOptionsPromise=null;
@@ -2355,8 +2527,8 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const searchLogs=async({silent=false}={})=>{if(logRefreshInFlight&&silent)return;const requestId=++searchRequest;const query=String(logSearch?.value||'').trim();if(!silent&&logSearchMeta)logSearchMeta.textContent='در حال جستجو...';logRefreshInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','search_logs');if(query)url.searchParams.set('q',query);else url.searchParams.delete('q');if(silent)url.searchParams.set('include_stats','1');else url.searchParams.delete('include_stats');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')throw new Error(data.message||'جستجوی گزارش‌ها ناموفق بود.');if(requestId!==searchRequest)return;lastLogsVersion=String(data.logs_version||lastLogsVersion);logs=Array.isArray(data.logs)?data.logs:[];render(logs);if(data.stats){lastStatsVersion=String(data.stats_version||lastStatsVersion);renderStats(data.stats)}}catch(error){if(requestId!==searchRequest||silent)return;if(logSearchMeta)logSearchMeta.textContent=error instanceof Error?error.message:'جستجو ناموفق بود.'}finally{logRefreshInFlight=false}};
   logSearch?.addEventListener('input',()=>{window.clearTimeout(searchTimer);searchTimer=window.setTimeout(()=>void searchLogs(),280)});
   const acceptUpdatedLogs=(items,version='',stats=null,statsVersion='')=>{searchRequest+=1;if(version)lastLogsVersion=String(version);if(stats){if(statsVersion)lastStatsVersion=String(statsVersion);renderStats(stats)}if(logSearch?.value.trim()){void searchLogs();return}logs=Array.isArray(items)?items:[];render(logs)};
-  const printFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement))return;const originalLabel=button.textContent;button.disabled=true;button.textContent='در حال آماده‌سازی...';result.className='result loading';result.textContent='در حال ساخت کارت مهمان برای چاپ...';try{const profile=await loadPrintProfile();await printCardForRow(row,profile,1);result.className='result success';result.textContent='پنجره چاپ مجدد باز شد.'}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'چاپ مجدد کارت ناموفق بود.'}finally{button.disabled=false;button.textContent=originalLabel;input.focus()}};
-  const forceAttendanceFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement)||isSubmitting||scanProcessing)return;const attendanceAction=String(button.dataset.forceAction||row.force_action||''),guestCode=normalize(row.national_id||row.work_id||'');if(!['entry','quit'].includes(attendanceAction)||guestCode.length<4)return;const title=attendanceAction==='entry'?'Force Enter':'Force Quit';if(!window.confirm(`${title} برای این مهمان ثبت شود؟ این عملیات حضور را Fake Presence علامت می‌زند.`))return;isSubmitting=true;button.disabled=true;input.focus();result.className='result loading';result.textContent='در حال ثبت عملیات اجباری...';try{const seatCount=attendanceAction==='entry'?await seatCountForEntry(guestCode):'';if(seatCount===null)throw new Error('ورود اجباری لغو شد؛ شماره صندلی اختصاص نیافت.');const data=await postWithSeatApproval({action:'force_attendance',attendance_action:attendanceAction,guest_code:guestCode,seat_ticket_count:seatCount,csrf:app.dataset.csrf||''});result.className='result success';result.textContent=data.message||'عملیات اجباری ثبت شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);if(data.result==='force_entry_success')await autoPrintEntry(data,guestCode)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'ثبت عملیات اجباری ناموفق بود.';button.disabled=false}finally{isSubmitting=false;input.focus();void processScanQueue()}};
+  const printFromLog=async(index,button)=>{if(app.egmScanTools?.choosePrint){await app.egmScanTools.choosePrint(logs[index]);return}const row=logs[index];if(!row||!(button instanceof HTMLButtonElement))return;const originalLabel=button.textContent;button.disabled=true;button.textContent='در حال آماده‌سازی...';result.className='result loading';result.textContent='در حال ساخت کارت مهمان برای چاپ...';try{const profile=await loadPrintProfile();await printCardForRow(row,profile,1);result.className='result success';result.textContent='پنجره چاپ مجدد باز شد.'}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'چاپ مجدد کارت ناموفق بود.'}finally{button.disabled=false;button.textContent=originalLabel;input.focus()}};
+  const forceAttendanceFromLog=async(index,button)=>{const row=logs[index];if(!row||!(button instanceof HTMLButtonElement)||isSubmitting||scanProcessing)return;const attendanceAction=String(button.dataset.forceAction||row.force_action||''),guestCode=normalize(row.national_id||row.work_id||'');if(!['entry','quit'].includes(attendanceAction)||guestCode.length<2)return;const title=attendanceAction==='entry'?'Force Enter':'Force Quit';if(!window.confirm(`${title} برای این مهمان ثبت شود؟ این عملیات حضور را Fake Presence علامت می‌زند.`))return;isSubmitting=true;button.disabled=true;input.focus();result.className='result loading';result.textContent='در حال ثبت عملیات اجباری...';try{const seatCount=attendanceAction==='entry'?await seatCountForEntry(guestCode):'';if(seatCount===null)throw new Error('ورود اجباری لغو شد؛ شماره صندلی اختصاص نیافت.');const data=await postWithSeatApproval({action:'force_attendance',attendance_action:attendanceAction,guest_code:guestCode,seat_ticket_count:seatCount,csrf:app.dataset.csrf||''});result.className='result success';result.textContent=data.message||'عملیات اجباری ثبت شد.';if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);if(data.result==='force_entry_success')await autoPrintEntry(data,guestCode)}catch(error){result.className='result error';result.textContent=error instanceof Error?error.message:'ثبت عملیات اجباری ناموفق بود.';button.disabled=false}finally{isSubmitting=false;input.focus();void processScanQueue()}};
   tbody.addEventListener('click',event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;const printTrigger=target.closest('[data-print-log]');if(printTrigger){const index=Number(printTrigger.dataset.printLog);if(Number.isInteger(index)&&logs[index])void printFromLog(index,printTrigger);return}const forceTrigger=target.closest('[data-force-log]');if(forceTrigger){const index=Number(forceTrigger.dataset.forceLog);if(Number.isInteger(index)&&logs[index])void forceAttendanceFromLog(index,forceTrigger);return}const walkInTrigger=target.closest('[data-register-uninvited]');if(walkInTrigger){const index=Number(walkInTrigger.dataset.registerUninvited);if(Number.isInteger(index)&&logs[index])void openWalkIn(logs[index]);return}const trigger=target.closest('[data-guest-detail]');if(!trigger)return;const index=Number(trigger.dataset.guestDetail);if(Number.isInteger(index)&&logs[index])openDetail(logs[index])});
   app.querySelector('[data-dialog-close]')?.addEventListener('click',()=>dialog?.close());
   dialog?.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
@@ -2372,27 +2544,34 @@ function egmCheckInRenderPage(array $context, string $csrf, string $nonce): neve
   const resetScannerState=()=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=0;lastNumericKeyAt=0;consecutiveFastGaps=0;scannerDetected=false};
   const queueStatus=()=>scanQueue.length>0?` (${scanQueue.length.toLocaleString('fa-IR')} اسکن در صف)`:'';
   const processScanQueue=async()=>{if(scanProcessing||isSubmitting||scanQueue.length===0)return;scanProcessing=true;try{while(scanQueue.length>0){const guestCode=scanQueue.shift();result.className='result loading';result.textContent=`در حال بررسی شناسه ${guestCode}${queueStatus()}...`;try{const seatCount=await seatCountForEntry(guestCode);if(seatCount===null){result.className='result duplicate';result.textContent='ورود لغو شد؛ شماره صندلی اختصاص نیافت.';continue}const data=await postWithSeatApproval({guest_code:guestCode,seat_ticket_count:seatCount,csrf:app.dataset.csrf||''});const good=data.result==='success'||data.result==='quit_success'||data.result==='force_entry_success'||data.result==='force_quit_success';const duplicate=data.result==='duplicate'||data.result==='quit_duplicate'||data.result==='attended_previous_period';result.className=`result ${good?'success':duplicate?'duplicate':'error'}`;result.textContent=`${data.message||'بررسی انجام شد.'}${queueStatus()}`;if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);showScanFeedback(data,guestCode);await autoPrintEntry(data,guestCode);if(data.result!=='attended_previous_period')showPreviousAttendanceAlert(data.previous_attendance)}catch(error){const failureMessage=error instanceof Error?error.message:'بررسی مهمان ناموفق بود.';result.className='result error';result.textContent=`${failureMessage}${queueStatus()}`;showScanFeedback({result:'request_error',message:failureMessage},guestCode,'error')}}}finally{scanProcessing=false;input.focus();if(scanQueue.length>0)void processScanQueue()}};
-  const enqueueScan=(rawCode)=>{const guestCode=normalize(rawCode);if(guestCode.length<4||guestCode.length>10)return;unlockScanAudio();scanQueue.push(guestCode);input.value='';resetScannerState();input.focus();if(scanProcessing||isSubmitting){result.className='result loading';result.textContent=`اسکن دریافت شد${queueStatus()}. در صف پردازش است.`}void processScanQueue()};
-  const scheduleScannerSubmission=(value)=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=window.setTimeout(()=>{scannerCompletionTimer=0;const completedCode=normalize(input.value);if(scannerDetected&&completedCode===value&&completedCode.length>=4&&completedCode.length<=9)enqueueScan(completedCode)},SCANNER_COMPLETION_DELAY_MS)};
-  input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10){enqueueScan(value);return}if(scannerDetected&&value.length>=4&&value.length<=9)scheduleScannerSubmission(value)});
-  input.addEventListener('keydown',event=>{unlockScanAudio();if(event.key==='Enter'){event.preventDefault();window.clearTimeout(scannerCompletionTimer);const value=normalize(input.value);if(value.length>=4&&value.length<=10)enqueueScan(value);return}if(event.repeat){resetScannerState();return}if(keyDigit(event.key)===''){if(!event.ctrlKey&&!event.metaKey&&!event.altKey)resetScannerState();return}const now=performance.now();const gap=lastNumericKeyAt>0?now-lastNumericKeyAt:Number.POSITIVE_INFINITY;if(gap<=SCANNER_MAX_KEY_GAP_MS)consecutiveFastGaps+=1;else{consecutiveFastGaps=0;scannerDetected=false}lastNumericKeyAt=now;if(consecutiveFastGaps>=SCANNER_MIN_FAST_GAPS)scannerDetected=true});
+  const enqueueScan=(rawCode)=>{const guestCode=normalize(rawCode);if(guestCode.length<2||guestCode.length>10)return;unlockScanAudio();scanQueue.push(guestCode);input.value='';resetScannerState();input.focus();if(scanProcessing||isSubmitting){result.className='result loading';result.textContent=`اسکن دریافت شد${queueStatus()}. در صف پردازش است.`}void processScanQueue()};
+  const scheduleScannerSubmission=(value)=>{window.clearTimeout(scannerCompletionTimer);scannerCompletionTimer=window.setTimeout(()=>{scannerCompletionTimer=0;const completedCode=normalize(input.value);if(scannerDetected&&completedCode===value&&completedCode.length>=2&&completedCode.length<=9)enqueueScan(completedCode)},SCANNER_COMPLETION_DELAY_MS)};
+  input.addEventListener('input',()=>{const value=normalize(input.value);if(input.value!==value)input.value=value;if(value.length===10){enqueueScan(value);return}if(scannerDetected&&value.length>=2&&value.length<=9)scheduleScannerSubmission(value)});
+  input.addEventListener('keydown',event=>{unlockScanAudio();if(event.key==='Enter'){event.preventDefault();window.clearTimeout(scannerCompletionTimer);const value=normalize(input.value);if(value.length>=2&&value.length<=10)enqueueScan(value);return}if(event.repeat){resetScannerState();return}if(keyDigit(event.key)===''){if(!event.ctrlKey&&!event.metaKey&&!event.altKey)resetScannerState();return}const now=performance.now();const gap=lastNumericKeyAt>0?now-lastNumericKeyAt:Number.POSITIVE_INFINITY;if(gap<=SCANNER_MAX_KEY_GAP_MS)consecutiveFastGaps+=1;else{consecutiveFastGaps=0;scannerDetected=false}lastNumericKeyAt=now;if(consecutiveFastGaps>=SCANNER_MIN_FAST_GAPS)scannerDetected=true});
   let pageScannerBuffer='',pageScannerLastKeyAt=0,pageScannerFastGaps=0,pageScannerResetTimer=0,pageScannerSourceSnapshot=null;
   const captureScannerSource=(element)=>{if(element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement)return{kind:'input',element,value:element.value,start:element.selectionStart,end:element.selectionEnd};if(element instanceof HTMLSelectElement)return{kind:'select',element,selectedIndex:element.selectedIndex};if(element instanceof HTMLElement&&element.isContentEditable)return{kind:'editable',element,html:element.innerHTML};return null};
   const restoreScannerSource=()=>{const snapshot=pageScannerSourceSnapshot;if(!snapshot?.element?.isConnected)return;if(snapshot.kind==='input'){snapshot.element.value=snapshot.value;try{snapshot.element.setSelectionRange(snapshot.start,snapshot.end)}catch{}}else if(snapshot.kind==='select')snapshot.element.selectedIndex=snapshot.selectedIndex;else if(snapshot.kind==='editable')snapshot.element.innerHTML=snapshot.html};
   const resetPageScannerCandidate=()=>{window.clearTimeout(pageScannerResetTimer);pageScannerResetTimer=0;pageScannerBuffer='';pageScannerLastKeyAt=0;pageScannerFastGaps=0;pageScannerSourceSnapshot=null};
   const armPageScannerReset=()=>{window.clearTimeout(pageScannerResetTimer);pageScannerResetTimer=window.setTimeout(resetPageScannerCandidate,Math.max(150,SCANNER_COMPLETION_DELAY_MS+60))};
   const showCapturedFocus=()=>{input.classList.remove('scanner-captured');void input.offsetWidth;input.classList.add('scanner-captured');window.setTimeout(()=>input.classList.remove('scanner-captured'),520)};
-  document.addEventListener('keydown',event=>{if(event.target===input||input.disabled||event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.metaKey||event.altKey||dialog?.open||walkInDialog?.open)return;const digit=keyDigit(event.key);if(digit===''){if(event.key!=='Enter')resetPageScannerCandidate();return}unlockScanAudio();const now=performance.now(),gap=pageScannerLastKeyAt>0?now-pageScannerLastKeyAt:Number.POSITIVE_INFINITY;if(gap>SCANNER_MAX_KEY_GAP_MS){resetPageScannerCandidate();pageScannerBuffer=digit;pageScannerSourceSnapshot=captureScannerSource(event.target);pageScannerFastGaps=0}else{pageScannerBuffer=(pageScannerBuffer+digit).slice(0,10);pageScannerFastGaps+=1}pageScannerLastKeyAt=now;armPageScannerReset();if(pageScannerFastGaps<SCANNER_MIN_FAST_GAPS)return;event.preventDefault();event.stopPropagation();const capturedCode=pageScannerBuffer;restoreScannerSource();resetPageScannerCandidate();input.focus();input.value=capturedCode;showCapturedFocus();scannerDetected=true;lastNumericKeyAt=now;consecutiveFastGaps=SCANNER_MIN_FAST_GAPS;if(capturedCode.length===10)enqueueScan(capturedCode);else scheduleScannerSubmission(capturedCode)},true);
+  document.addEventListener('keydown',event=>{if(event.target===input||input.disabled||event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.metaKey||event.altKey||document.querySelector('dialog[open]'))return;const digit=keyDigit(event.key);if(digit===''){if(event.key!=='Enter')resetPageScannerCandidate();return}unlockScanAudio();const now=performance.now(),gap=pageScannerLastKeyAt>0?now-pageScannerLastKeyAt:Number.POSITIVE_INFINITY;if(gap>SCANNER_MAX_KEY_GAP_MS){resetPageScannerCandidate();pageScannerBuffer=digit;pageScannerSourceSnapshot=captureScannerSource(event.target);pageScannerFastGaps=0}else{pageScannerBuffer=(pageScannerBuffer+digit).slice(0,10);pageScannerFastGaps+=1}pageScannerLastKeyAt=now;armPageScannerReset();if(pageScannerFastGaps<SCANNER_MIN_FAST_GAPS)return;event.preventDefault();event.stopPropagation();const capturedCode=pageScannerBuffer;restoreScannerSource();resetPageScannerCandidate();input.focus();input.value=capturedCode;showCapturedFocus();scannerDetected=true;lastNumericKeyAt=now;consecutiveFastGaps=SCANNER_MIN_FAST_GAPS;if(capturedCode.length===10)enqueueScan(capturedCode);else scheduleScannerSubmission(capturedCode)},true);
   const LOG_SYNC_INTERVAL_MS=2500;
   let logVersionCheckInFlight=false;
   const syncStats=async()=>{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','stats');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')return;lastStatsVersion=String(data.stats_version||lastStatsVersion);renderStats(data.stats)};
-  const syncVisibleLogs=async()=>{if(document.visibilityState!=='visible'||logRefreshInFlight||logVersionCheckInFlight)return;logVersionCheckInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','logs_version');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')return;const version=String(data.logs_version||''),statsVersion=String(data.stats_version||'');if(version&&version!==lastLogsVersion){await searchLogs({silent:true});return}if(statsVersion&&statsVersion!==lastStatsVersion)await syncStats()}finally{logVersionCheckInFlight=false}};
+  const syncVisibleLogs=async()=>{if(document.visibilityState!=='visible'||logRefreshInFlight||logVersionCheckInFlight)return;logVersionCheckInFlight=true;try{const url=new URL(window.location.href);url.searchParams.delete('period');url.searchParams.set('action','logs_version');url.searchParams.set('_sync',String(Date.now()));const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const data=await response.json().catch(()=>({}));if(!response.ok||data.status!=='ok')return;const version=String(data.logs_version||''),statsVersion=String(data.stats_version||'');if(version&&version!==lastLogsVersion){await searchLogs({silent:true});return}if(statsVersion&&statsVersion!==lastStatsVersion)await searchLogs({silent:true})}finally{logVersionCheckInFlight=false}};
   const logSyncTimer=window.setInterval(()=>void syncVisibleLogs(),LOG_SYNC_INTERVAL_MS);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void syncVisibleLogs()});
   window.addEventListener('pagehide',()=>window.clearInterval(logSyncTimer),{once:true});
+  app.egmScanTools={loadPrintProfile,printCardForRow,requestTicketNumber,recordTicketNumber,row:index=>logs[index],
+    post:payload=>postWithSeatApproval({...payload,csrf:app.dataset.csrf||''}),
+    accept:data=>{if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version)},
+    refresh:()=>searchLogs({silent:true}),
+    enter:async guestCode=>{if(isSubmitting||scanProcessing)throw new Error('لطفاً تا پایان ثبت قبلی صبر کنید.');isSubmitting=true;try{const seatCount=await seatCountForEntry(guestCode);if(seatCount===null)return;const data=await postWithSeatApproval({guest_code:guestCode,seat_ticket_count:seatCount,csrf:app.dataset.csrf||''});if(Array.isArray(data.logs))acceptUpdatedLogs(data.logs,data.logs_version,data.stats,data.stats_version);showScanFeedback(data,guestCode);await autoPrintEntry(data,guestCode);return data}finally{isSubmitting=false;void processScanQueue()}}
+  };
   input.focus();
 })();
 </script>
+<script nonce="<?= $nonce ?>" src="<?= htmlspecialchars($projectWebBase . '/assets/egm-web-scan.js?v=' . filemtime(dirname(__DIR__, 2) . '/assets/egm-web-scan.js'), ENT_QUOTES, 'UTF-8') ?>"></script>
 </body>
 </html>
     <?php
@@ -2409,7 +2588,7 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
         if (!is_array($payload)) $payload = $_POST;
         $requestedAction = strtolower(trim((string)($payload['action'] ?? 'check_in')));
     }
-    $isResetRequest = in_array($requestedAction, ['reset_period_records', 'reset_all_records'], true);
+    $isResetRequest = in_array($requestedAction, ['reset_period_records', 'reset_all_records', 'reset_guest_entry'], true);
     $canUseGuestControl = userHasPermissionId($sessionUser, 'event-guest-manager:main');
     $canResetAttendance = userHasPermissionId($sessionUser, 'event-guest-manager:manage-tasks');
     if (($isResetRequest && !$canResetAttendance) || (!$isResetRequest && !$canUseGuestControl)) {
@@ -2425,6 +2604,15 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
             $getAction = strtolower(trim((string)($_GET['action'] ?? '')));
             if ($getAction === 'uninvited_options') {
                 egmCheckInJson(['status' => 'ok', 'options' => egmCheckInUninvitedOptions($context)]);
+            }
+            if ($getAction === 'pending_invitees') {
+                egmCheckInJson(['status'=>'ok'] + egmCheckInPendingInvitees($context, (string)($_GET['q'] ?? ''), (int)($_GET['page'] ?? 1)));
+            }
+            if ($getAction === 'guest_print_profile') {
+                egmCheckInJson(['status'=>'ok'] + egmCheckInGuestPrintData($context, (string)($_GET['guest_code'] ?? ''), (string)($_GET['period_code'] ?? '')));
+            }
+            if ($getAction === 'manual_print_profile') {
+                egmCheckInJson(['status'=>'ok', 'print_profile'=>egmCheckInPrintProfile($context)]);
             }
             if ($getAction === 'print_profile') {
                 $profileGuestCode = (string)($_GET['guest_code'] ?? ($_SESSION['egm_last_print_guest_code'] ?? ''));
@@ -2487,7 +2675,14 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
                     'stats' => egmCheckInDashboardStats($context),
                 ]);
             }
-            if ($action === 'record_ticket_number') {
+            if ($action === 'report_to_management') {
+                require_once __DIR__ . '/system-telegram.php';
+                $result = systemTelegramCreateReport($context, (int)($payload['log_id'] ?? 0), $sessionUser);
+            } elseif ($action === 'reset_guest_entry') {
+                $result = egmCheckInResetGuestEntry($context, (string)($payload['guest_code'] ?? ''), (string)($payload['period_code'] ?? ''), $sessionUser);
+            } elseif ($action === 'record_manual_ticket') {
+                $result = egmCheckInRecordManualTicket($context, (string)($payload['ticket_id'] ?? ''), (string)($payload['quantity'] ?? ''), (string)($payload['client_token'] ?? ''), $sessionUser, (string)($payload['seat_mode'] ?? 'none'), egmCheckInBool($payload['allow_split_seats'] ?? false));
+            } elseif ($action === 'record_ticket_number') {
                 $result = egmCheckInRecordTicketNumber(
                     $context,
                     (string)($payload['guest_code'] ?? ''),
@@ -2540,7 +2735,7 @@ function handleEgmCheckInPage(string $projectRoot, string $missionDir, array $se
         egmCheckInJson(['status' => 'error', 'message' => $error->getMessage()], 422);
     } catch (Throwable $error) {
         error_log('EGM check-in failed: ' . $error->getMessage());
-        if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
+        if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST' || trim((string)($_GET['action'] ?? '')) !== '') {
             egmCheckInJson(['status' => 'error', 'message' => 'بررسی یا ثبت ورود ناموفق بود.'], 500);
         }
         denyPanelAccess(500, 'پنل کنترل مهمان موقتاً در دسترس نیست.', false);

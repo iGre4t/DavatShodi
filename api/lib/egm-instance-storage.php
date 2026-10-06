@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Bump whenever a request-time compatible table migration is added. Existing
 // instances use this marker to decide whether the migration block must run.
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-10-01.1';
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-10-06.1';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
 const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = [EGM_INSTANCE_SCHEMA_VERSION];
 
@@ -300,6 +300,10 @@ SQL);
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'entered_date', 'DATE NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'entered_time', 'TIME NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'quit_date', 'DATE NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'should_get_gift', 'TINYINT(1) NOT NULL DEFAULT 0');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'draw_eligible', 'TINYINT(1) NULL DEFAULT NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'benefits_reviewed_at', 'DATETIME NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'benefits_reviewed_by', 'VARCHAR(191) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'quit_time', 'TIME NULL');
     $correctPresenceAdded = !egmInstanceColumnExists($pdo, $userPeriodsTable, 'correct_presence');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'correct_presence', 'TINYINT(1) NOT NULL DEFAULT 0');

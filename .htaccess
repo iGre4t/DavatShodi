@@ -1,4 +1,19 @@
+Options -Indexes
 RewriteEngine On
+
+# Repository internals must never be served by Apache.
+RewriteRule (^|/)\.(git|svn)(/|$) - [F,L,NC]
+
+# Keep environment secrets and editor copies of these files private.
+<FilesMatch "(?i)^\.env(?:[.~].*)?$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
 
 # Keep bookmarks to the former generated-EGM directory working after it was
 # consolidated into the single "mini apps" tree.

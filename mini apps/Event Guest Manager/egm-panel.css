@@ -69,27 +69,6 @@
 }
 .egm-shell .egm-period-winner-row strong { color: var(--text, #111827); }
 
-.egm-shell .egm-task-top-nav.egm-control-nav {
-  flex-wrap: wrap;
-  gap: 8px;
-  overflow: visible;
-  border-bottom: 0;
-}
-
-.egm-shell .egm-control-nav .egm-task-top-item,
-.egm-shell .egm-control-nav .egm-task-top-item + .egm-task-top-item {
-  flex: 1 1 130px;
-  min-width: 115px;
-  margin: 0;
-  border: 1px solid var(--border, #e5e7eb);
-  border-radius: 10px;
-}
-
-.egm-shell .egm-control-nav .egm-task-top-item.active {
-  background: #e8f1ff;
-  border-color: #c4ddff;
-}
-
 .egm-shell [data-egm-control-panel-section="seating"] [data-seat-rows] {
   width: 100%;
   min-height: 150px;
@@ -1075,45 +1054,40 @@
 
 .egm-shell .egm-task-top-nav {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 0;
-  align-items: flex-end;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border, #e5e7eb);
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
+  overflow: visible;
+  border: 0;
   padding-bottom: 0;
+  margin: 0 0 20px;
 }
 
 .egm-shell .egm-task-top-item {
   display: inline-flex;
+  flex: 1 1 130px;
   width: auto;
+  min-width: 115px;
   align-items: center;
-  min-width: 128px;
-  text-align: center;
   justify-content: center;
+  text-align: center;
   border: 1px solid var(--border, #e5e7eb);
-  border-bottom: 0;
   background: #f8fafc;
   color: var(--muted, #6b7280);
-  border-radius: 12px 12px 0 0;
+  border-radius: 10px;
   padding: 10px 14px;
-  margin-bottom: -1px;
+  margin: 0;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.egm-shell .egm-task-top-item + .egm-task-top-item {
-  margin-inline-start: 6px;
-}
-
-.egm-shell .egm-task-top-item:hover {
-  background: #eef2f7;
-}
-
+.egm-shell .egm-task-top-item + .egm-task-top-item { margin-inline-start: 0; }
+.egm-shell .egm-task-top-item:hover { background: #eef2f7; }
 .egm-shell .egm-task-top-item.active {
-  background: #ffffff;
+  background: #e8f1ff;
   color: var(--primary, #111111);
   font-weight: 600;
-  border-color: var(--border, #e5e7eb);
+  border-color: #c4ddff;
 }
 
 .egm-shell .egm-task-top-section {
@@ -2695,52 +2669,55 @@
 .egm-shell .egm-period-export-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.egm-shell .egm-period-export-option {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   gap: 16px;
+}
+.egm-shell .egm-period-export-option {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: start;
+  gap: 20px;
   min-width: 0;
-  padding: 16px;
+  padding: 22px;
   border: 1px solid var(--border, #e5e7eb);
-  border-radius: 10px;
-  background: #fafbfc;
+  border-radius: 16px;
+  background: var(--surface, #fff);
+  transition: border-color .18s ease, box-shadow .18s ease;
 }
-
+.egm-shell .egm-period-export-option:hover {
+  border-color: var(--primary, #1999e3);
+  box-shadow: 0 5px 20px rgba(25, 153, 227, .06);
+}
+.egm-shell .egm-period-export-option > div { min-width: 0; }
 .egm-shell .egm-period-export-option h4 {
-  margin: 0 0 5px;
+  margin: 0 0 8px;
   color: var(--text, #111827);
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.6;
 }
-
 .egm-shell .egm-period-export-option p {
   margin: 0;
   color: var(--muted, #6b7280);
   font-size: 12px;
   line-height: 1.75;
 }
-
 .egm-shell .egm-period-export-option .btn {
-  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  gap: 8px;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 10px 16px;
+  margin: 0;
+  box-sizing: border-box;
+  text-decoration: none;
   white-space: nowrap;
 }
-
 @media (max-width: 900px) {
-  .egm-shell .egm-period-export-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .egm-shell .egm-period-export-option {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .egm-shell .egm-period-export-option .btn {
-    align-self: flex-start;
-  }
+  .egm-shell .egm-period-export-grid { grid-template-columns: 1fr; }
+  .egm-shell .egm-period-export-option { padding: 18px; }
 
   .egm-shell .egm-monitoring-kpi--wide {
     grid-column: span 1;
@@ -3242,7 +3219,39 @@ body.egm-period-invitee-editor-open {
 .egm-shell [data-egm-flow] > .egm-flow-nav,
 .egm-shell [data-egm-flow] > .egm-flow-panel,
 .egm-shell [data-egm-flow] > .egm-flow-footer { grid-column: 1 / -1; }
+.egm-shell .egm-nav-group { display: grid; gap: 5px; min-width: 0; }
+.egm-shell .egm-nav-group[hidden] { display: none; }
+.egm-shell .egm-nav-divider {
+  display: flex; align-items: center; gap: 10px; padding: 15px 10px 7px;
+  color: var(--muted); font-size: 11px; font-weight: 600;
+}
+.egm-shell .egm-nav-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.egm-shell .egm-nav-group:first-child .egm-nav-divider { padding-top: 4px; }
+.egm-shell .egm-nav-group [data-egm-task-subtab-nav] { display: grid; gap: 5px; }
 .egm-shell .egm-games-title { margin-bottom: 18px; }
+.egm-shell .egm-extra-text-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.egm-shell .egm-print-card-extra-row { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.egm-shell .egm-extra-text-settings input[type="color"] { width: 100%; height: 42px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; }
+.egm-shell .sub-layout { gap: 24px; padding-block: 16px 28px; }
+.egm-shell .sub-content { padding: 8px 20px 24px; align-content: start; }
+.egm-shell .sub-content > .sub-pane { width: 100%; max-width: 1200px; margin-inline: auto; }
+.egm-shell .sub-sidebar {
+  border: 1px solid var(--border); border-radius: 16px; padding: 16px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .025);
+}
+.egm-shell .sub-content > [data-pane="egm-main"] { max-width: 1000px; }
+.egm-shell .egm-task-top-nav.egm-control-nav { margin: 0 0 20px; }
+.egm-shell [data-egm-control-panel-section="general"] > .card,
+.egm-shell [data-egm-control-panel-section="seating"] .card,
+.egm-shell [data-egm-control-panel-section="printing"] .card { max-width: 100%; width: 100%; box-sizing: border-box; }
+@media (max-width: 1100px) {
+  .egm-shell .sub-layout { gap: 16px; }
+  .egm-shell .sub-content { padding-inline: 8px; }
+}
+@media (max-width: 900px) {
+  .egm-shell .sub-layout { padding-block: 12px 20px; }
+  .egm-shell .sub-content { padding: 8px 0 20px; }
+}
 .egm-shell .egm-games-settings, .egm-shell .egm-games-section { margin-top: 0; background: #fff; }
 .egm-shell .egm-flow-panel .egm-datetime-grid { max-width: 760px; width: 100%; }
 @media (max-width: 680px) {
@@ -3252,4 +3261,23 @@ body.egm-period-invitee-editor-open {
   .egm-shell .egm-flow-footer { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
   .egm-shell .egm-flow-footer .btn.primary { min-width: 0; flex: 1; }
   .egm-shell .egm-switch-grid { grid-template-columns: 1fr; }
+}
+
+/* Period operations are available before, and independently of, settings steps. */
+.egm-shell [data-task-top-section="control"] > .egm-period-operations{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;
+  padding:20px 24px;margin:0 0 20px;border:1px solid #d8e9f6;border-radius:20px;
+  background:linear-gradient(115deg,#fff,#f4faff);box-shadow:0 6px 20px rgba(24,99,151,.04);
+}
+.egm-shell .egm-period-operations-heading h3{margin:0;font-size:18px;color:var(--text,#172b4d)}
+.egm-shell .egm-period-operation-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.egm-shell .egm-period-operation-actions .btn{width:auto;min-width:0;flex:0 0 auto;margin:0;padding:11px 18px;border-radius:12px;text-decoration:none;font:inherit}
+.egm-shell .egm-period-operation-actions .egm-period-reset{color:#9d3e3e;background:transparent;border-color:transparent;border-inline-start:1px solid #e3e8ee;border-radius:0;padding-inline-start:20px}
+.egm-shell .egm-period-operation-actions .egm-period-reset:hover{background:#fff1f1;border-radius:12px}
+.egm-shell .egm-period-operations > .egm-period-ended-note{flex-basis:100%;margin:0;padding-top:12px;border-top:1px solid #e3e8ee}
+@media(max-width:720px){
+  .egm-shell [data-task-top-section="control"] > .egm-period-operations{padding:18px;align-items:stretch}
+  .egm-shell .egm-period-operation-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
+  .egm-shell .egm-period-operation-actions .egm-period-guest-control{grid-column:1/-1;text-align:center}
+  .egm-shell .egm-period-operation-actions .egm-period-reset{border-inline-start:0;padding-inline-start:12px}
 }

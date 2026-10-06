@@ -14,11 +14,12 @@ function egmCheckInAssert(bool $condition, string $message): void
 egmCheckInAssert(egmCheckInNormalizeNationalId('۱۲۳۴۵۶۷۸۹۰') === '1234567890', 'Persian National ID digits were not normalized');
 egmCheckInAssert(egmCheckInNormalizeNationalId('123456789') === '', 'A National ID shorter than 10 digits was accepted');
 egmCheckInAssert(egmCheckInNormalizeGuestCode('۱۲۳۴۵۶۷۸') === '12345678', 'Persian Work ID digits were not normalized');
-egmCheckInAssert(egmCheckInNormalizeGuestCode('123') === '', 'A Guest ID shorter than 4 digits was accepted');
+egmCheckInAssert(egmCheckInNormalizeGuestCode('1') === '', 'A Guest ID shorter than 2 digits was accepted');
 egmCheckInAssert(egmCheckInNormalizeGuestCode('12345678901') === '', 'A Guest ID longer than 10 digits was accepted');
 egmCheckInAssert(egmCheckInNormalizeWorkId('1234') === '1234', 'A 4-digit Work ID was rejected');
 egmCheckInAssert(egmCheckInNormalizeWorkId('123456789') === '123456789', 'A 9-digit Work ID was rejected');
 egmCheckInAssert(egmCheckInNormalizeWorkId('1234567890') === '', 'A 10-digit value was accepted as a Work ID');
+egmCheckInAssert(egmCheckInNormalizeWorkId('۱۲') === '12', 'A 2-digit Work ID was rejected');
 $ticketDefinitions = egmCheckInTicketDefinitions(['tickets' => [
     ['id' => 'food', 'title' => 'Food Ticket'],
     ['id' => 'gift', 'title' => 'Gift Ticket', 'dependsOn' => 'food'],
@@ -46,6 +47,23 @@ egmCheckInAssert(!str_contains($checkInSource, 'data-reset-all-records'), 'The d
 egmCheckInAssert(!str_contains($checkInSource, 'reset-records-button'), 'Guest Control still contains reset-button UI');
 
 $timezone = new DateTimeZone('Asia/Tehran');
+egmCheckInAssert(egmCheckInCanReportToManagement('not_found'), 'Unknown guests must be reportable');
+egmCheckInAssert(egmCheckInCanReportToManagement('walk_in_registered'), 'Walk-in registration must be reportable');
+egmCheckInAssert(egmCheckInCanReportToManagement('success', true), 'A walk-in remains reportable after entry');
+egmCheckInAssert(!egmCheckInCanReportToManagement('success'), 'Ordinary successful entry must not be reportable');
+$invitationDetails = egmCheckInInvitationDetails([
+    ['period_code'=>'past_absent'],
+    ['period_code'=>'past_present', 'entered_date'=>'2026-09-21', 'entered_time'=>'12:00'],
+    ['period_code'=>'future'],
+], [
+    ['tagCode'=>'past_absent', 'title'=>'بازه شهریور', 'startDate'=>'2026-09-21'],
+    ['tagCode'=>'past_present', 'title'=>'بازه پیشین', 'startDate'=>'2026-09-21'],
+    ['tagCode'=>'future', 'title'=>'بازه آینده', 'startDate'=>'2026-10-18'],
+], new DateTimeImmutable('2026-10-06 12:00', $timezone));
+egmCheckInAssert(str_contains($invitationDetails[0]['message'], 'اما حضور نداشته'), 'Past absence was not explained');
+egmCheckInAssert(str_contains($invitationDetails[1]['message'], 'و حضور داشته'), 'Past attendance was not explained');
+egmCheckInAssert(str_contains($invitationDetails[2]['message'], '1405') && !$invitationDetails[2]['past'], 'Future invitation date or status is wrong');
+egmCheckInAssert(!str_contains($invitationDetails[2]['message'], 'حضور نداشته'), 'Future invitation was incorrectly marked absent');
 $inside = new DateTimeImmutable('2026-08-18 10:30:00', $timezone);
 $scheduledPeriod = [
     'tagCode' => '01', 'title' => 'Scheduled', 'duration' => true,
@@ -200,8 +218,28 @@ try {
     $ungroupedAutomaticProfile = egmCheckInAutomaticPrintProfile($context, '45678901');
     egmCheckInAssert(($ungroupedAutomaticProfile['ticket_active'] ?? true) === false, 'Automatic Print off did not suppress ungrouped ticket output');
     $firstTime = new DateTimeImmutable('2026-08-18 10:15:30', $timezone);
-    $first = egmCheckInProcess($context, '1234567890', $firstTime);
+    $timedContext = $context;
+    foreach ($timedContext['periods'] as &$timedPeriod) {
+        if (egmCheckInPeriodCode($timedPeriod) === '01') $timedPeriod = array_replace($timedPeriod, [
+            'prizeEntryWindowEnabled'=>true, 'prizeEntryStartDate'=>'2026-08-18', 'prizeEntryStartTime'=>'08:00',
+            'prizeEntryEndDate'=>'2026-08-18', 'prizeEntryEndTime'=>'10:00',
+        ]);
+    }
+    unset($timedPeriod);
+    $timedContext['period'] = $timedContext['periods'][0];
+    $first = egmCheckInProcess($timedContext, '1234567890', $firstTime);
+    egmCheckInAssert(str_contains($first['message'], 'خارج از زمان مجاز قرعه‌کشی'), 'Late entry does not explain draw exclusion');
+    $lateLogs = egmCheckInRecentLogs($timedContext, 50, '1234567890');
+    egmCheckInAssert($lateLogs[0]['status'] === 'success' && $lateLogs[0]['management_report_eligible'] && $lateLogs[0]['draw_time_excluded'] && !$lateLogs[0]['draw_eligible'], 'Successful late entry does not offer management report');
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=1 WHERE user_id={$userId} AND period_code='01'");
+    $approvedLogs = egmCheckInRecentLogs($timedContext, 50, '1234567890');
+    egmCheckInAssert($approvedLogs[0]['draw_eligible'] && !$approvedLogs[0]['draw_time_excluded'] && !str_contains($approvedLogs[0]['message'], 'خارج از زمان مجاز'), 'Scan log does not reflect approval over time window');
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=0 WHERE user_id={$userId} AND period_code='01'");
+    egmCheckInAssert(!egmCheckInRecentLogs($timedContext, 50, '1234567890')[0]['draw_eligible'], 'Denied late guest remains eligible');
+    $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=NULL WHERE user_id={$userId} AND period_code='01'");
+
     egmCheckInAssert($first['result'] === 'success', 'The first valid check-in did not succeed');
+    egmCheckInAssert((int)$pdo->query("SELECT should_get_gift FROM `{$tables['user_periods']}` WHERE user_id={$userId} AND period_code='01'")->fetchColumn()===1, 'Successful entry did not get gift flag');
     $stored = $pdo->query(
         "SELECT `entered_date`, `entered_time` FROM `{$tables['user_periods']}` WHERE `user_id` = {$userId}"
     )->fetch(PDO::FETCH_ASSOC);
@@ -275,11 +313,11 @@ try {
 
     $shortCodeRejected = false;
     try {
-        egmCheckInProcess($context, '123', new DateTimeImmutable('2026-08-18 10:23:00', $timezone));
+        egmCheckInProcess($context, '1', new DateTimeImmutable('2026-08-18 10:23:00', $timezone));
     } catch (InvalidArgumentException $error) {
         $shortCodeRejected = true;
     }
-    egmCheckInAssert($shortCodeRejected, 'A 1-3 digit Guest ID reached the lookup flow');
+    egmCheckInAssert($shortCodeRejected, 'A 1-digit Guest ID reached the lookup flow');
 
     $pdo->exec(
         "INSERT INTO `{$tables['users']}` (`work_id`, `first_name`, `last_name`, `national_id`, `phone_number`, "
@@ -373,6 +411,7 @@ try {
     egmCheckInAssert(($walkIn['result'] ?? '') === 'walk_in_registered', 'Walk-in guest registration failed');
     egmCheckInAssert(($walkIn['guest_number'] ?? '') !== '', 'Walk-in guest did not receive a guest number');
     egmCheckInAssert(($walkIn['entry_recorded'] ?? false) === true, 'Walk-in registration did not immediately record entry');
+    egmCheckInAssert((int)$pdo->query("SELECT should_get_gift FROM `{$tables['user_periods']}` WHERE user_id=".(int)$walkIn['user_id']." AND period_code='01'")->fetchColumn()===0, 'Walk-in entry got gift automatically');
     $walkInUser = $pdo->query(
         "SELECT `id`, `source_type`, `is_uninvited_guest`, `outside_organization`, `uninvited_registered_by` "
         . "FROM `{$tables['users']}` WHERE `national_id` = '3234567890'"

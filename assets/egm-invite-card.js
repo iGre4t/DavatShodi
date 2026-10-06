@@ -7,8 +7,7 @@
   const ACCEPTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
   const DEFAULT_INVITE_FONT_FAMILY = "'PeydaWebFaNum', 'Segoe UI', Tahoma, Arial, sans-serif";
   const CUSTOM_INVITE_FONT_NAME = 'EGMInviteCardCustomFont';
-  let loadedCustomFontFace = null;
-  let loadedCustomFontSource = '';
+  const customFontLoads = new Map();
   const CONDITIONAL_FIELD_LABELS = Object.freeze({
     fullname: 'نام کامل', firstname: 'نام', lastname: 'نام خانوادگی', nationalid: 'کد ملی',
     workid: 'کد پرسنلی', guestnumber: 'شماره مهمان', phonenumber: 'شماره تلفن',
@@ -19,7 +18,7 @@
     equals: 'برابر است با', not_equals: 'برابر نیست با', contains: 'شامل می‌شود',
     not_contains: 'شامل نمی‌شود', empty: 'خالی است', not_empty: 'خالی نیست'
   });
-  const BUILTIN_MERGE_KEYS = new Set([...Object.keys(CONDITIONAL_FIELD_LABELS), 'periodtitle', 'printedat']);
+  const BUILTIN_MERGE_KEYS = new Set([...Object.keys(CONDITIONAL_FIELD_LABELS), 'periodtitle', 'perioddate', 'perioddate_dmy', 'perioddate_ymd', 'printedat']);
 
   function one(root, selector) {
     return root.querySelector(selector);
@@ -99,23 +98,18 @@
 
   async function ensureInviteCardFont(fontData) {
     const source = String(fontData || '').trim();
-    if (!source) {
-      if (loadedCustomFontFace && document.fonts?.delete) document.fonts.delete(loadedCustomFontFace);
-      loadedCustomFontFace = null;
-      loadedCustomFontSource = '';
-      return DEFAULT_INVITE_FONT_FAMILY;
-    }
-    if (loadedCustomFontFace && loadedCustomFontSource === source) {
-      return `'${CUSTOM_INVITE_FONT_NAME}', ${DEFAULT_INVITE_FONT_FAMILY}`;
-    }
+    if (!source) return DEFAULT_INVITE_FONT_FAMILY;
+    if (customFontLoads.has(source)) return customFontLoads.get(source);
     if (typeof FontFace !== 'function' || !document.fonts) throw new Error('مرورگر امکان بارگذاری فونت اختصاصی را ندارد.');
-    const face = new FontFace(CUSTOM_INVITE_FONT_NAME, `url(${source})`, { style: 'normal', weight: 'normal' });
-    await face.load();
-    document.fonts.add(face);
-    if (loadedCustomFontFace && document.fonts.delete) document.fonts.delete(loadedCustomFontFace);
-    loadedCustomFontFace = face;
-    loadedCustomFontSource = source;
-    return `'${CUSTOM_INVITE_FONT_NAME}', ${DEFAULT_INVITE_FONT_FAMILY}`;
+    const name = CUSTOM_INVITE_FONT_NAME + '_' + (customFontLoads.size + 1);
+    const loading = (async()=>{
+      const face=new FontFace(name,`url(${source})`,{style:'normal',weight:'normal'});
+      await face.load(); document.fonts.add(face);
+      return `'${name}', ${DEFAULT_INVITE_FONT_FAMILY}`;
+    })();
+    customFontLoads.set(source,loading);
+    try { return await loading; }
+    catch(error) { customFontLoads.delete(source); throw error; }
   }
 
   function loadCanvasImage(source) {
@@ -470,16 +464,41 @@
     return template.innerHTML.trim();
   }
 
+  function plainTextFromEditorHtml(html) {
+    const node=document.createElement('div'); node.innerHTML=sanitizeEditorHtml(html);
+    return (node.textContent || '').trim();
+  }
+
   function plainTextToEditorHtml(value) {
     const holder = document.createElement('div');
     holder.textContent = String(value || '');
     return holder.innerHTML.replace(/\r\n?|\n/g, '<br>');
   }
 
+  function periodDateMergeValues(rawDate) {
+    const value = String(rawDate || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return {perioddate: '', perioddate_dmy: '', perioddate_ymd: ''};
+    const date = new Date(value + 'T12:00:00Z');
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) return {perioddate: '', perioddate_dmy: '', perioddate_ymd: ''};
+    const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+      timeZone: 'UTC', year: 'numeric', month: 'numeric', day: 'numeric'
+    }).formatToParts(date);
+    const part = type => parts.find(item => item.type === type)?.value || '';
+    const year = part('year'), month = part('month'), day = part('day');
+    const months = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+    const persian = text => text.replace(/\d/g, digit => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)]);
+    return {
+      perioddate: '\u200f' + persian(`${day} ${months[Number(month) - 1]}ماه ${year}`) + '\u200f',
+      perioddate_dmy: '\u2066' + persian(`${day.padStart(2, '0')} / ${month.padStart(2, '0')} / ${year}`) + '\u2069',
+      perioddate_ymd: '\u2066' + persian(`${year} / ${month.padStart(2, '0')} / ${day.padStart(2, '0')}`) + '\u2069'
+    };
+  }
+
   function inviteeMergeValues(invitee) {
     const firstName = String(invitee?.firstName || '').trim();
     const lastName = String(invitee?.lastName || '').trim();
     return {
+      ...periodDateMergeValues(invitee?.periodStartDate),
       fullname: [firstName, lastName].filter(Boolean).join(' '),
       firstname: firstName,
       lastname: lastName,
@@ -566,7 +585,7 @@
       const replacement = matched ? matched.text : definition.fallback;
       output = output.replace(new RegExp(`\\[${definition.token}\\]`, 'gi'), () => replacement);
     });
-    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score|ticketcount|tickettitle|seat|periodtitle|printedat)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
+    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score|ticketcount|tickettitle|seat|periodtitle|perioddate|perioddate_dmy|perioddate_ymd|printedat)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
   }
 
   function richTextBlocks(html, invitee, conditionalVariables = []) {
@@ -654,7 +673,7 @@
         pendingSpace = false;
       };
       block.runs.forEach((run) => {
-        String(run.text || '').split(/(\n|\s+)/u).forEach((token) => {
+        (String(run.text || '').match(/\u2066[^\u2069]*\u2069|\n|\s+|[^\s\u2066]+/gu) || []).forEach((token) => {
           if (!token) return;
           if (token === '\n') {
             flush(true);
@@ -664,7 +683,8 @@
             pendingSpace = line.length > 0;
             return;
           }
-          splitRichWord(context, token, maxWidth, size, Boolean(run.bold), family).forEach((piece) => {
+          const pieces = token.startsWith('\u2066') ? [token] : splitRichWord(context, token, maxWidth, size, Boolean(run.bold), family);
+          pieces.forEach((piece) => {
             setCanvasRunFont(context, size, Boolean(run.bold), family);
             const pieceWidth = context.measureText(piece).width;
             const spaceWidth = pendingSpace ? context.measureText(' ').width : 0;
@@ -684,11 +704,12 @@
     return lines.length ? lines : [{ runs: [], width: 0 }];
   }
 
-  function fitRichCanvasText(context, blocks, maxWidth, maxHeight, fontFamily = DEFAULT_INVITE_FONT_FAMILY) {
+  function fitRichCanvasText(context, blocks, maxWidth, maxHeight, fontFamily = DEFAULT_INVITE_FONT_FAMILY, maxFontSize = 0) {
     const family = fontFamily || DEFAULT_INVITE_FONT_FAMILY;
     const minimum = 4;
     let low = minimum;
     let high = Math.max(minimum, Math.floor(maxHeight / 1.4));
+    if (maxFontSize > 0) high = Math.min(high, Math.max(minimum, Math.floor(maxFontSize)));
     let best = null;
     while (low <= high) {
       const size = Math.floor((low + high) / 2);
@@ -705,11 +726,14 @@
     return { size: minimum, lineHeight: minimum * 1.55, lines: layoutRichLines(context, blocks, maxWidth, minimum, family), family };
   }
 
-  function drawInviteText(context, textHtml, invitee, rect, conditionalVariables = [], fontFamily = DEFAULT_INVITE_FONT_FAMILY) {
+  function drawInviteText(context, textHtml, invitee, rect, conditionalVariables = [], fontFamily = DEFAULT_INVITE_FONT_FAMILY, settings = {}) {
     const padding = Math.max(2, Math.min(rect.width, rect.height) * 0.04);
     const innerWidth = Math.max(1, rect.width - padding * 2);
     const innerHeight = Math.max(1, rect.height - padding * 2);
-    const layout = fitRichCanvasText(context, richTextBlocks(textHtml, invitee, conditionalVariables), innerWidth, innerHeight, fontFamily);
+    const family = ['Tahoma', 'Arial', 'PeydaWebFaNum'].includes(settings.fontFamily) ? settings.fontFamily : fontFamily;
+    const blocks = richTextBlocks(textHtml, invitee, conditionalVariables);
+    blocks.forEach(block => block.runs.forEach(run => { if (settings.bold) run.bold = true; if (settings.color) run.color = normalizedEditorColor(settings.color) || run.color; }));
+    const layout = fitRichCanvasText(context, blocks, innerWidth, innerHeight, family, Number(settings.fontSize || 0));
     context.save();
     context.beginPath();
     context.rect(rect.x, rect.y, rect.width, rect.height);
@@ -721,7 +745,9 @@
     const totalHeight = layout.lines.length * layout.lineHeight;
     const startY = rect.y + (rect.height - totalHeight) / 2 + layout.lineHeight / 2;
     layout.lines.forEach((line, index) => {
-      let cursorX = rect.x + rect.width / 2 + line.width / 2;
+      let cursorX = settings.align === 'right' ? rect.x + rect.width - padding
+        : settings.align === 'left' ? rect.x + padding + line.width
+        : rect.x + rect.width / 2 + line.width / 2;
       line.runs.forEach((run) => {
         setCanvasRunFont(context, layout.size, run.bold, layout.family);
         context.fillStyle = normalizedEditorColor(run.color) || '#111827';
@@ -784,15 +810,16 @@
       width: width * Number(textRect.width || 0) / 100,
       height: height * Number(textRect.height || 0) / 100
     }, config?.conditionalVariables, fontFamily);
-    (Array.isArray(config?.textAreas) ? config.textAreas : []).forEach((area) => {
+    for (const area of (Array.isArray(config?.textAreas) ? config.textAreas : [])) {
+      const areaFamily=area.fontData ? await ensureInviteCardFont(area.fontData) : fontFamily;
       const rect = area?.rect || {};
       drawInviteText(context, String(area?.textHtml || area?.text || ''), displayInvitee, {
         x: width * Number(rect.x || 0) / 100,
         y: height * Number(rect.y || 0) / 100,
         width: width * Number(rect.width || 0) / 100,
         height: height * Number(rect.height || 0) / 100
-      }, config?.conditionalVariables, fontFamily);
-    });
+      }, config?.conditionalVariables, areaFamily, area);
+    }
     if (config?.ticketCountRect) {
       const rect = config.ticketCountRect;
       drawInviteText(context, '[ticketcount]', displayInvitee, {
@@ -864,6 +891,7 @@
     const conditionalStatus = one(pane, '[data-conditional-status]');
     const inviteeSearch = one(pane, '[data-invite-card-invitee-search]');
     const inviteeSelect = one(pane, '[data-invite-card-invitee-select]');
+    const previewPeriodSelect = one(pane, '[data-invite-card-preview-period]');
     const inviteeStatus = one(pane, '[data-invite-card-invitee-status]');
     const qrDataInput = one(pane, '[data-invite-card-qr-data]');
     const status = one(pane, '[data-invite-card-status]');
@@ -906,6 +934,9 @@
       textRect: null,
       ticketCountRect: null,
       textAreas: [],
+      mainTextHtml: '',
+      editingTextAreaId: '',
+      workingTextRects: new Map(),
       selectionTextAreaId: '',
       workingQrRect: null,
       workingTextRect: null,
@@ -991,13 +1022,14 @@
     }
 
     function draftPayloadForSections(sections) {
+      commitActiveText();
       const payload = { sections };
       if (sections.includes('content')) {
-        payload.textHtml = sanitizeEditorHtml(editor.innerHTML);
+        payload.textHtml = state.mainTextHtml;
         payload.qrData = '[nationalid]';
         payload.conditionalVariables = normalizedConditionalVariables(state.conditionalVariables);
         payload.conditionalBuilderDraft = collectConditionalBuilderDraft();
-        if (isReceiptCard) payload.textAreas = state.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
+        payload.textAreas = state.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
       }
       if (sections.includes('font')) {
         payload.fontData = state.fontData;
@@ -1007,7 +1039,7 @@
         payload.qrRect = cloneRect(state.qrRect);
         payload.textRect = cloneRect(state.textRect);
         if (isTicketCard) payload.ticketCountRect = cloneRect(state.ticketCountRect);
-        if (isReceiptCard) payload.textAreas = state.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
+        payload.textAreas = state.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
       }
       return payload;
     }
@@ -1028,12 +1060,13 @@
         const csrf = shell instanceof HTMLElement ? String(shell.dataset.egmCsrf || '') : '';
         const url = new URL(endpoint, window.location.href);
         url.searchParams.set('action', 'draft');
+        const body=JSON.stringify({ ...draftPayloadForSections(sections), csrf });
         const response = await fetch(url.toString(), {
           method: 'POST',
           credentials: 'same-origin',
-          keepalive: sections.includes('font') ? false : true,
+          keepalive: body.length < 60000,
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ ...draftPayloadForSections(sections), csrf })
+          body
         });
         const data = await response.json().catch(() => null);
         if (!response.ok || !data || data.status !== 'ok') {
@@ -1087,6 +1120,7 @@
     }
 
     function runEditorCommand(command, value) {
+      if (command==='insertText') [...pane.querySelectorAll(':scope > .egm-flow-nav .egm-flow-step')].find(button=>button.textContent.includes('متن‌ها'))?.click();
       saveEditorRange();
       restoreEditorRange();
       if (command === 'insertText') {
@@ -1158,18 +1192,45 @@
       scheduleInviteCardDraft('content');
     }
 
+    function activeTextArea() {
+      return state.textAreas.find(area => area.id === state.editingTextAreaId) || null;
+    }
+
+    function commitActiveText() {
+      const html = sanitizeEditorHtml(editor.innerHTML);
+      const area = activeTextArea();
+      if (area) { area.textHtml = html; area.text = editor.innerText.trim(); }
+      else state.mainTextHtml = html;
+    }
+
+    async function editTextArea(id = '') {
+      commitActiveText();
+      state.editingTextAreaId = id;
+      state.savedEditorRange = null;
+      const area = activeTextArea();
+      editor.innerHTML = area ? sanitizeEditorHtml(area.textHtml || plainTextToEditorHtml(area.text || '')) : state.mainTextHtml;
+      const title = one(pane, '[data-active-text-title]');
+      if (title) title.textContent = area ? `متن ${state.textAreas.indexOf(area) + 2}` : 'متن اصلی';
+      renderExtraTextAreas();
+      await applyStateFont();
+    }
+
     function updateFontUi() {
-      if (fontStatus instanceof HTMLElement) {
-        fontStatus.textContent = state.fontData
-          ? `${state.fontName || 'فونت اختصاصی'} — ${(state.fontBytes / 1024).toFixed(0)} KB`
-          : 'فونت پیش‌فرض استفاده می‌شود.';
-      }
-      if (removeFontButton instanceof HTMLButtonElement) removeFontButton.hidden = !state.fontData;
+      const current = activeTextArea() || state;
+      if (fontStatus instanceof HTMLElement) fontStatus.textContent = current.fontData
+        ? `${current.fontName || 'فونت اختصاصی'} — ${(Number(current.fontBytes || 0) / 1024).toFixed(0)} KB`
+        : activeTextArea() ? 'فونت اصلی کارت' : 'فونت پیش‌فرض';
+      if (removeFontButton instanceof HTMLButtonElement) removeFontButton.hidden = !current.fontData;
     }
 
     async function applyStateFont() {
-      state.fontFamily = await ensureInviteCardFont(state.fontData);
-      editor.style.fontFamily = state.fontFamily;
+      const area = activeTextArea();
+      const targetId = state.editingTextAreaId;
+      const family = await ensureInviteCardFont(area?.fontData || state.fontData);
+      if (targetId !== state.editingTextAreaId) return;
+      if (!area) state.fontFamily = family;
+      editor.style.fontFamily = area && !area.fontData && ['Tahoma','Arial','PeydaWebFaNum'].includes(area.fontFamily) ? area.fontFamily : family;
+      editor.style.textAlign = area?.align || 'center';
       updateFontUi();
     }
 
@@ -1397,7 +1458,10 @@
     }
 
     function selectedInvitee() {
-      return state.inviteesById.get(inviteeSelect.value) || null;
+      const invitee = state.inviteesById.get(inviteeSelect.value);
+      if (!invitee) return null;
+      const option = previewPeriodSelect?.selectedOptions?.[0];
+      return {...invitee, periodStartDate: option?.dataset.startDate || '', periodTitle: option?.dataset.periodTitle || ''};
     }
 
     async function loadInvitees(query) {
@@ -1415,6 +1479,18 @@
           throw new Error(responseMessage(result, 'بارگذاری دعوت‌شدگان ناموفق بود.'));
         }
         state.inviteesById = new Map();
+        if (previewPeriodSelect instanceof HTMLSelectElement && Array.isArray(result.periods)) {
+          const previousPeriod = previewPeriodSelect.value;
+          previewPeriodSelect.replaceChildren(new Option('انتخاب بازه پیش‌نمایش', ''));
+          result.periods.forEach(period => {
+            const option = new Option(period.title || period.code, period.code);
+            option.dataset.startDate = period.startDate || '';
+            option.dataset.periodTitle = period.title || '';
+            previewPeriodSelect.add(option);
+          });
+          previewPeriodSelect.value = previousPeriod;
+          if (!previewPeriodSelect.value && result.periods.length === 1) previewPeriodSelect.selectedIndex = 1;
+        }
         inviteeSelect.replaceChildren(new Option('ابتدا دعوت‌شونده را انتخاب کنید', ''));
         result.rows.forEach((invitee) => {
           const id = String(invitee?.id || '');
@@ -1479,57 +1555,84 @@
     }
 
     function renderExtraTextAreas() {
-      if (!(extraTextAreasRoot instanceof HTMLElement) || !isReceiptCard) return;
+      if (!(extraTextAreasRoot instanceof HTMLElement)) return;
       extraTextAreasRoot.replaceChildren();
-      if (!state.textAreas.length) {
-        const empty = document.createElement('p');
-        empty.className = 'muted small';
-        empty.textContent = 'هنوز متن مستقلی اضافه نشده است.';
-        extraTextAreasRoot.append(empty);
-        return;
-      }
-      state.textAreas.forEach((area, index) => {
-        const row = document.createElement('div');
-        row.className = 'egm-print-card-extra-row';
-        row.dataset.textAreaId = area.id;
-        const textarea = document.createElement('textarea');
-        textarea.dataset.printTextContent = area.id;
-        textarea.dir = 'rtl';
-        textarea.placeholder = 'متن این ناحیه؛ مثال: [fullname]';
-        textarea.value = String(area.text || '');
-        const stateLabel = document.createElement('span');
-        stateLabel.className = 'egm-print-card-extra-state';
-        stateLabel.textContent = area.rect
-          ? `متن ${index + 2} — ناحیه ${area.rect.width.toFixed(1)}×${area.rect.height.toFixed(1)}٪`
-          : `متن ${index + 2} — ناحیه تعیین نشده`;
-        const actions = document.createElement('div');
-        actions.className = 'egm-print-card-extra-actions';
-        const select = document.createElement('button');
-        select.type = 'button';
-        select.className = 'btn ghost';
-        select.dataset.selectPrintTextArea = area.id;
-        select.textContent = area.rect ? 'تغییر ناحیه روی کارت' : 'تعیین ناحیه روی کارت';
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'btn ghost';
-        remove.dataset.removePrintTextArea = area.id;
-        remove.textContent = 'حذف';
-        actions.append(select, remove);
-        row.append(textarea, stateLabel, actions);
-        extraTextAreasRoot.append(row);
+      [{id:'', label:'متن اصلی'}, ...state.textAreas.map((area,index)=>({id:area.id,label:`متن ${index+2}`}))].forEach(item=>{
+        const group = document.createElement('div');
+        group.className = 'egm-card-text-choice';
+        const button = document.createElement('button');
+        button.type='button'; button.className='egm-card-text-tab';
+        button.dataset.editTextArea=item.id;
+        button.textContent=item.label;
+        button.setAttribute('aria-pressed', String(item.id===state.editingTextAreaId));
+        group.append(button);
+        if (item.id) {
+          const remove=document.createElement('button');
+          remove.type='button'; remove.className='egm-card-text-remove';
+          remove.dataset.removePrintTextArea=item.id;
+          remove.textContent='×'; remove.setAttribute('aria-label',`حذف ${item.label}`);
+          group.append(remove);
+        }
+        extraTextAreasRoot.append(group);
       });
+      const settingsRoot=one(pane,'[data-active-text-settings]');
+      if (settingsRoot) {
+        settingsRoot.replaceChildren();
+        const area=activeTextArea();
+        if (area) {
+          const settings=document.createElement('div');
+          settings.className='egm-extra-text-settings';
+          settings.innerHTML=`<label class="field"><span>قلم</span><select data-text-style="fontFamily"><option value="default">قلم اصلی یا بارگذاری‌شده</option><option value="PeydaWebFaNum">پیدا</option><option value="Tahoma">تاهوما</option><option value="Arial">آریال</option></select></label>
+            <label class="field"><span>اندازه قلم</span><input type="number" min="4" max="1000" placeholder="خودکار" data-text-style="fontSize"></label>
+            <label class="field"><span>چینش</span><select data-text-style="align"><option value="center">وسط</option><option value="right">راست</option><option value="left">چپ</option></select></label>
+            <label class="field"><span>رنگ کلی متن</span><input type="color" data-text-style="color"></label>
+            <button type="button" class="btn ghost" data-clear-area-color>رنگ‌های داخل متن</button>`;
+          settings.querySelectorAll('[data-text-style]').forEach(input=>{
+            input.dataset.textStyleArea=area.id;
+            input.value=area[input.dataset.textStyle] || ({fontFamily:'default',align:'center',color:'#111827',fontSize:''}[input.dataset.textStyle]);
+          });
+          settingsRoot.append(settings);
+        }
+      }
+      const picker=one(pane,'[data-placement-text]');
+      if (picker) {
+        picker.replaceChildren();
+        [{id:'',label:'متن اصلی'},...state.textAreas.map((area,index)=>({id:area.id,label:`متن ${index+2}`}))].forEach(item=>{
+          const option=document.createElement('option'); option.value=item.id; option.textContent=item.label; picker.append(option);
+        });
+        picker.value=state.selectionTextAreaId;
+      }
     }
 
     function updateSelectionBoxes() {
       applyRect(qrBox, state.workingQrRect);
       applyRect(textBox, state.workingTextRect);
       applyRect(ticketBox, state.workingTicketCountRect);
-      applyRect(mainTextContextBox, state.selectionTextAreaId ? state.textRect : null);
+      applyRect(mainTextContextBox, state.selectionTextAreaId ? state.workingTextRects.get('') : null);
+      selectionLayer.querySelectorAll('[data-extra-placement-box]').forEach(node=>node.remove());
+      state.textAreas.forEach((area,index)=>{
+        if(area.id===state.selectionTextAreaId) return;
+        const rect=state.workingTextRects.get(area.id);
+        if(!rect) return;
+        const box=document.createElement('div'); box.className='egm-invite-card-selection-box is-text is-context';
+        box.dataset.extraPlacementBox=area.id;
+        const label=document.createElement('span');label.textContent=`متن ${index+2}`;box.append(label);
+        selectionLayer.append(box);applyRect(box,rect);
+      });
+      const label=textBox?.querySelector('span');
+      if(label) label.textContent=state.selectionTextAreaId ? `متن ${state.textAreas.findIndex(area=>area.id===state.selectionTextAreaId)+2}` : 'متن اصلی';
     }
 
     function setActiveTool(tool) {
       state.activeTool = tool === 'ticket' && isTicketCard ? 'ticket' : (tool === 'text' ? 'text' : 'qr');
-      pane.querySelectorAll('[data-selection-tool]').forEach((button) => {
+      one(pane,'[data-placement-text]')?.addEventListener('change',event=>{
+      state.workingTextRects.set(state.selectionTextAreaId,cloneRect(state.workingTextRect));
+      state.selectionTextAreaId=event.target.value;
+      state.workingTextRect=cloneRect(state.workingTextRects.get(state.selectionTextAreaId));
+      setActiveTool('text');updateSelectionBoxes();
+    });
+
+    pane.querySelectorAll('[data-selection-tool]').forEach((button) => {
         const active = button instanceof HTMLElement && button.dataset.selectionTool === state.activeTool;
         button.classList.toggle('active', active);
         button.classList.toggle('primary', active);
@@ -1548,7 +1651,9 @@
 
     function openSelectionModal(textAreaId = '') {
       if (!state.imageData || !(modal instanceof HTMLElement)) return;
-      state.selectionTextAreaId = isReceiptCard ? String(textAreaId || '') : '';
+      state.selectionTextAreaId = String(textAreaId || '');
+      state.workingTextRects=new Map([['',cloneRect(state.textRect)],...state.textAreas.map(area=>[area.id,cloneRect(area.rect)])]);
+      const picker=one(pane,'[data-placement-text]'); if(picker) picker.value=state.selectionTextAreaId;
       state.workingQrRect = cloneRect(state.qrRect);
       state.workingTicketCountRect = cloneRect(state.ticketCountRect);
       const selectedExtra = state.selectionTextAreaId
@@ -1572,12 +1677,9 @@
       if (commit) {
         state.qrRect = cloneRect(state.workingQrRect);
         if (isTicketCard) state.ticketCountRect = cloneRect(state.workingTicketCountRect);
-        if (state.selectionTextAreaId) {
-          const selectedExtra = state.textAreas.find((area) => area.id === state.selectionTextAreaId);
-          if (selectedExtra) selectedExtra.rect = cloneRect(state.workingTextRect);
-        } else {
-          state.textRect = cloneRect(state.workingTextRect);
-        }
+        state.workingTextRects.set(state.selectionTextAreaId,cloneRect(state.workingTextRect));
+        state.textRect=cloneRect(state.workingTextRects.get(''));
+        state.textAreas.forEach(area=>{area.rect=cloneRect(state.workingTextRects.get(area.id));});
         updateAreaStates();
         renderExtraTextAreas();
         markPreviewStale();
@@ -1641,7 +1743,7 @@
       }
       if (state.activeTool === 'qr') state.workingQrRect = nextRect;
       else if (state.activeTool === 'ticket') state.workingTicketCountRect = nextRect;
-      else state.workingTextRect = nextRect;
+      else { state.workingTextRect = nextRect; state.workingTextRects.set(state.selectionTextAreaId,cloneRect(nextRect)); }
       updateSelectionBoxes();
       if (selectionHelp instanceof HTMLElement) {
         selectionHelp.textContent = state.activeTool === 'qr'
@@ -1665,7 +1767,7 @@
     one(pane, '[data-action="clear-current-selection"]')?.addEventListener('click', () => {
       if (state.activeTool === 'qr') state.workingQrRect = null;
       else if (state.activeTool === 'ticket') state.workingTicketCountRect = null;
-      else state.workingTextRect = null;
+      else { state.workingTextRect = null; state.workingTextRects.set(state.selectionTextAreaId,null); }
       updateSelectionBoxes();
       if (selectionHelp instanceof HTMLElement) selectionHelp.textContent = 'ناحیه فعال پاک شد.';
     });
@@ -1680,33 +1782,39 @@
     one(pane, '[data-action="add-print-text-area"]')?.addEventListener('click', () => {
       const id = `text_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
       state.textAreas.push({ id, text: '', textHtml: '', rect: null });
-      renderExtraTextAreas();
-      markPreviewStale();
-    });
-    extraTextAreasRoot?.addEventListener('input', (event) => {
-      const input = event.target;
-      if (!(input instanceof HTMLTextAreaElement)) return;
-      const area = state.textAreas.find((item) => item.id === input.dataset.printTextContent);
-      if (!area) return;
-      area.text = input.value;
-      area.textHtml = plainTextToEditorHtml(input.value);
+      void editTextArea(id).catch(error=>setStatus(error.message,true));
       markPreviewStale();
       scheduleInviteCardDraft('content');
     });
-    extraTextAreasRoot?.addEventListener('click', (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const select = target?.closest('[data-select-print-text-area]');
-      if (select instanceof HTMLElement) {
-        setActiveTool('text');
-        openSelectionModal(String(select.dataset.selectPrintTextArea || ''));
-        return;
-      }
-      const remove = target?.closest('[data-remove-print-text-area]');
-      if (remove instanceof HTMLElement) {
-        state.textAreas = state.textAreas.filter((area) => area.id !== String(remove.dataset.removePrintTextArea || ''));
-        renderExtraTextAreas();
-        markPreviewStale();
-        scheduleInviteCardDraft(['content', 'layout'], 0);
+    pane.addEventListener('input', event=>{
+      const input=event.target;
+      if (!(input instanceof HTMLElement) || !input.hasAttribute('data-text-style')) return;
+      const area=state.textAreas.find(item=>item.id===input.dataset.textStyleArea);
+      if (!area || !input.checkValidity()) return;
+      const key=input.dataset.textStyle;
+      area[key]=key==='fontSize' ? Number(input.value || 0) : input.value;
+      void applyStateFont(); markPreviewStale(); scheduleInviteCardDraft('content');
+    });
+    pane.addEventListener('click',event=>{
+      if (!event.target.closest('[data-clear-area-color]')) return;
+      const area=activeTextArea(); if (!area) return;
+      area.color=''; markPreviewStale(); scheduleInviteCardDraft('content');
+    });
+    extraTextAreasRoot?.addEventListener('click', event=>{
+      const target=event.target instanceof Element ? event.target : null;
+      const edit=target?.closest('[data-edit-text-area]');
+      if (edit) { void editTextArea(edit.dataset.editTextArea).catch(error=>setStatus(error.message,true)); return; }
+      const remove=target?.closest('[data-remove-print-text-area]');
+      if (remove) {
+        commitActiveText();
+        const id=remove.dataset.removePrintTextArea;
+        if (state.editingTextAreaId===id) {
+          state.editingTextAreaId=''; editor.innerHTML=state.mainTextHtml; state.savedEditorRange=null;
+          const title=one(pane,'[data-active-text-title]'); if(title) title.textContent='متن اصلی';
+          void applyStateFont();
+        }
+        state.textAreas=state.textAreas.filter(area=>area.id!==id);
+        renderExtraTextAreas(); markPreviewStale(); scheduleInviteCardDraft(['content','layout'],0);
       }
     });
 
@@ -1819,19 +1927,19 @@
     fontFileInput?.addEventListener('change', async () => {
       const file = fontFileInput.files && fontFileInput.files[0];
       if (!(file instanceof File)) return;
+      const target = activeTextArea() || state;
       if (fontStatus instanceof HTMLElement) fontStatus.textContent = 'در حال بررسی و بارگذاری فونت...';
       try {
         const normalized = await normalizedFontDataUrl(file);
         const family = await ensureInviteCardFont(normalized.data);
-        state.fontData = normalized.data;
-        state.fontName = file.name;
-        state.fontMime = normalized.mime;
-        state.fontBytes = normalized.bytes;
-        state.fontFamily = family;
-        editor.style.fontFamily = family;
-        updateFontUi();
+        target.fontData = normalized.data;
+        target.fontName = file.name;
+        target.fontBytes = normalized.bytes;
+        if (target===state) { state.fontMime=normalized.mime; state.fontFamily=family; }
+        else target.fontFamily='default';
+        await applyStateFont();
         markPreviewStale();
-        scheduleInviteCardDraft('font', 0);
+        scheduleInviteCardDraft(target===state ? 'font' : 'content', 0);
         setStatus('فونت آماده است و به‌صورت خودکار ذخیره می‌شود.', false);
       } catch (error) {
         updateFontUi();
@@ -1841,14 +1949,13 @@
       }
     });
     removeFontButton?.addEventListener('click', async () => {
-      state.fontData = '';
-      state.fontName = '';
-      state.fontMime = '';
-      state.fontBytes = 0;
+      const target=activeTextArea() || state;
+      target.fontData=''; target.fontName=''; target.fontBytes=0;
+      if(target===state) state.fontMime='';
       try {
         await applyStateFont();
         markPreviewStale();
-        scheduleInviteCardDraft('font', 0);
+        scheduleInviteCardDraft(target===state ? 'font' : 'content', 0);
         setStatus('فونت اختصاصی حذف شد و تغییر به‌صورت خودکار ذخیره می‌شود.', false);
       } catch (error) {
         setStatus(error instanceof Error ? error.message : 'بازنشانی فونت ناموفق بود.', true);
@@ -1924,6 +2031,7 @@
       inviteeSearchTimer = window.setTimeout(() => { void loadInvitees(inviteeSearch.value); }, 250);
     });
     inviteeSelect.addEventListener('change', markPreviewStale);
+    previewPeriodSelect?.addEventListener('change', markPreviewStale);
     qrDataInput.addEventListener('input', () => {
       markPreviewStale();
       scheduleInviteCardDraft('content');
@@ -1934,11 +2042,12 @@
       if (!state.qrRect) throw new Error('ناحیه رمز دوبعدی را با تعیین ناحیه تعیین کنید.');
       if (!state.textRect) throw new Error('ناحیه متن دعوت را با تعیین ناحیه تعیین کنید.');
       if (isTicketCard && !state.ticketCountRect) throw new Error('ناحیه مستقل شماره بلیت را روی رسید تعیین کنید.');
-      const textHtml = sanitizeEditorHtml(editor.innerHTML);
-      const text = editor.innerText.trim();
+      commitActiveText();
+      const textHtml = state.mainTextHtml;
+      const text = plainTextFromEditorHtml(textHtml);
       const qrData = '[nationalid]';
       if (!text) throw new Error('متن کارت دعوت را وارد کنید.');
-      const textAreas = isReceiptCard ? state.textAreas.map((area, index) => {
+      const textAreas = state.textAreas.map((area, index) => {
         const areaText = String(area.text || '').trim();
         if (!areaText) throw new Error(`متن ناحیه ${index + 2} را وارد کنید.`);
         if (!area.rect) throw new Error(`ناحیه متن ${index + 2} را روی کارت تعیین کنید.`);
@@ -1946,9 +2055,12 @@
           id: area.id,
           text: areaText,
           textHtml: area.textHtml || plainTextToEditorHtml(areaText),
-          rect: cloneRect(area.rect)
+          rect: cloneRect(area.rect),
+          fontData: area.fontData || '', fontName: area.fontName || '',
+          fontFamily: area.fontFamily || 'default', color: area.color || '',
+          fontSize: Number(area.fontSize || 0), bold: Boolean(area.bold), align: area.align || 'center'
         };
-      }) : [];
+      });
       return {
         imageData: state.imageData,
         imageName: state.imageName,
@@ -2045,7 +2157,8 @@
         state.ticketCountRect = cloneRect(config.ticketCountRect);
         state.textAreas = config.textAreas.map((area) => ({ ...area, rect: cloneRect(area.rect) }));
         state.conditionalVariables = [];
-        editor.innerHTML = sanitizeEditorHtml(config.textHtml);
+        state.editingTextAreaId=''; state.mainTextHtml=sanitizeEditorHtml(config.textHtml);
+        editor.innerHTML = state.mainTextHtml;
         editor.style.fontFamily = fontFamily;
         renderConditionalVariables();
         fillConditionalBuilder();
@@ -2144,14 +2257,15 @@
           width: width * config.textRect.width / 100,
           height: height * config.textRect.height / 100
         }, config.conditionalVariables, fontFamily);
-        config.textAreas.forEach((area) => {
+        for (const area of config.textAreas) {
+          const areaFamily=area.fontData ? await ensureInviteCardFont(area.fontData) : fontFamily;
           drawInviteText(context, area.textHtml || area.text, invitee, {
             x: width * area.rect.x / 100,
             y: height * area.rect.y / 100,
             width: width * area.rect.width / 100,
             height: height * area.rect.height / 100
-          }, config.conditionalVariables, fontFamily);
-        });
+          }, config.conditionalVariables, areaFamily, area);
+        }
         const pngBlob = await canvasToPngBlob(canvas);
         if (state.generatedUrl) URL.revokeObjectURL(state.generatedUrl);
         state.generatedUrl = URL.createObjectURL(pngBlob);
@@ -2207,19 +2321,21 @@
         state.qrRect = normalizedRect(config.qrRect);
         state.textRect = normalizedRect(config.textRect);
         state.ticketCountRect = normalizedRect(config.ticketCountRect);
-        state.textAreas = isReceiptCard && Array.isArray(config.textAreas)
+        state.textAreas = Array.isArray(config.textAreas)
           ? config.textAreas.map((area, index) => ({
+              ...area,
               id: String(area?.id || `text_${index + 1}`),
               text: String(area?.text || '').trim(),
               textHtml: sanitizeEditorHtml(area?.textHtml || plainTextToEditorHtml(area?.text || '')),
               rect: normalizedRect(area?.rect)
-            })).filter((area) => area.text)
+            }))
           : [];
         editor.innerHTML = sanitizeEditorHtml(
           typeof config.textHtml === 'string' && config.textHtml
             ? config.textHtml
             : plainTextToEditorHtml(typeof config.text === 'string' ? config.text : '')
         );
+        state.editingTextAreaId=''; state.mainTextHtml=editor.innerHTML;
         state.conditionalVariables = normalizedConditionalVariables(config.conditionalVariables);
         renderConditionalVariables();
         const builderDraft = config.conditionalBuilderDraft && typeof config.conditionalBuilderDraft === 'object'

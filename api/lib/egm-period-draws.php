@@ -85,35 +85,20 @@ function egmPeriodDrawSettings(array $input): array
 /** @return array{0:string,1:string}|null Inclusive entry minutes, or no restriction. */
 function egmPeriodDrawEntryWindow(array $period): ?array
 {
-    if (!egmCheckInBool($period['prizeEntryWindowEnabled'] ?? ($period['prize_entry_window_enabled'] ?? false))) return null;
-    $values = [
-        (string)($period['prizeEntryStartDate'] ?? ($period['prize_entry_start_date'] ?? '')),
-        (string)($period['prizeEntryStartTime'] ?? ($period['prize_entry_start_time'] ?? '')),
-        (string)($period['prizeEntryEndDate'] ?? ($period['prize_entry_end_date'] ?? '')),
-        (string)($period['prizeEntryEndTime'] ?? ($period['prize_entry_end_time'] ?? '')),
-    ];
-    if (in_array('', array_map('trim', $values), true)) throw new InvalidArgumentException('زمان واجدان شرایط قرعه‌کشی این بازه کامل نیست.');
-    $timezone = new DateTimeZone('Asia/Tehran');
-    $start = egmCheckInDateTime($values[0], $values[1], false, $timezone);
-    $end = egmCheckInDateTime($values[2], $values[3], true, $timezone);
-    if (!$start || !$end || $end <= $start) throw new InvalidArgumentException('زمان واجدان شرایط قرعه‌کشی این بازه معتبر نیست.');
-    return [$start->format('Y-m-d H:i'), $end->format('Y-m-d H:i')];
+    return egmBenefitsDrawEntryWindow($period);
 }
 
 function egmPeriodDrawEligible(array $rows, array $draw, array $period = []): array
 {
-    $entryWindow = egmPeriodDrawEntryWindow($period);
+    egmPeriodDrawEntryWindow($period); // Validate settings even when there are no participants.
     $won = array_fill_keys(array_column($draw['winners'] ?? [], 'participantKey'), true);
     $result = [];
     foreach ($rows as $row) {
         if (trim((string)($row['entered_date'] ?? '')) === '' || trim((string)($row['entered_time'] ?? '')) === '') continue;
-        if ($entryWindow !== null) {
-            $entryMinute = trim((string)$row['entered_date']) . ' ' . substr(trim((string)$row['entered_time']), 0, 5);
-            if ($entryMinute < $entryWindow[0] || $entryMinute > $entryWindow[1]) continue;
-        }
         // Classification belongs to this period, never to a user's history in other periods.
         $walkIn = !empty($row['period_is_uninvited_guest']) || strtolower(trim((string)($row['invitation_source'] ?? ''))) === 'walk_in';
-        if (empty($draw[$walkIn ? 'includeWalkIns' : 'includeEntered'])) continue;
+        if (!egmBenefitsDrawState($row, $period)['allowed']) continue;
+        if (($row['draw_eligible'] ?? null) === null && empty($draw['includeEntered'])) continue;
         $key = (string)$row['user_id'];
         if (isset($won[$key]) || isset($result[$key])) continue;
         $work = (string)($row['work_id'] ?? '');

@@ -494,11 +494,25 @@ function egmGamesDeleteLevel(array $context, string $gameId, string $levelId): v
 
 function egmGamesJson(array $data, int $status = 200): never
 {
+    if (isset($GLOBALS['egmGamesResponseBufferLevel'])) {
+        while (ob_get_level() >= $GLOBALS['egmGamesResponseBufferLevel']) ob_end_clean();
+    }
     http_response_code($status);
     header('Content-Type: application/json; charset=UTF-8');
     header('Cache-Control: no-store');
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
+}
+
+function egmGamesRequestInput(string $method): array
+{
+    if ($method !== 'POST') return $_GET;
+    // Keep JSON clients working; browser forms avoid host filters on JSON bodies.
+    $body = $_POST['payload'] ?? file_get_contents('php://input');
+    if (!is_string($body)) throw new InvalidArgumentException('درخواست بازی نامعتبر است.');
+    $input = json_decode($body, true);
+    if (!is_array($input)) throw new InvalidArgumentException('درخواست بازی نامعتبر است.');
+    return $input;
 }
 
 function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPeriods, string $actorCode = ''): never
@@ -507,8 +521,7 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
         $context = egmPeriodInvitesContext($missionDir);
         if ($context['code'] === '') throw new RuntimeException('EGM must be registered before managing games.');
         $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-        $input = $method === 'POST' ? json_decode((string)file_get_contents('php://input'), true) : $_GET;
-        if (!is_array($input)) $input = [];
+        $input = egmGamesRequestInput($method);
         $action = (string)($input['action'] ?? 'list');
         $state = egmGamesState($context);
         if ($method === 'GET' && $action === 'list') {
@@ -620,7 +633,8 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
     } catch (InvalidArgumentException $error) {
         egmGamesJson(['status' => 'error', 'message' => $error->getMessage()], 422);
     } catch (Throwable $error) {
-        error_log('EGM games failed: ' . $error->getMessage());
-        egmGamesJson(['status' => 'error', 'message' => 'Managing games failed.'], 500);
+        $reference = bin2hex(random_bytes(4));
+        error_log('EGM games failed [' . $reference . ']: ' . (string)$error);
+        egmGamesJson(['status' => 'error', 'message' => 'ذخیره بازی ناموفق بود. کد پیگیری: ' . $reference . '؛ گزارش خطای PHP هاست را بررسی کنید.'], 500);
     }
 }

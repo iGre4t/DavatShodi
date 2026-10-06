@@ -453,6 +453,7 @@ function egmCreatorListMissions(): array
       'directory' => $directory,
       'webPath' => $webPath,
       'panelUrl' => 'panel.php?tab=' . rawurlencode(egmCreatorMissionTabId($folder, $code)),
+      'sidebarVisible' => (int)($record['sidebar_visible'] ?? 1) === 1,
       'createdAt' => $createdAt,
       'createdAtLabel' => $createdAt !== '' ? $createdAt : '-'
     ];
@@ -663,6 +664,16 @@ if ($egmCreatorIsJsonRequest) {
 
   $action = strtolower(trim((string)($payload['action'] ?? '')));
   try {
+    if ($action === 'sidebar_visibility') {
+      $directory = 'mini apps/EGMs/' . basename((string)($payload['folder'] ?? ''));
+      $pdo = egmCreatorDatabase();
+      $record = findEgmRegistryByDirectory($pdo, $directory);
+      if (!$record) throw new InvalidArgumentException('مورد انتخاب‌شده پیدا نشد.');
+      $visible = filter_var($payload['visible'] ?? true, FILTER_VALIDATE_BOOLEAN);
+      $statement = $pdo->prepare('UPDATE `egm` SET `sidebar_visible`=:visible WHERE `code`=:code');
+      $statement->execute([':visible'=>$visible ? 1 : 0, ':code'=>$record['code']]);
+      egmCreatorJsonResponse(['status'=>'ok', 'message'=>'نمایش در نوار کناری ذخیره شد.', 'clubs'=>egmCreatorListMissions()]);
+    }
     if ($action === 'create') {
       $mission = egmCreatorCreateMission((string)($payload['name'] ?? ''));
       $missions = egmCreatorListMissions();
@@ -767,6 +778,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
               <span class="egm-creator-muted"><?= htmlspecialchars((string)$mission['createdAtLabel'], ENT_QUOTES, 'UTF-8') ?></span>
             </div>
             <div class="egm-creator-muted">کد یکتا: <code><?= htmlspecialchars((string)$mission['code'], ENT_QUOTES, 'UTF-8') ?></code></div>
+            <label class="panel-sidebar-visibility"><input type="checkbox" role="switch" data-egm-sidebar-visible data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>" <?= ($mission['sidebarVisible'] ?? true) ? 'checked' : '' ?> /> نمایش در نوار کناری</label>
             <div class="egm-creator-actions">
               <a class="btn primary" href="<?= htmlspecialchars((string)$mission['panelUrl'], ENT_QUOTES, 'UTF-8') ?>">بخش پنل</a>
               <button type="button" class="btn ghost" data-egm-update-branch-setting data-folder="<?= htmlspecialchars((string)$mission['folder'], ENT_QUOTES, 'UTF-8') ?>">به‌روزرسانی تنظیمات شعبه</button>
@@ -835,6 +847,7 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
             <span class="egm-creator-muted">${createdAt}</span>
           </div>
           <div class="egm-creator-muted">کد یکتا: <code>${code}</code></div>
+          <label class="panel-sidebar-visibility"><input type="checkbox" role="switch" data-egm-sidebar-visible data-folder="${folder}" ${club?.sidebarVisible !== false ? 'checked' : ''} /> نمایش در نوار کناری</label>
           <div class="egm-creator-actions">
             <a class="btn primary" href="${panelUrl}">بخش پنل</a>
             <button type="button" class="btn ghost" data-egm-update-branch-setting data-folder="${folder}">به‌روزرسانی تنظیمات شعبه</button>
@@ -905,6 +918,22 @@ $egmCreatorEndpoint = 'mini%20apps/Event%20Guest%20Manager/EGMCreator.php';
   }
 
   if (listEl instanceof HTMLElement) {
+    listEl.addEventListener('change', async event => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || !input.hasAttribute('data-egm-sidebar-visible')) return;
+      const visible = input.checked;
+      input.disabled = true;
+      try {
+        const payload = await postCreatorAction({action:'sidebar_visibility', folder:input.dataset.folder, visible});
+        clubs = Array.isArray(payload.clubs) ? payload.clubs : clubs;
+        const club = clubs.find(item => item.folder === input.dataset.folder);
+        window.dispatchEvent(new CustomEvent('panel-sidebar-visibility', {detail:{tabId:club?.tabId, visible}}));
+        renderClubs();
+        setStatus(payload.message, 'ok');
+      } catch (error) { input.checked = !visible; setStatus(error.message, 'error'); }
+      finally { input.disabled = false; }
+    });
+
     listEl.addEventListener('click', async (event) => {
       const target = event.target instanceof Element
         ? event.target.closest('[data-egm-update-branch-setting], [data-egm-delete-club]')

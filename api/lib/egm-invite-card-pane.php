@@ -104,13 +104,13 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
       <div class="card egm-invite-card-content-card">
         <div class="section-header">
           <div>
-            <h3><?= $textTitle ?></h3>
+            <h3>متن‌های کارت</h3>
             <p class="muted small">متن در همان ناحیه‌ای که با تعیین ناحیه تعیین می‌کنید نمایش داده می‌شود.</p>
           </div>
         </div>
         <div class="form" style="gap:12px;">
           <div class="field full">
-            <span><?= htmlspecialchars($textTitle, ENT_QUOTES, 'UTF-8') ?></span>
+            <span data-active-text-title>متن اصلی</span>
             <div class="egm-invite-card-editor">
               <div class="egm-invite-card-editor-toolbar" role="toolbar" aria-label="ابزارهای ویرایش متن دعوت">
                 <button type="button" class="btn ghost" data-editor-command="bold" title="متن پررنگ (Ctrl+B)" aria-label="پررنگ"><strong>B</strong></button>
@@ -138,6 +138,9 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
                     <option value="[postallevel]">سطح پستی</option>
                     <option value="[score]">امتیاز</option>
                     <option value="[periodtitle]">نام بازه</option>
+                    <option value="[perioddate]">تاریخ شروع بازه — روز، نام ماه، سال</option>
+                    <option value="[perioddate_dmy]">تاریخ شروع بازه — روز / ماه / سال</option>
+                    <option value="[perioddate_ymd]">تاریخ شروع بازه — سال / ماه / روز</option>
                     <option value="[printedat]">زمان چاپ</option>
                   </select>
                   <button type="button" class="btn ghost" data-action="insert-invite-card-merge-tag">درج متغیر</button>
@@ -151,20 +154,20 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
               <button type="button" class="btn ghost" data-action="remove-invite-card-font" hidden>حذف فونت</button>
               <span class="muted small" data-invite-card-font-status>فونت پیش‌فرض استفاده می‌شود.</span>
             </div>
+            <div data-active-text-settings></div>
             <span class="muted small">بخشی از متن را انتخاب کنید و متن پررنگ یا رنگ را اعمال کنید. فرمت متغیرها نیز پس از جایگزینی حفظ می‌شود.</span>
           </div>
-          <?php if ($isReceiptCard): ?>
           <div class="field full egm-print-card-extra-areas">
             <div class="section-header">
               <div>
-                <strong>متن‌های مستقل بیشتر</strong>
+                <strong>انتخاب متن</strong>
                 <p class="muted small">هر تعداد متن لازم دارید اضافه کنید؛ هر متن ناحیه و محتوای مستقل خود را دارد و متغیرهایی مانند <span dir="ltr">[fullname]</span> را پشتیبانی می‌کند.</p>
               </div>
               <button type="button" class="btn primary standard-primary-button" data-action="add-print-text-area">+ افزودن متن</button>
             </div>
-            <div class="egm-print-card-extra-list" data-print-text-areas></div>
+            <div class="egm-card-text-picker" data-print-text-areas></div>
           </div>
-          <?php endif; ?>
+
           <?php if ($isTicketCard): ?>
           <p class="muted small">برای نمایش ردیف و شماره صندلی روی بلیت، متغیر <code dir="ltr">[seat]</code> را در متن اصلی یا یکی از متن‌های اضافه قرار دهید. برای نشستن آزاد، «در صورت خالی بودن صندلی» چاپ می‌شود.</p>
           <div class="field full egm-ticket-count-area">
@@ -227,6 +230,9 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
           </div>
           <div class="field full">
             <span>دعوت‌شونده برای ساخت پیش‌نمایش</span>
+            <select data-invite-card-preview-period aria-label="بازه برای پیش‌نمایش تاریخ">
+              <option value="">انتخاب بازه پیش‌نمایش</option>
+            </select>
             <div class="egm-invite-card-invitee-picker">
               <input type="search" data-invite-card-invitee-search placeholder="جستجو با نام، کد ملی یا کد پرسنلی..." autocomplete="off" />
               <select data-invite-card-invitee-select aria-label="انتخاب دعوت‌شونده">
@@ -278,7 +284,8 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
           </div>
           <div class="egm-invite-card-tool-row" role="toolbar" aria-label="ابزارهای تعیین ناحیه">
             <button type="button" class="btn primary standard-primary-button active" data-selection-tool="qr" aria-pressed="true">ناحیه رمز دوبعدی</button>
-            <button type="button" class="btn ghost" data-selection-tool="text" aria-pressed="false">ناحیه متن دعوت</button>
+            <button type="button" class="btn ghost" data-selection-tool="text" aria-pressed="false">ناحیه متن</button>
+            <label class="egm-card-placement-picker"><span>متن</span><select data-placement-text aria-label="انتخاب متن برای تعیین محل"><option value="">متن اصلی</option></select></label>
             <?php if ($isTicketCard): ?><button type="button" class="btn ghost" data-selection-tool="ticket" aria-pressed="false">ناحیه شماره بلیت</button><?php endif; ?>
             <button type="button" class="btn ghost" data-action="clear-current-selection">پاک‌کردن ناحیه فعال</button>
           </div>

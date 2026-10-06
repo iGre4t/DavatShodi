@@ -11,6 +11,7 @@ function ensureTcRegistryTable(PDO $pdo): void
 CREATE TABLE IF NOT EXISTS `tc` (
   `code` VARCHAR(64) NOT NULL,
   `name` VARCHAR(128) NOT NULL,
+  `sidebar_visible` TINYINT(1) NOT NULL DEFAULT 1,
   `directory` VARCHAR(512) NOT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -27,6 +28,9 @@ CREATE TABLE IF NOT EXISTS `tc_sequence` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL);
     $pdo->exec("INSERT IGNORE INTO `tc_sequence` (`id`, `next_code`) VALUES (1, '0001')");
+    if (!$pdo->query("SHOW COLUMNS FROM `tc` LIKE 'sidebar_visible'")->fetch()) {
+        $pdo->exec("ALTER TABLE `tc` ADD COLUMN `sidebar_visible` TINYINT(1) NOT NULL DEFAULT 1");
+    }
     migrateLegacyTcRegistryDirectories($pdo);
 }
 
@@ -134,14 +138,14 @@ function normalizeTcRegistryDirectory($value): string
 function listTcRegistry(PDO $pdo): array
 {
     ensureTcRegistryTable($pdo);
-    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `tc` ORDER BY LENGTH(`code`), `code`');
+    $stmt = $pdo->query('SELECT `code`, `name`, `directory`, `created_at`, `updated_at`, `sidebar_visible` FROM `tc` ORDER BY LENGTH(`code`), `code`');
     return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
 }
 
 function findTcRegistryByCode(PDO $pdo, string $code): ?array
 {
     ensureTcRegistryTable($pdo);
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `tc` WHERE `code` = :code LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at`, `sidebar_visible` FROM `tc` WHERE `code` = :code LIMIT 1');
     $stmt->execute([':code' => $code]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;
@@ -154,7 +158,7 @@ function findTcRegistryByDirectory(PDO $pdo, string $directory): ?array
     if ($directory === '') {
         return null;
     }
-    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at` FROM `tc` WHERE `directory` = :directory LIMIT 1');
+    $stmt = $pdo->prepare('SELECT `code`, `name`, `directory`, `created_at`, `updated_at`, `sidebar_visible` FROM `tc` WHERE `directory` = :directory LIMIT 1');
     $stmt->execute([':directory' => $directory]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return is_array($row) ? $row : null;

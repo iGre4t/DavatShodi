@@ -14,8 +14,8 @@
         <label class="field"><span>نام جایزه</span><input name="prizeName" maxlength="160"></label>
         <label class="field"><span>تعداد برندگان</span><input name="winnerLimit" type="number" min="1" max="1000" value="1" required></label>
         <label class="field full"><span>توضیحات</span><textarea name="description" maxlength="4000"></textarea></label>
-        <label><input name="includeEntered" type="checkbox" checked> مهمانان دعوت‌شده با ورود ثبت‌شده</label>
-        <label><input name="includeWalkIns" type="checkbox" checked> مهمانان ناخوانده با ورود ثبت‌شده</label>
+        <input name="includeEntered" type="checkbox" checked hidden>
+        <input name="includeWalkIns" type="checkbox" hidden>
         <div class="egm-period-actions"><button class="btn primary" type="submit">ذخیره قرعه‌کشی</button><button class="btn" type="reset">قرعه‌کشی جدید / لغو ویرایش</button></div>
       </form><p data-draw-message role="status" aria-live="polite"></p>
       <button class="btn" type="button" data-draw-refresh>بازخوانی قرعه‌کشی‌ها</button></div>
@@ -54,7 +54,7 @@
         const button = (action, label) => `<button type="button" class="btn" data-draw-action="${action}" data-draw-id="${escapeHtml(draw.id)}">${label}</button>`;
         return `<article class="card"><h4>${escapeHtml(draw.name)}</h4><p>${escapeHtml(draw.description)}</p>
           <p>${draw.winners.length} / ${draw.winnerLimit} برنده — ${draw.locked ? 'نهایی‌شده' : 'باز'} — ${escapeHtml(draw.prizeName)}</p>
-          <p>${[draw.includeEntered ? 'دعوت‌شدگان واردشده' : '', draw.includeWalkIns ? 'ناخوانده‌های واردشده' : ''].filter(Boolean).join(' + ')}</p>
+          <p>دعوت‌شدگان واردشده و مهمانان تأییدشده توسط مدیر</p>
           <div class="egm-period-actions"><a class="btn primary" target="_blank" rel="noopener" href="${escapeHtml(page.href)}">نمایش قرعه‌کشی</a>
           ${draw.locked ? button('unlock', 'باز کردن قفل') : button('edit', 'ویرایش') + button('lock', 'نهایی‌سازی و قفل') + button('reset', 'بازنشانی برندگان') + button('delete', 'حذف قرعه‌کشی')}
           <a class="btn" href="${escapeHtml(PERIOD_DRAWS_ENDPOINT + '?' + query + '&type=winners')}">خروجی برندگان</a>
@@ -119,8 +119,8 @@
     form.addEventListener('submit', event => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(form));
-      data.includeEntered = field('includeEntered').checked;
-      data.includeWalkIns = field('includeWalkIns').checked;
+      data.includeEntered = true;
+      data.includeWalkIns = false;
       void run(data.id ? 'save' : 'create', data);
     });
     pane.querySelector('[data-draw-refresh]').addEventListener('click', () => loadPeriodDraws(pane));
@@ -2824,14 +2824,14 @@
       </div>
       <div class="egm-task-top-section" data-task-top-section="export" hidden>
         <div class="card egm-period-export-card">
-          <div class="section-header"><div><h3>خروجی اکسل بازه</h3><p class="muted small">تمام فایل‌ها مستقیماً از اطلاعات ذخیره‌شده همین بازه در پایگاه داده ساخته می‌شوند.</p></div></div>
+          <div class="section-header"><div><h3>خروجی اکسل بازه</h3></div></div>
           <div class="egm-period-export-grid">
-            <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
-            <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد هر نوع بلیت برای هر مهمان، جمع هر مهمان، جمع هر نوع بلیت و جمع کل.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
-            <article class="egm-period-export-option"><div><h4>ورود ثبت‌شده، بدون خروج</h4><p>فهرست لحظه‌ای مهمانانی که وارد شده‌اند اما هنوز خروج ندارند. این گزارش به معنی تأیید حضور واقعی نیست.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
-            <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>فقط مهمانانی که هنگام مراجعه به‌عنوان مهمان ناخوانده ثبت شده‌اند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
-            <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>تمام تلاش‌های ورود، خروج، تکرار، رد شدن و دیگر رویدادهای کنترل مهمان.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
-            <article class="egm-period-export-option"><div><h4>وضعیت همه کاربران</h4><p>یک ردیف برای هر کاربر با آخرین وضعیت دقیق ثبت‌شده در این بازه.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=user_conditions&amp;period_code=${encodeURIComponent(task.tagCode)}">دریافت فایل اکسل</a></article>
+            <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
+            <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد بلیت‌های مهمانان و مجموع هر نوع بلیت.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
+            <article class="egm-period-export-option"><div><h4>مهمانان داخل رویداد</h4><p>ورود ثبت شده و هنوز خروج ندارند؛ حضور واقعی تأیید نشده است.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
+            <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>مهمانانی که بدون دعوت قبلی وارد شده‌اند.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
+            <article class="egm-period-export-option"><div><h4>گزارش کامل</h4><p>همه عملیات ورود، خروج و بررسی مهمانان.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=full_log&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
+            <article class="egm-period-export-option"><div><h4>وضعیت همه کاربران</h4><p>آخرین وضعیت هر مهمان در این بازه.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=user_conditions&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
             <article class="egm-period-export-option"><div><h4>حضور واقعی</h4><p>مهمانانی که ورود و خروج عادی و معتبر برای این بازه دارند.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=correct_presence&amp;period_code=${encodeURIComponent(task.tagCode)}">حضور واقعی</a></article>
             <article class="egm-period-export-option"><div><h4>حضوری نامعقول</h4><p>مهمانانی که ورود یا خروج آنها با عملیات اجباری ثبت شده است.</p></div><a class="btn primary standard-primary-button" href="${PERIOD_EXPORTS_ENDPOINT}?type=fake_presence&amp;period_code=${encodeURIComponent(task.tagCode)}">حضوری نامعقول</a></article>
           </div>
