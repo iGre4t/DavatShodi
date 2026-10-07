@@ -1215,6 +1215,24 @@ function egmPeriodInvitesRemove(array $context, string $periodCode, string $invi
     return count($state['periods'][$periodCode]) < $before;
 }
 
+/** Compare only columns supplied by the import, keeping unmapped values intact. */
+function egmPeriodInvitesExcelProfileChanges(array $existing, array $input): array
+{
+    $fields = ['first_name', 'last_name', 'national_id', 'work_id', 'phone_number', 'deputy', 'general_department', 'department', 'gender', 'postal_level'];
+    $mapped = is_array($input['mapped_fields'] ?? null) ? $input['mapped_fields'] : array_keys($input);
+    $normalized = egmPeriodInvitesNormalizeExcelRow($input, 2);
+    $changes = [];
+    foreach ($fields as $field) {
+        if (!in_array($field, $mapped, true)) continue;
+        $before = trim((string)($existing[$field] ?? ''));
+        $after = trim((string)($normalized[$field] ?? ''));
+        if ($field === 'national_id') $before = egmPeriodInvitesValidNationalId($before);
+        if ($field === 'work_id' && strtolower($before) === strtolower($after)) continue;
+        if ($before !== $after) $changes[$field] = $after;
+    }
+    return $changes;
+}
+
 /** @return array<string,mixed> */
 function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $inputRows): array
 {
@@ -1223,6 +1241,14 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
     }
     $source = egmPeriodInvitesGetSource($context);
     $invited = egmPeriodInvitesInvitedIdentitySet($context, $periodCode);
+    $existingByIdentity = [];
+    foreach (egmPeriodInvitesListInvitedRows($context, $periodCode) as $existing) {
+        $national = egmPeriodInvitesValidNationalId($existing['national_id'] ?? '');
+        $work = strtolower(trim((string)($existing['work_id'] ?? '')));
+        if ($national !== '') $existingByIdentity['n:' . $national] = $existing;
+        if ($work !== '') $existingByIdentity['w:' . $work] = $existing;
+    }
+    $skipped = 0;
     $candidates = egmPeriodInvitesCandidateRows($context, $source);
     $byNational = [];
     $byWork = [];
@@ -1243,8 +1269,24 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
             if (!is_array($inputRow)) continue;
             $excelRow = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
             if (egmPeriodInvitesIsAlreadyInvited($excelRow, $invited)) {
+                $national = egmPeriodInvitesValidNationalId($excelRow['national_id'] ?? '');
+                $work = strtolower(trim((string)($excelRow['work_id'] ?? '')));
+                $byN = $existingByIdentity['n:' . $national] ?? null;
+                $byW = $existingByIdentity['w:' . $work] ?? null;
+                $existing = $byN ?? $byW;
+                if ($byN && $byW && (string)$byN['invite_id'] !== (string)$byW['invite_id']) {
+                    $excelRow['can_invite'] = false;
+                    $excelRow['match_error'] = 'کد ملی و کد پرسنلی به دو مهمان متفاوت تعلق دارند.';
+                    $unmatchedRows[] = $excelRow;
+                    $conflicts++;
+                    continue;
+                }
+                $changes = is_array($existing) ? egmPeriodInvitesExcelProfileChanges($existing, $inputRow) : [];
+                if (!$changes) { $skipped++; continue; }
                 $excelRow['invited'] = true;
                 $excelRow['can_invite'] = false;
+                $excelRow['profile_changes'] = $changes;
+                $excelRow['existing_invitee'] = array_replace($existing, $changes);
                 $unmatchedRows[] = $excelRow;
                 continue;
             }
@@ -1292,7 +1334,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
     $rows = array_values($matched);
     foreach ($rows as &$row) $row['invited'] = egmPeriodInvitesIsAlreadyInvited($row, $invited);
     foreach ($unmatchedRows as &$row) {
-        if (egmPeriodInvitesIsAlreadyInvited($row, $invited)) {
+        if (empty($row['match_error']) && egmPeriodInvitesIsAlreadyInvited($row, $invited)) {
             $row['invited'] = true;
             $row['can_invite'] = false;
         }
@@ -1303,6 +1345,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
         'source' => $source,
         'rows' => $rows,
         'matched' => count($rows),
+        'skipped_invited' => $skipped,
         'unmatched' => count($unmatchedRows),
         'conflicts' => $conflicts,
         'unmatched_rows' => $unmatchedRows,

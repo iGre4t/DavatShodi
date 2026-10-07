@@ -1084,7 +1084,7 @@ if ($action === 'save_prizes') {
     $nameKey = function_exists('mb_strtolower') ? mb_strtolower($name, 'UTF-8') : strtolower($name);
     if (isset($seenNames[$nameKey])) {
       http_response_code(422);
-      echo json_encode(['status' => 'error', 'message' => 'Prize names must be unique.']);
+      echo json_encode(['status' => 'error', 'code' => 'duplicate_prize_name', 'message' => 'جایزه‌ای با این نام قبلاً ثبت شده است. نام دیگری وارد کنید.']);
       exit;
     }
     $seenNames[$nameKey] = true;

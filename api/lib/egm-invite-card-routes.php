@@ -5,6 +5,27 @@ require_once __DIR__ . '/egm-instance-storage.php';
 
 const EGM_INVITE_CARD_ROUTES_TABLE = 'egm_invite_card_routes';
 
+function egmInviteCardPage(string $imageUrl, array $settings, string $eventName, string $projectBase): string
+{
+    $escape = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $name = trim((string)($settings['eventName'] ?? '')) ?: trim($eventName);
+    $title = 'کارت دعوت' . ($name !== '' ? ' | ' . $name : '');
+    $logo = trim((string)($settings['eventLogo'] ?? ''));
+    if (preg_match('~^https?://~i', $logo) || preg_match('~^data:image/(?:png|jpeg|webp|gif|x-icon);base64,[A-Za-z0-9+/=]+$~D', $logo)) {
+        $icon = $logo;
+    } elseif ($logo !== '' && !preg_match('~[\\x00-\\x1f\\\\:]~', $logo) && !str_starts_with($logo, '//') && !in_array('..', explode('/', $logo), true)) {
+        $path = str_contains($logo, '/') ? $logo : 'uploads/gallery/' . $logo;
+        $icon = rtrim($projectBase, '/') . '/' . implode('/', array_map('rawurlencode', explode('/', ltrim($path, '/'))));
+    } else {
+        $icon = 'data:image/svg+xml,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1999df"/><path d="M14 20h36v24H14z M14 20l18 14 18-14" fill="none" stroke="white" stroke-width="4" stroke-linejoin="round"/></svg>');
+    }
+    return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">'
+        . '<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">'
+        . '<title>' . $escape($title) . '</title><link rel="icon" href="' . $escape($icon) . '">'
+        . '<style>html,body{margin:0;min-height:100%;background:#f3f4f6}body{display:flex;justify-content:center;align-items:flex-start}img{display:block;max-width:100%;height:auto;margin:auto}@media print{html,body{background:white}img{max-height:100vh;object-fit:contain}}</style>'
+        . '</head><body><img src="' . $escape($imageUrl) . '" alt="' . $escape($title) . '"></body></html>';
+}
+
 function ensureEgmInviteCardRoutesTable(PDO $pdo): void
 {
     static $ensured = [];

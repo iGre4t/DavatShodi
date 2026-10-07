@@ -133,9 +133,10 @@ function databaseInstanceMaterializerRefreshEgmPanelCode(string $source, string 
     $updated = 0;
     foreach ([
         'EGM Panel.php', 'EGMT.php', 'egm-panel-local.js', 'EGMSetting.js', 'EGMTaskAccess.js',
+        'EGM Prizes.js', 'egm-panel.css',
         'egm_store.php', 'task_access_store.php', 'invitees_csv_safety.php', 'period_exports.php',
         'print_card_store.php', 'custom_number_ticket_store.php', 'seat_map.php',
-        'RefMonitor.php', 'games.php',
+        'RefMonitor.php', 'games.php', 'period_draw.php', 'period_draws.php', 'pot_service.php', 'facilitators.php',
     ] as $relative) {
         $sourcePath = $source . DIRECTORY_SEPARATOR . $relative;
         if (!is_file($sourcePath)) {

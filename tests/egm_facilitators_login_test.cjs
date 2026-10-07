@@ -4,7 +4,7 @@ const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
 const {spawn} = require('node:child_process');
-const {request} = require('playwright');
+const {request,chromium} = require('playwright');
 const root = path.resolve(__dirname,'..').replaceAll('\\','/');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(),'egm-facilitator-login-'));
 const dataFile = path.join(temp,'accounts.json');
@@ -66,6 +66,19 @@ fs.writeFileSync(path.join(temp,'RefMonitor.php'),source);
   assert.ok(!(await pushFailure.text()).includes('Warning:'),'Startup output corrupted the JSON response');
   await client.post(url,{form:{action:'logout',csrf:await csrf()}});
   html=await (await client.get(url)).text();assert.match(html,/name="username"/);
+  fs.writeFileSync(dataFile,JSON.stringify([account]));
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try {
+   const page=await browser.newPage();
+   const posted=[];page.on('request',request=>{if(request.method()==='POST')posted.push(request.url());});
+   await page.goto(url);
+   await page.waitForFunction(()=>!document.querySelector('#ref-loader').open);
+   await page.locator('[name="username"]').fill('ref01');
+   await page.locator('[name="password"]').fill('  001234  ');
+   await page.locator('.login-form button[type="submit"]').click();
+   await page.waitForFunction(()=>document.querySelector('.brand-name')?.textContent==='تسهیلگر آزمایشی');
+   assert.equal(posted[0],url,'Browser login posted to a hidden input instead of RefMonitor');
+  } finally {await browser.close();}
   console.log('Real RefMonitor PHP request flow: facilitator login, wrong password, credential-change revocation, removal, administrator login and logout passed with an isolated PDO fixture.');
  } finally {await client.dispose();server.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1}).finally(()=>{

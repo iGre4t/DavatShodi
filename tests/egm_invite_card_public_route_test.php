@@ -13,6 +13,15 @@ $directory = 'mini apps/EGMs/رویداد مسیر صعود 1405';
 $asset = 'InviteCards/' . $code . '.jpg';
 $stored = $directory . '/egm_asset.php?path=' . rawurlencode($asset);
 
+$page = egmInviteCardPage('/card.jpg?v=123', ['eventName' => 'رویداد هم‌کوک', 'eventLogo' => 'uploads/gallery/event logo.png'], 'Fallback', '/app');
+egmPublicRouteAssert(str_contains($page, '<title>کارت دعوت | رویداد هم‌کوک</title>'), 'The event tab title is missing.');
+egmPublicRouteAssert(str_contains($page, 'href="/app/uploads/gallery/event%20logo.png"'), 'The event icon is not resolved against the application root.');
+egmPublicRouteAssert(str_contains($page, 'src="/card.jpg?v=123"'), 'The original card image is not displayed.');
+$fallbackPage = egmInviteCardPage('/card.jpg', ['eventLogo' => 'javascript:alert(1)'], '<Event>', '');
+egmPublicRouteAssert(str_contains($fallbackPage, 'کارت دعوت | &lt;Event&gt;'), 'Event names must be escaped.');
+egmPublicRouteAssert(!str_contains($fallbackPage, 'javascript:'), 'Unsafe icon URLs must not be rendered.');
+egmPublicRouteAssert(str_contains($fallbackPage, 'data:image/svg+xml,'), 'Cards without a logo need a fallback icon.');
+
 egmPublicRouteAssert(
     egmInviteCardDatabaseAssetRelative($stored, $directory, $code) === $asset,
     'The database-backed invite-card path was not recognized.'

@@ -3289,3 +3289,17 @@ body.egm-period-invitee-editor-open {
 }
 
 .egm-shell .egm-cover-color-setting{margin-top:16px;padding:16px;border:1px solid #e4e6ea;border-radius:12px;background:#fff;box-shadow:0 4px 16px rgba(20,24,33,.04)}.egm-shell .egm-cover-color-setting .field{max-width:460px}.egm-shell .egm-cover-color-setting select{width:100%}.egm-shell .egm-cover-color-setting p{margin:10px 0 0;color:#626974;font-size:.88rem;line-height:1.8}
+
+/* Focused prize entry with balanced fields. */
+.egm-shell #egm-prize-form {max-width: 760px; margin-inline: auto;}
+.egm-shell #egm-prize-form .egm-prize-grid {gap: 20px;}
+.egm-shell #egm-prize-form .egm-prize-grid > .field:first-child {grid-column: 1 / -1;}
+.egm-shell #egm-prize-form .field {width: 100%; min-width: 0; margin-inline: 0;}
+.egm-shell #egm-prize-form .egm-form-action {margin-top: 24px;}
+.egm-shell #egm-prize-form [aria-invalid="true"] {border-color: #dc3545;}
+.egm-shell .egm-prize-status {padding: 12px 16px; border-radius: 12px; background: #fff1f2; color: #a61b36; margin: 0 0 16px;}
+.egm-shell .egm-prize-status[data-kind="success"] {background: #ecfdf5; color: #16704a;}
+@media (max-width: 640px) {
+  .egm-shell #egm-prize-form .egm-prize-grid {grid-template-columns: 1fr; gap: 16px;}
+  .egm-shell #egm-prize-form .egm-form-action .btn {width: 100%;}
+}

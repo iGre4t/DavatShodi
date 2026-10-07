@@ -2,7 +2,12 @@
 declare(strict_types=1);
 
 
-$siteRoot = dirname(__DIR__, is_file(__DIR__ . '/../../api/lib/tab-permissions.php') ? 2 : 3);
+$siteRoot = __DIR__;
+while (!is_file($siteRoot . '/api/lib/tab-permissions.php')) {
+    $parentRoot = dirname($siteRoot);
+    if ($parentRoot === $siteRoot) throw new RuntimeException('Application root was not found.');
+    $siteRoot = $parentRoot;
+}
 require_once __DIR__ . '/egm-database-runtime.php';
 require_once $siteRoot . '/api/lib/tab-permissions.php';
 require_once __DIR__ . '/egm-security.php';

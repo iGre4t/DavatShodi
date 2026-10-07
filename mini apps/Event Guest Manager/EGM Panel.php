@@ -656,6 +656,7 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
     <div class="sub-pane<?= $egmInitialPane === 'egm-rewards-config' ? ' active' : '' ?>" data-pane="egm-rewards-config">
       <h2 class="egm-inventory-title">انبار جوایز</h2>
         <div id="egm-prize-section">
+          <p id="egm-prize-status" class="egm-prize-status" role="status" aria-live="polite" hidden></p>
           <div class="card">
             <div class="section-header">
               <h3>افزودن جایزه</h3>
@@ -664,7 +665,7 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
               <div class="form grid egm-prize-grid">
                 <label class="field standard-width">
                   <span>نام جایزه</span>
-                  <input id="egm-prize-name" name="name" type="text" autocomplete="off" required />
+                  <input id="egm-prize-name" name="name" type="text" autocomplete="off" aria-describedby="egm-prize-status" placeholder="نام جایزه" required />
                 </label>
                 <label class="field egm-standard-third">
                   <span>تعداد</span>
@@ -693,7 +694,7 @@ $egmGamesJsVer = (string)(@egmDbFilemtime(__DIR__ . '/../../assets/egm-games.js'
                 <label class="field standard-width"><span>رتبه</span><select id="egm-prize-rank" name="rank"><option value="0">بدون رتبه</option><option value="1">اول</option><option value="2">دوم</option><option value="3">سوم</option><option value="4">چهارم</option></select></label>
               </div>
               <div class="field full egm-form-action">
-                <button type="submit" class="btn primary standard-primary-button">افزودن</button>
+                <button type="submit" class="btn primary standard-primary-button">ثبت جایزه</button>
               </div>
             </form>
           </div>

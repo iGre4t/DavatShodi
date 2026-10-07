@@ -2763,7 +2763,7 @@
           </div>
         </div>
         <div class="card egm-period-unmatched-card" data-period-unmatched-card hidden>
-          <div class="section-header"><h3>کاربران بدون تطبیق فایل</h3><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-export-uninviteable disabled>خروجی کاربران دعوت‌ناپذیر</button><strong><span data-period-unmatched-total>0</span> ردیف</strong></div></div>
+          <div class="section-header"><h3>کاربران جدید و تغییر‌یافته فایل</h3><div class="egm-period-actions"><button type="button" class="btn ghost" data-period-export-uninviteable disabled>خروجی کاربران دعوت‌ناپذیر</button><strong><span data-period-unmatched-total>0</span> ردیف</strong></div></div>
           <p class="muted">مهمانان جدید فقط به همین رویداد و بازه افزوده می‌شوند.</p>
           <div class="table-wrapper egm-period-table-wrap"><table class="tct-list-table egm-period-table"><thead><tr>
             <th><input type="checkbox" data-period-unmatched-select-all aria-label="انتخاب همه کاربران بدون تطبیق" /></th><th>ردیف اکسل</th><th>نام</th><th>نام خانوادگی</th><th>کد ملی</th><th>کد پرسنلی</th><th>شماره همراه</th><th>معاونت</th><th>اداره کل</th><th>اداره</th><th>جنسیت</th><th>سطح پستی</th><th>جزئیات فایل</th><th>عملیات</th>
@@ -3608,7 +3608,9 @@
       source_row: Number(row.source_row || 0),
       national_id: String(row.national_id || ''),
       work_id: String(row.work_id || ''),
-      ticket_numbers: row.ticket_numbers || {}
+      ticket_numbers: row.ticket_numbers || {},
+      mapped_fields: row.mapped_fields,
+      ...Object.fromEntries(['first_name','last_name','phone_number','deputy','general_department','department','gender','postal_level'].map(key => [key, String(row[key] || '')]))
     }));
     const batchSize = 400;
     const batches = [];
@@ -3620,10 +3622,12 @@
     const matchedByCandidate = new Map();
     const unmatchedByExcelId = new Map();
     let source = '';
+    let skippedInvited = 0;
     for (let index = 0; index < batches.length; index += 1) {
       if (typeof onProgress === 'function') onProgress(index + 1, batches.length);
       const data = await requestPeriodInvites('match_excel', { period_code: periodCode, rows: batches[index] }, 'POST');
       source = String(data.source || source);
+      skippedInvited += Number(data.skipped_invited || 0);
       (Array.isArray(data.rows) ? data.rows : []).forEach((row) => {
         const candidateId = String(row?.candidate_id || '');
         if (candidateId !== '') matchedByCandidate.set(candidateId, row);
@@ -3647,6 +3651,7 @@
       source,
       rows: Array.from(matchedByCandidate.values()),
       matched: matchedByCandidate.size,
+      skipped_invited: skippedInvited,
       unmatched: unmatchedByExcelId.size,
       conflicts: Array.from(unmatchedByExcelId.values()).filter((row) => String(row?.match_error || '').trim() !== '').length,
       unmatched_rows: Array.from(unmatchedByExcelId.values())
@@ -4122,7 +4127,7 @@
       const checked = canInvite && state.unmatchedSelected.has(id);
       const matchError = String(row?.match_error || '').trim();
       const action = row?.invited
-        ? '<span class="egm-period-invited-badge">دعوت شده</span>'
+        ? `<button type="button" class="btn ghost" data-period-review-update="${escapeHtml(id)}">بررسی تغییرات</button>`
         : `<div class="egm-period-actions">${canInvite && !matchError ? `<button type="button" class="btn ghost" data-period-invite-unmatched-one="${escapeHtml(id)}">افزودن و دعوت</button>` : ''}<button type="button" class="btn ghost" data-period-unmatched-edit="${escapeHtml(id)}">${matchError ? 'اصلاح تعارض' : 'ویرایش'}</button></div>`;
       return `<tr data-period-unmatched-id="${escapeHtml(id)}">
         <td><input type="checkbox" data-period-unmatched-check value="${escapeHtml(id)}" ${checked ? 'checked' : ''} ${canInvite ? '' : 'disabled'} /></td>
@@ -4499,6 +4504,12 @@
           if (!window.confirm(`${error.message}\n${details}\nاین صندلی‌های نزدیکِ جدا را تأیید می‌کنید؟`)) throw new Error('ویرایش حضور بدون تخصیص صندلی لغو شد.');
           data = await requestPeriodInvites('update_invitee', { ...payload, allow_split_seats: true }, 'POST');
         }
+        if (context.row?.import_excel_id) {
+          const state = getPeriodInviteState(context.pane);
+          state.unmatchedRows = state.unmatchedRows.filter(row => row.excel_id !== context.row.import_excel_id);
+          state.unmatchedSelected.delete(context.row.import_excel_id);
+          renderPeriodUnmatchedRows(context.pane);
+        }
         await loadPeriodInvitees(context.pane, getPeriodInviteState(context.pane).inviteePage);
         const listStatus = context.pane.querySelector('[data-period-invitee-status]');
         if (listStatus) listStatus.textContent = data?.message || 'اطلاعات مهمان و حضور ذخیره شد.';
@@ -4870,6 +4881,12 @@
         renderPeriodUnmatchedRows(pane);
         return;
       }
+      const reviewUpdate = event.target instanceof Element ? event.target.closest('[data-period-review-update]') : null;
+      if (reviewUpdate) {
+        const row = state.unmatchedRows.find(item => item.excel_id === reviewUpdate.dataset.periodReviewUpdate);
+        if (row?.existing_invitee) openPeriodInviteeEditor(pane, {...row.existing_invitee, import_excel_id: row.excel_id});
+        return;
+      }
       const unmatchedInvite = event.target instanceof Element ? event.target.closest('[data-period-invite-unmatched-one]') : null;
       if (unmatchedInvite instanceof HTMLButtonElement) {
         await invitePeriodUnmatchedRows(pane, [unmatchedInvite.dataset.periodInviteUnmatchedOne || '']);
@@ -5015,6 +5032,7 @@
       const ticketColumns = new Set(Array.from(pane.querySelectorAll('[data-period-excel-ticket]')).filter((select) => select.value !== '').map((select) => Number(select.value)));
       const rows = state.excelRows.slice(1).map((row, index) => ({
         excel_id: `x:${index + 2}`, source_row: index + 2,
+        mapped_fields: Object.entries({national_id:'national',work_id:'work',first_name:'first',last_name:'last',phone_number:'phone',deputy:'deputy',general_department:'general-department',department:'department',gender:'gender',postal_level:'postal-level'}).filter(([,key]) => (pane.querySelector(`[data-period-excel-${key}]`)?.value ?? '') !== '').map(([field]) => field),
         national_id: nationalIndex === '' ? '' : String(row[Number(nationalIndex)] ?? ''), work_id: workIndex === '' ? '' : String(row[Number(workIndex)] ?? ''),
         first_name: mappedValue(row, 'first'), last_name: mappedValue(row, 'last'), phone_number: mappedValue(row, 'phone'),
         deputy: mappedValue(row, 'deputy'), general_department: mappedValue(row, 'general-department'), department: mappedValue(row, 'department'),
@@ -5037,8 +5055,9 @@
         renderPeriodUnmatchedRows(pane);
         pane.querySelector('[data-task-top-section="invite"]')?.dispatchEvent(new CustomEvent('egm-flow-open', {detail:{index:1}}));
         const conflictText = Number(data.conflicts || 0) > 0 ? ` ${data.conflicts} ردیف تعارض داشت و قابل اصلاح است.` : '';
-        const invitedCount = (data.rows || []).filter((row) => row?.invited).length + (data.unmatched_rows || []).filter((row) => row?.invited).length;
-        if (status) status.textContent = `${state.selected.size} کاربر تطبیق و برای دعوت انتخاب شد؛ ${state.unmatchedSelected.size} کاربر جدید بدون تطبیق آمادهٔ دعوت است؛ ${invitedCount} نفر قبلاً دعوت شده‌اند.${conflictText}`;
+        const invitedCount = Number(data.skipped_invited || 0);
+        const updateCount = (data.unmatched_rows || []).filter(row => row?.invited).length;
+        if (status) status.textContent = `${state.selected.size} کاربر تطبیق و برای دعوت انتخاب شد؛ ${state.unmatchedSelected.size} کاربر جدید بدون تطبیق آمادهٔ دعوت است؛ ${invitedCount} دعوت تکراری نادیده گرفته شد؛ ${updateCount} نفر نیاز به بررسی تغییرات دارند.${conflictText}`;
       } catch (error) {
         if (status) status.textContent = error?.message || 'تطبیق فایل ناموفق بود.';
       } finally {

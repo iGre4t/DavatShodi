@@ -321,7 +321,12 @@ function egmPotParticipants(): array
 
 function egmPotEligibleParticipants(array $level, array $winners): array
 {
-  $root = dirname(__DIR__, is_file(__DIR__ . '/../../api/lib/egm-period-draws.php') ? 2 : 3);
+  $root = __DIR__;
+  while (!is_file($root . '/api/lib/egm-period-draws.php')) {
+    $parentRoot = dirname($root);
+    if ($parentRoot === $root) throw new RuntimeException('Application root was not found.');
+    $root = $parentRoot;
+  }
   require_once $root . '/api/lib/egm-period-draws.php';
   $context = egmPeriodInvitesContext(__DIR__);
   try { $periodCode = egmPeriodDrawActiveCode($context); }

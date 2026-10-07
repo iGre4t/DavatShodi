@@ -144,7 +144,15 @@ try {
     $assetVersion = max(1, (int)filemtime($absolute));
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
-    header('Location: ' . ($projectBase === '' ? '' : $projectBase) . '/' . $encodedPath . '?v=' . $assetVersion, true, 302);
+    $settings = egmInstanceReadData($pdo, $egmCode, 'settings', []);
+    header('Content-Type: text/html; charset=UTF-8');
+    header('Referrer-Policy: no-referrer');
+    echo egmInviteCardPage(
+        ($projectBase === '' ? '' : $projectBase) . '/' . $encodedPath . '?v=' . $assetVersion,
+        is_array($settings) ? $settings : [],
+        (string)($registry['name'] ?? ''),
+        $projectBase
+    );
     exit;
 } catch (Throwable $error) {
     error_log('Invite card route failed: ' . $error->getMessage());

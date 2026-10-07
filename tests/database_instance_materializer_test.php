@@ -63,7 +63,8 @@ try {
     file_put_contents($egmTarget . '/EGM Panel.php', "<?php // stale generated EGM panel\n");
     file_put_contents($egmTarget . '/EGMT.php', "<?php // stale generated EGM task settings\n");
     foreach (['EGMSetting.js', 'EGMTaskAccess.js', 'egm_store.php', 'task_access_store.php',
-        'invitees_csv_safety.php', 'print_card_store.php', 'custom_number_ticket_store.php'] as $relative) {
+        'invitees_csv_safety.php', 'print_card_store.php', 'custom_number_ticket_store.php', 'games.php',
+        'period_draw.php', 'period_draws.php', 'pot_service.php', 'facilitators.php', 'EGM Prizes.js', 'egm-panel.css'] as $relative) {
         if (!is_file($egmSource . '/' . $relative)) file_put_contents($egmSource . '/' . $relative, "// shared EGM code\n");
     }
     unlink($egmTarget . '/seat_map.php');
@@ -72,6 +73,9 @@ try {
     materializerTestAssert($refreshed >= 3, 'Existing EGM shared panel/task code and missing seat endpoint were not refreshed selectively.');
     materializerTestAssert(is_file($egmTarget . '/seat_map.php'), 'Missing seat endpoint was not restored to the EGM instance.');
     materializerTestAssert(is_file($egmTarget . '/RefMonitor.php'), 'Missing RefMonitor was not restored to the EGM instance.');
+    foreach (['period_draw.php', 'period_draws.php', 'pot_service.php', 'facilitators.php', 'EGM Prizes.js', 'egm-panel.css'] as $relative) {
+        materializerTestAssert(is_file($egmTarget . '/' . $relative), 'Missing EGM endpoint was not restored: ' . $relative);
+    }
     $egmPanel = file_get_contents($egmTarget . '/EGM Panel.php');
     materializerTestAssert(is_string($egmPanel) && str_contains($egmPanel, 'mini apps/EGMs/RestoredEgm'), 'Refreshed EGM panel has the wrong generated path.');
     $egmTasks = file_get_contents($egmTarget . '/EGMT.php');

@@ -164,6 +164,14 @@
     return [];
   }
 
+  function showInventoryStatus(message, kind = "error") {
+    const status = document.getElementById("egm-prize-status");
+    if (!status) return;
+    status.textContent = message;
+    status.dataset.kind = kind;
+    status.hidden = !message;
+  }
+
   async function savePrizes(prizes, { confirmEmpty = false } = {}) {
     try {
       const response = await fetch(`${API_URL}?action=save_prizes`, {
@@ -179,15 +187,16 @@
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || payload?.status !== "ok") {
-        window.alert(payload?.message || "Saving prize inventory failed. No data was overwritten; reload and try again.");
-        window.location.reload();
+        showInventoryStatus(response.status === 409
+          ? "موجودی جوایز تغییر کرده است. بخش جوایز را دوباره باز کنید و تلاش کنید."
+          : payload?.message && /[\u0600-\u06ff]/.test(payload.message)
+            ? payload.message : "جایزه ذخیره نشد. دوباره تلاش کنید.");
         return false;
       }
       prizeInventoryVersion = String(payload.version || "").trim();
       return true;
     } catch {
-      window.alert("Saving prize inventory failed. No data was overwritten; reload and try again.");
-      window.location.reload();
+      showInventoryStatus("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
       return false;
     }
   }
@@ -419,7 +428,7 @@
         });
       });
 
-      form.querySelectorAll("input, button").forEach(control => {
+      form.querySelectorAll("input, select, button").forEach(control => {
         control.disabled = lockActive;
       });
       form.classList.toggle("egm-prize-form-locked", lockActive);
@@ -597,9 +606,14 @@
       }
     });
 
+    let addingPrize = false;
+    nameInput.addEventListener("input", () => {
+      nameInput.removeAttribute("aria-invalid");
+      showInventoryStatus("");
+    });
     form.addEventListener("submit", async event => {
       event.preventDefault();
-      if (Number.isInteger(editState.index)) {
+      if (addingPrize || Number.isInteger(editState.index)) {
         return;
       }
       const name = String(nameInput.value ?? "").trim();
@@ -607,11 +621,31 @@
         nameInput.focus();
         return;
       }
+      if ([...prizes, ...fakeItems].some(item => item.name.trim().toLowerCase() === name.toLowerCase())) {
+        showInventoryStatus("جایزه‌ای با این نام قبلاً ثبت شده است. نام دیگری وارد کنید.");
+        nameInput.setAttribute("aria-invalid", "true");
+        nameInput.focus();
+        return;
+      }
       const quantity = parseQuantity(quantityInput.value, 1);
       const value = parseValue(valueInput.value, 0);
       const rank = Number.parseInt(document.getElementById("egm-prize-rank")?.value ?? "0", 10) || 0;
       const nextPrizes = [...prizes, { id: makePrizeId(), name, onWheelName: name, quantity, last: quantity, value, rank, isFake: false }];
-      if (!await savePrizes([...nextPrizes, ...fakeItems])) return;
+      const submitButton = form.querySelector('[type="submit"]');
+      addingPrize = true;
+      form.setAttribute("aria-busy", "true");
+      submitButton.disabled = true;
+      submitButton.textContent = "در حال ثبت…";
+      showInventoryStatus("");
+      let saved;
+      try { saved = await savePrizes([...nextPrizes, ...fakeItems]); }
+      finally {
+        addingPrize = false;
+        form.removeAttribute("aria-busy");
+        submitButton.disabled = false;
+        submitButton.textContent = "ثبت جایزه";
+      }
+      if (!saved) return;
       prizes = nextPrizes;
       renderPrizes(prizes, listEl);
       nameInput.value = "";
@@ -620,7 +654,8 @@
       if (rankInput) rankInput.value = "0";
       valueInput.value = "";
       syncEditStateUI();
-      form.closest('[data-egm-flow]')?.dispatchEvent(new CustomEvent('egm-flow-open', {detail:{index:0}}));
+      showInventoryStatus("جایزه ثبت شد.", "success");
+      nameInput.focus();
     });
 
     fakeForm?.addEventListener("submit", async event => {

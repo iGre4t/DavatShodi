@@ -348,7 +348,20 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     @keyframes room-gradient{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
     @keyframes room-arrival{from{box-shadow:0 0 0 5px rgba(0,153,205,.18),0 8px 26px rgba(0,118,173,.25)}to{box-shadow:0 7px 24px rgba(0,118,173,.22)}}
     #ref-detail-dock #ref-completion-back{margin-top:8px}
-    @media(max-width:440px){body{padding:8px}.phone{height:calc(100dvh - 16px);min-height:calc(100dvh - 16px);border-radius:22px}.topbar{padding:16px 18px}.login-area,.main-area{padding:20px 18px calc(16px + env(safe-area-inset-bottom,0px))}.score-context{top:-20px}}
+    /* Explicit grid sizing prevents percentage widths shrinking to content. */
+    html{width:100%;min-height:100%;-webkit-text-size-adjust:100%}
+    body{width:100%;grid-template-columns:minmax(0,1fr)}
+    .app{width:100%;max-width:460px;min-width:0;justify-self:center}
+    .phone,.login-area,.main-area,.flow-panel,.stack{min-width:0}
+    .topbar{flex-shrink:0}
+    @media(max-width:600px){
+      body{padding:0;background:#fff;min-height:100dvh}
+      .app{max-width:none}
+      .phone{height:100vh;height:100dvh;min-height:0;width:100%;border:0;border-radius:0;box-shadow:none}
+      .topbar{padding:calc(16px + env(safe-area-inset-top,0px)) max(18px,env(safe-area-inset-right,0px)) 16px max(18px,env(safe-area-inset-left,0px))}
+      .login-area,.main-area{padding:20px max(18px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));overscroll-behavior-y:contain}
+      .score-context{top:-20px}
+    }
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
   </style>
   <style nonce="<?= $escape($nonce) ?>">
@@ -482,7 +495,9 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
-      const response = await fetch(form.action || location.href, {method:'POST', credentials:'same-origin', body:new URLSearchParams(new FormData(form)), signal:controller.signal});
+      // A hidden input named "action" shadows the form.action DOM property.
+      const target = new URL(form.getAttribute('action') || location.href, location.href);
+      const response = await fetch(target.href, {method:'POST', credentials:'same-origin', body:new URLSearchParams(new FormData(form)), signal:controller.signal});
       const html = await response.text();
       const message = new DOMParser().parseFromString(html, 'text/html').querySelector('.login-hint[role="alert"]')?.textContent.trim();
       if (!response.ok || message || !response.redirected) throw new Error(message || 'ورود یا خروج انجام نشد. صفحه را تازه‌سازی کنید.');
