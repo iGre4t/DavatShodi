@@ -113,7 +113,8 @@ function egmGroupsApplyPrintPolicy(array $context, array $profile, string $guest
     // Group output choices are authoritative and automatically queued. Global
     // enable/disable and copy-count switches apply only to ungrouped guests.
     $profile['auto_print'] = $printCard || $tickets !== [];
-    $profile['double_print'] = false;
+    $profile['card_active'] = $printCard;
+    if (!$printCard) $profile['configured'] = false;
     $profile['ticket_active'] = $tickets !== [];
     $profile['ticket_only'] = !$printCard && $tickets !== [];
     $profile['tickets'] = $tickets;

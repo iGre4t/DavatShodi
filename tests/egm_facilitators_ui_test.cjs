@@ -11,6 +11,7 @@ const card = panel.slice(start,panel.indexOf('</section>',start)).replace(/<\?[\
 const html = `<html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style/styles.css"><link rel="stylesheet" href="/mini%20apps/Event%20Guest%20Manager/egm-panel.css"><style>body{display:block;padding:20px;margin:0}.egm-shell{max-width:1000px;margin:auto}</style><div class="egm-shell" data-egm-csrf="test">${card}</div><script src="/mini%20apps/Event%20Guest%20Manager/vendor/xlsx/xlsx.full.min.js"></script><script src="/assets/egm-facilitators.js"></script></html>`;
 let users = [], nextId = 1, blocked = false;
 let imports=[];
+let panelUsers=[{code:'admin',name:'مدیر پنل',username:'admin',event_role:'referee'}];
 const publicRows = ()=>users.map(({password,...row})=>row);
 function excel(rows) {
  const workbook = XLSX.utils.book_new();
@@ -29,10 +30,14 @@ function excel(rows) {
     if(req.method()==='POST') {
      const data=JSON.parse(new URLSearchParams(req.postData()).get('payload'));assert.equal(data.csrf,'test');
      const user=users.find(user=>user.id===data.id);
+     if(data.action==='save_panel_role') {
+      panelUsers[0].event_role=data.event_role;
+      return route.fulfill({contentType:'application/json',body:JSON.stringify({status:'ok',panel_users:panelUsers})});
+     }
      if(data.action==='save') {
       if(users.some(u=>u.username.toLowerCase()===data.username.toLowerCase() && u.id!==data.id))return route.fulfill({status:422,contentType:'application/json',body:JSON.stringify({status:'error',message:'نام کاربری تکراری است.'})});
-      if(user){user.name=data.name;user.username=data.username;if(data.password)user.password=data.password;}
-      else users.push({id:String(nextId++),name:data.name,username:data.username,password:data.password});
+      if(user){user.name=data.name;user.username=data.username;if(data.password)user.password=data.password;if(data.win_app_access_level)user.win_app_access_level=data.win_app_access_level;if(data.event_role)user.event_role=data.event_role;}
+      else users.push({id:String(nextId++),name:data.name,username:data.username,password:data.password,win_app_access_level:data.win_app_access_level,event_role:data.event_role});
      }
      if(data.action==='reveal')return route.fulfill({contentType:'application/json',body:JSON.stringify({status:'ok',password:user.password})});
      if(data.action==='delete')users=users.filter(u=>u.id!==data.id);
@@ -42,7 +47,7 @@ function excel(rows) {
       users.push(...data.rows.map(row=>({...row,id:String(nextId++)})));
      }
     }
-    return route.fulfill({contentType:'application/json',body:JSON.stringify({status:'ok',users:publicRows()})});
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({status:'ok',users:publicRows(),panel_users:panelUsers})});
    }
    if(url.pathname==='/panel.php')return route.fulfill({contentType:'text/html;charset=utf-8',body:html});
    const filename=path.join(root,decodeURIComponent(url.pathname));
@@ -52,6 +57,10 @@ function excel(rows) {
   await page.goto('http://egm.test/panel.php');
   await page.locator('[data-fac-add]').click();
   const form=page.locator('[data-fac-form]');
+  assert.equal(await form.locator('[name="win_app_access_level"]').inputValue(),'scan_only');
+  assert.equal(await form.locator('[name="event_role"]').inputValue(),'referee');
+  await form.locator('[name="event_role"]').selectOption('head_referee');
+  await form.locator('[name="win_app_access_level"]').selectOption('scan_and_details');
   await form.locator('[name="name"]').fill('علی رضایی');
   await form.locator('[name="username"]').fill('ref01');
   await form.locator('[name="password"]').fill('001234');
@@ -62,6 +71,8 @@ function excel(rows) {
   await page.reload();await page.locator('[data-fac-list] [data-fac-action="edit"]').waitFor();
   await page.locator('[data-fac-action="edit"]').click();
   assert.equal(await form.locator('[name="password"]').inputValue(),'');
+  assert.equal(await form.locator('[name="win_app_access_level"]').inputValue(),'scan_and_details');
+  assert.equal(await form.locator('[name="event_role"]').inputValue(),'head_referee');
   await form.locator('[name="name"]').fill('نام تازه');await form.locator('[type="submit"]').click();
   await page.waitForFunction(()=>!document.querySelector('[data-fac-editor]').open);
   assert.equal(users[0].password,'001234');
@@ -72,7 +83,8 @@ function excel(rows) {
   await passwordForm.locator('[data-fac-toggle]').click();assert.equal(await passwordForm.locator('input').getAttribute('type'),'password');
   await passwordForm.locator('input').fill('changed');await passwordForm.locator('[type="submit"]').click();
   await page.waitForFunction(()=>!document.querySelector('[data-fac-password-dialog]').open);
-  assert.equal(await passwordForm.locator('input').inputValue(),'');assert.equal(users[0].password,'changed');
+  assert.equal(users[0].event_role,'head_referee','Password-only edit preserves event role');
+  assert.equal(await passwordForm.locator('input').inputValue(),'');assert.equal(users[0].password,'changed');assert.equal(users[0].win_app_access_level,'scan_and_details','Password-only edit preserves Windows role');
   await page.locator('[data-fac-file]').setInputFiles(excel([['پرسنل','ورود','کلمه عبور'],['زهرا احمدی','0002','000045'],['مهدی','0003','pass3']]));
   await page.locator('[data-fac-import-dialog]').waitFor({state:'visible'});
   for(const [name,index] of [['name','0'],['username','1'],['password','2']])await page.locator(`[data-fac-column="${name}"]`).selectOption(index);
@@ -97,6 +109,15 @@ function excel(rows) {
   assert.ok(await page.locator('[data-fac-editor]').evaluate(el=>el.scrollWidth<=el.clientWidth));
   await page.screenshot({path:path.join(os.tmpdir(),'egm-facilitators-mobile.png')});
   await form.locator('[data-fac-close]').first().click();
+  await page.locator('[data-fac-panel-list] button').click();
+  const panelForm=page.locator('[data-fac-panel-form]');
+  assert.equal(await panelForm.locator('select').inputValue(),'referee');
+  await panelForm.locator('select').selectOption('system_manager');
+  await panelForm.locator('[type="submit"]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-fac-panel-dialog]').open);
+  await page.reload();
+  await page.locator('[data-fac-panel-list] button').waitFor();
+  assert.ok((await page.locator('[data-fac-panel-list]').textContent()).includes('مدیر سیستم'));
   blocked=true;await page.reload();await page.waitForFunction(()=>document.querySelector('[data-fac-status]').textContent.includes('دسترسی'));
   assert.equal(errors.length,0,errors.join('\n'));
   console.log('Facilitator list reload, CRUD, masked/revealed passwords, password edits, Excel mapping/leading zeros, rejected imports, confirmation cancellation and mobile dialog passed.');

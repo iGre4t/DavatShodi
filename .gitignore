@@ -53,3 +53,9 @@ api/config.php
 # Local exports, database backups, and Windows publish artifacts
 /.codex-behavior-export/
 /outputs/
+/downloads/windows/*.exe
+/downloads/windows/*.zip
+/downloads/windows/latest.json
+/downloads/windows/publish.lock
+/downloads/windows/.release-*
+/downloads/windows/.manifest-*

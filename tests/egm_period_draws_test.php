@@ -66,6 +66,8 @@ rejectsDraw(fn()=>egmPeriodDrawSettings(array_replace($settings,['includeEntered
 $rows[1]['draw_eligible']=0; $rows[3]['draw_eligible']=0;
 $candidate=egmPeriodDrawAction($draws,'roll',['id'=>$id],$rows,'admin')['participant'];
 checkDraw($candidate['key']==='1','Roll chooses only eligible guest');
+checkDraw(egmPeriodDrawAction($draws,'state',['id'=>$id],$rows,'admin')['pendingParticipant']['key']==='1','State recovers a roll whose response was lost');
+checkDraw(egmPeriodDrawAction($draws,'state',['id'=>$id],$rows,'another-operator')['pendingParticipant']===null,'Recovery must not expose another operator selection');
 rejectsDraw(function() use (&$draws,$id,$rows) { egmPeriodDrawAction($draws,'confirm',['id'=>$id,'candidateKey'=>'2'],$rows,'admin'); });
 rejectsDraw(function() use (&$draws,$id,$rows) { egmPeriodDrawAction($draws,'confirm',['id'=>$id,'candidateKey'=>'1'],$rows,'other'); });
 $state=egmPeriodDrawAction($draws,'confirm',['id'=>$id,'candidateKey'=>'1'],$rows,'admin');
@@ -85,6 +87,7 @@ checkDraw(count($draws) === 3, 'Opening the same prize-level draw does not dupli
 egmPeriodDrawAction($draws,'roll',['id'=>$id],$rows,'admin');
 rejectsDraw(function() use (&$draws,$id) { egmPeriodDrawAction($draws,'confirm',['id'=>$id,'candidateKey'=>'1'],[],'admin'); });
 $draws[$id]['pending']['admin']['expires']=time()-1;
+checkDraw(egmPeriodDrawAction($draws,'state',['id'=>$id],$rows,'admin')['pendingParticipant']===null,'Expired selections must not recover');
 rejectsDraw(function() use (&$draws,$id,$rows) { egmPeriodDrawAction($draws,'confirm',['id'=>$id,'candidateKey'=>'1'],$rows,'admin'); });
 egmPeriodDrawAction($draws,'delete',['id'=>$id],[],'admin');
 checkDraw(!isset($draws[$id]) && isset($draws[$other]), 'Deleting a draw preserves other draws');

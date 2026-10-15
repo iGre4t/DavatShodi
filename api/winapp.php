@@ -7,6 +7,8 @@ require_once __DIR__ . '/lib/tab-permissions.php';
 require_once __DIR__ . '/lib/egm-registry.php';
 require_once __DIR__ . '/lib/egm-check-in.php';
 require_once __DIR__ . '/lib/egm-invite-card-store.php';
+require_once __DIR__ . '/lib/egm-winapp-access.php';
+require_once __DIR__ . '/lib/egm-staff-roles.php';
 
 ini_set('session.use_strict_mode', '1');
 ini_set('session.use_only_cookies', '1');
@@ -16,6 +18,8 @@ $isHttps = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !
     || (string)($_SERVER['SERVER_PORT'] ?? '') === '443';
 ini_set('session.cookie_secure', $isHttps ? '1' : '0');
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    // The seat-map web bridge uses the panel session; desktop authentication is separate.
+    if ((string)($_GET['seat'] ?? '') !== '1') session_name('EGMWINAPPSESSID');
     session_start();
 }
 
@@ -65,19 +69,40 @@ function winAppRequireUser(): array
     if (empty($_SESSION['authenticated']) || !is_array($user)) {
         winAppJson(['status' => 'error', 'message' => 'لطفاً دوباره وارد شوید.', 'code' => 'unauthenticated'], 401);
     }
-    if (!userHasPermissionId($user, 'event-guest-manager:main')) {
-        winAppJson(['status' => 'error', 'message' => 'شما اجازه استفاده از کنترل مهمان را ندارید.'], 403);
+    $pdo = winAppDatabase();
+    if (($user['auth_type'] ?? '') === 'facilitator') {
+        $user = egmWinAppRefreshFacilitator($pdo, $user);
+        if (!$user) {
+            $_SESSION = [];
+            winAppJson(['status'=>'error', 'code'=>'unauthenticated', 'message'=>'دسترسی تسهیلگر پایان یافته است. دوباره وارد شوید.'], 401);
+        }
+    } else {
+        $record = loadUserByCode($pdo, (string)($user['code'] ?? ''));
+        if (!$record) {
+            $_SESSION = [];
+            winAppJson(['status'=>'error', 'code'=>'unauthenticated', 'message'=>'حساب شما دیگر در دسترس نیست.'], 401);
+        }
+        unset($record['password_hash']);
+        $user = array_merge($user, $record);
+        $user['permissions'] = normalizeTabPermissions($record['permissions'] ?? null, true);
+        $events = listEgmRegistry($pdo);
+        if (!array_filter($events, static fn ($event) => egmWinAppCanAccessEvent($pdo, $user, $event))) {
+            winAppJson(['status'=>'error', 'message'=>'شما اجازه استفاده از کنترل مهمان را ندارید.'], 403);
+        }
     }
+    $_SESSION['user'] = $user;
     return $user;
 }
 
 function winAppDatabase(): PDO
 {
+    static $connection;
+    if ($connection instanceof PDO) return $connection;
     $pdo = connectDatabase(loadConfig(__DIR__ . '/config.php'));
     if (!$pdo instanceof PDO) {
         throw new RuntimeException('اتصال به پایگاه داده برقرار نشد.');
     }
-    return $pdo;
+    return $connection = $pdo;
 }
 
 function winAppAbsoluteAssetUrl(string $value): string
@@ -156,7 +181,7 @@ function winAppMissionDirectory(PDO $pdo, string $eventCode): string
 function winAppNormalizeAccessLevel($value): string
 {
     $level = strtolower(trim((string)$value));
-    return in_array($level, ['full_access', 'scan_and_details', 'scan_and_event', 'scan_only'], true)
+    return in_array($level, ['full_access', 'scan_and_details', 'scan_and_actions', 'scan_and_event', 'scan_only'], true)
         ? $level
         : 'full_access';
 }
@@ -166,7 +191,7 @@ function winAppAccessPolicy(string $missionDirectory, array $user): array
     $level = 'full_access';
     $userCode = strtolower(trim((string)($user['code'] ?? '')));
     $path = $missionDirectory . DIRECTORY_SEPARATOR . 'tasks' . DIRECTORY_SEPARATOR . 'task-access.json';
-    if ($userCode !== '' && is_file($path)) {
+    if (($user['auth_type'] ?? '') !== 'facilitator' && $userCode !== '' && is_file($path)) {
         $decoded = json_decode((string)file_get_contents($path), true);
         $users = is_array($decoded['users'] ?? null) ? $decoded['users'] : [];
         foreach ($users as $code => $entry) {
@@ -175,16 +200,13 @@ function winAppAccessPolicy(string $missionDirectory, array $user): array
             break;
         }
     }
-    $canViewUsers = in_array($level, ['full_access', 'scan_and_details'], true);
-    return [
-        'level' => $level,
-        'can_scan' => true,
-        'can_view_user_info' => $canViewUsers,
-        'can_view_event_info' => $level !== 'scan_only',
-        'can_manage_scan_actions' => $canViewUsers,
-        'can_manage_settings' => $level === 'full_access',
-        'can_use_printer' => $level === 'full_access',
-    ];
+    if (($user['auth_type'] ?? '') === 'facilitator') {
+        $registry = egmInstanceRegistryForDirectory(winAppDatabase(), $missionDirectory);
+        $row = is_array($registry) ? egmWinAppFacilitatorForEvent(winAppDatabase(), $user, (string)$registry['code']) : null;
+        if (!$row) winAppJson(['status'=>'error', 'message'=>'شما در این رویداد تسهیلگر نیستید.'], 403);
+        $level = egmFacilitatorWindowsAccessLevel($row['win_app_access_level'] ?? null);
+    }
+    return egmWinAppPolicy($level);
 }
 
 function winAppAdminSecurity(array $context, bool $includeHash = false): array
@@ -278,34 +300,7 @@ function winAppEventSummary(array $context): array
 
 function winAppPrintProfile(array $context, string $guestCode = ''): array
 {
-    $pdo = $context['pdo'];
-    $code = (string)($context['code'] ?? '');
-    $settings = egmInstanceReadData($pdo, $code, 'settings', []);
-    $printSettings = is_array($settings['printSettings'] ?? null) ? $settings['printSettings'] : [];
-    $card = egmInstanceReadData($pdo, $code, 'print_card', null);
-    $card = egmInviteCardHydrateAssets($pdo, $code, $card, 'print-card');
-    $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];
-    $ticketCard = egmInstanceReadData($pdo, $code, 'custom_number_ticket', null);
-    $ticketCard = egmInviteCardHydrateAssets($pdo, $code, $ticketCard, 'custom-number-ticket');
-    $tickets = array_map(static function (array $definition) use ($pdo, $code, $ticketCard): array {
-        $isDefault = $definition['id'] === 'default';
-        $card = $isDefault ? $ticketCard : egmInstanceReadData($pdo, $code, 'custom_number_ticket:' . $definition['id'], null);
-        $card = $isDefault ? $card : egmInviteCardHydrateAssets($pdo, $code, $card, 'cnt-' . $definition['id']);
-        if (!$isDefault && !egmCheckInTicketCardConfigured($card)) $card = $ticketCard;
-        return $definition + ['configured' => egmCheckInTicketCardConfigured($card), 'card' => $card];
-    }, egmCheckInTicketDefinitions($ticketSettings));
-    $profile = [
-        'auto_print' => (bool)($printSettings['autoPrint'] ?? false),
-        'double_print' => (bool)($printSettings['doublePrint'] ?? false),
-        'configured' => is_array($card) && !empty($card['imageData']) && is_array($card['qrRect'] ?? null) && is_array($card['textRect'] ?? null),
-        'card' => $card,
-        'ticket_active' => (bool)($ticketSettings['active'] ?? false),
-        'ticket_only' => (bool)($ticketSettings['ticketOnly'] ?? false),
-        'ticket_configured' => egmCheckInTicketCardConfigured($ticketCard),
-        'ticket_card' => $ticketCard,
-        'tickets' => $tickets,
-    ];
-    return $guestCode !== '' ? egmGroupsApplyPrintPolicy($context, $profile, $guestCode) : $profile;
+    return egmCheckInPrintProfile($context, $guestCode);
 }
 
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
@@ -339,23 +334,15 @@ try {
         $statement = $pdo->prepare('SELECT ' . implode(', ', $columns) . ' FROM `users` WHERE `username` = :username LIMIT 1');
         $statement->execute([':username' => $username]);
         $row = $statement->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($row) || !password_verify($password, (string)($row['password_hash'] ?? ''))) {
-            winAppJson(['status' => 'error', 'message' => 'نام کاربری یا رمز عبور نادرست است.'], 401);
+        $user = null;
+        if (is_array($row) && password_verify($password, (string)($row['password_hash'] ?? ''))) {
+            unset($row['password_hash']);
+            $row['permissions'] = normalizeTabPermissions($row['permissions'] ?? null, true);
+            $events = listEgmRegistry($pdo);
+            if (array_filter($events, static fn ($event) => egmWinAppCanAccessEvent($pdo, $row, $event))) $user = $row;
         }
-        $permissions = normalizeTabPermissions($row['permissions'] ?? null, true);
-        $user = [
-            'code' => (string)$row['code'],
-            'username' => (string)$row['username'],
-            'fullname' => (string)($row['fullname'] ?? ''),
-            'phone' => (string)($row['phone'] ?? ''),
-            'email' => (string)($row['email'] ?? ''),
-            'id_number' => (string)($row['id_number'] ?? ''),
-            'work_id' => (string)($row['work_id'] ?? ''),
-            'permissions' => $permissions,
-        ];
-        if (!userHasPermissionId($user, 'event-guest-manager:main')) {
-            winAppJson(['status' => 'error', 'message' => 'حساب شما به کنترل مهمان دسترسی ندارد.'], 403);
-        }
+        $user ??= egmWinAppAuthenticateFacilitator($pdo, listEgmRegistry($pdo), $username, $password);
+        if (!$user) winAppJson(['status'=>'error', 'message'=>'نام کاربری، رمز عبور یا دسترسی رویداد معتبر نیست.'], 401);
         session_regenerate_id(true);
         $_SESSION['authenticated'] = true;
         $_SESSION['user'] = $user;
@@ -390,6 +377,7 @@ try {
     if ($action === 'events') {
         $events = [];
         foreach (listEgmRegistry($pdo) as $record) {
+            if (!egmWinAppCanAccessEvent($pdo, $_SESSION['user'], $record)) continue;
             $relative = normalizeEgmRegistryDirectory($record['directory'] ?? '');
             $missionDirectory = $relative === '' ? '' : dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
             if ($missionDirectory === '' || !is_dir($missionDirectory)) continue;
@@ -401,25 +389,50 @@ try {
                 'primary_color' => (string)$eventBranding['primary_color'],
                 'logo_url' => (string)$eventBranding['logo_url'],
                 'access' => $access,
+                'event_role' => ($_SESSION['user']['auth_type'] ?? '') === 'facilitator'
+                    ? egmStaffRole(egmWinAppFacilitatorForEvent($pdo, $_SESSION['user'], (string)$record['code'])['event_role'] ?? null)
+                    : egmStaffPanelRole($pdo, (string)$record['code'], (string)$_SESSION['user']['code']),
             ];
         }
-        if ($events && !array_filter($events, static fn(array $event): bool => !empty($event['access']['can_manage_settings']))) {
+        if (($_SESSION['user']['auth_type'] ?? '') !== 'facilitator' && $events && !array_filter($events, static fn(array $event): bool => !empty($event['access']['can_manage_settings']))) {
             $events = [reset($events)];
         }
         winAppJson(['status' => 'ok', 'events' => $events]);
     }
 
     $eventCode = trim((string)($payload['event_code'] ?? ''));
+    $eventRecord = findEgmRegistryByCode($pdo, $eventCode);
+    if (!is_array($eventRecord) || !egmWinAppCanAccessEvent($pdo, $_SESSION['user'], $eventRecord)) {
+        winAppJson(['status'=>'error', 'message'=>'شما به این رویداد دسترسی ندارید.'], 403);
+    }
+    if (($_SESSION['user']['auth_type'] ?? '') === 'facilitator') {
+        $eventFacilitator = egmWinAppFacilitatorForEvent($pdo, $_SESSION['user'], $eventCode);
+        $_SESSION['user'] = array_merge($_SESSION['user'], egmFacilitatorsSessionUser([$eventFacilitator], $eventFacilitator['id'], $eventFacilitator['auth_version']));
+    } else {
+        $_SESSION['user']['event_role'] = egmStaffPanelRole($pdo, $eventCode, (string)$_SESSION['user']['code']);
+    }
     $missionDirectory = winAppMissionDirectory($pdo, $eventCode);
     $access = winAppAccessPolicy($missionDirectory, $_SESSION['user']);
     $context = egmCheckInContext(dirname(__DIR__), $missionDirectory);
+    $context['scan_input'] = egmScanInputNormalize($payload['scan_input'] ?? []);
+    if ($method === 'POST' && $action === 'lookup_scan_candidates') {
+        if (empty($access['can_scan'])) winAppJson(['status'=>'error','message'=>'اجازه بررسی مهمان ندارید.'],403);
+        session_write_close();
+        winAppJson(['status'=>'ok'] + egmScanLookupCandidates($context,(string)($payload['typed_code']??''),(string)($payload['scanned_code']??'')));
+    }
     if ($method === 'POST' && $action === 'event_updates') {
         // Read-only refresh: do not transmit receipt images or trigger print queues.
         session_write_close();
+        $event = winAppEventSummary($context);
+        if (empty($access['can_view_event_info'])) {
+            $event['name'] = 'EGM';
+            $event['period_code'] = '';
+            $event['period_title'] = '';
+        }
         winAppJson([
-            'status'=>'ok', 'access'=>$access, 'event'=>winAppEventSummary($context),
+            'status'=>'ok', 'access'=>$access, 'event'=>$event,
             'stats'=>!empty($access['can_view_event_info']) ? egmCheckInDashboardStats($context) : null,
-            'logs'=>!empty($access['can_view_user_info']) ? egmCheckInRecentLogs($context, 30) : [],
+            'logs'=>!empty($access['can_view_logs']) ? egmCheckInRecentLogs($context, 30) : [],
             'seat_map'=>is_array($context['period'] ?? null)
                 ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled'=>false],
             'admin_security'=>winAppAdminSecurity($context),
@@ -443,7 +456,7 @@ try {
     }
     if ($method === 'POST' && $action === 'reset_guest_entry') {
         winAppRequireCsrf($payload);
-        if (empty($access['can_manage_scan_actions'])) {
+        if (empty($access['can_reset_guest_entry'])) {
             winAppJson(['status' => 'error', 'message' => 'شما اجازه بازنشانی ورود مهمان را ندارید.'], 403);
         }
         $result = egmCheckInResetGuestEntry($context,
@@ -454,7 +467,7 @@ try {
             'event' => winAppEventSummary($context),
             'stats' => egmCheckInDashboardStats($context),
             'logs' => egmCheckInRecentLogs($context, 30),
-            'print_profile' => winAppPrintProfile($context),
+            'print_profile' => !empty($access['can_use_printer']) ? winAppPrintProfile($context) : new stdClass(),
             'seat_map' => is_array($context['period'] ?? null)
                 ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled' => false],
         ]);
@@ -464,7 +477,7 @@ try {
         if (!winAppVerifyAdminPasscode($context, $payload['passcode'] ?? '')) {
             winAppJson(['status' => 'error', 'message' => 'Admin Passcode نادرست است.'], 403);
         }
-        winAppJson(['status' => 'ok', 'message' => 'دسترسی برای یک دقیقه باز شد.', 'admin_security' => winAppAdminSecurity($context)]);
+        winAppJson(['status' => 'ok', 'message' => 'تنظیمات باز شد.', 'admin_security' => winAppAdminSecurity($context), 'print_profile' => winAppPrintProfile($context)]);
     }
     if ($method === 'POST' && $action === 'set_page_lock') {
         winAppRequireCsrf($payload);
@@ -490,19 +503,22 @@ try {
     }
     if ($method === 'POST' && $action === 'save_print_settings') {
         winAppRequireCsrf($payload);
-        if (empty($access['can_manage_settings'])) {
-            winAppJson(['status' => 'error', 'message' => 'شما اجازه تغییر تنظیمات چاپ این EGM را ندارید.'], 403);
+        if (empty($access['can_manage_settings']) && !winAppVerifyAdminPasscode($context, $payload['passcode'] ?? '')) {
+            winAppJson(['status' => 'error', 'message' => 'برای تغییر تنظیمات چاپ، کد مدیریت معتبر لازم است.'], 403);
         }
         $settings = egmInstanceReadData($pdo, (string)$context['code'], 'settings', []);
         if (!is_array($settings)) $settings = [];
         $settings['printSettings'] = [
             'autoPrint' => egmCheckInBool($payload['auto_print'] ?? false),
             'doublePrint' => egmCheckInBool($payload['double_print'] ?? false),
+            'cardActive' => array_key_exists('card_active', $payload)
+                ? egmCheckInBool($payload['card_active'])
+                : (!egmCheckInBool($payload['ticket_active'] ?? false) || !egmCheckInBool($payload['ticket_only'] ?? false)),
         ];
         $existingTicketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];
         $settings['customNumberTicketSettings'] = [
             'active' => egmCheckInBool($payload['ticket_active'] ?? false),
-            'ticketOnly' => egmCheckInBool($payload['ticket_only'] ?? false),
+            'ticketOnly' => !$settings['printSettings']['cardActive'],
             'tickets' => egmCheckInTicketDefinitions($existingTicketSettings),
         ];
         egmInstanceWriteData($pdo, (string)$context['code'], 'settings', $settings);
@@ -530,8 +546,8 @@ try {
             'access' => $access,
             'event' => $event,
             'stats' => !empty($access['can_view_event_info']) ? egmCheckInDashboardStats($context) : null,
-            'logs' => !empty($access['can_view_user_info']) ? egmCheckInRecentLogs($context, 30) : [],
-            'print_profile' => winAppPrintProfile($context),
+            'logs' => !empty($access['can_view_logs']) ? egmCheckInRecentLogs($context, 30) : [],
+            'print_profile' => !empty($access['can_use_printer']) ? winAppPrintProfile($context) : new stdClass(),
             'seat_map' => is_array($context['period'] ?? null)
                 ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled' => false],
             'admin_security' => winAppAdminSecurity($context),
@@ -543,14 +559,16 @@ try {
         winAppJson(['status' => 'ok'] + egmCheckInSeatRequirement($context, (string)($payload['guest_code'] ?? '')));
     }
     if ($method === 'POST' && $action === 'scan') {
+        if (!empty($payload['period_code']) && (string)$payload['period_code'] !== egmCheckInPeriodCode((array)($context['period']??[]))) throw new InvalidArgumentException('بازهٔ فعال تغییر کرده است؛ مهمان را دوباره بررسی کنید.');
         winAppRequireCsrf($payload);
-        $scanGuestCode = egmCheckInNormalizeGuestCode((string)($payload['guest_code'] ?? ''));
+        $scanGuestCode = egmCheckInNormalizeDigits((string)($payload['guest_code'] ?? ''));
         $result = egmCheckInProcess($context, $scanGuestCode, null, null, [], isset($payload['seat_ticket_count']) ? (string)$payload['seat_ticket_count'] : null, egmCheckInBool($payload['allow_split_seats'] ?? false), egmCheckInBool($payload['allow_free_seat'] ?? false));
         if (empty($access['can_view_user_info'])) {
             $resultCode = (string)($result['result'] ?? '');
             $result = [
                 'result' => $resultCode,
-                'message' => winAppRestrictedScanMessage($resultCode),
+                'message' => !empty($result['suggested_guests']) ? $result['message'] : winAppRestrictedScanMessage($resultCode),
+                'suggested_guests' => $result['suggested_guests'] ?? [],
             ];
         }
         $event = winAppEventSummary($context);
@@ -560,7 +578,7 @@ try {
             $event['period_title'] = '';
         }
         $printGuest = null;
-        if (in_array((string)($result['result'] ?? ''), ['success', 'force_entry_success'], true)) {
+        if (!empty($access['can_use_printer']) && in_array((string)($result['result'] ?? ''), ['success', 'force_entry_success'], true)) {
             $recentPrintLogs = egmCheckInRecentLogs($context, 5);
             foreach ($recentPrintLogs as $printLog) {
                 $logNationalId = egmCheckInNormalizeGuestCode((string)($printLog['national_id'] ?? ''));
@@ -576,15 +594,16 @@ try {
             'access' => $access,
             'event' => $event,
             'stats' => !empty($access['can_view_event_info']) ? egmCheckInDashboardStats($context) : null,
-            'logs' => !empty($access['can_view_user_info']) ? egmCheckInRecentLogs($context, 30) : [],
-            'print_profile' => egmCheckInAutomaticPrintProfile($context, $scanGuestCode),
+            'logs' => !empty($access['can_view_logs']) ? egmCheckInRecentLogs($context, 30) : [],
+            'print_profile' => !empty($access['can_use_printer']) ? egmCheckInAutomaticPrintProfile($context, $scanGuestCode) : new stdClass(),
             'seat_map' => is_array($context['period'] ?? null)
                 ? egmSeatMapEffective($context, egmCheckInPeriodCode($context['period'])) : ['enabled' => false],
-            'print_guest' => $printGuest,
+            'print_guest' => !empty($access['can_use_printer']) ? $printGuest : null,
         ]);
     }
     if ($method === 'POST' && $action === 'record_ticket_number') {
         winAppRequireCsrf($payload);
+        if (empty($access['can_use_printer'])) winAppJson(['status'=>'error', 'message'=>'اجازه چاپ ندارید.'], 403);
         $recorded = egmCheckInRecordTicketNumber(
             $context,
             (string)($payload['guest_code'] ?? ''),
@@ -620,7 +639,7 @@ try {
             'event' => winAppEventSummary($context),
             'stats' => egmCheckInDashboardStats($context),
             'logs' => egmCheckInRecentLogs($context, 30),
-            'print_profile' => egmCheckInAutomaticPrintProfile($context, (string)($payload['guest_code'] ?? ($payload['national_id'] ?? ($payload['work_id'] ?? '')))),
+            'print_profile' => !empty($access['can_use_printer']) ? egmCheckInAutomaticPrintProfile($context, (string)($payload['guest_code'] ?? ($payload['national_id'] ?? ($payload['work_id'] ?? '')))) : new stdClass(),
         ]);
     }
     if ($method === 'POST' && $action === 'force_attendance') {
@@ -647,7 +666,7 @@ try {
             'event' => winAppEventSummary($context),
             'stats' => egmCheckInDashboardStats($context),
             'logs' => egmCheckInRecentLogs($context, 30),
-            'print_profile' => egmCheckInAutomaticPrintProfile($context, (string)($payload['guest_code'] ?? '')),
+            'print_profile' => !empty($access['can_use_printer']) ? egmCheckInAutomaticPrintProfile($context, (string)($payload['guest_code'] ?? '')) : new stdClass(),
         ]);
     }
     winAppJson(['status' => 'error', 'message' => 'عملیات درخواستی پشتیبانی نمی‌شود.'], 404);

@@ -61,7 +61,7 @@ const PANEL_TAB_CATALOG = Array.isArray(window.PANEL_TAB_CATALOG)
       })
       .filter(Boolean)
   : PANEL_TAB_FALLBACK_IDS.map((id) => ({ id, label: id, title: id }));
-const PANEL_TAB_IDS = PANEL_TAB_CATALOG.map((tab) => tab.id);
+const PANEL_TAB_IDS = (Array.isArray(window.PANEL_PERMISSION_CATALOG) ? window.PANEL_PERMISSION_CATALOG : PANEL_TAB_CATALOG).map((tab) => normalizeTabToken(tab.id)).filter(Boolean);
 const PANEL_CHILD_TAB_MAP = (() => {
   const incoming =
     window.PANEL_CHILD_TAB_MAP && typeof window.PANEL_CHILD_TAB_MAP === "object"
@@ -93,8 +93,8 @@ const PANEL_ALLOWED_TABS = (() => {
     : [];
   const selected = incoming
     .map((tabId) => normalizeTabToken(tabId))
-    .filter((tabId) => PANEL_TAB_IDS.includes(tabId));
-  return selected.length ? selected : [...PANEL_TAB_IDS];
+    .filter((tabId) => PANEL_TAB_CATALOG.some(tab => tab.id === tabId));
+  return Array.isArray(window.PANEL_ALLOWED_TABS) ? selected : PANEL_TAB_CATALOG.map(tab => tab.id);
 })();
 const PANEL_ALLOWED_TAB_SET = new Set(PANEL_ALLOWED_TABS);
 const PANEL_INITIAL_TAB = (() => {
@@ -678,7 +678,7 @@ function normalizeUserTabPermissions(value, fallbackToAll = true) {
   let selectedParents = PANEL_TAB_IDS.filter((parentId) => inputSet.has(parentId));
 
   if (!selectedParents.length) {
-    if (!fallbackToAll) {
+    if (!fallbackToAll || (value != null && value !== "")) {
       return [];
     }
     selectedParents = [...PANEL_TAB_IDS];
@@ -694,7 +694,9 @@ function normalizeUserTabPermissions(value, fallbackToAll = true) {
 
     const marker = getPanelChildrenCustomizationMarker(parentId);
     const hasCustomizationMarker = marker !== "" && inputSet.has(marker);
-    const selectedChildren = childIds.filter((childId) => inputSet.has(childId));
+    let selectedChildren = childIds.filter((childId) => inputSet.has(childId));
+    const legacyEgmChildren = ['main', 'invitees', 'manage-tasks', 'task-access', 'monitoring', 'export', 'linker', 'logs'];
+    if (parentId === 'event-guest-manager' && !hasCustomizationMarker && legacyEgmChildren.every(suffix => inputSet.has(`${parentId}:${suffix}`))) selectedChildren = childIds;
     if (hasCustomizationMarker || selectedChildren.length > 0) {
       if (marker !== "") {
         normalizedSet.add(marker);
@@ -5451,6 +5453,7 @@ function initHomeSubTabs() {
   const root = qs("#tab-home");
   if (!root) return;
 
+  if (root.querySelector(".event-dashboard")) return;
   const buttons = qsa("[data-home-pane-target]", root);
   const panes = qsa("[data-home-pane]", root);
   const loadMoreButton = qs("#home-asset-log-more");
@@ -6973,6 +6976,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadMoreGalleryPhotos.blur();
   });
 
+  qs('#tab-home')?.addEventListener('click', async event => {
+    const button = event.target.closest?.('[data-dashboard-tab]');
+    if (!button || button.disabled) return;
+    const status = qs('.ed-navigation-status');
+    if (status) status.textContent = '';
+    button.disabled = true;
+    try {
+      await activateTab(button.dataset.dashboardTab, {historyMode:'push'});
+      const pane = button.dataset.dashboardPane;
+      if (pane) {
+        const section = document.getElementById('tab-' + button.dataset.dashboardTab);
+        const findTarget = () => [...(section?.querySelectorAll('.sub-item[data-pane]') || [])].find(item => item.dataset.pane === pane);
+        let target = findTarget();
+        // Period panes may be built asynchronously after the external script loads.
+        if (!target) target = await new Promise(resolve => {
+          if (!section) return resolve(null);
+          const observer = new MutationObserver(() => { const item=findTarget(); if(item){clearTimeout(timer);observer.disconnect();resolve(item);} });
+          const timer=setTimeout(()=>{observer.disconnect();resolve(null);},4000);
+          observer.observe(section,{childList:true,subtree:true});
+        });
+        if (target) target.click();
+      }
+    } catch (error) {
+      if (status) status.textContent = 'صفحه باز نشد؛ دوباره تلاش کنید.';
+    } finally { button.disabled = false; }
+  });
+
   // Clicking a nav-item switches tabs and refreshes the header/title.
   const navContainer = qs('.nav');
   navContainer?.addEventListener('click', async (event) => {
@@ -7247,7 +7277,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     payload.email = email;
     const backendPayload = { ...payload };
-    const defaultPermissions = getAllPanelTabIds();
+    const defaultPermissions = ['home', 'settings'];
     if (isAddMode) {
       backendPayload.password = password;
       backendPayload.permissions = defaultPermissions;

@@ -18,7 +18,7 @@
     equals: 'برابر است با', not_equals: 'برابر نیست با', contains: 'شامل می‌شود',
     not_contains: 'شامل نمی‌شود', empty: 'خالی است', not_empty: 'خالی نیست'
   });
-  const BUILTIN_MERGE_KEYS = new Set([...Object.keys(CONDITIONAL_FIELD_LABELS), 'periodtitle', 'perioddate', 'perioddate_dmy', 'perioddate_ymd', 'printedat']);
+  const BUILTIN_MERGE_KEYS = new Set([...Object.keys(CONDITIONAL_FIELD_LABELS), 'eventname', 'periodtitle', 'perioddate', 'perioddate_dmy', 'perioddate_ymd', 'printedat']);
 
   function one(root, selector) {
     return root.querySelector(selector);
@@ -174,6 +174,14 @@
     'mci-cinema-white': {
       name: 'سفید — بلیت سینما', fileName: 'mci-cinema-white.png', heading: 'بلیت سینما',
       background: '#ffffff', ink: '#0f172a', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', icon: 'سینما', cinema: true
+    },
+    'mci-welcome-classic': {
+      name: 'MCI — سفید رسمی', fileName: 'mci-welcome-classic.png', heading: 'خوش آمدید',
+      background: '#ffffff', ink: '#000000', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', printCard: true
+    },
+    'mci-welcome-blue': {
+      name: 'MCI — آبی', fileName: 'mci-welcome-blue.png', heading: 'خوش آمدید',
+      background: '#ffffff', ink: '#0076ad', accent: '#0095da', panel: '#ffffff', pattern: 'mci', brand: 'mci', printCard: true
     }
   });
   let receiptTemplateFontPromise = null;
@@ -241,16 +249,24 @@
     context.fillRect(0, 0, 1000, 1000);
 
     if (definition.brand === 'mci') {
-      context.strokeStyle = '#000000';
+      const markColor = definition.printCard && definition.ink !== '#000000' ? definition.ink : '#000000';
+      context.strokeStyle = markColor;
       context.lineWidth = 6;
       addRoundedRectPath(context, 5, 5, 990, 990, 18);
       context.stroke();
-      drawMciMark(context, 405, 38, 190, 125, '#000000');
+      drawMciMark(context, 405, 38, 190, 125, markColor);
 
-      context.strokeStyle = '#000000';
+      context.strokeStyle = markColor;
       context.lineWidth = 6;
-      addRoundedRectPath(context, 70, 345, 860, 325, 32);
+      addRoundedRectPath(context, 70, definition.printCard ? 390 : 345, 860, definition.printCard ? 225 : 325, 32);
       context.stroke();
+      if (definition.printCard) {
+        context.lineWidth = 3;
+        context.beginPath();
+        context.moveTo(170, 715);
+        context.lineTo(830, 715);
+        context.stroke();
+      }
       if (definition.cinema) {
         context.lineWidth = 3;
         context.beginPath();
@@ -349,6 +365,28 @@
     const definition = RECEIPT_TEMPLATE_DEFINITIONS[templateId];
     if (!definition) throw new Error('قالب انتخاب‌شده معتبر نیست.');
     const textColor = definition.dark ? '#f5d47d' : definition.ink;
+    if (definition.printCard) {
+      const ink = definition.ink;
+      const area = (id, text, rect, fontSize = 0) => ({
+        id, text, textHtml: `<p><strong><span style="color:${ink}">${text}</span></strong></p>`,
+        rect, fontSize, bold: true, align: 'center'
+      });
+      return {
+        imageData, imageName: definition.fileName, fontData: font.data, fontName: font.name,
+        qrRect: { x: 42, y: 81, width: 16, height: 16 },
+        textRect: { x: 10, y: 18, width: 80, height: 9 },
+        ticketCountRect: null,
+        textHtml: `<p><strong><span style="color:${ink}">خوش آمدید</span></strong></p>`,
+        textAreas: [
+          area('mci_card_event', '[eventname]', { x: 8, y: 28, width: 84, height: 8 }),
+          area('mci_card_number_label', 'شماره مهمان', { x: 15, y: 40, width: 70, height: 6 }),
+          area('mci_card_number', '[guestnumber]', { x: 12, y: 46, width: 76, height: 16 }, 140),
+          area('mci_card_name', '[fullname]', { x: 9, y: 64, width: 82, height: 9 }),
+          area('mci_card_work_id', 'کد پرسنلی: [workid]', { x: 10, y: 73, width: 80, height: 6 })
+        ],
+        conditionalVariables: [], conditionalBuilderDraft: {}, qrData: '[nationalid]'
+      };
+    }
     if (definition.brand === 'mci') {
       const cinema = definition.cinema === true;
       return {
@@ -516,6 +554,7 @@
       tickettitle: String(invitee?.ticketTitle || ''),
       seat: String(invitee?.seat || ''),
       periodtitle: String(invitee?.periodTitle || ''),
+      eventname: String(invitee?.eventName || ''),
       printedat: String(invitee?.printedAt || new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
         year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
       }).format(new Date()))
@@ -585,7 +624,7 @@
       const replacement = matched ? matched.text : definition.fallback;
       output = output.replace(new RegExp(`\\[${definition.token}\\]`, 'gi'), () => replacement);
     });
-    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score|ticketcount|tickettitle|seat|periodtitle|perioddate|perioddate_dmy|perioddate_ymd|printedat)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
+    return output.replace(/\[(fullname|firstname|lastname|nationalid|workid|guestnumber|phonenumber|deputy|generaldepartment|department|gender|postallevel|score|ticketcount|tickettitle|seat|eventname|periodtitle|perioddate|perioddate_dmy|perioddate_ymd|printedat)\]/gi, (_, key) => values[String(key).toLowerCase()] ?? '');
   }
 
   function richTextBlocks(html, invitee, conditionalVariables = []) {
@@ -955,6 +994,7 @@
       conditionalValueField: '',
       conditionalValueRequest: 0,
       configLoaded: false,
+      configRequest: 0,
       draftReady: false,
       draftTimer: 0,
       draftSaving: false,
@@ -1461,7 +1501,7 @@
       const invitee = state.inviteesById.get(inviteeSelect.value);
       if (!invitee) return null;
       const option = previewPeriodSelect?.selectedOptions?.[0];
-      return {...invitee, periodStartDate: option?.dataset.startDate || '', periodTitle: option?.dataset.periodTitle || ''};
+      return {...invitee, eventName: pane.dataset.eventName || '', periodStartDate: option?.dataset.startDate || '', periodTitle: option?.dataset.periodTitle || ''};
     }
 
     async function loadInvitees(query) {
@@ -2123,14 +2163,15 @@
 
     receiptTemplatesRoot?.addEventListener('click', async (event) => {
       const target = event.target instanceof Element ? event.target.closest('[data-receipt-template]') : null;
-      if (!(target instanceof HTMLButtonElement) || !isTicketCard) return;
+      if (!(target instanceof HTMLButtonElement) || !isReceiptCard) return;
       const templateId = String(target.dataset.receiptTemplate || '');
       const definition = RECEIPT_TEMPLATE_DEFINITIONS[templateId];
-      if (!definition) return;
-      if (!state.configLoaded) {
-        setReceiptTemplateStatus('لطفاً تا پایان بارگذاری تنظیمات فعلی صبر کنید.', true);
-        return;
-      }
+      if (!definition || Boolean(definition.printCard) !== isPrintCard) return;
+      // A complete template replaces the current design, even if its GET is still pending.
+      ++state.configRequest;
+      window.clearTimeout(state.draftTimer);
+      state.pendingDraftSections.clear();
+      state.draftReady = false;
       const buttons = Array.from(receiptTemplatesRoot.querySelectorAll('[data-receipt-template]'));
       buttons.forEach((button) => { if (button instanceof HTMLButtonElement) button.disabled = true; });
       setReceiptTemplateStatus(`در حال ساخت و ذخیره قالب «${definition.name}»...`, false);
@@ -2168,7 +2209,11 @@
         renderExtraTextAreas();
         markPreviewStale();
 
+        while (state.draftSaving || state.imageSaving) {
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
         const data = await saveConfig(config);
+        state.configLoaded = true;
         updateReceiptTemplateSelection(templateId);
         window.clearTimeout(state.draftTimer);
         state.pendingDraftSections.clear();
@@ -2205,14 +2250,13 @@
       if (generateButton instanceof HTMLButtonElement) generateButton.disabled = true;
       try {
         const config = collectConfig();
-        setStatus('ابتدا تنظیمات کارت دعوت در پایگاه داده ذخیره می‌شود...', false);
-        await saveConfig(config);
-        window.clearTimeout(state.draftTimer);
-        state.pendingDraftSections.clear();
-        setAutosaveStatus('همه تنظیمات در پایگاه داده ذخیره شده‌اند.', false);
-        setStatus('تنظیمات ذخیره شد؛ در حال ساخت تصویر PNG با ابعاد کامل...', false);
-        const invitee = selectedInvitee();
-        if (!invitee) throw new Error('برای ساخت پیش‌نمایش یک دعوت‌شونده را از فهرست انتخاب کنید.');
+        setStatus('در حال ساخت تصویر PNG با ابعاد کامل...', false);
+        const invitee = selectedInvitee() || {
+          firstName: 'نمونه', lastName: 'مهمان', guestNumber: '۱۲۳',
+          workId: '123456', nationalId: '0000000000',
+          eventName: pane.dataset.eventName || '', periodTitle: 'بازه نمونه',
+          ticketCount: '۱', seat: 'ردیف ۱ صندلی ۵'
+        };
         if (!(preview instanceof HTMLElement) || !(outputImage instanceof HTMLImageElement)
           || !(downloadLink instanceof HTMLAnchorElement)) return;
         const background = await loadCanvasImage(config.imageData);
@@ -2291,6 +2335,7 @@
     });
 
     async function loadConfig() {
+      const requestId = ++state.configRequest;
       updateSource();
       updateAreaStates();
       renderExtraTextAreas();
@@ -2299,6 +2344,7 @@
       try {
         const response = await fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
         const result = await response.json().catch(() => null);
+        if (requestId !== state.configRequest) return;
         if (!response.ok || !result || result.status !== 'ok') {
           throw new Error(responseMessage(result, 'بارگذاری تنظیمات کارت دعوت ناموفق بود.'));
         }
@@ -2355,6 +2401,7 @@
           updateFontUi();
           fontWarning = fontError instanceof Error ? `فونت ذخیره‌شده بارگذاری نشد: ${fontError.message}` : 'فونت ذخیره‌شده بارگذاری نشد.';
         }
+        if (requestId !== state.configRequest) return;
         qrDataInput.value = '[nationalid]';
         updateSource();
         updateAreaStates();
@@ -2365,6 +2412,7 @@
         setAutosaveStatus('همه اطلاعات ذخیره‌شده بازیابی شد؛ ذخیره خودکار فعال است.', false);
         setStatus(fontWarning || `تنظیمات ذخیره‌شده EGM ${result.egmCode || ''} بارگذاری شد.`, Boolean(fontWarning));
       } catch (error) {
+        if (requestId !== state.configRequest) return;
         state.configLoaded = false;
         state.draftReady = false;
         setAutosaveStatus('ذخیره خودکار به‌دلیل خطای بارگذاری غیرفعال است.', true);

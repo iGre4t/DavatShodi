@@ -44,6 +44,9 @@ function egmPeriodDrawPotLevel(array $context, string $levelId): ?array
 
 function egmPeriodDrawCanAccess(array $context, array $user, string $period): bool
 {
+    if (isset($user['egm_draw_facilitator_event'])) {
+        return hash_equals((string)$context['code'], (string)$user['egm_draw_facilitator_event']);
+    }
     $canManage = userHasPermissionId($user, 'event-guest-manager:manage-tasks')
         || userHasPermissionId($user, 'event-guest-manager:main');
     if ($canManage) return true;
@@ -175,8 +178,13 @@ function egmPeriodDrawAction(array &$draws, string $action, array $input, array 
         unset($draw['pending'][$actor]);
     } elseif (!in_array($action, ['state', 'export'], true)) throw new InvalidArgumentException('عملیات نامعتبر است.');
     $eligible = egmPeriodDrawEligible($rows, $draw, $period);
+    $pendingParticipant = null;
+    $pending = $draw['pending'][$actor] ?? [];
+    if (empty($draw['locked']) && ($pending['expires'] ?? 0) >= time()) {
+        foreach ($eligible as $item) if ($item['key'] === ($pending['key'] ?? null)) { $pendingParticipant = $item; break; }
+    }
     return ['draw' => egmPeriodDrawPublic($draw), 'level' => ['name' => $draw['name'], 'potSettings' => egmPeriodDrawPublic($draw)],
-        'winners' => $draw['winners'], 'eligibleParticipants' => $eligible, 'eligibleCount' => count($eligible)];
+        'winners' => $draw['winners'], 'eligibleParticipants' => $eligible, 'eligibleCount' => count($eligible), 'pendingParticipant' => $pendingParticipant];
 }
 
 function egmPeriodDrawRun(array $context, string $period, string $action, array $input, string $actor): array
@@ -190,6 +198,15 @@ function egmPeriodDrawRun(array $context, string $period, string $action, array 
     if ((int)$query->fetchColumn() !== 1) throw new RuntimeException('Draw is busy. Retry.');
     try {
         $draws = egmInstanceReadData($pdo, $context['code'], $key, []);
+        if (is_array($input['generalDefinition'] ?? null)) {
+            $generalId = (string)$input['levelId'];
+            $existing = $draws[$generalId] ?? ['winners' => [], 'pending' => [], 'locked' => false];
+            $definition = $input['generalDefinition'];
+            if ((int)$definition['winnerLimit'] < count($existing['winners'])) {
+                throw new InvalidArgumentException('تعداد برندگان تنظیم‌شده از برندگان این بازه کمتر است.');
+            }
+            $draws[$generalId] = array_replace($existing, $definition, ['id' => $generalId]);
+        }
         if ($action === 'ensure_pot') {
             $input['potLevel'] = egmPeriodDrawPotLevel($context, (string)($input['levelId'] ?? ''));
         }
@@ -204,7 +221,7 @@ function egmPeriodDrawRun(array $context, string $period, string $action, array 
             $rows = [];
         }
         $result = egmPeriodDrawAction($draws, $action, $input, $rows, $actor, $periodSettings);
-        if (!in_array($action, ['list', 'state', 'export'], true)) egmInstanceWriteData($pdo, $context['code'], $key, $draws);
+        if (isset($input['generalDefinition']) || !in_array($action, ['list', 'state', 'export'], true)) egmInstanceWriteData($pdo, $context['code'], $key, $draws);
         return $result;
     } finally {
         $query = $pdo->prepare('SELECT RELEASE_LOCK(:name)');

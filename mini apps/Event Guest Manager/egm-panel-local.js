@@ -2828,6 +2828,7 @@
           <div class="egm-period-export-grid">
             <article class="egm-period-export-option"><div><h4>همه مهمانان</h4><p>فهرست کامل دعوت‌شدگان همراه وضعیت دقیق، ورود و خروج.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=all_guests&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
             <article class="egm-period-export-option"><div><h4>بازی‌ها، تیم‌ها و امتیازها</h4><p>هر بازی در یک برگه؛ مشخصات اعضا، سازنده تیم و وضعیت ورود و جایزه.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=games&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل بازی‌ها</span></a></article>
+            <article class="egm-period-export-option"><div><h4>خروجی رتبه‌بندی بازی‌ها</h4><p>اکسل کامل یا فهرست اسامی برای مجری.</p></div><button type="button" class="btn primary" data-game-ranking-export="${PERIOD_EXPORTS_ENDPOINT}?period_code=${encodeURIComponent(task.tagCode)}">خروجی رتبه‌بندی</button></article>
             <article class="egm-period-export-option"><div><h4>گزارش تعداد بلیت‌ها</h4><p>تعداد بلیت‌های مهمانان و مجموع هر نوع بلیت.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=ticket_numbers&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
             <article class="egm-period-export-option"><div><h4>مهمانان داخل رویداد</h4><p>ورود ثبت شده و هنوز خروج ندارند؛ حضور واقعی تأیید نشده است.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=entered_no_quit&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
             <article class="egm-period-export-option"><div><h4>مهمانان ناخوانده</h4><p>مهمانانی که بدون دعوت قبلی وارد شده‌اند.</p></div><a class="btn primary" href="${PERIOD_EXPORTS_ENDPOINT}?type=uninvited_guests&amp;period_code=${encodeURIComponent(task.tagCode)}"><i class="ri ri-download-2-line" aria-hidden="true"></i><span>دریافت اکسل</span></a></article>
@@ -3194,7 +3195,7 @@
         </div>
         ${informationSection}
         ${periodInvitationSections}
-        ${isPeriod && document.querySelector('.egm-shell')?.dataset.egmCanManageGames === '1' ? '<div class="egm-task-top-section" data-task-top-section="games" hidden><div class="card" data-egm-period-games><div class="section-header"><h3>بازی‌های این بازه</h3></div><p class="muted">بازی‌های ساخته‌شده را برای این بازه فعال کنید.</p><div data-period-games-list></div><p class="hint" data-period-games-status aria-live="polite"></p></div></div>' : ''}
+        ${isPeriod && document.querySelector('.egm-shell')?.dataset.egmCanManageGames === '1' ? '<div class="egm-task-top-section" data-task-top-section="games" hidden><div class="card" data-egm-period-games><div data-period-games-list></div><p class="hint" data-period-games-status aria-live="polite"></p></div></div>' : ''}
         ${isPeriod ? periodDrawSection() + periodWinnersSection() : ''}
         ${describePhotoSection}
         ${teamChallengeSection}
@@ -3619,13 +3620,41 @@
     }
     if (!batches.length) batches.push([]);
 
+    const oeuReviews = [];
+    for (let index = 0; index < batches.length; index += 1) {
+      if (typeof onProgress === 'function') onProgress(index + 1, batches.length);
+      oeuReviews.push(await requestPeriodInvites('preview_oeu_updates', {period_code:periodCode, rows:batches[index]}, 'POST'));
+    }
+    const blockedOeuRows = new Map(oeuReviews.flatMap(review => (review.issues || []).map(issue => [String(issue.excel_id),issue.message])));
+    const seenOeuUpdates = new Map(); const conflictingOeuIds = new Set();
+    for (const review of oeuReviews) for (const update of review.updates || []) {
+      const previous = seenOeuUpdates.get(update.id);
+      if (previous && JSON.stringify(previous.changes) !== JSON.stringify(update.changes)) conflictingOeuIds.add(update.id);
+      if (!previous) seenOeuUpdates.set(update.id, update);
+    }
+    for (const review of oeuReviews) {
+      review.updates = (review.updates || []).filter(update => {
+        if (!conflictingOeuIds.has(update.id)) return true;
+        const message = 'برای یک کاربر، اطلاعات متفاوتی در چند ردیف فایل آمده است.';
+        blockedOeuRows.set(String(update.excel_id), message);
+        review.issues = [...(review.issues || []), {excel_id:update.excel_id,message}];
+        return false;
+      });
+    }
+    if (typeof window.EGMOeuImportReview !== 'function') throw new Error('بخش بررسی اطلاعات بارگذاری نشده است. صفحه را تازه‌سازی کنید.');
+    await window.EGMOeuImportReview(oeuReviews, (token,ids) => requestPeriodInvites('apply_oeu_updates', {period_code:periodCode,token,ids}, 'POST'));
+
     const matchedByCandidate = new Map();
     const unmatchedByExcelId = new Map();
+    for (const [id,message] of blockedOeuRows) {
+      const original = originalsById.get(id);
+      if (original) unmatchedByExcelId.set(id, {...original, can_invite:false, match_error:message});
+    }
     let source = '';
     let skippedInvited = 0;
     for (let index = 0; index < batches.length; index += 1) {
       if (typeof onProgress === 'function') onProgress(index + 1, batches.length);
-      const data = await requestPeriodInvites('match_excel', { period_code: periodCode, rows: batches[index] }, 'POST');
+      const data = await requestPeriodInvites('match_excel', { period_code: periodCode, rows: batches[index].filter(row=>!blockedOeuRows.has(row.excel_id)), sync_oeu_identity:false }, 'POST');
       source = String(data.source || source);
       skippedInvited += Number(data.skipped_invited || 0);
       (Array.isArray(data.rows) ? data.rows : []).forEach((row) => {
@@ -4079,9 +4108,15 @@
     return `<details class="egm-period-excel-details" ${matchError ? 'open' : ''}><summary>${matchError ? 'نمایش دلیل' : 'نمایش اطلاعات'}</summary><div>${reason}${entries.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</div></details>`;
   }
 
+  function periodImportWorkId(value) {
+    const work = String(value ?? '').trim();
+    return /^[\s\-–—ـ_]+$/u.test(work) || ['null','n/a','na','n.a.','n.a','none','not available','ندارد','بدون کد'].includes(work.toLowerCase()) ? '' : work;
+  }
+
   function periodUninviteableRows(state) {
-    return (Array.isArray(state?.unmatchedRows) ? state.unmatchedRows : []).filter((row) => (
-      String(row?.national_id || '').trim() === '' && String(row?.work_id || '').trim() === ''
+    return (Array.isArray(state?.unmatchedRows) ? state.unmatchedRows : []).filter(row => !row?.invited && (
+      row?.can_invite === false || Boolean(String(row?.match_error || '').trim())
+      || (!String(row?.national_id || '').trim() && !periodImportWorkId(row?.work_id))
     ));
   }
 
@@ -4089,30 +4124,31 @@
     const state = getPeriodInviteState(pane);
     const rows = periodUninviteableRows(state);
     const status = pane.querySelector('[data-period-unmatched-status]');
-    if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') {
-      if (status) status.textContent = 'موتور ساخت فایل اکسل بارگذاری نشده است. صفحه را بازخوانی کنید.';
-      return;
+    const button = pane.querySelector('[data-period-export-uninviteable]');
+    if (button) button.disabled = true;
+    try {
+      if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') throw new Error('موتور ساخت فایل اکسل بارگذاری نشده است. صفحه را بازخوانی کنید.');
+      if (!rows.length) throw new Error('کاربر دعوت‌ناپذیری برای خروجی وجود ندارد.');
+      const table = [['ردیف فایل', 'نام کامل', 'کد ملی', 'کد پرسنلی', 'شماره همراه', 'معاونت', 'اداره کل', 'اداره', 'دلیل دعوت‌ناپذیری']];
+      rows.forEach(row => table.push([
+        row?.source_row || '', [row?.first_name, row?.last_name].map(value=>String(value || '').trim()).filter(Boolean).join(' '),
+        String(row?.national_id || '').trim(), periodImportWorkId(row?.work_id), String(row?.phone_number || '').trim(),
+        String(row?.deputy || ''), String(row?.general_department || ''), String(row?.department || ''),
+        String(row?.match_error || ((!row?.national_id && !periodImportWorkId(row?.work_id)) ? 'کد ملی و کد پرسنلی وارد نشده است.' : 'اطلاعات نیاز به اصلاح دارد.'))
+      ]));
+      const worksheet = window.XLSX.utils.aoa_to_sheet(table);
+      worksheet['!cols'] = [8,32,16,16,18,24,24,24,60].map(wch=>({wch}));
+      worksheet['!autofilter'] = {ref:`A1:I${table.length}`};
+      for (let rowNumber = 2; rowNumber <= table.length; rowNumber++) for (const col of ['C','D','E']) if (worksheet[`${col}${rowNumber}`]) worksheet[`${col}${rowNumber}`].z = '@';
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, 'دعوت‌ناپذیر');
+      window.XLSX.writeFile(workbook, periodExportDatedFilename('کاربران دعوت‌ناپذیر', pane), {bookType:'xlsx',compression:true});
+      if (status) status.textContent = `${rows.length} کاربر دعوت‌ناپذیر در فایل اکسل دانلود شد.`;
+    } catch (error) {
+      if (status) status.textContent = error?.message || 'ساخت فایل اکسل انجام نشد.';
+    } finally {
+      if (button) button.disabled = rows.length === 0;
     }
-    if (!rows.length) {
-      if (status) status.textContent = 'کاربر غیرقابل دعوتی بدون کد ملی و کد پرسنلی وجود ندارد.';
-      return;
-    }
-    const table = [['نام کامل', 'شماره تلفن']];
-    rows.forEach((row) => table.push([
-      [String(row?.first_name || '').trim(), String(row?.last_name || '').trim()].filter(Boolean).join(' '),
-      String(row?.phone_number || '').trim()
-    ]));
-    const worksheet = window.XLSX.utils.aoa_to_sheet(table);
-    worksheet['!cols'] = [{ wch: 34 }, { wch: 20 }];
-    worksheet['!autofilter'] = { ref: `A1:B${table.length}` };
-    for (let rowNumber = 2; rowNumber <= table.length; rowNumber += 1) {
-      if (worksheet[`B${rowNumber}`]) worksheet[`B${rowNumber}`].z = '@';
-    }
-    const workbook = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(workbook, worksheet, 'دعوت‌ناپذیر');
-    const filename = periodExportDatedFilename('کاربران غیرقابل دعوت', pane);
-    window.XLSX.writeFile(workbook, filename, { bookType: 'xlsx', compression: true });
-    if (status) status.textContent = `${rows.length} کاربر غیرقابل دعوت در فایل اکسل دانلود شد.`;
   }
 
   function renderPeriodUnmatchedRows(pane) {
@@ -5033,7 +5069,7 @@
       const rows = state.excelRows.slice(1).map((row, index) => ({
         excel_id: `x:${index + 2}`, source_row: index + 2,
         mapped_fields: Object.entries({national_id:'national',work_id:'work',first_name:'first',last_name:'last',phone_number:'phone',deputy:'deputy',general_department:'general-department',department:'department',gender:'gender',postal_level:'postal-level'}).filter(([,key]) => (pane.querySelector(`[data-period-excel-${key}]`)?.value ?? '') !== '').map(([field]) => field),
-        national_id: nationalIndex === '' ? '' : String(row[Number(nationalIndex)] ?? ''), work_id: workIndex === '' ? '' : String(row[Number(workIndex)] ?? ''),
+        national_id: nationalIndex === '' ? '' : String(row[Number(nationalIndex)] ?? ''), work_id: workIndex === '' ? '' : periodImportWorkId(row[Number(workIndex)]),
         first_name: mappedValue(row, 'first'), last_name: mappedValue(row, 'last'), phone_number: mappedValue(row, 'phone'),
         deputy: mappedValue(row, 'deputy'), general_department: mappedValue(row, 'general-department'), department: mappedValue(row, 'department'),
         gender: mappedValue(row, 'gender'), postal_level: mappedValue(row, 'postal-level'),

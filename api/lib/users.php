@@ -329,7 +329,7 @@ function insertUserRecord(PDO $pdo, array $user): bool
     $workId = trim((string)($user['work_id'] ?? ''));
     $telegramId = trim((string)($user['telegram_id'] ?? ''));
     $pinCode = trim((string)($user['pin_code'] ?? ''));
-    $permissions = normalizeTabPermissions($user['permissions'] ?? null, true);
+    $permissions = normalizeTabPermissions($user['permissions'] ?? getDefaultPanelUserPermissions(), false);
     $permissionsJson = encodeTabPermissionsForStorage($permissions);
     $passwordHash = trim((string)($user['password_hash'] ?? '')) ?: getDefaultUserPasswordHash();
     try {

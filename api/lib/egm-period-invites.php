@@ -145,13 +145,21 @@ function tctPeriodInviteClean($value, int $maxLength = 191): string
     return function_exists('mb_substr') ? mb_substr($text, 0, $maxLength, 'UTF-8') : substr($text, 0, $maxLength);
 }
 
+/** Missing work IDs must never act as a shared identity. */
+function egmPeriodInvitesWorkId($value): string
+{
+    $work = tctPeriodInviteClean($value, 128);
+    if (preg_match('/^[\s\-–—ـ_]+$/u', $work) === 1) return '';
+    return in_array(mb_strtolower($work, 'UTF-8'), ['null','n/a','na','n.a.','n.a','none','not available','ندارد','بدون کد'], true) ? '' : $work;
+}
+
 function egmPeriodInvitesIdentityKey(array $row): string
 {
     $nationalId = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
     if ($nationalId !== '') {
         return 'n:' . $nationalId;
     }
-    $workId = strtolower(tctPeriodInviteClean($row['work_id'] ?? '', 128));
+    $workId = strtolower(egmPeriodInvitesWorkId($row['work_id'] ?? ''));
     return $workId !== '' ? 'w:' . $workId : '';
 }
 
@@ -161,7 +169,7 @@ function egmPeriodInvitesNormalizeCandidate(array $row, string $candidateId, str
     return [
         'candidate_id' => $candidateId,
         'source' => $source,
-        'work_id' => tctPeriodInviteClean($row['work_id'] ?? '', 128),
+        'work_id' => egmPeriodInvitesWorkId($row['work_id'] ?? ''),
         'first_name' => tctPeriodInviteClean($row['first_name'] ?? '', 191),
         'last_name' => tctPeriodInviteClean($row['last_name'] ?? '', 191),
         'national_id' => egmPeriodInvitesValidNationalId($row['national_id'] ?? ''),
@@ -186,6 +194,7 @@ function egmPeriodInvitesNormalizeExcelRow(array $row, int $fallbackRow): array
     $normalized['source_row'] = max(1, (int)($row['source_row'] ?? $fallbackRow));
     $normalized['can_invite'] = egmPeriodInvitesIdentityKey($normalized) !== '';
     $normalized['ticket_numbers'] = is_array($row['ticket_numbers'] ?? null) ? $row['ticket_numbers'] : [];
+    $normalized['oeu_reviewed'] = ($row['oeu_reviewed'] ?? false) === true;
     $rawData = [];
     if (is_array($row['raw_data'] ?? null)) {
         foreach (array_slice($row['raw_data'], 0, 50, true) as $label => $value) {
@@ -250,9 +259,9 @@ function egmPeriodInvitesValidNationalId($value): string
  * A different valid National ID or a duplicate Work ID is treated as a conflict
  * so an upload can never silently move an identity to another person.
  */
-function egmPeriodInvitesSyncOeuNationalId(PDO $pdo, string $workId, string $nationalId): int
+function egmPeriodInvitesSyncOeuNationalId(PDO $pdo, string $workId, string $nationalId, bool $write = true): int
 {
-    $workId = tctPeriodInviteClean($workId, 128);
+    $workId = egmPeriodInvitesWorkId($workId);
     $nationalId = egmPeriodInvitesValidNationalId($nationalId);
     if ($workId === '' || $nationalId === '') return 0;
 
@@ -279,7 +288,7 @@ function egmPeriodInvitesSyncOeuNationalId(PDO $pdo, string $workId, string $nat
     if ((int)$findOwner->fetchColumn() > 0) {
         throw new InvalidArgumentException("کد ملی {$nationalId} قبلاً برای کاربر دیگری در OEU ثبت شده است.");
     }
-    if (!hash_equals($nationalId, $currentNationalId)) {
+    if ($write && !hash_equals($nationalId, $currentNationalId)) {
         $update = $pdo->prepare(
             'UPDATE `' . ORG_USERS_ACTIVE_TABLE . '` SET `national_id` = :national_id WHERE `id` = :id'
         );
@@ -299,7 +308,7 @@ function egmPeriodInvitesSyncMatchedEgmNationalId(
     if ($nationalId === '') return $candidate;
 
     $currentNationalId = egmPeriodInvitesValidNationalId($candidate['national_id'] ?? '');
-    $workId = tctPeriodInviteClean($candidate['work_id'] ?? '', 128);
+    $workId = egmPeriodInvitesWorkId($candidate['work_id'] ?? '');
     if ($currentNationalId !== '' && !hash_equals($currentNationalId, $nationalId)) {
         throw new InvalidArgumentException("کد ملی اکسل با کد ملی فعلی کد پرسنلی {$workId} در EGM مغایرت دارد.");
     }
@@ -403,7 +412,7 @@ function egmPeriodInvitesInvitedIdentitySet(array $context, string $periodCode):
         $statement->execute([':period_code' => $periodCode]);
         foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
             $national = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
-            $work = strtolower(trim((string)($row['work_id'] ?? '')));
+            $work = strtolower(egmPeriodInvitesWorkId($row['work_id'] ?? ''));
             if ($national !== '') $set['n:' . $national] = true;
             if ($work !== '') $set['w:' . $work] = true;
         }
@@ -413,7 +422,7 @@ function egmPeriodInvitesInvitedIdentitySet(array $context, string $periodCode):
     foreach ($state['periods'][$periodCode] ?? [] as $row) {
         if (is_array($row)) {
             $national = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
-            $work = strtolower(trim((string)($row['work_id'] ?? '')));
+            $work = strtolower(egmPeriodInvitesWorkId($row['work_id'] ?? ''));
             if ($national !== '') $set['n:' . $national] = true;
             if ($work !== '') $set['w:' . $work] = true;
         }
@@ -424,7 +433,7 @@ function egmPeriodInvitesInvitedIdentitySet(array $context, string $periodCode):
 function egmPeriodInvitesIsAlreadyInvited(array $row, array $invited): bool
 {
     $national = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
-    $work = strtolower(trim((string)($row['work_id'] ?? '')));
+    $work = strtolower(egmPeriodInvitesWorkId($row['work_id'] ?? ''));
     return ($national !== '' && isset($invited['n:' . $national]))
         || ($work !== '' && isset($invited['w:' . $work]));
 }
@@ -676,8 +685,8 @@ SQL);
     try {
         foreach ($rows as $row) {
             $nationalId = egmPeriodInvitesValidNationalId($row['national_id'] ?? '');
-            $workId = tctPeriodInviteClean($row['work_id'] ?? '', 128);
-            $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $nationalId);
+            $workId = egmPeriodInvitesWorkId($row['work_id'] ?? '');
+            $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $nationalId, empty($row['oeu_reviewed']));
             $userId = 0;
             if ($nationalId !== '') {
                 $findNational->execute([':national_id' => $nationalId]);
@@ -983,7 +992,7 @@ function egmPeriodInvitesUpdateInvitedRow(
     $usersTable = (string)$context['tables']['users'];
     $periodsTable = (string)$context['tables']['user_periods'];
     $profile = [
-        'work_id' => tctPeriodInviteClean($input['work_id'] ?? '', 128),
+        'work_id' => egmPeriodInvitesWorkId($input['work_id'] ?? ''),
         'first_name' => tctPeriodInviteClean($input['first_name'] ?? '', 191),
         'last_name' => tctPeriodInviteClean($input['last_name'] ?? '', 191),
         'phone_number' => tctPeriodInviteClean($input['phone_number'] ?? '', 32),
@@ -1227,14 +1236,14 @@ function egmPeriodInvitesExcelProfileChanges(array $existing, array $input): arr
         $before = trim((string)($existing[$field] ?? ''));
         $after = trim((string)($normalized[$field] ?? ''));
         if ($field === 'national_id') $before = egmPeriodInvitesValidNationalId($before);
-        if ($field === 'work_id' && strtolower($before) === strtolower($after)) continue;
+        if ($field === 'work_id') { $before = egmPeriodInvitesWorkId($before); if (strtolower($before) === strtolower($after)) continue; }
         if ($before !== $after) $changes[$field] = $after;
     }
     return $changes;
 }
 
 /** @return array<string,mixed> */
-function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $inputRows): array
+function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $inputRows, bool $syncOeuIdentity = true): array
 {
     if (count($inputRows) > 1000) {
         throw new InvalidArgumentException('The Excel match request is too large. Refresh the panel so it can process the file in smaller batches.');
@@ -1244,7 +1253,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
     $existingByIdentity = [];
     foreach (egmPeriodInvitesListInvitedRows($context, $periodCode) as $existing) {
         $national = egmPeriodInvitesValidNationalId($existing['national_id'] ?? '');
-        $work = strtolower(trim((string)($existing['work_id'] ?? '')));
+        $work = strtolower(egmPeriodInvitesWorkId($existing['work_id'] ?? ''));
         if ($national !== '') $existingByIdentity['n:' . $national] = $existing;
         if ($work !== '') $existingByIdentity['w:' . $work] = $existing;
     }
@@ -1254,7 +1263,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
     $byWork = [];
     foreach ($candidates as $candidate) {
         $national = egmPeriodInvitesValidNationalId($candidate['national_id'] ?? '');
-        $work = strtolower(trim((string)($candidate['work_id'] ?? '')));
+        $work = strtolower(egmPeriodInvitesWorkId($candidate['work_id'] ?? ''));
         if ($national !== '') $byNational[$national] = $candidate;
         if ($work !== '' && !isset($byWork[$work])) $byWork[$work] = $candidate;
     }
@@ -1268,9 +1277,10 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
         foreach ($inputRows as $offset => $inputRow) {
             if (!is_array($inputRow)) continue;
             $excelRow = egmPeriodInvitesNormalizeExcelRow($inputRow, $offset + 2);
+            $excelRow['oeu_reviewed'] = !$syncOeuIdentity;
             if (egmPeriodInvitesIsAlreadyInvited($excelRow, $invited)) {
                 $national = egmPeriodInvitesValidNationalId($excelRow['national_id'] ?? '');
-                $work = strtolower(trim((string)($excelRow['work_id'] ?? '')));
+                $work = strtolower(egmPeriodInvitesWorkId($excelRow['work_id'] ?? ''));
                 $byN = $existingByIdentity['n:' . $national] ?? null;
                 $byW = $existingByIdentity['w:' . $work] ?? null;
                 $existing = $byN ?? $byW;
@@ -1293,12 +1303,12 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
             $pdo->exec('SAVEPOINT egm_excel_match_row');
             try {
                 $national = egmPeriodInvitesValidNationalId($excelRow['national_id'] ?? '');
-                $workId = tctPeriodInviteClean($excelRow['work_id'] ?? '', 128);
+                $workId = egmPeriodInvitesWorkId($excelRow['work_id'] ?? '');
                 $work = strtolower($workId);
 
                 // An uploaded National ID is also authoritative for an unambiguous
                 // OEU Work-ID match, even when this EGM currently uses custom users.
-                $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $national);
+                $oeuUserId = egmPeriodInvitesSyncOeuNationalId($pdo, $workId, $national, $syncOeuIdentity);
                 $candidate = ($national !== '' ? ($byNational[$national] ?? null) : null)
                     ?? ($work !== '' ? ($byWork[$work] ?? null) : null);
                 if (!is_array($candidate)) {
@@ -1306,7 +1316,7 @@ function egmPeriodInvitesMatchExcel(array $context, string $periodCode, array $i
                     $pdo->exec('RELEASE SAVEPOINT egm_excel_match_row');
                     continue;
                 }
-                $candidate = egmPeriodInvitesSyncMatchedEgmNationalId(
+                if ($syncOeuIdentity || ($candidate['source'] ?? '') !== 'oeu') $candidate = egmPeriodInvitesSyncMatchedEgmNationalId(
                     $context,
                     $candidate,
                     $national,
@@ -1409,6 +1419,15 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
             egmPeriodInvitesJson(['status' => 'ok', 'source' => $source, 'message' => 'منبع دعوت‌شدگان ذخیره شد.']);
         }
         $periodCode = egmPeriodInvitesValidatePeriod($context, (string)($input['period_code'] ?? ''));
+        if ($action === 'preview_oeu_updates' && $method === 'POST') {
+            require_once __DIR__ . '/egm-oeu-import-review.php';
+            egmPeriodInvitesJson(['status'=>'ok'] + egmOeuImportPreview($context,$periodCode,is_array($input['rows']??null)?$input['rows']:[]));
+        }
+        if ($action === 'apply_oeu_updates' && $method === 'POST') {
+            require_once __DIR__ . '/egm-oeu-import-review.php';
+            $count=egmOeuImportApply($context,$periodCode,(string)($input['token']??''),is_array($input['ids']??null)?$input['ids']:[],tctPeriodInviteClean($sessionUser['code']??'',191));
+            egmPeriodInvitesJson(['status'=>'ok','updated'=>$count]);
+        }
         if ($action === 'filter_options') {
             $source = egmPeriodInvitesGetSource($context);
             egmPeriodInvitesJson(['status' => 'ok', 'source' => $source, 'options' => egmPeriodInvitesFilterOptions(egmPeriodInvitesCandidateRows($context, $source)), 'ticket_definitions' => egmPeriodInvitesTicketDefinitions($context)]);
@@ -1421,7 +1440,7 @@ function handleEgmPeriodInvitesRequest(string $missionDir, array $sessionUser): 
         }
         if ($action === 'match_excel' && $method === 'POST') {
             $rows = is_array($input['rows'] ?? null) ? $input['rows'] : [];
-            egmPeriodInvitesJson(['status' => 'ok'] + egmPeriodInvitesMatchExcel($context, $periodCode, $rows));
+            egmPeriodInvitesJson(['status' => 'ok'] + egmPeriodInvitesMatchExcel($context, $periodCode, $rows, ($input['sync_oeu_identity'] ?? true) !== false));
         }
         if ($action === 'invite_unmatched' && $method === 'POST') {
             $rows = is_array($input['rows'] ?? null) ? $input['rows'] : [];

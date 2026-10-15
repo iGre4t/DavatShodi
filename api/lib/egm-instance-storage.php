@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Bump whenever a request-time compatible table migration is added. Existing
 // instances use this marker to decide whether the migration block must run.
-const EGM_INSTANCE_SCHEMA_VERSION = '2026-10-06.1';
+const EGM_INSTANCE_SCHEMA_VERSION = '2026-10-09.1';
 const EGM_INSTANCE_SCHEMA_VERSION_KEY = '__egm_schema_version';
 const EGM_INSTANCE_COMPATIBLE_SCHEMA_VERSIONS = [EGM_INSTANCE_SCHEMA_VERSION];
 
@@ -302,6 +302,7 @@ SQL);
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'quit_date', 'DATE NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'should_get_gift', 'TINYINT(1) NOT NULL DEFAULT 0');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'draw_eligible', 'TINYINT(1) NULL DEFAULT NULL');
+    egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'games_eligible', 'TINYINT(1) NULL DEFAULT NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'benefits_reviewed_at', 'DATETIME NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'benefits_reviewed_by', 'VARCHAR(191) NULL');
     egmInstanceAddColumnIfMissing($pdo, $userPeriodsTable, 'quit_time', 'TIME NULL');
@@ -1222,8 +1223,8 @@ function egmInstanceOeuNationalIdKey($value): string
 /**
  * Fill incomplete EGM guest records from the active OEU directory.
  *
- * Matching is deliberately limited to a stored OEU row id, a valid National ID,
- * or a Work ID that occurs exactly once in OEU. Names and phone numbers are not
+ * Match by a unique National ID, or a unique Work ID with no conflicting
+ * National ID. Directory row IDs can be recycled during imports. Names and phone numbers are not
  * identities and are therefore never used for automatic matching.
  */
 function egmInstanceEnrichUsersFromOeu(PDO $pdo, string $code, bool $refreshOeuSourced = true): int
@@ -1243,16 +1244,11 @@ function egmInstanceEnrichUsersFromOeu(PDO $pdo, string $code, bool $refreshOeuS
         return 0;
     }
 
-    $oeuById = [];
     $oeuByNational = [];
     $duplicateNationals = [];
     $oeuByWork = [];
     $duplicateWorkIds = [];
     foreach ($oeuRows as $oeu) {
-        $oeuId = (int)($oeu['id'] ?? 0);
-        if ($oeuId > 0) {
-            $oeuById[$oeuId] = $oeu;
-        }
         $nationalKey = egmInstanceOeuNationalIdKey($oeu['national_id'] ?? '');
         if ($nationalKey !== '') {
             if (isset($oeuByNational[$nationalKey])) {
@@ -1313,14 +1309,15 @@ function egmInstanceEnrichUsersFromOeu(PDO $pdo, string $code, bool $refreshOeuS
                 continue;
             }
             $sourceUserId = (int)($user['source_user_id'] ?? 0);
-            $oeu = $sourceUserId > 0 ? ($oeuById[$sourceUserId] ?? null) : null;
-            if (!is_array($oeu)) {
-                $nationalKey = egmInstanceOeuNationalIdKey($user['national_id'] ?? '');
-                $oeu = $nationalKey !== '' ? ($oeuByNational[$nationalKey] ?? null) : null;
-            }
-            if (!is_array($oeu)) {
+            $nationalKey = egmInstanceOeuNationalIdKey($user['national_id'] ?? '');
+            $oeu = $nationalKey !== '' ? ($oeuByNational[$nationalKey] ?? null) : null;
+            if (!is_array($oeu) && !isset($duplicateNationals[$nationalKey])) {
                 $workKey = egmInstanceOeuIdentityKey($user['work_id'] ?? '');
                 $oeu = $workKey !== '' ? ($oeuByWork[$workKey] ?? null) : null;
+                $incomingNational = is_array($oeu) ? egmInstanceOeuNationalIdKey($oeu['national_id'] ?? '') : '';
+                if ($nationalKey !== '' && $incomingNational !== '' && $nationalKey !== $incomingNational) {
+                    $oeu = null;
+                }
             }
             if (!is_array($oeu)) {
                 continue;
@@ -1348,7 +1345,7 @@ function egmInstanceEnrichUsersFromOeu(PDO $pdo, string $code, bool $refreshOeuS
                     $changes[$field] = $incoming;
                 }
             }
-            if ($sourceUserId < 1 && (int)($oeu['id'] ?? 0) > 0) {
+            if ($sourceUserId !== (int)($oeu['id'] ?? 0) && (int)($oeu['id'] ?? 0) > 0) {
                 $changes['source_user_id'] = (int)$oeu['id'];
             }
             $incomingSourceRow = (int)($oeu['source_row'] ?? 0);

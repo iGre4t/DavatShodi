@@ -4,10 +4,12 @@ session_start();
 require_once __DIR__ . '/api/lib/common.php';
 require_once __DIR__ . '/api/lib/users.php';
 require_once __DIR__ . '/api/lib/tab-permissions.php';
+panelSessionClearExpired();
 require_once __DIR__ . '/api/lib/egm-registry.php';
 require_once __DIR__ . '/api/lib/egm-instance-storage.php';
 require_once __DIR__ . '/api/lib/tc-registry.php';
 require_once __DIR__ . '/api/lib/database-instance-materializer.php';
+require_once __DIR__ . '/api/lib/panel-dashboard.php';
 
 const DEFAULT_PANEL_SETTINGS = [
   'title' => 'Great Panel',
@@ -207,6 +209,9 @@ if (empty($_SESSION['authenticated'])) {
   exit;
 }
 $sessionUser = $_SESSION['user'] ?? [];
+if (!is_array($sessionUser) || !$sessionUser) { header('Location: login.php'); exit; }
+if (!isset($_SESSION['panel_session_expires_at'])) panelSessionInitialize();
+header('Cache-Control: no-store, no-cache, must-revalidate');
 $userConfig = loadConfig(__DIR__ . '/api/config.php');
 $userPdo = connectDatabase($userConfig);
 $panelBootstrapErrors = [];
@@ -234,9 +239,6 @@ unset($currentUser['password_hash']);
 $currentUserPermissions = normalizeTabPermissions($currentUser['permissions'] ?? null, true);
 $currentUser['permissions'] = $currentUserPermissions;
 $allowedTabs = resolveAllowedPanelTabsForUser($currentUser);
-if (!in_array('organizational-event-userbase', $allowedTabs, true)) {
-  $allowedTabs[] = 'organizational-event-userbase';
-}
 $initialTab = '';
 if (in_array('home', $allowedTabs, true)) {
   $initialTab = 'home';
@@ -261,34 +263,10 @@ $childPermissionMap = getPanelChildTabIdsByParent();
 $taskClubCreatorEnabled = in_array('task-club', $allowedTabs, true);
 $eventGuestManagerCreatorEnabled = in_array('event-guest-manager', $allowedTabs, true);
 $rateMeCreatorEnabled = in_array('rate-me', $allowedTabs, true);
-$taskClubMissionTabs = $taskClubCreatorEnabled ? panelMissionTabs($userPdo) : [];
-$eventGuestManagerTabs = $eventGuestManagerCreatorEnabled ? panelEgmTabs($userPdo) : [];
+$taskClubMissionTabs = array_values(array_filter(panelMissionTabs($userPdo), static fn ($entry) => in_array($entry['id'], $allowedTabs, true)));
+$eventGuestManagerTabs = array_values(array_filter(panelEgmTabs($userPdo), static fn ($entry) => in_array($entry['id'], $allowedTabs, true)));
 $panelTabCatalog = $tabCatalog;
 $panelAllowedTabs = array_values($allowedTabs);
-foreach ($taskClubMissionTabs as $missionTab) {
-  $missionTabId = (string)($missionTab['id'] ?? '');
-  if ($missionTabId === '') {
-    continue;
-  }
-  $panelTabCatalog[] = [
-    'id' => $missionTabId,
-    'label' => (string)($missionTab['name'] ?? $missionTabId),
-    'title' => (string)($missionTab['name'] ?? $missionTabId)
-  ];
-  $panelAllowedTabs[] = $missionTabId;
-}
-foreach ($eventGuestManagerTabs as $egmTab) {
-  $egmTabId = (string)($egmTab['id'] ?? '');
-  if ($egmTabId === '') {
-    continue;
-  }
-  $panelTabCatalog[] = [
-    'id' => $egmTabId,
-    'label' => (string)($egmTab['name'] ?? $egmTabId),
-    'title' => (string)($egmTab['name'] ?? $egmTabId)
-  ];
-  $panelAllowedTabs[] = $egmTabId;
-}
 if ($taskClubCreatorEnabled) {
   $panelTabCatalog[] = [
     'id' => 'task-club-creator',
@@ -337,6 +315,8 @@ $accountEmail = $currentUser['email'] ?? '';
 <!doctype html>
 <html lang="fa" dir="rtl">
   <head>
+    <script>window.PANEL_SESSION = <?= json_encode(panelSessionState(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+    <script src="assets/panel-session.js?v=<?= (int)@filemtime(__DIR__ . '/assets/panel-session.js') ?>" defer></script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title><?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?></title>
@@ -345,7 +325,8 @@ $accountEmail = $currentUser['email'] ?? '';
     <script src="style/appearance.js"></script>
     <link rel="icon" id="site-icon-link" href="<?= htmlspecialchars($panelSiteIconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
     <link rel="preload" href="style/fonts/remixicon.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-    <link rel="stylesheet" href="style/styles.css" />
+    <link rel="stylesheet" href="style/styles.css?v=<?= (int)filemtime(__DIR__ . '/style/styles.css') ?>" />
+    <link rel="stylesheet" href="style/event-dashboard.css?v=<?= (int)filemtime(__DIR__ . '/style/event-dashboard.css') ?>" />
     <link rel="stylesheet" href="assets/panel-sidebar.css?v=<?= (int)@filemtime(__DIR__ . '/assets/panel-sidebar.css') ?>" />
     <link rel="stylesheet" href="style/remixicon.css" />
   </head>
@@ -549,33 +530,8 @@ $accountEmail = $currentUser['email'] ?? '';
         <?php endif; ?>
 
         <?php if (in_array('home', $allowedTabs, true)): ?>
-        <!-- Home tab shows quick KPI cards and recent asset system logs populated by app.js. -->
         <section id="tab-home" class="tab<?= $initialTab === 'home' ? ' active' : '' ?>">
-          <div class="cards">
-            <div class="card kpi">
-              <div class="kpi-label">مجموع کاربران</div>
-              <div class="kpi-value" id="kpi-users">0</div>
-            </div>
-            <div class="card kpi">
-              <div class="kpi-label">تعداد اموال</div>
-              <div class="kpi-value" id="kpi-photos">0</div>
-            </div>
-            <div class="card kpi">
-              <div class="kpi-label">گزارشات 24 ساعت اخیر</div>
-              <div class="kpi-value" id="kpi-db-status">0</div>
-            </div>
-          </div>
-
-          <div class="card home-log-card">
-            <div class="section-header">
-              <h3>گزارشات سیستم اموال</h3>
-            </div>
-            <p id="home-asset-log-status" class="hint home-log-status" aria-live="polite"></p>
-            <div id="home-asset-log-days" class="home-log-days"></div>
-            <div class="section-footer home-log-footer">
-              <button type="button" id="home-asset-log-more" class="btn ghost hidden">نمایش بیشتر</button>
-            </div>
-          </div>
+          <?php require __DIR__.'/panel-dashboard-view.php'; ?>
         </section>
         <?php endif; ?>
 
@@ -884,7 +840,8 @@ $accountEmail = $currentUser['email'] ?? '';
           <h3 id="permissions-modal-title">دسترسی ها</h3>
           <button type="button" class="icon-btn" data-close-permissions aria-label="بستن دسترسی ها">×</button>
         </div>
-        <p class="hint">دسترسی هر کاربر فقط به تب‌های انتخاب‌شده محدود می‌شود.</p>
+        <p class="hint">برای دسترسی محدود، رویداد و بخش‌های آن را انتخاب کنید. گزینهٔ «همه رویدادها» دسترسی سراسری می‌دهد.</p>
+        <label class="field"><span>جست‌وجوی رویداد یا بخش</span><input type="search" id="permission-search" placeholder="نام رویداد یا بخش" autocomplete="off"></label>
         <div id="permissions-checkboxes" class="permissions-checkboxes pm-permission-grid">
           <?php foreach ($permissionTree as $group): ?>
             <?php $parentId = (string)($group['id'] ?? ''); ?>
@@ -1318,7 +1275,12 @@ $accountEmail = $currentUser['email'] ?? '';
     <script>
       window.__CURRENT_USER_NAME = <?= json_encode($topbarUserName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.__CURRENT_USER_CODE = <?= json_encode($userCode, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      window.PANEL_PERMISSION_CATALOG = <?= json_encode($tabCatalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_TAB_CATALOG = <?= json_encode($panelTabCatalog, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
+      document.getElementById('permission-search')?.addEventListener('input', function () {
+        const query = this.value.trim().toLocaleLowerCase('fa');
+        document.querySelectorAll('.pm-permission-group').forEach(group => { group.hidden = !group.textContent.toLocaleLowerCase('fa').includes(query); });
+      });
       window.PANEL_CHILD_TAB_MAP = <?= json_encode($childPermissionMap, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_ALLOWED_TABS = <?= json_encode($panelAllowedTabs, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;
       window.PANEL_INITIAL_TAB = <?= json_encode($initialTab, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;

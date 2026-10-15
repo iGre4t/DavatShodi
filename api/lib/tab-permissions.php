@@ -1,20 +1,88 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/panel-session.php';
+
+
+/** Registry entries are read on every request, including hidden sidebar events. */
+function panelPermissionDatabase(): ?PDO
+{
+    if (array_key_exists('panelPermissionPdo', $GLOBALS)) return $GLOBALS['panelPermissionPdo'];
+    require_once __DIR__ . '/common.php';
+    return $GLOBALS['panelPermissionPdo'] = connectDatabase(loadConfig(dirname(__DIR__) . '/config.php'));
+}
+
+function panelPermissionInstances(): array
+{
+    if (isset($GLOBALS['panelPermissionInstanceCatalog'])) return $GLOBALS['panelPermissionInstanceCatalog'];
+    $entries = [];
+    $pdo = panelPermissionDatabase();
+    if (!$pdo) return [];
+    foreach (['egm' => 'event-guest-manager', 'tc' => 'task-club'] as $table => $parent) {
+        try { $rows = $pdo->query("SELECT code, name, directory FROM `$table`")->fetchAll(PDO::FETCH_ASSOC); }
+        catch (Throwable $error) { continue; }
+        foreach ($rows as $row) {
+            $directory = str_replace('\\', '/', trim((string)$row['directory']));
+            if ($table === 'egm' && !str_starts_with($directory, 'mini apps/EGMs/')) continue;
+            if ($table === 'tc' && !str_starts_with($directory, 'mini apps/missions/')) continue;
+            $id = $table === 'egm' ? $parent . '-mission-' . $row['code']
+                : $parent . '-mission-' . substr(hash('sha256', basename($directory)), 0, 12);
+            $entries[$id] = ['id' => $id, 'label' => (string)$row['name'], 'title' => (string)$row['name'], 'parent' => $parent, 'directory' => $directory];
+        }
+    }
+    return $GLOBALS['panelPermissionInstanceCatalog'] = $entries;
+}
+
+function panelPermissionInstanceChildren(array $children): array
+{
+    foreach (panelPermissionInstances() as $id => $entry) {
+        $children[$id] = array_map(static function ($child) use ($entry, $id) {
+            $child['id'] = $id . substr($child['id'], strlen($entry['parent']));
+            return $child;
+        }, $children[$entry['parent']] ?? []);
+    }
+    return $children;
+}
+
+function getDefaultPanelUserPermissions(): array { return ['home', 'settings']; }
+
+/** A global module grant covers its instances; individual grants never grant the creator. */
+function panelPermissionGranted(array $permissions, string $id): bool
+{
+    if (in_array($id, $permissions, true)) return true;
+    [$root, $suffix] = array_pad(explode(':', $id, 2), 2, null);
+    $entry = panelPermissionInstances()[$root] ?? null;
+    return $entry && in_array($entry['parent'] . ($suffix === null ? '' : ':' . $suffix), $permissions, true);
+}
+
+/** Use the requested script, including materialized wrappers, rather than template __DIR__. */
+function panelPermissionContextId(string $id): string
+{
+    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_FILENAME'] ?? ''));
+    $root = str_replace('\\', '/', dirname(__DIR__, 2));
+    foreach (panelPermissionInstances() as $entry) {
+        if (str_starts_with($script, $root . '/' . $entry['directory'] . '/')) {
+            if ($id === $entry['parent'] || str_starts_with($id, $entry['parent'] . ':')) {
+                return $entry['id'] . substr($id, strlen($entry['parent']));
+            }
+        }
+    }
+    return $id;
+}
 
 function getPanelTabDefinitions(): array
 {
     static $tabs = null;
     if ($tabs !== null) {
-        return $tabs;
+        return array_merge($tabs, array_values(panelPermissionInstances()));
     }
     $tabs = [
-        ['id' => 'home', 'label' => 'خانه', 'title' => 'Home'],
+        ['id' => 'home', 'label' => 'خانه', 'title' => 'میز کار رویدادها'],
         ['id' => 'users', 'label' => 'کاربران', 'title' => 'Users'],
         ['id' => 'settings', 'label' => 'تنظیمات حساب', 'title' => 'Account Settings'],
         ['id' => 'features', 'label' => 'Features', 'title' => 'Features'],
         ['id' => 'wheel-of-fortune', 'label' => 'گردونه شانس', 'title' => 'گردونه شانس'],
-        ['id' => 'task-club', 'label' => 'باشگاه تعاملی', 'title' => 'باشگاه تعاملی'],
-        ['id' => 'event-guest-manager', 'label' => 'EGM Develop', 'title' => 'EGM Develop'],
+        ['id' => 'task-club', 'label' => 'باشگاه تعاملی (همه باشگاه‌ها)', 'title' => 'باشگاه تعاملی'],
+        ['id' => 'event-guest-manager', 'label' => 'مدیریت مهمانان (همه رویدادها)', 'title' => 'مدیریت مهمانان'],
         ['id' => 'rate-me', 'label' => 'RateMe', 'title' => 'RateMe'],
         ['id' => 'asset-manager', 'label' => 'مدیریت اموال', 'title' => 'مدیریت اموال'],
         ['id' => 'organizational-event-userbase', 'label' => 'کاربران سازمان', 'title' => 'کاربران سازمان'],
@@ -22,14 +90,14 @@ function getPanelTabDefinitions(): array
         ['id' => 'linker-service', 'label' => 'Linker Service', 'title' => 'Linker Service'],
         ['id' => 'devsettings', 'label' => 'تنظیمات توسعه‌دهنده', 'title' => 'Developer Settings']
     ];
-    return $tabs;
+    return array_merge($tabs, array_values(panelPermissionInstances()));
 }
 
 function getPanelChildTabDefinitionsByParent(): array
 {
     static $children = null;
     if ($children !== null) {
-        return $children;
+        return panelPermissionInstanceChildren($children);
     }
     $children = [
         'task-club' => [
@@ -45,6 +113,16 @@ function getPanelChildTabDefinitionsByParent(): array
         ],
         'event-guest-manager' => [
             ['id' => 'event-guest-manager:main', 'label' => 'کنترل پنل'],
+            ['id' => 'event-guest-manager:scan', 'label' => 'اسکن و کنترل مهمانان'],
+            ['id' => 'event-guest-manager:games', 'label' => 'بازی‌ها و اتاق‌ها'],
+            ['id' => 'event-guest-manager:groups', 'label' => 'گروه‌ها'],
+            ['id' => 'event-guest-manager:prizes', 'label' => 'جوایز و قرعه‌کشی'],
+            ['id' => 'event-guest-manager:invite-card', 'label' => 'طراحی کارت دعوت'],
+            ['id' => 'event-guest-manager:print-card', 'label' => 'طراحی کارت چاپی'],
+            ['id' => 'event-guest-manager:custom-number-ticket', 'label' => 'بلیت شماره‌دار'],
+            ['id' => 'event-guest-manager:guest-reports', 'label' => 'گزارش‌های مهمانان'],
+            ['id' => 'event-guest-manager:facilitators', 'label' => 'تسهیلگرها'],
+
             ['id' => 'event-guest-manager:invitees', 'label' => 'دعوت‌شدگان'],
             ['id' => 'event-guest-manager:manage-tasks', 'label' => 'بازه‌ها'],
             ['id' => 'event-guest-manager:task-access', 'label' => 'دسترسی ادمین'],
@@ -66,7 +144,8 @@ function getPanelChildTabDefinitionsByParent(): array
             ['id' => 'devsettings:panel-settings', 'label' => 'عمومی'],
             ['id' => 'devsettings:appearance', 'label' => 'ظاهر'],
             ['id' => 'devsettings:database', 'label' => 'پایگاه داده'],
-            ['id' => 'devsettings:printer-settings', 'label' => 'تنظیمات چاپگر']
+            ['id' => 'devsettings:printer-settings', 'label' => 'تنظیمات چاپگر'],
+            ['id' => 'devsettings:windows-app', 'label' => 'برنامه ویندوز و به‌روزرسانی‌ها']
         ],
         'asset-manager' => [
             ['id' => 'asset-manager:assets', 'label' => 'افزودن مال'],
@@ -76,7 +155,7 @@ function getPanelChildTabDefinitionsByParent(): array
             ['id' => 'asset-manager:permissions', 'label' => 'دسترسی‌ها']
         ]
     ];
-    return $children;
+    return panelPermissionInstanceChildren($children);
 }
 
 function getPanelChildTabIdsByParent(): array
@@ -272,7 +351,7 @@ function normalizeTabPermissions($value, bool $fallbackToAll = true): array
         }
     }
     if (empty($selectedRoots)) {
-        if (!$fallbackToAll) {
+        if (!$fallbackToAll || ($value !== null && $value !== '')) {
             return [];
         }
         $selectedRoots = $rootIds;
@@ -291,6 +370,13 @@ function normalizeTabPermissions($value, bool $fallbackToAll = true): array
             if (isset($inputSet[$childId])) {
                 $selectedChildren[] = $childId;
             }
+        }
+        // Older full-EGM grants had every legacy child but no explicit customization marker.
+        // Preserve their administrative access when introducing the new section catalog.
+        $legacyEgmChildren = ['main', 'invitees', 'manage-tasks', 'task-access', 'monitoring', 'export', 'linker', 'logs'];
+        if ($rootId === 'event-guest-manager' && !$hasCustomizationMarker
+            && count(array_filter($legacyEgmChildren, static fn ($suffix) => isset($inputSet[$rootId . ':' . $suffix]))) === count($legacyEgmChildren)) {
+            $selectedChildren = $children;
         }
         if ($hasCustomizationMarker || !empty($selectedChildren)) {
             if ($marker !== '') {
@@ -318,15 +404,9 @@ function encodeTabPermissionsForStorage(array $permissions): string
 function resolveAllowedPanelTabsForUser(array $user): array
 {
     $normalized = normalizeTabPermissions($user['permissions'] ?? null, true);
-    // Organizational users are part of user management. Keep the new module
-    // visible for existing accounts that already have the legacy Users tab.
-    if (in_array('users', $normalized, true)
-        && !in_array('organizational-event-userbase', $normalized, true)) {
-        $normalized[] = 'organizational-event-userbase';
-    }
     $allowed = [];
     foreach (getAllPanelTabIds() as $tabId) {
-        if (in_array($tabId, $normalized, true)) {
+        if (panelPermissionGranted($normalized, $tabId)) {
             $allowed[] = $tabId;
         }
     }
@@ -339,17 +419,18 @@ function resolveAllowedPanelChildTabsForUser(array $user, string $parentTabId): 
     if ($parent === '') {
         return [];
     }
+    $effectiveParent = panelPermissionContextId($parent);
     $children = getPanelChildTabIdsByParent()[$parent] ?? [];
     if (empty($children)) {
         return [];
     }
     $normalized = normalizeTabPermissions($user['permissions'] ?? null, true);
-    if (!in_array($parent, $normalized, true)) {
+    if (!panelPermissionGranted($normalized, $effectiveParent)) {
         return [];
     }
     $allowed = [];
     foreach ($children as $childId) {
-        if (in_array($childId, $normalized, true)) {
+        if (panelPermissionGranted($normalized, panelPermissionContextId($childId))) {
             $allowed[] = $childId;
         }
     }
@@ -363,7 +444,7 @@ function userHasPermissionId(array $user, string $permissionId): bool
         return false;
     }
     $normalized = normalizeTabPermissions($user['permissions'] ?? null, true);
-    return in_array($id, $normalized, true);
+    return panelPermissionGranted($normalized, panelPermissionContextId($id));
 }
 
 function userHasTabPermission(array $user, string $tabId): bool
@@ -397,9 +478,27 @@ function denyPanelAccess(int $statusCode, string $message, bool $json = false): 
 function requireAuthenticatedSessionUser(bool $json = false): array
 {
     ensurePanelSessionStarted();
+    panelSessionClearExpired();
     if (empty($_SESSION['authenticated']) || !is_array($_SESSION['user'] ?? null)) {
-        denyPanelAccess(401, 'You must be logged in to access this resource.', $json);
+        header('X-Panel-Session-Expired: 1');
+        if (!$json) { header('Location: /login.php'); exit; }
+        denyPanelAccess(401, 'نشست شما پایان یافته است. دوباره وارد شوید.', true);
     }
+    // Permissions can be revoked while this browser is open. Never authorize a stale session copy.
+    $pdo = panelPermissionDatabase();
+    if (!$pdo) denyPanelAccess(503, 'بررسی دسترسی ممکن نشد. دوباره تلاش کنید.', $json);
+    try {
+        $statement = $pdo->prepare('SELECT permissions FROM users WHERE code = :code LIMIT 1');
+        $statement->execute([':code' => (string)($_SESSION['user']['code'] ?? '')]);
+        $record = $statement->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $error) { denyPanelAccess(503, 'بررسی دسترسی ممکن نشد. دوباره تلاش کنید.', $json); }
+    if (!$record) {
+        $_SESSION = [];
+        header('X-Panel-Session-Expired: 1');
+        if (!$json) { header('Location: /login.php'); exit; }
+        denyPanelAccess(401, 'حساب شما دیگر در دسترس نیست.', true);
+    }
+    $_SESSION['user']['permissions'] = normalizeTabPermissions($record['permissions'], true);
     return $_SESSION['user'];
 }
 
@@ -407,7 +506,7 @@ function requireTabPermissionFromSession(string $tabId, bool $json = false): arr
 {
     $user = requireAuthenticatedSessionUser($json);
     if (!userHasTabPermission($user, $tabId)) {
-        denyPanelAccess(403, 'You do not have permission to access this resource.', $json);
+        denyPanelAccess(403, 'شما به این بخش دسترسی ندارید.', $json);
     }
     return $user;
 }

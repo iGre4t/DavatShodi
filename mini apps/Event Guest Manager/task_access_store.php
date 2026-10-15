@@ -287,7 +287,7 @@ function egmTaskAccessNormalizeInviteesSpecialAccess($raw): array
 function egmTaskAccessNormalizeWinAppLevel($raw): string
 {
   $level = egmTaskAccessNormalizeToken((string)$raw);
-  return in_array($level, ['full_access', 'scan_and_details', 'scan_and_event', 'scan_only'], true)
+  return in_array($level, ['full_access', 'scan_and_details', 'scan_and_actions', 'scan_and_event', 'scan_only'], true)
     ? $level
     : 'full_access';
 }

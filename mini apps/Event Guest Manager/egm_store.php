@@ -53,6 +53,16 @@ function egmStoreDatabase(): ?PDO
 
 function egmStoreCampaignLinkTarget(string $destination = 'refmonitor'): string
 {
+  if ($destination === 'scan') {
+    return '/mini%20apps/Event%20Guest%20Manager/check-in.php';
+  }
+  if (str_starts_with($destination, 'draw:')) {
+    $id = substr($destination, 5);
+    require_once egmStoreProjectRoot() . '/api/lib/egm-general-draws.php';
+    $context = egmPeriodInvitesContext(__DIR__);
+    if (!preg_match('/^[a-f0-9]{32}$/', $id) || !isset(egmGeneralDrawDefinitions($context)[$id])) throw new InvalidArgumentException('قرعه‌کشی پیدا نشد.');
+    return '/mini%20apps/Event%20Guest%20Manager/general_draw.php?level_id=' . rawurlencode($id);
+  }
   return '/mini%20apps/Event%20Guest%20Manager/RefMonitor.php';
 }
 
@@ -888,11 +898,19 @@ $egmStoreMainActions = [
   'set_admin_assignment'
 ];
 
-if (in_array($action, $egmStoreMainActions, true) && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main')) {
+if (in_array($action, $egmStoreMainActions, true) && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:' . (in_array($action, ['search_invitee_admin', 'get_admin_assignments', 'set_admin_assignment'], true) ? 'task-access' : 'prizes'))) {
   denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
 }
 
-if (in_array($action, ['get_settings', 'save_settings', 'get_mission_link', 'save_mission_link'], true)) {
+if ($action === 'get_settings'
+    && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main')
+    && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:task-access')
+    && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:linker')
+    && !userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:facilitators')) {
+  denyPanelAccess(403, 'شما به تنظیمات این رویداد دسترسی ندارید.', true);
+}
+
+if (in_array($action, ['save_settings', 'get_mission_link', 'save_mission_link'], true)) {
   if (!userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main')) {
     denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
   }
@@ -905,10 +923,16 @@ if (in_array($action, ['list_campaign_links', 'check_campaign_link', 'create_cam
 if ($action === 'list_campaign_links') {
   egmStoreRequireCampaignRedirects();
   $target = egmStoreCampaignLinkTarget();
+  require_once egmStoreProjectRoot() . '/api/lib/egm-general-draws.php';
+  $destinations = [$target => 'refmonitor', egmStoreCampaignLinkTarget('scan') => 'scan'];
+  foreach (egmGeneralDrawDefinitions(egmPeriodInvitesContext(__DIR__)) as $draw) {
+    $destination = 'draw:' . $draw['id'];
+    $destinations[egmStoreCampaignLinkTarget($destination)] = $destination;
+  }
   $links = [];
   foreach (campaignRedirectsList() as $redirect) {
-    if ((string)($redirect['target'] ?? '') === $target) {
-      $links[] = egmStoreCampaignLinkResponse((string)$redirect['path'], $redirect);
+    if (isset($destinations[(string)($redirect['target'] ?? '')])) {
+      $links[] = egmStoreCampaignLinkResponse((string)$redirect['path'], $redirect, $destinations[(string)$redirect['target']]);
     }
   }
   echo json_encode(['status' => 'ok', 'data' => $links], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -928,7 +952,7 @@ if ($action === 'check_campaign_link') {
   }
   requireTcStoreCsrf($payload);
   $destination = (string)($payload['destination'] ?? 'refmonitor');
-  if ($destination !== 'refmonitor') {
+  if (!in_array($destination, ['refmonitor', 'scan'], true) && !preg_match('/^draw:[a-f0-9]{32}$/', $destination)) {
     http_response_code(422);
     echo json_encode(['status' => 'error', 'message' => 'Invalid campaign destination.']);
     exit;
@@ -962,7 +986,7 @@ if ($action === 'create_campaign_link') {
   }
   requireTcStoreCsrf($payload);
   $destination = (string)($payload['destination'] ?? 'refmonitor');
-  if ($destination !== 'refmonitor') {
+  if (!in_array($destination, ['refmonitor', 'scan'], true) && !preg_match('/^draw:[a-f0-9]{32}$/', $destination)) {
     http_response_code(422);
     echo json_encode(['status' => 'error', 'message' => 'Invalid campaign destination.']);
     exit;
@@ -1060,7 +1084,6 @@ if ($action === 'save_prizes') {
     exit;
   }
   $normalized = [];
-  $seenNames = [];
   $seenIds = [];
   foreach ($prizes as $prize) {
     if (!is_array($prize)) {
@@ -1068,7 +1091,7 @@ if ($action === 'save_prizes') {
       echo json_encode(['status' => 'error', 'message' => 'Every prize row must be a valid object; no data was saved.']);
       exit;
     }
-    foreach (['id', 'name', 'onWheelName', 'quantity', 'last', 'value', 'rank', 'isFake'] as $field) {
+    foreach (['id', 'name', 'onWheelName', 'quantity', 'last', 'value', 'rank', 'chance', 'isFake'] as $field) {
       if (array_key_exists($field, $prize) && $prize[$field] !== null && !is_scalar($prize[$field])) {
         http_response_code(422);
         echo json_encode(['status' => 'error', 'message' => 'Prize fields must contain simple values; no data was saved.']);
@@ -1081,17 +1104,10 @@ if ($action === 'save_prizes') {
       echo json_encode(['status' => 'error', 'message' => 'Every prize row must have a name; no data was saved.']);
       exit;
     }
-    $nameKey = function_exists('mb_strtolower') ? mb_strtolower($name, 'UTF-8') : strtolower($name);
-    if (isset($seenNames[$nameKey])) {
-      http_response_code(422);
-      echo json_encode(['status' => 'error', 'code' => 'duplicate_prize_name', 'message' => 'جایزه‌ای با این نام قبلاً ثبت شده است. نام دیگری وارد کنید.']);
-      exit;
-    }
-    $seenNames[$nameKey] = true;
     $id = trim((string)($prize['id'] ?? ''));
     if ($id !== '' && (!preg_match('/^[A-Za-z0-9._-]{1,96}$/', $id) || isset($seenIds[$id]))) {
       http_response_code(422);
-      echo json_encode(['status' => 'error', 'message' => 'Prize IDs must be valid and unique.']);
+      echo json_encode(['status' => 'error', 'message' => 'کد هر جایزه باید معتبر و یکتا باشد.']);
       exit;
     }
     if ($id !== '') $seenIds[$id] = true;
@@ -1113,6 +1129,10 @@ if ($action === 'save_prizes') {
       echo json_encode(['status' => 'error', 'message' => 'Prize quantity, remaining stock, and value must be valid non-negative numbers; no data was saved.']);
       exit;
     }
+    $chance = $prize['chance'] ?? 'normal';
+    if (!in_array($chance, ['normal','more','priority'], true)) {
+      http_response_code(422); echo json_encode(['status'=>'error','message'=>'شانس انتخاب جایزه معتبر نیست.']); exit;
+    }
     $isFake = egmStoreNormalizeBool($prize['isFake'] ?? false);
     if ($last > $quantity) {
       http_response_code(422);
@@ -1127,6 +1147,7 @@ if ($action === 'save_prizes') {
       'last' => $last,
       'value' => $value,
       'rank' => $rank,
+      'chance' => $chance,
       'isFake' => $isFake
     ];
   }
@@ -1546,6 +1567,7 @@ if ($action === 'get_settings') {
   ];
   $stored = egmStoreReadScopedSettings($baseDir, $settingsFile, $legacySettingsFile);
   $settings = array_merge($defaults, is_array($stored) ? $stored : []);
+  $settings['autoReport'] = egmStoreNormalizeBool($settings['autoReport'] ?? false);
   $settings['maintenanceMode'] = (bool)($settings['maintenanceMode'] ?? false);
   $settings['eventAccessLocked'] = (bool)($settings['eventAccessLocked'] ?? false);
   $adminPasscode = is_array($settings['adminPasscode'] ?? null) ? $settings['adminPasscode'] : [];
@@ -1562,6 +1584,7 @@ if ($action === 'get_settings') {
   $printSettings = is_array($settings['printSettings'] ?? null) ? $settings['printSettings'] : [];
   $settings['printSettings'] = [
     'autoPrint' => (bool)($printSettings['autoPrint'] ?? false),
+    'cardActive' => egmStoreNormalizeBool($printSettings['cardActive'] ?? (empty($settings['customNumberTicketSettings']['active']) || empty($settings['customNumberTicketSettings']['ticketOnly']))),
     'doublePrint' => (bool)($printSettings['doublePrint'] ?? false)
   ];
   $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];
@@ -1576,6 +1599,9 @@ if ($action === 'get_settings') {
   ];
   $settings['landing'] = normalizeLandingSettings($settings['landing'] ?? []);
   $settings['rewardPrizeDisplay'] = normalizeRewardPrizeDisplaySettings($settings['rewardPrizeDisplay'] ?? []);
+  if (!userHasPermissionId($egmStoreSessionUser, 'event-guest-manager:main')) {
+    $settings = array_intersect_key($settings, $defaults);
+  }
   echo json_encode(['status' => 'ok', 'data' => $settings], JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -1606,6 +1632,7 @@ if ($action === 'save_settings') {
   $settings['hint'] = is_string($settings['hint'] ?? null) ? trim($settings['hint']) : '';
   $settings['hintHtml'] = is_string($settings['hintHtml'] ?? null) ? trim($settings['hintHtml']) : '';
   $settings['hintAlign'] = is_string($settings['hintAlign'] ?? null) ? trim($settings['hintAlign']) : 'right';
+  $settings['autoReport'] = egmStoreNormalizeBool($settings['autoReport'] ?? false);
   $settings['maintenanceMode'] = egmStoreNormalizeBool($settings['maintenanceMode'] ?? false);
   $settings['eventAccessLocked'] = egmStoreNormalizeBool($settings['eventAccessLocked'] ?? false);
   $adminHash = trim((string)($storedAdminPasscode['hash'] ?? ''));
@@ -1631,6 +1658,7 @@ if ($action === 'save_settings') {
   $printSettings = is_array($settings['printSettings'] ?? null) ? $settings['printSettings'] : [];
   $settings['printSettings'] = [
     'autoPrint' => egmStoreNormalizeBool($printSettings['autoPrint'] ?? false),
+    'cardActive' => egmStoreNormalizeBool($printSettings['cardActive'] ?? (empty($settings['customNumberTicketSettings']['active']) || empty($settings['customNumberTicketSettings']['ticketOnly']))),
     'doublePrint' => egmStoreNormalizeBool($printSettings['doublePrint'] ?? false)
   ];
   $ticketSettings = is_array($settings['customNumberTicketSettings'] ?? null) ? $settings['customNumberTicketSettings'] : [];

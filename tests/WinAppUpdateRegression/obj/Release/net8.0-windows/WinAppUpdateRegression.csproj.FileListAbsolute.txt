@@ -1,0 +1,15 @@
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\bin\Release\net8.0-windows\WinAppUpdateRegression.exe
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\bin\Release\net8.0-windows\WinAppUpdateRegression.deps.json
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\bin\Release\net8.0-windows\WinAppUpdateRegression.runtimeconfig.json
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\bin\Release\net8.0-windows\WinAppUpdateRegression.dll
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\bin\Release\net8.0-windows\WinAppUpdateRegression.pdb
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.AssemblyInfoInputs.cache
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.AssemblyInfo.cs
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.csproj.CoreCompileInputs.cache
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.sourcelink.json
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.dll
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\refint\WinAppUpdateRegression.dll
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.pdb
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\WinAppUpdateRegression.genruntimeconfig.cache
+C:\Users\hp\OneDrive\Documents\GitHub\DavatShodi\tests\WinAppUpdateRegression\obj\Release\net8.0-windows\ref\WinAppUpdateRegression.dll

@@ -47,7 +47,10 @@ egmCheckInAssert(!str_contains($checkInSource, 'data-reset-all-records'), 'The d
 egmCheckInAssert(!str_contains($checkInSource, 'reset-records-button'), 'Guest Control still contains reset-button UI');
 
 $timezone = new DateTimeZone('Asia/Tehran');
-egmCheckInAssert(egmCheckInCanReportToManagement('not_found'), 'Unknown guests must be reportable');
+egmCheckInAssert(!egmCheckInCanReportToManagement('not_found'), 'Bare unknown scans must not be reportable');
+egmCheckInAssert(!egmCheckInCanReportToManagement('minimum_stay', true, 'quit', true), 'Blocked checkout must not report a walk-in or late guest');
+egmCheckInAssert(!egmCheckInCanReportToManagement('immune_time', false, 'check', true, 'quit'), 'Checkout before exit time must not be reported');
+egmCheckInAssert(egmCheckInCanReportToManagement('force_quit_success', false, 'quit'), 'Actual forced checkout must be reported');
 egmCheckInAssert(egmCheckInCanReportToManagement('walk_in_registered'), 'Walk-in registration must be reportable');
 egmCheckInAssert(egmCheckInCanReportToManagement('success', true), 'A walk-in remains reportable after entry');
 egmCheckInAssert(!egmCheckInCanReportToManagement('success'), 'Ordinary successful entry must not be reportable');
@@ -161,6 +164,30 @@ try {
         'period_state' => ['result' => 'active'],
         'can_scan' => true,
     ];
+    egmInstanceWriteData($pdo, $code, 'print_card', [
+        'imageData' => 'data:image/png;base64,AA==',
+        'qrRect' => ['x'=>1,'y'=>1,'width'=>20,'height'=>20],
+        'textRect' => ['x'=>1,'y'=>25,'width'=>90,'height'=>10],
+    ]);
+    egmInstanceWriteData($pdo, $code, 'settings', [
+        'printSettings' => ['autoPrint'=>true, 'doublePrint'=>true],
+        'customNumberTicketSettings' => ['active'=>false, 'ticketOnly'=>true],
+    ]);
+    $cardOnly = egmCheckInAutomaticPrintProfile($context, '1234567890');
+    egmCheckInAssert($cardOnly['card_active'] && $cardOnly['configured'] && !$cardOnly['ticket_only'], 'A stale ticket-only switch hid an active invitation print card');
+    egmCheckInAssert($cardOnly['auto_print'] && $cardOnly['double_print'], 'Automatic/copy settings did not apply to invitation cards');
+    egmInstanceWriteData($pdo, $code, 'settings', [
+        'printSettings' => ['autoPrint'=>true, 'cardActive'=>false],
+        'customNumberTicketSettings' => ['active'=>false, 'ticketOnly'=>false],
+    ]);
+    $disabled = egmCheckInPrintProfile($context);
+    egmCheckInAssert(!$disabled['card_active'] && !$disabled['configured'] && !$disabled['ticket_active'], 'Both disabled outputs were still printable');
+    egmInstanceWriteData($pdo, $code, 'settings', [
+        'printSettings' => ['autoPrint'=>true, 'cardActive'=>true],
+        'customNumberTicketSettings' => ['active'=>true, 'ticketOnly'=>true],
+    ]);
+    $both = egmCheckInPrintProfile($context);
+    egmCheckInAssert($both['card_active'] && $both['configured'] && $both['ticket_active'] && !$both['ticket_only'], 'Independent card selection did not override legacy ticket-only');
     egmInstanceWriteData($pdo, $code, 'settings', [
         'printSettings' => ['autoPrint' => false, 'doublePrint' => false],
         'customNumberTicketSettings' => ['active' => true, 'ticketOnly' => false, 'tickets' => [
@@ -239,6 +266,7 @@ try {
     $pdo->exec("UPDATE `{$tables['user_periods']}` SET draw_eligible=NULL WHERE user_id={$userId} AND period_code='01'");
 
     egmCheckInAssert($first['result'] === 'success', 'The first valid check-in did not succeed');
+    egmCheckInAssert(!egmCheckInRecentLogs($context, 50, '1234567890')[0]['should_get_gift'], 'Check-in alone finalized gift eligibility');
     egmCheckInAssert((int)$pdo->query("SELECT should_get_gift FROM `{$tables['user_periods']}` WHERE user_id={$userId} AND period_code='01'")->fetchColumn()===1, 'Successful entry did not get gift flag');
     $stored = $pdo->query(
         "SELECT `entered_date`, `entered_time` FROM `{$tables['user_periods']}` WHERE `user_id` = {$userId}"
@@ -592,6 +620,7 @@ try {
     egmCheckInAssert(count($periodLogs) === 3, 'Period-specific Guest Control logs were not filtered correctly');
     egmCheckInAssert(($periodLogs[0]['period_code'] ?? '') === '02', 'Guest Control returned a log from another period');
     egmCheckInAssert(($periodLogs[0]['quit_time'] ?? '') === '16:30:00', 'Guest Control did not return the stored quit time');
+    egmCheckInAssert($periodLogs[0]['should_get_gift'], 'Successful checkout did not finalize approved gift eligibility');
     egmCheckInAssert(($periodLogs[0]['attendance_action'] ?? '') === 'quit', 'The log operation type was not identified as quit');
     egmCheckInAssert(($periodLogs[0]['operation_time'] ?? '') === '16:30:00', 'The unified operation time is incorrect');
     egmCheckInAssert(($periodLogs[0]['work_id'] ?? '') === 'W-1', 'Guest details were not included with the log');

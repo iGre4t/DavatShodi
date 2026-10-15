@@ -133,6 +133,7 @@ function egmPrizeInventoryNormalizeRecords(array $records): array
       'last' => $last,
       'value' => $value,
       'rank' => $rank,
+      'chance' => in_array($record['chance'] ?? 'normal', ['normal','more','priority'], true) ? ($record['chance'] ?? 'normal') : 'normal',
       'isFake' => egmPrizeInventoryNormalizeBool($record['isFake'] ?? false),
       'pendingAwardIds' => egmPrizeInventoryNormalizePendingAwardIds($record['pendingAwardIds'] ?? [])
     ];
@@ -179,6 +180,7 @@ function egmPrizeInventoryValidateRecords(array $records, bool $allowMissingIds,
       && (!is_scalar($record['value']) || !is_numeric($record['value']) || !is_finite((float)$record['value']) || (float)$record['value'] < 0)) {
       return false;
     }
+    if (array_key_exists('chance', $record) && !in_array($record['chance'], ['normal','more','priority'], true)) return false;
     if (array_key_exists('rank', $record)
       && (!is_scalar($record['rank']) || filter_var($record['rank'], FILTER_VALIDATE_INT) === false
         || (int)$record['rank'] < 0 || (int)$record['rank'] > 4)) return false;

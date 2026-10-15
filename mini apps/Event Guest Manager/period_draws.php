@@ -15,7 +15,7 @@ try {
     if (!in_array($action, ['list', 'state', 'export'], true) && $method !== 'POST') { http_response_code(405); exit; }
     if ($method === 'POST' && !egmSecurityIsValidCsrfToken(egmSecurityReadCsrfFromRequest($input))) { http_response_code(403); exit; }
     $context = egmPeriodInvitesContext(__DIR__);
-    $activeOnly = in_array($action, ['state', 'roll', 'confirm', 'ensure_pot'], true);
+    $activeOnly = in_array($action, ['roll', 'confirm'], true);
     $activePeriod = $activeOnly ? egmPeriodDrawActiveCode($context) : '';
     $requestedPeriod = trim((string)($input['period_code'] ?? ''));
     if ($activeOnly && $requestedPeriod !== '' && $requestedPeriod !== $activePeriod) {
@@ -44,7 +44,7 @@ try {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['status' => 'ok'] + $result, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
 } catch (InvalidArgumentException $error) {
-    http_response_code(422);
+    http_response_code(200); // Preserve JSON validation errors through the hosting proxy.
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['status' => 'error', 'message' => $error->getMessage()], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $error) {

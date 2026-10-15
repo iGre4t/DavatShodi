@@ -7,6 +7,9 @@
   const csrf = card.closest('.egm-shell')?.dataset.egmCsrf || '';
   const editor = $('[data-fac-editor]'), passwordDialog = $('[data-fac-password-dialog]');
   const deleteDialog = $('[data-fac-delete-dialog]'), importDialog = $('[data-fac-import-dialog]');
+  const accessLabels = {scan_only:'فقط اسکن',scan_and_event:'اسکن و اطلاعات عمومی رویداد',scan_and_actions:'اسکن و عملیات حضور، بدون جزئیات مهمان',scan_and_details:'اسکن و اطلاعات مهمانان',full_access:'دسترسی کامل'};
+  const roleLabels = {system_manager:'مدیر سیستم',head_referee:'سرداور',referee:'داور'};
+  let panelUsers = [], panelUserCode = '';
   let users = [], editingId = '', passwordId = '', deleteId = '', workbook = null, sheetRows = [];
   const status = (selector, message = '', error = false) => {
     const el = $(selector); el.textContent = message; el.classList.toggle('egm-fac-error', error);
@@ -23,12 +26,14 @@
   function render() {
     const list = $('[data-fac-list]'); list.replaceChildren();
     if (!users.length) {
-      const row = list.insertRow(), cell = row.insertCell(); cell.colSpan = 3; cell.className = 'muted';
+      const row = list.insertRow(), cell = row.insertCell(); cell.colSpan = 5; cell.className = 'muted';
       cell.textContent = 'هنوز تسهیلگری اضافه نشده است.'; return;
     }
     for (const user of users) {
       const row = list.insertRow(); row.insertCell().textContent = user.name;
       const username = row.insertCell(); username.textContent = user.username; username.dir = 'auto';
+      row.insertCell().textContent = accessLabels[user.win_app_access_level] || accessLabels.scan_only;
+      row.insertCell().textContent = roleLabels[user.event_role] || roleLabels.referee;
       const actions = row.insertCell(); actions.className = 'egm-fac-actions';
       for (const [action,label] of [['edit','ویرایش'],['password','نمایش رمز'],['delete','حذف']]) {
         const button = document.createElement('button'); button.type = 'button'; button.className = 'btn ghost';
@@ -41,6 +46,8 @@
     const form = $('[data-fac-form]'); form.reset(); editingId = user?.id || '';
     $('#egm-fac-editor-title').textContent = user ? 'ویرایش تسهیلگر' : 'افزودن تسهیلگر';
     form.elements.name.value = user?.name || ''; form.elements.username.value = user?.username || '';
+    form.elements.win_app_access_level.value = user?.win_app_access_level || 'scan_only';
+    form.elements.event_role.value = user?.event_role || 'referee';
     form.elements.password.required = !user; form.elements.password.type = 'password';
     form.querySelector('[data-fac-toggle]').textContent = 'نمایش';
     $('[data-fac-password-hint]').textContent = user ? 'برای حفظ رمز فعلی، این قسمت را خالی بگذارید.' : '';
@@ -89,6 +96,8 @@
     event.preventDefault(); const form = event.currentTarget;
     void submit(form,'[data-fac-editor-status]','save',{
       id:editingId,name:form.elements.name.value,username:form.elements.username.value,password:form.elements.password.value,
+      win_app_access_level:form.elements.win_app_access_level.value,
+      event_role:form.elements.event_role.value,
     },editor);
   });
   $('[data-fac-password-form]').addEventListener('submit',event=>{
@@ -150,7 +159,38 @@
     void submit(event.currentTarget,'[data-fac-import-status]','import',{rows,update_existing:$('[data-fac-update]').checked},importDialog);
   });
   const entryButtons = [$('[data-fac-add]'),$('[data-fac-upload]')];
+  function renderPanelUsers() {
+    const list = $('[data-fac-panel-list]'); list.replaceChildren();
+    if (!panelUsers.length) {
+      const row = list.insertRow(), cell = row.insertCell(); cell.colSpan = 4; cell.className = 'muted';
+      cell.textContent = 'کاربری با دسترسی به این رویداد وجود ندارد.';
+    }
+    for (const user of panelUsers) {
+      const row = list.insertRow(); row.insertCell().textContent = user.name;
+      const username = row.insertCell(); username.dir = 'auto'; username.textContent = user.username;
+      row.insertCell().textContent = roleLabels[user.event_role] || roleLabels.referee;
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'btn ghost';
+      button.textContent = 'تعیین نقش'; button.setAttribute('aria-label', `تعیین نقش · ${user.name}`);
+      button.addEventListener('click',()=>{
+        panelUserCode = user.code;
+        $('[data-fac-panel-name]').textContent = user.name;
+        $('[data-fac-panel-form]').elements.event_role.value = user.event_role || 'referee';
+        status('[data-fac-panel-status]'); $('[data-fac-panel-dialog]').showModal();
+      });
+      row.insertCell().append(button);
+    }
+  }
+  $('[data-fac-panel-form]').addEventListener('submit',async event=>{
+    event.preventDefault(); const button = event.currentTarget.querySelector('[type="submit"]');
+    button.disabled = true;
+    try {
+      const payload = await request('save_panel_role',{user_code:panelUserCode,event_role:event.currentTarget.elements.event_role.value});
+      panelUsers = payload.panel_users || []; renderPanelUsers(); $('[data-fac-panel-dialog]').close();
+      status('[data-fac-status]','نقش ذخیره شد.');
+    } catch(error) {status('[data-fac-panel-status]',error.message,true);}
+    finally {button.disabled = false;}
+  });
   entryButtons.forEach(button=>button.disabled=true);
-  request().then(payload=>{users=payload.users;render();}).catch(error=>status('[data-fac-status]',error.message,true))
+  request().then(payload=>{users=payload.users;panelUsers=payload.panel_users || [];render();renderPanelUsers();}).catch(error=>status('[data-fac-status]',error.message,true))
     .finally(()=>entryButtons.forEach(button=>button.disabled=false));
 })();

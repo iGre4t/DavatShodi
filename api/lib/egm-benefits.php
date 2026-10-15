@@ -7,9 +7,31 @@ function egmBenefitsDecision(string $choice): array
         'both' => ['gift'=>1, 'draw'=>1, 'label'=>'هدیه و قرعه‌کشی'],
         'gift' => ['gift'=>1, 'draw'=>0, 'label'=>'فقط هدیه'],
         'draw' => ['gift'=>0, 'draw'=>1, 'label'=>'فقط قرعه‌کشی'],
-        'deny' => ['gift'=>0, 'draw'=>0, 'label'=>'بدون هدیه و قرعه‌کشی'],
+        'all' => ['gift'=>1, 'draw'=>1, 'label'=>'بازی، هدیه و قرعه‌کشی'],
+        'games' => ['gift'=>0, 'draw'=>0, 'label'=>'فقط بازی'],
+        'games_gift' => ['gift'=>1, 'draw'=>0, 'label'=>'بازی و هدیه'],
+        'games_draw' => ['gift'=>0, 'draw'=>1, 'label'=>'بازی و قرعه‌کشی'],
+        'benefits' => ['gift'=>1, 'draw'=>1, 'label'=>'هدیه و قرعه‌کشی، بدون بازی'],
+        'deny' => ['gift'=>0, 'draw'=>0, 'label'=>'بدون بازی، هدیه و قرعه‌کشی'],
         default => throw new InvalidArgumentException('انتخاب مدیر معتبر نیست.'),
     };
+}
+
+function egmBenefitsGamesDecision(string $choice): int
+{
+    return in_array($choice, ['both', 'all', 'games', 'games_gift', 'games_draw'], true) ? 1 : 0;
+}
+
+/** Gift approval is provisional until actual entry and successful checkout in this period. */
+function egmBenefitsGiftEligible(array $row): bool
+{
+    return (int)($row['should_get_gift'] ?? 0) === 1
+        && trim((string)($row['entered_date'] ?? '')) !== ''
+        && trim((string)($row['entered_time'] ?? '')) !== ''
+        && trim((string)($row['quit_date'] ?? '')) !== ''
+        && trim((string)($row['quit_time'] ?? '')) !== ''
+        && (int)($row['correct_presence'] ?? 0) === 1
+        && (int)($row['fake_presence'] ?? 0) === 0;
 }
 
 /** Apply a pending manager decision when a previously unknown guest is registered. */
@@ -27,8 +49,8 @@ function egmBenefitsApplyEntry(array $context, int $userId, string $periodCode):
     if (!$decision) return;
     $snapshot = json_decode((string)($decision['report_snapshot'] ?? ''), true) ?: [];
     $provider = ($snapshot['decision_provider'] ?? '') === 'bale' ? 'bale' : 'telegram';
-    $pdo->prepare("UPDATE `{$table}` SET should_get_gift=?,draw_eligible=?,benefits_reviewed_at=?,benefits_reviewed_by=? WHERE user_id=? AND period_code=?")
-        ->execute([$decision['gift'], $decision['draw'], $decision['decided_at'], $provider . ':' . $decision['admin_id'], $userId, $periodCode]);
+    $pdo->prepare("UPDATE `{$table}` SET should_get_gift=?,draw_eligible=?,games_eligible=?,benefits_reviewed_at=?,benefits_reviewed_by=? WHERE user_id=? AND period_code=?")
+        ->execute([$decision['gift'], $decision['draw'], array_key_exists('decision_games', $snapshot) ? (int)$snapshot['decision_games'] : 1, $decision['decided_at'], $snapshot['decision_actor'] ?? ($provider . ':' . $decision['admin_id']), $userId, $periodCode]);
 }
 
 function egmBenefitsDrawAllowed(array $row): bool

@@ -15,11 +15,29 @@ const css = [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[
         const sizes = await page.evaluate(() => ({width:innerWidth, body:document.body.scrollWidth, app:document.querySelector('.app').getBoundingClientRect().width, height:document.querySelector('.phone').getBoundingClientRect().height, documentHeight:document.documentElement.scrollHeight}));
         assert.equal(sizes.width, width);
         assert.ok(sizes.body <= width, JSON.stringify(sizes));
-        assert.equal(Math.round(sizes.app), width <= 600 ? width : 460);
-        assert.equal(Math.round(sizes.height), width <= 600 ? 844 : 808);
+        assert.equal(Math.round(sizes.app), width<=600 ? width : 460);
+        assert.equal(Math.round(sizes.height), width<=600 ? 844 : 808);
         assert.ok(sizes.documentHeight <= 844, JSON.stringify(sizes));
       }
     }
-    console.log('RefMonitor mobile layout passed: login and long team views at five widths.');
+    const desktop = await browser.newPage();
+    for (const viewport of [{width:1366,height:768},{width:1920,height:1080},{width:800,height:480}]) {
+      await desktop.setViewportSize(viewport);
+      await desktop.setContent(`<html dir="rtl"><style>${css}</style><body><main class="app"><section class="phone"><header class="topbar">پنل تسهیلگر</header><div class="main-area"><h1>خوش آمدید</h1><div class="games-list">${'<button class="game-card">بازی نمونه</button>'.repeat(30)}</div><div class="action-dock"><button class="primary-action flow-action">ادامه</button></div></div></section></main></body></html>`);
+      const frame = await desktop.evaluate(()=>{
+        const phone=document.querySelector('.phone'),main=document.querySelector('.main-area'),r=phone.getBoundingClientRect();
+        return {width:r.width,height:r.height,left:r.left,top:r.top,radius:getComputedStyle(phone).borderRadius,scrollable:main.scrollHeight>main.clientHeight,pageHeight:document.documentElement.scrollHeight};
+      });
+      assert.equal(frame.width,460); assert.equal(frame.height,viewport.height-36);
+      assert.equal(frame.left,(viewport.width-460)/2);assert.equal(frame.top,18);assert.equal(frame.radius,'28px');
+      assert.ok(frame.scrollable);assert.ok(frame.pageHeight<=viewport.height);
+    }
+    // A phone requesting a desktop-sized viewport must still fit the full screen.
+    await page.setViewportSize({width:980,height:844});
+    await page.setContent(`<html class="ref-mobile-layout" dir="rtl"><style>${css}</style><body><main class="app"><section class="phone"><header class="topbar">تسهیلگر</header><div class="main-area">بازی‌ها</div></section></main></body></html>`);
+    assert.equal(await page.locator('.phone').evaluate(el=>el.getBoundingClientRect().width),980);
+    assert.equal(await page.locator('.phone').evaluate(el=>getComputedStyle(el).borderRadius),'0px');
+    assert.ok(source.includes("classList.toggle('ref-mobile-layout', mobile)"));
+    console.log('RefMonitor layout passed: full-width mobile, desktop-mode phone, centered TCM-sized desktop frame, and scrolling at laptop/large/short screen sizes.');
   } finally {await browser.close();}
 })().catch(error => {console.error(error);process.exitCode=1;});

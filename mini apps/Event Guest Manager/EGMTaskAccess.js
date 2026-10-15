@@ -104,7 +104,7 @@
 
   function normalizeWinAppAccessLevel(value) {
     const level = normalizeToken(value);
-    return ['full_access', 'scan_and_details', 'scan_and_event', 'scan_only'].includes(level)
+    return ['full_access', 'scan_and_details', 'scan_and_actions', 'scan_and_event', 'scan_only'].includes(level)
       ? level
       : 'full_access';
   }

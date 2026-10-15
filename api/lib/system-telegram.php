@@ -147,6 +147,8 @@ function systemTelegramEnsure(PDO $pdo): void
     systemBotExec($pdo, "CREATE TABLE IF NOT EXISTS egm_telegram_reports (id CHAR(32) PRIMARY KEY,egm_code VARCHAR(64) NOT NULL,period_code VARCHAR(64) NOT NULL,log_id BIGINT NOT NULL,user_id BIGINT NULL,guest_code VARCHAR(32) NOT NULL,snapshot LONGTEXT NOT NULL,decision VARCHAR(16) NULL,decided_by BIGINT NULL,decided_at DATETIME NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY uq_egm_report(egm_code,log_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     systemBotExec($pdo, "CREATE TABLE IF NOT EXISTS egm_telegram_deliveries (report_id CHAR(32) NOT NULL,admin_id BIGINT NOT NULL,chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL,PRIMARY KEY(report_id,admin_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     systemBotExec($pdo, "CREATE TABLE IF NOT EXISTS egm_telegram_decisions (id BIGINT AUTO_INCREMENT PRIMARY KEY,egm_code VARCHAR(64) NOT NULL,period_code VARCHAR(64) NOT NULL,guest_code VARCHAR(32) NOT NULL,user_id BIGINT NULL,gift TINYINT NOT NULL,draw TINYINT NOT NULL,admin_id BIGINT NOT NULL,report_id CHAR(32) NOT NULL,decided_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY uq_egm_guest_decision(egm_code,period_code,guest_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    egmInstanceAddColumnIfMissing($pdo, systemBotSql('egm_telegram_deliveries'), 'needs_refresh', 'TINYINT NOT NULL DEFAULT 0');
+    egmInstanceAddColumnIfMissing($pdo, 'egm_telegram_reports', 'delivery_requested', 'TINYINT NOT NULL DEFAULT 1');
     systemBotExec($pdo, "CREATE TABLE IF NOT EXISTS egm_telegram_export_menus (id CHAR(32) PRIMARY KEY,admin_id BIGINT NOT NULL,chat_id BIGINT NOT NULL,payload LONGTEXT NOT NULL,expires_at DATETIME NOT NULL,KEY ix_expiry(expires_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     systemBotExec($pdo, "CREATE TABLE IF NOT EXISTS system_telegram_updates (update_id BIGINT PRIMARY KEY,completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
@@ -168,14 +170,15 @@ function systemTelegramContext(PDO $pdo, string $code): array
     return egmCheckInContext($root, $real);
 }
 
-function systemTelegramKeyboard(string $reportId): array
+function systemTelegramKeyboard(string $reportId, bool $resolved = false): array
 {
     $rows = [];
-    foreach (['both','deny','gift','draw'] as $choice) {
+    if ($resolved) return ['inline_keyboard'=>[[['text'=>'برگرداندن به بررسی', 'callback_data'=>'egm:'.$reportId.':reopen']]]];
+    foreach (['all','deny','games_draw','games','gift','draw','benefits','games_gift'] as $choice) {
         $decision = egmBenefitsDecision($choice);
         $rows[] = ['text'=>$decision['label'], 'callback_data'=>'egm:' . $reportId . ':' . $choice];
     }
-    return ['inline_keyboard'=>[array_slice($rows,0,2),array_slice($rows,2,2)]];
+    return ['inline_keyboard'=>array_chunk($rows,2)];
 }
 
 function systemTelegramReportText(array $report): string
@@ -185,13 +188,15 @@ function systemTelegramReportText(array $report): string
     $statusLabel=egmPeriodExportConditionLabels()[$row['status'] ?? ''] ?? 'بررسی ناموفق';
     $parts = ['گزارش به مدیریت', 'رویداد: ' . ($row['event_name'] ?? $report['egm_code']), 'بازه: ' . (($row['period_title'] ?? '') ?: $report['period_code']),
         'مهمان: ' . (($row['full_name'] ?? '') ?: 'نامشخص'), 'وضعیت: ' . $statusLabel, 'شرح: ' . ($row['message'] ?? '')];
-    foreach (['national_id'=>'کد ملی','work_id'=>'کد پرسنلی','guest_number'=>'شماره مهمان','phone_number'=>'همراه','department'=>'اداره','gender'=>'جنسیت','attempted_at'=>'زمان بررسی','reported_by'=>'اپراتور'] as $field=>$label) {
+    foreach (['national_id'=>'کد ملی','work_id'=>'کد پرسنلی','guest_number'=>'شماره مهمان','phone_number'=>'همراه','department'=>'اداره','gender'=>'جنسیت','attempted_at'=>'زمان بررسی','input_method_label'=>'روش ورود کد','reported_by'=>'اپراتور'] as $field=>$label) {
         if (trim((string)($row[$field] ?? '')) !== '') $parts[] = $label . ': ' . $row[$field];
     }
     if (!empty($row['entered_date']) && !empty($row['entered_time'])) $parts[] = 'زمان ورود: ' . $row['entered_date'] . ' ' . $row['entered_time'];
-    if (!empty($report['decision'])) $parts[] = 'تصمیم مدیر: ' . egmBenefitsDecision($report['decision'])['label'];
+    $footer = !empty($report['decision']) ? "\nتصمیم مدیر: " . egmBenefitsDecision($report['decision'])['label'] . "\n✅ حل شده" : '';
     $text = implode("\n", $parts);
-    return function_exists('mb_substr') ? mb_substr($text, 0, 4000) : substr($text, 0, 3900);
+    // Keep the resolution at the bottom even when a long invitation history is truncated.
+    $text = function_exists('mb_substr') ? mb_substr($text, 0, 3700) : substr($text, 0, 3500);
+    return $text . $footer;
 }
 
 function systemTelegramDeliver(PDO $pdo, array $report): array
@@ -213,7 +218,7 @@ function systemTelegramDeliverUnlocked(PDO $pdo, array $report): array
         if ($hash === '' || !hash_equals(hash('sha256',$hash), $grant['pin_fingerprint'])) continue;
         try {
             $payload = ['chat_id'=>$grant['chat_id'], 'text'=>systemTelegramReportText($report)];
-            if (empty($report['decision'])) $payload['reply_markup'] = systemTelegramKeyboard($report['id']);
+            $payload['reply_markup'] = systemTelegramKeyboard($report['id'], !empty($report['decision']));
             $message = systemTelegramCall('sendMessage', $payload);
             systemBotPrepare($pdo, 'INSERT IGNORE INTO egm_telegram_deliveries(report_id,admin_id,chat_id,message_id) VALUES(?,?,?,?)')->execute([$report['id'],$grant['admin_id'],$grant['chat_id'],$message['message_id']]);
             $sent++;
@@ -224,18 +229,11 @@ function systemTelegramDeliverUnlocked(PDO $pdo, array $report): array
 
 function systemTelegramCreateReport(array $context, int $logId, array $actor): array
 {
-    if (systemTelegramConfig()['bot_token'] === '') throw new InvalidArgumentException('ربات پیام‌رسان هنوز تنظیم نشده است.');
-    $rows = egmCheckInRecentLogs($context, 1, '', $logId);
-    $row = $rows[0] ?? null;
-    if (!$row || empty($row['management_report_eligible'])) throw new InvalidArgumentException('این گزارش قابل ارسال به مدیریت نیست.');
-    if ($row['period_code'] === '') throw new InvalidArgumentException('بازه این گزارش مشخص نیست.');
-    $pdo = $context['pdo'];systemTelegramEnsure($pdo);
-    $id = bin2hex(random_bytes(16));
-    $row['event_name'] = $context['name'];$row['reported_by'] = $actor['username'] ?? $actor['code'] ?? '';
-    systemBotPrepare($pdo, 'INSERT IGNORE INTO egm_telegram_reports(id,egm_code,period_code,log_id,user_id,guest_code,snapshot) VALUES(?,?,?,?,?,?,?)')
-        ->execute([$id,$context['code'],$row['period_code'],$logId,$row['user_id'] ?: null,$row['national_id'] ?: $row['work_id'],json_encode($row,JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)]);
-    $find = systemBotPrepare($pdo, 'SELECT * FROM egm_telegram_reports WHERE egm_code=? AND log_id=?');$find->execute([$context['code'],$logId]);$report=$find->fetch(PDO::FETCH_ASSOC);
-    $result = systemTelegramDeliver($pdo,$report);
+    require_once __DIR__ . '/egm-guest-reports.php';
+    $report = egmGuestReportsStore($context, $logId, $actor);
+    if (!$report) throw new InvalidArgumentException('این گزارش قابل ارسال به مدیریت نیست.');
+    $context['pdo']->prepare('UPDATE egm_telegram_reports SET delivery_requested=1 WHERE id=?')->execute([$report['id']]);
+    $result = systemTelegramDeliver($context['pdo'], $report);
     return ['report_id'=>$report['id'],'message'=>$result['sent'] ? 'گزارش برای مدیران پیام‌رسان ارسال شد.' : 'گزارش ذخیره شد؛ پس از اتصال مدیر یا برقراری ارتباط ارسال می‌شود.'] + $result;
 }
 
@@ -243,7 +241,13 @@ function systemTelegramCreateReport(array $context, int $logId, array $actor): a
 function systemBotsCreateReport(array $context, int $logId, array $actor): array
 {
     $providers = array_values(array_filter(['telegram', 'bale'], static fn(string $provider): bool => systemBotWithProvider($provider, static fn(): bool => systemTelegramConfig()['bot_token'] !== '')));
-    if (!$providers) throw new InvalidArgumentException('ربات مدیریت هنوز تنظیم نشده است.');
+    if (!$providers) {
+        require_once __DIR__ . '/egm-guest-reports.php';
+        $report = egmGuestReportsStore($context, $logId, $actor);
+        if (!$report) throw new InvalidArgumentException('این گزارش قابل ارسال به مدیریت نیست.');
+        $context['pdo']->prepare('UPDATE egm_telegram_reports SET delivery_requested=1 WHERE id=?')->execute([$report['id']]);
+        return ['report_id'=>$report['id'], 'sent'=>0, 'failed'=>0, 'message'=>'گزارش ذخیره شد؛ ربات مدیریت هنوز تنظیم نشده است.'];
+    }
     $result = systemBotWithProvider($providers[0], static fn(): array => systemTelegramCreateReport($context, $logId, $actor));
     $delivery = [$providers[0] => ['sent'=>$result['sent'], 'failed'=>$result['failed']]];
     foreach (array_slice($providers, 1) as $provider) {
@@ -264,34 +268,81 @@ function systemBotsCreateReport(array $context, int $logId, array $actor): array
     return $result;
 }
 
-function systemTelegramDecide(PDO $pdo, string $id, string $choice, string $adminId, ?array $context = null): array
+function systemTelegramDecide(PDO $pdo, string $id, string $choice, string $adminId, ?array $context = null, ?array $panelActor = null): array
 {
-    $decision = egmBenefitsDecision($choice);
+    $decision = $choice === 'reopen' ? null : egmBenefitsDecision($choice);
     $find = systemBotPrepare($pdo, 'SELECT * FROM egm_telegram_reports WHERE id=?');$find->execute([$id]);$report=$find->fetch(PDO::FETCH_ASSOC);
     if (!$report) throw new InvalidArgumentException('گزارش پیدا نشد.');
+    require_once __DIR__.'/egm-guest-reports.php';
+    $report=egmGuestReportCanonical($pdo,$report);$id=$report['id'];
     $context ??= systemTelegramContext($pdo,$report['egm_code']);
     if ($context['code'] !== $report['egm_code']) throw new InvalidArgumentException('رویداد گزارش تطابق ندارد.');
-    $grant = systemBotPrepare($pdo, 'SELECT pin_fingerprint FROM egm_telegram_grants WHERE egm_code=? AND admin_id=?');$grant->execute([$report['egm_code'],$adminId]);
-    $fingerprint = $grant->fetchColumn();$hash = systemTelegramPinHash($pdo,$report['egm_code']);
-    if (!$fingerprint || $hash === '' || !hash_equals(hash('sha256',$hash), (string)$fingerprint)) throw new InvalidArgumentException('برای این رویداد دسترسی ندارید؛ دوباره pin بفرستید.');
+    if ($panelActor === null) {
+        $grant = systemBotPrepare($pdo, 'SELECT pin_fingerprint FROM egm_telegram_grants WHERE egm_code=? AND admin_id=?');$grant->execute([$report['egm_code'],$adminId]);
+        $fingerprint = $grant->fetchColumn();$hash = systemTelegramPinHash($pdo,$report['egm_code']);
+        if (!$fingerprint || $hash === '' || !hash_equals(hash('sha256',$hash), (string)$fingerprint)) throw new InvalidArgumentException('برای این رویداد دسترسی ندارید؛ دوباره pin بفرستید.');
+    }
     // Use the context connection for the guest update and decision in one transaction.
     $db=$context['pdo'];$db->beginTransaction();
     try {
         $lock=systemBotPrepare($db, 'SELECT * FROM egm_telegram_reports WHERE id=? FOR UPDATE');$lock->execute([$id]);$report=$lock->fetch(PDO::FETCH_ASSOC);
-        if ($report['decision'] !== null) throw new InvalidArgumentException('این گزارش قبلاً بررسی شده است.');
+        if ($choice !== 'reopen' && $report['decision'] !== null) throw new InvalidArgumentException('این گزارش قبلاً بررسی شده است.');
+        if ($choice === 'reopen' && $report['decision'] === null) throw new InvalidArgumentException('گزارش در انتظار بررسی است.');
         $user=egmCheckInFindUser($db,$context['tables']['users'],$report['guest_code']);
-        $prior=systemBotPrepare($db, 'SELECT r.created_at FROM egm_telegram_decisions d JOIN egm_telegram_reports r ON r.id=d.report_id WHERE d.egm_code=? AND d.period_code=? AND (d.guest_code=? OR (? IS NOT NULL AND d.user_id=?)) ORDER BY r.created_at DESC LIMIT 1 FOR UPDATE');
+        if ($user) {
+            $presenceLock=$db->prepare("SELECT id FROM `{$context['tables']['user_periods']}` WHERE user_id=? AND period_code=? FOR UPDATE");
+            $presenceLock->execute([$user['id'],$report['period_code']]);
+            $presenceLock->fetchAll();
+        }
+        $prior=systemBotPrepare($db, 'SELECT r.log_id FROM egm_telegram_decisions d JOIN egm_telegram_reports r ON r.id=d.report_id WHERE d.egm_code=? AND d.period_code=? AND (d.guest_code=? OR (? IS NOT NULL AND d.user_id=?)) ORDER BY r.log_id DESC LIMIT 1 FOR UPDATE');
         $prior->execute([$report['egm_code'],$report['period_code'],$report['guest_code'],$user['id'] ?? null,$user['id'] ?? null]);$newer=$prior->fetchColumn();
-        if ($newer && $newer > $report['created_at']) throw new InvalidArgumentException('گزارش جدیدتری برای این مهمان بررسی شده است.');
-        systemBotPrepare($db, 'INSERT INTO egm_telegram_decisions(egm_code,period_code,guest_code,user_id,gift,draw,admin_id,report_id) VALUES(?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id),gift=VALUES(gift),draw=VALUES(draw),admin_id=VALUES(admin_id),report_id=VALUES(report_id),decided_at=NOW()')
-            ->execute([$report['egm_code'],$report['period_code'],$report['guest_code'],$user['id'] ?? null,$decision['gift'],$decision['draw'],$adminId,$id]);
-        if ($user) systemBotPrepare($db, "UPDATE `{$context['tables']['user_periods']}` SET should_get_gift=?,draw_eligible=?,benefits_reviewed_at=NOW(),benefits_reviewed_by=? WHERE user_id=? AND period_code=?")
-            ->execute([$decision['gift'],$decision['draw'],systemBotProvider().':'.$adminId,$user['id'],$report['period_code']]);
-        $snapshot=json_decode($report['snapshot'],true)?:[];$snapshot['decision_provider']=systemBotProvider();
-        systemBotPrepare($db, 'UPDATE egm_telegram_reports SET decision=?,decided_by=?,decided_at=NOW(),snapshot=? WHERE id=?')->execute([$choice,$adminId,json_encode($snapshot,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$id]);
+        if ($newer && (int)$newer > (int)$report['log_id']) throw new InvalidArgumentException('گزارش جدیدتری برای این مهمان بررسی شده است.');
+        $snapshot=json_decode($report['snapshot'],true)?:[];
+        $reviewer = $panelActor !== null ? 'panel:'.($panelActor['code'] ?? '') : systemBotProvider().':'.$adminId;
+        if ($choice === 'reopen') {
+            // Do not revoke a newer, separately resolved report for the same guest.
+            $current = $db->prepare('SELECT report_id FROM egm_telegram_decisions WHERE egm_code=? AND period_code=? AND guest_code=? FOR UPDATE');
+            $current->execute([$report['egm_code'],$report['period_code'],$report['guest_code']]);
+            $currentId = $current->fetchColumn();
+            if ($currentId && $currentId !== $id) throw new InvalidArgumentException('ابتدا گزارش جدیدتر این مهمان را به بررسی برگردانید.');
+            if ($user) $db->prepare('DELETE FROM egm_telegram_decisions WHERE egm_code=? AND period_code=? AND (user_id=? OR guest_code=? OR guest_code=?)')->execute([$report['egm_code'],$report['period_code'],$user['id'],$user['national_id'] ?? '',$user['work_id'] ?? '']);
+            else $db->prepare('DELETE FROM egm_telegram_decisions WHERE report_id=?')->execute([$id]);
+            if ($user) $db->prepare("UPDATE `{$context['tables']['user_periods']}` SET should_get_gift=IF(entered_date IS NOT NULL AND entered_time IS NOT NULL AND is_uninvited_guest=0 AND LOWER(COALESCE(invitation_source,''))<>'walk_in',1,0),draw_eligible=NULL,games_eligible=NULL,benefits_reviewed_at=NULL,benefits_reviewed_by=NULL WHERE user_id=? AND period_code=?")
+                ->execute([$user['id'],$report['period_code']]);
+            unset($snapshot['decision_games'], $snapshot['decision_provider'], $snapshot['decision_actor']);
+            $db->prepare('UPDATE egm_telegram_reports SET decision=NULL,decided_by=NULL,decided_at=NULL,snapshot=? WHERE id=?')->execute([json_encode($snapshot,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$id]);
+        } else {
+            $games = egmBenefitsGamesDecision($choice);
+            $db->prepare('INSERT INTO egm_telegram_decisions(egm_code,period_code,guest_code,user_id,gift,draw,admin_id,report_id) VALUES(?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id),gift=VALUES(gift),draw=VALUES(draw),admin_id=VALUES(admin_id),report_id=VALUES(report_id),decided_at=NOW()')
+                ->execute([$report['egm_code'],$report['period_code'],$report['guest_code'],$user['id'] ?? null,$decision['gift'],$decision['draw'],$adminId,$id]);
+            if ($user) $db->prepare("UPDATE `{$context['tables']['user_periods']}` SET should_get_gift=?,draw_eligible=?,games_eligible=?,benefits_reviewed_at=NOW(),benefits_reviewed_by=? WHERE user_id=? AND period_code=?")
+                ->execute([$decision['gift'],$decision['draw'],$games,$reviewer,$user['id'],$report['period_code']]);
+            $snapshot['decision_provider']=$panelActor !== null ? 'panel' : systemBotProvider();
+            $snapshot['decision_games']=$games;
+            $snapshot['decision_actor']=$reviewer;
+            $db->prepare('UPDATE egm_telegram_reports SET decision=?,decided_by=?,decided_at=NOW(),snapshot=? WHERE id=?')->execute([$choice,$adminId,json_encode($snapshot,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$id]);
+        }
+        // Close/reopen equivalent copies together; original scan snapshots remain intact.
+        $siblings=$db->prepare('SELECT id,snapshot FROM egm_telegram_reports WHERE egm_code=? AND period_code=? AND user_id=? FOR UPDATE');
+        $siblings->execute([$report['egm_code'],$report['period_code'],$report['user_id']]);
+        $sameKey=egmGuestReportKey($report);
+        $sync=$db->prepare('UPDATE egm_telegram_reports SET decision=?,decided_by=?,decided_at=NOW() WHERE id=?');
+        $groupIds=[$id];
+        foreach($siblings->fetchAll(PDO::FETCH_ASSOC)as $sibling){
+            if($sibling['id']===$id)continue;
+            if($sameKey!==egmGuestReportKey(array_replace($report,$sibling)))continue;
+            $sync->execute([$choice==='reopen'?null:$choice,$choice==='reopen'?null:$adminId,$sibling['id']]);$groupIds[]=$sibling['id'];
+        }
         $db->commit();
     } catch (Throwable $error) {if($db->inTransaction())$db->rollBack();throw $error;}
-    $report['decision']=$choice;
+    $find->execute([$id]);
+    $report = $find->fetch(PDO::FETCH_ASSOC);
+    foreach (['telegram','bale'] as $provider) systemBotWithProvider($provider, static function() use ($pdo,$id,$groupIds): void {
+        $table = systemBotSql('egm_telegram_deliveries');
+        if (!egmInstanceTableExists($pdo,$table)) return;
+        egmInstanceAddColumnIfMissing($pdo,$table,'needs_refresh','TINYINT NOT NULL DEFAULT 0');
+        $refresh=$pdo->prepare("UPDATE `{$table}` SET needs_refresh=1 WHERE report_id=?");foreach($groupIds as $groupId)$refresh->execute([$groupId]);
+    });
     return $report;
 }
 
@@ -299,8 +350,11 @@ function systemTelegramRefreshMessages(PDO $pdo, array $report): void
 {
     $query=systemBotPrepare($pdo, 'SELECT * FROM egm_telegram_deliveries WHERE report_id=?');$query->execute([$report['id']]);
     foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $delivery) {
-        try { systemTelegramCall('editMessageText',['chat_id'=>$delivery['chat_id'],'message_id'=>$delivery['message_id'],'text'=>systemTelegramReportText($report),'reply_markup'=>['inline_keyboard'=>[]]]); }
-        catch (Throwable $error) { /* The stored decision remains authoritative. */ }
+        try { systemTelegramCall('editMessageText',['chat_id'=>$delivery['chat_id'],'message_id'=>$delivery['message_id'],'text'=>systemTelegramReportText($report),'reply_markup'=>systemTelegramKeyboard($report['id'], !empty($report['decision']))]); }
+        catch (Throwable $error) {
+            if (!$error instanceof SystemTelegramApiException || !str_contains(strtolower($error->description),'message is not modified')) continue;
+        }
+        systemBotPrepare($pdo,'UPDATE egm_telegram_deliveries SET needs_refresh=0 WHERE report_id=? AND admin_id=?')->execute([$report['id'],$delivery['admin_id']]);
     }
 }
 
@@ -314,9 +368,9 @@ function systemTelegramUpdate(PDO $pdo, array $update): void
         }
         $answer='';
         try {
-            if (!preg_match('/^egm:([a-f0-9]{32}):(both|gift|draw|deny)$/D',(string)($callback['data'] ?? ''),$parts)) throw new InvalidArgumentException('درخواست معتبر نیست.');
+            if (!preg_match('/^egm:([a-f0-9]{32}):(both|gift|draw|deny|all|games|games_gift|games_draw|benefits|reopen)$/D',(string)($callback['data'] ?? ''),$parts)) throw new InvalidArgumentException('درخواست معتبر نیست.');
             $report=systemTelegramDecide($pdo,$parts[1],$parts[2],(string)$callback['from']['id']);
-            $answer='تصمیم ثبت شد: '.egmBenefitsDecision($parts[2])['label'];
+            $answer=$parts[2] === 'reopen' ? 'گزارش به بررسی برگشت.' : 'تصمیم ثبت شد: '.egmBenefitsDecision($parts[2])['label'];
             foreach(['telegram','bale'] as $provider)systemBotWithProvider($provider,static function()use($pdo,$report):void{
                 if(systemTelegramConfig()['bot_token']!==''&&egmInstanceTableExists($pdo,systemBotSql('egm_telegram_deliveries')))systemTelegramRefreshMessages($pdo,$report);
             });
@@ -382,5 +436,6 @@ function systemTelegramProcess(PDO $pdo, array $update): void
 
 function systemTelegramRetry(PDO $pdo): void
 {
-    foreach (systemBotQuery($pdo, 'SELECT r.* FROM egm_telegram_reports r WHERE r.decision IS NULL AND EXISTS(SELECT 1 FROM egm_telegram_grants g WHERE g.egm_code=r.egm_code AND NOT EXISTS(SELECT 1 FROM egm_telegram_deliveries d WHERE d.report_id=r.id AND d.admin_id=g.admin_id)) ORDER BY r.created_at LIMIT 100')->fetchAll(PDO::FETCH_ASSOC) as $report) systemTelegramDeliver($pdo,$report);
+    foreach (systemBotQuery($pdo,'SELECT DISTINCT r.* FROM egm_telegram_reports r JOIN egm_telegram_deliveries d ON d.report_id=r.id WHERE d.needs_refresh=1 LIMIT 100')->fetchAll(PDO::FETCH_ASSOC) as $report) systemTelegramRefreshMessages($pdo,$report);
+    foreach (systemBotQuery($pdo, 'SELECT r.* FROM egm_telegram_reports r WHERE r.delivery_requested=1 AND r.decision IS NULL AND EXISTS(SELECT 1 FROM egm_telegram_grants g WHERE g.egm_code=r.egm_code AND NOT EXISTS(SELECT 1 FROM egm_telegram_deliveries d WHERE d.report_id=r.id AND d.admin_id=g.admin_id)) ORDER BY r.created_at LIMIT 100')->fetchAll(PDO::FETCH_ASSOC) as $report) systemTelegramDeliver($pdo,$report);
 }

@@ -1,0 +1,8 @@
+{
+  "name": "egm-games-live",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {"node": ">=22"},
+  "scripts": {"start": "node server.cjs"},
+  "dependencies": {"ws": "^8.18.3"}
+}

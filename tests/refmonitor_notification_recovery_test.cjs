@@ -1,0 +1,13 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');const {chromium}=require('playwright');
+const source=fs.readFileSync(path.join(__dirname,'../mini apps/Event Guest Manager/RefMonitor.php'),'utf8');
+const fragment=source.slice(source.indexOf('  const notificationHelp ='),source.indexOf('  const announceRoom='));
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('https://ref.test/**',r=>r.fulfill({contentType:'text/html;charset=utf-8',body:`<button id="ref-alert-help">Help</button><p id="ref-alert-status" class="status-text error">Old error</p><script>
+window.Notification={permission:'denied'};window.PushManager=function(){};window.testFail=false;
+const alertButton=document.createElement('button');const workerReady=Promise.resolve({pushManager:{getSubscription:async()=>({toJSON:()=>({})})}});
+let alertsEnabled=true,pushDevice='';const paintAlerts=()=>{};const syncRoomWatch=()=>{};let watchKey='';
+const setStatus=(id,message,kind='')=>{const n=document.getElementById(id);n.textContent=message;n.className='status-text'+(kind?' '+kind:'')};
+const request=async action=>{if(window.testFail)throw Error('HTTP 503 fixture');return action==='push_config'?{public_key:'AA'}:{device_id:'device'}};
+const stopRoomAttention=()=>{};const unlockAudio=async()=>{};const ding=()=>{};const alertPreference='test';
+${fragment}
+window.reconcile=reconcileNotificationPermission;
+</script>`}));await page.goto('https://ref.test');await page.locator('#ref-alert-help').click();assert.equal(await page.locator('dialog').evaluate(d=>d.open),true);await page.locator('dialog button').click();await page.evaluate(async()=>{Notification.permission='granted';await reconcile()});assert.equal(await page.locator('#ref-alert-status').evaluate(n=>n.classList.contains('error')),false);assert.match(await page.locator('#ref-alert-status').textContent(),/فعال شد/);await page.evaluate(async()=>{pushDevice='';window.testFail=true;await reconcile()});assert.equal(await page.locator('#ref-alert-status').evaluate(n=>n.classList.contains('error')),false);assert.match(await page.locator('#ref-alert-status').textContent(),/پس‌زمینه/);await page.locator('#ref-alert-help').click();assert.match(await page.locator('dialog').textContent(),/HTTP 503 fixture/);assert.deepEqual(errors,[]);console.log('Notification permission recovery, setup failure tone and actionable help PASS')}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

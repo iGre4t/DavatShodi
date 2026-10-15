@@ -55,12 +55,12 @@ function databaseInstanceMaterializerPatch(string $kind, string $content, string
     }
     return str_replace([
         $urlFrom, $directoryFrom,
-        "__DIR__ . '/../../", '__DIR__ . "/../../', 'dirname(__DIR__, 2)',
+        "__DIR__ . '/../../", '__DIR__ . "/../../', 'dirname(__DIR__, 2)', 'dirname(__DIR__,2)',
         $sessionFrom, 'return "../../{$trimmed}";',
         "src: url('../../style/", "url('../../style/", 'href="../../style/', "= '../../style/",
     ], [
         $webPath, $directory,
-        "__DIR__ . '/../../../", '__DIR__ . "/../../../', 'dirname(__DIR__, 3)',
+        "__DIR__ . '/../../../", '__DIR__ . "/../../../', 'dirname(__DIR__, 3)', 'dirname(__DIR__,3)',
         $sessionTo, 'return "../../../{$trimmed}";',
         "src: url('../../../style/", "url('../../../style/", 'href="../../../style/', "= '../../../style/",
     ], $content);
@@ -134,9 +134,9 @@ function databaseInstanceMaterializerRefreshEgmPanelCode(string $source, string 
     foreach ([
         'EGM Panel.php', 'EGMT.php', 'egm-panel-local.js', 'EGMSetting.js', 'EGMTaskAccess.js',
         'EGM Prizes.js', 'egm-panel.css',
-        'egm_store.php', 'task_access_store.php', 'invitees_csv_safety.php', 'period_exports.php',
-        'print_card_store.php', 'custom_number_ticket_store.php', 'seat_map.php',
-        'RefMonitor.php', 'games.php', 'period_draw.php', 'period_draws.php', 'pot_service.php', 'facilitators.php',
+        'egm_store.php', 'prize_inventory_store.php', 'task_access_store.php', 'invitees_csv_safety.php', 'period_exports.php',
+        'print_card_store.php', 'invite_card_store.php', 'custom_number_ticket_store.php', 'groups.php', 'pot_api.php', 'pot_draw.php', 'seat_map.php',
+        'RefMonitor.php', 'games.php', 'period_draw.php', 'period_draws.php', 'general_draw.php', 'general_draws.php', 'guest_reports.php', 'competition_prizes.php', 'competition-prizes.js', 'draw-connection.js', 'pot_service.php', 'facilitators.php',
     ] as $relative) {
         $sourcePath = $source . DIRECTORY_SEPARATOR . $relative;
         if (!is_file($sourcePath)) {

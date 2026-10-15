@@ -40,7 +40,7 @@ egmPresenceAssert(count($correctRecords) === 1, 'Correct Presence export filter 
 egmPresenceAssert(count($fakeRecords) === 1, 'Fake Presence export filter is wrong.');
 $xlsx = appXlsxFromSpreadsheetXml(egmPeriodExportSpreadsheetXml('حضور واقعی', $correctRecords));
 egmPresenceAssert(str_starts_with($xlsx, "PK\x03\x04"), 'Correct Presence export is not a real XLSX package.');
-egmPresenceAssert(str_contains($xlsx, 'Correct Presence'), 'Correct Presence column is missing from the XLSX package.');
+egmPresenceAssert(str_contains($xlsx, 'حضور واقعی'), 'Persian presence column is missing from the XLSX package.');
 egmPresenceAssert(
     egmExportDatedFilename('حضور واقعی', '2026-08-22') === 'حضور واقعی 31 مردادماه.xlsx',
     'The Shamsi-dated presence filename is wrong.'

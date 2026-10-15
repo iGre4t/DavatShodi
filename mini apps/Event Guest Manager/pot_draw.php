@@ -11,7 +11,7 @@ $cspNonce = egmSecurityCreateCspNonce();
 egmSecuritySendPageHeaders($cspNonce);
 egmSecurityHardenSessionSettings();
 $user = requireTabPermissionFromSession('event-guest-manager', false);
-if (!userHasPermissionId($user, 'event-guest-manager:main')) {
+if (!userHasPermissionId($user, 'event-guest-manager:prizes')) {
   denyPanelAccess(403, 'You do not have permission to manage Pot draws.', false);
 }
 

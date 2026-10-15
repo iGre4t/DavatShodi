@@ -10,7 +10,7 @@ require_once __DIR__ . '/pot_service.php';
 egmSecuritySendCommonHeaders();
 egmSecurityHardenSessionSettings();
 $user = requireTabPermissionFromSession('event-guest-manager', true);
-if (!userHasPermissionId($user, 'event-guest-manager:main')) {
+if (!userHasPermissionId($user, 'event-guest-manager:prizes')) {
   denyPanelAccess(403, 'You do not have permission to manage Pot draws.', true);
 }
 header('Content-Type: application/json; charset=UTF-8');

@@ -55,6 +55,11 @@ fs.writeFileSync(path.join(temp,'RefMonitor.php'),source);
   async function login(username,password) {return client.post(url,{form:{action:'login',username,password,csrf:await csrf()}});}
   let html=await (await login('ref01','wrong')).text();assert.match(html,/نام کاربری یا رمز عبور معتبر نیست/);
   html=await (await login('ref01','  001234  ')).text();assert.match(html,/class="brand-name">تسهیلگر آزمایشی/);assert.match(html,/data-ref-view="home"/);
+  const state = await (await client.get(url+'?ref_session=1')).json();
+  assert.equal(state.authenticated,true);assert.match(state.csrf,/^[a-f0-9]{64}$/);
+  const expired = await client.post(url,{form:{action:'period_status',csrf:'stale'}});
+  assert.equal(expired.status(),403);assert.equal((await expired.json()).code,'csrf_expired');
+  assert.equal((await (await client.get(url+'?ref_session=1')).json()).authenticated,true,'Stale CSRF must not log out the referee');
   fs.writeFileSync(dataFile,JSON.stringify([{...account,auth_version:'v2'}]));
   html=await (await client.get(url)).text();assert.match(html,/name="username"/);assert.ok(!html.includes('data-ref-view="home"'));
   await login('ref01','  001234  ');fs.writeFileSync(dataFile,'[]');

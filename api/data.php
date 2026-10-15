@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 session_start();
+require_once __DIR__ . '/lib/panel-session.php';
+panelSessionClearExpired();
 
 ini_set('display_errors', '0');
 ini_set('display_startup_errors', '0');
@@ -250,6 +252,7 @@ $isAuthenticated = !empty($_SESSION['authenticated']) && is_array($_SESSION['use
 $currentUserCode = $isAuthenticated ? trim((string)($_SESSION['user']['code'] ?? '')) : '';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if (!$isAuthenticated) {
+    header('X-Panel-Session-Expired: 1');
     http_response_code(401);
     sendJsonResponse([
         'status' => 'error',
@@ -387,7 +390,7 @@ if ($method === 'POST') {
         $email = trim((string)($user['email'] ?? ''));
         $telegramId = trim((string)($user['telegram_id'] ?? ''));
         $pinCode = trim((string)($user['pin_code'] ?? ''));
-        $permissions = normalizeTabPermissions($user['permissions'] ?? null, true);
+        $permissions = normalizeTabPermissions($user['permissions'] ?? getDefaultPanelUserPermissions(), false);
         if (!isValidEmail($email)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
         }

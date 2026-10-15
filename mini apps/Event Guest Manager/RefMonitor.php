@@ -28,6 +28,8 @@ require_once $projectRoot . '/api/lib/egm-registry.php';
 require_once $projectRoot . '/api/lib/egm-games.php';
 require_once $projectRoot . '/api/lib/egm-refmonitor-teams.php';
 require_once $projectRoot . '/api/lib/egm-facilitators.php';
+require_once $projectRoot . '/api/lib/egm-staff-roles.php';
+require_once $projectRoot . '/api/lib/egm-refmonitor-manager.php';
 
 // This cookie is independent of PHPSESSID (panel.php) and EGM's guest cookie.
 if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -36,13 +38,26 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_name('REFMONITOR' . substr(hash('sha256', (string)realpath(__DIR__)), 0, 12));
     ini_set('session.use_strict_mode', '1');
     session_set_cookie_params([
-        'lifetime' => 86400,
+        'lifetime' => 2592000,
         'path' => '/',
         'secure' => $secure,
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
+    // Separate storage prevents other PHP apps' shorter garbage collection from logging referees out.
+    $oldSavePath = session_save_path() ?: sys_get_temp_dir();
+    $refSavePath = sys_get_temp_dir() . '/refmonitor-' . substr(hash('sha256', $projectRoot), 0, 16);
+    if ((is_dir($refSavePath) || @mkdir($refSavePath, 0700, true)) && is_writable($refSavePath)) {
+        $existingId = (string)($_COOKIE[session_name()] ?? '');
+        if (preg_match('/^[a-zA-Z0-9,-]{16,128}$/D', $existingId) && !is_file($refSavePath . '/sess_' . $existingId)) {
+            $oldFile = $oldSavePath . '/sess_' . $existingId;
+            if (is_file($oldFile) && @copy($oldFile, $refSavePath . '/sess_' . $existingId)) @chmod($refSavePath . '/sess_' . $existingId, 0600);
+        }
+        session_save_path($refSavePath);
+    }
+    ini_set('session.gc_maxlifetime', '2592000');
     session_start();
+    setcookie(session_name(), session_id(), ['expires' => time() + 2592000, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Lax']);
 }
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('X-Content-Type-Options: nosniff');
@@ -76,6 +91,8 @@ if ($facilitatorId !== '' && $pdo instanceof PDO && $eventCode !== '') {
         $currentUser = egmFacilitatorsSessionUser(egmFacilitatorsRead($pdo, $eventCode), $facilitatorId, (string)($_SESSION['ref_monitor_facilitator_version'] ?? ''));
     } catch (Throwable $error) {
         error_log('RefMonitor facilitator session failed: ' . $error->getMessage());
+        http_response_code(503);
+        exit('ارتباط با سرور موقتاً برقرار نیست. صفحه را دوباره باز کنید؛ حساب شما خارج نشده است.');
     }
     if (!$currentUser) unset($_SESSION['ref_monitor_facilitator_id'], $_SESSION['ref_monitor_facilitator_version']);
 }
@@ -84,20 +101,24 @@ if (!$currentUser && $sessionCode !== '' && $pdo instanceof PDO) {
     $user = loadUserByCode($pdo, $sessionCode);
     if (is_array($user) && userHasPermissionId($user, 'event-guest-manager')) {
         $currentUser = $user;
+        $currentUser['event_role'] = egmStaffPanelRole($pdo, $eventCode, (string)$user['code']);
     } else {
         unset($_SESSION['ref_monitor_user_code']);
     }
 }
 
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && ($_GET['ref_session'] ?? '') === '1') {
+    refMonitorJsonResponse(['status' => 'ok', 'csrf' => $_SESSION['ref_monitor_csrf'], 'authenticated' => $currentUser !== null]);
+}
 $errors = [];
 $username = '';
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $csrf = (string)($_POST['csrf'] ?? '');
     if (!hash_equals((string)$_SESSION['ref_monitor_csrf'], $csrf)) {
         http_response_code(403);
-        if (in_array((string)($_POST['action'] ?? ''), ['push_config', 'push_register', 'push_watch', 'push_remove', 'period_status', 'search_invitees', 'create_team', 'start_team', 'list_teams', 'team_detail', 'update_name', 'update_members', 'update_cover_color', 'update_team_details', 'complete_level', 'submit_score'], true)) {
+        if (in_array((string)($_POST['action'] ?? ''), ['manager_request', 'push_config', 'push_register', 'push_watch', 'push_remove', 'period_status', 'search_invitees', 'create_team', 'start_team', 'list_teams', 'team_detail', 'update_name', 'update_members', 'update_cover_color', 'update_team_details', 'complete_level', 'submit_score'], true)) {
             header('Content-Type: application/json; charset=UTF-8');
-            echo json_encode(['status' => 'error', 'message' => 'فرم منقضی شده است. صفحه را تازه‌سازی کنید.'], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['status' => 'error', 'code' => 'csrf_expired', 'message' => 'فرم منقضی شده است. صفحه را تازه‌سازی کنید.'], JSON_UNESCAPED_UNICODE);
             exit;
         }
         $errors[] = 'فرم منقضی شده است. صفحه را تازه‌سازی کنید.';
@@ -111,7 +132,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             setcookie(session_name(), '', time() - 42000, $cookie['path'] ?? '/', $cookie['domain'] ?? '', (bool)($cookie['secure'] ?? false), (bool)($cookie['httponly'] ?? true));
         }
         session_destroy();
-        header('Location: RefMonitor.php');
+        header('Location: RefMonitor.php', true, 303);
         exit;
     } elseif (($_POST['action'] ?? '') === 'login') {
         $username = trim((string)($_POST['username'] ?? ''));
@@ -141,7 +162,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $_SESSION['ref_monitor_user_code'] = (string)$user['code'];
                     $_SESSION['ref_monitor_csrf'] = bin2hex(random_bytes(32));
                     unset($_SESSION['ref_monitor_failures']);
-                    header('Location: RefMonitor.php');
+                    header('Location: RefMonitor.php', true, 303);
                     exit;
                 }
                 $facilitator = $eventCode !== '' ? egmFacilitatorsAuthenticateRows(egmFacilitatorsRead($pdo, $eventCode), $username, $password) : null;
@@ -151,7 +172,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $_SESSION['ref_monitor_facilitator_id'] = $facilitator['id'];
                     $_SESSION['ref_monitor_facilitator_version'] = $facilitator['auth_version'];
                     $_SESSION['ref_monitor_csrf'] = bin2hex(random_bytes(32));
-                    header('Location: RefMonitor.php');
+                    header('Location: RefMonitor.php', true, 303);
                     exit;
                 }
                 $errors[] = 'نام کاربری یا رمز عبور معتبر نیست.';
@@ -165,7 +186,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $attempts[] = time();
             $_SESSION['ref_monitor_failures'] = $attempts;
         }
-    } elseif (in_array((string)($_POST['action'] ?? ''), ['push_config', 'push_register', 'push_watch', 'push_remove', 'period_status', 'search_invitees', 'create_team', 'start_team', 'list_teams', 'team_detail', 'update_name', 'update_members', 'update_cover_color', 'update_team_details', 'complete_level', 'submit_score'], true)) {
+    } elseif (in_array((string)($_POST['action'] ?? ''), ['manager_request', 'push_config', 'push_register', 'push_watch', 'push_remove', 'period_status', 'search_invitees', 'create_team', 'start_team', 'list_teams', 'team_detail', 'update_name', 'update_members', 'update_cover_color', 'update_team_details', 'complete_level', 'submit_score'], true)) {
         header('Content-Type: application/json; charset=UTF-8');
         if (!$currentUser || !$pdo instanceof PDO || $eventCode === '') {
             http_response_code(403);
@@ -174,6 +195,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         try {
             $pushAction=(string)($_POST['action']??'');
+            if ($pushAction==='manager_request') {
+                $input=json_decode((string)($_POST['payload']??''),true);
+                if (!is_array($input)) throw new InvalidArgumentException('درخواست مدیریت معتبر نیست.');
+                refMonitorJsonResponse(['status'=>'ok']+egmRefManagerRequest($pdo,$eventCode,$currentUser,$input));
+            }
             if($pushAction==='push_config'){
                 $keys=egmRefPushKeys($pdo);refMonitorJsonResponse(['status'=>'ok','public_key'=>$keys['publicKey']]);
             }
@@ -207,6 +233,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId);
             $action = (string)$_POST['action'];
             $teamId = (int)($_POST['team_id'] ?? 0);
+            if ($teamId > 0) {
+                $ownedTeam = egmRefMonitorReadTeam($pdo, egmRefMonitorGameTable($pdo, $eventCode, $periodCode, $gameId), $teamId);
+                egmRefMonitorAssertTeamOwner($ownedTeam['payload'], (string)$currentUser['code']);
+            }
             if ($action === 'push_watch') {
                 if($teamId>0)egmRefMonitorReadTeam($pdo,egmRefMonitorGameTable($pdo,$eventCode,$periodCode,$gameId),$teamId);
                 egmRefPushWatch($pdo,$eventCode,(string)$currentUser['code'],(string)($_POST['device_id']??''),$periodCode,$gameId,$teamId);
@@ -237,14 +267,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             } elseif ($action === 'complete_level') {
                 $result = ['team' => egmRefMonitorCompleteLevel($pdo, $eventCode, $periodCode, $gameId, $teamId, (string)($_POST['level_id'] ?? ''), (string)$currentUser['code'])];
             } elseif ($action === 'submit_score') {
-                $result = ['team' => egmRefMonitorSubmitScore($pdo, $eventCode, $periodCode, $gameId, $teamId, (string)($_POST['level_id'] ?? ''), (string)($_POST['score'] ?? ''), (string)$currentUser['code'])];
+                $result = ['team' => egmRefMonitorSubmitScore($pdo, $eventCode, $periodCode, $gameId, $teamId, (string)($_POST['level_id'] ?? ''), (string)($_POST['score'] ?? ''), (string)$currentUser['code'], false, $_POST['score_index'] ?? null)];
             } else {
-                $result = ['teams' => egmRefMonitorListTeams($pdo, $eventCode, $periodCode, $gameId)];
+                $result = ['teams' => array_values(array_filter(egmRefMonitorListTeams($pdo, $eventCode, $periodCode, $gameId), static fn(array $team): bool => (string)$team['created_by'] === (string)$currentUser['code']))];
             }
             if (isset($result['team'])) $result['team'] = egmGameEnrichTeam($pdo, $eventCode, $periodCode, $gameId, $result['team']);
             refMonitorJsonResponse(['status' => 'ok'] + $result);
         } catch (InvalidArgumentException $error) {
-            refMonitorJsonResponse(['status' => 'error', 'message' => $error->getMessage()],422);
+            refMonitorJsonResponse(['status' => 'error', 'message' => $error->getMessage(), 'http_status'=>422]);
         } catch (Throwable $error) {
             error_log('RefMonitor team request failed: ' . $error->getMessage());
             $isPush=str_starts_with((string)($_POST['action']??''),'push_');
@@ -294,8 +324,27 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <script nonce="<?= $escape($nonce) ?>">
+    // Chrome's desktop-site mode can give a phone a 980px layout viewport.
+    // Scale the entire UI back to the phone's CSS screen width, not just text.
+    (() => {
+      function fitRefMonitor() {
+        const mobile = navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 600;
+        document.documentElement.classList.toggle('ref-mobile-layout', mobile);
+        const scale = mobile && innerWidth > screen.width * 1.2 ? innerWidth / screen.width : 1;
+        document.documentElement.style.zoom = String(scale);
+        document.documentElement.style.setProperty('--ref-ui-scale', String(scale));
+      }
+      fitRefMonitor();
+      addEventListener('resize', fitRefMonitor);
+      addEventListener('orientationchange', fitRefMonitor);
+    })();
+  </script>
   <title>پنل تسهیلگر</title>
   <link rel="manifest" href="RefMonitor-manifest.php">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="تسهیلگر">
   <meta name="theme-color" content="#ffffff">
   <link rel="apple-touch-icon" href="RefMonitor-icon.php">
   <link rel="icon" id="site-icon-link" href="<?= $escape($panelIcon ?: 'data:,') ?>">
@@ -349,17 +398,24 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     @keyframes room-arrival{from{box-shadow:0 0 0 5px rgba(0,153,205,.18),0 8px 26px rgba(0,118,173,.25)}to{box-shadow:0 7px 24px rgba(0,118,173,.22)}}
     #ref-detail-dock #ref-completion-back{margin-top:8px}
     /* Explicit grid sizing prevents percentage widths shrinking to content. */
-    html{width:100%;min-height:100%;-webkit-text-size-adjust:100%}
-    body{width:100%;grid-template-columns:minmax(0,1fr)}
-    .app{width:100%;max-width:460px;min-width:0;justify-self:center}
+    html{width:100%;height:100%;overflow:hidden;-webkit-text-size-adjust:100%}
+    body{width:100%;height:calc(100vh / var(--ref-ui-scale,1));height:calc(100dvh / var(--ref-ui-scale,1));min-height:0;display:block;padding:0;overflow:hidden;background:#fff}
+    .app{width:100%;height:100%;max-width:none;min-width:0;margin:0}
+    .phone{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
     .phone,.login-area,.main-area,.flow-panel,.stack{min-width:0}
     .topbar{flex-shrink:0}
+    /* Match TCM's desktop app frame while phones retain their full-width shell. */
+    @media(min-width:601px){
+      html:not(.ref-mobile-layout) body{display:flex;align-items:center;justify-content:center;padding:18px;background:radial-gradient(ellipse at 15% 10%,#d6f2fc,transparent 55%),linear-gradient(145deg,#edf8fd,#e4f0f8)}
+      html:not(.ref-mobile-layout) .app{width:min(460px,100%);height:100%;position:relative}
+      html:not(.ref-mobile-layout) .phone{border:1px solid #cfe5f1;border-radius:28px;box-shadow:0 8px 24px rgba(29,55,96,.1),inset 0 1px 0 #fff}
+    }
     @media(max-width:600px){
-      body{padding:0;background:#fff;min-height:100dvh}
+      body{padding:0;background:#fff;min-height:0}
       .app{max-width:none}
-      .phone{height:100vh;height:100dvh;min-height:0;width:100%;border:0;border-radius:0;box-shadow:none}
+      .phone{height:100%;min-height:0;width:100%;border:0;border-radius:0;box-shadow:none}
       .topbar{padding:calc(16px + env(safe-area-inset-top,0px)) max(18px,env(safe-area-inset-right,0px)) 16px max(18px,env(safe-area-inset-left,0px))}
-      .login-area,.main-area{padding:20px max(18px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));overscroll-behavior-y:contain}
+      .login-area,.main-area{padding:20px max(18px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));overscroll-behavior-y:auto}
       .score-context{top:-20px}
     }
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
@@ -391,8 +447,14 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     </div>
   <?php else: ?>
     <div class="main-area" data-ref-view="home"><h1 class="welcome"><span class="welcome-name"><?= $escape($displayName) ?></span> عزیز، خوش آمدید</h1>
-      <button type="button" class="secondary-action" id="ref-room-alerts" aria-pressed="false">فعال‌کردن صدای اتاق و اعلان</button><p class="status-text" id="ref-alert-status" role="status"></p>
+      <button type="button" class="secondary-action" id="ref-room-alerts" aria-pressed="false">فعال‌کردن صدای اتاق و اعلان</button><p class="status-text" id="ref-alert-status" role="status"></p><button type="button" class="inline-action" id="ref-alert-help">راهنمای اعلان و نصب روی گوشی</button>
       <?php if ($activePeriod): ?><p class="status-text">بازهٔ فعال: <?= $escape($activePeriod['title']) ?></p><?php endif; ?>
+      <?php if (in_array(egmStaffRole($currentUser['event_role'] ?? null),['system_manager','head_referee'],true)): ?>
+      <section class="games-section"><h2 class="games-heading">مدیریت</h2><ul class="games-list">
+        <li><button type="button" class="game-card" data-manager-open="games"><span class="game-icon">⚙</span><span><?= egmStaffRole($currentUser['event_role'] ?? null)==='head_referee'?'مدیریت اتاق‌ها':'مدیریت بازی و اتاق' ?></span><span class="game-arrow">‹</span></button></li>
+        <li><button type="button" class="game-card" data-manager-open="teams"><span class="game-icon">♟</span><span><?= egmStaffRole($currentUser['event_role'] ?? null)==='head_referee'?'مشاهدهٔ تیم‌ها':'مدیریت تیم‌ها' ?></span><span class="game-arrow">‹</span></button></li>
+      </ul></section>
+      <?php endif; ?>
       <section class="games-section" aria-labelledby="games-heading"><h2 id="games-heading" class="games-heading">بازی‌ها</h2>
         <?php if ($gamesError !== ''): ?><div class="placeholder" role="alert"><?= $escape($gamesError) ?></div>
         <?php elseif ($games === []): ?><div class="placeholder">در این بازه بازی فعالی وجود ندارد.</div>
@@ -401,6 +463,9 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
         </ul><?php endif; ?>
       </section>
     </div>
+    <?php if (in_array(egmStaffRole($currentUser['event_role'] ?? null),['system_manager','head_referee'],true)): ?>
+    <div class="main-area hidden" data-ref-view="manager"><div id="ref-manager-content"></div><p class="status-text" id="ref-manager-status" role="status"></p></div>
+    <?php endif; ?>
     <div class="main-area hidden" data-ref-view="game"><h1 class="roadmap" id="ref-game-title"></h1>
       <p class="status-text" id="ref-game-period"></p>
       <section class="games-section"><h2 class="games-heading">تیم‌های ثبت‌شده</h2><p class="status-text" id="ref-teams-status" role="status"></p><ul class="team-list" id="ref-teams-list"></ul></section>
@@ -435,6 +500,7 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   <?php endif; ?>
 </section></main>
 <dialog id="ref-team-edit" class="score-confirm" aria-labelledby="ref-team-edit-title"><form id="ref-team-edit-form"><h2 id="ref-team-edit-title">ویرایش تیم</h2><label class="login-field"><span>نام تیم</span><input class="login-input" id="ref-detail-name" maxlength="100" required></label><label class="login-field" id="ref-edit-color-field"><span>رنگ پوشش</span><select class="login-input" id="ref-detail-cover-input"></select></label><button class="secondary-action hidden" type="button" id="ref-edit-members">ویرایش اعضا</button><p class="status-text" id="ref-member-hint"></p><p class="status-text" id="ref-edit-status" role="status"></p><div class="confirm-actions"><button type="submit" class="primary-action" id="ref-edit-save">ذخیره تغییرات</button><button type="button" class="secondary-action" id="ref-edit-cancel">لغو</button></div></form></dialog>
+<dialog id="ref-score-saved" class="score-confirm"><form method="dialog"><h2>امتیاز ثبت شد</h2><p id="ref-score-saved-message"></p><button class="primary-action" type="submit">بازگشت به تیم</button></form></dialog>
 <dialog id="ref-score-confirm" class="score-confirm" aria-labelledby="ref-confirm-title" aria-describedby="ref-confirm-warning"><form method="dialog"><h2 id="ref-confirm-title">تأیید امتیاز</h2><p id="ref-confirm-team"></p><p id="ref-confirm-room"></p><strong id="ref-confirm-score"></strong><p id="ref-confirm-warning">پس از ثبت، این امتیاز قابل تغییر نیست. نام تیم، اتاق و مجموع امتیاز را بررسی کنید.</p><p class="status-text error" id="ref-confirm-status" role="alert"></p><div class="confirm-actions"><button type="button" class="primary-action" id="ref-confirm-save">تأیید و ثبت امتیاز</button><button type="submit" class="secondary-action" id="ref-confirm-cancel">برگشت و اصلاح</button></div></form></dialog>
 <script nonce="<?= $escape($nonce) ?>">
 (() => {
@@ -444,21 +510,18 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   const iconPath = 'M1173 407.266V773C791.7 589.486 381.3 521.402 0 573.591V16.8977C319.721 -26.5479 659.341 13.9796 985.446 136.213C1099.03 178.364 1173 286.979 1173 406.947V407.266Z';
   loader.innerHTML = `<div class="ref-loader-card"><svg viewBox="0 0 1173 773" aria-hidden="true"><path class="ref-loader-fill" d="${iconPath}"/><path class="ref-loader-path" d="${iconPath}"/><path class="ref-loader-failure-mark" d="M555 250v160m0 85v5"/></svg><p role="status" aria-live="polite">در حال آماده‌سازی</p><p class="ref-loader-message"></p><div class="ref-loader-actions"><button type="button" class="secondary-action" data-loader-close>بازگشت</button><button type="button" class="primary-action" data-loader-reload>تازه‌سازی صفحه</button></div></div>`;
   document.body.append(loader);
-  let loaderDepth = 0, loaderStarted = 0, loaderGeneration = 0;
-  const loaderCycle = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 200 : 2400;
+  let loaderDepth = 0, loaderGeneration = 0;
   const beginLoading = () => {
     if (!loader.open) {
       loader.classList.remove('failed'); loader.querySelector('.ref-loader-message').textContent = '';
       loader.querySelector('[role="status"]').textContent = 'در حال آماده‌سازی';
-      loader.showModal(); loaderStarted = performance.now(); loaderGeneration++;
+      loader.showModal(); loaderGeneration++;
       const path = loader.querySelector('.ref-loader-path'); path.style.animation = 'none'; void path.getBoundingClientRect(); path.style.animation = '';
     }
     loaderDepth++;
     return loaderGeneration;
   };
   const finishLoading = async (generation, error = null) => {
-    const elapsed = performance.now() - loaderStarted, cycle = loaderCycle();
-    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.ceil(Math.max(1, elapsed) / cycle) * cycle - elapsed)));
     if (generation !== loaderGeneration) return;
     loaderDepth = Math.max(0, loaderDepth - 1);
     if (error) {
@@ -474,9 +537,9 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   };
   const dismissLoader = () => { loaderGeneration++; loaderDepth = 0; loader.close(); };
   loader.querySelector('[data-loader-close]').addEventListener('click', dismissLoader);
-  loader.querySelector('[data-loader-reload]').addEventListener('click', () => location.reload());
+  loader.querySelector('[data-loader-reload]').addEventListener('click', () => location.replace(location.pathname));
   loader.addEventListener('cancel', event => { event.preventDefault(); if (loader.classList.contains('failed')) dismissLoader(); });
-  // Fetch begins immediately; even cached data waits for one complete outline.
+  // Keep the loader visible only while the page or a request is loading.
   const initialGeneration = beginLoading();
   const pageReady = document.readyState === 'complete' ? Promise.resolve() : new Promise(resolve => window.addEventListener('load', resolve, {once:true}));
   let bootTimer;
@@ -488,26 +551,17 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   const pageFailed = () => { const generation = beginLoading(); void finishLoading(generation, new Error('آماده‌سازی صفحه با خطا روبه‌رو شد. صفحه را تازه‌سازی کنید.')); };
   window.addEventListener('error', event => { if (event instanceof ErrorEvent) pageFailed(); });
   window.addEventListener('unhandledrejection', pageFailed);
-  document.querySelectorAll('form[method="post"]').forEach(form => form.addEventListener('submit', async event => {
-    if (event.defaultPrevented) return;
-    event.preventDefault();
-    const generation = beginLoading();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    try {
-      // A hidden input named "action" shadows the form.action DOM property.
-      const target = new URL(form.getAttribute('action') || location.href, location.href);
-      const response = await fetch(target.href, {method:'POST', credentials:'same-origin', body:new URLSearchParams(new FormData(form)), signal:controller.signal});
-      const html = await response.text();
-      const message = new DOMParser().parseFromString(html, 'text/html').querySelector('.login-hint[role="alert"]')?.textContent.trim();
-      if (!response.ok || message || !response.redirected) throw new Error(message || 'ورود یا خروج انجام نشد. صفحه را تازه‌سازی کنید.');
-      const elapsed = performance.now() - loaderStarted, cycle = loaderCycle();
-      await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.ceil(Math.max(1, elapsed) / cycle) * cycle - elapsed)));
-      location.replace(response.url);
-    } catch (error) {
-      await finishLoading(generation, new Error(error.name === 'AbortError' ? 'پاسخی از سرور دریافت نشد. اتصال را بررسی کنید.' : error.name === 'TypeError' ? 'ارتباط با سرور برقرار نشد. اتصال را بررسی کنید.' : error.message || 'ارتباط با سرور برقرار نشد.'));
-    } finally { clearTimeout(timeout); }
-  }));
+  // Use browser navigation for authentication so regenerated cookies and CSRF arrive together.
+  document.querySelectorAll('form[method="post"]').forEach(form => form.addEventListener('submit', () => beginLoading()));
+  let pullStart = null;
+  document.addEventListener('touchstart', event => {
+    const area = event.target.closest('.main-area,.login-area');
+    pullStart = area && area.scrollTop <= 0 && !event.target.closest('input,select,textarea,dialog') ? {y:event.touches[0].clientY,area} : null;
+  }, {passive:true});
+  document.addEventListener('touchend', event => {
+    if (pullStart && pullStart.area.scrollTop <= 0 && event.changedTouches[0].clientY - pullStart.y > 100) location.replace(location.pathname);
+    pullStart = null;
+  }, {passive:true});
   const password = document.getElementById('ref-password');
   document.getElementById('ref-password-toggle')?.addEventListener('click', () => { password.type = password.type === 'password' ? 'text' : 'password'; });
   const back = document.getElementById('ref-back');
@@ -515,7 +569,7 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   const logoutForm = document.getElementById('ref-logout-form');
   const games = <?= json_encode($games, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const currentPeriod = <?= json_encode($activePeriod, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-  const csrf = <?= json_encode($_SESSION['ref_monitor_csrf'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  let csrf = <?= json_encode($_SESSION['ref_monitor_csrf'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const views = [...document.querySelectorAll('[data-ref-view]')];
   const gameTitle = document.getElementById('ref-game-title');
   const renderRoadmap = (heading, gameName, currentPage) => {
@@ -567,6 +621,15 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
       data = await response.json();
     } catch {
       throw new Error(`پاسخ سرور معتبر نیست (HTTP ${response.status}). صفحه را تازه‌سازی کنید و دوباره تلاش کنید.`);
+    }
+    if (response.status === 403 && data.code === 'csrf_expired' && !options.csrfRetried) {
+      const stateResponse = await fetch(location.pathname + '?ref_session=1', {credentials:'same-origin', cache:'no-store'});
+      const state = await stateResponse.json();
+      if (stateResponse.ok && state.authenticated && state.csrf) {
+        csrf = state.csrf;
+        document.querySelectorAll('input[name="csrf"]').forEach(input => input.value = csrf);
+        return request(action, fields, {...options, silent:true, csrfRetried:true});
+      }
     }
     if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'درخواست انجام نشد.');
     return data;
@@ -701,6 +764,16 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   const renderResults = () => {
     resultList.replaceChildren();
     for (const person of results) {
+      if (selected.has(person.id)) continue;
+      if (person.already_in_team) {
+        const item = personItem(person, () => {}, 'عضو تیم');
+        item.querySelector('button').disabled = true;
+        const reason = document.createElement('small');
+        reason.textContent = 'عضو تیم دیگری در این بازی است.';
+        item.querySelector('span').append(reason);
+        resultList.append(item);
+        continue;
+      }
       if (!selected.has(person.id)) resultList.append(personItem(person, () => {
         if (selected.size >= (activeGame?.max_players || 20)) { setStatus('ref-search-status', `هر تیم در این بازی حداکثر ${activeGame?.max_players || 20} عضو دارد.`, 'error'); return; }
         if (activeGame?.gender_mode === 'separated') {
@@ -941,7 +1014,14 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     const intro = document.createElement('p'); intro.className = 'status-text'; intro.textContent = activeGame.auto_room_manager ? 'بازی تمام شد؟ مجموع امتیاز دورها را وارد کنید.' : activeGame.has_levels ? 'امتیاز نهایی این مرحله را وارد کنید.' : 'امتیاز نهایی بازی را وارد کنید.';
     const form = document.createElement('form'); form.className = 'score-form'; form.id = 'ref-score-form'; form.dataset.levelId = nextLevel.id;
     const input = document.createElement('input'); input.className = 'login-input score-number'; input.type = 'number'; input.min = '0'; input.max = '999999.99'; input.step = '0.01'; input.required = true; input.placeholder = 'امتیاز'; input.setAttribute('aria-label', `امتیاز ${nextLevel.name}`);
-    if (activeGame.auto_room_manager) {
+    const requiredScores = Number(activeTeam.score_count ?? activeGame.score_count ?? 1);
+    if (requiredScores > 1) {
+      const index = (activeTeam.score_attempts?.[nextLevel.id]?.length || 0) + 1;
+      document.getElementById('ref-score-submit').textContent = `ثبت امتیاز بازی ${scoreOrdinal(index)}`;
+      const label = document.createElement('label'); label.className = 'login-field';
+      const caption = document.createElement('span'); caption.textContent = `امتیاز بازی ${scoreOrdinal(index)} · ${index.toLocaleString('fa-IR')} از ${requiredScores.toLocaleString('fa-IR')}`;
+      label.append(caption, input); form.append(label);
+    } else if (activeGame.auto_room_manager) {
       input.id = 'ref-rounds-total'; input.placeholder = '۰';
       input.setAttribute('aria-label', 'مجموع امتیاز تمام دورهای این اتاق');
       const label = document.createElement('label'); label.className = 'login-field'; label.htmlFor = input.id;
@@ -975,6 +1055,7 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     if (editDialog.open && !editSaving) editDialog.close();
     const target = views.find(view => view.dataset.refView === name) || views[0];
     for (const view of views) view.classList.toggle('hidden', view !== target);
+    if (name === 'manager') window.RefMonitorManager?.show(state);
     const isHome = target === views[0];
     back.classList.toggle('hidden', isHome);
     logoutForm.classList.toggle('hidden', !isHome);
@@ -1030,6 +1111,7 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   window.RefMonitorNavigation = {open, back() {
     if (back.classList.contains('hidden') || scoreSaving || editSaving) return;
     const state = history.state || {};
+    if (state.view === 'manager') { window.RefMonitorManager?.back(state); return; }
     if (state.view === 'team') {
       const step = state.step || (state.teamId ? 'members' : 'name');
       if (step === 'review') { replaceView('team', activeGame.id, activePeriod, state.teamId, 'members'); return; }
@@ -1040,6 +1122,15 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     if (state.view === 'score' || state.view === 'score-entry') { replaceView('team-detail', activeGame.id, activePeriod, state.teamId || activeTeam?.id); return; }
     if (state.view === 'team-detail') { replaceView('game'); return; }
     replaceView('home');
+  }};
+  window.RefMonitorManagerAPI = {request, open, replaceView, period:currentPeriod, role:<?= json_encode(egmStaffRole($currentUser['event_role'] ?? null)) ?>, refreshGames(updated) {
+    const ids = new Set(games.map(game => game.id));
+    games.splice(0, games.length, ...updated.filter(game => ids.has(game.id)));
+    if (activeGame) activeGame = games.find(game => game.id === activeGame.id) || activeGame;
+    document.querySelectorAll('[data-open-game]').forEach(button => {
+      const game = games.find(item => item.id === button.dataset.openGame);
+      if (game) button.children[1].textContent = game.name;
+    });
   }};
   document.querySelectorAll('[data-open-game]').forEach(button => button.addEventListener('click', () => open('game', button.dataset.openGame)));
   document.getElementById('ref-new-team').addEventListener('click', () => {
@@ -1109,11 +1200,12 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   const confirmation = document.getElementById('ref-score-confirm');
   confirmation.addEventListener('cancel', event => { if (scoreSaving) event.preventDefault(); });
   confirmation.addEventListener('close', () => { if (!scoreSaving) pendingScore = null; });
+  function scoreOrdinal(n) { return ['اول','دوم','سوم','چهارم','پنجم','ششم','هفتم','هشتم','نهم','دهم'][n - 1] || n.toLocaleString('fa-IR'); }
   const confirmResult = (levelId, score = null) => {
     const level = scoreSteps(activeGame).find(item => item.id === levelId);
     const completionOnly = !!activeGame.no_score_needed;
     pendingScore = {team_id:activeTeam.id, game_id:activeGame.id, level_id:levelId, action:completionOnly ? 'complete_level' : 'submit_score'};
-    if (!completionOnly) pendingScore.score = score;
+    if (!completionOnly) { pendingScore.score = score; pendingScore.score_index = (activeTeam.score_attempts?.[levelId]?.length || 0) + 1; }
     document.getElementById('ref-confirm-title').textContent = completionOnly ? (activeGame.has_levels ? 'تأیید پایان مرحله' : 'تأیید پایان بازی') : 'تأیید امتیاز';
     document.getElementById('ref-confirm-team').textContent = `تیم: ${activeTeam.name}${activeTeam.cover_color ? ` · پوشش ${activeTeam.cover_color}` : ''}`;
     document.getElementById('ref-confirm-room').textContent = activeGame.auto_room_manager ? `اتاق: ${activeTeam.room_assignment?.room_name || 'تعیین نشده'} · ${level?.name || ''}` : `${activeGame.name} · ${level?.name || ''}`;
@@ -1146,12 +1238,18 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
       announceRoom(activeTeam);
       scoreSaving = false; pendingScore = null; confirmation.close();
       renderTeamDetail();
-      if (activeGame.auto_room_manager || activeTeam.ended_at || completionOnly) {
+      const partialScore = activeTeam.score_submission?.completed === false;
+      if (partialScore || activeGame.auto_room_manager || activeTeam.ended_at || completionOnly) {
         const state = {refMonitor:true, view:'team-detail', gameId:activeGame.id, periodCode:activePeriod, teamId:activeTeam.id};
         history.replaceState(state, '', location.href);
         for (const view of views) view.classList.toggle('hidden', view.dataset.refView !== 'team-detail');
-        setStatus('ref-journey-status', completionOnly ? (activeTeam.ended_at ? 'بازی پایان یافت.' : 'مرحله پایان یافت.') : activeTeam.ended_at ? 'امتیاز نهایی ثبت شد.' : activeTeam.room_assignment ? 'امتیاز ثبت شد؛ به اتاق بعدی بروید.' : 'امتیاز ثبت شد؛ منتظر اتاق بعدی بمانید.', 'success');
+        setStatus('ref-journey-status', partialScore ? '' : completionOnly ? (activeTeam.ended_at ? 'بازی پایان یافت.' : 'مرحله پایان یافت.') : activeTeam.ended_at ? 'امتیاز نهایی ثبت شد.' : activeTeam.room_assignment ? 'امتیاز ثبت شد؛ به اتاق بعدی بروید.' : 'امتیاز ثبت شد؛ منتظر اتاق بعدی بمانید.', 'success');
         document.getElementById(activeTeam.ended_at ? 'ref-completion-card' : activeGame.auto_room_manager ? 'ref-room-card' : 'ref-detail-title').scrollIntoView({block:'start', behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+        if (partialScore) {
+          const count = activeTeam.score_submission.submitted;
+          document.getElementById('ref-score-saved-message').textContent = `امتیاز بازی ${scoreOrdinal(count)} ثبت شد، تیم باید بازی ${scoreOrdinal(count + 1)} را نیز در همین مرحله انجام دهد.`;
+          document.getElementById('ref-score-saved').showModal();
+        }
       } else {
         const nextLevel = scoreSteps(activeGame).find(level => !activeTeam.scores?.[level.id]);
         activeScoreLevelId = nextLevel?.id || null;
@@ -1246,6 +1344,17 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     if(key===watchKey)return;watchKey=key;
     watchQueue=watchQueue.catch(()=>{}).then(()=>request('push_watch',fields,{silent:true})).catch(()=>{if(watchKey===key)watchKey='';});
   };
+  const notificationHelp = document.createElement('dialog');
+  notificationHelp.className = 'score-confirm';
+  const isIphone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  notificationHelp.innerHTML = '<h2>اعلان و نصب روی گوشی</h2><p>' + (isIphone ? 'در Safari، دکمهٔ اشتراک‌گذاری را بزنید و «افزودن به صفحهٔ اصلی» (Add to Home Screen) را انتخاب کنید. پنل را از آیکون جدید باز کنید و اجازهٔ اعلان بدهید. ورود در نسخهٔ نصب‌شده ممکن است برای بار اول دوباره لازم باشد.' : 'اگر اجازهٔ اعلان را رد کرده‌اید، از آیکون کنار آدرس سایت وارد تنظیمات سایت شوید و اعلان‌ها را مجاز کنید. سپس به این صفحه برگردید.') + '</p><button type="button" class="primary-action">متوجه شدم</button>';
+  document.body.append(notificationHelp);
+  notificationHelp.querySelector('button').onclick = () => notificationHelp.close();
+  document.getElementById('ref-alert-help').onclick = () => notificationHelp.showModal();
+  const pushDiagnostic = document.createElement('p');
+  pushDiagnostic.setAttribute('role','status');
+  notificationHelp.insertBefore(pushDiagnostic, notificationHelp.querySelector('button'));
+  let pushRegisterPending = false;
   const registerPush=async permission=>{
     if(!window.isSecureContext)throw new Error('برای اعلان هنگام قفل بودن گوشی، پنل را با HTTPS باز کنید.');
     if(!('PushManager'in window)||!('Notification'in window))throw new Error('برای اعلان در آیفون، این پنل را به صفحهٔ اصلی گوشی اضافه کنید و از همان‌جا باز کنید.');
@@ -1256,6 +1365,7 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     const key=Uint8Array.from(binary,char=>char.charCodeAt(0));
     const subscription=await registration.pushManager.getSubscription()||await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
     const response=await request('push_register',{subscription:JSON.stringify(subscription.toJSON())},{silent:true});pushDevice=response.device_id;paintAlerts();watchKey='';syncRoomWatch();
+    pushDiagnostic.textContent = '';
     setStatus('ref-alert-status','اعلان اتاق فعال شد؛ صدای اعلان هنگام قفل بودن گوشی تابع تنظیمات گوشی است.');
   };
   alertButton.addEventListener('click',async()=>{
@@ -1269,9 +1379,25 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
     alertsEnabled=true;paintAlerts();try{localStorage.setItem(alertPreference,'1');}catch{}
     const permission=('Notification'in window)?Notification.requestPermission():Promise.resolve('unsupported');
     try{await unlockAudio();ding();setStatus('ref-alert-status','صدای اتاق روشن شد.');await registerPush(await permission);}
-    catch(error){setStatus('ref-alert-status',error.message,'error');}finally{alertButton.disabled=false;}
+    catch(error){
+      pushDiagnostic.textContent = error.message;
+      setStatus('ref-alert-status', 'صدای داخل پنل روشن است. ' + (('Notification' in window && Notification.permission === 'granted') ? 'اعلان پس‌زمینه فعلاً وصل نشد؛ دوباره تلاش کنید.' : 'برای اعلان پس‌زمینه، اجازهٔ مرورگر لازم است.'));
+      if (!('Notification' in window) || Notification.permission !== 'granted') notificationHelp.showModal();
+    }finally{alertButton.disabled=false;}
   });
-  if(alertsEnabled&&'Notification'in window&&Notification.permission==='granted')void registerPush('granted').catch(error=>setStatus('ref-alert-status',error.message,'error'));
+  const reconcileNotificationPermission = async () => {
+    if (!alertsEnabled || pushRegisterPending || !('Notification' in window) || Notification.permission !== 'granted') return;
+    setStatus('ref-alert-status', 'صدای داخل پنل روشن است.');
+    if (pushDevice) return;
+    pushRegisterPending = true;
+    try { await registerPush('granted'); }
+    catch (error) { pushDiagnostic.textContent = error.message; setStatus('ref-alert-status', 'صدای داخل پنل روشن است؛ اتصال اعلان پس‌زمینه فعلاً برقرار نیست.'); }
+    finally { pushRegisterPending = false; }
+  };
+  void reconcileNotificationPermission();
+  window.addEventListener('focus', reconcileNotificationPermission);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void reconcileNotificationPermission(); });
+  if (navigator.permissions?.query) navigator.permissions.query({name:'notifications'}).then(result => { result.onchange = reconcileNotificationPermission; }).catch(() => {});
   const announceRoom=(team,fromWaiting=false)=>{
     const room=team.room_assignment;if(!room)return;const key=`${team.id}:${room.level_id}:${room.room_id}:${room.assigned_at}`;
     if(alertedAssignments.has(key))return;alertedAssignments.add(key);
@@ -1321,4 +1447,8 @@ if ($panelIcon !== '' && !preg_match('~^(?:data:|https?://|//|/)~i', $panelIcon)
   window.addEventListener('online',()=>{void checkPeriod();void refreshRoom();});
 })();
 </script>
+<?php if ($currentUser && in_array(egmStaffRole($currentUser['event_role'] ?? null),['system_manager','head_referee'],true)): ?>
+<link rel="stylesheet" href="<?= $escape($assetRootUrl) ?>assets/refmonitor-manager.css?v=<?= (int)filemtime($projectRoot.'/assets/refmonitor-manager.css') ?>">
+<script src="<?= $escape($assetRootUrl) ?>assets/refmonitor-manager.js?v=<?= (int)filemtime($projectRoot.'/assets/refmonitor-manager.js') ?>" defer></script>
+<?php endif; ?>
 </body></html>

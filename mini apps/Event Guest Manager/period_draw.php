@@ -16,34 +16,46 @@ require_once $siteRoot . '/api/lib/egm-period-draws.php';
 $cspNonce = egmSecurityCreateCspNonce();
 egmSecuritySendPageHeaders($cspNonce);
 egmSecurityHardenSessionSettings();
-$user = requireTabPermissionFromSession('event-guest-manager', false);
 $context = egmPeriodInvitesContext(__DIR__);
+if (!empty($egmGeneralDraw)) {
+  require_once $siteRoot . '/api/lib/egm-general-draws.php';
+  require_once $siteRoot . '/api/lib/egm-draw-session.php';
+  egmDrawSessionStart(__DIR__);
+  $user = egmDrawRequireUser($context);
+} else $user = requireTabPermissionFromSession('event-guest-manager', false);
+$requestedPeriod = !empty($egmGeneralDraw) ? '' : trim((string)($_GET['period_code'] ?? ''));
 try {
-  $periodCode = egmPeriodDrawActiveCode($context);
+  $periodCode = $requestedPeriod !== ''
+    ? egmPeriodInvitesValidatePeriod($context, $requestedPeriod)
+    : egmPeriodDrawActiveCode($context);
 } catch (InvalidArgumentException $error) {
-  http_response_code(409);
+  if (!empty($egmGeneralDraw)) {
+    $message = htmlspecialchars($error->getMessage(), ENT_QUOTES, 'UTF-8');
+    echo '<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style/styles.css"><main class="card"><h1>قرعه‌کشی</h1><p>' . $message . '</p><a class="btn primary" href="?level_id=' . rawurlencode((string)($_GET['level_id'] ?? '')) . '">تازه‌سازی</a></main></html>'; exit;
+  }
+  http_response_code(404);
   exit(htmlspecialchars($error->getMessage(), ENT_QUOTES, 'UTF-8'));
 }
-$requestedPeriod = trim((string)($_GET['period_code'] ?? ''));
-if ($requestedPeriod !== '' && $requestedPeriod !== $periodCode) {
-  http_response_code(409);
-  exit('این قرعه‌کشی فقط در بازهٔ فعال قابل اجراست.');
-}
+$activePeriodCode = '';
+try { $activePeriodCode = egmPeriodDrawActiveCode($context); } catch (InvalidArgumentException $error) { /* No active draw period. */ }
+$drawCanRun = $periodCode === $activePeriodCode;
 if (!egmPeriodDrawCanAccess($context, $user, $periodCode)) denyPanelAccess(403, 'دسترسی مدیریت قرعه‌کشی مجاز نیست.', false);
 $levelId = trim((string)($_GET['level_id'] ?? ''));
 try {
   try {
-    $state = egmPeriodDrawRun($context, $periodCode, 'state', ['levelId' => $levelId], (string)$user['code']);
+    $state = !empty($egmGeneralDraw) ? egmGeneralDrawRun($context, 'state', ['levelId' => $levelId], (string)$user['code']) : egmPeriodDrawRun($context, $periodCode, 'state', ['levelId' => $levelId], (string)$user['code']);
   } catch (InvalidArgumentException $error) {
     if (egmPeriodDrawPotLevel($context, $levelId) === null) throw $error;
     egmPeriodDrawRun($context, $periodCode, 'ensure_pot', ['levelId' => $levelId], (string)$user['code']);
-    $state = egmPeriodDrawRun($context, $periodCode, 'state', ['levelId' => $levelId], (string)$user['code']);
+    $state = !empty($egmGeneralDraw) ? egmGeneralDrawRun($context, 'state', ['levelId' => $levelId], (string)$user['code']) : egmPeriodDrawRun($context, $periodCode, 'state', ['levelId' => $levelId], (string)$user['code']);
   }
   $level = $state['level'];
 } catch (InvalidArgumentException $error) { http_response_code(404); exit('قرعه‌کشی پیدا نشد.'); }
 $csrf = egmSecurityGetCsrfToken();
 $title = (string)$level['potSettings']['title'];
 $limit = (int)$level['potSettings']['winnerLimit'];
+// The page no longer writes session data; release it before rendering the stage.
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 ?>
 <!doctype html>
 <html lang="fa" dir="rtl">
@@ -96,7 +108,7 @@ $limit = (int)$level['potSettings']['winnerLimit'];
     .winner-info{text-align:right;font-size:1rem;direction:rtl;color:#fff;font-weight:600}
     .winner-meta{display:block;color:rgba(255,255,255,.58);font-size:.82rem;font-weight:400;margin-top:4px}
     .eligible-panel{overflow:visible}
-    .competition-shell{width:min(900px,100%);padding:26px;border-radius:30px;background:linear-gradient(155deg,rgba(12,28,67,.88),rgba(9,15,46,.94));border:1px solid rgba(220,241,255,.2);box-shadow:0 24px 60px rgba(1,8,38,.35);position:relative;z-index:1}
+    .competition-shell{width:min(900px,100%);padding:26px;border-radius:30px;background:linear-gradient(155deg,rgba(12,28,67,.32),rgba(9,15,46,.42));border:1px solid rgba(220,241,255,.2);box-shadow:0 24px 60px rgba(1,8,38,.18);position:relative;z-index:1}
     .competition-top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
     .competition-top h2{margin:0;font-size:1.4rem}
     .competition-progress{color:#cde8ff;font-weight:700}
@@ -104,7 +116,7 @@ $limit = (int)$level['potSettings']['winnerLimit'];
     .competition-card{appearance:none;border:0;padding:0;background:transparent;aspect-ratio:3/4;min-height:0;perspective:900px;cursor:pointer;box-shadow:none;border-radius:20px;position:relative}
     .competition-card:hover:not(:disabled){transform:translateY(-4px)}
     .competition-card:disabled{opacity:1;cursor:default}
-    .competition-card-inner{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .55s cubic-bezier(.2,.75,.2,1)}
+    .competition-card-inner{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .35s cubic-bezier(.2,.75,.2,1)}
     .competition-card.flipped .competition-card-inner{transform:rotateY(180deg)}
     .competition-card-face{position:absolute;inset:0;border-radius:20px;display:flex;align-items:center;justify-content:center;backface-visibility:hidden;overflow:hidden;border:1px solid rgba(255,255,255,.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 12px 26px rgba(2,8,39,.35)}
     .competition-card-front{font-size:clamp(2.5rem,7vw,5rem);font-weight:700;color:#f8fcff;background:linear-gradient(150deg,rgba(245,252,255,.35),rgba(105,169,244,.12) 42%,rgba(255,255,255,.04));backdrop-filter:blur(16px)}
@@ -122,7 +134,38 @@ $limit = (int)$level['potSettings']['winnerLimit'];
     @keyframes competition-shine{from{transform:translateX(-60%) rotate(18deg)}to{transform:translateX(60%) rotate(18deg)}}
     @keyframes competition-win{50%{transform:scale(1.06)}}
     @media(max-width:560px){.competition-shell{padding:16px}.competition-card-face{border-radius:14px}.competition-cards{gap:9px}}
-    @media(prefers-reduced-motion:reduce){.competition-card-inner,.competition-card{transition:none!important;animation:none!important}}
+    .competition-card.anticipating{animation:competition-pulse .7s ease-in-out infinite alternate}
+    @keyframes competition-pulse{to{filter:drop-shadow(0 0 30px #ffd978);transform:scale(1.035)}}
+    .competition-card.charging,.competition-card.releasing{z-index:4}
+    .competition-card.charging{animation:competition-charge 5.4s linear forwards;will-change:transform}
+    .competition-card.charging::before{content:'';position:absolute;inset:-25%;border-radius:50%;pointer-events:none;background:radial-gradient(ellipse,rgba(255,255,240,.95),rgba(255,221,135,.55) 25%,rgba(133,222,255,.4) 45%,transparent 70%);animation:competition-underlight 5.4s ease-in forwards}
+    .competition-card.charging::after{content:'';position:absolute;inset:-80%;pointer-events:none;background:repeating-conic-gradient(from 0deg,transparent 0deg 18deg,rgba(255,245,204,.28) 20deg 24deg,transparent 28deg 45deg);mask-image:radial-gradient(circle,transparent 15%,#000 35%,transparent 70%);animation:competition-rays 5.4s ease-in forwards}
+    .competition-card.releasing{filter:drop-shadow(0 0 45px #fff2c9)}
+    .competition-reveal-effects{position:fixed;inset:0;z-index:20;pointer-events:none;overflow:hidden}
+    .competition-holy-light{position:absolute;left:var(--origin-x);top:var(--origin-y);width:250vmax;height:250vmax;margin:-125vmax;background:radial-gradient(circle,rgba(255,255,248,.92) 0%,rgba(255,243,199,.65) 8%,rgba(177,226,255,.35) 20%,transparent 45%);opacity:0;transform:scale(.01)}
+    .competition-reveal-effects.burst .competition-holy-light{animation:competition-holy-burst 3.1s cubic-bezier(.16,.6,.2,1) forwards}
+    .competition-confetti{position:absolute;left:var(--start);top:75%;width:10px;height:18px;border-radius:2px;background:var(--color);opacity:0;animation:competition-confetti-flight 3.6s var(--delay) cubic-bezier(.15,.65,.4,1) forwards;will-change:transform}
+    @keyframes competition-charge{0%{transform:translate(0,0) scale(1)}25%{transform:translate(-1px,1px) rotate(-.3deg) scale(1.015)}40%{transform:translate(2px,-1px) rotate(.5deg) scale(1.025)}55%{transform:translate(-3px,2px) rotate(-.8deg) scale(1.035)}65%{transform:translate(3px,-2px) rotate(1deg) scale(1.045)}72%{transform:translate(-4px,2px) rotate(-1deg) scale(1.055)}78%{transform:translate(4px,-3px) rotate(1.2deg) scale(1.06)}83%{transform:translate(-5px,3px) rotate(-1.3deg) scale(1.065)}87%{transform:translate(5px,-3px) rotate(1.4deg) scale(1.07)}90%{transform:translate(-5px,3px) rotate(-1.4deg) scale(1.075)}93%{transform:translate(5px,-3px) rotate(1.4deg) scale(1.08)}96%{transform:translate(-5px,3px) rotate(-1.5deg) scale(1.085)}98%{transform:translate(5px,-3px) rotate(1.5deg) scale(1.09)}100%{transform:translate(0,0) scale(1.1)}}
+    @keyframes competition-underlight{0%{opacity:0;transform:scale(.5)}45%{opacity:.45;transform:scale(.85)}100%{opacity:1;transform:scale(1.45)}}
+    @keyframes competition-rays{from{opacity:0;transform:rotate(-25deg) scale(.5)}to{opacity:1;transform:rotate(30deg) scale(1.4)}}
+    @keyframes competition-holy-burst{0%{opacity:0;transform:scale(.01)}18%{opacity:1;transform:scale(.5)}45%{opacity:.75;transform:scale(.9)}100%{opacity:0;transform:scale(1.2)}}
+    @keyframes competition-confetti-flight{0%{opacity:0;transform:translate(0,0) rotate(0)}5%{opacity:1}45%{opacity:1;transform:translate(calc(var(--travel) * .65),var(--lift)) rotate(calc(var(--turn) * .5))}85%{opacity:1}100%{opacity:0;transform:translate(var(--travel),80vh) rotate(var(--turn))}}
+    .competition-mode .page-header{flex:none}
+    .competition-mode #competition-view{flex:none;min-height:0}
+    .competition-mode .competition-shell{width:min(1120px,calc(100% - 48px));height:min(700px,calc(100dvh - 220px));min-height:0;padding:clamp(18px,2.4vh,28px);display:flex;flex-direction:column;gap:16px}
+    .competition-mode .competition-top{flex:none;margin:0;justify-content:center;position:relative;width:100%;min-height:32px}
+    .competition-mode .competition-progress{position:absolute;inset-inline-end:0}
+    .competition-mode .competition-top h2{font-size:clamp(1.2rem,2.8vh,2rem)}
+    .competition-mode .competition-progress{font-size:clamp(1rem,2.2vh,1.5rem)}
+    .competition-mode .competition-cards{flex:1;min-height:0;width:100%;max-width:none;margin:0;grid-template-rows:repeat(3,minmax(0,1fr));gap:clamp(10px,1.8vh,20px)}
+    .competition-mode .competition-card{aspect-ratio:auto;min-width:0}
+    .competition-mode .competition-card-front{font-size:clamp(2.5rem,8vh,6rem)}
+    .competition-mode .competition-card-back{direction:rtl;font-size:clamp(1rem,3.4vh,2.6rem);padding:12px 20px}
+    .competition-mode .competition-actions{flex:none;margin:0}
+    .competition-mode .competition-status{flex:none;margin:0;font-size:clamp(1rem,2.5vh,1.8rem)}
+    .competition-mode .competition-history{width:min(1120px,calc(100% - 48px));max-width:none;max-height:none;overflow:visible;margin:0;font-size:1rem}
+    @media(max-width:600px){.competition-mode .competition-shell,.competition-mode .competition-history{width:100%}.competition-mode .competition-top{flex-direction:column;gap:8px}.competition-mode .competition-progress{position:static}.competition-mode .competition-shell{height:auto}.competition-mode .competition-cards{flex:none;height:65vh}.competition-mode .competition-history{max-height:none}.competition-mode .competition-card-back{font-size:1rem;padding:8px}.competition-mode .competition-status{font-size:1rem}}
+    @media(prefers-reduced-motion:reduce){.competition-card-inner,.competition-card,.competition-card::before,.competition-card::after{transition:none!important;animation:none!important}.competition-holy-light,.competition-confetti{display:none}}
     @media(max-width:480px){.draw-shell,.winners-panel{padding:20px}.page-menu{gap:8px}.menu-item{font-size:.9rem;padding:4px 10px}.code-display{letter-spacing:.6rem;font-size:clamp(3.2rem,20vw,7rem)}}
   </style>
 </head>
@@ -135,9 +178,9 @@ $limit = (int)$level['potSettings']['winnerLimit'];
   <nav class="page-header">
     <div class="page-menu">
       <a id="draw-tab" class="menu-item active" href="#draw">قرعه کشی</a>
+      <a id="competition-tab" class="menu-item" href="#competition"<?= $drawCanRun ? '' : ' hidden' ?>>جوایز رقابت‌ها</a>
       <a id="eligible-tab" class="menu-item" href="#eligible">واجدین شرایط</a>
-      <a id="competition-tab" class="menu-item" href="#competition">جوایز رقابت‌ها</a>
-      <a class="menu-item" href="/panel.php">بازگشت به پنل</a>
+      <?php if (!empty($egmGeneralDraw)): ?><form method="post"><input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>"><button type="submit" name="draw_logout" value="1" class="menu-item confirm-btn">خروج</button></form><?php endif; ?>
     </div>
   </nav>
   <div id="draw-view" class="page-view">
@@ -169,24 +212,26 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       <div id="eligible-items" class="winner-items"></div>
     </div>
   </div>
-  <div id="competition-view" class="page-view" hidden data-csrf="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
+  <div id="competition-view" class="page-view" hidden data-period-code="<?= htmlspecialchars($periodCode, ENT_QUOTES, 'UTF-8') ?>" data-endpoint="<?= !empty($egmGeneralDraw) ? 'competition_prizes.php?draw_session=1&amp;draw_id=' . rawurlencode($levelId) : 'competition_prizes.php' ?>" data-csrf="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
     <div class="competition-shell">
-      <div class="competition-top"><h2>جوایز رقابت‌ها</h2><span class="competition-progress" id="competition-progress"></span></div>
+      <div class="competition-top"><h2>جوایز رقابت‌ها</h2><span class="competition-progress" id="competition-progress"></span><button type="button" class="confirm-btn" id="competition-reset" title="Shift + Delete">بازنشانی</button></div>
       <div class="competition-cards" id="competition-cards" aria-label="کارت‌های جوایز">
         <?php for ($card = 1; $card <= 9; $card++): ?><button type="button" class="competition-card" data-card="<?= $card ?>" aria-label="انتخاب کارت <?= $card ?>"><span class="competition-card-inner"><span class="competition-card-face competition-card-front"><?= $card ?></span><span class="competition-card-face competition-card-back"></span></span></button><?php endfor; ?>
       </div>
       <div class="competition-actions"><button type="button" class="start-btn" id="competition-roll" disabled>چرخش</button><button type="button" class="confirm-btn" id="competition-confirm" hidden>تأیید جایزه</button><button type="button" class="confirm-btn" id="competition-cancel" hidden>لغو انتخاب</button></div>
       <p class="competition-status" id="competition-status" role="status" aria-live="polite"></p>
-      <div class="competition-history" id="competition-history"></div>
     </div>
+    <div class="competition-history winners-panel" id="competition-history"></div>
   </div>
 
+  <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>" src="draw-connection.js?v=<?= (int)@filemtime(__DIR__ . '/draw-connection.js') ?>"></script>
   <script nonce="<?= htmlspecialchars($cspNonce, ENT_QUOTES, 'UTF-8') ?>">
     (() => {
       const periodCode = <?= json_encode($periodCode, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
       const levelId = <?= json_encode($levelId, JSON_UNESCAPED_UNICODE) ?>;
       const csrf = <?= json_encode($csrf, JSON_UNESCAPED_UNICODE) ?>;
       const winnerLimit = <?= $limit ?>;
+      const drawCanRun = <?= $drawCanRun ? 'true' : 'false' ?>;
       const codeDisplay = document.getElementById("code-display");
       let digitElements = [...document.querySelectorAll(".code-digit")];
       const rollBtn = document.getElementById("roll");
@@ -209,12 +254,17 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       let stopTimeouts = [];
       let winners = [];
       let candidateKey = null;
+      let drawBusy = false;
       let eligibleParticipants = [];
       let eligibleCount = 0;
       let drawLocked = <?= !empty($level['potSettings']['locked']) ? 'true' : 'false' ?>;
+      const connection = window.EGMDrawConnection;
+      const connected = () => !connection || connection.ready;
+      const showError = error => { if (!connection?.isConnectionError(error)) statusEl.textContent = error.message; };
 
       const api = async (action) => {
-        const response = await fetch("period_draws.php", {
+        if (connection) return connection.request(<?= json_encode(!empty($egmGeneralDraw) ? "general_draws.php?runtime=1" : "period_draws.php") ?>, {action, levelId, csrf, period_code:periodCode, candidateKey});
+        const response = await fetch(<?= json_encode(!empty($egmGeneralDraw) ? "general_draws.php?runtime=1" : "period_draws.php") ?>, {
           method: "POST",
           credentials: "same-origin",
           headers: {"Content-Type": "application/json"},
@@ -300,8 +350,10 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       const render = () => {
         countEl.textContent = String(winners.length);
         eligibleEl.textContent = String(eligibleCount);
-        rollBtn.disabled = drawLocked || winners.length >= winnerLimit || eligibleCount < 1 || animationInterval !== null;
-        if (drawLocked) statusEl.textContent = "این قرعه‌کشی قفل شده و نتیجه آن نهایی است.";
+        rollBtn.disabled = !connected() || drawBusy || !drawCanRun || drawLocked || winners.length >= winnerLimit || eligibleCount < 1 || animationInterval !== null;
+        confirmBtn.disabled = !connected() || drawBusy || !candidateKey || drawLocked || animationInterval !== null;
+        if (!drawCanRun) statusEl.textContent = "نمایش این قرعه‌کشی ممکن است؛ اجرای آن فقط در زمان فعال بودن این بازه مجاز است.";
+        else if (drawLocked) statusEl.textContent = "این قرعه‌کشی قفل شده و نتیجه آن نهایی است.";
         winnersEl.innerHTML = "";
         renderEligible();
         if (!winners.length) {
@@ -336,11 +388,25 @@ $limit = (int)$level['potSettings']['winnerLimit'];
         eligibleParticipants = payload.eligibleParticipants || [];
         eligibleCount = Number(payload.eligibleCount || 0);
         if (payload.level?.potSettings) drawLocked = Boolean(payload.level.potSettings.locked);
+        if ('pendingParticipant' in payload && !drawBusy && animationInterval === null) {
+          const pending = payload.pendingParticipant;
+          if (pending) {
+            candidateKey = pending.key;
+            setCode(pending.code, Array(normalizeCode(pending.code).length).fill(true));
+            setWinnerText(pending.fullName);
+            metaEl.textContent = pending.workId ? `شناسه: ${pending.workId}` : '';
+          } else {
+            const wasConfirmed = candidateKey && winners.some(winner => (winner.key || winner.participantKey) === candidateKey);
+            candidateKey = null;
+            if (wasConfirmed) metaEl.textContent = 'برنده ذخیره شد.';
+          }
+        }
         render();
       };
       const showView = async (view) => {
         const showEligible = view === "eligible";
-        const showCompetition = view === "competition";
+        const showCompetition = drawCanRun && view === "competition";
+        document.body.classList.toggle("competition-mode", showCompetition);
         drawView.hidden = showEligible || showCompetition;
         eligibleView.hidden = !showEligible;
         competitionView.hidden = !showCompetition;
@@ -352,11 +418,7 @@ $limit = (int)$level['potSettings']['winnerLimit'];
         try {
           applyState(await api("state"));
         } catch (error) {
-          eligibleItemsEl.innerHTML = "";
-          const message = document.createElement("p");
-          message.className = "status";
-          message.textContent = error.message;
-          eligibleItemsEl.appendChild(message);
+          showError(error);
         }
       };
       const animateTo = (candidate) => new Promise((resolve) => {
@@ -390,6 +452,8 @@ $limit = (int)$level['potSettings']['winnerLimit'];
       });
 
       rollBtn.addEventListener("click", async () => {
+        if (drawBusy || !connected()) return;
+        drawBusy = true;
         statusEl.textContent = "";
         rollBtn.disabled = true;
         confirmBtn.disabled = true;
@@ -402,12 +466,17 @@ $limit = (int)$level['potSettings']['winnerLimit'];
           await animateTo(payload.participant);
         } catch (error) {
           cancelAnimation();
-          statusEl.textContent = error.message;
+          showError(error);
           setIdleWinnerText();
+          render();
+        } finally {
+          drawBusy = false;
           render();
         }
       });
       confirmBtn.addEventListener("click", async () => {
+        if (drawBusy || !candidateKey || !connected()) return;
+        drawBusy = true;
         confirmBtn.disabled = true;
         statusEl.textContent = "";
         try {
@@ -416,21 +485,60 @@ $limit = (int)$level['potSettings']['winnerLimit'];
           applyState(payload);
           metaEl.textContent = "برنده ذخیره شد.";
         } catch (error) {
-          statusEl.textContent = error.message;
+          showError(error);
           confirmBtn.disabled = false;
+        } finally {
+          drawBusy = false;
+          render();
         }
       });
+      const resetDraw = async () => {
+        if (drawBusy || !drawCanRun || !connected()) return;
+        drawBusy = true;
+        confirmBtn.disabled = true;
+        render();
+        try {
+          const payload = await api('reset');
+          candidateKey = null;
+          cancelAnimation();
+          setCode('0000');
+          setIdleWinnerText();
+          metaEl.textContent = '';
+          statusEl.textContent = 'قرعه‌کشی بازنشانی شد.';
+          applyState(payload);
+        } catch (error) {
+          showError(error);
+          confirmBtn.disabled = !candidateKey;
+        }
+        finally { drawBusy = false; render(); }
+      };
       document.addEventListener("keydown", (event) => {
-        if (drawView.hidden) return;
-        const targetTag = event.target?.tagName ?? "";
-        if (["INPUT", "TEXTAREA"].includes(targetTag)) return;
-        if (event.code === "Enter" && !rollBtn.disabled) {
-          rollBtn.click();
-        } else if (event.code === "Space" && !confirmBtn.disabled) {
+        if (event.isComposing || event.altKey || event.metaKey || event.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+        if (event.shiftKey && !event.ctrlKey && ['ArrowLeft', 'ArrowRight'].includes(event.code)) {
           event.preventDefault();
-          confirmBtn.click();
+          if (event.repeat) return;
+          const tabs = [drawTab, eligibleTab, competitionTab].filter(tab => !tab.hidden && tab.getClientRects().length);
+          tabs.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+          const current = tabs.findIndex(tab => tab.classList.contains('active'));
+          const direction = event.code === 'ArrowRight' ? 1 : -1;
+          tabs[(current + direction + tabs.length) % tabs.length]?.click();
+          return;
         }
-      });
+        if (event.shiftKey && !event.ctrlKey && event.code === 'Delete') {
+          event.preventDefault();
+          if (event.repeat) return;
+          if (!drawView.hidden) void resetDraw();
+          return;
+        }
+        if (drawView.hidden || event.ctrlKey || event.shiftKey) return;
+        if (['Enter', 'NumpadEnter', 'Space'].includes(event.code)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (event.repeat || drawBusy) return;
+          const button = event.code === 'Space' ? confirmBtn : rollBtn;
+          if (!button.disabled) button.click();
+        }
+      }, true);
       drawTab.addEventListener("click", (event) => {
         event.preventDefault();
         history.replaceState(null, "", "#draw");
@@ -449,11 +557,17 @@ $limit = (int)$level['potSettings']['winnerLimit'];
 
       setCode("0000");
       setIdleWinnerText();
+      window.addEventListener('egmdrawconnectionchange', render);
+      if (connection) connection.register(async () => {
+        if (drawBusy || animationInterval !== null) return false;
+        applyState(await api('state'));
+        return true;
+      });
       api("state").then((payload) => {
         applyState(payload);
         showView(location.hash === "#competition" ? "competition" : (location.hash === "#eligible" ? "eligible" : "draw"));
       }).catch((error) => {
-        statusEl.textContent = error.message;
+        showError(error);
         render();
       });
     })();

@@ -90,9 +90,21 @@
       const profile = data.print_profile;
       row = {...row, ...data.print_guest};
       const options = [];
-      if (!profile.ticket_only && profile.configured) options.push({title:'کارت مهمان', profile});
-      if (profile.ticket_active) for (const ticket of profile.tickets || []) if (ticket.configured) options.push({title:ticket.title, ticket, profile:{configured:true, card:ticket.card}});
+      if (!profile.ticket_only && profile.configured && profile.card) options.push({title:'کارت دعوت', profile});
+      if (profile.ticket_active) for (const ticket of profile.tickets || []) {
+        const number = row.ticket_numbers?.[ticket.id] || (ticket.id === 'default' ? row.number_of_ticket : '');
+        if (ticket.configured && ticket.card && number) options.push({title:ticket.title, ticket, number, profile:{configured:true, card:ticket.card}});
+      }
       if (!options.length) throw new Error('طرحی برای چاپ این مهمان آماده نیست.');
+      const printOption = async option => {
+        const guest = option.ticket ? {...row, number_of_ticket:option.number, ticket_title:option.title} : row;
+        await tools.printCardForRow(guest, option.profile, !option.ticket && profile.double_print ? 2 : 1);
+      };
+      if (options.length === 1) {
+        await printOption(options[0]);
+        report('پنجره چاپ باز شد.');
+        return;
+      }
       const dialog = modal(`چاپ برای ${row.full_name || 'مهمان'}`, `<div class="egm-print-options">${options.map((option, index) => `<button type="button" data-output="${index}">${esc(option.title)}</button>`).join('')}</div>`);
       let busy = false;
       dialog.onclick = async event => {
@@ -100,14 +112,7 @@
         busy = true;button.disabled = true;
         try {
           const option = options[Number(button.dataset.output)];
-          if (option.ticket) {
-            const saved = row.ticket_numbers?.[option.ticket.id] || (option.ticket.id === 'default' ? row.number_of_ticket : '');
-            const number = saved || await tools.requestTicketNumber(row, option.title);
-            if (number === null) return;
-            if (!saved) {await tools.recordTicketNumber(row, option.ticket, number);row.ticket_numbers = {...row.ticket_numbers, [option.ticket.id]:number};await tools.refresh();}
-            row = {...row, number_of_ticket:number, ticket_title:option.title};
-          }
-          await tools.printCardForRow(row, option.profile, 1);message(dialog, 'پنجره چاپ باز شد.');
+          await printOption(option);message(dialog, 'پنجره چاپ باز شد.');
         } catch (error) {message(dialog, error.message);}
         finally {busy = false;button.disabled = false;}
       };
@@ -134,6 +139,7 @@
   toolbar.querySelector('[data-manual]').onclick = async () => {
     try {
       const {print_profile:profile} = await get('manual_print_profile');
+      if (!profile.ticket_active) throw new Error('چاپ بلیت شماره‌دار برای این رویداد غیرفعال است.');
       const tickets = (profile.tickets || []).filter(ticket => ticket.configured);
       if (!tickets.length) throw new Error('ابتدا طرح بلیت شماره‌دار را تنظیم کنید.');
       const dialog = modal('چاپ بلیت دستی', `<form><label>نوع بلیت<select name="ticket">${tickets.map(ticket => `<option value="${esc(ticket.id)}">${esc(ticket.title)}</option>`).join('')}</select></label><label>تعداد بلیت<input name="quantity" inputmode="numeric" maxlength="32" required autocomplete="off"></label><label>صندلی<select name="seat"><option value="none">بدون رزرو صندلی</option><option value="assigned">رزرو صندلی</option></select></label><button type="submit" class="egm-tool-primary">ثبت و چاپ</button></form>`);

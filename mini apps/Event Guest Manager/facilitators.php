@@ -17,8 +17,9 @@ try {
     require_once __DIR__ . '/egm-security.php';
     require_once dirname(__DIR__, 2) . '/api/lib/tab-permissions.php';
     require_once dirname(__DIR__, 2) . '/api/lib/egm-facilitators.php';
+    require_once dirname(__DIR__, 2) . '/api/lib/egm-staff-roles.php';
     $user = requireTabPermissionFromSession('event-guest-manager', true);
-    if (!userHasPermissionId($user, 'event-guest-manager:main') && !userHasPermissionId($user, 'event-guest-manager:task-access')) {
+    if (!userHasPermissionId($user, 'event-guest-manager:facilitators')) {
         egmFacilitatorsJson(['status' => 'error', 'message' => 'دسترسی مدیریت تسهیلگرها را ندارید.'], 403);
     }
     $context = egmDatabaseRuntimeContextForPath(__DIR__ . '/Setting.json');
@@ -26,7 +27,7 @@ try {
     $pdo = $context['pdo']; $code = (string)$context['code'];
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     if ($method === 'GET') {
-        egmFacilitatorsJson(['status' => 'ok', 'users' => egmFacilitatorsPublic(egmFacilitatorsRead($pdo, $code))]);
+        egmFacilitatorsJson(['status' => 'ok', 'users' => egmFacilitatorsPublic(egmFacilitatorsRead($pdo, $code)), 'panel_users'=>egmStaffPanelUsers($pdo, $code)]);
     }
     if ($method !== 'POST') egmFacilitatorsJson(['status' => 'error', 'message' => 'روش درخواست نامعتبر است.'], 405);
     $raw = $_POST['payload'] ?? file_get_contents('php://input');
@@ -34,6 +35,10 @@ try {
     if (!is_array($input)) throw new InvalidArgumentException('درخواست نامعتبر است.');
     if (!egmSecurityIsValidCsrfToken((string)($input['csrf'] ?? ''))) egmFacilitatorsJson(['status' => 'error', 'message' => 'فرم منقضی شده است. صفحه را تازه‌سازی کنید.'], 403);
     $action = (string)($input['action'] ?? ''); $id = (string)($input['id'] ?? '');
+    if ($action === 'save_panel_role') {
+        egmStaffSavePanelRole($pdo, $code, (string)($input['user_code'] ?? ''), $input['event_role'] ?? null);
+        egmFacilitatorsJson(['status'=>'ok', 'panel_users'=>egmStaffPanelUsers($pdo, $code)]);
+    }
     if ($action === 'reveal') {
         foreach (egmFacilitatorsRead($pdo, $code) as $row) {
             if ($row['id'] === $id) egmFacilitatorsJson(['status' => 'ok', 'password' => tcPasswordVaultDecrypt($row['password_encrypted'])]);

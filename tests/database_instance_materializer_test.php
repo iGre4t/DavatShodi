@@ -62,9 +62,9 @@ try {
 
     file_put_contents($egmTarget . '/EGM Panel.php', "<?php // stale generated EGM panel\n");
     file_put_contents($egmTarget . '/EGMT.php', "<?php // stale generated EGM task settings\n");
-    foreach (['EGMSetting.js', 'EGMTaskAccess.js', 'egm_store.php', 'task_access_store.php',
-        'invitees_csv_safety.php', 'print_card_store.php', 'custom_number_ticket_store.php', 'games.php',
-        'period_draw.php', 'period_draws.php', 'pot_service.php', 'facilitators.php', 'EGM Prizes.js', 'egm-panel.css'] as $relative) {
+    foreach (['EGMSetting.js', 'EGMTaskAccess.js', 'egm_store.php', 'prize_inventory_store.php', 'task_access_store.php',
+        'invitees_csv_safety.php', 'print_card_store.php', 'invite_card_store.php', 'custom_number_ticket_store.php', 'groups.php', 'pot_api.php', 'pot_draw.php', 'games.php',
+        'period_draw.php', 'period_draws.php', 'general_draw.php', 'general_draws.php', 'guest_reports.php', 'competition_prizes.php', 'competition-prizes.js', 'draw-connection.js', 'pot_service.php', 'facilitators.php', 'EGM Prizes.js', 'egm-panel.css'] as $relative) {
         if (!is_file($egmSource . '/' . $relative)) file_put_contents($egmSource . '/' . $relative, "// shared EGM code\n");
     }
     unlink($egmTarget . '/seat_map.php');
@@ -73,7 +73,7 @@ try {
     materializerTestAssert($refreshed >= 3, 'Existing EGM shared panel/task code and missing seat endpoint were not refreshed selectively.');
     materializerTestAssert(is_file($egmTarget . '/seat_map.php'), 'Missing seat endpoint was not restored to the EGM instance.');
     materializerTestAssert(is_file($egmTarget . '/RefMonitor.php'), 'Missing RefMonitor was not restored to the EGM instance.');
-    foreach (['period_draw.php', 'period_draws.php', 'pot_service.php', 'facilitators.php', 'EGM Prizes.js', 'egm-panel.css'] as $relative) {
+    foreach (['period_draw.php', 'period_draws.php', 'draw-connection.js', 'pot_service.php', 'facilitators.php', 'EGM Prizes.js', 'egm-panel.css'] as $relative) {
         materializerTestAssert(is_file($egmTarget . '/' . $relative), 'Missing EGM endpoint was not restored: ' . $relative);
     }
     $egmPanel = file_get_contents($egmTarget . '/EGM Panel.php');
@@ -82,6 +82,11 @@ try {
     materializerTestAssert(is_string($egmTasks) && str_contains($egmTasks, 'mini apps/EGMs/RestoredEgm'), 'Refreshed EGM task controller has the wrong generated path.');
     materializerTestAssert(databaseInstanceMaterializerRefreshEgmPanelCode($egmSource, $egmTarget, 'RestoredEgm') === 0, 'Current EGM shared panel code was rewritten unnecessarily.');
 
+    $reports = file_get_contents(dirname(__DIR__) . '/mini apps/Event Guest Manager/guest_reports.php');
+    $patchedReports = databaseInstanceMaterializerPatch('egm', $reports, 'RestoredEgm');
+    materializerTestAssert(!str_contains($patchedReports, 'dirname(__DIR__, 2)'), 'Guest reports retained the template API root.');
+    materializerTestAssert(substr_count($patchedReports, 'dirname(__DIR__, 3)') === 3, 'Guest reports API includes and context root were not patched.');
+    materializerTestAssert(databaseInstanceMaterializerPatch('egm', 'dirname(__DIR__,2)', 'RestoredEgm') === 'dirname(__DIR__,3)', 'Compact dirname syntax was not patched.');
     echo "Database instance materializer test passed.\n";
 } finally {
     materializerTestRemoveTree($root);

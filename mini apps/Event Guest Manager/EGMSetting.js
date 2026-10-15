@@ -599,7 +599,7 @@
     const autoPrintToggle = getEl("egm-auto-print-toggle");
     const doublePrintToggle = getEl("egm-double-print-toggle");
     const customNumberTicketToggle = getEl("egm-custom-number-ticket-toggle");
-    const ticketOnlyToggle = getEl("egm-ticket-only-toggle");
+    const printCardToggle = getEl("egm-print-card-toggle");
     const startDate = getEl("egm-duration-start");
     const startTime = getEl("egm-duration-start-time");
     const endDate = getEl("egm-duration-end");
@@ -607,6 +607,7 @@
     const adminPasscodeState = getEl("egm-admin-passcode-state");
 
     Object.assign(settingsCache, settings);
+    if (getEl("egm-auto-report-toggle")) getEl("egm-auto-report-toggle").checked = Boolean(settings.autoReport);
     if (activeToggle) activeToggle.checked = Boolean(settings.active);
     if (durationToggle) durationToggle.checked = Boolean(settings.duration);
     if (maintenanceToggle) maintenanceToggle.checked = Boolean(settings.maintenanceMode);
@@ -614,7 +615,7 @@
     if (autoPrintToggle) autoPrintToggle.checked = Boolean(settings.printSettings?.autoPrint);
     if (doublePrintToggle) doublePrintToggle.checked = Boolean(settings.printSettings?.doublePrint);
     if (customNumberTicketToggle) customNumberTicketToggle.checked = Boolean(settings.customNumberTicketSettings?.active);
-    if (ticketOnlyToggle) ticketOnlyToggle.checked = Boolean(settings.customNumberTicketSettings?.ticketOnly);
+    if (printCardToggle) printCardToggle.checked = settings.printSettings?.cardActive ?? (!settings.customNumberTicketSettings?.active || !settings.customNumberTicketSettings?.ticketOnly);
     renderTicketTypes(settings.customNumberTicketSettings?.tickets);
     if (startDate && typeof settings.startDate === "string") startDate.value = settings.startDate;
     if (startTime && typeof settings.startTime === "string") startTime.value = settings.startTime;
@@ -632,7 +633,7 @@
     const autoPrintToggle = getEl("egm-auto-print-toggle");
     const doublePrintToggle = getEl("egm-double-print-toggle");
     const customNumberTicketToggle = getEl("egm-custom-number-ticket-toggle");
-    const ticketOnlyToggle = getEl("egm-ticket-only-toggle");
+    const printCardToggle = getEl("egm-print-card-toggle");
     const startDate = getEl("egm-duration-start");
     const startTime = getEl("egm-duration-start-time");
     const endDate = getEl("egm-duration-end");
@@ -640,15 +641,17 @@
     const collected = {
       active: Boolean(activeToggle?.checked),
       duration: Boolean(durationToggle?.checked),
+      autoReport: Boolean(getEl("egm-auto-report-toggle")?.checked),
       maintenanceMode: Boolean(maintenanceToggle?.checked),
       eventAccessLocked: Boolean(eventAccessLockToggle?.checked),
       printSettings: {
         autoPrint: Boolean(autoPrintToggle?.checked),
+        cardActive: printCardToggle ? Boolean(printCardToggle.checked) : (settingsCache.printSettings?.cardActive ?? true),
         doublePrint: Boolean(doublePrintToggle?.checked)
       },
       customNumberTicketSettings: {
         active: Boolean(customNumberTicketToggle?.checked),
-        ticketOnly: Boolean(ticketOnlyToggle?.checked),
+        ticketOnly: printCardToggle ? !printCardToggle.checked : Boolean(settingsCache.customNumberTicketSettings?.ticketOnly),
         tickets: collectTicketTypes()
       },
       startDate: startDate?.value ?? "",
@@ -1054,7 +1057,7 @@
     const ticketCard = getEl('egm-ticket-types')?.closest('.card');
     const passcodeCard = getEl('egm-admin-passcode-save')?.closest('.card');
     if (seating && seatCard) seating.append(seatCard);
-    if (printing) ['egm-auto-print-toggle', 'egm-double-print-toggle', 'egm-custom-number-ticket-toggle', 'egm-ticket-only-toggle'].forEach(id => {
+    if (printing) ['egm-auto-print-toggle', 'egm-print-card-toggle', 'egm-custom-number-ticket-toggle', 'egm-double-print-toggle'].forEach(id => {
       const row = getEl(id)?.closest('.egm-switch');
       if (row) printing.append(row);
     });
@@ -1103,6 +1106,36 @@
     try { savedKey = sessionStorage.getItem('egmControlPanelTab') || ''; } catch {}
     const savedTrigger = triggers.find((trigger) => trigger.getAttribute('data-egm-control-panel-trigger') === savedKey);
     activate(savedTrigger?.getAttribute('data-egm-control-panel-trigger') || activeTrigger?.getAttribute("data-egm-control-panel-trigger") || "");
+  }
+
+  function initScanLink() {
+    const card = document.querySelector('[data-egm-scan-link]');
+    if (!card || card.dataset.initialized === '1') return;
+    card.dataset.initialized = '1';
+    const input = card.querySelector('[data-egm-scan-url]');
+    const link = card.querySelector('[data-egm-scan-open]');
+    const status = card.querySelector('[data-egm-scan-link-status]');
+    if (!input || !link) return;
+    input.value = link.href;
+    card.querySelector('[data-egm-scan-copy]')?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(input.value);
+        status.textContent = 'لینک کپی شد.';
+      } catch {
+        input.focus();
+        input.select();
+        status.textContent = 'لینک را کپی کنید.';
+      }
+    });
+    card.querySelector('[data-egm-scan-short]')?.addEventListener('click', () => {
+      document.querySelector('[data-egm-control-panel-trigger="linker"]')?.click();
+      const destination = getEl('egm-linker-destination');
+      if (destination) {
+        destination.value = 'scan';
+        destination.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      getEl('egm-linker-path')?.focus();
+    });
   }
 
   function initCampaignLinker() {
@@ -1241,11 +1274,11 @@
         lastCanCreate = Boolean(data.can_create);
         createBtn.disabled = !lastCanCreate;
         if (data.available) {
-          setStatus(`${data.campaign_url || `/campaigns/${path}`} is available.`);
+          setStatus(`مسیر ${data.campaign_url || `/campaigns/${path}`} در دسترس است.`);
         } else if (data.owned_by_egm) {
-          setStatus(`${data.campaign_url || `/campaigns/${path}`} already points to this destination.`);
+          setStatus(`مسیر ${data.campaign_url || `/campaigns/${path}`} قبلاً برای این مقصد ساخته شده است.`);
         } else {
-          setStatus(`${data.campaign_url || `/campaigns/${path}`} is already used by another redirect.`, true);
+          setStatus(`مسیر ${data.campaign_url || `/campaigns/${path}`} قبلاً برای مقصد دیگری استفاده شده است.`, true);
         }
       } catch (error) {
         renderLinkState(null);
@@ -1526,6 +1559,7 @@
     organizeControlPanel();
     initControlPanelTabs();
     initCampaignLinker();
+    initScanLink();
     const settings = await loadSettings();
     applySettings(settings);
     getEl("egm-admin-passcode-save")?.addEventListener("click", async event => {
@@ -1615,7 +1649,7 @@
       saveBtn.textContent = "در حال ذخیره...";
       try {
         const settings = collectSettings();
-        await saveSettings({ active: settings.active, duration: settings.duration, maintenanceMode: settings.maintenanceMode, eventAccessLocked: settings.eventAccessLocked, startDate: settings.startDate, startTime: settings.startTime, endDate: settings.endDate, endTime: settings.endTime });
+        await saveSettings({ active: settings.active, duration: settings.duration, maintenanceMode: settings.maintenanceMode, eventAccessLocked: settings.eventAccessLocked, autoReport: settings.autoReport, startDate: settings.startDate, startTime: settings.startTime, endDate: settings.endDate, endTime: settings.endTime });
         saveBtn.textContent = "ذخیره شد";
         try { localStorage.setItem("egmSettingsUpdated", String(Date.now())); } catch {}
         window.setTimeout(() => { saveBtn.textContent = original; }, 1200);

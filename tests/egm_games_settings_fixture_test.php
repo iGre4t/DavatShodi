@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/api/lib/egm-games.php';
+require_once dirname(__DIR__) . '/api/lib/egm-refmonitor-teams.php';
 function verifySetting(bool $ok, string $message): void { if (!$ok) throw new RuntimeException($message); }
 function rejectedSetting(callable $work): void { try { $work(); } catch (InvalidArgumentException $error) { return; } throw new RuntimeException('Invalid setting accepted'); }
 class SettingsFixtureStatement extends PDOStatement {
@@ -44,7 +45,18 @@ egmGamesSaveRoom($context,$id,'game_total','','اتاق','both');
 egmGamesSaveAutoMode($context,$id,true); verifySetting(egmGamesState($context)['games'][0]['auto_room_manager'], 'Auto mode failed');
 rejectedSetting(fn()=>egmGamesSaveMode($context,$id,true));
 egmGamesSaveAutoMode($context,$id,false);
-rejectedSetting(fn()=>egmGamesSaveGenderMode($context,$id,'separated'));
+egmGamesSaveGenderMode($context,$id,'separated');
+verifySetting(egmGamesState($context)['games'][0]['rooms'][0]['gender'] === 'both', 'Separated mode changed shared room');
+egmGamesSaveRoom($context,$id,'game_total','','اتاق مشترک','both');
+verifySetting(count(egmGamesState($context)['games'][0]['rooms']) === 2, 'Shared room save failed in separated mode');
+foreach (['male','female'] as $gender) {
+    verifySetting(egmRefMonitorRoomEligible($gender,'both','separated'), 'Single-gender team cannot use shared room');
+    verifySetting(egmRefMonitorRoomEligible($gender,$gender,'separated'), 'Matching room rejected');
+    verifySetting(!egmRefMonitorRoomEligible($gender,$gender === 'male' ? 'female' : 'male','separated'), 'Wrong-gender room accepted');
+}
+foreach (['mixed',''] as $gender) verifySetting(!egmRefMonitorRoomEligible($gender,'both','separated'), 'Invalid team accepted in shared room');
+rejectedSetting(fn()=>egmRefMonitorAssertGenderMode([['gender'=>'male'],['gender'=>'female']], 'separated'));
+rejectedSetting(fn()=>egmRefMonitorAssertGenderMode([['gender'=>'']], 'separated'));
 $roomId=egmGamesState($context)['games'][0]['rooms'][0]['id'];
 egmGamesSaveRoom($context,$id,'game_total',$roomId,'اتاق','male'); egmGamesSaveGenderMode($context,$id,'separated');
 verifySetting(egmGamesState($context)['games'][0]['gender_mode'] === 'separated', 'Gender save failed');

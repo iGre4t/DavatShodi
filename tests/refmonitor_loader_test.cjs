@@ -6,7 +6,7 @@ const source=fs.readFileSync(path.join(__dirname,'../mini apps/Event Guest Manag
 const script=source.slice(source.indexOf('  // The same MCI silhouette'),source.indexOf("  const password = document.getElementById('ref-password');"));
 const request=source.slice(source.indexOf('  const request = async'),source.indexOf('  const addPrizeHint ='));
 const css=[...source.matchAll(/<style nonce=.*>([\s\S]*?)<\/style>/g)].map(match=>match[1]).join('\n');
-const html=`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><style>${css}</style><button id="underlying">ادامه</button><form method="post" id="login"><input name="action" value="login" type="hidden"><button type="submit">ورود</button></form><form method="post" id="logout" action="RefMonitor.php?logout=1"><input name="action" value="logout" type="hidden"><button type="submit">خروج</button></form><dialog id="confirmation"><button>تأیید</button></dialog><script>(()=>{${script}const csrf='test',activePeriod='001',activeGame={id:'1234567890abcdef'};${request}window.testRequest=request;window.testTransition=()=>withLoading(async()=>{});})();</script></html>`;
+const html=`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><style>${css}</style><button id="underlying">ادامه</button><form method="post" id="login"><input name="action" value="login" type="hidden"><button type="submit">ورود</button></form><form method="post" id="logout" action="RefMonitor.php?logout=1"><input name="action" value="logout" type="hidden"><button type="submit">خروج</button></form><dialog id="confirmation"><button>تأیید</button></dialog><script>(()=>{${script}let csrf='test';const activePeriod='001',activeGame={id:'1234567890abcdef'};${request}window.testRequest=request;window.testTransition=()=>withLoading(async()=>{});})();</script></html>`;
 (async()=>{
  const browser=await chromium.launch({channel:'msedge',headless:true});
  try {
@@ -15,7 +15,7 @@ const html=`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><styl
   await page.route('http://loader.test/**',async route=>{
    if(route.request().method()!=='POST')return route.fulfill({contentType:'text/html;charset=utf-8',body:html});
    requested=true;lastPostUrl=route.request().url();
-   if(mode==='login')return route.fulfill({contentType:'text/html',body:'<p class="login-hint" role="alert">نام کاربری یا رمز عبور معتبر نیست.</p>'});
+   if(mode==='login')return route.fulfill({contentType:'text/html;charset=utf-8',body:'<p class="login-hint" role="alert">نام کاربری یا رمز عبور معتبر نیست.</p>'});
    if(mode==='slow')await new Promise(resolve=>setTimeout(resolve,2600));
    if(mode==='network')return route.abort();
    if(mode==='invalid')return route.fulfill({contentType:'text/html',body:'<!DOCTYPE html><h1>Error</h1>'});
@@ -52,13 +52,15 @@ const html=`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><styl
   const reduced=await page.evaluate(async()=>{const started=performance.now();await testTransition();return performance.now()-started;});
   assert.ok(reduced>=180&&reduced<1000);
   mode='login';requested=false;
-  await page.locator('#login button').click();await page.waitForFunction(()=>document.querySelector('#ref-loader').classList.contains('failed'));
-  assert.equal(requested,true);assert.match(await page.locator('.ref-loader-message').textContent(),/نام کاربری/);
-  assert.equal(lastPostUrl,'http://loader.test/RefMonitor.php','Login must post to RefMonitor, not the hidden action field');
-  await page.locator('[data-loader-close]').click();
-  await page.locator('#logout button').click();await page.waitForFunction(()=>document.querySelector('#ref-loader').classList.contains('failed'));
-  assert.equal(lastPostUrl,'http://loader.test/RefMonitor.php?logout=1','Logout must use the action attribute rather than the hidden field');
-  await page.locator('[data-loader-close]').click();
+  await page.locator('#login button').click();
+  await page.waitForSelector('.login-hint');
+  assert.equal(requested,true);assert.match(await page.locator('.login-hint').textContent(),/نام کاربری/);
+  assert.equal(lastPostUrl,'http://loader.test/RefMonitor.php','Login must use browser POST navigation');
+  await page.goto('http://loader.test/RefMonitor.php');
+  await page.waitForFunction(()=>!document.querySelector('#ref-loader').open);
+  await page.locator('#logout button').click();
+  await page.waitForURL('http://loader.test/RefMonitor.php?logout=1');
+  assert.equal(lastPostUrl,'http://loader.test/RefMonitor.php?logout=1','Logout must use native form action');
   assert.equal(errors.length,0,errors.join('\n'));
   console.log('MCI boot/fast/slow loaders, immediate fetch, complete animation, JSON/network/403 failures, recovery, silent polling, confirmation stacking and reduced motion passed.');
  }finally{await browser.close();}

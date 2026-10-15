@@ -29,7 +29,7 @@ function egmGamesState(array $context): array
             $maxPlayers = 20;
         }
         $genderMode = (string)($game['gender_mode'] ?? 'normal');
-        $games[] = ['id' => $game['id'], 'name' => $name, 'has_levels' => (bool)($game['has_levels'] ?? ($levels !== [])), 'gender_mode' => in_array($genderMode, ['normal', 'separated'], true) ? $genderMode : 'normal', 'auto_room_manager' => (bool)($game['auto_room_manager'] ?? false), 'require_cover_color' => (bool)($game['require_cover_color'] ?? false), 'no_score_needed' => (bool)($game['no_score_needed'] ?? false), 'rooms' => egmGamesNormalizeRooms((array)($game['rooms'] ?? [])), 'levels' => $levels, 'min_players' => $minPlayers, 'max_players' => $maxPlayers];
+        $games[] = ['id' => $game['id'], 'name' => $name, 'has_levels' => (bool)($game['has_levels'] ?? ($levels !== [])), 'gender_mode' => in_array($genderMode, ['normal', 'separated'], true) ? $genderMode : 'normal', 'auto_room_manager' => (bool)($game['auto_room_manager'] ?? false), 'require_cover_color' => (bool)($game['require_cover_color'] ?? false), 'no_score_needed' => (bool)($game['no_score_needed'] ?? false), 'rooms' => egmGamesNormalizeRooms((array)($game['rooms'] ?? [])), 'levels' => $levels, 'min_players' => $minPlayers, 'max_players' => $maxPlayers, 'score_count' => max(1, min(20, (int)($game['score_count'] ?? 1)))];
     }
     $enabled = [];
     foreach ((array)($stored['enabled'] ?? []) as $period => $ids) {
@@ -46,8 +46,8 @@ function egmGamesNormalizeRooms(array $stored): array
         if (!is_array($room) || !preg_match('/^[a-f0-9]{16}$/D', (string)($room['id'] ?? ''))) continue;
         $name = trim((string)($room['name'] ?? ''));
         $gender = (string)($room['gender'] ?? 'both');
-        if ($name === '' || !in_array($gender, ['male', 'female', 'both'], true)) continue;
-        $rooms[] = ['id' => $room['id'], 'name' => $name, 'gender' => $gender];
+        if ($name === '' || !in_array($gender, ['male', 'female', 'both', 'priority_male', 'priority_female'], true)) continue;
+        $rooms[] = ['id' => $room['id'], 'name' => $name, 'gender' => $gender, 'enabled' => ($room['enabled'] ?? true) !== false];
     }
     return $rooms;
 }
@@ -106,7 +106,7 @@ function egmGamesLevelHasScores(array $context, array $state, string $gameId, st
         $rows = $context['pdo']->query("SELECT `payload` FROM `{$table}` WHERE `user_id` IS NULL")->fetchAll(PDO::FETCH_COLUMN);
         foreach ($rows as $json) {
             $payload = json_decode((string)$json, true);
-            if (is_array($payload) && ($payload['type'] ?? '') === 'team' && array_key_exists($levelId, (array)($payload['scores'] ?? []))) return true;
+            if (is_array($payload) && ($payload['type'] ?? '') === 'team' && (array_key_exists($levelId, (array)($payload['scores'] ?? [])) || !empty($payload['score_attempts'][$levelId]))) return true;
         }
     }
     return false;
@@ -177,7 +177,7 @@ function egmGamesHasAnyScores(array $context, array $state, string $gameId): boo
         if (!egmInstanceTableExists($context['pdo'], $table)) continue;
         foreach ($context['pdo']->query("SELECT `payload` FROM `{$table}` WHERE `user_id` IS NULL")->fetchAll(PDO::FETCH_COLUMN) as $json) {
             $payload = json_decode((string)$json, true);
-            if (is_array($payload) && ($payload['type'] ?? '') === 'team' && !empty($payload['scores'])) return true;
+            if (is_array($payload) && ($payload['type'] ?? '') === 'team' && (!empty($payload['scores']) || !empty($payload['score_attempts']))) return true;
         }
     }
     return false;
@@ -214,8 +214,10 @@ function egmGamesRoomInUse(array $context, array $state, string $gameId, string 
 
 function egmGamesHasActiveTeams(array $context, array $state, string $gameId): bool
 {
+    require_once __DIR__.'/egm-game-lifecycle.php';
+    $endedPeriods=egmGamesEndedPeriodCodes($context);
     foreach ($state['enabled'] as $periodCode => $ids) {
-        if (!in_array($gameId, $ids, true)) continue;
+        if (isset($endedPeriods[(string)$periodCode]) || !in_array($gameId, $ids, true)) continue;
         $table = egmGamesTableName((string)$context['code'], (string)$periodCode, $gameId);
         if (!egmInstanceTableExists($context['pdo'], $table)) continue;
         foreach ($context['pdo']->query("SELECT `payload` FROM `{$table}` WHERE `user_id` IS NULL")->fetchAll(PDO::FETCH_COLUMN) as $json) {
@@ -238,13 +240,15 @@ function egmGamesAssertSeparatedTeams(array $context, array $state, string $game
 {
     $usersTable = egmInstanceTableNames((string)$context['code'])['users'];
     $lookup = $context['pdo']->prepare("SELECT `gender` FROM `{$usersTable}` WHERE `id` = :id LIMIT 1");
+    require_once __DIR__.'/egm-game-lifecycle.php';
+    $endedPeriods=egmGamesEndedPeriodCodes($context);
     foreach ($state['enabled'] as $periodCode => $ids) {
-        if (!in_array($gameId, $ids, true)) continue;
+        if (isset($endedPeriods[(string)$periodCode]) || !in_array($gameId, $ids, true)) continue;
         $table = egmGamesTableName((string)$context['code'], (string)$periodCode, $gameId);
         if (!egmInstanceTableExists($context['pdo'], $table)) continue;
         foreach ($context['pdo']->query("SELECT `payload` FROM `{$table}` WHERE `user_id` IS NULL")->fetchAll(PDO::FETCH_COLUMN) as $json) {
             $team = json_decode((string)$json, true);
-            if (!is_array($team) || ($team['type'] ?? '') !== 'team') continue;
+            if (!is_array($team) || ($team['type'] ?? '') !== 'team' || empty($team['started_at']) || !empty($team['ended_at'])) continue;
             $teamGender = '';
             foreach ((array)($team['members'] ?? []) as $member) {
                 $memberId = (int)($member['id'] ?? 0);
@@ -293,11 +297,6 @@ function egmGamesSaveGenderMode(array $context, string $gameId, string $mode): v
                 if ($game['auto_room_manager'] && egmGamesHasActiveTeams($context, $state, $gameId)) {
                     throw new InvalidArgumentException('نوع جنسیتی بازی هنگام فعالیت تیم‌ها قابل تغییر نیست.');
                 }
-                foreach (egmGamesPlayableLevels($game) as $level) {
-                    foreach ($level['rooms'] as $room) {
-                        if ($room['gender'] === 'both') throw new InvalidArgumentException('ابتدا همهٔ اتاق‌های این بازی را مرد یا زن تعیین کنید.');
-                    }
-                }
                 egmGamesAssertSeparatedTeams($context, $state, $gameId);
             }
             $game['gender_mode'] = $mode;
@@ -316,9 +315,6 @@ function egmGamesSaveAutoMode(array $context, string $gameId, bool $enabled): vo
         foreach ($state['games'] as &$game) {
             if ($game['id'] !== $gameId) continue;
             if ($game['auto_room_manager'] === $enabled) return;
-            if (!$enabled && egmGamesHasActiveTeams($context, $state, $gameId)) {
-                throw new InvalidArgumentException('تا زمانی که تیمی در این بازی فعال است، مدیریت خودکار اتاق‌ها قابل خاموش‌کردن نیست.');
-            }
             $playableLevels = egmGamesPlayableLevels($game);
             if ($enabled && $playableLevels === []) throw new InvalidArgumentException('ابتدا مراحل این بازی را تعریف کنید.');
             if ($enabled) foreach ($playableLevels as $level) {
@@ -342,6 +338,21 @@ function egmGamesSaveAutoMode(array $context, string $gameId, bool $enabled): vo
             }
             $game['auto_room_manager'] = $enabled;
             egmGamesWrite($context, $state);
+            if (!$enabled) {
+                require_once __DIR__ . '/egm-refmonitor-teams.php';
+                foreach ($state['enabled'] as $periodCode => $ids) {
+                    if (!in_array($gameId, $ids, true)) continue;
+                    $table = egmGamesTableName((string)$context['code'], (string)$periodCode, $gameId);
+                    if (!egmInstanceTableExists($context['pdo'], $table)) continue;
+                    foreach ($context['pdo']->query("SELECT id,payload FROM `{$table}` WHERE user_id IS NULL")->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                        $team = json_decode((string)$row['payload'], true);
+                        if (!is_array($team) || ($team['type'] ?? '') !== 'team' || !empty($team['ended_at']) || empty($team['room_assignment'])) continue;
+                        $team['room_wait_level_id'] = $team['room_assignment']['level_id'];
+                        unset($team['room_assignment'], $team['queue_since']);
+                        egmRefMonitorWriteTeam($context['pdo'], $table, (int)$row['id'], $team);
+                    }
+                }
+            }
             if ($enabled) {
                 require_once __DIR__ . '/egm-refmonitor-teams.php';
                 foreach ($state['enabled'] as $periodCode => $ids) {
@@ -381,8 +392,6 @@ function egmGamesSaveLevel(array $context, string $gameId, string $levelId, stri
             $found = true;
             if (!$game['has_levels']) throw new InvalidArgumentException('ابتدا امتیازدهی مرحله‌ای را برای این بازی فعال کنید.');
             if ($levelId === '') {
-                if ($game['auto_room_manager']) throw new InvalidArgumentException('ابتدا مدیریت خودکار اتاق‌ها را خاموش کنید.');
-                if (egmGamesHasAnyScores($context, $state, $gameId)) throw new InvalidArgumentException('پس از ثبت اولین امتیاز، افزودن مرحلهٔ جدید ممکن نیست.');
                 $game['levels'][] = ['id' => bin2hex(random_bytes(8)), 'name' => $name, 'rooms' => []];
             } else {
                 $levelFound = false;
@@ -406,14 +415,11 @@ function egmGamesSaveRoom(array $context, string $gameId, string $levelId, strin
     if ($name === '' || (function_exists('mb_strlen') ? mb_strlen($name, 'UTF-8') : strlen($name)) > 100) {
         throw new InvalidArgumentException('نام اتاق باید بین ۱ تا ۱۰۰ نویسه باشد.');
     }
-    if (!in_array($gender, ['male', 'female', 'both'], true)) throw new InvalidArgumentException('گروه اتاق نامعتبر است.');
+    if (!in_array($gender, ['male', 'female', 'both', 'priority_male', 'priority_female'], true)) throw new InvalidArgumentException('گروه اتاق نامعتبر است.');
     egmGamesWithLock($context, $gameId, static function () use ($context, $gameId, $levelId, $roomId, $name, $gender): void {
         $state = egmGamesState($context);
         foreach ($state['games'] as &$game) {
             if ($game['id'] !== $gameId) continue;
-            if ($game['gender_mode'] === 'separated' && $gender === 'both') {
-                throw new InvalidArgumentException('اتاق بازی تفکیک‌شده باید مرد یا زن باشد.');
-            }
             if ($game['has_levels']) {
                 foreach ($game['levels'] as &$level) {
                     if ($level['id'] === $levelId) { $rooms = &$level['rooms']; break; }
@@ -423,16 +429,11 @@ function egmGamesSaveRoom(array $context, string $gameId, string $levelId, strin
                 $rooms = &$game['rooms'];
             }
             if (!isset($rooms)) throw new InvalidArgumentException('مرحله پیدا نشد.');
-            if ($roomId !== '' && egmGamesRoomInUse($context, $state, $gameId, $roomId)) {
-                throw new InvalidArgumentException('این اتاق اکنون در اختیار یک تیم است.');
-            }
             $found = $roomId === '';
             foreach ($rooms as $room) {
                 if ($room['id'] === $roomId) {
                     $found = true;
-                    if ($game['auto_room_manager'] && $room['gender'] !== $gender && egmGamesHasActiveTeams($context, $state, $gameId)) {
-                        throw new InvalidArgumentException('گروه اتاق هنگام فعالیت تیم‌ها قابل تغییر نیست.');
-                    }
+                    if ($room['gender'] !== $gender && egmGamesRoomInUse($context, $state, $gameId, $roomId)) throw new InvalidArgumentException('برای تغییر گروه این اتاق، ابتدا آن را غیرفعال کنید تا تیم جابه‌جا شود.');
                 }
                 if ($room['id'] !== $roomId && $room['name'] === $name) throw new InvalidArgumentException('نام این اتاق در این مرحله تکراری است.');
             }
@@ -455,6 +456,58 @@ function egmGamesSaveRoom(array $context, string $gameId, string $levelId, strin
         }
         unset($game);
         throw new InvalidArgumentException('مرحله پیدا نشد.');
+    });
+}
+
+/** Toggle a room under the same lock used by scoring and room dispatch. */
+function egmGamesSetRoomEnabled(array $context, string $gameId, string $levelId, string $roomId, bool $enabled, bool $confirmed, string $actor): array
+{
+    require_once __DIR__ . '/egm-refmonitor-teams.php';
+    return egmGamesWithLock($context, $gameId, static function () use ($context, $gameId, $levelId, $roomId, $enabled, $confirmed, $actor): array {
+        $state = egmGamesState($context);
+        foreach ($state['games'] as &$game) {
+            if ($game['id'] !== $gameId) continue;
+            $rooms = null;
+            if ($game['has_levels']) {
+                foreach ($game['levels'] as &$level) if ($level['id'] === $levelId) { $rooms = &$level['rooms']; break; }
+                unset($level);
+            } elseif ($levelId === EGM_GAME_SINGLE_SCORE_ID) $rooms = &$game['rooms'];
+            if (!is_array($rooms)) throw new InvalidArgumentException('مرحله پیدا نشد.');
+            $index = array_search($roomId, array_column($rooms, 'id'), true);
+            if ($index === false) throw new InvalidArgumentException('اتاق پیدا نشد.');
+            $tables = []; $occupied = [];
+            foreach ($state['enabled'] as $period => $ids) {
+                if (!in_array($gameId, $ids, true)) continue;
+                $table = egmGamesTableName((string)$context['code'], (string)$period, $gameId);
+                if (!egmInstanceTableExists($context['pdo'], $table)) continue;
+                $tables[] = $table;
+                if ($enabled) continue;
+                foreach ($context['pdo']->query("SELECT id,payload FROM `{$table}` WHERE user_id IS NULL")->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $payload = json_decode((string)$row['payload'], true);
+                    if (!is_array($payload) || ($payload['type'] ?? '') !== 'team' || !empty($payload['ended_at']) || ($payload['room_assignment']['room_id'] ?? '') !== $roomId) continue;
+                    $occupied[] = ['table'=>$table, 'id'=>(int)$row['id'], 'period'=>(string)$period, 'name'=>$payload['name'] ?? '', 'payload'=>$payload];
+                }
+            }
+            if ($occupied && !$confirmed) return ['requires_confirmation'=>true, 'teams'=>array_map(static fn($team)=>['id'=>$team['id'], 'period'=>$team['period'], 'name'=>$team['name']], $occupied)];
+            $db = $context['pdo']; $db->beginTransaction();
+            try {
+                $rooms[$index]['enabled'] = $enabled;
+                unset($rooms);
+                foreach ($occupied as $team) {
+                    $payload = $team['payload'];
+                    $payload['room_changes'][] = ['reason'=>'room_disabled', 'assignment'=>$payload['room_assignment'], 'by'=>$actor, 'at'=>date('c')];
+                    $payload['room_wait_level_id'] = $payload['room_assignment']['level_id'];
+                    unset($payload['room_assignment']);
+                    $payload['queue_since'] = egmRefMonitorQueueTime();
+                    egmRefMonitorWriteTeam($db, $team['table'], $team['id'], $payload);
+                }
+                egmGamesWrite($context, $state);
+                foreach ($tables as $table) egmRefMonitorDispatchRooms($db, (string)$context['code'], $table, $game);
+                $db->commit();
+            } catch (Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
+            return ['requires_confirmation'=>false, 'enabled'=>$enabled, 'moved_teams'=>count($occupied)];
+        }
+        throw new InvalidArgumentException('بازی پیدا نشد.');
     });
 }
 
@@ -521,22 +574,38 @@ function egmGamesSaveCoverColorRequirement(array $context, string $gameId, bool 
     });
 }
 
-function egmGamesSaveLimits(array $context, string $gameId, $minValue, $maxValue): void
+function egmGamesSaveLimits(array $context, string $gameId, $minValue, $maxValue, $scoreCountValue = null): void
 {
     if (!is_scalar($minValue) || !is_scalar($maxValue)
         || !ctype_digit((string)$minValue) || !ctype_digit((string)$maxValue)) {
         throw new InvalidArgumentException('حداقل و حداکثر اعضای تیم باید عدد صحیح باشند.');
     }
+    if ($scoreCountValue !== null && (!is_scalar($scoreCountValue) || !ctype_digit((string)$scoreCountValue) || (int)$scoreCountValue < 1 || (int)$scoreCountValue > 20)) throw new InvalidArgumentException('تعداد امتیاز باید بین ۱ و ۲۰ باشد.');
     $min = (int)$minValue;
     $max = (int)$maxValue;
     if ($min < 1 || $max < $min || $max > EGM_GAME_TEAM_MAX) {
         throw new InvalidArgumentException('حداقل باید ۱ یا بیشتر و حداکثر بین حداقل و ۱۰۰ نفر باشد.');
     }
-    egmGamesWithLock($context, $gameId, static function () use ($context, $gameId, $min, $max): void {
+    egmGamesWithLock($context, $gameId, static function () use ($context, $gameId, $min, $max, $scoreCountValue): void {
         $state = egmGamesState($context);
         $found = false;
         foreach ($state['games'] as &$game) {
             if ($game['id'] !== $gameId) continue;
+            if ($scoreCountValue !== null && (int)$scoreCountValue !== $game['score_count']) {
+                // Preserve legacy started teams before changing the default for new starts.
+                foreach (array_keys($state['enabled']) as $periodCode) {
+                    $table = egmGamesTableName((string)$context['code'], (string)$periodCode, $gameId);
+                    if (!egmInstanceTableExists($context['pdo'], $table)) continue;
+                    $update = $context['pdo']->prepare("UPDATE `{$table}` SET payload=? WHERE id=? AND user_id IS NULL");
+                    foreach ($context['pdo']->query("SELECT id,payload FROM `{$table}` WHERE user_id IS NULL")->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                        $payload = json_decode((string)$row['payload'], true);
+                        if (!is_array($payload) || ($payload['type'] ?? '') !== 'team' || empty($payload['started_at']) || isset($payload['score_count'])) continue;
+                        $payload['score_count'] = $game['score_count'];
+                        $update->execute([json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), $row['id']]);
+                    }
+                }
+                $game['score_count'] = (int)$scoreCountValue;
+            }
             $game['min_players'] = $min;
             $game['max_players'] = $max;
             $found = true;
@@ -568,6 +637,45 @@ function egmGamesDeleteLevel(array $context, string $gameId, string $levelId): v
     });
 }
 
+/** Correct existing rounds only; never advance a team or release its room. */
+function egmGamesCorrectTeamScores(array $context, string $period, string $gameId, int $teamId, array $changes, string $actor): array
+{
+    require_once __DIR__ . '/egm-refmonitor-teams.php';
+    if ($changes === [] || count($changes) > 400) throw new InvalidArgumentException('امتیازی برای اصلاح انتخاب نشده است.');
+    $table = egmRefMonitorGameTable($context['pdo'], (string)$context['code'], $period, $gameId);
+    return egmGamesWithLock($context, $gameId, static function () use ($context, $table, $teamId, $changes, $actor): array {
+        $team = egmRefMonitorReadTeam($context['pdo'], $table, $teamId);
+        $payload = $team['payload'];
+        $seen = [];
+        foreach ($changes as $change) {
+            if (!is_array($change)) throw new InvalidArgumentException('درخواست اصلاح نامعتبر است.');
+            $level = (string)($change['level_id'] ?? '');
+            $index = $change['index'] ?? null;
+            $value = $change['score'] ?? null;
+            $expected = $change['expected_score'] ?? null;
+            if (!is_scalar($value) || preg_match('/^\d{1,6}(?:\.\d{1,2})?$/D', (string)$value) !== 1) throw new InvalidArgumentException('امتیاز باید عددی نامنفی با حداکثر دو رقم اعشار باشد.');
+            if (!is_int($index) || $index < 0 || !is_numeric($value) || !is_finite((float)$value) || !is_numeric($expected) || !is_finite((float)$expected) || isset($seen[$level . ':' . $index])) throw new InvalidArgumentException('امتیاز نامعتبر است.');
+            $seen[$level . ':' . $index] = true;
+            $complete = $payload['scores'][$level] ?? null;
+            $attempts = $payload['score_attempts'][$level] ?? ($complete['attempts'] ?? (is_array($complete) ? [$complete] : []));
+            if (!is_array($attempts) || !isset($attempts[$index]) || !is_array($attempts[$index]) || !empty($attempts[$index]['completion_only']) || !isset($attempts[$index]['score'])) throw new InvalidArgumentException('این نوبت امتیاز ثبت‌شده ندارد.');
+            $previous = (float)$attempts[$index]['score'];
+            if ($previous !== (float)$expected) throw new InvalidArgumentException('امتیاز توسط مدیر دیگری تغییر کرده است. جزئیات تیم را دوباره باز کنید.');
+            $next = round((float)$value, 2);
+            if ($previous === $next) continue;
+            $attempts[$index]['score'] = $next;
+            $payload['score_attempts'][$level] = $attempts;
+            if (is_array($complete)) {
+                $payload['scores'][$level]['score'] = round(array_sum(array_column($attempts, 'score')), 2);
+                $payload['scores'][$level]['attempts'] = $attempts;
+            }
+            $payload['score_corrections'][] = ['level_id'=>$level, 'round'=>$index + 1, 'before'=>$previous, 'after'=>$next, 'by'=>$actor, 'at'=>date('c')];
+        }
+        egmRefMonitorWriteTeam($context['pdo'], $table, $teamId, $payload);
+        return egmRefMonitorTeamView($team['row'], $payload);
+    });
+}
+
 function egmGamesJson(array $data, int $status = 200): never
 {
     if (isset($GLOBALS['egmGamesResponseBufferLevel'])) {
@@ -585,7 +693,7 @@ function egmGamesRequestInput(string $method): array
     if ($method !== 'POST') return $_GET;
     if (isset($_POST['action'])) {
         $input = $_POST;
-        foreach (['enabled', 'required', 'has_levels'] as $field) {
+        foreach (['enabled', 'required', 'has_levels', 'confirmed'] as $field) {
             if (!array_key_exists($field, $input)) continue;
             if (!in_array($input[$field], ['1', '0'], true)) throw new InvalidArgumentException('تنظیم بازی نامعتبر است.');
             $input[$field] = $input[$field] === '1';
@@ -608,7 +716,16 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
         $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
         $input = egmGamesRequestInput($method);
         $action = (string)($input['action'] ?? 'list');
+        require_once __DIR__.'/egm-game-lifecycle.php';
+        try {egmGamesCleanupExpiredPeriods($context);}
+        catch(Throwable $error){error_log('EGM expired-game cleanup deferred: '.$error->getMessage());}
         $state = egmGamesState($context);
+        if ($method === 'GET' && $action === 'monitor_snapshot') {
+            if (!$canPeriods) egmGamesJson(['status'=>'error', 'message'=>'Access denied.'], 403);
+            require_once __DIR__ . '/egm-game-monitor.php';
+            $period = egmGamesValidatePeriod($context, trim((string)($input['period_code'] ?? '')));
+            egmGamesJson(egmGameMonitorSnapshot($context, $period));
+        }
         if ($method === 'GET' && $action === 'list') {
             if (!$canManage && !$canPeriods) egmGamesJson(['status' => 'error', 'message' => 'Access denied.'], 403);
             $periodCode = trim((string)($input['period_code'] ?? ''));
@@ -621,6 +738,7 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
         if ($method !== 'POST') egmGamesJson(['status' => 'error', 'message' => 'Unsupported request.'], 405);
         if (!egmSecurityIsValidCsrfToken(trim((string)($input['csrf'] ?? '')))) egmGamesJson(['status' => 'error', 'message' => 'Invalid security token.'], 403);
         if (in_array($action, ['save', 'delete', 'save_level', 'delete_level', 'save_room', 'delete_room', 'save_limits', 'save_mode', 'save_gender_mode', 'save_auto_mode', 'save_no_score_mode', 'save_cover_color_requirement', 'end_team'], true) && !$canManage) egmGamesJson(['status' => 'error', 'message' => 'Access denied.'], 403);
+        if (in_array($action, ['correct_team_scores', 'set_room_enabled', 'update_team_members', 'search_team_members'], true) && !$canManage) egmGamesJson(['status' => 'error', 'message' => 'دسترسی مدیریت بازی ندارید.'], 403);
         if ($action === 'set_enabled' && !$canPeriods) egmGamesJson(['status' => 'error', 'message' => 'Access denied.'], 403);
         if ($action === 'save') {
             $name = trim((string)($input['name'] ?? ''));
@@ -658,7 +776,7 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
             egmGamesSaveCoverColorRequirement($context, trim((string)($input['game_id'] ?? '')), $input['required']);
             $state = egmGamesState($context);
         } elseif ($action === 'save_limits') {
-            egmGamesSaveLimits($context, trim((string)($input['game_id'] ?? '')), $input['min_players'] ?? null, $input['max_players'] ?? null);
+            egmGamesSaveLimits($context, trim((string)($input['game_id'] ?? '')), $input['min_players'] ?? null, $input['max_players'] ?? null, $input['score_count'] ?? null);
             $state = egmGamesState($context);
         } elseif ($action === 'save_level') {
             egmGamesSaveLevel($context, trim((string)($input['game_id'] ?? '')), trim((string)($input['level_id'] ?? '')), (string)($input['name'] ?? ''));
@@ -669,6 +787,10 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
         } elseif ($action === 'save_room') {
             egmGamesSaveRoom($context, trim((string)($input['game_id'] ?? '')), trim((string)($input['level_id'] ?? '')), trim((string)($input['room_id'] ?? '')), (string)($input['name'] ?? ''), (string)($input['gender'] ?? ''));
             $state = egmGamesState($context);
+        } elseif ($action === 'set_room_enabled') {
+            if (!is_bool($input['enabled'] ?? null) || (isset($input['confirmed']) && !is_bool($input['confirmed']))) throw new InvalidArgumentException('وضعیت اتاق نامعتبر است.');
+            $result = egmGamesSetRoomEnabled($context, trim((string)($input['game_id'] ?? '')), trim((string)($input['level_id'] ?? '')), trim((string)($input['room_id'] ?? '')), $input['enabled'], $input['confirmed'] ?? false, $actorCode);
+            egmGamesJson(['status'=>'ok'] + $result);
         } elseif ($action === 'delete_room') {
             egmGamesDeleteRoom($context, trim((string)($input['game_id'] ?? '')), trim((string)($input['level_id'] ?? '')), trim((string)($input['room_id'] ?? '')));
             $state = egmGamesState($context);
@@ -713,6 +835,23 @@ function handleEgmGamesRequest(string $missionDir, bool $canManage, bool $canPer
             $teamId = (int)($input['team_id'] ?? 0);
             $team = egmRefMonitorEndTeam($context['pdo'], (string)$context['code'], $period, $id, $teamId, $actorCode);
             egmGamesJson(['status' => 'ok', 'team' => $team]);
+        } elseif ($action === 'correct_team_scores') {
+            $period = egmGamesValidatePeriod($context, trim((string)($input['period_code'] ?? '')));
+            $changes = $input['changes'] ?? [];
+            if (is_string($changes)) $changes = json_decode($changes, true);
+            if (!is_array($changes)) throw new InvalidArgumentException('درخواست اصلاح نامعتبر است.');
+            $team = egmGamesCorrectTeamScores($context, $period, trim((string)($input['game_id'] ?? '')), (int)($input['team_id'] ?? 0), $changes, $actorCode);
+            egmGamesJson(['status'=>'ok', 'team'=>$team]);
+        } elseif ($action === 'update_team_members' || $action === 'search_team_members') {
+            require_once __DIR__ . '/egm-refmonitor-teams.php';
+            $period = egmGamesValidatePeriod($context, trim((string)($input['period_code'] ?? '')));
+            $id = trim((string)($input['game_id'] ?? ''));
+            if ($action === 'search_team_members') egmGamesJson(['status'=>'ok', 'members'=>egmRefMonitorSearchInvitees($context['pdo'], (string)$context['code'], $period, (string)($input['query'] ?? ''), $id)]);
+            $members = json_decode((string)($input['member_ids'] ?? ''), true);
+            $expected = json_decode((string)($input['expected_members'] ?? ''), true);
+            if (!is_array($members) || !is_array($expected)) throw new InvalidArgumentException('فهرست اعضا نامعتبر است.');
+            $team = egmRefMonitorUpdateMembers($context['pdo'], (string)$context['code'], $period, $id, (int)($input['team_id'] ?? 0), $members, $actorCode, $expected);
+            egmGamesJson(['status'=>'ok', 'team'=>$team]);
         } elseif ($action === 'list_teams') {
             if (!$canManage && !$canPeriods) egmGamesJson(['status' => 'error', 'message' => 'Access denied.'], 403);
             require_once __DIR__ . '/egm-refmonitor-teams.php';

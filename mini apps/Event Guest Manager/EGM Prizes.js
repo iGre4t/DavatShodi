@@ -155,6 +155,7 @@
               last: Number.isFinite(last) ? last : quantity,
               value,
               rank: Number.parseInt(item?.rank ?? 0, 10) || 0,
+              chance: ["normal","more","priority"].includes(item?.chance) ? item.chance : "normal",
               isFake: Boolean(item?.isFake)
             };
           })
@@ -263,7 +264,7 @@
       return;
     }
     if (!prizes.length) {
-      listEl.innerHTML = '<tr><td colspan="7" class="muted">هنوز جایزه‌ای اضافه نشده است.</td></tr>';
+      listEl.innerHTML = '<tr><td colspan="8" class="muted">هنوز جایزه‌ای اضافه نشده است.</td></tr>';
       return;
     }
     listEl.innerHTML = prizes
@@ -274,11 +275,17 @@
         const last = Number.isFinite(prize.last) && prize.last >= 0 ? prize.last : quantity;
         const value = parsePrizeValue(prize.value, 0);
         return `
-          <tr data-index="${index}" data-prize-name="${escapeHtml(prize.name)}">
+          <tr data-index="${index}" data-prize-id="${escapeHtml(prize.id)}">
             <td>
               <label class="field standard-width" style="margin:0;">
                 <input type="text" data-field="name" value="${escapeHtml(prize.name)}" />
               </label>
+              <small class="egm-prize-code">کد جایزه: <bdi dir="ltr">${escapeHtml(prize.id)}</bdi></small>
+              <div class="egm-prize-order" aria-label="ترتیب جایزه">
+                <span>${(index + 1).toLocaleString('fa-IR')}</span>
+                <button type="button" class="btn" data-action="move-up" title="بالاتر" aria-label="بالاتر بردن جایزه" ${index === 0 ? 'disabled' : ''}>↑</button>
+                <button type="button" class="btn" data-action="move-down" title="پایین‌تر" aria-label="پایین‌تر بردن جایزه" ${index === prizes.length - 1 ? 'disabled' : ''}>↓</button>
+              </div>
             </td>
             <td>
               <span class="egm-status-pill">
@@ -300,6 +307,9 @@
             <td><label class="field" style="margin:0"><select data-field="rank" aria-label="رتبه جایزه">
               <option value="0" ${!prize.rank ? "selected" : ""}>بدون رتبه</option>
               ${[1,2,3,4].map(rank => `<option value="${rank}" ${Number(prize.rank) === rank ? "selected" : ""}>${["اول", "دوم", "سوم", "چهارم"][rank - 1]}</option>`).join("")}
+            </select></label></td>
+            <td><label class="field" style="margin:0"><select data-field="chance" aria-label="شانس انتخاب جایزه">
+              ${[["normal","عادی"],["more","شانس بیشتر"],["priority","اولویت ۶۰٪"]].map(([key,label])=>`<option value="${key}" ${(prize.chance || "normal") === key ? "selected" : ""}>${label}</option>`).join("")}
             </select></label></td>
             <td>
               <div class="egm-count-control">
@@ -346,6 +356,7 @@
     renderPrizes(prizes, listEl);
     renderFakeItems(fakeItems, fakeListEl);
     const editState = { index: null };
+    let reordering = false;
 
     function parseQuantity(rawValue, fallback = 0) {
       const parsed = Number.parseInt(rawValue ?? "", 10);
@@ -365,7 +376,8 @@
         name: String(rowNameInput?.value ?? "").trim(),
         quantity: parseQuantity(rowQuantityInput?.value, 0),
         value: parseValue(rowValueInput?.value, 0),
-        rank: Number.parseInt(rowRankInput?.value ?? "0", 10) || 0
+        rank: Number.parseInt(rowRankInput?.value ?? "0", 10) || 0,
+        chance: row?.querySelector('[data-field="chance"]')?.value || "normal"
       };
     }
 
@@ -382,6 +394,7 @@
         draft.name !== originalName ||
         draft.quantity !== originalQuantity ||
         draft.rank !== (Number(original?.rank) || 0) ||
+        draft.chance !== (original?.chance || "normal") ||
         Math.abs(draft.value - originalValue) > 0.000001
       );
     }
@@ -409,6 +422,8 @@
         if (rowQuantityInput) rowQuantityInput.disabled = isLockedRow;
         if (rowValueInput) rowValueInput.disabled = isLockedRow;
         if (rowRankInput) rowRankInput.disabled = isLockedRow;
+        const chanceInput = row.querySelector('[data-field="chance"]');
+        if (chanceInput) chanceInput.disabled = isLockedRow;
 
         if (deleteBtn) {
           deleteBtn.disabled = isLockedRow || (isActiveRow && dirty);
@@ -425,6 +440,9 @@
         countButtons.forEach(btn => {
           btn.disabled = isLockedRow || (isActiveRow && dirty);
           btn.classList.toggle("egm-action-disabled", btn.disabled);
+        });
+        row.querySelectorAll('[data-action="move-up"], [data-action="move-down"]').forEach(btn => {
+          btn.disabled = lockActive || reordering || (btn.dataset.action === 'move-up' ? index === 0 : index === prizes.length - 1);
         });
       });
 
@@ -453,24 +471,23 @@
         if (!Array.isArray(payload) || !payload.length) {
           return;
         }
-        const byName = new Map();
+        const byId = new Map();
         payload.forEach(item => {
-          const name = String(item?.name ?? "").trim();
-          if (!name) return;
+          const id = String(item?.id ?? "").trim();
+          if (!id) return;
           const quantity = Number.parseInt(item?.quantity ?? 0, 10);
           const last = Number.parseInt(item?.last ?? quantity, 10);
-          byName.set(name, {
+          byId.set(id, {
             quantity: Number.isFinite(quantity) ? quantity : 0,
             last: Number.isFinite(last) ? last : (Number.isFinite(quantity) ? quantity : 0)
           });
         });
         listEl.querySelectorAll("tr[data-index]").forEach(row => {
-          const nameInput = row.querySelector('[data-field="name"]');
-          const name = String(nameInput?.value ?? "").trim();
-          if (!name || !byName.has(name)) {
+          const id = String(row.dataset.prizeId || "");
+          if (!id || !byId.has(id)) {
             return;
           }
-          const status = byName.get(name);
+          const status = byId.get(id);
           const lastEl = row.querySelector(".egm-status-last");
           const qtyEl = row.querySelector(".egm-status-qty");
           if (lastEl) lastEl.textContent = String(status.last);
@@ -487,7 +504,7 @@
     delete window[EGM_PRIZE_STATUS_INTERVAL_KEY];
 
     listEl.addEventListener("input", event => {
-      const field = event.target.closest('[data-field="name"], [data-field="quantity"], [data-field="value"], [data-field="rank"]');
+      const field = event.target.closest('[data-field="name"], [data-field="quantity"], [data-field="value"], [data-field="rank"], [data-field="chance"]');
       if (!field) {
         return;
       }
@@ -507,10 +524,11 @@
       syncEditStateUI();
     });
     listEl.addEventListener("change", event => {
-      if (event.target?.matches?.('[data-field="rank"]')) event.target.dispatchEvent(new Event("input", { bubbles: true }));
+      if (event.target?.matches?.('[data-field="rank"], [data-field="chance"]')) event.target.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     listEl.addEventListener("click", async event => {
+      if (reordering || addingPrize) return;
       const button = event.target.closest("button");
       if (!button) {
         return;
@@ -521,6 +539,31 @@
         return;
       }
       const action = button.dataset.action;
+      if (action === 'move-up' || action === 'move-down') {
+        if (Number.isInteger(editState.index)) return;
+        const destination = index + (action === 'move-up' ? -1 : 1);
+        if (destination < 0 || destination >= prizes.length) return;
+        const nextPrizes = prizes.slice();
+        [nextPrizes[index], nextPrizes[destination]] = [nextPrizes[destination], nextPrizes[index]];
+        const movedId = prizes[index].id;
+        const controls = [listEl, form, fakeForm, fakeListEl].filter(Boolean).flatMap(root => [...root.querySelectorAll('input,select,button')]);
+        const disabled = controls.map(control => control.disabled);
+        reordering = true;listEl.setAttribute('aria-busy', 'true');
+        controls.forEach(control => control.disabled = true);
+        let saved = false;
+        try { saved = await savePrizes([...nextPrizes, ...fakeItems]); }
+        finally {
+          reordering = false;listEl.removeAttribute('aria-busy');
+          controls.forEach((control,i) => control.disabled = disabled[i]);
+        }
+        if (!saved) return;
+        prizes = nextPrizes;renderPrizes(prizes, listEl);syncEditStateUI();
+        showInventoryStatus('ترتیب جوایز ذخیره شد.', 'success');
+        const movedRow = [...listEl.querySelectorAll('tr[data-prize-id]')].find(row => row.dataset.prizeId === movedId);
+        const focusTarget = movedRow?.querySelector(`[data-action="${action}"]:not(:disabled)`) || movedRow?.querySelector('[data-field="name"]');
+        focusTarget?.focus();
+        return;
+      }
       if (action === "add-count" || action === "sub-count" || action === "reset-count") {
         if (Number.isInteger(editState.index) && editState.index !== index) {
           return;
@@ -596,6 +639,7 @@
           last: nextLast,
           value,
           rank: Number.parseInt(rankInput?.value ?? "0", 10) || 0,
+          chance: row.querySelector('[data-field="chance"]')?.value || "normal",
           isFake: false
         };
         if (!await savePrizes([...nextPrizes, ...fakeItems])) return;
@@ -621,16 +665,10 @@
         nameInput.focus();
         return;
       }
-      if ([...prizes, ...fakeItems].some(item => item.name.trim().toLowerCase() === name.toLowerCase())) {
-        showInventoryStatus("جایزه‌ای با این نام قبلاً ثبت شده است. نام دیگری وارد کنید.");
-        nameInput.setAttribute("aria-invalid", "true");
-        nameInput.focus();
-        return;
-      }
       const quantity = parseQuantity(quantityInput.value, 1);
       const value = parseValue(valueInput.value, 0);
       const rank = Number.parseInt(document.getElementById("egm-prize-rank")?.value ?? "0", 10) || 0;
-      const nextPrizes = [...prizes, { id: makePrizeId(), name, onWheelName: name, quantity, last: quantity, value, rank, isFake: false }];
+      const nextPrizes = [...prizes, { id: makePrizeId(), name, onWheelName: name, quantity, last: quantity, value, rank, chance: document.getElementById("egm-prize-chance")?.value || "normal", isFake: false }];
       const submitButton = form.querySelector('[type="submit"]');
       addingPrize = true;
       form.setAttribute("aria-busy", "true");
@@ -652,6 +690,7 @@
       quantityInput.value = "1";
       const rankInput = document.getElementById("egm-prize-rank");
       if (rankInput) rankInput.value = "0";
+      const chanceInput = document.getElementById("egm-prize-chance"); if (chanceInput) chanceInput.value = "normal";
       valueInput.value = "";
       syncEditStateUI();
       showInventoryStatus("جایزه ثبت شد.", "success");
@@ -1127,6 +1166,7 @@
     const save = document.getElementById("egm-competition-queue-save");
     const status = document.getElementById("egm-competition-queue-status");
     const count = document.getElementById("egm-competition-queue-count");
+    const enabled = document.getElementById('egm-competition-queue-enabled');
     if (!list || !rankSelect || !add || !save || !status) return;
     const names = {1: "اول", 2: "دوم", 3: "سوم", 4: "چهارم"};
     let queue = [];
@@ -1141,6 +1181,10 @@
       return result;
     };
     const render = () => {
+      const queueOn = !enabled || enabled.checked;
+      list.hidden = !queueOn;
+      rankSelect.disabled = !queueOn;
+      add.disabled = !queueOn;
       if (count) count.textContent = `${queue.length.toLocaleString("fa-IR")} جایزه`;
       list.replaceChildren();
       if (!queue.length) {
@@ -1169,6 +1213,7 @@
         list.append(item);
       });
     };
+    enabled?.addEventListener('change', render);
     list.addEventListener("click", event => {
       const button = event.target.closest("button[data-action]");
       if (!button) return;
@@ -1190,7 +1235,7 @@
       save.disabled = true;
       status.textContent = "در حال ذخیره...";
       try {
-        const result = await request("save_queue", {queue, version});
+        const result = await request("save_queue", {queue, version, queueEnabled: !enabled || enabled.checked});
         version = result.queueVersion;
         status.textContent = "صف ذخیره شد.";
       } catch (error) { status.textContent = error.message; }
@@ -1198,6 +1243,7 @@
     });
     request("settings_state").then(result => {
       queue = result.queueTemplate || [];
+      if (enabled) enabled.checked = result.queueEnabled !== false;
       version = result.queueVersion;
       render();
     }).catch(error => { status.textContent = error.message; });

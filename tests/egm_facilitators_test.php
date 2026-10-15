@@ -38,6 +38,21 @@ try {
     $input=['name'=>'علی رضایی','username'=>'Ref01','password'=>'001234'];
     $public=egmFacilitatorsMutate($pdo,'12345',fn($rows)=>egmFacilitatorsApplySave($rows,$input));
     $rows=egmFacilitatorsRead($pdo,'12345'); $first=$rows[0];
+    check($first['win_app_access_level']==='scan_only' && $public[0]['win_app_access_level']==='scan_only','New facilitator must default to scan only');
+    check($first['event_role']==='referee' && $public[0]['event_role']==='referee','Default event role must be referee');
+    foreach (['system_manager','head_referee','referee'] as $role) {
+        $assigned=egmFacilitatorsApplySave($rows,['name'=>'علی رضایی','username'=>'Ref01','password'=>'','event_role'=>$role],$first['id']);
+        check(egmFacilitatorsPublic($assigned)[0]['event_role']===$role,'Event role not exposed correctly');
+        check(egmFacilitatorsSessionUser($assigned,$first['id'],$first['auth_version'])['event_role']===$role,'Session has stale role');
+        $preservedRole=egmFacilitatorsApplySave($assigned,['name'=>'علی رضایی','username'=>'Ref01','password'=>'new'],$first['id']);
+        check($preservedRole[0]['event_role']===$role && $preservedRole[0]['win_app_access_level']==='scan_only','Role must survive password edits without changing Windows access');
+    }
+    invalid(fn()=>egmFacilitatorsApplySave($rows,['name'=>'علی رضایی','username'=>'Ref01','password'=>'','event_role'=>'admin'],$first['id']));
+    $withAccess=egmFacilitatorsApplySave($rows,['name'=>'علی رضایی','username'=>'Ref01','password'=>'','win_app_access_level'=>'full_access'],$first['id']);
+    check($withAccess[0]['win_app_access_level']==='full_access' && $withAccess[0]['auth_version']===$first['auth_version'],'Role edit must preserve authenticated identity');
+    $preserved=egmFacilitatorsApplySave($withAccess,['name'=>'علی رضایی','username'=>'Ref01','password'=>'new-pass'],$first['id']);
+    check($preserved[0]['win_app_access_level']==='full_access','Password-only edit must preserve Windows access');
+    invalid(fn()=>egmFacilitatorsApplySave($rows,['name'=>'علی رضایی','username'=>'Ref01','password'=>'','win_app_access_level'=>'admin'],$first['id']));
     check(count($public)===1 && !isset($public[0]['password_hash'],$public[0]['password_encrypted']), 'List exposes credentials');
     check($first['password_hash']!==$input['password'] && tcPasswordVaultDecrypt($first['password_encrypted'])==='001234', 'Encrypted reveal failed');
     check(egmFacilitatorsAuthenticateRows($rows,'ref01','001234')!==null,'Facilitator login failed');

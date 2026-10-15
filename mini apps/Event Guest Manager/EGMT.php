@@ -21,7 +21,7 @@ $tctSessionUser = requireTabPermissionFromSession('event-guest-manager', $tctIsJ
 $tctSessionUserCode = strtolower(trim((string)($tctSessionUser['code'] ?? '')));
 $tctCanAccessManageTasks = userHasPermissionId($tctSessionUser, 'event-guest-manager:manage-tasks');
 $tctManageTasksOverride = null;
-$tctHasTaskSubtabAccess = false;
+$tctHasTaskSubtabAccess = userHasPermissionId($tctSessionUser, 'event-guest-manager:export');
 if ($tctSessionUserCode !== '') {
   $tctTaskAccessPath = __DIR__ . '/tasks/task-access.json';
   if (egmDbIsFile($tctTaskAccessPath)) {
@@ -2073,6 +2073,13 @@ function tctResolveUserTaskAccessForTask(array $task, string $sessionUserCode, a
   ];
   foreach ($paneKeys as $paneKey) {
     $resolved['panes'][$paneKey] = true;
+  }
+
+  if (!userHasPermissionId($_SESSION['user'] ?? [], 'event-guest-manager:manage-tasks')
+      && userHasPermissionId($_SESSION['user'] ?? [], 'event-guest-manager:export')) {
+    $resolved['panes'] = array_fill_keys($paneKeys, false);
+    $resolved['panes']['export'] = true;
+    return $resolved;
   }
 
   $normalizedUserCode = strtolower(trim($sessionUserCode));

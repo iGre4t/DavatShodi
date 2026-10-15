@@ -441,7 +441,7 @@ function egmInviteCardNormalizeConditionalVariables($value): array
         'postallevel', 'score',
     ];
     $operators = ['equals', 'not_equals', 'contains', 'not_contains', 'empty', 'not_empty'];
-    $reserved = array_fill_keys([...$fields, 'periodtitle', 'perioddate', 'perioddate_dmy', 'perioddate_ymd', 'printedat'], true);
+    $reserved = array_fill_keys([...$fields, 'eventname', 'periodtitle', 'perioddate', 'perioddate_dmy', 'perioddate_ymd', 'printedat'], true);
     $normalized = [];
     $seen = [];
     foreach ($value as $definition) {
@@ -640,7 +640,7 @@ function egmInviteCardNormalizeConfig(array $payload): array
 function handleEgmInviteCardStore(string $projectRoot, string $missionDir, array $user, string $storageKey = 'invite_card', string $assetScope = 'invite-card'): never
 {
     $isNumberTicket = $storageKey === 'custom_number_ticket' || str_starts_with($storageKey, 'custom_number_ticket:');
-    if (!userHasPermissionId($user, 'event-guest-manager:main')) {
+    if (!userHasPermissionId($user, 'event-guest-manager:' . ($isNumberTicket ? 'custom-number-ticket' : ($storageKey === 'print_card' ? 'print-card' : 'invite-card')))) {
         denyPanelAccess(403, 'You do not have permission to access this Event Guest Manager section.', true);
     }
     try {

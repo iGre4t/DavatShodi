@@ -22,3 +22,10 @@ if (array_column(egmCompetitionEligiblePrizes($inventory, 2), 'id') !== ['a']) {
 $state = egmCompetitionStatePublic(['confirmed' => [['prizeId' => 'a']], 'pending' => null], $queue, $inventory);
 if ($state['nextRank'] !== 3 || $state['position'] !== 1) throw new RuntimeException('Queue did not advance after confirmation.');
 echo "EGM competition prize rules passed.\n";
+$awards = [['card' => 8, 'prizeId' => 'a', 'prizeName' => 'دوم']];
+try { egmCompetitionRequireUnusedCard($awards, 8); throw new RuntimeException('Locked card accepted.'); }
+catch (InvalidArgumentException $expected) {}
+egmCompetitionRequireUnusedCard($awards, 8, false);
+$reuse = egmCompetitionStatePublic(['confirmed' => $awards], $queue, $inventory, true, false);
+if ($reuse['keepConfirmedCards'] !== false || count($reuse['confirmed']) !== 1 || $reuse['nextRank'] !== 3) throw new RuntimeException('Reusable cards lost history or queue progress.');
+if (egmCompetitionAvailablePrizes($inventory, $awards, 2) !== []) throw new RuntimeException('Reusable cards repeated an awarded prize.');

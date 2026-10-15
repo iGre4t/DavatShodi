@@ -15,7 +15,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
     $textTitle = $isTicketCard ? 'متن بلیت شماره‌دار' : ($isPrintCard ? 'متن رسید' : 'متن دعوت');
     $paneKeyHtml = htmlspecialchars($paneKey, ENT_QUOTES, 'UTF-8');
     ?>
-    <div class="sub-pane<?= $activeClass ?>" data-pane="<?= $paneKeyHtml ?>" data-egm-invite-card-pane="1" data-card-kind="<?= htmlspecialchars($cardKind, ENT_QUOTES, 'UTF-8') ?>" data-store-endpoint="<?= $endpoint ?>" data-qr-endpoint="modules/minor/QR%20Code%20Generator/generate.php">
+    <div class="sub-pane<?= $activeClass ?>" data-pane="<?= $paneKeyHtml ?>" data-egm-invite-card-pane="1" data-card-kind="<?= htmlspecialchars($cardKind, ENT_QUOTES, 'UTF-8') ?>" data-event-name="<?= htmlspecialchars((string)($options['eventName'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" data-store-endpoint="<?= $endpoint ?>" data-qr-endpoint="modules/minor/QR%20Code%20Generator/generate.php">
       <div class="card egm-invite-card-artwork-card">
         <div class="section-header">
           <div>
@@ -23,16 +23,26 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
             <p class="muted small"><?= $isReceiptCard ? 'رسید همیشه مربع است. می‌توانید تصویر زمینه انتخاب کنید یا از صفحه سفید استفاده کنید.' : 'تصویر مستقیماً برای همین EGM ذخیره می‌شود و وارد کتابخانه تصاویر نخواهد شد.' ?></p>
           </div>
         </div>
-        <?php if ($isTicketCard): ?>
+        <?php if ($isReceiptCard): ?>
         <section class="egm-receipt-templates" data-receipt-templates data-template-font-url="style/fonts/IRANSansXFaNum-Bold.ttf" aria-labelledby="<?= $paneKeyHtml ?>-template-title">
           <div class="egm-receipt-template-heading">
             <div>
-              <h4 id="<?= $paneKeyHtml ?>-template-title">قالب‌های آماده رسید</h4>
-              <p class="muted small">یک قالب را انتخاب کنید تا تصویر زمینه، کادرها، متن فارسی، محل نام، رمز دوبعدی و شماره بلیت با فونت ایران‌سنس آماده و ذخیره شود.</p>
+              <h4 id="<?= $paneKeyHtml ?>-template-title"><?= $isPrintCard ? 'قالب‌های آماده کارت چاپی' : 'قالب‌های آماده رسید' ?></h4>
+              <p class="muted small"><?= $isPrintCard ? 'قالب MCI را انتخاب کنید تا خوش‌آمدگویی، نام رویداد، شماره بزرگ مهمان، نام و کد پرسنلی آماده و ذخیره شود.' : 'یک قالب را انتخاب کنید تا تصویر زمینه، کادرها، متن فارسی، محل نام، رمز دوبعدی و شماره بلیت با فونت ایران‌سنس آماده و ذخیره شود.' ?></p>
             </div>
             <span class="egm-receipt-template-font">ایران‌سنس</span>
           </div>
           <div class="egm-receipt-template-grid">
+            <?php if ($isPrintCard): ?>
+            <button type="button" class="egm-receipt-template-card is-mci-white" data-receipt-template="mci-welcome-classic">
+              <span class="egm-receipt-template-art"><span>خوش آمدید</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">MCI — سفید رسمی</span><span class="muted small">شماره مهمان در کادر برجسته</span>
+            </button>
+            <button type="button" class="egm-receipt-template-card is-mci-white" data-receipt-template="mci-welcome-blue">
+              <span class="egm-receipt-template-art"><span>خوش آمدید</span><strong>۱۲۳</strong></span>
+              <span class="egm-receipt-template-name">MCI — آبی</span><span class="muted small">حاشیه آبی و شماره خوانا</span>
+            </button>
+            <?php else: ?>
             <button type="button" class="egm-receipt-template-card is-food-classic" data-receipt-template="food-classic">
               <span class="egm-receipt-template-art"><span>رسید غذا</span><strong>۱۲۳</strong></span>
               <span class="egm-receipt-template-name">غذا — سنتی سبز</span>
@@ -77,6 +87,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
               <span class="egm-receipt-template-art"><span>بلیت سینما</span><strong>ردیف ۱ · صندلی ۵</strong></span>
               <span class="egm-receipt-template-name">سفید — بلیت سینما</span><span class="muted small">نقشه MCI با جای برجسته برای [seat]</span>
             </button>
+            <?php endif; ?>
           </div>
           <p class="muted small egm-receipt-template-status" data-receipt-template-status aria-live="polite"></p>
         </section>
@@ -138,6 +149,7 @@ function renderEgmInviteCardPane(string $storeEndpoint, bool $active = false, ar
                     <option value="[postallevel]">سطح پستی</option>
                     <option value="[score]">امتیاز</option>
                     <option value="[periodtitle]">نام بازه</option>
+                    <option value="[eventname]">نام رویداد</option>
                     <option value="[perioddate]">تاریخ شروع بازه — روز، نام ماه، سال</option>
                     <option value="[perioddate_dmy]">تاریخ شروع بازه — روز / ماه / سال</option>
                     <option value="[perioddate_ymd]">تاریخ شروع بازه — سال / ماه / روز</option>

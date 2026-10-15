@@ -52,7 +52,9 @@ function egmPeriodExportConditionLabels(): array
         'inactive' => 'بازه غیرفعال',
         'invalid_schedule' => 'زمان‌بندی نامعتبر',
         'quit_completed' => 'ورود و خروج ثبت شده',
-        'entered' => 'ورود ثبت شده؛ خروج ثبت نشده',
+        'entered' => 'وارد شده',
+        'invited' => 'دعوت‌شده',
+        'walk_in' => 'مهمان ناخوانده',
         'invalid_quit_without_entry' => 'وضعیت ناسازگار؛ خروج بدون ورود',
         'not_entered' => 'ورود ثبت نشده',
         'not_started' => 'هنوز بررسی نشده',
@@ -63,13 +65,20 @@ function egmPeriodExportConditionLabel(string $condition): string
 {
     $condition = trim($condition);
     if ($condition === '') return 'هنوز بررسی نشده';
-    return egmPeriodExportConditionLabels()[$condition] ?? $condition;
+    return egmPeriodExportConditionLabels()[$condition] ?? 'وضعیت نامشخص';
 }
 
 function egmPeriodExportResolveCondition(array $row): string
 {
     $condition = trim((string)($row['last_control_condition'] ?? ''));
-    if ($condition !== '') return $condition;
+    $hasEntry = !empty($row['entered_date']) && !empty($row['entered_time']);
+    $hasQuit = !empty($row['quit_date']) && !empty($row['quit_time']);
+    if ($hasQuit && $hasEntry) return ($row['export_quit_condition'] ?? $condition) === 'force_quit_success' ? 'force_quit_success' : 'quit_success';
+    if ($hasEntry) {
+        if (!empty($row['period_is_uninvited_guest']) || ($row['invitation_source'] ?? '') === 'walk_in') return 'walk_in';
+        return ($row['export_entry_condition'] ?? $condition) === 'force_entry_success' ? 'force_entry_success' : 'entered';
+    }
+    if ($condition !== '' && !in_array($condition, ['duplicate','quit_duplicate','minimum_stay','quit_without_entry'], true)) return $condition;
     $attendance = trim((string)($row['attendance_state'] ?? ''));
     if ($attendance !== '') return $attendance;
     $status = trim((string)($row['period_status'] ?? ($row['status'] ?? '')));
@@ -176,14 +185,14 @@ function egmPeriodExportMainRecord(array $row, ?string $condition = null): array
         'کد ملی' => trim((string)($row['national_id'] ?? '')),
         'کد پرسنلی' => trim((string)($row['work_id'] ?? '')),
         'شماره همراه' => trim((string)($row['phone_number'] ?? '')),
-        'دریافت هدیه' => (int)($row['should_get_gift'] ?? 0) === 1 ? 'بله' : 'خیر',
+        'دریافت هدیه' => egmBenefitsGiftEligible($row) ? 'بله' : 'خیر',
         'وضعیت دقیق' => egmPeriodExportConditionLabel($condition),
         'تاریخ ورود' => trim((string)($row['entered_date'] ?? '')),
         'زمان ورود' => trim((string)($row['entered_time'] ?? '')),
         'تاریخ خروج' => trim((string)($row['quit_date'] ?? '')),
         'زمان خروج' => trim((string)($row['quit_time'] ?? '')),
-        'Correct Presence' => (int)($row['correct_presence'] ?? 0) === 1 ? 'بله' : 'خیر',
-        'Fake Presence' => (int)($row['fake_presence'] ?? 0) === 1 ? 'بله' : 'خیر',
+        'حضور واقعی' => (int)($row['correct_presence'] ?? 0) === 1 ? 'بله' : 'خیر',
+        'حضور نامعقول' => (int)($row['fake_presence'] ?? 0) === 1 ? 'بله' : 'خیر',
     ];
 }
 
@@ -256,7 +265,7 @@ function egmPeriodExportTicketRecords(array $guestRows, array $ticketDefinitions
             'کد ملی' => trim((string)($row['national_id'] ?? '')),
             'کد پرسنلی' => trim((string)($row['work_id'] ?? '')),
             'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),
-            'دریافت هدیه' => (int)($row['should_get_gift'] ?? 0) === 1 ? 'بله' : 'خیر',
+            'دریافت هدیه' => egmBenefitsGiftEligible($row) ? 'بله' : 'خیر',
         ];
         $userTotal = 0;
         foreach ($ticketDefinitions as $definition) {
@@ -289,13 +298,40 @@ function egmPeriodExportRecords(string $type, array $guestRows, array $logRows =
     if ($type === 'ticket_numbers') {
         return egmPeriodExportTicketRecords($guestRows, $ticketDefinitions);
     }
+    $duplicates = [];
+    $attendance = [];
+    foreach ($logRows as $log) {
+        $kind = $log['log_condition'] ?? '';
+        $userId = (int)($log['user_id'] ?? 0);
+        if ($userId > 0 && in_array($kind, ['success','force_entry_success','quit_success','force_quit_success'], true)) {
+            $key = in_array($kind, ['quit_success','force_quit_success'], true) ? 'export_quit_condition' : 'export_entry_condition';
+            $attendance[$userId][$key] ??= $kind;
+        }
+        if (!in_array($kind, ['duplicate','quit_duplicate'], true)) continue;
+        if ($userId > 0) $duplicates[$userId][$kind][] = (string)($log['occurred_at'] ?? '');
+    }
+    foreach ($guestRows as &$guest) $guest += $attendance[(int)($guest['user_id'] ?? 0)] ?? [];
+    unset($guest);
+    $duplicateColumns = static function(array $row) use ($duplicates): array {
+        $times = $duplicates[(int)($row['user_id'] ?? 0)] ?? [];
+        return [
+            'زمان اسکن‌های تکراری ورود' => implode("\n", array_reverse($times['duplicate'] ?? [])),
+            'زمان اسکن‌های تکراری خروج' => implode("\n", array_reverse($times['quit_duplicate'] ?? [])),
+        ];
+    };
     if ($type === 'full_log') {
-        return array_map(static function (array $row): array {
+        $logRows = array_values(array_filter($logRows, static function(array $row): bool {
+            $condition = (string)($row['log_condition'] ?? '');
+            if (in_array($condition, ['duplicate','quit_duplicate','minimum_stay','quit_without_entry'], true)) return false;
+            if (($row['attendance_action'] ?? '') === 'quit' || str_starts_with($condition, 'quit_')) return in_array($condition, ['quit_success','force_quit_success'], true);
+            return true;
+        }));
+        return array_map(static function (array $row) use ($duplicateColumns): array {
             $condition = trim((string)($row['log_condition'] ?? '')) ?: 'not_started';
-            return egmPeriodExportMainRecord($row, $condition) + [
-                'کد وضعیت' => $condition,
+            return egmPeriodExportMainRecord($row, $condition) + $duplicateColumns($row) + [
+                'کد وضعیت' => egmPeriodExportConditionLabel($condition),
                 'زمان عملیات' => trim((string)($row['occurred_at'] ?? '')),
-                'نوع عملیات' => trim((string)($row['attendance_action'] ?? 'check')),
+                'نوع عملیات' => ['entry'=>'ورود','quit'=>'خروج','check'=>'بررسی'][$row['attendance_action'] ?? 'check'] ?? 'بررسی',
                 'پیام ثبت‌شده' => trim((string)($row['message'] ?? '')),
                 'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),
                 'معاونت' => trim((string)($row['deputy'] ?? '')),
@@ -331,14 +367,14 @@ function egmPeriodExportRecords(string $type, array $guestRows, array $logRows =
         ));
     }
 
-    return array_map(static function (array $row) use ($type): array {
+    return array_map(static function (array $row) use ($type, $duplicateColumns): array {
         // This is an operational "currently inside" list, not a final
         // Correct/Fake Presence classification.
         $condition = $type === 'entered_no_quit' ? 'entered' : egmPeriodExportResolveCondition($row);
-        $record = egmPeriodExportMainRecord($row, $condition) + [
-            'کد وضعیت' => $condition,
+        $record = egmPeriodExportMainRecord($row, $condition) + $duplicateColumns($row) + [
+            'کد وضعیت' => egmPeriodExportConditionLabel($condition),
             'شماره مهمان' => trim((string)($row['guest_number'] ?? '')),
-            'نوع دعوت' => trim((string)($row['invitation_source'] ?? '')),
+            'نوع دعوت' => ($row['invitation_source'] ?? '') === 'walk_in' ? 'مهمان ناخوانده' : 'دعوت‌شده',
             'معاونت' => trim((string)($row['deputy'] ?? '')),
             'اداره کل' => trim((string)($row['general_department'] ?? '')),
             'اداره' => trim((string)($row['department'] ?? '')),
@@ -458,7 +494,7 @@ function egmPeriodExportBuild(array $context, string $periodCode, string $type):
         return egmGameExportBuild($context, $periodCode, $periodTitle, egmExportPeriodDatedFilename($types[$type], $periodDate));
     }
     $guestRows = egmPeriodExportGuestRows($context, $periodCode);
-    $logRows = $type === 'full_log' ? egmPeriodExportLogRows($context, $periodCode) : [];
+    $logRows = $type !== 'ticket_numbers' ? egmPeriodExportLogRows($context, $periodCode) : [];
     $ticketDefinitions = $type === 'ticket_numbers' ? egmPeriodExportTicketDefinitions($context, $guestRows) : [];
     $records = egmPeriodExportRecords($type, $guestRows, $logRows, $ticketDefinitions);
     $sheetName = $types[$type];
@@ -479,6 +515,28 @@ function handleEgmPeriodExportRequest(string $missionDir, array $sessionUser): n
         $periodCode = egmPeriodInvitesValidatePeriod($context, trim((string)($_GET['period_code'] ?? '')));
         if (!egmPeriodExportSessionCanAccess($context, $sessionUser, $periodCode)) {
             denyPanelAccess(403, 'شما اجازه دریافت خروجی این بازه را ندارید.', false);
+        }
+        if (($_GET['type'] ?? '') === 'game_rankings') {
+            require_once __DIR__ . '/egm-game-rankings.php';
+            if (($_GET['options'] ?? '') === '1') {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['status'=>'ok','games'=>egmGameRankingOptions($context, $periodCode)], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            $limit = filter_var($_GET['rank_to'] ?? '', FILTER_VALIDATE_INT);
+            if ($limit === false) throw new InvalidArgumentException('رتبه پایان معتبر نیست.');
+            $format = (string)($_GET['format'] ?? '');
+            if (!in_array($format, ['full','presenter'], true)) throw new InvalidArgumentException('نوع خروجی را انتخاب کنید.');
+            $data = egmGameRankingData($context, $periodCode, trim((string)($_GET['game_id'] ?? '')), $limit);
+            $title = $periodCode;
+            foreach (egmPeriodInvitesPeriods($context) as $period) if ((string)($period['tagCode'] ?? $period['code'] ?? '') === $periodCode) { $title = trim((string)($period['title'] ?? '')) ?: $periodCode; break; }
+            if ($format === 'full') { appXlsxSend(egmGameRankingXlsx($data, $title), egmExportSafeFilenamePart('رتبه‌بندی بازی‌ها '.$title).'.xlsx'); exit; }
+            $content = egmGameRankingDocx($data, $title);
+            while (ob_get_level() > 0) if (!@ob_end_clean()) break;
+            header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+            header('Content-Disposition: attachment; filename="game-rankings.docx"; filename*=UTF-8\'\''.rawurlencode(egmExportSafeFilenamePart('رتبه‌بندی بازی‌ها '.$title).'.docx'));
+            header('Content-Length: '.strlen($content)); header('Cache-Control: no-store');
+            echo $content; exit;
         }
         $export = egmPeriodExportBuild(
             $context,

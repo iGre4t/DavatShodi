@@ -557,17 +557,35 @@ function egmPeriodInviteCardsStoreUpload(array $context, string $periodCode, str
 /** @return array<int,array<string,string>> */
 function egmPeriodInviteCardsGeneratedExportRows(array $context, string $periodCode): array
 {
-    egmInstanceEnrichUsersFromOeu($context['pdo'], (string)$context['code']);
+    // Export is read-only: never refresh identities or phone numbers here.
     $periodsTable = (string)$context['tables']['user_periods'];
     $usersTable = (string)$context['tables']['users'];
+    $routesTable = EGM_INVITE_CARD_ROUTES_TABLE;
+    $hasRoutes = egmInstanceTableExists($context['pdo'], $routesTable);
+    $routeColumns = $hasRoutes ? ', r.`user_id` AS route_user_id, r.`egm_code` AS route_egm_code, r.`period_code` AS route_period_code' : '';
+    $routeJoin = $hasRoutes ? " LEFT JOIN `{$routesTable}` r ON r.`invite_code` = p.`invite_card_code` " : '';
     $statement = $context['pdo']->prepare(
-        "SELECT u.`first_name`, u.`last_name`, u.`national_id`, u.`work_id`, u.`phone_number`, p.`invite_card_code` "
+        "SELECT p.`user_id`, u.`first_name`, u.`last_name`, u.`national_id`, u.`work_id`, u.`phone_number`, p.`invite_card_code` {$routeColumns} "
         . "FROM `{$periodsTable}` p INNER JOIN `{$usersTable}` u ON u.`id` = p.`user_id` "
+        . $routeJoin
         . "WHERE p.`period_code` = :period_code AND p.`invite_card_code` IS NOT NULL "
         . "AND p.`invite_card_file` IS NOT NULL AND p.`invite_card_generated_at` IS NOT NULL "
         . "ORDER BY p.`id`"
     );
     $statement->execute([':period_code' => $periodCode]);
+    $rows = $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $seen = [];
+    foreach ($rows as $row) {
+        $key = strtolower(trim((string)$row['invite_card_code']));
+        if (isset($seen[$key]) || (isset($row['route_user_id']) && (
+            (int)$row['route_user_id'] !== (int)$row['user_id']
+            || (string)$row['route_egm_code'] !== (string)$context['code']
+            || (string)$row['route_period_code'] !== $periodCode
+        ))) {
+            throw new RuntimeException('مالک یکی از لینک‌های کارت دعوت با مهمان این بازه تطبیق ندارد؛ خروجی برای جلوگیری از ارسال کارت اشتباه متوقف شد.');
+        }
+        $seen[$key] = true;
+    }
     return array_map(static fn(array $row): array => [
         'first_name' => (string)($row['first_name'] ?? ''),
         'last_name' => (string)($row['last_name'] ?? ''),
@@ -575,7 +593,7 @@ function egmPeriodInviteCardsGeneratedExportRows(array $context, string $periodC
         'work_id' => (string)($row['work_id'] ?? ''),
         'phone_number' => (string)($row['phone_number'] ?? ''),
         'invite_card_code' => (string)($row['invite_card_code'] ?? ''),
-    ], $statement->fetchAll(PDO::FETCH_ASSOC) ?: []);
+    ], $rows);
 }
 
 function egmPeriodInviteCardsPublicBaseUrl(array $context): string

@@ -1,0 +1,43 @@
+<?php
+declare(strict_types=1);
+require_once dirname(__DIR__) . '/api/lib/egm-draw-session.php';
+require_once dirname(__DIR__) . '/api/lib/egm-period-draws.php';
+$pdo = new PDO('mysql:host=127.0.0.1;port=3306;charset=utf8mb4', 'root', '', [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+$database='egm_session_test_' . bin2hex(random_bytes(6));
+$pdo->exec("CREATE DATABASE `$database`");
+try {
+    $pdo->exec("USE `$database`");
+    $pdo->exec('CREATE TABLE users (code VARCHAR(30), username VARCHAR(100), password_hash VARCHAR(255), permissions TEXT)');
+    $hash=password_hash('temporary-test-password', PASSWORD_DEFAULT);
+    $query=$pdo->prepare('INSERT INTO users VALUES (?, ?, ?, ?)');
+    $query->execute(['panel-user','test', $hash, null]);
+    $panelPath=session_save_path();
+    session_name('PANELTEST');session_start();
+    $panelId=session_id();$_SESSION['authenticated']=true;$_SESSION['panel_marker']='kept';
+    egmDrawSessionStart(dirname(__DIR__) . '/mini apps/Event Guest Manager');
+    if(isset($_SESSION['authenticated']) || isset($_SESSION['panel_marker'])) throw new Exception('Panel authentication leaked into draw session');
+    if(egmDrawSessionUser($pdo)!==null) throw new Exception('Draw authenticated without separate login');
+    $_SESSION['draw_user_code']='panel-user';$_SESSION['draw_auth_version']=hash('sha256',$hash);
+    if((egmDrawSessionUser($pdo)['code']??'')!=='panel-user') throw new Exception('Real panel user unavailable');
+    $pdo->exec("UPDATE users SET password_hash='changed'");
+    if(egmDrawSessionUser($pdo)!==null) throw new Exception('Changed password did not revoke draw session');
+    $eventCode='9876543216';ensureEgmInstanceTables($pdo,$eventCode);
+    $facilitator=['id'=>'ref1','username'=>'ref','fullname'=>'Test referee','password_hash'=>$hash,'auth_version'=>'version1'];
+    egmInstanceWriteData($pdo,$eventCode,EGM_FACILITATORS_KEY,[$facilitator]);
+    if(egmFacilitatorsAuthenticateRows([$facilitator],'ref','temporary-test-password')===null) throw new Exception('Facilitator credentials rejected');
+    if(egmFacilitatorsAuthenticateRows([$facilitator],'ref','wrong')!==null) throw new Exception('Wrong facilitator password accepted');
+    unset($_SESSION['draw_user_code']);
+    $_SESSION['draw_facilitator_id']='ref1';$_SESSION['draw_facilitator_event']=$eventCode;$_SESSION['draw_auth_version']='version1';
+    $ref=egmDrawSessionUser($pdo,$eventCode);
+    if(($ref['code']??'')!=='facilitator:ref1' || !egmPeriodDrawCanAccess(['code'=>$eventCode],$ref,'01')) throw new Exception('Facilitator draw access rejected');
+    if(egmDrawSessionUser($pdo,'other')!==null || egmPeriodDrawCanAccess(['code'=>'other'],$ref,'01')) throw new Exception('Facilitator crossed event boundary');
+    $facilitator['auth_version']='changed';egmInstanceWriteData($pdo,$eventCode,EGM_FACILITATORS_KEY,[$facilitator]);
+    if(egmDrawSessionUser($pdo,$eventCode)!==null) throw new Exception('Changed facilitator credentials kept session');
+    egmInstanceWriteData($pdo,$eventCode,EGM_FACILITATORS_KEY,[]);
+    if(egmDrawSessionUser($pdo,$eventCode)!==null) throw new Exception('Deleted facilitator kept session');
+    session_destroy();session_write_close();
+    session_save_path($panelPath);session_name('PANELTEST');session_id($panelId);session_start();
+    if(($_SESSION['panel_marker']??'')!=='kept') throw new Exception('Separate draw login changed panel session');
+    session_destroy();
+    echo "PASS: draw requires separate login, resolves only real panel users, revokes changed credentials, preserves panel session.\n";
+} finally {$pdo->exec("DROP DATABASE `$database`");}

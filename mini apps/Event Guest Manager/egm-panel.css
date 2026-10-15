@@ -3303,3 +3303,7 @@ body.egm-period-invitee-editor-open {
   .egm-shell #egm-prize-form .egm-prize-grid {grid-template-columns: 1fr; gap: 16px;}
   .egm-shell #egm-prize-form .egm-form-action .btn {width: 100%;}
 }
+
+.egm-prize-code{display:block;margin-top:7px;color:#738397;font-size:11px;overflow-wrap:anywhere}.egm-prize-code bdi{font-family:monospace;user-select:all}
+
+.egm-prize-order{display:flex;align-items:center;gap:5px;margin-top:9px}.egm-prize-order>span{font-size:12px;color:#738397;min-width:20px}.egm-prize-order .btn{min-width:32px;min-height:32px;padding:3px 7px;border-radius:8px;font-size:17px;line-height:1}.egm-prize-order .btn:disabled{opacity:.35;cursor:default}

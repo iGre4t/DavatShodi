@@ -10,7 +10,8 @@ $devPaneOrder = [
   'devsettings:panel-settings',
   'devsettings:appearance',
   'devsettings:database',
-  'devsettings:printer-settings'
+  'devsettings:printer-settings',
+  'devsettings:windows-app'
 ];
 $visibleDevPanes = [];
 foreach ($devPaneOrder as $permissionId) {
@@ -26,6 +27,9 @@ $activeDevPane = $visibleDevPanes[0] ?? '';
             <aside class="sub-sidebar">
               <div class="sub-header">تنظیمات توسعه‌دهنده</div>
               <div class="sub-nav">
+                <?php if (in_array('windows-app', $visibleDevPanes, true)): ?>
+                  <button type="button" class="sub-item<?= $activeDevPane === 'windows-app' ? ' active' : '' ?>" data-pane="windows-app">برنامه ویندوز</button>
+                <?php endif; ?>
                 <?php if (in_array('panel-settings', $visibleDevPanes, true)): ?>
                   <button type="button" class="sub-item<?= $activeDevPane === 'panel-settings' ? ' active' : '' ?>" data-pane="panel-settings">
                     عمومی
@@ -49,6 +53,9 @@ $activeDevPane = $visibleDevPanes[0] ?? '';
               </div>
             </aside>
             <div class="sub-content">
+              <?php if (in_array('windows-app', $visibleDevPanes, true)): ?>
+                <div class="sub-pane<?= $activeDevPane === 'windows-app' ? ' active' : '' ?>" data-pane="windows-app"><?php include __DIR__ . '/windows-app-updates-pane.php'; ?></div>
+              <?php endif; ?>
               <?php if (empty($visibleDevPanes)): ?>
                 <div class="card settings-section">
                   <p class="hint">شما دسترسی به هیچ زیرتب تنظیمات توسعه‌دهنده ندارید.</p>

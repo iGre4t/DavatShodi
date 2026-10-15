@@ -80,3 +80,13 @@ php api/telegram-bot.php diagnose
 رویداد (اگر چند رویداد در دسترس باشد)، بازه و نوع گزارش را با دکمه‌های داخل پیام انتخاب کنید. بازه‌های قبلی نیز قابل انتخاب هستند. گزینه‌ها و فایل‌های XLSX دقیقاً از سازنده خروجی پنل استفاده می‌کنند: همه مهمانان، ورود بدون خروج، مهمانان ناخوانده، گزارش کامل، وضعیت کاربران، حضور واقعی، حضور نامعقول و تعداد بلیت‌ها. فایل در همان گفت‌وگوی خصوصی ارسال می‌شود و قابل دانلود است.
 
 دسترسی هنگام هر دانلود دوباره بررسی می‌شود؛ تغییر پین یا `/logout` امکان دریافت فایل از دکمه‌های قدیمی را لغو می‌کند. منوها بعد از یک روز منقضی می‌شوند. فایل موقت پس از ارسال حذف می‌شود.
+
+
+## Guest reports and automatic reporting
+
+Each EGM has a `گزارش خودکار` switch in its general settings (`autoReport`, default off).
+Failed attendance checks, walk-in registrations, and entries excluded by the draw entry window are saved in `گزارش‌های مهمانان` even when sending is off. When enabled, new reports are delivered independently to configured Telegram and Bale bots, using each bot's EGM PIN grants. Attendance commits before reporting; transport errors do not reverse entry.
+
+Panel managers can filter by period/status, search, and independently approve games, gifts, and draw participation. Game approval still requires the guest to be checked in and not checked out. Decisions are shared with the bots. Resolved messages end with `✅ حل شده` and have a `برگرداندن به بررسی` button. Returning a report to review removes its override and restores the normal invitation/time-window rules. Failed message edits are queued and retried by the existing bot poll/webhook retry path.
+
+The instance schema migration adds nullable `games_eligible`; report/delivery schema migrations add `delivery_requested` and `needs_refresh`. Existing manual reports retain requested delivery. Historical logs are imported incrementally when the guest-report tab is loaded, without sending unsolicited historical messages.

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/api/lib/common.php';
-require_once dirname(__DIR__) . '/api/lib/egm-instance-storage.php';
+require_once dirname(__DIR__) . '/api/lib/egm-period-invite-cards.php';
 require_once dirname(__DIR__) . '/modules/minor/Organizational Event Userbase/org_users_store.php';
 
 function egmOeuEnrichmentAssert(bool $condition, string $message): void
@@ -100,7 +100,41 @@ try {
         is_array($ambiguousGuest) && trim((string)$ambiguousGuest['national_id']) === '',
         'A duplicated OEU Work ID must not be used for automatic identity matching.'
     );
+
+    // A directory re-import can reuse row IDs for completely different people.
+    $pdo->prepare("UPDATE `{$usersTable}` SET source_type='oeu', source_user_id=? WHERE id=?")
+        ->execute([$oeuIds[1], $guestId]);
+    egmInstanceEnrichUsersFromOeu($pdo, $code);
+    $lookup->execute([':id' => $guestId]);
+    $guest = $lookup->fetch(PDO::FETCH_ASSOC);
+    egmOeuEnrichmentAssert($guest['national_id'] === $nationalId && $guest['work_id'] === $workId
+        && $guest['phone_number'] === '09120000000', 'A reused OEU row ID reassigned guest identity or phone.');
+    egmOeuEnrichmentAssert((int)$guest['source_user_id'] === $oeuIds[0], 'A stale directory relationship was not repaired.');
+
+    $periodTable = $tables['user_periods'];
+    $pdo->prepare("INSERT INTO `{$periodTable}` (user_id,period_code,invite_card_code,invite_card_file,invite_card_generated_at) VALUES (?, '01', 'ExportStableCode01', 'InviteCards/ExportStableCode01.jpg', CURRENT_TIMESTAMP)")
+        ->execute([$guestId]);
+    $pdo->prepare('UPDATE organizational_event_users SET phone_number=? WHERE id=?')
+        ->execute(['09129999999', $oeuIds[0]]);
+    $context = ['pdo' => $pdo, 'code' => $code, 'tables' => $tables];
+    $exportRows = egmPeriodInviteCardsGeneratedExportRows($context, '01');
+    egmOeuEnrichmentAssert(count($exportRows) === 1 && $exportRows[0]['phone_number'] === '09120000000'
+        && $exportRows[0]['invite_card_code'] === 'ExportStableCode01', 'Export changed guest data instead of reading the stored card owner.');
+    $lookup->execute([':id' => $guestId]);
+    egmOeuEnrichmentAssert($lookup->fetch(PDO::FETCH_ASSOC)['phone_number'] === '09120000000', 'Export mutated the guest database.');
+    egmInviteCardUpsertRoute($pdo, 'ExportStableCode01', $code, '01', $ambiguousGuestId,
+        'InviteCards/ExportStableCode01.jpg', 'generated');
+    $rejected = false;
+    try {
+        egmPeriodInviteCardsGeneratedExportRows($context, '01');
+    } catch (RuntimeException $error) {
+        $rejected = str_contains($error->getMessage(), 'تطبیق ندارد');
+    }
+    egmOeuEnrichmentAssert($rejected, 'Export allowed a link routed to a different guest.');
 } finally {
+    if (egmInstanceTableExists($pdo, EGM_INVITE_CARD_ROUTES_TABLE)) {
+        $pdo->prepare('DELETE FROM `' . EGM_INVITE_CARD_ROUTES_TABLE . '` WHERE egm_code=?')->execute([$code]);
+    }
     if ($oeuIds) {
         $placeholders = implode(',', array_fill(0, count($oeuIds), '?'));
         $pdo->prepare("DELETE FROM `organizational_event_users` WHERE `id` IN ({$placeholders})")->execute($oeuIds);

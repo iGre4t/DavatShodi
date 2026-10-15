@@ -1,0 +1,35 @@
+[
+    {
+        "id": "local-preview-prize-1",
+        "name": "کارت هدیه ویژه",
+        "onWheelName": "کارت هدیه ویژه",
+        "quantity": 9,
+        "last": 9,
+        "value": 0,
+        "rank": 1,
+        "isFake": false,
+        "pendingAwardIds": []
+    },
+    {
+        "id": "local-preview-prize-2",
+        "name": "هدفون بی‌سیم",
+        "onWheelName": "هدفون بی‌سیم",
+        "quantity": 9,
+        "last": 9,
+        "value": 0,
+        "rank": 1,
+        "isFake": false,
+        "pendingAwardIds": []
+    },
+    {
+        "id": "local-preview-prize-3",
+        "name": "ساعت هوشمند",
+        "onWheelName": "ساعت هوشمند",
+        "quantity": 9,
+        "last": 9,
+        "value": 0,
+        "rank": 1,
+        "isFake": false,
+        "pendingAwardIds": []
+    }
+]

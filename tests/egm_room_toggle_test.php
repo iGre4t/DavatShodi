@@ -1,0 +1,20 @@
+<?php
+declare(strict_types=1);
+require_once dirname(__DIR__).'/api/lib/egm-refmonitor-teams.php';
+function roomCheck(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
+$db=new PDO('mysql:host=127.0.0.1;port=3306;charset=utf8mb4','root','',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$name='egm_room_toggle_'.bin2hex(random_bytes(5));$db->exec("CREATE DATABASE `$name`");
+try{$db->exec("USE `$name`");$code='9876543292';$ctx=['pdo'=>$db,'code'=>$code,'tables'=>ensureEgmInstanceTables($db,$code)];egmInstanceWritePeriods($db,$code,[['tagCode'=>'01','active'=>true]]);$gid='1234567890abcdef';$a='1111111111111111';$b='2222222222222222';$ra='aaaaaaaaaaaaaaaa';$r2='bbbbbbbbbbbbbbbb';$rb='cccccccccccccccc';
+$game=['id'=>$gid,'name'=>'Game','has_levels'=>true,'auto_room_manager'=>true,'gender_mode'=>'normal','score_count'=>2,'rooms'=>[],'levels'=>[['id'=>$a,'name'=>'A','rooms'=>[['id'=>$ra,'name'=>'A1','gender'=>'both'],['id'=>$r2,'name'=>'A2','gender'=>'both']]],['id'=>$b,'name'=>'B','rooms'=>[['id'=>$rb,'name'=>'B1','gender'=>'both']]]]];egmGamesWrite($ctx,['games'=>[$game],'enabled'=>['01'=>[$gid]]]);$t=egmRefMonitorGameTable($db,$code,'01',$gid);
+$p=['type'=>'team','name'=>'Playing','started_at'=>date('c'),'members'=>[],'score_count'=>2,'scores'=>[],'score_attempts'=>[$a=>[['score'=>10,'submitted_at'=>'before','submitted_by'=>'ref']]],'room_assignment'=>['level_id'=>$a,'room_id'=>$ra,'room_name'=>'A1','level_name'=>'A']];$db->prepare("INSERT INTO `$t` (user_id,payload) VALUES(NULL,?)")->execute([json_encode($p)]);$id=(int)$db->lastInsertId();
+$r=egmGamesSetRoomEnabled($ctx,$gid,$a,$ra,false,false,'admin');roomCheck($r['requires_confirmation']&&count($r['teams'])===1,'Occupied room must confirm');roomCheck(egmRefMonitorReadTeam($db,$t,$id)['payload']===$p,'Preview changes team');roomCheck(egmGamesState($ctx)['games'][0]['levels'][0]['rooms'][0]['enabled'],'Preview disables room');
+$r=egmGamesSetRoomEnabled($ctx,$gid,$a,$ra,false,true,'admin');$now=egmRefMonitorReadTeam($db,$t,$id)['payload'];roomCheck($now['room_assignment']['room_id']===$r2&&$now['score_attempts']===$p['score_attempts'],'Evacuation must keep level and score');
+egmGamesSetRoomEnabled($ctx,$gid,$a,$r2,false,true,'admin');$now=egmRefMonitorReadTeam($db,$t,$id)['payload'];roomCheck(empty($now['room_assignment'])&&$now['room_wait_level_id']===$a,'No suitable room must wait, not jump to B');
+$r=egmGamesSetRoomEnabled($ctx,$gid,$b,$rb,false,false,'admin');roomCheck(!$r['requires_confirmation'],'Empty room needs no confirmation');
+egmGamesSetRoomEnabled($ctx,$gid,$b,$rb,true,false,'admin');roomCheck(empty(egmRefMonitorReadTeam($db,$t,$id)['payload']['room_assignment']),'Other-level room must not take displaced team');
+egmGamesSetRoomEnabled($ctx,$gid,$a,$ra,true,false,'admin');$now=egmRefMonitorReadTeam($db,$t,$id)['payload'];roomCheck($now['room_assignment']['room_id']===$ra,'Re-enabled room takes waiting team');
+$view=egmRefMonitorSubmitScore($db,$code,'01',$gid,$id,$a,'20','ref',false,2);roomCheck((float)$view['scores'][$a]['score']===30.0&&$view['room_assignment']['level_id']===$b,'After remaining score team proceeds normally');roomCheck(empty(egmRefMonitorReadTeam($db,$t,$id)['payload']['room_wait_level_id']),'Completed level pin clears');
+egmGamesSaveAutoMode($ctx,$gid,false);$manual=egmRefMonitorReadTeam($db,$t,$id)['payload'];roomCheck(empty($manual['room_assignment'])&&$manual['room_wait_level_id']===$b&&(float)$manual['scores'][$a]['score']===30.0,'Turning automatic rooms off during play preserves progress');
+egmGamesSaveAutoMode($ctx,$gid,true);roomCheck(egmRefMonitorReadTeam($db,$t,$id)['payload']['room_assignment']['level_id']===$b,'Turning automatic rooms back on resumes same level');
+egmGamesSaveLevel($ctx,$gid,'','New live level');roomCheck(count(egmGamesState($ctx)['games'][0]['levels'])===3,'Can add level during active auto game');
+echo "PASS: confirmation/no mutation, legacy enabled default, same-level relocation, partial-score preservation, waiting, re-enable/dispatch, completion and live level creation\n";
+}finally{$db->exec("DROP DATABASE `$name`");}

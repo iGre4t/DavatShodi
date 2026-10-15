@@ -40,7 +40,7 @@ function egmGameExportRecords(array $game, array $teams, array $profiles, string
                 'تاریخ خروج' => (string)($profile['quit_date'] ?? ''), 'زمان خروج' => (string)($profile['quit_time'] ?? ''),
                 'وضعیت حضور' => egmPeriodExportConditionLabel(egmPeriodExportResolveCondition($profile)),
                 'حضور واقعی' => !empty($profile['correct_presence']) ? 'بله' : 'خیر', 'حضور اجباری' => !empty($profile['fake_presence']) ? 'بله' : 'خیر',
-                'دریافت هدیه' => $flags['gift_approved'] ? 'بله' : 'خیر',
+                'دریافت هدیه' => egmBenefitsGiftEligible($profile) ? 'بله' : 'خیر',
                 'زمان بررسی هدیه و قرعه‌کشی' => (string)($profile['benefits_reviewed_at'] ?? ''), 'بررسی‌کننده هدیه و قرعه‌کشی' => (string)($profile['benefits_reviewed_by'] ?? ''),
                 'تأیید قرعه‌کشی' => !isset($profile['draw_eligible']) ? 'بررسی نشده' : ((int)$profile['draw_eligible'] === 1 ? 'بله' : 'خیر'),
                 'حضور قبلی در همین بازی' => $flags['previous_game_participation'] ? 'بله' : 'خیر', 'هشدار جایزه' => $flags['prize_warning']];
